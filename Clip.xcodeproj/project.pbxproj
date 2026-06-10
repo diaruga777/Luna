@@ -1,0 +1,504 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 71;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		CBAD00000000000000000000 /* BackgroundResourceUploadExtension.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = CBF100000000000000000000 /* BackgroundResourceUploadExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CBB200000000000000000000 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = CBC300000000000000000000 /* MLXVLM */; };
+		CBB300000000000000000000 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = CBC400000000000000000000 /* MLXLMCommon */; };
+		CBB400000000000000000000 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = CBC500000000000000000000 /* MLXVLM */; };
+		CBB500000000000000000000 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = CBC600000000000000000000 /* MLXLMCommon */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CBAA00000000000000000000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CBA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CBE100000000000000000000;
+			remoteInfo = BackgroundResourceUploadExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		CBAC00000000000000000000 /* Embed ExtensionKit Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+				CBAD00000000000000000000 /* BackgroundResourceUploadExtension.appex in Embed ExtensionKit Extensions */,
+			);
+			name = "Embed ExtensionKit Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		CBF000000000000000000000 /* Clip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Clip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CBF100000000000000000000 /* BackgroundResourceUploadExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = BackgroundResourceUploadExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		CBD000000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CBE000000000000000000000 /* Clip */;
+		};
+		CBD100000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CBE100000000000000000000 /* BackgroundResourceUploadExtension */;
+		};
+		CBD200000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Log.swift,
+				PhotoSearch/Applets/Applet.swift,
+				PhotoSearch/Applets/AppletEvaluator.swift,
+				PhotoSearch/Applets/AppletNotificationManager.swift,
+				PhotoSearch/Applets/AppletStore.swift,
+				PhotoSearch/CLIPEmbeddingEngine.swift,
+				PhotoSearch/CLIPEngineProvider.swift,
+				PhotoSearch/CLIPModel.swift,
+				PhotoSearch/CLIPModelManager.swift,
+				PhotoSearch/CLIPModelStore.swift,
+				PhotoSearch/CLIPTextTokenizer.swift,
+				PhotoSearch/ImageTextRecognizer.swift,
+				PhotoSearch/Ingest/NewPhotoProcessor.swift,
+				PhotoSearch/PhotoAssetSource.swift,
+				PhotoSearch/PhotoEmbeddingIndex.swift,
+				PhotoSearch/PhotoFrameAnalyzer.swift,
+				PhotoSearch/PhotoIndexStore.swift,
+				PhotoSearch/VLM/MLXVLMEngine.swift,
+				PhotoSearch/VLM/VLMEngine.swift,
+				PhotoSearch/VLM/VLMEngineProvider.swift,
+				PhotoSearch/VLM/VLMModel.swift,
+				PhotoSearch/VLM/VLMModelManager.swift,
+				PhotoSearch/VLM/VLMModelStore.swift,
+				Storage.swift,
+			);
+			target = CBE100000000000000000000 /* BackgroundResourceUploadExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		CBC000000000000000000000 /* Clip */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (CBD000000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, CBD200000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Clip; sourceTree = "<group>"; };
+		CBC100000000000000000000 /* BackgroundResourceUploadExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (CBD100000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = BackgroundResourceUploadExtension; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		CBA200000000000000000000 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CBB200000000000000000000 /* MLXVLM in Frameworks */,
+				CBB300000000000000000000 /* MLXLMCommon in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBA500000000000000000000 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CBB400000000000000000000 /* MLXVLM in Frameworks */,
+				CBB500000000000000000000 /* MLXLMCommon in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		CBB000000000000000000000 = {
+			isa = PBXGroup;
+			children = (
+				CBC000000000000000000000 /* Clip */,
+				CBC100000000000000000000 /* BackgroundResourceUploadExtension */,
+				CBB100000000000000000000 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		CBB100000000000000000000 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				CBF000000000000000000000 /* Clip.app */,
+				CBF100000000000000000000 /* BackgroundResourceUploadExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		CBE000000000000000000000 /* Clip */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CBD400000000000000000000 /* Build configuration list for PBXNativeTarget "Clip" */;
+			buildPhases = (
+				CBA100000000000000000000 /* Sources */,
+				CBA200000000000000000000 /* Frameworks */,
+				CBA300000000000000000000 /* Resources */,
+				CBAC00000000000000000000 /* Embed ExtensionKit Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CBAB00000000000000000000 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				CBC000000000000000000000 /* Clip */,
+			);
+			name = Clip;
+			packageProductDependencies = (
+				CBC300000000000000000000 /* MLXVLM */,
+				CBC400000000000000000000 /* MLXLMCommon */,
+			);
+			productName = Clip;
+			productReference = CBF000000000000000000000 /* Clip.app */;
+			productType = "com.apple.product-type.application";
+		};
+		CBE100000000000000000000 /* BackgroundResourceUploadExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CBD500000000000000000000 /* Build configuration list for PBXNativeTarget "BackgroundResourceUploadExtension" */;
+			buildPhases = (
+				CBA400000000000000000000 /* Sources */,
+				CBA500000000000000000000 /* Frameworks */,
+				CBA600000000000000000000 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CBC100000000000000000000 /* BackgroundResourceUploadExtension */,
+			);
+			name = BackgroundResourceUploadExtension;
+			packageProductDependencies = (
+				CBC500000000000000000000 /* MLXVLM */,
+				CBC600000000000000000000 /* MLXLMCommon */,
+			);
+			productName = BackgroundResourceUploadExtension;
+			productReference = CBF100000000000000000000 /* BackgroundResourceUploadExtension.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		CBA000000000000000000000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1620;
+				LastUpgradeCheck = 1620;
+				TargetAttributes = {
+					CBE000000000000000000000 = {
+					DevelopmentTeam = MM5QBNLXR6;
+					ProvisioningStyle = Automatic;
+						CreatedOnToolsVersion = 16.2;
+					};
+					CBE100000000000000000000 = {
+						CreatedOnToolsVersion = 16.2;
+					};
+				};
+			};
+			buildConfigurationList = CBD300000000000000000000 /* Build configuration list for PBXProject "Clip" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = CBB000000000000000000000;
+			packageReferences = (
+				CBC200000000000000000000 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */,
+			);
+			productRefGroup = CBB100000000000000000000 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CBE000000000000000000000 /* Clip */,
+				CBE100000000000000000000 /* BackgroundResourceUploadExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		CBA300000000000000000000 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBA600000000000000000000 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		CBA100000000000000000000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBA400000000000000000000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		CBAB00000000000000000000 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CBE100000000000000000000 /* BackgroundResourceUploadExtension */;
+			targetProxy = CBAA00000000000000000000 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		CBE200000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		CBE300000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		CBE400000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Clip/Clip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Clip/Info.plist;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		CBE500000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Clip/Clip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Clip/Info.plist;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		CBE600000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = BackgroundResourceUploadExtension/BackgroundResourceUploadExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BackgroundResourceUploadExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = BackgroundResourceUploadExtension;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip.BackgroundResourceUploadExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		CBE700000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = BackgroundResourceUploadExtension/BackgroundResourceUploadExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BackgroundResourceUploadExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = BackgroundResourceUploadExtension;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip.BackgroundResourceUploadExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		CBD300000000000000000000 /* Build configuration list for PBXProject "Clip" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CBE200000000000000000000 /* Debug */,
+				CBE300000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CBD400000000000000000000 /* Build configuration list for PBXNativeTarget "Clip" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CBE400000000000000000000 /* Debug */,
+				CBE500000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CBD500000000000000000000 /* Build configuration list for PBXNativeTarget "BackgroundResourceUploadExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CBE600000000000000000000 /* Debug */,
+				CBE700000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		CBC200000000000000000000 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-examples.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.29.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CBC300000000000000000000 /* MLXVLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CBC200000000000000000000 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXVLM;
+		};
+		CBC400000000000000000000 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CBC200000000000000000000 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLMCommon;
+		};
+		CBC500000000000000000000 /* MLXVLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CBC200000000000000000000 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXVLM;
+		};
+		CBC600000000000000000000 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CBC200000000000000000000 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLMCommon;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = CBA000000000000000000000 /* Project object */;
+}

@@ -34,6 +34,13 @@ struct Applet: Codable, Sendable, Equatable, Identifiable {
     /// Whether a local notification fires on each new match.
     var notifyOnCapture: Bool
 
+    /// Whether a new match is marked as a Favorite in Photos. Optional for
+    /// back-compat with applets stored before this action existed (nil == off).
+    var favoriteOnCapture: Bool?
+
+    /// Whether a new match is added to the "Clip Matches" album (nil == off).
+    var addToAlbumOnCapture: Bool?
+
     /// Minimum CLIP cosine similarity for a photo to be a *candidate* (before VLM
     /// confirmation). Deliberately generous — the VLM makes the final call.
     var threshold: Double
@@ -64,6 +71,8 @@ struct Applet: Codable, Sendable, Equatable, Identifiable {
         createdAt: Date,
         captureCount: Int = 0,
         notifyOnCapture: Bool = false,
+        favoriteOnCapture: Bool? = nil,
+        addToAlbumOnCapture: Bool? = nil,
         threshold: Double = Applet.defaultThreshold,
         matchedAssetIdentifiers: Set<String> = [],
         queryEmbedding: [Float]? = nil,
@@ -75,6 +84,8 @@ struct Applet: Codable, Sendable, Equatable, Identifiable {
         self.createdAt = createdAt
         self.captureCount = captureCount
         self.notifyOnCapture = notifyOnCapture
+        self.favoriteOnCapture = favoriteOnCapture
+        self.addToAlbumOnCapture = addToAlbumOnCapture
         self.threshold = threshold
         self.matchedAssetIdentifiers = matchedAssetIdentifiers
         self.queryEmbedding = queryEmbedding

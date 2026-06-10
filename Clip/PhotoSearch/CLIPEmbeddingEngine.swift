@@ -109,19 +109,23 @@ actor CoreMLCLIPEmbeddingEngine: CLIPEmbeddingEngine {
     // MARK: - Prediction
 
     private func predictEmbedding(model: MLModel, input: MLFeatureProvider) throws -> [Float] {
-        let output: MLFeatureProvider
-        do {
-            output = try model.prediction(from: input)
-        } catch {
-            throw CLIPEmbeddingError.predictionFailed(error)
+        // Drain Core ML's autoreleased prediction objects (output provider,
+        // multi-array) each call so they don't pile up across a long indexing loop.
+        try autoreleasepool {
+            let output: MLFeatureProvider
+            do {
+                output = try model.prediction(from: input)
+            } catch {
+                throw CLIPEmbeddingError.predictionFailed(error)
+            }
+            guard
+                let outputName = Self.featureName(in: model.modelDescription.outputDescriptionsByName, ofType: .multiArray),
+                let array = output.featureValue(for: outputName)?.multiArrayValue
+            else {
+                throw CLIPEmbeddingError.missingOutput
+            }
+            return Self.l2Normalized(Self.floats(from: array))
         }
-        guard
-            let outputName = Self.featureName(in: model.modelDescription.outputDescriptionsByName, ofType: .multiArray),
-            let array = output.featureValue(for: outputName)?.multiArrayValue
-        else {
-            throw CLIPEmbeddingError.missingOutput
-        }
-        return Self.l2Normalized(Self.floats(from: array))
     }
 
     // MARK: - Lazy load
@@ -194,7 +198,8 @@ actor CoreMLCLIPEmbeddingEngine: CLIPEmbeddingEngine {
             let pointer = array.dataPointer.bindMemory(to: Double.self, capacity: count)
             for i in 0..<count { result[i] = Float(pointer[i]) }
         case .float16:
-            for i in 0..<count { result[i] = array[i].floatValue }
+            let pointer = array.dataPointer.bindMemory(to: UInt16.self, capacity: count)
+            for i in 0..<count { result[i] = Float(Float16(bitPattern: pointer[i])) }
         default:
             for i in 0..<count { result[i] = array[i].floatValue }
         }

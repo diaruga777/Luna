@@ -4,6 +4,10 @@
 <dict>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSSupportsLockedCameraCapture</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Clip uses the camera from the Lock Screen capture control to detect whether a capture is a pocket shot.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Clip indexes your photo library on-device so you can search it by description. Your photos never leave your device.</string>
 	<key>UILaunchScreen</key>

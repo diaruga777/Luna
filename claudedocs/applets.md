@@ -45,24 +45,15 @@ testable core: analyze (CLIP embed + OCR) → append to the shared index
 (`PhotoIndexStore.appendEntry`, `NSFileCoordinator`-guarded) → `AppletEvaluator`.
 One asset at a time; decoded image reused for analysis + VLM.
 
-Two drivers:
+Driver:
 - **Foreground:** `ForegroundPhotoIngestObserver` (`PHPhotoLibraryChangeObserver`,
   started by `PhotoSearchRootViewController`) — processes new photos while the app
   is open. No-ops unless a CLIP model + VLM are ready and an applet exists.
-- **Background (app closed):** the `BackgroundResourceUploadExtension` target — a
-  `PHBackgroundResourceUploadExtension` (iOS 26.1+). The system wakes `process()`
-  when new photos are added; `BackgroundIngestRunner` finds photos not yet in the
-  index and runs the local pipeline on a bounded batch (3/invocation for memory),
-  returning `.processing`/`.completed`. **No uploads** — it's used purely as a
-  background wake + local-processing hook. The host app enables it via
-  `PHPhotoLibrary.setUploadJobExtensionEnabled(true)` (called in `AppletManager`
-  on applet creation). The extension links PuttyCore + MLXVLM/MLXLMCommon and the
-  shared pipeline (via pbxproj membership exception sets); App Group +
-  `extended-virtual-addressing` entitlements. Applet query embeddings are
-  precomputed in the app (`Applet.queryEmbedding`) so the extension needs no CLIP
-  text encoder/tokenizer. Bundled CLIP encoders are staged into the App Group
-  (`CLIPModelManager.stageBundledModelInSharedContainer`) so the default model
-  works in the extension too.
+
+> The old `BackgroundResourceUploadExtension` (PhotoKit `PHBackgroundResourceUploadExtension`)
+> was **removed** — it's a backup mechanism (opportunistic, breaks with iCloud Photos,
+> `-1` errors in iOS 26.1/26.2), not a reliable trigger. For an instant, locked trigger
+> see [[pocket-trigger]] (LockedCameraCapture + Camera Control button).
 
 ## Storage (App Group, shared with the future extension)
 
@@ -121,9 +112,8 @@ run — order-dependent shared state in the tokenizer tests.
 
 ## Remaining / follow-ups
 
-- **Validate background ingest on device** (iOS 26.1+): MLX inference + extension
-  memory ceiling (peak ~0.8–1.2 GB; the runner does 3 assets/invocation — tune if
-  jetsammed). The extension compiles and embeds; runtime is device-only.
+- Background reaction to new photos when the app is closed is handled by the pocket
+  trigger ([[pocket-trigger]]), not a photo-library background extension.
 - Optimization: `MLXVLMEngine` reloads the model per call — cache the container for
   batch/backfill if needed.
 - Pre-existing tokenizer test isolation bug (above).

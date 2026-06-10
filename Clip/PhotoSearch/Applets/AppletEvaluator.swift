@@ -103,6 +103,12 @@ actor AppletEvaluatorImpl: AppletEvaluator {
             if applet.notifyOnCapture {
                 await notifier.notifyCapture(applet)
             }
+            if applet.favoriteOnCapture == true {
+                await PhotoLibraryActions.favorite(assetIdentifier)
+            }
+            if applet.addToAlbumOnCapture == true {
+                await PhotoLibraryActions.addToClipAlbum(assetIdentifier)
+            }
         }
         return matched
     }

@@ -2,44 +2,40 @@
 //  BackgroundResourceUploadExtension.swift
 //  BackgroundResourceUploadExtension
 //
-//  Created by Harry Sanabria on 6/9/26.
+//  The one iOS hook that proactively wakes the app in the background when new photos
+//  are added (PhotoKit's resource-upload extension point, iOS 26.1+). We don't
+//  upload — we use the wake to scan the newly-added photos for the pocket trigger
+//  (a dark/uniform frame) and fire a notification, so a pocket photo taken with the
+//  system camera is reacted to within minutes even when Clip isn't open.
+//
+//  Intentionally lightweight (luminance only, no CLIP/VLM) so it stays well under the
+//  extension's tight memory ceiling and never jetsams.
 //
 
 import ExtensionFoundation
 import Foundation
 import Photos
 
-/// Background hook woken by PhotoKit when new photos are added. Instead of
-/// uploading, we use it as an on-device trigger to run the applet ingest pipeline
-/// locally (see `BackgroundIngestRunner`): match new photos against applets, update
-/// counts, and notify — all without leaving the device.
 @main
 final class BackgroundUploadExtension: PHBackgroundResourceUploadExtension {
-
-    private let logger: Logger = Logger()
 
     required init() {}
 
     func process() -> PHBackgroundResourceUploadProcessingResult {
-        let runner = BackgroundIngestRunner(logger: logger)
-
-        // process() is synchronous; bridge to the async pipeline and block this
-        // background thread until the batch completes.
+        // process() is synchronous; bridge to the async scan and block this background
+        // thread until the bounded batch completes.
         let semaphore = DispatchSemaphore(value: 0)
         let moreWork = LockedBool()
         Task {
-            let remaining = await runner.runBatch()
+            let remaining = await BackgroundPhotoScanRunner().runBatch()
             moreWork.set(remaining)
             semaphore.signal()
         }
         semaphore.wait()
-
         return moreWork.get() ? .processing : .completed
     }
 
-    func notifyTermination() {
-        logger.info("Background ingest extension terminating")
-    }
+    func notifyTermination() {}
 }
 
 /// Minimal thread-safe boolean to ferry the result out of the bridging `Task`.

@@ -59,6 +59,8 @@ final class AppletManager {
         query: String,
         name: String,
         notifyOnCapture: Bool,
+        favoriteOnCapture: Bool = false,
+        addToAlbumOnCapture: Bool = false,
         threshold: Double = Applet.defaultThreshold,
         onProgress: @escaping @MainActor (Double) -> Void
     ) async throws -> Applet {
@@ -79,6 +81,8 @@ final class AppletManager {
             query: query,
             createdAt: Date(),
             notifyOnCapture: notifyOnCapture,
+            favoriteOnCapture: favoriteOnCapture,
+            addToAlbumOnCapture: addToAlbumOnCapture,
             threshold: threshold,
             queryEmbedding: queryEmbedding,
             queryEmbeddingModelIdentifier: modelIdentifier
@@ -87,7 +91,6 @@ final class AppletManager {
         if notifyOnCapture {
             await requestNotificationAuthorization()
         }
-        enableBackgroundIngest()
 
         guard let index = try? context.indexStore.load(), !index.entries.isEmpty else {
             await vlmEngine.unload()
@@ -95,7 +98,9 @@ final class AppletManager {
             return refreshed(applet)
         }
 
-        let imageInputSize = context.modelStore.selectedModel.imageInputSize
+        // Match the live ingest path's VLM image size (NewPhotoProcessor uses 768) —
+        // a 256px CLIP thumbnail makes the VLM miss, so backfill must not undercount.
+        let vlmImageInputSize = 768
         let total = index.entries.count
 
         for (offset, entry) in index.entries.enumerated() {
@@ -103,7 +108,7 @@ final class AppletManager {
                 let similarity = Self.cosine(queryEmbedding, entry.embedding)
                 if Double(similarity) >= threshold,
                    let image = await assetSource.loadImage(
-                       localIdentifier: entry.localIdentifier, targetSize: imageInputSize
+                       localIdentifier: entry.localIdentifier, targetSize: vlmImageInputSize
                    ),
                    (try? await vlmEngine.contains(image: image, query: query)) == true {
                     try? context.appletStore.recordMatch(appletID: applet.id, assetID: entry.localIdentifier)
@@ -118,28 +123,6 @@ final class AppletManager {
 
     private func requestNotificationAuthorization() async {
         await context.appletNotificationManager.requestAuthorizationIfNeeded()
-    }
-
-    /// Enables PhotoKit's background-upload extension so the system wakes our
-    /// extension to process new photos while the app is closed. Best-effort:
-    /// requires full photo-library access and iOS 26.1+. Repeating it is harmless.
-    private func enableBackgroundIngest() {
-        if #available(iOS 26.1, *) {
-            // The background-upload extension is only eligible with full library
-            // access; with limited/denied access the API fails with a generic error.
-            let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-            guard status == .authorized else {
-                context.logger.info(
-                    "Skipping background ingest: needs full photo access (status \(status.rawValue)); foreground ingest still runs while the app is open"
-                )
-                return
-            }
-            do {
-                try PHPhotoLibrary.shared().setUploadJobExtensionEnabled(true)
-            } catch {
-                context.logger.error("Couldn't enable background photo ingest: \(error)")
-            }
-        }
     }
 
     private func refreshed(_ applet: Applet) -> Applet {

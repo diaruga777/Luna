@@ -61,14 +61,29 @@ actor PhotoSearchServiceImpl: PhotoSearchService {
         identifiers = sorted.map(\.localIdentifier)
         creationDates = sorted.map(\.creationDate)
         ocrTexts = sorted.map(\.ocrText)
-        matrix = sorted.flatMap { entry -> [Float] in
-            // Defend against a malformed entry whose vector length disagrees with
-            // the declared dimension.
-            if entry.embedding.count == dimension { return entry.embedding }
-            var padded = entry.embedding
-            padded.append(contentsOf: Array(repeating: 0, count: max(0, dimension - padded.count)))
-            return Array(padded.prefix(dimension))
+        // Preallocate the row-major matrix and copy each entry in place rather than
+        // flatMap (which would allocate a temporary array per entry and hold ~2× the
+        // embedding memory during construction). The Apple Vision model has
+        // dimension 0 (OCR/label only, no vector), so guard the empty case — an
+        // empty matrix is valid (search falls back to OCR/chronological).
+        guard dimension > 0, !sorted.isEmpty else {
+            matrix = []
+            chronological = identifiers
+            return
         }
+        var flat = [Float](repeating: 0, count: sorted.count * dimension)
+        flat.withUnsafeMutableBufferPointer { dest in
+            guard let destBase = dest.baseAddress else { return }
+            for (row, entry) in sorted.enumerated() {
+                let n = min(entry.embedding.count, dimension)
+                guard n > 0 else { continue }  // short/malformed vector: leave zeros
+                entry.embedding.withUnsafeBufferPointer { src in
+                    guard let srcBase = src.baseAddress else { return }
+                    destBase.advanced(by: row * dimension).update(from: srcBase, count: n)
+                }
+            }
+        }
+        matrix = flat
         chronological = identifiers
     }
 

@@ -20,6 +20,8 @@ final class AppletEditViewController: UIViewController {
     private let queryField = UITextField()
     private let nameField = UITextField()
     private let notifySwitch = UISwitch()
+    private let favoriteSwitch = UISwitch()
+    private let albumSwitch = UISwitch()
 
     private let overlay = UIView()
     private let overlayLabel = UILabel()
@@ -60,14 +62,16 @@ final class AppletEditViewController: UIViewController {
         nameField.text = existingApplet?.name
 
         notifySwitch.isOn = existingApplet?.notifyOnCapture ?? false
-        let notifyRow = UIStackView(arrangedSubviews: [makeLabel("Notify on each capture"), notifySwitch])
-        notifyRow.axis = .horizontal
-        notifyRow.alignment = .center
+        favoriteSwitch.isOn = existingApplet?.favoriteOnCapture ?? false
+        albumSwitch.isOn = existingApplet?.addToAlbumOnCapture ?? false
 
         let stack = UIStackView(arrangedSubviews: [
             makeLabel("Match"), queryField,
             makeLabel("Name"), nameField,
-            notifyRow,
+            makeLabel("Actions on each match"),
+            actionRow("Notify", notifySwitch),
+            actionRow("Favorite the photo", favoriteSwitch),
+            actionRow("Add to “Clip Matches” album", albumSwitch),
         ])
         stack.axis = .vertical
         stack.spacing = 10
@@ -92,6 +96,18 @@ final class AppletEditViewController: UIViewController {
                 delete.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             ])
         }
+    }
+
+    private func actionRow(_ title: String, _ toggle: UISwitch) -> UIStackView {
+        let label = UILabel()
+        label.text = title
+        label.font = .preferredFont(forTextStyle: .body)
+        label.numberOfLines = 0
+        let row = UIStackView(arrangedSubviews: [label, toggle])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 8
+        return row
     }
 
     private func makeLabel(_ text: String) -> UILabel {
@@ -138,6 +154,8 @@ final class AppletEditViewController: UIViewController {
             var updated = existing
             updated.name = name.isEmpty ? existing.query : name
             updated.notifyOnCapture = notifySwitch.isOn
+            updated.favoriteOnCapture = favoriteSwitch.isOn
+            updated.addToAlbumOnCapture = albumSwitch.isOn
             Task {
                 try? await manager.update(updated)
                 onChange?()
@@ -147,16 +165,19 @@ final class AppletEditViewController: UIViewController {
         }
 
         guard !query.isEmpty else {
-            presentAlert(title: "Add a description", message: "Tell Pouch what to look for, like “a dog”.")
+            presentAlert(title: "Add a description", message: "Tell Clip what to look for, like “a dog”.")
             return
         }
 
         setOverlay(visible: true, progress: 0)
         let notify = notifySwitch.isOn
+        let favorite = favoriteSwitch.isOn
+        let addToAlbum = albumSwitch.isOn
         Task {
             do {
                 _ = try await manager.create(
                     query: query, name: name, notifyOnCapture: notify,
+                    favoriteOnCapture: favorite, addToAlbumOnCapture: addToAlbum,
                     onProgress: { [weak self] progress in
                         self?.progressView.setProgress(Float(progress), animated: true)
                     }

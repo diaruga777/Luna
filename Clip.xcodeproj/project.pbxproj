@@ -7,19 +7,33 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		CBAD00000000000000000000 /* BackgroundResourceUploadExtension.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = CBF100000000000000000000 /* BackgroundResourceUploadExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CBAE00000000000000000000 /* ClipCapture.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = CBF200000000000000000000 /* ClipCapture.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		CBB200000000000000000000 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = CBC300000000000000000000 /* MLXVLM */; };
 		CBB300000000000000000000 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = CBC400000000000000000000 /* MLXLMCommon */; };
-		CBB400000000000000000000 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = CBC500000000000000000000 /* MLXVLM */; };
-		CBB500000000000000000000 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = CBC600000000000000000000 /* MLXLMCommon */; };
+		CBBA00000000000000000000 /* ClipCaptureWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CBF300000000000000000000 /* ClipCaptureWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CBBE00000000000000000000 /* BackgroundResourceUploadExtension.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = CBF400000000000000000000 /* BackgroundResourceUploadExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		CBAA00000000000000000000 /* PBXContainerItemProxy */ = {
+		CBB700000000000000000000 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = CBA000000000000000000000 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = CBE100000000000000000000;
+			remoteGlobalIDString = CBE800000000000000000000;
+			remoteInfo = ClipCapture;
+		};
+		CBBC00000000000000000000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CBA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CBEB00000000000000000000;
+			remoteInfo = ClipCaptureWidget;
+		};
+		CBCD00000000000000000000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CBA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CBE600000000000000000000;
 			remoteInfo = BackgroundResourceUploadExtension;
 		};
 /* End PBXContainerItemProxy section */
@@ -31,68 +45,68 @@
 			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
 			dstSubfolderSpec = 16;
 			files = (
-				CBAD00000000000000000000 /* BackgroundResourceUploadExtension.appex in Embed ExtensionKit Extensions */,
+				CBAE00000000000000000000 /* ClipCapture.appex in Embed ExtensionKit Extensions */,
+				CBBE00000000000000000000 /* BackgroundResourceUploadExtension.appex in Embed ExtensionKit Extensions */,
 			);
 			name = "Embed ExtensionKit Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBBD00000000000000000000 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				CBBA00000000000000000000 /* ClipCaptureWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		CBF000000000000000000000 /* Clip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Clip.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		CBF100000000000000000000 /* BackgroundResourceUploadExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = BackgroundResourceUploadExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		CBF200000000000000000000 /* ClipCapture.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = ClipCapture.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		CBF300000000000000000000 /* ClipCaptureWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClipCaptureWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		CBF400000000000000000000 /* BackgroundResourceUploadExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = BackgroundResourceUploadExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		CBD000000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		CBD800000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = CBE000000000000000000000 /* Clip */;
 		};
-		CBD100000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		CBD900000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = CBE100000000000000000000 /* BackgroundResourceUploadExtension */;
+			target = CBE800000000000000000000 /* ClipCapture */;
 		};
-		CBD200000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		CBDA00000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Log.swift,
-				PhotoSearch/Applets/Applet.swift,
-				PhotoSearch/Applets/AppletEvaluator.swift,
-				PhotoSearch/Applets/AppletNotificationManager.swift,
-				PhotoSearch/Applets/AppletStore.swift,
-				PhotoSearch/CLIPEmbeddingEngine.swift,
-				PhotoSearch/CLIPEngineProvider.swift,
-				PhotoSearch/CLIPModel.swift,
-				PhotoSearch/CLIPModelManager.swift,
-				PhotoSearch/CLIPModelStore.swift,
-				PhotoSearch/CLIPTextTokenizer.swift,
-				PhotoSearch/ImageTextRecognizer.swift,
-				PhotoSearch/Ingest/NewPhotoProcessor.swift,
-				PhotoSearch/PhotoAssetSource.swift,
-				PhotoSearch/PhotoEmbeddingIndex.swift,
-				PhotoSearch/PhotoFrameAnalyzer.swift,
-				PhotoSearch/PhotoIndexStore.swift,
-				PhotoSearch/VLM/MLXVLMEngine.swift,
-				PhotoSearch/VLM/VLMEngine.swift,
-				PhotoSearch/VLM/VLMEngineProvider.swift,
-				PhotoSearch/VLM/VLMModel.swift,
-				PhotoSearch/VLM/VLMModelManager.swift,
-				PhotoSearch/VLM/VLMModelStore.swift,
-				Storage.swift,
+				Info.plist,
 			);
-			target = CBE100000000000000000000 /* BackgroundResourceUploadExtension */;
+			target = CBEB00000000000000000000 /* ClipCaptureWidget */;
+		};
+		CBDC00000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = CBE600000000000000000000 /* BackgroundResourceUploadExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		CBC000000000000000000000 /* Clip */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (CBD000000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, CBD200000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Clip; sourceTree = "<group>"; };
-		CBC100000000000000000000 /* BackgroundResourceUploadExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (CBD100000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = BackgroundResourceUploadExtension; sourceTree = "<group>"; };
+		CBC000000000000000000000 /* Clip */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (CBD800000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Clip; sourceTree = "<group>"; };
+		CBC700000000000000000000 /* ClipCapture */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (CBD900000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ClipCapture; sourceTree = "<group>"; };
+		CBC800000000000000000000 /* ClipCaptureWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (CBDA00000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ClipCaptureWidget; sourceTree = "<group>"; };
+		CBCC00000000000000000000 /* BackgroundResourceUploadExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (CBDC00000000000000000000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = BackgroundResourceUploadExtension; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -105,12 +119,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		CBA500000000000000000000 /* Frameworks */ = {
+		CBA800000000000000000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				CBB400000000000000000000 /* MLXVLM in Frameworks */,
-				CBB500000000000000000000 /* MLXLMCommon in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBB800000000000000000000 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBCA00000000000000000000 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,7 +147,9 @@
 			isa = PBXGroup;
 			children = (
 				CBC000000000000000000000 /* Clip */,
-				CBC100000000000000000000 /* BackgroundResourceUploadExtension */,
+				CBC700000000000000000000 /* ClipCapture */,
+				CBC800000000000000000000 /* ClipCaptureWidget */,
+				CBCC00000000000000000000 /* BackgroundResourceUploadExtension */,
 				CBB100000000000000000000 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -130,7 +158,9 @@
 			isa = PBXGroup;
 			children = (
 				CBF000000000000000000000 /* Clip.app */,
-				CBF100000000000000000000 /* BackgroundResourceUploadExtension.appex */,
+				CBF200000000000000000000 /* ClipCapture.appex */,
+				CBF300000000000000000000 /* ClipCaptureWidget.appex */,
+				CBF400000000000000000000 /* BackgroundResourceUploadExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -146,11 +176,14 @@
 				CBA200000000000000000000 /* Frameworks */,
 				CBA300000000000000000000 /* Resources */,
 				CBAC00000000000000000000 /* Embed ExtensionKit Extensions */,
+				CBBD00000000000000000000 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				CBAB00000000000000000000 /* PBXTargetDependency */,
+				CBB600000000000000000000 /* PBXTargetDependency */,
+				CBBB00000000000000000000 /* PBXTargetDependency */,
+				CBBF00000000000000000000 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				CBC000000000000000000000 /* Clip */,
@@ -164,28 +197,70 @@
 			productReference = CBF000000000000000000000 /* Clip.app */;
 			productType = "com.apple.product-type.application";
 		};
-		CBE100000000000000000000 /* BackgroundResourceUploadExtension */ = {
+		CBE800000000000000000000 /* ClipCapture */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = CBD500000000000000000000 /* Build configuration list for PBXNativeTarget "BackgroundResourceUploadExtension" */;
+			buildConfigurationList = CBD600000000000000000000 /* Build configuration list for PBXNativeTarget "ClipCapture" */;
 			buildPhases = (
-				CBA400000000000000000000 /* Sources */,
-				CBA500000000000000000000 /* Frameworks */,
-				CBA600000000000000000000 /* Resources */,
+				CBA700000000000000000000 /* Sources */,
+				CBA800000000000000000000 /* Frameworks */,
+				CBA900000000000000000000 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				CBC100000000000000000000 /* BackgroundResourceUploadExtension */,
+				CBC700000000000000000000 /* ClipCapture */,
+			);
+			name = ClipCapture;
+			packageProductDependencies = (
+			);
+			productName = ClipCapture;
+			productReference = CBF200000000000000000000 /* ClipCapture.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
+		CBEB00000000000000000000 /* ClipCaptureWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CBD700000000000000000000 /* Build configuration list for PBXNativeTarget "ClipCaptureWidget" */;
+			buildPhases = (
+				CBAF00000000000000000000 /* Sources */,
+				CBB800000000000000000000 /* Frameworks */,
+				CBB900000000000000000000 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CBC800000000000000000000 /* ClipCaptureWidget */,
+			);
+			name = ClipCaptureWidget;
+			packageProductDependencies = (
+			);
+			productName = ClipCaptureWidget;
+			productReference = CBF300000000000000000000 /* ClipCaptureWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		CBE600000000000000000000 /* BackgroundResourceUploadExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CBDB00000000000000000000 /* Build configuration list for PBXNativeTarget "BackgroundResourceUploadExtension" */;
+			buildPhases = (
+				CBC900000000000000000000 /* Sources */,
+				CBCA00000000000000000000 /* Frameworks */,
+				CBCB00000000000000000000 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CBCC00000000000000000000 /* BackgroundResourceUploadExtension */,
 			);
 			name = BackgroundResourceUploadExtension;
 			packageProductDependencies = (
-				CBC500000000000000000000 /* MLXVLM */,
-				CBC600000000000000000000 /* MLXLMCommon */,
 			);
 			productName = BackgroundResourceUploadExtension;
-			productReference = CBF100000000000000000000 /* BackgroundResourceUploadExtension.appex */;
+			productReference = CBF400000000000000000000 /* BackgroundResourceUploadExtension.appex */;
 			productType = "com.apple.product-type.extensionkit-extension";
 		};
 /* End PBXNativeTarget section */
@@ -199,12 +274,24 @@
 				LastUpgradeCheck = 1620;
 				TargetAttributes = {
 					CBE000000000000000000000 = {
-					DevelopmentTeam = MM5QBNLXR6;
-					ProvisioningStyle = Automatic;
 						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = MM5QBNLXR6;
+						ProvisioningStyle = Automatic;
 					};
-					CBE100000000000000000000 = {
+					CBE800000000000000000000 = {
 						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = MM5QBNLXR6;
+						ProvisioningStyle = Automatic;
+					};
+					CBEB00000000000000000000 = {
+						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = MM5QBNLXR6;
+						ProvisioningStyle = Automatic;
+					};
+					CBE600000000000000000000 = {
+						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = MM5QBNLXR6;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -225,7 +312,9 @@
 			projectRoot = "";
 			targets = (
 				CBE000000000000000000000 /* Clip */,
-				CBE100000000000000000000 /* BackgroundResourceUploadExtension */,
+				CBE800000000000000000000 /* ClipCapture */,
+				CBEB00000000000000000000 /* ClipCaptureWidget */,
+				CBE600000000000000000000 /* BackgroundResourceUploadExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -238,7 +327,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		CBA600000000000000000000 /* Resources */ = {
+		CBA900000000000000000000 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBB900000000000000000000 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBCB00000000000000000000 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -255,7 +358,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		CBA400000000000000000000 /* Sources */ = {
+		CBA700000000000000000000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBAF00000000000000000000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBC900000000000000000000 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -265,10 +382,20 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		CBAB00000000000000000000 /* PBXTargetDependency */ = {
+		CBB600000000000000000000 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = CBE100000000000000000000 /* BackgroundResourceUploadExtension */;
-			targetProxy = CBAA00000000000000000000 /* PBXContainerItemProxy */;
+			target = CBE800000000000000000000 /* ClipCapture */;
+			targetProxy = CBB700000000000000000000 /* PBXContainerItemProxy */;
+		};
+		CBBB00000000000000000000 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CBEB00000000000000000000 /* ClipCaptureWidget */;
+			targetProxy = CBBC00000000000000000000 /* PBXContainerItemProxy */;
+		};
+		CBBF00000000000000000000 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CBE600000000000000000000 /* BackgroundResourceUploadExtension */;
+			targetProxy = CBCD00000000000000000000 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -335,7 +462,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Clip/Clip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Clip/Info.plist;
@@ -362,7 +489,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Clip/Clip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Clip/Info.plist;
@@ -382,16 +509,123 @@
 			};
 			name = Release;
 		};
-		CBE600000000000000000000 /* Debug */ = {
+		CBE900000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClipCapture/ClipCapture.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				EXTENSIONKIT_EXTENSION = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipCapture/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Clip;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Clip uses the camera to detect whether a capture is a pocket shot.";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip.capture;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		CBEA00000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClipCapture/ClipCapture.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				EXTENSIONKIT_EXTENSION = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipCapture/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Clip;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Clip uses the camera to detect whether a capture is a pocket shot.";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip.capture;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		CBEC00000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipCaptureWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Clip;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip.capturewidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		CBED00000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipCaptureWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Clip;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip.capturewidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		CBE700000000000000000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = BackgroundResourceUploadExtension/BackgroundResourceUploadExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				EXTENSIONKIT_EXTENSION = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BackgroundResourceUploadExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = BackgroundResourceUploadExtension;
+				INFOPLIST_KEY_CFBundleDisplayName = Clip;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -408,16 +642,17 @@
 			};
 			name = Debug;
 		};
-		CBE700000000000000000000 /* Release */ = {
+		CBEE00000000000000000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = BackgroundResourceUploadExtension/BackgroundResourceUploadExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				EXTENSIONKIT_EXTENSION = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BackgroundResourceUploadExtension/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = BackgroundResourceUploadExtension;
+				INFOPLIST_KEY_CFBundleDisplayName = Clip;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -455,11 +690,29 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		CBD500000000000000000000 /* Build configuration list for PBXNativeTarget "BackgroundResourceUploadExtension" */ = {
+		CBD600000000000000000000 /* Build configuration list for PBXNativeTarget "ClipCapture" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				CBE600000000000000000000 /* Debug */,
-				CBE700000000000000000000 /* Release */,
+				CBE900000000000000000000 /* Debug */,
+				CBEA00000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CBD700000000000000000000 /* Build configuration list for PBXNativeTarget "ClipCaptureWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CBEC00000000000000000000 /* Debug */,
+				CBED00000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CBDB00000000000000000000 /* Build configuration list for PBXNativeTarget "BackgroundResourceUploadExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CBE700000000000000000000 /* Debug */,
+				CBEE00000000000000000000 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -484,16 +737,6 @@
 			productName = MLXVLM;
 		};
 		CBC400000000000000000000 /* MLXLMCommon */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = CBC200000000000000000000 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
-			productName = MLXLMCommon;
-		};
-		CBC500000000000000000000 /* MLXVLM */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = CBC200000000000000000000 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
-			productName = MLXVLM;
-		};
-		CBC600000000000000000000 /* MLXLMCommon */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = CBC200000000000000000000 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
 			productName = MLXLMCommon;

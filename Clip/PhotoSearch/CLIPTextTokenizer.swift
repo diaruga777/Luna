@@ -180,9 +180,11 @@ final class BPECLIPTokenizer: CLIPTextTokenizer {
         byteList.append(contentsOf: 0xAE...0xFF)
 
         var codes = byteList
+        var present = Set(byteList)
         var n = 0
-        for b in 0...255 where !byteList.contains(b) {
+        for b in 0...255 where !present.contains(b) {
             byteList.append(b)
+            present.insert(b)
             codes.append(256 + n)
             n += 1
         }

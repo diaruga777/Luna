@@ -39,14 +39,6 @@ actor MLXVLMEngine: VLMEngine {
     init(modelDirectory: URL, logger: Logger) {
         self.modelDirectory = modelDirectory
         self.logger = logger
-        // Cap MLX's reusable buffer cache so freed buffers are returned to the OS
-        // rather than retained — otherwise peak stays high and backgrounding the app
-        // (which has a much lower memory limit) gets the process jetsam-killed.
-        MLX.GPU.set(cacheLimit: 64 * 1024 * 1024)
-    }
-
-    deinit {
-        MLX.GPU.clearCache()
     }
 
     /// Releases the loaded model and frees GPU memory. Call when a batch of

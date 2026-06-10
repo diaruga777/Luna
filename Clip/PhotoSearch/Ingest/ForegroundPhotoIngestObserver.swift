@@ -60,17 +60,20 @@ final class ForegroundPhotoIngestObserver: NSObject, PHPhotoLibraryChangeObserve
 
     private func process(_ assets: [(id: String, date: Date)]) async {
         let applets = (try? context.appletStore.list()) ?? []
-        guard !applets.isEmpty, let processor = makeProcessor() else { return }
+        guard !applets.isEmpty, let pipeline = makePipeline() else { return }
         for asset in assets {
-            _ = await processor.process(assetIdentifier: asset.id, creationDate: asset.date)
+            _ = await pipeline.processor.process(assetIdentifier: asset.id, creationDate: asset.date)
         }
+        // Free the ~1GB VLM after the batch so it isn't held resident into
+        // backgrounding (a lower memory ceiling there would jetsam the process).
+        await pipeline.vlm.unload()
     }
 
     /// Builds the ingest pipeline for the selected CLIP + VLM models. Returns nil if
     /// either isn't ready (applets can't run without embeddings + the VLM). Built
     /// directly from the providers to avoid touching the context's main-actor engine
     /// cache off the main thread.
-    private func makeProcessor() -> NewPhotoProcessor? {
+    private func makePipeline() -> (processor: NewPhotoProcessor, vlm: VLMEngine)? {
         let clipModel = context.modelStore.selectedModel
         guard let clipEngine = context.engineProvider.makeEngine(for: clipModel),
               let vlmEngine = context.vlmEngineProvider.makeEngine(for: context.vlmModelStore.selectedModel) else {
@@ -89,7 +92,7 @@ final class ForegroundPhotoIngestObserver: NSObject, PHPhotoLibraryChangeObserve
             clipModelIdentifier: clipModel.rawValue,
             logger: context.logger
         )
-        return NewPhotoProcessorImpl(
+        let processor = NewPhotoProcessorImpl(
             assetSource: PhotoKitAssetSource(),
             analyzer: analyzer,
             indexStore: context.indexStore,
@@ -98,5 +101,6 @@ final class ForegroundPhotoIngestObserver: NSObject, PHPhotoLibraryChangeObserve
             imageInputSize: clipModel.imageInputSize,
             logger: context.logger
         )
+        return (processor, vlmEngine)
     }
 }

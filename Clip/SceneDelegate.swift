@@ -2,8 +2,9 @@
 //  SceneDelegate.swift
 //  Clip
 //
-//  Clip is the on-device photo-search + applets experience: no login, no camera.
-//  The whole app is the photo-search root.
+//  Clip is a weblink reader: save links from Safari (via the bundled Safari
+//  extension + action-button shortcut), then read them in a scrolling reader
+//  or an RSVP speed reader.
 //
 
 import UIKit
@@ -19,54 +20,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     ) {
         guard let windowScene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: windowScene)
-        window.rootViewController = PhotoSearchRootViewController(context: Self.makeContext())
+        window.rootViewController = UINavigationController(rootViewController: ReadingListViewController())
         self.window = window
         window.makeKeyAndVisible()
     }
 
-    /// Builds the photo-search dependency graph (CLIP + photo index + VLM + applets).
-    /// Everything runs on-device; photos never leave the phone.
-    private static func makeContext() -> PhotoSearchContext {
-        let logger = Logger()
-
-        let clipModelManager = CLIPModelManagerImpl(logger: logger)
-        let clipEngineProvider = CLIPEngineProviderImpl(
-            modelManager: clipModelManager,
-            makeTokenizer: {
-                if let bundled = BPECLIPTokenizer.bundled() { return bundled }
-                logger.error("clip_merges data set missing; CLIP text search will be degraded")
-                return BPECLIPTokenizer(mergesFileContents: "")
-            },
-            logger: logger
-        )
-        let photoIndexStore = PhotoIndexStoreImpl(logger: logger)
-        let analyzerProvider = PhotoFrameAnalyzerProviderImpl(
-            engineProvider: clipEngineProvider,
-            textRecognizer: VisionImageTextRecognizer(),
-            logger: logger
-        )
-        let photoIndexer = PhotoIndexerImpl(
-            assetSource: PhotoKitAssetSource(),
-            analyzerProvider: analyzerProvider,
-            indexStore: photoIndexStore,
-            logger: logger
-        )
-        let vlmModelManager = VLMModelManagerImpl(logger: logger)
-
-        return PhotoSearchContext(
-            modelStore: CLIPModelStoreImpl(),
-            modelManager: clipModelManager,
-            engineProvider: clipEngineProvider,
-            indexer: photoIndexer,
-            indexStore: photoIndexStore,
-            searchService: PhotoSearchServiceImpl(),
-            authorizer: PhotoLibraryAuthorizer(),
-            vlmModelStore: VLMModelStoreImpl(),
-            vlmModelManager: vlmModelManager,
-            vlmEngineProvider: VLMEngineProviderImpl(modelManager: vlmModelManager, logger: logger),
-            appletStore: AppletStoreImpl(logger: logger),
-            appletNotificationManager: AppletNotificationManagerImpl(),
-            logger: logger
-        )
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        // Items may have been added by the intent while we were backgrounded.
+        NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        ReadingListIngestor.shared.ingestAllPending()
     }
 }

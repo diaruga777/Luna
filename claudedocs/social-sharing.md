@@ -75,14 +75,20 @@ articles into each other's reading lists.
 
 ## CloudKit ops (NOT in code — Console steps)
 
-1. Dev env: run a debug build once (just-in-time schema), then verify/add
-   **queryable indexes** on `recipientUUID` and `recordID` for `Message`.
-2. Security Roles: grant **`_icloud` Create + Write** on `Message` (Write
-   includes delete — recipients must delete senders' records; default
-   `_creator`-only Write breaks the flow with permissionFailure).
-3. **Deploy Schema Changes to Production** before TestFlight (prod has no
-   just-in-time schema; debug ↔ TestFlight builds can't message each other —
-   different environments).
+The container `iCloud.com.hpiddy.clip` was created by automatic signing
+during the build-20 archive. Before messaging works:
+
+1. One-time token: `DEVELOPER_DIR=/Applications/Xcode-26.2.0.app xcrun cktool save-token --type management`
+   (opens the Console token page; human step).
+2. Import the prepared schema (`claudedocs/cloudkit-schema.ckdb` — record
+   type, queryable indexes on `recipientUUID` + `recordID`, `_icloud`
+   Create+Write grant) into BOTH environments:
+   `xcrun cktool import-schema --team-id MM5QBNLXR6 --container-id iCloud.com.hpiddy.clip --environment development --file claudedocs/cloudkit-schema.ckdb`
+   then `--environment production`. (If the GRANT lines are rejected by an
+   older cktool, set Security Roles in the Console instead: `_icloud` =
+   Create + Write on `Message`.)
+3. Note: TestFlight uses the **production** environment; debug builds use
+   development — the two can't message each other.
 
 ## Intents (orthogonal change, same round)
 

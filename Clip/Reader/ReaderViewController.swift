@@ -76,14 +76,23 @@ final class ReaderViewController: UIViewController {
         let toggleItem = UIBarButtonItem(
             image: UIImage(systemName: icon), style: .plain,
             target: self, action: #selector(toggleMode))
+        let shareItem = UIBarButtonItem(
+            image: UIImage(systemName: "square.and.arrow.up"), style: .plain,
+            target: self, action: #selector(shareTapped))
         if newMode == .rsvp {
             let settingsItem = UIBarButtonItem(
                 image: UIImage(systemName: "gearshape"), style: .plain,
                 target: self, action: #selector(openSettings))
-            navigationItem.rightBarButtonItems = [toggleItem, settingsItem]
+            navigationItem.rightBarButtonItems = [toggleItem, settingsItem, shareItem]
         } else {
-            navigationItem.rightBarButtonItems = [toggleItem]
+            navigationItem.rightBarButtonItems = [toggleItem, shareItem]
         }
+    }
+
+    @objc private func shareTapped() {
+        SendToFriendSheet.present(
+            from: self, sourceView: view,
+            urlString: item.urlString, title: item.title ?? content.title)
     }
 
     @objc private func openSettings() {

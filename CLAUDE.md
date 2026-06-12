@@ -1,8 +1,8 @@
 # Clip — Weblink Reader (experiment)
 
-Clip is an experimental weblink reader iOS app (UIKit, bundle com.hpiddy.clip, App Group group.com.hpiddy.clip). Links are saved from Safari via a bundled Safari web extension + a SaveLink App Intent wired to the Action Button, then read in a scrolling reader (with inline split-web link frames) or a ReadMaxx-style RSVP speed reader. Feature docs live in `claudedocs/` — keep them current when changing features.
+Clip is an experimental weblink reader iOS app (UIKit, bundle com.hpiddy.clip, App Group group.com.hpiddy.clip, deployment target iOS 26). Links are saved from Safari via a bundled Safari web extension + a SaveLink App Intent wired to the Action Button, then read in a scrolling reader (with inline split-web link frames) or a ReadMaxx-style RSVP speed reader. Articles can be sent to a Kindle (embedded SMTP) and shared with friends (CloudKit public-DB messages, `iCloud.com.hpiddy.clip`). Feature docs live in `claudedocs/` — keep them current when changing features.
 
-Targets: Clip (app), ClipSafari (Safari web extension), ClipTests (unit tests). Dependency: SwiftSoup. Built with Xcode 27 beta / iOS 27 simulator.
+Targets: Clip (app), ClipSafari (Safari web extension), ClipShare (share extension), ClipTests (unit tests). Dependency: SwiftSoup. Dev with Xcode 27 beta / iOS 27 simulator; archive/upload with stable Xcode 26.2.
 
 # Swift Project — Blitz AI Agent Guide
 

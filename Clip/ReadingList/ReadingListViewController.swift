@@ -34,8 +34,13 @@ final class ReadingListViewController: UITableViewController {
 
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
 
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .add, target: self, action: #selector(addTapped))
+        navigationItem.rightBarButtonItems = [
+            UIBarButtonItem(
+                barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
+            UIBarButtonItem(
+                image: UIImage(systemName: "person.2"), style: .plain,
+                target: self, action: #selector(friendsTapped)),
+        ]
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "gearshape"), style: .plain,
             target: self, action: #selector(settingsTapped))
@@ -58,8 +63,13 @@ final class ReadingListViewController: UITableViewController {
     @objc private func pulledToRefresh() {
         ReadingListIngestor.shared.ingestAllPending()
         ArticleSendCoordinator.shared.retryPendingSends()
+        Task { await SocialMessageCenter.shared.processInbox() }
         reload()
         refreshControl?.endRefreshing()
+    }
+
+    @objc private func friendsTapped() {
+        navigationController?.pushViewController(FriendsViewController(), animated: true)
     }
 
     // MARK: - Add
@@ -237,14 +247,24 @@ final class ReadingListViewController: UITableViewController {
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
         let item = item(at: indexPath)
-        return UIContextMenuConfiguration(actionProvider: { _ in
-            let send = UIAction(
+        return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
+            let sendToFriend = UIAction(
+                title: "Send to Friend…",
+                image: UIImage(systemName: "person.2")
+            ) { _ in
+                guard let self else { return }
+                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+                SendToFriendSheet.present(
+                    from: self, sourceView: sourceView,
+                    urlString: item.urlString, title: item.title)
+            }
+            let sendToKindle = UIAction(
                 title: "Send to Kindle",
                 image: UIImage(systemName: "paperplane")
-            ) { [weak self] _ in
+            ) { _ in
                 self?.sendToKindle(item)
             }
-            return UIMenu(children: [send])
+            return UIMenu(children: [sendToFriend, sendToKindle])
         })
     }
 

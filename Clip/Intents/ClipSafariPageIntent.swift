@@ -39,7 +39,7 @@ struct ClipSafariPageIntent: AppIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & ReturnsValue<String?> {
         let isSafari = app?.localizedCaseInsensitiveContains("safari") ?? true
         guard isSafari else { throw ClipError.notInSafari }
 
@@ -52,8 +52,8 @@ struct ClipSafariPageIntent: AppIntent {
             throw ClipError.trackedURLMismatch
         }
 
-        await IntentIngestHelper.handleSavePressWithTimeout(urlString: tracked)
-        return .result()
+        let savedURL = await IntentIngestHelper.handleSavePressWithTimeout(urlString: tracked)
+        return .result(value: savedURL)
     }
 }
 
@@ -62,16 +62,26 @@ enum IntentIngestHelper {
     /// Handles a save press (save+ingest, double-press send, or ignore), giving
     /// up after 12 s so the intent finishes promptly in the background. Work cut
     /// off by the timeout is persisted as pending/queued and retried later.
-    static func handleSavePressWithTimeout(urlString: String) async {
-        await withTaskGroup(of: Void.self) { group in
+    /// Returns the URL that ended up saved (also for duplicates, which are
+    /// already in the list), or nil when the outcome couldn't be determined
+    /// before the timeout.
+    static func handleSavePressWithTimeout(urlString: String) async -> String? {
+        await withTaskGroup(of: String?.self) { group in
             group.addTask {
-                _ = await ReadingListIngestor.shared.handleSavePress(urlString: urlString)
+                let result = await ReadingListIngestor.shared.handleSavePress(urlString: urlString)
+                switch result {
+                case .saved(let item): return item.urlString
+                case .sentToKindle(let item): return item.urlString
+                case .ignored: return urlString
+                }
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: 12_000_000_000)
+                return nil
             }
-            _ = await group.next()
+            let first = await group.next() ?? nil
             group.cancelAll()
+            return first
         }
     }
 }

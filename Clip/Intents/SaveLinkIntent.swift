@@ -17,8 +17,9 @@ struct SaveLinkIntent: AppIntent {
     @Parameter(title: "URL", description: "The link to save.")
     var url: URL
 
-    func perform() async throws -> some IntentResult {
-        await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
-        return .result()
+    func perform() async throws -> some IntentResult & ReturnsValue<String?> {
+        let savedURL = await IntentIngestHelper.handleSavePressWithTimeout(
+            urlString: url.absoluteString)
+        return .result(value: savedURL)
     }
 }

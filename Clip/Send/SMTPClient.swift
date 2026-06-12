@@ -5,6 +5,7 @@
 
 import Foundation
 import Network
+import os
 
 /// Byte-level connection a SMTP session runs over. The real implementation is
 /// TLS over TCP (implicit TLS, port 465); tests script a mock.
@@ -142,20 +143,25 @@ final class TLSConnectionTransport: SMTPTransport {
 
     func connect() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var resumed = false
+            // The handler runs on the connection's serial queue; the lock just
+            // makes the one-shot resume guard Swift-6-clean.
+            let hasResumed = OSAllocatedUnfairLock(initialState: false)
             connection.stateUpdateHandler = { state in
+                let result: Result<Void, Error>
                 switch state {
                 case .ready:
-                    guard !resumed else { return }
-                    resumed = true
-                    continuation.resume()
+                    result = .success(())
                 case .failed(let error), .waiting(let error):
-                    guard !resumed else { return }
-                    resumed = true
-                    continuation.resume(throwing: error)
+                    result = .failure(error)
                 default:
-                    break
+                    return
                 }
+                let isFirstResume = hasResumed.withLock { resumed in
+                    defer { resumed = true }
+                    return !resumed
+                }
+                guard isFirstResume else { return }
+                continuation.resume(with: result)
             }
             connection.start(queue: queue)
         }

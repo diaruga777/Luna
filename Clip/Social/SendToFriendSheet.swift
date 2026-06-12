@@ -49,7 +49,7 @@ enum SendToFriendSheet {
         urlString: String, title: String?, to friend: Friend,
         presenter: UIViewController
     ) {
-        Task {
+        Task { @MainActor in
             guard await ICloudGate.requireICloud(presenting: presenter) else { return }
             do {
                 try await SocialMessageCenter.shared.sendArticle(
@@ -69,6 +69,7 @@ enum SendToFriendSheet {
     }
 
     /// A title-only alert that dismisses itself — lightweight send confirmation.
+    @MainActor
     private static func showTransientConfirmation(
         _ text: String, from presenter: UIViewController
     ) {

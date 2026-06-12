@@ -289,8 +289,10 @@ final class SettingsViewController: UITableViewController {
         textField.keyboardType = secure ? .default : .emailAddress
         textField.textAlignment = .right
         textField.textColor = .secondaryLabel
+        // Persist on every keystroke: a menu tap or app switch may never end
+        // editing, and these are tiny values.
+        textField.addTarget(self, action: #selector(sendFieldEdited(_:)), for: .editingChanged)
         textField.addTarget(self, action: #selector(sendFieldEdited(_:)), for: .editingDidEnd)
-        textField.addTarget(self, action: #selector(sendFieldEdited(_:)), for: .editingDidEndOnExit)
 
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         textField.translatesAutoresizingMaskIntoConstraints = false
@@ -305,6 +307,9 @@ final class SettingsViewController: UITableViewController {
             cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
         ])
         nameLabel.setContentHuggingPriority(.required, for: .horizontal)
+        // Long values (password dots, addresses) must truncate in the field,
+        // never squeeze the label out.
+        nameLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         cell.selectionStyle = .none
         return cell
     }
@@ -328,8 +333,12 @@ final class SettingsViewController: UITableViewController {
             UIAction(
                 title: mode.displayName,
                 state: mode == KindleSendSettings.sendMode ? .on : .off
-            ) { _ in
+            ) { [weak self] _ in
                 KindleSendSettings.sendMode = mode
+                // Rebuild the row: the button's frame was sized for the old
+                // title and would ellipsize the new one.
+                self?.tableView.reloadSections(
+                    IndexSet(integer: Section.sendToKindle.rawValue), with: .none)
             }
         })
         button.sizeToFit()

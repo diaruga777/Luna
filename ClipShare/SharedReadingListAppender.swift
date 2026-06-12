@@ -26,6 +26,9 @@ enum SharedReadingListAppender {
         var eyeTrackedWordIndex: Int?
         var wordCount: Int?
         var readingProgress: Double?
+        var sendState: String?
+        var dateSent: Date?
+        var lastSaveAttemptDate: Date?
     }
 
     static func append(urlString: String) {
@@ -47,7 +50,8 @@ enum SharedReadingListAppender {
                  state: "pending", contentFileName: nil, lastWordIndex: nil,
                  readState: "unopened", lastReaderMode: nil,
                  lastScrollOffset: nil, lastSpokenWordIndex: nil,
-                 eyeTrackedWordIndex: nil, wordCount: nil, readingProgress: nil),
+                 eyeTrackedWordIndex: nil, wordCount: nil, readingProgress: nil,
+                 sendState: nil, dateSent: nil, lastSaveAttemptDate: nil),
             at: 0)
         if let data = try? JSONEncoder().encode(items) {
             try? data.write(to: fileURL, options: .atomic)

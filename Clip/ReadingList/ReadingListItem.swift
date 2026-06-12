@@ -33,6 +33,17 @@ struct ReadingListItem: Codable, Identifiable {
         case rsvp
     }
 
+    /// Send-to-Kindle delivery status. Absent means never requested.
+    enum SendState: String, Codable {
+        /// Send requested but not yet delivered (e.g. article still ingesting,
+        /// or the app died mid-send). Retried on pull-to-refresh.
+        case queued
+        /// Delivered to the SMTP server.
+        case sent
+        /// Delivery failed. Retried on pull-to-refresh.
+        case failed
+    }
+
     let id: UUID
     var urlString: String
     var title: String?
@@ -55,6 +66,13 @@ struct ReadingListItem: Codable, Identifiable {
     var wordCount: Int?
     /// 0…1 how far the user has gotten (scroll depth or RSVP position).
     var readingProgress: Double?
+    /// Send-to-Kindle status; nil until a send is first requested.
+    var sendState: SendState?
+    /// When the article was last delivered to Kindle (for the once-per-day guard).
+    var dateSent: Date?
+    /// When the user last pressed save for this URL while it was already in the
+    /// list (the double-save-to-send detection window).
+    var lastSaveAttemptDate: Date?
 
     var url: URL? { URL(string: urlString) }
 
@@ -73,6 +91,9 @@ struct ReadingListItem: Codable, Identifiable {
         self.eyeTrackedWordIndex = nil
         self.wordCount = nil
         self.readingProgress = nil
+        self.sendState = nil
+        self.dateSent = nil
+        self.lastSaveAttemptDate = nil
     }
 
     // Manual decoding so items saved before readState existed still decode.
@@ -92,5 +113,8 @@ struct ReadingListItem: Codable, Identifiable {
         eyeTrackedWordIndex = try container.decodeIfPresent(Int.self, forKey: .eyeTrackedWordIndex)
         wordCount = try container.decodeIfPresent(Int.self, forKey: .wordCount)
         readingProgress = try container.decodeIfPresent(Double.self, forKey: .readingProgress)
+        sendState = try container.decodeIfPresent(SendState.self, forKey: .sendState)
+        dateSent = try container.decodeIfPresent(Date.self, forKey: .dateSent)
+        lastSaveAttemptDate = try container.decodeIfPresent(Date.self, forKey: .lastSaveAttemptDate)
     }
 }

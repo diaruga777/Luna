@@ -52,29 +52,26 @@ struct ClipSafariPageIntent: AppIntent {
             throw ClipError.trackedURLMismatch
         }
 
-        let item = ReadingListStore.shared.add(urlString: tracked)
-        _ = await IntentIngestHelper.ingestWithTimeout(item)
+        await IntentIngestHelper.handleSavePressWithTimeout(urlString: tracked)
         return .result()
     }
 }
 
-/// Shared best-effort inline ingestion for background intents.
+/// Shared best-effort inline save handling for background intents.
 enum IntentIngestHelper {
-    /// Runs ingestion, giving up (but not cancelling persistence) after 12 s so
-    /// the intent finishes promptly in the background.
-    static func ingestWithTimeout(_ item: ReadingListItem) async -> Bool {
-        await withTaskGroup(of: Bool.self) { group in
+    /// Handles a save press (save+ingest, double-press send, or ignore), giving
+    /// up after 12 s so the intent finishes promptly in the background. Work cut
+    /// off by the timeout is persisted as pending/queued and retried later.
+    static func handleSavePressWithTimeout(urlString: String) async {
+        await withTaskGroup(of: Void.self) { group in
             group.addTask {
-                await ReadingListIngestor.shared.ingest(item)
-                return true
+                _ = await ReadingListIngestor.shared.handleSavePress(urlString: urlString)
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: 12_000_000_000)
-                return false
             }
-            let finished = await group.next() ?? false
+            _ = await group.next()
             group.cancelAll()
-            return finished
         }
     }
 }

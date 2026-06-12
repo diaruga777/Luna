@@ -15,8 +15,28 @@ final class SettingsViewController: UITableViewController {
         case appearance
         case listInfo
         case eyeTracking
+        case sendToKindle
         case actionButton
         case extensionStatus
+    }
+
+    /// Rows of the Send to Kindle section; the host row only exists for the
+    /// custom provider.
+    private enum SendRow {
+        case mode
+        case kindleAddress
+        case provider
+        case host
+        case username
+        case password
+        case testSend
+    }
+
+    private var sendRows: [SendRow] {
+        var rows: [SendRow] = [.mode, .kindleAddress, .provider]
+        if KindleSendSettings.provider == .custom { rows.append(.host) }
+        rows += [.username, .password, .testSend]
+        return rows
     }
 
     private let wpmLabel = UILabel()
@@ -47,6 +67,7 @@ final class SettingsViewController: UITableViewController {
         case .appearance: return 2
         case .listInfo: return 2
         case .eyeTracking: return 1
+        case .sendToKindle: return sendRows.count
         case .actionButton: return 2
         case .extensionStatus: return 1
         }
@@ -58,6 +79,7 @@ final class SettingsViewController: UITableViewController {
         case .appearance: return "Reader Appearance"
         case .listInfo: return "Reading List"
         case .eyeTracking: return "Eye Tracking"
+        case .sendToKindle: return "Send to Kindle"
         case .actionButton: return "Action Button"
         case .extensionStatus: return "Safari Extension"
         }
@@ -73,6 +95,8 @@ final class SettingsViewController: UITableViewController {
             return "Show an estimated reading time and your progress on each article."
         case .eyeTracking:
             return "Uses the front camera (on supported devices) to estimate the last word you read, so audio and RSVP can start there. Turning this off clears all stored estimates."
+        case .sendToKindle:
+            return "Articles are emailed as EPUBs from your account. For Gmail, use an app password (myaccount.google.com → Security → App passwords). Amazon only accepts mail from approved senders: add the account email at amazon.com → Manage Your Content and Devices → Preferences → Personal Document Settings. \"Double Save\" sends an article when you save the same page twice within a few seconds."
         case .actionButton:
             return "Save the Safari page you're reading with one press of the Action Button: enable the Clip Safari extension (Settings → Apps → Safari → Extensions), install the shortcut below, then pick \"Clip Safari Page\" in Settings → Action Button."
         case .extensionStatus:
@@ -151,6 +175,44 @@ final class SettingsViewController: UITableViewController {
                 isOn: ReaderSettings.eyeTrackingEnabled, action: #selector(eyeTrackingToggled(_:)))
             cell.selectionStyle = .none
 
+        case .sendToKindle:
+            switch sendRows[indexPath.row] {
+            case .mode:
+                content.text = "Send Articles"
+                cell.accessoryView = makeModeButton()
+                cell.selectionStyle = .none
+            case .kindleAddress:
+                return makeFieldCell(
+                    label: "Kindle", placeholder: "name@kindle.com",
+                    text: KindleSendSettings.kindleAddress, field: .kindleAddress)
+            case .provider:
+                content.text = "Email Provider"
+                let control = UISegmentedControl(
+                    items: KindleSendSettings.Provider.allCases.map(\.displayName))
+                control.selectedSegmentIndex = KindleSendSettings.Provider.allCases
+                    .firstIndex(of: KindleSendSettings.provider) ?? 0
+                control.addTarget(self, action: #selector(providerChanged(_:)), for: .valueChanged)
+                cell.accessoryView = control
+                cell.selectionStyle = .none
+            case .host:
+                return makeFieldCell(
+                    label: "Server", placeholder: "smtp.example.com",
+                    text: KindleSendSettings.customHost, field: .host)
+            case .username:
+                return makeFieldCell(
+                    label: "Email", placeholder: "you@gmail.com",
+                    text: KindleSendSettings.smtpUsername, field: .username)
+            case .password:
+                return makeFieldCell(
+                    label: "Password", placeholder: "App password",
+                    text: KeychainSendCredentialsStore.shared.smtpPassword() ?? "",
+                    field: .password, secure: true)
+            case .testSend:
+                content.text = "Send Test to Kindle"
+                content.textProperties.color = view.tintColor ?? .systemBlue
+                content.image = UIImage(systemName: "paperplane")
+            }
+
         case .actionButton:
             if indexPath.row == 0 {
                 content.text = "Install Shortcut"
@@ -175,6 +237,10 @@ final class SettingsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
+        case .sendToKindle:
+            if sendRows[indexPath.row] == .testSend {
+                sendTestEmail()
+            }
         case .actionButton:
             if indexPath.row == 0 {
                 installShortcut(from: tableView.cellForRow(at: indexPath) ?? view)
@@ -188,6 +254,119 @@ final class SettingsViewController: UITableViewController {
         default:
             break
         }
+    }
+
+    // MARK: - Send to Kindle controls
+
+    /// Which setting a text field edits (stored in the field's tag).
+    private enum SendField: Int {
+        case kindleAddress = 1
+        case host
+        case username
+        case password
+    }
+
+    /// A label + full-width text field cell that persists its setting when
+    /// editing ends. Built manually (no content configuration — it would
+    /// replace the subviews).
+    private func makeFieldCell(
+        label: String, placeholder: String, text: String,
+        field: SendField, secure: Bool = false
+    ) -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+
+        let nameLabel = UILabel()
+        nameLabel.text = label
+        nameLabel.font = .preferredFont(forTextStyle: .body)
+
+        let textField = UITextField()
+        textField.placeholder = placeholder
+        textField.text = text
+        textField.tag = field.rawValue
+        textField.isSecureTextEntry = secure
+        textField.autocapitalizationType = .none
+        textField.autocorrectionType = .no
+        textField.keyboardType = secure ? .default : .emailAddress
+        textField.textAlignment = .right
+        textField.textColor = .secondaryLabel
+        textField.addTarget(self, action: #selector(sendFieldEdited(_:)), for: .editingDidEnd)
+        textField.addTarget(self, action: #selector(sendFieldEdited(_:)), for: .editingDidEndOnExit)
+
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        cell.contentView.addSubview(nameLabel)
+        cell.contentView.addSubview(textField)
+        NSLayoutConstraint.activate([
+            nameLabel.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+            nameLabel.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+            textField.leadingAnchor.constraint(equalTo: nameLabel.trailingAnchor, constant: 12),
+            textField.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+            textField.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+            cell.contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+        ])
+        nameLabel.setContentHuggingPriority(.required, for: .horizontal)
+        cell.selectionStyle = .none
+        return cell
+    }
+
+    @objc private func sendFieldEdited(_ textField: UITextField) {
+        let value = (textField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        switch SendField(rawValue: textField.tag) {
+        case .kindleAddress: KindleSendSettings.kindleAddress = value
+        case .host: KindleSendSettings.customHost = value
+        case .username: KindleSendSettings.smtpUsername = value
+        case .password: KeychainSendCredentialsStore.shared.setSMTPPassword(value)
+        case nil: break
+        }
+    }
+
+    private func makeModeButton() -> UIButton {
+        let button = UIButton(type: .system)
+        button.showsMenuAsPrimaryAction = true
+        button.changesSelectionAsPrimaryAction = true
+        button.menu = UIMenu(children: KindleSendSettings.SendMode.allCases.map { mode in
+            UIAction(
+                title: mode.displayName,
+                state: mode == KindleSendSettings.sendMode ? .on : .off
+            ) { _ in
+                KindleSendSettings.sendMode = mode
+            }
+        })
+        button.sizeToFit()
+        return button
+    }
+
+    @objc private func providerChanged(_ control: UISegmentedControl) {
+        let providers = KindleSendSettings.Provider.allCases
+        let index = max(0, min(control.selectedSegmentIndex, providers.count - 1))
+        KindleSendSettings.provider = providers[index]
+        // The host row appears/disappears with the provider.
+        tableView.reloadSections(IndexSet(integer: Section.sendToKindle.rawValue), with: .automatic)
+    }
+
+    private func sendTestEmail() {
+        guard ArticleSendCoordinator.shared.isConfigured else {
+            presentAlert(
+                title: "Not Configured",
+                message: "Fill in the Kindle address, email, and app password first.")
+            return
+        }
+        Task { [weak self] in
+            do {
+                try await ArticleSendCoordinator.shared.sendTestDocument()
+                self?.presentAlert(
+                    title: "Test Sent",
+                    message: "Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list.")
+            } catch {
+                self?.presentAlert(title: "Test Failed", message: "\(error)")
+            }
+        }
+    }
+
+    private func presentAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 
     // MARK: - Controls

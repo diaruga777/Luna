@@ -18,8 +18,7 @@ struct SaveLinkIntent: AppIntent {
     var url: URL
 
     func perform() async throws -> some IntentResult {
-        let item = ReadingListStore.shared.add(urlString: url.absoluteString)
-        _ = await IntentIngestHelper.ingestWithTimeout(item)
+        await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
         return .result()
     }
 }

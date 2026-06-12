@@ -4,8 +4,8 @@ Press the Action Button while reading in Safari → the current page is saved to
 
 ## Key files
 
-- `Clip/Intents/ClipSafariPageIntent.swift` — "Clip Current Safari Page": `openAppWhenRun = false`. ALWAYS saves `SafariURLStore.lastURL` (from the extension). `app: String?` guards you're in Safari (nil treated as Safari); `url: URL?` is only a VERIFICATION — when present its host must match the tracked URL or the intent throws `trackedURLMismatch`. Success silent; failures throw (Shortcuts error alerts). Inline ingest capped at 12 s (`IntentIngestHelper`).
-- `Clip/Intents/SaveLinkIntent.swift` — "Save Link": required `url: URL`, saves exactly as given. Silent success.
+- `Clip/Intents/ClipSafariPageIntent.swift` — "Clip Current Safari Page": `openAppWhenRun = false`. ALWAYS targets `SafariURLStore.lastURL` (from the extension). `app: String?` guards you're in Safari (nil treated as Safari); `url: URL?` is only a VERIFICATION — when present its host must match the tracked URL or the intent throws `trackedURLMismatch`. Success silent; failures throw (Shortcuts error alerts). The save itself goes through `ReadingListIngestor.handleSavePress` — repeat presses are ignored, except a press within 12 s of the last (double save) which can send the article to Kindle (see send-to-kindle.md). Work capped at 12 s (`IntentIngestHelper.handleSavePressWithTimeout`).
+- `Clip/Intents/SaveLinkIntent.swift` — "Save Link": required `url: URL`, same `handleSavePress` path with the URL exactly as given. Silent success.
 - `Clip/Intents/ClipShortcuts.swift` — `AppShortcutsProvider` exposing both intents.
 
 ## Bundled shortcut

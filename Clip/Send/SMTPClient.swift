@@ -1,0 +1,211 @@
+//
+//  SMTPClient.swift
+//  Clip
+//
+
+import Foundation
+import Network
+
+/// Byte-level connection a SMTP session runs over. The real implementation is
+/// TLS over TCP (implicit TLS, port 465); tests script a mock.
+protocol SMTPTransport {
+    /// Opens the connection; throws if it can't be established.
+    func connect() async throws
+    /// Writes raw bytes.
+    func send(_ data: Data) async throws
+    /// Reads one CRLF-terminated line (returned without the CRLF).
+    func readLine() async throws -> String
+    /// Tears the connection down; safe to call more than once.
+    func close()
+}
+
+/// An SMTP failure with the server's reply attached for diagnosis.
+struct SMTPError: Error, CustomStringConvertible {
+    let step: String
+    let reply: String
+    var description: String { "SMTP \(step) failed: \(reply)" }
+}
+
+/// Speaks just enough ESMTP to submit one message over an authenticated
+/// connection: EHLO → AUTH PLAIN (AUTH LOGIN fallback) → MAIL/RCPT/DATA → QUIT.
+final class SMTPClient {
+
+    private let transport: SMTPTransport
+
+    init(transport: SMTPTransport) {
+        self.transport = transport
+    }
+
+    /// Submits one message. `username`/`password` authenticate; the message's
+    /// own From/To headers should match `from`/`to`.
+    func submit(message: MIMEMessage, username: String, password: String) async throws {
+        defer { transport.close() }
+        try await transport.connect()
+
+        try await expect(code: "220", step: "greeting")
+        try await command("EHLO clip.local", expecting: "250", step: "EHLO")
+        try await authenticate(username: username, password: password)
+        try await command("MAIL FROM:<\(message.from)>", expecting: "250", step: "MAIL FROM")
+        try await command("RCPT TO:<\(message.to)>", expecting: "250", step: "RCPT TO")
+        try await command("DATA", expecting: "354", step: "DATA")
+        try await transport.send(Self.dotStuffed(message.messageData()))
+        try await transport.send(Data("\r\n.\r\n".utf8))
+        try await expect(code: "250", step: "message body")
+        // QUIT reply is best-effort; the message is already accepted.
+        try? await transport.send(Data("QUIT\r\n".utf8))
+    }
+
+    // MARK: - Auth
+
+    private func authenticate(username: String, password: String) async throws {
+        let plain = Data("\0\(username)\0\(password)".utf8).base64EncodedString()
+        try await transport.send(Data("AUTH PLAIN \(plain)\r\n".utf8))
+        let plainReply = try await readReply()
+        if plainReply.code == "235" { return }
+
+        // Some servers only advertise LOGIN.
+        try await transport.send(Data("AUTH LOGIN\r\n".utf8))
+        let loginReply = try await readReply()
+        guard loginReply.code == "334" else {
+            throw SMTPError(step: "AUTH", reply: plainReply.lastLine)
+        }
+        try await transport.send(
+            Data((Data(username.utf8).base64EncodedString() + "\r\n").utf8))
+        let usernameReply = try await readReply()
+        guard usernameReply.code == "334" else {
+            throw SMTPError(step: "AUTH LOGIN username", reply: usernameReply.lastLine)
+        }
+        try await transport.send(
+            Data((Data(password.utf8).base64EncodedString() + "\r\n").utf8))
+        let passwordReply = try await readReply()
+        guard passwordReply.code == "235" else {
+            throw SMTPError(step: "AUTH LOGIN password", reply: passwordReply.lastLine)
+        }
+    }
+
+    // MARK: - Protocol plumbing
+
+    private func command(_ line: String, expecting code: String, step: String) async throws {
+        try await transport.send(Data((line + "\r\n").utf8))
+        try await expect(code: code, step: step)
+    }
+
+    private func expect(code: String, step: String) async throws {
+        let reply = try await readReply()
+        guard reply.code == code else {
+            throw SMTPError(step: step, reply: reply.lastLine)
+        }
+    }
+
+    /// Reads a full (possibly multiline `250-…`) reply.
+    private func readReply() async throws -> (code: String, lastLine: String) {
+        while true {
+            let line = try await transport.readLine()
+            guard line.count >= 3 else {
+                throw SMTPError(step: "reply parsing", reply: line)
+            }
+            // "250-..." marks continuation; "250 ..." (or bare "250") ends the reply.
+            if line.count == 3 || line[line.index(line.startIndex, offsetBy: 3)] != "-" {
+                return (String(line.prefix(3)), line)
+            }
+        }
+    }
+
+    /// RFC 5321 §4.5.2: any data line starting with "." gets a "." prepended.
+    static func dotStuffed(_ data: Data) -> Data {
+        var output = Data(capacity: data.count)
+        var atLineStart = true
+        for byte in data {
+            if atLineStart && byte == UInt8(ascii: ".") {
+                output.append(UInt8(ascii: "."))
+            }
+            output.append(byte)
+            atLineStart = byte == UInt8(ascii: "\n")
+        }
+        return output
+    }
+}
+
+/// SMTPTransport over NWConnection with implicit TLS — the port-465 submission
+/// path Gmail and most providers support.
+final class TLSConnectionTransport: SMTPTransport {
+
+    private let connection: NWConnection
+    private var receiveBuffer = Data()
+    private let queue = DispatchQueue(label: "clip.smtp.transport")
+
+    init(host: String, port: UInt16) {
+        // Port 465 is never 0; fall back keeps the force-unwrap-free invariant.
+        let nwPort = NWEndpoint.Port(rawValue: port) ?? .init(integerLiteral: 465)
+        connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tls)
+    }
+
+    func connect() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            var resumed = false
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    guard !resumed else { return }
+                    resumed = true
+                    continuation.resume()
+                case .failed(let error), .waiting(let error):
+                    guard !resumed else { return }
+                    resumed = true
+                    continuation.resume(throwing: error)
+                default:
+                    break
+                }
+            }
+            connection.start(queue: queue)
+        }
+    }
+
+    func send(_ data: Data) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(content: data, completion: .contentProcessed { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            })
+        }
+    }
+
+    func readLine() async throws -> String {
+        while true {
+            if let lineEnd = receiveBuffer.firstRange(of: Data("\r\n".utf8)) {
+                let lineData = receiveBuffer.subdata(in: receiveBuffer.startIndex..<lineEnd.lowerBound)
+                receiveBuffer.removeSubrange(receiveBuffer.startIndex..<lineEnd.upperBound)
+                return String(decoding: lineData, as: UTF8.self)
+            }
+            let chunk = try await receiveChunk()
+            guard !chunk.isEmpty else {
+                throw SMTPError(step: "read", reply: "connection closed")
+            }
+            receiveBuffer.append(chunk)
+        }
+    }
+
+    private func receiveChunk() async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) {
+                data, _, isComplete, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let data, !data.isEmpty {
+                    continuation.resume(returning: data)
+                } else if isComplete {
+                    continuation.resume(returning: Data())
+                } else {
+                    continuation.resume(returning: Data())
+                }
+            }
+        }
+    }
+
+    func close() {
+        connection.cancel()
+    }
+}

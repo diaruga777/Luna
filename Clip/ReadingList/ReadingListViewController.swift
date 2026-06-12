@@ -57,6 +57,7 @@ final class ReadingListViewController: UITableViewController {
 
     @objc private func pulledToRefresh() {
         ReadingListIngestor.shared.ingestAllPending()
+        ArticleSendCoordinator.shared.retryPendingSends()
         reload()
         refreshControl?.endRefreshing()
     }
@@ -78,7 +79,7 @@ final class ReadingListViewController: UITableViewController {
                 .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty
             else { return }
             if !text.hasPrefix("http") { text = "https://" + text }
-            ReadingListIngestor.shared.saveAndIngest(urlString: text)
+            Task { await ReadingListIngestor.shared.handleSavePress(urlString: text) }
         })
         present(alert, animated: true)
     }
@@ -181,6 +182,12 @@ final class ReadingListViewController: UITableViewController {
            let progress = item.readingProgress, progress > 0.01 {
             infoParts.append("\(Int(progress * 100))%")
         }
+        switch item.sendState {
+        case .sent: infoParts.append("sent to Kindle")
+        case .failed: infoParts.append("send failed")
+        case .queued: infoParts.append("sending…")
+        case nil: break
+        }
         config.secondaryText = infoParts.joined(separator: " · ") + stateSuffix
         // Unopened articles pop; anything touched fades back (but stays legible).
         config.textProperties.color = item.readState == .unopened ? .label : .secondaryLabel
@@ -220,5 +227,37 @@ final class ReadingListViewController: UITableViewController {
         }
         speedRead.backgroundColor = .systemIndigo
         return UISwipeActionsConfiguration(actions: [delete, speedRead])
+    }
+
+    // MARK: - Long-press send
+
+    override func tableView(
+        _ tableView: UITableView,
+        contextMenuConfigurationForRowAt indexPath: IndexPath,
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        let item = item(at: indexPath)
+        return UIContextMenuConfiguration(actionProvider: { _ in
+            let send = UIAction(
+                title: "Send to Kindle",
+                image: UIImage(systemName: "paperplane")
+            ) { [weak self] _ in
+                self?.sendToKindle(item)
+            }
+            return UIMenu(children: [send])
+        })
+    }
+
+    private func sendToKindle(_ item: ReadingListItem) {
+        guard ArticleSendCoordinator.shared.isConfigured else {
+            let alert = UIAlertController(
+                title: "Set Up Send to Kindle",
+                message: "Add your Kindle address and email account in Settings first.",
+                preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+            return
+        }
+        Task { await ArticleSendCoordinator.shared.send(item) }
     }
 }

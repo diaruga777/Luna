@@ -21,6 +21,10 @@ final class ReadingListStore {
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
 
+    /// Serializes read-modify-write mutations: concurrent ingest/send tasks
+    /// would otherwise interleave loads and saves and silently lose updates.
+    private let mutationLock = NSLock()
+
     /// The shared store uses the App Group container; tests pass a scratch
     /// directory so they never touch (or wipe) real user data.
     init(containerURL: URL? = nil) {
@@ -55,8 +59,20 @@ final class ReadingListStore {
         return items.sorted { $0.dateAdded > $1.dateAdded }
     }
 
+    /// The existing item for a URL, if it's already in the list.
+    func item(forURLString urlString: String) -> ReadingListItem? {
+        items().first { $0.urlString == urlString }
+    }
+
+    /// A fresh copy of an item by ID (callers' copies go stale across mutations).
+    func item(withID itemID: UUID) -> ReadingListItem? {
+        items().first { $0.id == itemID }
+    }
+
     @discardableResult
     func add(urlString: String) -> ReadingListItem {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         if let existing = all.first(where: { $0.urlString == urlString }) {
             return existing
@@ -73,6 +89,8 @@ final class ReadingListStore {
 
     /// Persists the RSVP resume position.
     func setLastWordIndex(_ wordIndex: Int, for itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == itemID }),
               all[index].lastWordIndex != wordIndex else { return }
@@ -82,6 +100,8 @@ final class ReadingListStore {
 
     /// Marks a download/extraction failure.
     func markFailed(_ itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == itemID }) else { return }
         all[index].state = .failed
@@ -90,6 +110,8 @@ final class ReadingListStore {
 
     /// Persists the scroll reader's resume position.
     func setLastScrollOffset(_ offset: Double, for itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == itemID }),
               all[index].lastScrollOffset != offset else { return }
@@ -99,6 +121,8 @@ final class ReadingListStore {
 
     /// Persists the read-aloud resume position (marks audio as having played).
     func setLastSpokenWordIndex(_ wordIndex: Int, for itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == itemID }),
               all[index].lastSpokenWordIndex != wordIndex else { return }
@@ -109,6 +133,8 @@ final class ReadingListStore {
     /// Persists how far through the article the user has gotten (0…1, only
     /// ever increases).
     func setReadingProgress(_ progress: Double, for itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == itemID }) else { return }
         let clamped = min(max(progress, 0), 1)
@@ -119,6 +145,8 @@ final class ReadingListStore {
 
     /// Persists the eye-tracking estimate (nil clears it).
     func setEyeTrackedWordIndex(_ wordIndex: Int?, for itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == itemID }),
               all[index].eyeTrackedWordIndex != wordIndex else { return }
@@ -128,6 +156,8 @@ final class ReadingListStore {
 
     /// Disabling eye tracking wipes every stored gaze estimate.
     func clearAllEyeTracking() {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         var changed = false
         for index in all.indices where all[index].eyeTrackedWordIndex != nil {
@@ -138,6 +168,8 @@ final class ReadingListStore {
     }
 
     func delete(_ item: ReadingListItem) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         all.removeAll { $0.id == item.id }
         if let fileName = item.contentFileName {
@@ -148,6 +180,8 @@ final class ReadingListStore {
 
     /// Removes every finished article (and its cached content) in one pass.
     func deleteAllRead() {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         let read = all.filter { $0.readState == .read }
         guard !read.isEmpty else { return }
@@ -162,6 +196,8 @@ final class ReadingListStore {
 
     /// Remembers which reader the user last used for an article.
     func setReaderMode(_ mode: ReadingListItem.ReaderMode, for itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == itemID }),
               all[index].lastReaderMode != mode else { return }
@@ -169,8 +205,38 @@ final class ReadingListStore {
         save(all)
     }
 
+    /// Updates the Kindle delivery status; `.sent` also stamps `dateSent`.
+    func setSendState(_ sendState: ReadingListItem.SendState, for itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        guard let index = all.firstIndex(where: { $0.id == itemID }) else { return }
+        all[index].sendState = sendState
+        if sendState == .sent {
+            all[index].dateSent = Date()
+        }
+        save(all)
+    }
+
+    /// Records a save press on an already-listed URL and returns the previous
+    /// press time (the item's save time, if this is the first repeat press) —
+    /// the primitive behind double-save-to-send detection.
+    @discardableResult
+    func recordSaveAttempt(for itemID: UUID) -> Date? {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
+        let previous = all[index].lastSaveAttemptDate ?? all[index].dateAdded
+        all[index].lastSaveAttemptDate = Date()
+        save(all)
+        return previous
+    }
+
     /// Raises the item's read state; never downgrades (read stays read).
     func markReadState(_ newState: ReadingListItem.ReadState, for itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == itemID }) else { return }
         let order: [ReadingListItem.ReadState] = [.unopened, .opened, .read]
@@ -186,6 +252,8 @@ final class ReadingListStore {
 
     func saveContent(_ content: ArticleContent, for item: ReadingListItem) -> ReadingListItem {
         let fileName = "\(item.id.uuidString).json"
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == item.id }) else { return item }
         if let data = try? JSONEncoder().encode(content) {

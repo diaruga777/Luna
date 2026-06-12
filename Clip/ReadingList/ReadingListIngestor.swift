@@ -37,7 +37,10 @@ final class ReadingListIngestor {
             let html = try await fetcher.fetchHTML(from: url)
             var content = try extractor.extract(html: html, baseURL: url)
             content = await downloadImages(for: content, itemID: item.id)
-            _ = store.saveContent(content, for: item)
+            let updated = store.saveContent(content, for: item)
+            if updated.state == .ready {
+                ArticleSendCoordinator.shared.articleBecameReady(updated)
+            }
         } catch {
             store.markFailed(item.id)
         }
@@ -96,11 +99,44 @@ final class ReadingListIngestor {
         }
     }
 
-    /// Saves a URL and immediately starts ingesting it.
+    /// What a save press did, so intents can wait on the right work.
+    enum SavePressResult {
+        /// New URL — saved; ingestion may still be running.
+        case saved(ReadingListItem)
+        /// Double press — the article was (re)sent to Kindle.
+        case sentToKindle(ReadingListItem)
+        /// Duplicate press — nothing happened.
+        case ignored
+    }
+
+    /// The save-press entry point shared by the intents and the in-app add:
+    /// first press saves and ingests; a second press within a few seconds sends
+    /// the article to Kindle (when configured); any other press on an existing
+    /// URL is ignored. Awaits the resulting work (callers bound it with a timeout).
     @discardableResult
-    func saveAndIngest(urlString: String) -> ReadingListItem {
-        let item = store.add(urlString: urlString)
-        Task { await self.ingest(item) }
-        return item
+    func handleSavePress(urlString: String) async -> SavePressResult {
+        let existing = store.item(forURLString: urlString)
+        let previousPress = existing.map { store.recordSaveAttempt(for: $0.id) } ?? nil
+
+        let decision = SavePressPolicy.decide(
+            existingItem: existing,
+            previousPressDate: previousPress,
+            now: Date(),
+            sendMode: KindleSendSettings.sendMode,
+            kindleConfigured: ArticleSendCoordinator.shared.isConfigured)
+
+        switch decision {
+        case .saveNew:
+            let item = store.add(urlString: urlString)
+            await ingest(item)
+            return .saved(item)
+        case .sendToKindle:
+            // The policy only returns this for an existing item.
+            guard let existing else { return .ignored }
+            await ArticleSendCoordinator.shared.send(existing)
+            return .sentToKindle(existing)
+        case .ignore:
+            return .ignored
+        }
     }
 }

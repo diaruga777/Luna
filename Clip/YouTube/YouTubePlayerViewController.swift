@@ -39,6 +39,13 @@ final class YouTubePlayerViewController: UIViewController, WKScriptMessageHandle
         configuration.allowsPictureInPictureMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.userContentController.add(self, name: "player")
+        // The embed page is loaded directly (its own youtube.com origin —
+        // loadHTMLString origins get rejected with error 152/153), so the
+        // ended signal comes from the page's <video> element.
+        let endedWatcher = WKUserScript(
+            source: Self.endedWatcherJS, injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true)
+        configuration.userContentController.addUserScript(endedWatcher)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false
@@ -67,40 +74,33 @@ final class YouTubePlayerViewController: UIViewController, WKScriptMessageHandle
             closeButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
         ])
 
-        webView.loadHTMLString(Self.playerHTML(videoID: videoID), baseURL: URL(string: "https://www.youtube.com"))
+        var embedComponents = URLComponents(string: "https://www.youtube.com/embed/\(videoID)")
+        embedComponents?.queryItems = [
+            URLQueryItem(name: "playsinline", value: "1"),
+            URLQueryItem(name: "autoplay", value: "1"),
+            URLQueryItem(name: "rel", value: "0"),
+        ]
+        if let embedURL = embedComponents?.url {
+            var request = URLRequest(url: embedURL)
+            // YouTube rejects embeds without a referrer (error 153).
+            request.setValue("https://clip-reader.app/", forHTTPHeaderField: "Referer")
+            webView.load(request)
+        }
     }
 
-    /// IFrame API shell: posts "ended" to the native side via the message handler.
-    private static func playerHTML(videoID: String) -> String {
+    /// Watches the embed page's <video> element and posts "ended" natively.
+    private static let endedWatcherJS = """
+        (function() {
+          function attach() {
+            var video = document.querySelector('video');
+            if (!video) { setTimeout(attach, 500); return; }
+            video.addEventListener('ended', function() {
+              window.webkit.messageHandlers.player.postMessage('ended');
+            });
+          }
+          attach();
+        })();
         """
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>html,body{margin:0;background:#000;height:100%}#player{width:100%;height:100%}</style>
-        </head>
-        <body>
-          <div id="player"></div>
-          <script src="https://www.youtube.com/iframe_api"></script>
-          <script>
-            function onYouTubeIframeAPIReady() {
-              new YT.Player('player', {
-                videoId: '\(videoID)',
-                playerVars: { playsinline: 1, autoplay: 1, rel: 0 },
-                events: {
-                  onStateChange: function(event) {
-                    if (event.data === YT.PlayerState.ENDED) {
-                      window.webkit.messageHandlers.player.postMessage('ended');
-                    }
-                  }
-                }
-              });
-            }
-          </script>
-        </body>
-        </html>
-        """
-    }
 
     func userContentController(
         _ userContentController: WKUserContentController,

@@ -26,6 +26,10 @@ enum SharedReadingListAppender {
         var eyeTrackedWordIndex: Int?
         var wordCount: Int?
         var readingProgress: Double?
+        var youtubeVideoID: String?
+        var channelName: String?
+        var thumbnailFileName: String?
+        var sharedByUsername: String?
         var sendState: String?
         var dateSent: Date?
         var lastSaveAttemptDate: Date?
@@ -51,6 +55,8 @@ enum SharedReadingListAppender {
                  readState: "unopened", lastReaderMode: nil,
                  lastScrollOffset: nil, lastSpokenWordIndex: nil,
                  eyeTrackedWordIndex: nil, wordCount: nil, readingProgress: nil,
+                 youtubeVideoID: nil, channelName: nil, thumbnailFileName: nil,
+                 sharedByUsername: nil,
                  sendState: nil, dateSent: nil, lastSaveAttemptDate: nil),
             at: 0)
         if let data = try? JSONEncoder().encode(items) {

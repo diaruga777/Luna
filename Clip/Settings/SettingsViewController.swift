@@ -16,8 +16,17 @@ final class SettingsViewController: UITableViewController {
         case listInfo
         case eyeTracking
         case sendToKindle
+        case youtube
         case actionButton
         case extensionStatus
+    }
+
+    /// Rows of the YouTube section.
+    private enum YouTubeRow: Int, CaseIterable {
+        case clientID
+        case signIn
+        case playlist
+        case autoAdd
     }
 
     /// Rows of the Send to Kindle section; the host row only exists for the
@@ -68,6 +77,7 @@ final class SettingsViewController: UITableViewController {
         case .listInfo: return 2
         case .eyeTracking: return 1
         case .sendToKindle: return sendRows.count
+        case .youtube: return YouTubeRow.allCases.count
         case .actionButton: return 2
         case .extensionStatus: return 1
         }
@@ -80,6 +90,7 @@ final class SettingsViewController: UITableViewController {
         case .listInfo: return "Reading List"
         case .eyeTracking: return "Eye Tracking"
         case .sendToKindle: return "Send to Kindle"
+        case .youtube: return "YouTube"
         case .actionButton: return "Action Button"
         case .extensionStatus: return "Safari Extension"
         }
@@ -97,6 +108,8 @@ final class SettingsViewController: UITableViewController {
             return "Uses the front camera (on supported devices) to estimate the last word you read, so audio and RSVP can start there. Turning this off clears all stored estimates."
         case .sendToKindle:
             return "Articles are emailed as EPUBs from your account. For Gmail, use an app password (myaccount.google.com → Security → App passwords). Amazon only accepts mail from approved senders: add the account email at amazon.com → Manage Your Content and Devices → Preferences → Personal Document Settings. \"Double Save\" sends an article when you save the same page twice within a few seconds."
+        case .youtube:
+            return "Sign in to find videos by channel and title and to add saved videos to a playlist. The real Watch Later list is closed to apps, so pick or create a playlist instead. Auto-added videos are marked read immediately. Needs a Google OAuth client ID (console.cloud.google.com → create an iOS client for com.hpiddy.clip and enable the YouTube Data API)."
         case .actionButton:
             return "Save the Safari page you're reading with one press of the Action Button: enable the Clip Safari extension (Settings → Apps → Safari → Extensions), install the shortcut below, then pick \"Clip Safari Page\" in Settings → Action Button."
         case .extensionStatus:
@@ -213,6 +226,35 @@ final class SettingsViewController: UITableViewController {
                 content.image = UIImage(systemName: "paperplane")
             }
 
+        case .youtube:
+            switch YouTubeRow(rawValue: indexPath.row)! {
+            case .clientID:
+                return makeFieldCell(
+                    label: "Client ID", placeholder: "….apps.googleusercontent.com",
+                    text: YouTubeSettings.googleClientID, field: .youtubeClientID)
+            case .signIn:
+                if GoogleAuthClient.shared.isSignedIn {
+                    content.text = "Sign Out of YouTube"
+                    content.textProperties.color = .systemRed
+                    content.image = UIImage(systemName: "person.crop.circle.badge.checkmark")
+                } else {
+                    content.text = "Sign In to YouTube"
+                    content.textProperties.color = view.tintColor ?? .systemBlue
+                    content.image = UIImage(systemName: "person.crop.circle")
+                }
+            case .playlist:
+                content.text = "Playlist"
+                content.secondaryText = YouTubeSettings.playlistTitle ?? "None selected"
+                content.secondaryTextProperties.color = .secondaryLabel
+                content.image = UIImage(systemName: "text.badge.plus")
+            case .autoAdd:
+                content.text = "Auto-Add Saved Videos"
+                cell.accessoryView = makeSwitch(
+                    isOn: YouTubeSettings.autoAddToPlaylist,
+                    action: #selector(autoAddToggled(_:)))
+                cell.selectionStyle = .none
+            }
+
         case .actionButton:
             if indexPath.row == 0 {
                 content.text = "Install Shortcut"
@@ -241,6 +283,12 @@ final class SettingsViewController: UITableViewController {
             if sendRows[indexPath.row] == .testSend {
                 sendTestEmail()
             }
+        case .youtube:
+            switch YouTubeRow(rawValue: indexPath.row)! {
+            case .signIn: youtubeSignInTapped()
+            case .playlist: choosePlaylistTapped()
+            case .clientID, .autoAdd: break
+            }
         case .actionButton:
             if indexPath.row == 0 {
                 installShortcut(from: tableView.cellForRow(at: indexPath) ?? view)
@@ -264,6 +312,7 @@ final class SettingsViewController: UITableViewController {
         case host
         case username
         case password
+        case youtubeClientID
     }
 
     /// A label + full-width text field cell that persists its setting when
@@ -321,8 +370,83 @@ final class SettingsViewController: UITableViewController {
         case .host: KindleSendSettings.customHost = value
         case .username: KindleSendSettings.smtpUsername = value
         case .password: KeychainSendCredentialsStore.shared.setSMTPPassword(value)
+        case .youtubeClientID: YouTubeSettings.googleClientID = value
         case nil: break
         }
+    }
+
+    // MARK: - YouTube actions
+
+    @objc private func autoAddToggled(_ toggle: UISwitch) {
+        YouTubeSettings.autoAddToPlaylist = toggle.isOn
+    }
+
+    private func youtubeSignInTapped() {
+        if GoogleAuthClient.shared.isSignedIn {
+            GoogleAuthClient.shared.signOut()
+            reloadYouTubeSection()
+            return
+        }
+        Task { [weak self] in
+            do {
+                try await GoogleAuthClient.shared.signIn()
+                self?.reloadYouTubeSection()
+            } catch {
+                self?.presentAlert(title: "Sign-In Failed", message: "\(error)")
+            }
+        }
+    }
+
+    /// Lists the user's playlists (plus a create option) and stores the pick.
+    private func choosePlaylistTapped() {
+        guard GoogleAuthClient.shared.isSignedIn else {
+            presentAlert(title: "Sign In First", message: "Sign in to YouTube to pick a playlist.")
+            return
+        }
+        Task { [weak self] in
+            do {
+                let playlists = try await YouTubeAPIClient().listMyPlaylists()
+                self?.presentPlaylistSheet(playlists)
+            } catch {
+                self?.presentAlert(title: "Couldn't Load Playlists", message: "\(error)")
+            }
+        }
+    }
+
+    @MainActor
+    private func presentPlaylistSheet(_ playlists: [YouTubePlaylist]) {
+        let sheet = UIAlertController(
+            title: "Add Videos To", message: nil, preferredStyle: .actionSheet)
+        for playlist in playlists {
+            sheet.addAction(UIAlertAction(title: playlist.title, style: .default) { [weak self] _ in
+                YouTubeSettings.playlistID = playlist.id
+                YouTubeSettings.playlistTitle = playlist.title
+                self?.reloadYouTubeSection()
+            })
+        }
+        sheet.addAction(UIAlertAction(
+            title: "Create \"Watch Later (Clip)\"", style: .default
+        ) { [weak self] _ in
+            Task {
+                do {
+                    let created = try await YouTubeAPIClient()
+                        .createPlaylist(title: "Watch Later (Clip)")
+                    YouTubeSettings.playlistID = created.id
+                    YouTubeSettings.playlistTitle = created.title
+                    self?.reloadYouTubeSection()
+                } catch {
+                    self?.presentAlert(title: "Couldn't Create Playlist", message: "\(error)")
+                }
+            }
+        })
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = view
+        present(sheet, animated: true)
+    }
+
+    @MainActor
+    private func reloadYouTubeSection() {
+        tableView.reloadSections(IndexSet(integer: Section.youtube.rawValue), with: .none)
     }
 
     private func makeModeButton() -> UIButton {

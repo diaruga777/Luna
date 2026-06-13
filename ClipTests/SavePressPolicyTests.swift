@@ -93,6 +93,17 @@ final class SavePressPolicyTests: XCTestCase {
             .sendToKindle)
     }
 
+    func testDoublePressOnVideoIsIgnored() {
+        var video = item()
+        video.youtubeVideoID = "dQw4w9WgXcQ"
+        XCTAssertEqual(
+            SavePressPolicy.decide(
+                existingItem: video,
+                previousPressDate: now.addingTimeInterval(-5), now: now,
+                sendMode: .doubleSave, kindleConfigured: true),
+            .ignore)
+    }
+
     func testFailedEarlierSendDoesNotBlockDoublePress() {
         XCTAssertEqual(
             SavePressPolicy.decide(

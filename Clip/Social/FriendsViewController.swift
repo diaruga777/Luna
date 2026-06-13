@@ -197,10 +197,15 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
                 var details = [dateFormatter.string(from: friend.dateAdded)]
                 if let email = friend.card.email { details.append(email) }
                 if let phone = friend.card.phone { details.append(phone) }
+                let autoShared = ShareSuggestionStore.shared
+                    .alwaysSharedBaseURLs(friendUUID: friend.card.uuid)
+                if !autoShared.isEmpty {
+                    details.append("auto-shares: \(autoShared.joined(separator: ", "))")
+                }
                 content.secondaryText = details.joined(separator: " · ")
                 content.secondaryTextProperties.color = .secondaryLabel
+                content.secondaryTextProperties.numberOfLines = 2
                 content.image = UIImage(systemName: "person.circle")
-                cell.selectionStyle = .none
             }
 
         case .scan:
@@ -233,8 +238,40 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
             }
             present(scanner, animated: true)
         case .friends:
-            break
+            guard !friends.isEmpty else { return }
+            presentShareAutomationSheet(for: friends[indexPath.row])
         }
+    }
+
+    /// Per-friend sharing automation: lists auto-shared sites with stop
+    /// actions and offers a full suggestion-state wipe.
+    private func presentShareAutomationSheet(for friend: Friend) {
+        let store = ShareSuggestionStore.shared
+        let autoShared = store.alwaysSharedBaseURLs(friendUUID: friend.card.uuid)
+
+        let sheet = UIAlertController(
+            title: friend.card.username,
+            message: autoShared.isEmpty
+                ? "No sites are auto-shared to this friend."
+                : "Links from these sites are shared automatically.",
+            preferredStyle: .actionSheet)
+        for base in autoShared {
+            sheet.addAction(UIAlertAction(
+                title: "Stop auto-sharing \(base)", style: .destructive
+            ) { [weak self] _ in
+                store.removeAlwaysShare(baseURL: base, friendUUID: friend.card.uuid)
+                self?.tableView.reloadData()
+            })
+        }
+        sheet.addAction(UIAlertAction(
+            title: "Reset Share Suggestions", style: .destructive
+        ) { [weak self] _ in
+            store.wipe(friendUUID: friend.card.uuid)
+            self?.tableView.reloadData()
+        })
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = view
+        present(sheet, animated: true)
     }
 
     override func tableView(

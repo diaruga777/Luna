@@ -16,6 +16,39 @@ final class ReadingListViewController: UITableViewController {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// What the list shows: everything, only articles, or only videos.
+    private enum ListFilter: Int, CaseIterable {
+        case all
+        case articles
+        case videos
+
+        var displayName: String {
+            switch self {
+            case .all: return "All"
+            case .articles: return "Articles"
+            case .videos: return "Videos"
+            }
+        }
+
+        func includes(_ item: ReadingListItem) -> Bool {
+            switch self {
+            case .all: return true
+            case .articles: return !item.isYouTubeVideo
+            case .videos: return item.isYouTubeVideo
+            }
+        }
+    }
+
+    private static let filterDefaultsKey = "readingListFilter"
+
+    private var filter: ListFilter {
+        get {
+            ListFilter(rawValue: UserDefaults.standard.integer(forKey: Self.filterDefaultsKey))
+                ?? .all
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.filterDefaultsKey) }
+    }
+
     private let store = ReadingListStore.shared
     private var unreadItems: [ReadingListItem] = []
     private var readItems: [ReadingListItem] = []
@@ -48,16 +81,35 @@ final class ReadingListViewController: UITableViewController {
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(pulledToRefresh), for: .valueChanged)
 
+        let filterControl = UISegmentedControl(
+            items: ListFilter.allCases.map(\.displayName))
+        filterControl.selectedSegmentIndex = filter.rawValue
+        filterControl.addTarget(self, action: #selector(filterChanged(_:)), for: .valueChanged)
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
+        filterControl.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(filterControl)
+        NSLayoutConstraint.activate([
+            filterControl.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 20),
+            filterControl.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -20),
+            filterControl.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+        ])
+        tableView.tableHeaderView = header
+
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
         reload()
     }
 
     @objc private func reload() {
-        let all = store.items()
+        let all = store.items().filter { filter.includes($0) }
         unreadItems = all.filter { $0.readState != .read }
         readItems = all.filter { $0.readState == .read }
         tableView.reloadData()
+    }
+
+    @objc private func filterChanged(_ control: UISegmentedControl) {
+        filter = ListFilter(rawValue: control.selectedSegmentIndex) ?? .all
+        reload()
     }
 
     @objc private func pulledToRefresh() {
@@ -184,13 +236,18 @@ final class ReadingListViewController: UITableViewController {
         case .failed: stateSuffix = " · failed (pull to retry)"
         case .ready: stateSuffix = ""
         }
-        var infoParts = [host, dateFormatter.string(from: item.dateAdded)]
-        if ReaderSettings.showReadingTime, let words = item.wordCount, words > 0 {
-            infoParts.append("\(max(1, Int((Double(words) / 220.0).rounded(.up)))) min")
+        var infoParts = [item.channelName ?? host, dateFormatter.string(from: item.dateAdded)]
+        if !item.isYouTubeVideo {
+            if ReaderSettings.showReadingTime, let words = item.wordCount, words > 0 {
+                infoParts.append("\(max(1, Int((Double(words) / 220.0).rounded(.up)))) min")
+            }
+            if ReaderSettings.showReadingProgress, item.readState != .read,
+               let progress = item.readingProgress, progress > 0.01 {
+                infoParts.append("\(Int(progress * 100))%")
+            }
         }
-        if ReaderSettings.showReadingProgress, item.readState != .read,
-           let progress = item.readingProgress, progress > 0.01 {
-            infoParts.append("\(Int(progress * 100))%")
+        if let sharedBy = item.sharedByUsername {
+            infoParts.append("from \(sharedBy)")
         }
         switch item.sendState {
         case .sent: infoParts.append("sent to Kindle")
@@ -199,6 +256,12 @@ final class ReadingListViewController: UITableViewController {
         case nil: break
         }
         config.secondaryText = infoParts.joined(separator: " · ") + stateSuffix
+
+        if item.isYouTubeVideo {
+            config.image = videoThumbnail(for: item)
+            config.imageProperties.maximumSize = CGSize(width: 96, height: 54)
+            config.imageProperties.cornerRadius = 6
+        }
         // Unopened articles pop; anything touched fades back (but stays legible).
         config.textProperties.color = item.readState == .unopened ? .label : .secondaryLabel
         config.secondaryTextProperties.color = item.readState == .unopened
@@ -212,9 +275,63 @@ final class ReadingListViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let item = item(at: indexPath)
+        if item.isYouTubeVideo {
+            openVideo(item)
+            return
+        }
         guard item.state == .ready, let content = store.content(for: item) else { return }
         let reader = ReaderViewController(item: item, content: content)
         navigationController?.pushViewController(reader, animated: true)
+    }
+
+    // MARK: - Video playback
+
+    /// Prefers the YouTube app (marks read on successful handoff); otherwise
+    /// the in-app player (marks read when playback finishes).
+    private func openVideo(_ item: ReadingListItem) {
+        guard let videoID = item.youtubeVideoID else { return }
+        if let appURL = YouTubeURL.appURL(videoID: videoID),
+           UIApplication.shared.canOpenURL(appURL) {
+            UIApplication.shared.open(appURL) { [weak self] success in
+                if success {
+                    self?.store.markReadState(.read, for: item.id)
+                }
+            }
+            return
+        }
+        present(YouTubePlayerViewController(videoID: videoID, itemID: item.id), animated: true)
+    }
+
+    /// Thumbnail with a play glyph composited on (cached file from ingest;
+    /// falls back to a plain play tile).
+    private func videoThumbnail(for item: ReadingListItem) -> UIImage {
+        let size = CGSize(width: 96, height: 54)
+        let baseImage: UIImage? = item.thumbnailFileName.flatMap {
+            UIImage(contentsOfFile:
+                store.articlesDirectory.appendingPathComponent($0).path)
+        }
+        return UIGraphicsImageRenderer(size: size).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            if let baseImage {
+                // hqdefault is 4:3 with letterboxing; aspect-fill crops it to 16:9.
+                let scale = max(size.width / baseImage.size.width,
+                                size.height / baseImage.size.height)
+                let drawSize = CGSize(width: baseImage.size.width * scale,
+                                      height: baseImage.size.height * scale)
+                baseImage.draw(in: CGRect(
+                    x: (size.width - drawSize.width) / 2,
+                    y: (size.height - drawSize.height) / 2,
+                    width: drawSize.width, height: drawSize.height))
+            }
+            let glyphSize: CGFloat = 24
+            let glyphRect = CGRect(
+                x: (size.width - glyphSize) / 2, y: (size.height - glyphSize) / 2,
+                width: glyphSize, height: glyphSize)
+            UIImage(systemName: "play.circle.fill")?
+                .withTintColor(.white.withAlphaComponent(0.92), renderingMode: .alwaysOriginal)
+                .draw(in: glyphRect)
+        }
     }
 
     override func tableView(
@@ -226,6 +343,9 @@ final class ReadingListViewController: UITableViewController {
             [weak self] _, _, done in
             self?.store.delete(item)
             done(true)
+        }
+        guard !item.isYouTubeVideo else {
+            return UISwipeActionsConfiguration(actions: [delete])
         }
         let speedRead = UIContextualAction(style: .normal, title: "RSVP") {
             [weak self] _, _, done in
@@ -257,6 +377,10 @@ final class ReadingListViewController: UITableViewController {
                 SendToFriendSheet.present(
                     from: self, sourceView: sourceView,
                     urlString: item.urlString, title: item.title)
+            }
+            guard !item.isYouTubeVideo else {
+                // Videos can be shared with friends but never sent to Kindle.
+                return UIMenu(children: [sendToFriend])
             }
             let sendToKindle = UIAction(
                 title: "Send to Kindle",

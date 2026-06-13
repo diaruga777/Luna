@@ -11,6 +11,10 @@
 		<string>audio</string>
 		<string>remote-notification</string>
 	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>youtube</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

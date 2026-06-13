@@ -26,5 +26,13 @@ struct ClipShortcuts: AppShortcutsProvider {
             shortTitle: "Save Link",
             systemImageName: "link.badge.plus"
         )
+        AppShortcut(
+            intent: FindYouTubeVideoIntent(),
+            phrases: [
+                "Save a YouTube video with \(.applicationName)",
+            ],
+            shortTitle: "Save YouTube Video",
+            systemImageName: "play.rectangle"
+        )
     }
 }

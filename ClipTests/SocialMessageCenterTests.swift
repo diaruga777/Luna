@@ -11,11 +11,15 @@ final class SocialMessageCenterTests: XCTestCase {
 
     private var scratchDirectory: URL!
     private var friendsStore: FriendsStore!
+    private var readingListStore: ReadingListStore!
     private var transport: InMemoryMessageTransport!
     private var identityStore: InMemoryIdentityStore!
-    private var savedArticleURLs: [String] = []
+    private var ingestedItemURLs: [String] = []
     private var center: SocialMessageCenter!
     private var me: UserIdentity!
+
+    /// URLs of items the center accepted into the reading list this test.
+    private var savedArticleURLs: [String] { ingestedItemURLs }
 
     override func setUp() {
         super.setUp()
@@ -23,15 +27,17 @@ final class SocialMessageCenterTests: XCTestCase {
             .appendingPathComponent("SocialCenterTests-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratchDirectory, withIntermediateDirectories: true)
         friendsStore = FriendsStore(containerURL: scratchDirectory)
+        readingListStore = ReadingListStore(containerURL: scratchDirectory)
         transport = InMemoryMessageTransport()
         identityStore = InMemoryIdentityStore()
         me = identityStore.createIdentity(username: "me", email: nil, phone: nil)
-        savedArticleURLs = []
+        ingestedItemURLs = []
         center = SocialMessageCenter(
             identityStore: identityStore,
             friendsStore: friendsStore,
             transport: transport,
-            saveSharedArticle: { [weak self] url in self?.savedArticleURLs.append(url) })
+            readingListStore: readingListStore,
+            startIngest: { [weak self] item in self?.ingestedItemURLs.append(item.urlString) })
     }
 
     override func tearDown() {
@@ -79,7 +85,7 @@ final class SocialMessageCenterTests: XCTestCase {
         XCTAssertTrue(transport.messages.isEmpty)
     }
 
-    func testArticleFromFriendIsSaved() async throws {
+    func testArticleFromFriendIsSavedWithAttribution() async throws {
         let alice = makeSender()
         friendsStore.add(alice.card)
         try await inject(body: .readingListItem(urlString: "https://example.com/x", title: "X"), from: alice)
@@ -88,6 +94,23 @@ final class SocialMessageCenterTests: XCTestCase {
 
         XCTAssertEqual(savedArticleURLs, ["https://example.com/x"])
         XCTAssertTrue(transport.messages.isEmpty)
+        let saved = readingListStore.item(forURLString: "https://example.com/x")
+        XCTAssertEqual(saved?.sharedByUsername, "alice")
+    }
+
+    func testIncomingDuplicateURLIsDroppedEntirely() async throws {
+        let alice = makeSender()
+        friendsStore.add(alice.card)
+        // Already in the local list (saved by the user, no attribution).
+        _ = readingListStore.add(urlString: "https://example.com/dup")
+
+        try await inject(
+            body: .readingListItem(urlString: "https://example.com/dup", title: nil), from: alice)
+        await center.processInbox()
+
+        XCTAssertTrue(savedArticleURLs.isEmpty) // no re-ingest
+        XCTAssertNil(readingListStore.item(forURLString: "https://example.com/dup")?.sharedByUsername)
+        XCTAssertTrue(transport.messages.isEmpty) // record still consumed
     }
 
     func testArticleFromNonFriendRejectedAndDeleted() async throws {

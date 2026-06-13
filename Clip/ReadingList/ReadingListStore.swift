@@ -233,6 +233,36 @@ final class ReadingListStore {
         return previous
     }
 
+    /// Records which friend shared this item to us (set once, on acceptance).
+    func setSharedBy(_ username: String, for itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        guard let index = all.firstIndex(where: { $0.id == itemID }),
+              all[index].sharedByUsername != username else { return }
+        all[index].sharedByUsername = username
+        save(all)
+    }
+
+    /// Fills in the YouTube metadata produced by ingestion and marks the item
+    /// ready (videos have no article content).
+    func saveYouTubeMetadata(
+        videoID: String, title: String, channelName: String?,
+        thumbnailFileName: String?, for itemID: UUID
+    ) -> ReadingListItem? {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
+        all[index].youtubeVideoID = videoID
+        all[index].title = title
+        all[index].channelName = channelName
+        all[index].thumbnailFileName = thumbnailFileName
+        all[index].state = .ready
+        save(all)
+        return all[index]
+    }
+
     /// Raises the item's read state; never downgrades (read stays read).
     func markReadState(_ newState: ReadingListItem.ReadState, for itemID: UUID) {
         mutationLock.lock()

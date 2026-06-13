@@ -13,6 +13,7 @@ final class ReadingListIngestor {
     private let store = ReadingListStore.shared
     private let fetcher = ArticleFetcher()
     private let extractor = ArticleExtractor()
+    private let youTubeMetadataFetcher: YouTubeMetadataFetching = YouTubeOEmbedFetcher()
 
     /// IDs currently being ingested, to avoid duplicate concurrent work.
     private var inFlight = Set<UUID>()
@@ -33,6 +34,11 @@ final class ReadingListIngestor {
             lock.unlock()
         }
 
+        if let videoID = YouTubeURL.videoID(from: item.urlString) {
+            await ingestYouTubeVideo(item, videoID: videoID)
+            return
+        }
+
         do {
             let html = try await fetcher.fetchHTML(from: url)
             var content = try extractor.extract(html: html, baseURL: url)
@@ -41,6 +47,31 @@ final class ReadingListIngestor {
             if updated.state == .ready {
                 ArticleSendCoordinator.shared.articleBecameReady(updated)
             }
+        } catch {
+            store.markFailed(item.id)
+        }
+    }
+
+    /// Video ingestion: oEmbed title/channel + thumbnail download; no article
+    /// content. On first readiness, the watch-later auto-add hook runs (never
+    /// for repeat presses — duplicates don't re-ingest).
+    private func ingestYouTubeVideo(_ item: ReadingListItem, videoID: String) async {
+        do {
+            let metadata = try await youTubeMetadataFetcher.fetchMetadata(videoID: videoID)
+            var thumbnailFileName: String?
+            if let thumbnail = try? await youTubeMetadataFetcher.fetchThumbnail(videoID: videoID) {
+                let fileName = "\(item.id.uuidString)-thumb.jpg"
+                try? thumbnail.write(
+                    to: store.articlesDirectory.appendingPathComponent(fileName),
+                    options: .atomic)
+                thumbnailFileName = fileName
+            }
+            guard let updated = store.saveYouTubeMetadata(
+                videoID: videoID, title: metadata.title,
+                channelName: metadata.channelName,
+                thumbnailFileName: thumbnailFileName, for: item.id)
+            else { return }
+            await WatchLaterAutoAdder.shared.videoBecameReady(updated)
         } catch {
             store.markFailed(item.id)
         }
@@ -128,6 +159,15 @@ final class ReadingListIngestor {
         switch decision {
         case .saveNew:
             let item = store.add(urlString: urlString)
+            // New-save automation runs HERE and only here — repeat presses
+            // (e.g. double-save for Kindle) never re-share or re-suggest.
+            let autoShareTargets = ShareSuggestionStore.shared.handleNewSave(urlString: urlString)
+            for target in autoShareTargets {
+                Task {
+                    await SocialMessageCenter.shared.autoShare(
+                        urlString: urlString, toFriendUUID: target.uuid)
+                }
+            }
             await ingest(item)
             return .saved(item)
         case .sendToKindle:

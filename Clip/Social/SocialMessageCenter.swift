@@ -17,9 +17,10 @@ final class SocialMessageCenter {
     private let identityStore: IdentityStoring
     private let friendsStore: FriendsStore
     private let transport: MessageTransport
-    /// How an accepted shared article enters the reading list (injectable so
-    /// tests don't touch the real ingestor).
-    private let saveSharedArticle: (String) -> Void
+    private let readingListStore: ReadingListStore
+    /// Kicks ingestion for an accepted shared article; injectable so tests
+    /// don't touch the real ingestor.
+    private let startIngest: (ReadingListItem) -> Void
 
     /// Prevents overlapping inbox drains (launch + push can race).
     private let drainLock = NSLock()
@@ -28,12 +29,13 @@ final class SocialMessageCenter {
     init(identityStore: IdentityStoring = KeychainIdentityStore.shared,
          friendsStore: FriendsStore = .shared,
          transport: MessageTransport = CloudKitMessageTransport(),
-         saveSharedArticle: ((String) -> Void)? = nil) {
+         readingListStore: ReadingListStore = .shared,
+         startIngest: ((ReadingListItem) -> Void)? = nil) {
         self.identityStore = identityStore
         self.friendsStore = friendsStore
         self.transport = transport
-        self.saveSharedArticle = saveSharedArticle ?? { urlString in
-            let item = ReadingListStore.shared.add(urlString: urlString)
+        self.readingListStore = readingListStore
+        self.startIngest = startIngest ?? { item in
             Task { await ReadingListIngestor.shared.ingest(item) }
         }
     }
@@ -61,8 +63,12 @@ final class SocialMessageCenter {
     }
 
     /// Sends a reading-list article to a friend. Throws so the UI can show
-    /// the failure.
-    func sendArticle(urlString: String, title: String?, to friend: Friend) async throws {
+    /// the failure. User-initiated sends feed the share-suggestion streak;
+    /// automated (always-share) sends don't.
+    func sendArticle(
+        urlString: String, title: String?, to friend: Friend,
+        countsAsManualShare: Bool = true
+    ) async throws {
         guard let identity = identityStore.loadIdentity() else {
             throw MessageCrypto.CryptoError(reason: "no identity")
         }
@@ -71,6 +77,25 @@ final class SocialMessageCenter {
             senderSigningKey: identity.signingKey,
             recipientEncryptionPublicKey: friend.card.encryptionPublicKey)
         try await transport.send(payload: payload, to: friend.card.uuid, from: identity.uuid)
+        if countsAsManualShare {
+            ShareSuggestionStore.shared.recordManualShare(
+                urlString: urlString,
+                friendUUID: friend.card.uuid,
+                friendUsername: friend.card.username)
+        }
+    }
+
+    /// Always-share automation for a newly saved URL: fire-and-forget send
+    /// that never feeds the suggestion streak.
+    func autoShare(urlString: String, toFriendUUID uuid: UUID) async {
+        guard let friend = friendsStore.friend(withUUID: uuid) else { return }
+        do {
+            try await sendArticle(
+                urlString: urlString, title: nil, to: friend, countsAsManualShare: false)
+            logger.info("auto-shared to \(friend.card.username, privacy: .public)")
+        } catch {
+            logger.error("auto-share failed: \(String(describing: error), privacy: .public)")
+        }
     }
 
     // MARK: - Incoming
@@ -153,7 +178,15 @@ final class SocialMessageCenter {
                 return
             }
             guard URL(string: urlString) != nil else { return }
-            saveSharedArticle(urlString)
+            // Recipient-side dedupe: an incoming share of a URL we already
+            // have is dropped entirely (no re-ingest, no attribution change).
+            guard readingListStore.item(forURLString: urlString) == nil else {
+                logger.info("dropping duplicate shared article")
+                return
+            }
+            let saved = readingListStore.add(urlString: urlString)
+            readingListStore.setSharedBy(friend.card.username, for: saved.id)
+            startIngest(saved)
             logger.info("accepted shared article from \(friend.card.username, privacy: .public)")
 
         case .unknown(let type):

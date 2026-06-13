@@ -1,0 +1,63 @@
+//
+//  YouTubeURL.swift
+//  Clip
+//
+
+import Foundation
+
+/// Recognizes YouTube video links and extracts the video ID.
+enum YouTubeURL {
+
+    private static let youtubeHosts: Set<String> = [
+        "youtube.com", "www.youtube.com", "m.youtube.com",
+        "music.youtube.com", "youtube-nocookie.com", "www.youtube-nocookie.com",
+    ]
+
+    /// The video ID, or nil when the URL isn't a YouTube video link.
+    static func videoID(from urlString: String) -> String? {
+        guard let url = URL(string: urlString),
+              let host = url.host?.lowercased()
+        else { return nil }
+
+        if host == "youtu.be" {
+            return validated(url.pathComponents.dropFirst().first)
+        }
+
+        guard youtubeHosts.contains(host) else { return nil }
+        let pathParts = url.pathComponents.dropFirst()
+
+        switch pathParts.first {
+        case "watch":
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+            return validated(query?.first(where: { $0.name == "v" })?.value)
+        case "shorts", "embed", "live", "v":
+            return validated(pathParts.dropFirst().first)
+        default:
+            return nil
+        }
+    }
+
+    /// Standard watch URL for a video ID.
+    static func watchURLString(videoID: String) -> String {
+        "https://www.youtube.com/watch?v=\(videoID)"
+    }
+
+    /// Deep link into the YouTube app.
+    static func appURL(videoID: String) -> URL? {
+        URL(string: "youtube://watch?v=\(videoID)")
+    }
+
+    /// Highest-availability thumbnail (exists for every video).
+    static func thumbnailURL(videoID: String) -> URL? {
+        URL(string: "https://img.youtube.com/vi/\(videoID)/hqdefault.jpg")
+    }
+
+    /// Video IDs are 11 URL-safe-base64-ish characters; reject anything odd.
+    private static func validated(_ candidate: String?) -> String? {
+        guard let candidate,
+              candidate.count == 11,
+              candidate.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+        else { return nil }
+        return candidate
+    }
+}

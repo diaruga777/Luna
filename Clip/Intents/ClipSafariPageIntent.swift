@@ -7,9 +7,10 @@ import AppIntents
 import Foundation
 
 /// Saves the page currently open in Safari — always the URL persisted by the
-/// ClipSafari extension. The optional URL parameter is only a cross-check: when
-/// provided, its base (host) must match the tracked URL, guarding against a
-/// stale tracked page. Designed for the Action Button shortcut.
+/// ClipSafari extension; the optional URL parameter NEVER overrides it. When
+/// provided it's a fuzzy prefix cross-check against the tracked URL (guarding
+/// against a stale tracked page); when absent, no check runs. Designed for the
+/// Action Button shortcut.
 struct ClipSafariPageIntent: AppIntent {
     static let title: LocalizedStringResource = "Clip Current Safari Page"
     static let description = IntentDescription(
@@ -19,7 +20,7 @@ struct ClipSafariPageIntent: AppIntent {
     @Parameter(title: "App", description: "The current app, from Get Current App. Used to check you're in Safari.")
     var app: String?
 
-    @Parameter(title: "Verification URL", description: "Optional. If provided, its site must match the tracked Safari page.")
+    @Parameter(title: "Verification URL", description: "Optional. If provided, it must be a (fuzzy) prefix match of the tracked Safari page. It never overrides what gets saved.")
     var url: URL?
 
     enum ClipError: Error, CustomLocalizedStringResourceConvertible {
@@ -46,9 +47,7 @@ struct ClipSafariPageIntent: AppIntent {
         guard let tracked = SafariURLStore.lastURL else { throw ClipError.noTrackedURL }
 
         if let url,
-           let verifyHost = url.host?.lowercased(),
-           let trackedHost = URL(string: tracked)?.host?.lowercased(),
-           verifyHost != trackedHost {
+           !URLPrefixMatch.fuzzyPrefixMatches(provided: url.absoluteString, tracked: tracked) {
             throw ClipError.trackedURLMismatch
         }
 

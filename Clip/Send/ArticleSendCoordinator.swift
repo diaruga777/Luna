@@ -84,6 +84,8 @@ final class ArticleSendCoordinator {
     func send(_ item: ReadingListItem) async {
         guard isConfigured else { return }
         guard let fresh = store.item(withID: item.id) else { return }
+        // Videos have no article content to send to a Kindle.
+        guard !fresh.isYouTubeVideo else { return }
 
         guard fresh.state == .ready else {
             store.setSendState(.queued, for: fresh.id)
@@ -130,6 +132,7 @@ final class ArticleSendCoordinator {
     /// Called by the ingestor when an article becomes ready: delivers anything
     /// queued by an earlier press, and everything when the mode is "all saves".
     func articleBecameReady(_ item: ReadingListItem) {
+        guard !item.isYouTubeVideo else { return }
         let shouldSend = item.sendState == .queued
             || (KindleSendSettings.sendMode == .allSaves && item.sendState == nil)
         guard shouldSend, isConfigured else { return }

@@ -66,6 +66,15 @@ struct ReadingListItem: Codable, Identifiable {
     var wordCount: Int?
     /// 0…1 how far the user has gotten (scroll depth or RSVP position).
     var readingProgress: Double?
+    /// YouTube video ID when this item is a video link rather than an article.
+    var youtubeVideoID: String?
+    /// YouTube channel name (from oEmbed), shown in the list subtitle.
+    var channelName: String?
+    /// Downloaded video thumbnail (inside the Articles directory).
+    var thumbnailFileName: String?
+    /// Username of the friend who shared this item to us, when it arrived via
+    /// a social message (display only).
+    var sharedByUsername: String?
     /// Send-to-Kindle status; nil until a send is first requested.
     var sendState: SendState?
     /// When the article was last delivered to Kindle (for the once-per-day guard).
@@ -75,6 +84,8 @@ struct ReadingListItem: Codable, Identifiable {
     var lastSaveAttemptDate: Date?
 
     var url: URL? { URL(string: urlString) }
+
+    var isYouTubeVideo: Bool { youtubeVideoID != nil }
 
     init(urlString: String) {
         self.id = UUID()
@@ -91,6 +102,10 @@ struct ReadingListItem: Codable, Identifiable {
         self.eyeTrackedWordIndex = nil
         self.wordCount = nil
         self.readingProgress = nil
+        self.youtubeVideoID = nil
+        self.channelName = nil
+        self.thumbnailFileName = nil
+        self.sharedByUsername = nil
         self.sendState = nil
         self.dateSent = nil
         self.lastSaveAttemptDate = nil
@@ -113,6 +128,10 @@ struct ReadingListItem: Codable, Identifiable {
         eyeTrackedWordIndex = try container.decodeIfPresent(Int.self, forKey: .eyeTrackedWordIndex)
         wordCount = try container.decodeIfPresent(Int.self, forKey: .wordCount)
         readingProgress = try container.decodeIfPresent(Double.self, forKey: .readingProgress)
+        youtubeVideoID = try container.decodeIfPresent(String.self, forKey: .youtubeVideoID)
+        channelName = try container.decodeIfPresent(String.self, forKey: .channelName)
+        thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
+        sharedByUsername = try container.decodeIfPresent(String.self, forKey: .sharedByUsername)
         sendState = try container.decodeIfPresent(SendState.self, forKey: .sendState)
         dateSent = try container.decodeIfPresent(Date.self, forKey: .dateSent)
         lastSaveAttemptDate = try container.decodeIfPresent(Date.self, forKey: .lastSaveAttemptDate)

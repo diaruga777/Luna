@@ -53,6 +53,30 @@ articles into each other's reading lists.
   (confirm alert → add → sendFriendAdd; self-add allowed in DEBUG only),
   `ICloudGate.requireICloud` ("iCloud Required" alert with Open Settings).
 
+## Share suggestions (`Social/ShareSuggestionStore.swift`)
+
+Per base URL (host minus www.): consecutive-share streak to one friend,
+suppressed set, always-share set, plus one `pendingSuggestion` slot.
+- `recordManualShare` — from `sendArticle(countsAsManualShare: true)` (in-app
+  sheet sends, Share Once); same friend streak+1, new friend resets to 1,
+  clears that friend's suppression.
+- `handleNewSave` — called ONLY for newly saved URLs (`handleSavePress`
+  `.saveNew`): returns always-share targets (auto-sent via
+  `SocialMessageCenter.autoShare`, which never feeds the streak) and arms
+  `pendingSuggestion` when streak ≥ 2 (not suppressed/always).
+- Choices (via `SetShareChoiceIntent`): Don't Share = suppress until next
+  manual share; Share Once = send + streak; Always Share = auto-share future
+  saves of that site.
+- Friends screen: friend subtitle lists auto-shared sites; tapping a friend
+  opens a sheet with per-site "Stop auto-sharing" + "Reset Share Suggestions"
+  (full wipe for that friend).
+
+## Recipient-side rules
+
+Incoming `readingListItem`: dropped entirely when the URL is already saved
+(no re-ingest, no attribution change). New items record
+`sharedByUsername` (sender's username) — shown in the list as "from <name>".
+
 ## Flows
 
 - **Add friend**: A scans/opens B's code → confirm alert → A stores B +

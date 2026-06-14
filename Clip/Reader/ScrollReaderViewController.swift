@@ -24,9 +24,16 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
     private var didFinishReading = false
     private var didRestoreScroll = false
 
-    // Read-aloud
+    /// Auto-advancing chunk highlight (the "highlight" reader mode).
+    private let autoHighlight: Bool
+    /// Read aloud while highlighting (the shared audio toggle).
+    private let audioEnabled: Bool
+    private var didStartPlayback = false
+
+    // Read-aloud (audio) and chunk-highlight (silent) playback — at most one is
+    // active per instance, selected by audioEnabled / autoHighlight.
     private var speech: SpeechController?
-    private let speakButton = UIButton(type: .system)
+    private var chunk: ChunkHighlightController?
     private let footer = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let footerPlayButton = UIButton(type: .system)
     private let footerRateButton = UIButton(type: .system)
@@ -38,9 +45,12 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
 
     private let highlightColor = UIColor.systemBlue.withAlphaComponent(0.3)
 
-    init(item: ReadingListItem, content: ArticleContent) {
+    init(item: ReadingListItem, content: ArticleContent,
+         autoHighlight: Bool = false, audioEnabled: Bool = false) {
         self.item = item
         self.content = content
+        self.autoHighlight = autoHighlight
+        self.audioEnabled = audioEnabled
         self.rendered = ArticleTextRenderer.render(content)
         self.wordMap = WordMap(content: content, rendered: rendered)
         super.init(nibName: nil, bundle: nil)
@@ -50,6 +60,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
 
     deinit {
         speech?.stop()
+        chunk?.stop()
         gazeTracker?.stop()
     }
 
@@ -80,7 +91,6 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
 
-        configureSpeakButton()
         configureFooter()
 
         // Force full text layout shortly after first paint: one early hitch
@@ -114,6 +124,18 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
         // An article that fits on one screen can never scroll — seeing it at
         // all means it's been read.
         checkFinishedReading()
+
+        // Start playback once: read-aloud when audio is on, otherwise the
+        // chunk-highlight when this is the highlight mode. Plain scroll does
+        // neither.
+        if !didStartPlayback {
+            didStartPlayback = true
+            if audioEnabled {
+                startSpeech()
+            } else if autoHighlight {
+                startChunkHighlight()
+            }
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -124,28 +146,15 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
             store.setReadingProgress(
                 Double(visibleBottom / textView.contentSize.height), for: item.id)
         }
-        if let spoken = speech?.currentWordIndex {
-            store.setLastSpokenWordIndex(spoken, for: item.id)
+        if let position = speech?.currentWordIndex ?? chunk?.currentWordIndex {
+            store.setLastSpokenWordIndex(position, for: item.id)
         }
         if ReaderSettings.eyeTrackingEnabled, let gazeIndex = gazeTracker?.estimatedWordIndex {
             store.setEyeTrackedWordIndex(gazeIndex, for: item.id)
         }
     }
 
-    // MARK: - Read-aloud UI
-
-    private func configureSpeakButton() {
-        speakButton.configuration = GlassStyle.circularButtonConfiguration(
-            symbol: "speaker.wave.2.fill", padding: 12)
-        speakButton.addTarget(self, action: #selector(startSpeech), for: .touchUpInside)
-        speakButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(speakButton)
-        NSLayoutConstraint.activate([
-            speakButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            speakButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-        ])
-    }
+    // MARK: - Playback UI
 
     private func configureFooter() {
         footer.translatesAutoresizingMaskIntoConstraints = false
@@ -192,7 +201,18 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
         ])
     }
 
-    @objc private func startSpeech() {
+    /// First word to resume from: where playback left off, else (on first play)
+    /// the eye-tracked last-read word when available.
+    private var resumeWordIndex: Int? {
+        if let resume = item.lastSpokenWordIndex {
+            return resume
+        } else if ReaderSettings.eyeTrackingEnabled {
+            return gazeTracker?.estimatedWordIndex ?? item.eyeTrackedWordIndex
+        }
+        return nil
+    }
+
+    private func startSpeech() {
         if speech == nil {
             let controller = SpeechController(
                 content: content, rendered: rendered, wordMap: wordMap,
@@ -200,39 +220,40 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
             controller.delegate = self
             speech = controller
         }
-        // Resume where audio left off; on the very first playback, start from
-        // the eye-tracked last-read word when available.
-        let startWord: Int?
-        if let resume = item.lastSpokenWordIndex {
-            startWord = resume
-        } else if ReaderSettings.eyeTrackingEnabled {
-            startWord = gazeTracker?.estimatedWordIndex ?? item.eyeTrackedWordIndex
-        } else {
-            startWord = nil
+        followPlayback = true
+        footer.isHidden = false
+        speech?.play(fromWordIndex: resumeWordIndex)
+    }
+
+    private func startChunkHighlight() {
+        if chunk == nil {
+            let controller = ChunkHighlightController(content: content, wordMap: wordMap)
+            controller.delegate = self
+            chunk = controller
         }
         followPlayback = true
-        speech?.play(fromWordIndex: startWord)
-        speakButton.isHidden = true
         footer.isHidden = false
+        footerRateButton.setTitle(chunk?.speedLabel, for: .normal)
+        chunk?.play(fromWordIndex: resumeWordIndex)
     }
 
     @objc private func togglePlayback() {
-        speech?.togglePlayPause()
         followPlayback = true
+        if let chunk { chunk.togglePlayPause() } else { speech?.togglePlayPause() }
     }
 
     @objc private func skipBack() {
-        speech?.skipBackward()
         followPlayback = true
+        if let chunk { chunk.skipBackward() } else { speech?.skipBackward() }
     }
 
     @objc private func skipForward() {
-        speech?.skipForward()
         followPlayback = true
+        if let chunk { chunk.skipForward() } else { speech?.skipForward() }
     }
 
     @objc private func cycleRate() {
-        speech?.cycleRate()
+        if let chunk { chunk.cycleSpeed() } else { speech?.cycleRate() }
     }
 
     // MARK: - Highlighting
@@ -271,8 +292,9 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         checkFinishedReading()
         if scrollView.isTracking || scrollView.isDragging {
-            // User-driven scroll: drop the resume highlight, stop auto-follow.
-            if speech?.isPlaying != true {
+            // User-driven scroll: stop auto-follow; drop the resume highlight
+            // only when nothing is actively playing.
+            if speech?.isPlaying != true && chunk?.isPlaying != true {
                 removeHighlight()
             }
             followPlayback = false
@@ -390,6 +412,35 @@ extension ScrollReaderViewController: SpeechControllerDelegate {
     }
 
     func speechDidFinishArticle(_ controller: SpeechController) {
+        didFinishReading = true
+        onFinishedReading?()
+        footerPlayButton.configuration?.image = UIImage(systemName: "play.fill")
+        removeHighlight()
+    }
+}
+
+// MARK: - ChunkHighlightControllerDelegate
+
+extension ScrollReaderViewController: ChunkHighlightControllerDelegate {
+    func chunkHighlight(
+        _ controller: ChunkHighlightController, willHighlight range: NSRange, wordIndex: Int
+    ) {
+        applyHighlight(range)
+        if followPlayback {
+            scrollToCenter(range)
+        }
+    }
+
+    func chunkHighlightStateDidChange(_ controller: ChunkHighlightController) {
+        let icon = controller.isPlaying ? "pause.fill" : "play.fill"
+        footerPlayButton.configuration?.image = UIImage(systemName: icon)
+        footerRateButton.setTitle(controller.speedLabel, for: .normal)
+        if !controller.isPlaying, let word = controller.currentWordIndex {
+            store.setLastSpokenWordIndex(word, for: item.id)
+        }
+    }
+
+    func chunkHighlightDidFinish(_ controller: ChunkHighlightController) {
         didFinishReading = true
         onFinishedReading?()
         footerPlayButton.configuration?.image = UIImage(systemName: "play.fill")

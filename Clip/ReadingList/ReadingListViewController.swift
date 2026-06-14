@@ -95,6 +95,13 @@ final class ReadingListViewController: UITableViewController {
         ])
         tableView.tableHeaderView = header
 
+        // Permanent reorder mode: every row shows a drag handle you can press
+        // and drag, while taps still open the article (selection-during-editing)
+        // and there's no delete badge (editingStyle .none). Delete/RSVP live in
+        // the long-press menu.
+        tableView.allowsSelectionDuringEditing = true
+        tableView.setEditing(true, animated: false)
+
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
         reload()
@@ -271,6 +278,7 @@ final class ReadingListViewController: UITableViewController {
         config.textProperties.numberOfLines = 2
         cell.contentConfiguration = config
         cell.accessoryType = item.state == .ready ? .disclosureIndicator : .none
+        cell.showsReorderControl = true
         return cell
     }
 
@@ -336,32 +344,50 @@ final class ReadingListViewController: UITableViewController {
         }
     }
 
+    // MARK: - Reordering
+
     override func tableView(
-        _ tableView: UITableView,
-        trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
-    ) -> UISwipeActionsConfiguration? {
-        let item = item(at: indexPath)
-        let delete = UIContextualAction(style: .destructive, title: "Delete") {
-            [weak self] _, _, done in
-            self?.store.delete(item)
-            done(true)
-        }
-        guard !item.isYouTubeVideo else {
-            return UISwipeActionsConfiguration(actions: [delete])
-        }
-        let speedRead = UIContextualAction(style: .normal, title: "RSVP") {
-            [weak self] _, _, done in
-            guard let self, item.state == .ready,
-                  let content = self.store.content(for: item) else { done(false); return }
-            let reader = ReaderViewController(item: item, content: content, forceMode: .rsvp)
-            self.navigationController?.pushViewController(reader, animated: true)
-            done(true)
-        }
-        speedRead.backgroundColor = .systemIndigo
-        return UISwipeActionsConfiguration(actions: [delete, speedRead])
+        _ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath
+    ) -> UITableViewCell.EditingStyle {
+        .none // reorder handle only, no delete badge
     }
 
-    // MARK: - Long-press send
+    override func tableView(
+        _ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath
+    ) -> Bool {
+        false
+    }
+
+    override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
+        true
+    }
+
+    /// Keep drags within their section (reordering doesn't change read state).
+    override func tableView(
+        _ tableView: UITableView,
+        targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath,
+        toProposedIndexPath proposedDestinationIndexPath: IndexPath
+    ) -> IndexPath {
+        proposedDestinationIndexPath.section == sourceIndexPath.section
+            ? proposedDestinationIndexPath
+            : sourceIndexPath
+    }
+
+    override func tableView(
+        _ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath
+    ) {
+        if sourceIndexPath.section == 0 {
+            let moved = unreadItems.remove(at: sourceIndexPath.row)
+            unreadItems.insert(moved, at: destinationIndexPath.row)
+        } else {
+            let moved = readItems.remove(at: sourceIndexPath.row)
+            readItems.insert(moved, at: destinationIndexPath.row)
+        }
+        // Persist the new global order (display order = unread then read).
+        store.setOrder((unreadItems + readItems).map(\.id))
+    }
+
+    // MARK: - Long-press menu
 
     override func tableView(
         _ tableView: UITableView,
@@ -386,11 +412,30 @@ final class ReadingListViewController: UITableViewController {
             ) { _ in
                 self?.sendToKindle(item)
             }
-            // Videos: friends only (no article to email). Documents: Kindle
-            // only (no URL to share). Articles: both.
+            let speedRead = UIAction(
+                title: "Speed Read",
+                image: UIImage(systemName: "bolt.fill")
+            ) { _ in
+                guard let self, item.state == .ready,
+                      let content = self.store.content(for: item) else { return }
+                self.navigationController?.pushViewController(
+                    ReaderViewController(item: item, content: content, forceMode: .rsvp),
+                    animated: true)
+            }
+            let delete = UIAction(
+                title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
+            ) { _ in
+                self?.store.delete(item)
+            }
+            // Videos: share to friends + delete. Documents: Kindle + read + delete.
+            // Articles: everything.
             var children: [UIAction] = []
             if item.canShareToFriends { children.append(sendToFriend) }
-            if !item.isYouTubeVideo { children.append(sendToKindle) }
+            if !item.isYouTubeVideo {
+                children.append(sendToKindle)
+                children.append(speedRead)
+            }
+            children.append(delete)
             return UIMenu(children: children)
         })
     }

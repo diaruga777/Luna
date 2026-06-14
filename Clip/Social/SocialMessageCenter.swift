@@ -112,6 +112,7 @@ final class SocialMessageCenter {
         guard let identity = identityStore.loadIdentity() else { return }
         do {
             try await transport.ensureSubscription(for: identity.uuid)
+            logger.info("inbox subscription ensured for \(identity.uuid.uuidString, privacy: .public)")
         } catch {
             logger.error("subscription failed: \(String(describing: error), privacy: .public)")
         }

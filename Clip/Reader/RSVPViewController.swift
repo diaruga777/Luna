@@ -27,9 +27,8 @@ final class RSVPViewController: UIViewController {
     // Read-aloud pacing: when on, whole sentences are spoken (natural prosody,
     // normal pace) and the display flashes each word as it's voiced — the WPM
     // setting is ignored.
-    private var isSpeechMode = false
+    private let isSpeechMode: Bool
     private let synthesizer = AVSpeechSynthesizer()
-    private let speechButton = UIButton(type: .system)
     /// First word index of the sentence currently being spoken.
     private var speechSentenceBase = 0
     /// UTF-16 offset of each word within the current utterance string.
@@ -50,12 +49,20 @@ final class RSVPViewController: UIViewController {
 
     /// Horizontal position of the focal (ORP) column, as a fraction of width.
     private static let focalFraction: CGFloat = 0.4
-    private static let wordFont = UIFont.monospacedSystemFont(ofSize: 38, weight: .medium)
+    /// Target characters visible on one line — the font is sized so a word this
+    /// long fits, and longer words split (`WordSplitter`).
+    private static let targetCharactersAcross = 15
 
-    init(item: ReadingListItem, content: ArticleContent) {
+    /// Sized at init from the device width so `targetCharactersAcross`
+    /// characters fit beside the focal column without running off-screen.
+    private let wordFont: UIFont
+
+    init(item: ReadingListItem, content: ArticleContent, audioEnabled: Bool = false) {
         self.item = item
-        let maxChars = Self.maxCharactersPerWord(forWidth: UIScreen.main.bounds.width)
-        self.engine = RSVPEngine(content: content, maxCharactersPerWord: maxChars)
+        self.isSpeechMode = audioEnabled
+        self.wordFont = Self.makeWordFont(forWidth: UIScreen.main.bounds.width)
+        self.engine = RSVPEngine(
+            content: content, maxCharactersPerWord: Self.targetCharactersAcross)
         super.init(nibName: nil, bundle: nil)
         if let resume = item.lastWordIndex, engine.words.indices.contains(resume) {
             currentIndex = resume
@@ -71,19 +78,23 @@ final class RSVPViewController: UIViewController {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// Widest word (in monospaced characters) that fits without running off the
-    /// right edge, given the ORP sits at the focal column. The right side binds:
-    /// the suffix after the ORP (ORP index caps at 3) extends from the focal X.
-    private static func maxCharactersPerWord(forWidth width: CGFloat) -> Int {
-        let characterWidth = ("0" as NSString)
-            .size(withAttributes: [.font: wordFont]).width
-        guard characterWidth > 0, width > 0 else { return .max }
-        let focalX = width * focalFraction
+    /// Picks the monospaced font size so `targetCharactersAcross` characters
+    /// fit beside the focal column. The right side binds: a word that long has
+    /// up to `target − maxORP` characters after the ORP (ORP index caps at 3),
+    /// and those must fit between the focal column and the right margin.
+    private static func makeWordFont(forWidth width: CGFloat) -> UIFont {
+        let probe = UIFont.monospacedSystemFont(ofSize: 100, weight: .medium)
+        let advanceRatio = ("0" as NSString)
+            .size(withAttributes: [.font: probe]).width / 100
+        guard advanceRatio > 0, width > 0 else {
+            return UIFont.monospacedSystemFont(ofSize: 30, weight: .medium)
+        }
         let rightMargin: CGFloat = 20
-        let suffixBudget = max(40, width - rightMargin - focalX)
-        let maxSuffixCharacters = Int(suffixBudget / characterWidth)
-        // + the max ORP index (3) for the prefix that sits left of the focal.
-        return max(8, maxSuffixCharacters + 3)
+        let rightBudget = max(120, width * (1 - focalFraction) - rightMargin)
+        let suffixCharacters = CGFloat(targetCharactersAcross - 3)
+        let characterWidth = rightBudget / suffixCharacters
+        let size = min(44, max(20, (characterWidth / advanceRatio).rounded()))
+        return UIFont.monospacedSystemFont(ofSize: size, weight: .medium)
     }
 
     override func viewDidLoad() {
@@ -93,6 +104,12 @@ final class RSVPViewController: UIViewController {
         configureGuidelines()
         configureWordLabel()
         configureControls()
+
+        if isSpeechMode {
+            // Read-aloud paces the display; prepare the audio session up front.
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+            try? AVAudioSession.sharedInstance().setActive(true)
+        }
 
         view.addGestureRecognizer(
             UITapGestureRecognizer(target: self, action: #selector(togglePlayPause)))
@@ -139,7 +156,7 @@ final class RSVPViewController: UIViewController {
     }
 
     private func configureWordLabel() {
-        wordLabel.font = Self.wordFont
+        wordLabel.font = wordFont
         wordLabel.textColor = .label
         view.addSubview(wordLabel)
     }
@@ -179,24 +196,12 @@ final class RSVPViewController: UIViewController {
             speedRow.addSubview(button)
         }
 
-        var speechConfig = UIButton.Configuration.plain()
-        speechConfig.image = UIImage(systemName: "speaker.wave.2")
-        speechConfig.baseForegroundColor = .label
-        speechButton.configuration = speechConfig
-        speechButton.addTarget(self, action: #selector(toggleSpeechMode), for: .touchUpInside)
-        speechButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(speechButton)
-
         let controls = UIStackView(arrangedSubviews: [scrubber, statusLabel, speedRow])
         controls.axis = .vertical
         controls.spacing = 12
         controls.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(controls)
 
-        NSLayoutConstraint.activate([
-            speechButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            speechButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-        ])
         NSLayoutConstraint.activate([
             controls.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
             controls.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
@@ -223,7 +228,7 @@ final class RSVPViewController: UIViewController {
 
         let attributed = NSMutableAttributedString(
             string: word.text,
-            attributes: [.font: Self.wordFont, .foregroundColor: UIColor.label])
+            attributes: [.font: wordFont, .foregroundColor: UIColor.label])
         let orpStart = String(characters.prefix(orp)).utf16.count
         let orpLength = String(characters[orp]).utf16.count
         attributed.addAttribute(
@@ -234,10 +239,10 @@ final class RSVPViewController: UIViewController {
 
         let prefixWidth = NSAttributedString(
             string: String(characters.prefix(orp)),
-            attributes: [.font: Self.wordFont]).size().width
+            attributes: [.font: wordFont]).size().width
         let orpWidth = NSAttributedString(
             string: String(characters[orp]),
-            attributes: [.font: Self.wordFont]).size().width
+            attributes: [.font: wordFont]).size().width
 
         let focalX = view.bounds.width * Self.focalFraction
         let centerY = view.bounds.midY - 40
@@ -272,28 +277,6 @@ final class RSVPViewController: UIViewController {
     }
 
     // MARK: - Read-aloud pacing
-
-    @objc private func toggleSpeechMode() {
-        isSpeechMode.toggle()
-        speechButton.configuration?.image = UIImage(
-            systemName: isSpeechMode ? "speaker.wave.2.fill" : "speaker.wave.2")
-        speechButton.configuration?.baseForegroundColor = isSpeechMode ? .systemRed : .label
-        if isSpeechMode {
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-            try? AVAudioSession.sharedInstance().setActive(true)
-        }
-        if isPlaying {
-            // Swap the pacing source mid-flight.
-            timer?.invalidate()
-            timer = nil
-            synthesizer.stopSpeaking(at: .immediate)
-            if isSpeechMode {
-                speakCurrentSentence()
-            } else {
-                scheduleNext()
-            }
-        }
-    }
 
     /// Speaks from the current word to the end of the sentence as ONE
     /// utterance — natural prosody at normal speech pace — and records each

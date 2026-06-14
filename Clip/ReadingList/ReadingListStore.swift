@@ -51,12 +51,25 @@ final class ReadingListStore {
 
     // MARK: - List operations
 
-    /// All items, newest first.
+    /// All items in saved order — FIFO (oldest first), reorderable by the user.
     func items() -> [ReadingListItem] {
         guard let data = try? Data(contentsOf: listFileURL),
               let items = try? JSONDecoder().decode([ReadingListItem].self, from: data)
         else { return [] }
-        return items.sorted { $0.dateAdded > $1.dateAdded }
+        return items
+    }
+
+    /// Reorders the stored list to match `orderedIDs` (items not listed keep
+    /// their relative order at the end). Backs manual drag-to-reorder.
+    func setOrder(_ orderedIDs: [UUID]) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        let all = items()
+        let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var reordered = orderedIDs.compactMap { byID[$0] }
+        let placed = Set(orderedIDs)
+        reordered.append(contentsOf: all.filter { !placed.contains($0.id) })
+        save(reordered)
     }
 
     /// The existing item for a URL, if it's already in the list.
@@ -78,7 +91,7 @@ final class ReadingListStore {
             return existing
         }
         let item = ReadingListItem(urlString: urlString)
-        all.insert(item, at: 0)
+        all.append(item) // FIFO: newest at the end
         save(all)
         return item
     }

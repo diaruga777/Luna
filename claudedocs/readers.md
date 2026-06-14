@@ -1,6 +1,12 @@
 # Readers
 
-Two reading modes for extracted articles, with read-aloud, nested inline readers, position memory, and (device-only) eye tracking. Hosted by `Clip/Reader/ReaderViewController.swift` — a container that swaps the scroll/RSVP children in place via the nav-bar toggle (bolt ↔ text icon), persists `lastReaderMode` per article, and tracks read state (marks `.opened` on open; children call back `onFinishedReading` → `.read`: scroll reader at bottom-of-content (or content that fits one screen), RSVP at playback end).
+THREE reading modes for extracted articles, with read-aloud, nested inline readers, position memory, and (device-only) eye tracking. Hosted by `Clip/Reader/ReaderViewController.swift` — a container with a **3-way nav-bar segmented switcher** (`text.alignleft` scroll / `highlighter` highlight / `bolt.fill` RSVP) plus a **separate audio toggle** (speaker bar button) that turns read-aloud on/off for whichever mode is showing. It persists `lastReaderMode` per article AND globally (`ReaderSettings.lastReaderMode`) — a new article with no per-article preference opens in the global last-used mode. Changing mode/audio rebuilds the child VC. Tracks read state (marks `.opened` on open; children call back `onFinishedReading` → `.read`).
+
+- **Scroll**: plain scrolling text (audio off) or read-aloud word-follow (audio on).
+- **Highlight** (`Clip/Reader/ChunkHighlightController.swift` + `ChunkPlanner.swift`): auto-advancing chunk highlight over the scrolling text — no audio by default, footer play/pause/skip/speed, auto-centering. Chunking follows speed-reading practice (≤4 words / ≤24 chars per chunk, broken at sentence/clause boundaries); per-chunk duration = wordCount·60/WPM × length × pause factor. Turning audio on in this mode reads aloud (word-follow) instead.
+- **RSVP**: centered one-word display (audio off = WPM timer, audio on = sentence TTS).
+
+The scroll reader (`ScrollReaderViewController`) backs both Scroll and Highlight via `init(autoHighlight:audioEnabled:)`: audio → `SpeechController`; else autoHighlight → `ChunkHighlightController`; else plain. The footer routes play/pause/skip/speed to whichever engine is active.
 
 ## Scroll reader (+ split-web link handling)
 

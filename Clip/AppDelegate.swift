@@ -4,10 +4,11 @@
 //
 
 import UIKit
+import UserNotifications
 import os
 
 @main
-final class AppDelegate: UIResponder, UIApplicationDelegate {
+final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
     private let logger = Logger(subsystem: "com.hpiddy.clip", category: "push")
 
@@ -23,7 +24,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         // every launch; the subscription save is idempotent. Pushes are only a
         // hint — the foreground processInbox calls are the source of truth.
         application.registerForRemoteNotifications()
-        // Needed so the "friend shared" local notifications can appear.
+        // Needed so the "friend shared" local notifications can appear, and so
+        // they show as banners while the app is open (delegate below).
+        UNUserNotificationCenter.current().delegate = self
         NotificationManager.requestAuthorization()
         Task {
             await SocialMessageCenter.shared.ensureSubscription()
@@ -58,6 +61,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     ) {
         // Expected on simulators without push support; foreground polling covers it.
         logger.error("Remote notification registration failed: \(String(describing: error), privacy: .public)")
+    }
+
+    /// Show friend-share notifications as banners even while the app is open.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
     }
 
     func application(

@@ -103,7 +103,7 @@ enum SharedReadingListAppender {
             items = decoded
         }
         guard let item = build(items) else { return }
-        items.insert(item, at: 0)
+        items.append(item) // FIFO: newest at the end
         if let data = try? JSONEncoder().encode(items) {
             try? data.write(to: fileURL, options: .atomic)
         }

@@ -22,6 +22,17 @@ enum ReaderSettings {
     private static let serifKey = "readerSerifFont"
     private static let readingTimeKey = "showReadingTime"
     private static let progressKey = "showReadingProgress"
+    private static let lastReaderModeKey = "lastReaderMode"
+
+    /// The reader mode the user last used — the default for new articles that
+    /// don't yet have a per-article preference.
+    static var lastReaderMode: ReadingListItem.ReaderMode {
+        get {
+            ReadingListItem.ReaderMode(
+                rawValue: UserDefaults.standard.string(forKey: lastReaderModeKey) ?? "") ?? .scroll
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: lastReaderModeKey) }
+    }
 
     /// Reader text size multiplier (Safari-Reader-style Aa control).
     static var fontScale: Double {

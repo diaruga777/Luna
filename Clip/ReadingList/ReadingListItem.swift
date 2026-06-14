@@ -29,7 +29,11 @@ struct ReadingListItem: Codable, Identifiable {
 
     /// Which reader the user last used for this article.
     enum ReaderMode: String, Codable {
+        /// Plain scrolling text.
         case scroll
+        /// Auto-advancing chunk highlight over the scrolling text.
+        case highlight
+        /// One word/chunk at a time, centered (ReadMaxx-style).
         case rsvp
     }
 

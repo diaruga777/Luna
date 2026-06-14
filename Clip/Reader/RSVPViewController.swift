@@ -49,12 +49,13 @@ final class RSVPViewController: UIViewController {
     private let sentenceHaptic = UIImpactFeedbackGenerator(style: .light)
 
     /// Horizontal position of the focal (ORP) column, as a fraction of width.
-    private let focalFraction: CGFloat = 0.4
-    private let wordFont = UIFont.monospacedSystemFont(ofSize: 38, weight: .medium)
+    private static let focalFraction: CGFloat = 0.4
+    private static let wordFont = UIFont.monospacedSystemFont(ofSize: 38, weight: .medium)
 
     init(item: ReadingListItem, content: ArticleContent) {
         self.item = item
-        self.engine = RSVPEngine(content: content)
+        let maxChars = Self.maxCharactersPerWord(forWidth: UIScreen.main.bounds.width)
+        self.engine = RSVPEngine(content: content, maxCharactersPerWord: maxChars)
         super.init(nibName: nil, bundle: nil)
         if let resume = item.lastWordIndex, engine.words.indices.contains(resume) {
             currentIndex = resume
@@ -69,6 +70,21 @@ final class RSVPViewController: UIViewController {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Widest word (in monospaced characters) that fits without running off the
+    /// right edge, given the ORP sits at the focal column. The right side binds:
+    /// the suffix after the ORP (ORP index caps at 3) extends from the focal X.
+    private static func maxCharactersPerWord(forWidth width: CGFloat) -> Int {
+        let characterWidth = ("0" as NSString)
+            .size(withAttributes: [.font: wordFont]).width
+        guard characterWidth > 0, width > 0 else { return .max }
+        let focalX = width * focalFraction
+        let rightMargin: CGFloat = 20
+        let suffixBudget = max(40, width - rightMargin - focalX)
+        let maxSuffixCharacters = Int(suffixBudget / characterWidth)
+        // + the max ORP index (3) for the prefix that sits left of the focal.
+        return max(8, maxSuffixCharacters + 3)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -111,7 +127,7 @@ final class RSVPViewController: UIViewController {
     }
 
     private func layoutGuidelines() {
-        let focalX = view.bounds.width * focalFraction
+        let focalX = view.bounds.width * Self.focalFraction
         let centerY = view.bounds.midY - 40
         let wordHalfHeight: CGFloat = 36
         // Vertical notches above/below the focal letter…
@@ -123,7 +139,7 @@ final class RSVPViewController: UIViewController {
     }
 
     private func configureWordLabel() {
-        wordLabel.font = wordFont
+        wordLabel.font = Self.wordFont
         wordLabel.textColor = .label
         view.addSubview(wordLabel)
     }
@@ -207,7 +223,7 @@ final class RSVPViewController: UIViewController {
 
         let attributed = NSMutableAttributedString(
             string: word.text,
-            attributes: [.font: wordFont, .foregroundColor: UIColor.label])
+            attributes: [.font: Self.wordFont, .foregroundColor: UIColor.label])
         let orpStart = String(characters.prefix(orp)).utf16.count
         let orpLength = String(characters[orp]).utf16.count
         attributed.addAttribute(
@@ -218,12 +234,12 @@ final class RSVPViewController: UIViewController {
 
         let prefixWidth = NSAttributedString(
             string: String(characters.prefix(orp)),
-            attributes: [.font: wordFont]).size().width
+            attributes: [.font: Self.wordFont]).size().width
         let orpWidth = NSAttributedString(
             string: String(characters[orp]),
-            attributes: [.font: wordFont]).size().width
+            attributes: [.font: Self.wordFont]).size().width
 
-        let focalX = view.bounds.width * focalFraction
+        let focalX = view.bounds.width * Self.focalFraction
         let centerY = view.bounds.midY - 40
         wordLabel.frame.origin = CGPoint(
             x: focalX - prefixWidth - orpWidth / 2,

@@ -4,9 +4,12 @@
 //
 
 import UIKit
+import os
 
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
+
+    private let logger = Logger(subsystem: "com.hpiddy.clip", category: "push")
 
     func application(
         _ application: UIApplication,
@@ -20,11 +23,20 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         // every launch; the subscription save is idempotent. Pushes are only a
         // hint — the foreground processInbox calls are the source of truth.
         application.registerForRemoteNotifications()
+        // Needed so the "friend shared" local notifications can appear.
+        NotificationManager.requestAuthorization()
         Task {
             await SocialMessageCenter.shared.ensureSubscription()
             await SocialMessageCenter.shared.processInbox()
         }
         return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        logger.info("Registered for remote notifications (\(deviceToken.count) byte token).")
     }
 
     /// Silent push from the CloudKit subscription: a message record matching
@@ -45,6 +57,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         // Expected on simulators without push support; foreground polling covers it.
+        logger.error("Remote notification registration failed: \(String(describing: error), privacy: .public)")
     }
 
     func application(

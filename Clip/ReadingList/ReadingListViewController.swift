@@ -236,7 +236,9 @@ final class ReadingListViewController: UITableViewController {
         case .failed: stateSuffix = " · failed (pull to retry)"
         case .ready: stateSuffix = ""
         }
-        var infoParts = [item.channelName ?? host, dateFormatter.string(from: item.dateAdded)]
+        let leadingLabel = item.channelName
+            ?? (item.isDocument ? (item.documentType?.uppercased() ?? "Document") : host)
+        var infoParts = [leadingLabel, dateFormatter.string(from: item.dateAdded)]
         if !item.isYouTubeVideo {
             if ReaderSettings.showReadingTime, let words = item.wordCount, words > 0 {
                 infoParts.append("\(max(1, Int((Double(words) / 220.0).rounded(.up)))) min")
@@ -378,17 +380,18 @@ final class ReadingListViewController: UITableViewController {
                     from: self, sourceView: sourceView,
                     urlString: item.urlString, title: item.title)
             }
-            guard !item.isYouTubeVideo else {
-                // Videos can be shared with friends but never sent to Kindle.
-                return UIMenu(children: [sendToFriend])
-            }
             let sendToKindle = UIAction(
                 title: "Send to Kindle",
                 image: UIImage(systemName: "paperplane")
             ) { _ in
                 self?.sendToKindle(item)
             }
-            return UIMenu(children: [sendToFriend, sendToKindle])
+            // Videos: friends only (no article to email). Documents: Kindle
+            // only (no URL to share). Articles: both.
+            var children: [UIAction] = []
+            if item.canShareToFriends { children.append(sendToFriend) }
+            if !item.isYouTubeVideo { children.append(sendToKindle) }
+            return UIMenu(children: children)
         })
     }
 

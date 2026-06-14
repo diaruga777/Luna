@@ -21,6 +21,9 @@ final class SocialMessageCenter {
     /// Kicks ingestion for an accepted shared article; injectable so tests
     /// don't touch the real ingestor.
     private let startIngest: (ReadingListItem) -> Void
+    /// Posts the "friend shared an article" local notification (username,
+    /// title); injectable so tests don't touch UNUserNotificationCenter.
+    private let notifyArticleShared: (String, String?) -> Void
 
     /// Prevents overlapping inbox drains (launch + push can race).
     private let drainLock = NSLock()
@@ -30,13 +33,17 @@ final class SocialMessageCenter {
          friendsStore: FriendsStore = .shared,
          transport: MessageTransport = CloudKitMessageTransport(),
          readingListStore: ReadingListStore = .shared,
-         startIngest: ((ReadingListItem) -> Void)? = nil) {
+         startIngest: ((ReadingListItem) -> Void)? = nil,
+         notifyArticleShared: ((String, String?) -> Void)? = nil) {
         self.identityStore = identityStore
         self.friendsStore = friendsStore
         self.transport = transport
         self.readingListStore = readingListStore
         self.startIngest = startIngest ?? { item in
             Task { await ReadingListIngestor.shared.ingest(item) }
+        }
+        self.notifyArticleShared = notifyArticleShared ?? { username, title in
+            NotificationManager.postArticleShared(fromUsername: username, title: title)
         }
     }
 
@@ -168,7 +175,7 @@ final class SocialMessageCenter {
             friendsStore.add(card)
             logger.info("added friend \(card.username, privacy: .public) via message")
 
-        case .readingListItem(let urlString, _):
+        case .readingListItem(let urlString, let title):
             // Only friends may push links, and the signature must match the
             // key we stored when we added them.
             guard let friend = friendsStore.friend(withUUID: record.senderUUID),
@@ -188,6 +195,9 @@ final class SocialMessageCenter {
             readingListStore.setSharedBy(friend.card.username, for: saved.id)
             startIngest(saved)
             logger.info("accepted shared article from \(friend.card.username, privacy: .public)")
+            if FriendNotificationSettings.isNotifyEnabled(friendUUID: friend.card.uuid) {
+                notifyArticleShared(friend.card.username, title)
+            }
 
         case .unknown(let type):
             logger.info("ignoring unknown message type \(type, privacy: .public)")

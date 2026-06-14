@@ -23,12 +23,22 @@ struct RSVPWord {
 struct RSVPEngine {
     let words: [RSVPWord]
 
-    init(content: ArticleContent) {
+    /// `maxCharactersPerWord` splits over-long words into multiple frames that
+    /// fit the focal column (default `.max` = never split; used by tests).
+    init(content: ArticleContent, maxCharactersPerWord: Int = .max) {
         var words: [RSVPWord] = []
         for block in content.blocks {
             let tokens = block.text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-            for (index, token) in tokens.enumerated() {
-                words.append(Self.makeWord(token, isLastInBlock: index == tokens.count - 1))
+            for (tokenIndex, token) in tokens.enumerated() {
+                let isLastToken = tokenIndex == tokens.count - 1
+                let parts = WordSplitter.split(token, maxCharacters: maxCharactersPerWord)
+                for (partIndex, part) in parts.enumerated() {
+                    let isLastPart = partIndex == parts.count - 1
+                    // Only the final part carries the token's sentence/paragraph
+                    // pause; continuation parts end in "-" and read straight on.
+                    words.append(Self.makeWord(
+                        part, isLastInBlock: isLastToken && isLastPart))
+                }
             }
         }
         self.words = words

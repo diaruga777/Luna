@@ -76,16 +76,17 @@ final class ReaderViewController: UIViewController {
         let toggleItem = UIBarButtonItem(
             image: UIImage(systemName: icon), style: .plain,
             target: self, action: #selector(toggleMode))
-        let shareItem = UIBarButtonItem(
+        // Documents have no URL to share with friends or via the share sheet.
+        let shareItem: UIBarButtonItem? = item.isDocument ? nil : UIBarButtonItem(
             image: UIImage(systemName: "square.and.arrow.up"), style: .plain,
             target: self, action: #selector(shareTapped))
         if newMode == .rsvp {
             let settingsItem = UIBarButtonItem(
                 image: UIImage(systemName: "gearshape"), style: .plain,
                 target: self, action: #selector(openSettings))
-            navigationItem.rightBarButtonItems = [toggleItem, settingsItem, shareItem]
+            navigationItem.rightBarButtonItems = [toggleItem, settingsItem, shareItem].compactMap { $0 }
         } else {
-            navigationItem.rightBarButtonItems = [toggleItem, shareItem]
+            navigationItem.rightBarButtonItems = [toggleItem, shareItem].compactMap { $0 }
         }
     }
 

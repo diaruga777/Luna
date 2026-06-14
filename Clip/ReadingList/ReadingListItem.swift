@@ -75,6 +75,10 @@ struct ReadingListItem: Codable, Identifiable {
     /// Username of the friend who shared this item to us, when it arrived via
     /// a social message (display only).
     var sharedByUsername: String?
+    /// File extension (e.g. "pdf", "txt", "md") when this item is an imported
+    /// document with no web URL. The raw file lives at
+    /// `Articles/<id>-source.<documentType>`.
+    var documentType: String?
     /// Send-to-Kindle status; nil until a send is first requested.
     var sendState: SendState?
     /// When the article was last delivered to Kindle (for the once-per-day guard).
@@ -86,6 +90,15 @@ struct ReadingListItem: Codable, Identifiable {
     var url: URL? { URL(string: urlString) }
 
     var isYouTubeVideo: Bool { youtubeVideoID != nil }
+
+    /// An imported document (PDF/text/etc.) rather than a web link or video.
+    var isDocument: Bool { documentType != nil }
+
+    /// Documents have no real URL to send to other users.
+    var canShareToFriends: Bool { !isDocument }
+
+    /// The `clipdoc://` identity used for imported documents (no web URL).
+    static func documentURLString(id: UUID) -> String { "clipdoc://\(id.uuidString)" }
 
     init(urlString: String) {
         self.id = UUID()
@@ -106,6 +119,7 @@ struct ReadingListItem: Codable, Identifiable {
         self.channelName = nil
         self.thumbnailFileName = nil
         self.sharedByUsername = nil
+        self.documentType = nil
         self.sendState = nil
         self.dateSent = nil
         self.lastSaveAttemptDate = nil
@@ -132,6 +146,7 @@ struct ReadingListItem: Codable, Identifiable {
         channelName = try container.decodeIfPresent(String.self, forKey: .channelName)
         thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
         sharedByUsername = try container.decodeIfPresent(String.self, forKey: .sharedByUsername)
+        documentType = try container.decodeIfPresent(String.self, forKey: .documentType)
         sendState = try container.decodeIfPresent(SendState.self, forKey: .sendState)
         dateSent = try container.decodeIfPresent(Date.self, forKey: .dateSent)
         lastSaveAttemptDate = try container.decodeIfPresent(Date.self, forKey: .lastSaveAttemptDate)

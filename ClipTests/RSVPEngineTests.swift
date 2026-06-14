@@ -65,4 +65,31 @@ final class RSVPEngineTests: XCTestCase {
         let paragraphEnd = engine.duration(at: 1, wpm: 300)
         XCTAssertEqual(paragraphEnd, 0.2 * 2.5, accuracy: 0.0001)
     }
+
+    func testDefaultDoesNotSplitLongWords() {
+        let engine = RSVPEngine(content: makeContent(["supercalifragilisticexpialidocious"]))
+        XCTAssertEqual(engine.words.map(\.text), ["supercalifragilisticexpialidocious"])
+    }
+
+    func testLongWordSplitsIntoFramesWhenCapped() {
+        let engine = RSVPEngine(
+            content: makeContent(["pneumonoultramicroscopic ok"]),
+            maxCharactersPerWord: 10)
+        // The long word becomes several hyphenated frames; "ok" stays one word.
+        XCTAssertGreaterThan(engine.words.count, 2)
+        XCTAssertTrue(engine.words.allSatisfy { $0.text.count <= 10 })
+        XCTAssertEqual(engine.words.last?.text, "ok")
+        // Only the final frame of the block carries the paragraph-end pause.
+        XCTAssertTrue(engine.words.last?.endsParagraph ?? false)
+        XCTAssertFalse(engine.words.first?.endsParagraph ?? true)
+    }
+
+    func testSplitParagraphEndOnLastPartOfLastToken() {
+        // A long final token: its last part ends the paragraph, earlier parts don't.
+        let engine = RSVPEngine(
+            content: makeContent(["go pneumonoultramicroscopicsilicovolcanoconiosis"]),
+            maxCharactersPerWord: 12)
+        XCTAssertTrue(engine.words.last?.endsParagraph ?? false)
+        XCTAssertEqual(engine.words.dropLast().filter { $0.endsParagraph }.count, 0)
+    }
 }

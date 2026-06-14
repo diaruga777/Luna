@@ -71,6 +71,29 @@ suppressed set, always-share set, plus one `pendingSuggestion` slot.
   opens a sheet with per-site "Stop auto-sharing" + "Reset Share Suggestions"
   (full wipe for that friend).
 
+## Notifications & per-friend settings
+
+- **Push**: silent CKQuerySubscription pushes (`shouldSendContentAvailable`)
+  wake the app to drain the inbox; they carry no content (the body is
+  encrypted). The distribution build is correctly `aps-environment =
+  production` (verified in the exported IPA) — TestFlight push works; debug
+  builds use the dev environment. AppDelegate logs register/fail under the
+  `push` category for diagnosis.
+- **Authorization**: `NotificationManager.requestAuthorization()` at launch —
+  required before any notification can appear (silent pushes show nothing on
+  their own).
+- **Local notifications**: when `processInbox` accepts a shared article from a
+  friend whose per-friend "Notify When They Share" toggle is on
+  (`FriendNotificationSettings`), `NotificationManager.postArticleShared`
+  fires "X shared an article: <title>". Injected into `SocialMessageCenter`
+  for testing. Force-quit apps won't wake on a silent push (Apple limitation)
+  — the notification then appears the next time the app runs `processInbox`.
+- **Friend detail page** (`FriendDetailViewController`, pushed from a friend
+  row): Auto-Send Websites sub-page (`AutoSendWebsitesViewController` —
+  per-base-URL toggles over the reading list's hosts, via
+  `ShareSuggestionStore.setAlwaysShare`), Notify-When-They-Share switch, and
+  Remove Friend (deletes friend + wipes suggestion/notify state).
+
 ## Recipient-side rules
 
 Incoming `readingListItem`: dropped entirely when the URL is already saved

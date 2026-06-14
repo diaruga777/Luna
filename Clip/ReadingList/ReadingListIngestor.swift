@@ -34,6 +34,11 @@ final class ReadingListIngestor {
             lock.unlock()
         }
 
+        if item.isDocument {
+            await ingestDocument(item)
+            return
+        }
+
         if let videoID = YouTubeURL.videoID(from: item.urlString) {
             await ingestYouTubeVideo(item, videoID: videoID)
             return
@@ -49,6 +54,28 @@ final class ReadingListIngestor {
             }
         } catch {
             store.markFailed(item.id)
+        }
+    }
+
+    /// Document ingestion: parse the imported file (stored at
+    /// `Articles/<id>-source.<type>`) into article content. Documents are
+    /// Kindle-eligible, so the becameReady hook runs as for web articles.
+    private func ingestDocument(_ item: ReadingListItem) async {
+        guard let type = item.documentType else {
+            store.markFailed(item.id)
+            return
+        }
+        let sourceURL = store.articlesDirectory
+            .appendingPathComponent("\(item.id.uuidString)-source.\(type)")
+        guard let content = DocumentParser.parse(
+            fileURL: sourceURL, type: type, title: item.title ?? "Document")
+        else {
+            store.markFailed(item.id)
+            return
+        }
+        let updated = store.saveContent(content, for: item)
+        if updated.state == .ready {
+            ArticleSendCoordinator.shared.articleBecameReady(updated)
         }
     }
 

@@ -175,6 +175,10 @@ final class ReadingListStore {
         if let fileName = item.contentFileName {
             try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(fileName))
         }
+        if let type = item.documentType {
+            try? fileManager.removeItem(at: articlesDirectory
+                .appendingPathComponent("\(item.id.uuidString)-source.\(type)"))
+        }
         save(all)
     }
 

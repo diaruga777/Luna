@@ -35,4 +35,23 @@ final class VideoMatchSelectionTests: XCTestCase {
     func testEmptyCandidates() {
         XCTAssertNil(VideoMatchSelection.bestMatch(title: "anything", candidates: []))
     }
+
+    func testIgnoresPunctuationAndCase() {
+        let match = VideoMatchSelection.bestMatch(
+            title: "swift concurrency explained!!!", candidates: candidates)
+        XCTAssertEqual(match?.videoID, "bbbbbbbbbbb")
+    }
+
+    func testSubstringMatch() {
+        let match = VideoMatchSelection.bestMatch(
+            title: "concurrency explained", candidates: candidates)
+        // Not a prefix of any candidate, but contained in both a and b → first (a).
+        XCTAssertEqual(match?.videoID, "aaaaaaaaaaa")
+    }
+
+    func testAllWordsPresentOutOfOrder() {
+        let match = VideoMatchSelection.bestMatch(
+            title: "explained part concurrency", candidates: candidates)
+        XCTAssertEqual(match?.videoID, "aaaaaaaaaaa")
+    }
 }

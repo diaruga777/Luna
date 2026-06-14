@@ -63,7 +63,7 @@ final class YouTubeAPIClient: YouTubeAPIProviding {
     func searchVideos(channelID: String, query: String) async throws -> [YouTubeSearchResult] {
         let data = try await get("/search", query: [
             "part": "snippet", "type": "video", "channelId": channelID,
-            "q": query, "maxResults": "10",
+            "q": query, "maxResults": "25",
         ])
         struct Wire: Decodable {
             struct Item: Decodable {
@@ -166,19 +166,44 @@ final class YouTubeAPIClient: YouTubeAPIProviding {
     }
 }
 
-/// Picks the saved video from search results: exact title match (case
-/// insensitive) → title-prefix match → top result. Pure, tested.
+/// Picks the saved video from search results, leniently: normalized exact →
+/// either-direction prefix → substring → all-query-words-present → top result.
+/// Normalization lowercases, strips punctuation/ellipsis, and collapses
+/// whitespace so truncated/messy share text still matches. Pure, tested.
 enum VideoMatchSelection {
     static func bestMatch(
         title: String, candidates: [YouTubeSearchResult]
     ) -> YouTubeSearchResult? {
-        let wanted = title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        if let exact = candidates.first(where: { $0.title.lowercased() == wanted }) {
-            return exact
+        guard !candidates.isEmpty else { return nil }
+        let wanted = normalize(title)
+        guard !wanted.isEmpty else { return candidates.first }
+
+        let normalized = candidates.map { (candidate: $0, key: normalize($0.title)) }
+
+        if let exact = normalized.first(where: { $0.key == wanted }) {
+            return exact.candidate
         }
-        if let prefix = candidates.first(where: { $0.title.lowercased().hasPrefix(wanted) }) {
-            return prefix
+        if let prefix = normalized.first(where: {
+            $0.key.hasPrefix(wanted) || wanted.hasPrefix($0.key)
+        }) {
+            return prefix.candidate
+        }
+        if let substring = normalized.first(where: { $0.key.contains(wanted) }) {
+            return substring.candidate
+        }
+        let wantedWords = wanted.split(separator: " ").map(String.init)
+        if let allWords = normalized.first(where: { entry in
+            wantedWords.allSatisfy { entry.key.contains($0) }
+        }) {
+            return allWords.candidate
         }
         return candidates.first
+    }
+
+    static func normalize(_ text: String) -> String {
+        let stripped = text.lowercased().unicodeScalars.map { scalar -> Character in
+            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : " "
+        }
+        return String(stripped).split(separator: " ").joined(separator: " ")
     }
 }

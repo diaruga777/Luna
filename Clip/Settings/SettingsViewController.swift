@@ -23,7 +23,6 @@ final class SettingsViewController: UITableViewController {
 
     /// Rows of the YouTube section.
     private enum YouTubeRow: Int, CaseIterable {
-        case clientID
         case signIn
         case playlist
         case autoAdd
@@ -109,7 +108,7 @@ final class SettingsViewController: UITableViewController {
         case .sendToKindle:
             return "Articles are emailed as EPUBs from your account. For Gmail, use an app password (myaccount.google.com → Security → App passwords). Amazon only accepts mail from approved senders: add the account email at amazon.com → Manage Your Content and Devices → Preferences → Personal Document Settings. \"Double Save\" sends an article when you save the same page twice within a few seconds."
         case .youtube:
-            return "Sign in to find videos by channel and title and to add saved videos to a playlist. The real Watch Later list is closed to apps, so pick or create a playlist instead. Auto-added videos are marked read immediately. Needs a Google OAuth client ID (console.cloud.google.com → create an iOS client for com.hpiddy.clip and enable the YouTube Data API)."
+            return "Sign in to find videos by channel and title and to add saved videos to a playlist. The real Watch Later list is closed to apps, so pick or create a playlist instead. Auto-added videos are marked read immediately."
         case .actionButton:
             return "Save the Safari page you're reading with one press of the Action Button: enable the Clip Safari extension (Settings → Apps → Safari → Extensions), install the shortcut below, then pick \"Clip Safari Page\" in Settings → Action Button."
         case .extensionStatus:
@@ -228,10 +227,6 @@ final class SettingsViewController: UITableViewController {
 
         case .youtube:
             switch YouTubeRow(rawValue: indexPath.row)! {
-            case .clientID:
-                return makeFieldCell(
-                    label: "Client ID", placeholder: "….apps.googleusercontent.com",
-                    text: YouTubeSettings.googleClientID, field: .youtubeClientID)
             case .signIn:
                 if GoogleAuthClient.shared.isSignedIn {
                     content.text = "Sign Out of YouTube"
@@ -287,7 +282,7 @@ final class SettingsViewController: UITableViewController {
             switch YouTubeRow(rawValue: indexPath.row)! {
             case .signIn: youtubeSignInTapped()
             case .playlist: choosePlaylistTapped()
-            case .clientID, .autoAdd: break
+            case .autoAdd: break
             }
         case .actionButton:
             if indexPath.row == 0 {
@@ -312,7 +307,6 @@ final class SettingsViewController: UITableViewController {
         case host
         case username
         case password
-        case youtubeClientID
     }
 
     /// A label + full-width text field cell that persists its setting when
@@ -370,7 +364,6 @@ final class SettingsViewController: UITableViewController {
         case .host: KindleSendSettings.customHost = value
         case .username: KindleSendSettings.smtpUsername = value
         case .password: KeychainSendCredentialsStore.shared.setSMTPPassword(value)
-        case .youtubeClientID: YouTubeSettings.googleClientID = value
         case nil: break
         }
     }

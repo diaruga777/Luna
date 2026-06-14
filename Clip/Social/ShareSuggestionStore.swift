@@ -153,6 +153,28 @@ final class ShareSuggestionStore {
 
     // MARK: - Friends-screen support
 
+    /// Whether a base URL is auto-shared to a friend.
+    func isAlwaysShared(baseURL: String, friendUUID: UUID) -> Bool {
+        loadState().rules[baseURL]?.alwaysFriends[friendUUID] != nil
+    }
+
+    /// Directly turns auto-share for a base URL to a friend on or off (the
+    /// friend-detail toggle, independent of the suggestion streak).
+    func setAlwaysShare(
+        baseURL: String, friendUUID: UUID, friendUsername: String, enabled: Bool
+    ) {
+        mutate { state in
+            var rule = state.rules[baseURL] ?? SiteRule()
+            if enabled {
+                rule.alwaysFriends[friendUUID] = friendUsername
+                rule.suppressedFriendUUIDs.remove(friendUUID)
+            } else {
+                rule.alwaysFriends.removeValue(forKey: friendUUID)
+            }
+            state.rules[baseURL] = rule
+        }
+    }
+
     /// Base URLs auto-shared to a friend.
     func alwaysSharedBaseURLs(friendUUID: UUID) -> [String] {
         loadState().rules

@@ -15,6 +15,7 @@ final class SocialMessageCenterTests: XCTestCase {
     private var transport: InMemoryMessageTransport!
     private var identityStore: InMemoryIdentityStore!
     private var ingestedItemURLs: [String] = []
+    private var notifiedShares: [(username: String, title: String?)] = []
     private var center: SocialMessageCenter!
     private var me: UserIdentity!
 
@@ -32,12 +33,16 @@ final class SocialMessageCenterTests: XCTestCase {
         identityStore = InMemoryIdentityStore()
         me = identityStore.createIdentity(username: "me", email: nil, phone: nil)
         ingestedItemURLs = []
+        notifiedShares = []
         center = SocialMessageCenter(
             identityStore: identityStore,
             friendsStore: friendsStore,
             transport: transport,
             readingListStore: readingListStore,
-            startIngest: { [weak self] item in self?.ingestedItemURLs.append(item.urlString) })
+            startIngest: { [weak self] item in self?.ingestedItemURLs.append(item.urlString) },
+            notifyArticleShared: { [weak self] username, title in
+                self?.notifiedShares.append((username, title))
+            })
     }
 
     override func tearDown() {
@@ -96,6 +101,33 @@ final class SocialMessageCenterTests: XCTestCase {
         XCTAssertTrue(transport.messages.isEmpty)
         let saved = readingListStore.item(forURLString: "https://example.com/x")
         XCTAssertEqual(saved?.sharedByUsername, "alice")
+    }
+
+    func testNotifiesWhenFriendNotificationsEnabled() async throws {
+        let alice = makeSender()
+        friendsStore.add(alice.card)
+        FriendNotificationSettings.setNotify(true, friendUUID: alice.uuid)
+        defer { FriendNotificationSettings.setNotify(false, friendUUID: alice.uuid) }
+
+        try await inject(
+            body: .readingListItem(urlString: "https://example.com/x", title: "Hi"), from: alice)
+        await center.processInbox()
+
+        XCTAssertEqual(notifiedShares.count, 1)
+        XCTAssertEqual(notifiedShares.first?.username, "alice")
+        XCTAssertEqual(notifiedShares.first?.title, "Hi")
+    }
+
+    func testDoesNotNotifyWhenDisabled() async throws {
+        let alice = makeSender()
+        friendsStore.add(alice.card)
+        FriendNotificationSettings.setNotify(false, friendUUID: alice.uuid)
+
+        try await inject(
+            body: .readingListItem(urlString: "https://example.com/y", title: nil), from: alice)
+        await center.processInbox()
+
+        XCTAssertTrue(notifiedShares.isEmpty)
     }
 
     func testIncomingDuplicateURLIsDroppedEntirely() async throws {

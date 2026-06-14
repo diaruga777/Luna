@@ -132,6 +132,25 @@ final class ShareSuggestionStoreTests: XCTestCase {
         XCTAssertNil(store.pendingSuggestion())
     }
 
+    func testDirectSetAlwaysShareEnablesAndDisables() {
+        XCTAssertFalse(store.isAlwaysShared(baseURL: "example.com", friendUUID: alice.uuid))
+
+        store.setAlwaysShare(
+            baseURL: "example.com", friendUUID: alice.uuid,
+            friendUsername: alice.name, enabled: true)
+        XCTAssertTrue(store.isAlwaysShared(baseURL: "example.com", friendUUID: alice.uuid))
+        XCTAssertEqual(store.alwaysSharedBaseURLs(friendUUID: alice.uuid), ["example.com"])
+        // Now a new save from that site auto-shares to alice.
+        XCTAssertEqual(
+            store.handleNewSave(urlString: "https://example.com/x").map(\.uuid), [alice.uuid])
+
+        store.setAlwaysShare(
+            baseURL: "example.com", friendUUID: alice.uuid,
+            friendUsername: alice.name, enabled: false)
+        XCTAssertFalse(store.isAlwaysShared(baseURL: "example.com", friendUUID: alice.uuid))
+        XCTAssertTrue(store.handleNewSave(urlString: "https://example.com/y").isEmpty)
+    }
+
     func testNewSaveWithoutHistoryClearsStalePending() {
         shareToAlice("https://example.com/1")
         shareToAlice("https://example.com/2")

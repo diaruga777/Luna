@@ -206,6 +206,7 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
                 content.secondaryTextProperties.color = .secondaryLabel
                 content.secondaryTextProperties.numberOfLines = 2
                 content.image = UIImage(systemName: "person.circle")
+                cell.accessoryType = .disclosureIndicator
             }
 
         case .scan:
@@ -239,39 +240,11 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
             present(scanner, animated: true)
         case .friends:
             guard !friends.isEmpty else { return }
-            presentShareAutomationSheet(for: friends[indexPath.row])
+            let detail = FriendDetailViewController(friend: friends[indexPath.row]) { [weak self] in
+                self?.reload()
+            }
+            navigationController?.pushViewController(detail, animated: true)
         }
-    }
-
-    /// Per-friend sharing automation: lists auto-shared sites with stop
-    /// actions and offers a full suggestion-state wipe.
-    private func presentShareAutomationSheet(for friend: Friend) {
-        let store = ShareSuggestionStore.shared
-        let autoShared = store.alwaysSharedBaseURLs(friendUUID: friend.card.uuid)
-
-        let sheet = UIAlertController(
-            title: friend.card.username,
-            message: autoShared.isEmpty
-                ? "No sites are auto-shared to this friend."
-                : "Links from these sites are shared automatically.",
-            preferredStyle: .actionSheet)
-        for base in autoShared {
-            sheet.addAction(UIAlertAction(
-                title: "Stop auto-sharing \(base)", style: .destructive
-            ) { [weak self] _ in
-                store.removeAlwaysShare(baseURL: base, friendUUID: friend.card.uuid)
-                self?.tableView.reloadData()
-            })
-        }
-        sheet.addAction(UIAlertAction(
-            title: "Reset Share Suggestions", style: .destructive
-        ) { [weak self] _ in
-            store.wipe(friendUUID: friend.card.uuid)
-            self?.tableView.reloadData()
-        })
-        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        sheet.popoverPresentationController?.sourceView = view
-        present(sheet, animated: true)
     }
 
     override func tableView(

@@ -19,7 +19,12 @@ NEVER sent to Kindle; social sharing works normally.
   reachable from the fullscreen controls on device).
 - `GoogleAuthClient.swift` — Google OAuth (ASWebAuthenticationSession, PKCE
   S256, redirect = reversed client ID scheme), tokens in Keychain
-  (`com.hpiddy.clip.google`), auto-refresh. Client ID comes from settings.
+  (`com.hpiddy.clip.google`), auto-refresh. The OAuth client ID is **shipped
+  in the app** (`YouTubeSettings.googleClientID`, a constant); users don't
+  enter one.
+- `YouTubeQuery.swift` — parses the intent's "channel:title" input: splits on
+  the FIRST colon (titles may contain colons), drops a leading "@" from the
+  channel, and strips ellipses (… and "...") from both terms.
 - `YouTubeAPIClient.swift` — Data API v3 (Bearer): channel search, video
   search, playlists list/create, playlistItems insert.
   `VideoMatchSelection.bestMatch` = exact title → prefix → top result.

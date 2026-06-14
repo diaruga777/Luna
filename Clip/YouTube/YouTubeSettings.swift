@@ -8,17 +8,14 @@ import Foundation
 /// YouTube integration preferences (the OAuth tokens live in the Keychain via
 /// `GoogleAuthClient`; these are plain settings).
 enum YouTubeSettings {
-    private static let clientIDKey = "youtubeGoogleClientID"
     private static let playlistIDKey = "youtubePlaylistID"
     private static let playlistTitleKey = "youtubePlaylistTitle"
     private static let autoAddKey = "youtubeAutoAddToPlaylist"
 
-    /// The user's Google Cloud OAuth iOS client ID
-    /// (e.g. "1234-abc.apps.googleusercontent.com").
-    static var googleClientID: String {
-        get { UserDefaults.standard.string(forKey: clientIDKey) ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: clientIDKey) }
-    }
+    /// Clip's Google Cloud OAuth iOS client ID (shipped with the app — users
+    /// don't provide their own).
+    static let googleClientID =
+        "651383166044-9galm8odrsc0l2ndanjgrthf0q1sdmf2.apps.googleusercontent.com"
 
     /// Target playlist for "add to watch later" (the real Watch Later playlist
     /// is closed to the API, so the user picks/creates one).

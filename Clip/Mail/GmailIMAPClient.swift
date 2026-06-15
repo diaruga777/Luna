@@ -203,30 +203,67 @@ final class GmailIMAPClient: IMAPFetching {
     }
 
     /// URLs in a message body: plain-text links via NSDataDetector plus any
-    /// `href="…"` targets in HTML parts.
+    /// `href` targets in HTML. Gmail bodies are usually quoted-printable, where
+    /// soft line breaks (`=\r\n`) split long URLs and `=XX` escapes hide chars;
+    /// when we detect QP we decode the whole body first (in a true QP body any
+    /// literal `=` is itself encoded, so a full decode is safe).
     static func extractURLs(from body: String) -> [URL] {
+        let text = (body.contains("=\r\n") || body.contains("=\n") || body.contains("=3D"))
+            ? decodeQuotedPrintable(body) : body
+
         var found: [URL] = []
         var seen = Set<String>()
         func add(_ string: String) {
-            guard let url = URL(string: string), url.scheme?.hasPrefix("http") == true,
+            let candidate = string.trimmingCharacters(
+                in: CharacterSet(charactersIn: "\"'<>) \t\r\n"))
+            guard let url = URL(string: candidate), url.scheme?.hasPrefix("http") == true,
                   seen.insert(url.absoluteString).inserted else { return }
             found.append(url)
         }
         if let detector = try? NSDataDetector(
             types: NSTextCheckingResult.CheckingType.link.rawValue) {
-            let range = NSRange(body.startIndex..., in: body)
-            for match in detector.matches(in: body, range: range) {
+            for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
                 if let url = match.url { add(url.absoluteString) }
             }
         }
-        // hrefs (links that aren't bare URLs the detector would miss).
-        var searchRange = body.startIndex..<body.endIndex
-        while let hrefRange = body.range(of: "href=\"", options: .caseInsensitive, range: searchRange),
-              let closeQuote = body[hrefRange.upperBound...].firstIndex(of: "\"") {
-            add(String(body[hrefRange.upperBound..<closeQuote]))
-            searchRange = closeQuote..<body.endIndex
+        // hrefs (links the detector may miss).
+        var searchRange = text.startIndex..<text.endIndex
+        while let hrefRange = text.range(of: "href=", options: .caseInsensitive, range: searchRange) {
+            let after = text[hrefRange.upperBound...]
+            let quote = after.first
+            let valueStart = (quote == "\"" || quote == "'")
+                ? after.index(after: after.startIndex) : after.startIndex
+            let terminators: Set<Character> = quote == "\"" ? ["\""]
+                : quote == "'" ? ["'"] : [" ", ">", "\r", "\n"]
+            let end = text[valueStart...].firstIndex { terminators.contains($0) } ?? text.endIndex
+            add(String(text[valueStart..<end]))
+            searchRange = end..<text.endIndex
         }
         return found
+    }
+
+    /// Decodes a quoted-printable string: drops soft line breaks and turns `=XX`
+    /// hex escapes back into bytes (decoded as UTF-8). Iterates Unicode scalars,
+    /// not Characters — Swift clusters `\r\n` into one Character, which would
+    /// hide the soft break.
+    static func decodeQuotedPrintable(_ s: String) -> String {
+        var bytes: [UInt8] = []
+        let scalars = Array(s.unicodeScalars)
+        let cr = Unicode.Scalar(13), lf = Unicode.Scalar(10), eq = Unicode.Scalar(61)
+        var i = 0
+        func hex(_ scalar: Unicode.Scalar) -> UInt8? { UInt8(String(scalar), radix: 16) }
+        while i < scalars.count {
+            if scalars[i] == eq {
+                if i + 1 < scalars.count, scalars[i + 1] == lf { i += 2; continue }
+                if i + 2 < scalars.count, scalars[i + 1] == cr, scalars[i + 2] == lf { i += 3; continue }
+                if i + 2 < scalars.count, let hi = hex(scalars[i + 1]), let lo = hex(scalars[i + 2]) {
+                    bytes.append(hi << 4 | lo); i += 3; continue
+                }
+            }
+            bytes.append(contentsOf: Array(String(scalars[i]).utf8))
+            i += 1
+        }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     // MARK: - Connection primitives

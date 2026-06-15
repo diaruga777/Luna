@@ -78,7 +78,7 @@ final class SettingsViewController: UITableViewController {
 
 /// RSVP speed, serif toggle, and text size.
 final class ReaderSettingsScreen: UITableViewController {
-    private enum Row: Int, CaseIterable { case speed, serif, textSize, shareSheet }
+    private enum Row: Int, CaseIterable { case speed, serif, textSize, accentColor, shareSheet }
     private let wpmLabel = UILabel()
 
     init() { super.init(style: .insetGrouped) }
@@ -141,12 +141,48 @@ final class ReaderSettingsScreen: UITableViewController {
             control.selectedSegmentIndex = scales.firstIndex(of: ReaderSettings.fontScale) ?? 1
             control.addTarget(self, action: #selector(textSizeChanged(_:)), for: .valueChanged)
             cell.accessoryView = control
+        case .accentColor:
+            content.text = "Highlight Color"
+            cell.accessoryView = makeAccentButton()
         case .shareSheet:
             content.text = "Share Sheet"
             cell.accessoryView = makeExperienceButton()
         }
         cell.contentConfiguration = content
         return cell
+    }
+
+    /// A pull-down button choosing the reader highlight color, with a swatch.
+    private func makeAccentButton() -> UIButton {
+        let button = UIButton(type: .system)
+        button.showsMenuAsPrimaryAction = true
+        updateAccentButton(button)
+        button.sizeToFit()
+        return button
+    }
+
+    private func swatch(for accent: ReaderAccent) -> UIImage? {
+        UIImage(systemName: "circle.fill")?
+            .withTintColor(accent.color, renderingMode: .alwaysOriginal)
+    }
+
+    private func updateAccentButton(_ button: UIButton) {
+        let current = ReaderSettings.accent
+        button.setTitle(current.displayName, for: .normal)
+        button.setImage(swatch(for: current), for: .normal)
+        button.configuration = nil
+        button.menu = UIMenu(children: ReaderAccent.allCases.map { accent in
+            UIAction(
+                title: accent.displayName, image: swatch(for: accent),
+                state: accent == current ? .on : .off
+            ) { [weak self, weak button] _ in
+                ReaderSettings.accent = accent
+                if let button {
+                    self?.updateAccentButton(button)
+                    button.sizeToFit()
+                }
+            }
+        })
     }
 
     /// A pull-down button choosing what the share sheet does with a link.

@@ -75,25 +75,32 @@ final class CloudKitMessageTransport: MessageTransport {
             options: .firesOnRecordCreation)
         let info = CKSubscription.NotificationInfo()
         info.shouldSendContentAvailable = true
-        // Ride the record's fields along in the push so the client can process
-        // without a follow-up query (which lags behind push delivery on the
-        // public DB). CloudKit drops these if the payload exceeds the APNs size
-        // limit, in which case we fall back to fetching.
-        info.desiredKeys = ["senderUUID", "payload"]
+        // NB: do NOT set desiredKeys. CloudKit rejects the subscription with
+        // "unsupported field type in notification" (CKError 12/2018) because the
+        // `payload` field is Bytes, which can't ride an APNs push. The push is
+        // just a wake hint; processInbox fetches (with retry-on-empty) to handle
+        // the public-DB query-index lag.
         subscription.notificationInfo = info
         _ = try await database.save(subscription)
     }
 
-    func inboxRecord(fromPush userInfo: [AnyHashable: Any]) -> InboxRecord? {
+    func recordID(fromPush userInfo: [AnyHashable: Any]) -> String? {
         guard let notification = CKNotification(fromRemoteNotificationDictionary: userInfo)
-                as? CKQueryNotification,
-              let recordID = notification.recordID,
-              let fields = notification.recordFields,
-              let senderString = fields["senderUUID"] as? String,
-              let senderUUID = UUID(uuidString: senderString),
-              let payload = fields["payload"] as? Data
+                as? CKQueryNotification
         else { return nil }
-        return InboxRecord(recordID: recordID.recordName, senderUUID: senderUUID, payload: payload)
+        return notification.recordID?.recordName
+    }
+
+    func fetchRecord(recordID: String) async throws -> InboxRecord? {
+        // record(for:) is a strongly-consistent fetch-by-ID — unlike a query
+        // (eventually-consistent index), it sees the record the push referenced
+        // immediately, so no retry/lag.
+        let record = try await database.record(for: CKRecord.ID(recordName: recordID))
+        guard let senderString = record["senderUUID"] as? String,
+              let senderUUID = UUID(uuidString: senderString),
+              let payload = record["payload"] as? Data
+        else { return nil }
+        return InboxRecord(recordID: recordID, senderUUID: senderUUID, payload: payload)
     }
 
     func availability() async -> MessagingAvailability {

@@ -49,36 +49,43 @@ final class ShareReaderViewController: UIViewController {
             spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
         spinner.startAnimating()
-
-        // A Done button visible during loading too.
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
+        navigationItem.leftBarButtonItem = doneButton()
 
         Task { await ingestAndPresent() }
     }
 
-    @objc private func doneTapped() { onDone() }
+    /// A Done item whose action lives in the closure (retained by the bar item),
+    /// so it still works after this VC is removed from the nav stack.
+    private func doneButton() -> UIBarButtonItem {
+        let onDone = self.onDone
+        return UIBarButtonItem(
+            systemItem: .done, primaryAction: UIAction { _ in onDone() })
+    }
 
     private func ingestAndPresent() async {
+        // Save immediately (shared storage) so the article is captured even if
+        // the user exits mid-read; reuse the item the extension just appended.
+        let item = ReadingListStore.shared.add(urlString: url.absoluteString)
         do {
             let html = try await ArticleFetcher().fetchHTML(from: url)
             let content = try ArticleExtractor().extract(html: html, baseURL: url)
-            presentReader(content: content)
+            // Persist the parsed content so the main app has it too.
+            let saved = ReadingListStore.shared.saveContent(content, for: item)
+            presentReader(item: saved, content: content)
         } catch {
             presentFailure()
         }
     }
 
-    private func presentReader(content: ArticleContent) {
+    private func presentReader(item: ReadingListItem, content: ArticleContent) {
         spinner.stopAnimating()
-        let item = ReadingListItem(urlString: url.absoluteString)
         // nil providers: no share button/footer, no eye tracking — the rest of
-        // the reader (modes, audio, inline link viewer) is the real thing.
+        // the reader (modes, audio, inline link viewer) is the real thing. The
+        // reader marks the (real, shared) item opened/read via ReadingListStore.
         let reader = ReaderViewController(
             item: item, content: content, forceMode: mode.readerMode,
             shareProvider: nil, gazeTrackerFactory: nil)
-        reader.navigationItem.leftBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
+        reader.navigationItem.leftBarButtonItem = doneButton()
         // Replace this loading screen with the reader as the sole VC (no back).
         navigationController?.setViewControllers([reader], animated: false)
     }

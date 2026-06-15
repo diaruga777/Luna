@@ -13,11 +13,11 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
     private enum Section: Int, CaseIterable {
         case myCode
         case friends
-        case scan
     }
 
     private enum MyCodeRow: Int, CaseIterable {
         case qr
+        case scan
         case username
         case email
         case phone
@@ -117,7 +117,6 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
         switch Section(rawValue: section)! {
         case .myCode: return MyCodeRow.allCases.count
         case .friends: return max(friends.count, 1)
-        case .scan: return 1
         }
     }
 
@@ -125,7 +124,6 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
         switch Section(rawValue: section)! {
         case .myCode: return "My Code"
         case .friends: return "Friends"
-        case .scan: return nil
         }
     }
 
@@ -138,9 +136,7 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
             }
             return footer
         case .friends:
-            return "Adding is two-way: when someone adds you, you're added back automatically. Friends can send articles to your reading list."
-        case .scan:
-            return "You can also scan a Clip code with the system Camera app."
+            return "Adding is two-way: when someone adds you, you're added back automatically. Friends can send articles to your reading list. You can also scan a Clip code with the system Camera app."
         }
     }
 
@@ -171,6 +167,10 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
                 ])
                 cell.selectionStyle = .none
                 return cell
+            case .scan:
+                content.text = "Scan Friend Code"
+                content.textProperties.color = view.tintColor ?? .systemBlue
+                content.image = UIImage(systemName: "qrcode.viewfinder")
             case .username:
                 return makeProfileFieldCell(
                     label: "Username", text: identity?.username ?? "", field: .username)
@@ -208,11 +208,6 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
                 content.image = UIImage(systemName: "person.circle")
                 cell.accessoryType = .disclosureIndicator
             }
-
-        case .scan:
-            content.text = "Scan Friend Code"
-            content.textProperties.color = view.tintColor ?? .systemBlue
-            content.image = UIImage(systemName: "qrcode.viewfinder")
         }
 
         cell.contentConfiguration = content
@@ -223,21 +218,24 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
         case .myCode:
-            guard MyCodeRow(rawValue: indexPath.row) == .shareLink,
-                  let identity = identityStore.loadIdentity(),
-                  let url = FriendLink.url(for: identity.card)
-            else { return }
-            let activity = UIActivityViewController(
-                activityItems: [url.absoluteString], applicationActivities: nil)
-            activity.popoverPresentationController?.sourceView =
-                tableView.cellForRow(at: indexPath) ?? view
-            present(activity, animated: true)
-        case .scan:
-            let scanner = QRScannerViewController { [weak self] card in
-                guard let self else { return }
-                FriendAddFlow.confirmAndAdd(card: card, from: self)
+            switch MyCodeRow(rawValue: indexPath.row)! {
+            case .scan:
+                let scanner = QRScannerViewController { [weak self] card in
+                    guard let self else { return }
+                    FriendAddFlow.confirmAndAdd(card: card, from: self)
+                }
+                present(scanner, animated: true)
+            case .shareLink:
+                guard let identity = identityStore.loadIdentity(),
+                      let url = FriendLink.url(for: identity.card) else { return }
+                let activity = UIActivityViewController(
+                    activityItems: [url.absoluteString], applicationActivities: nil)
+                activity.popoverPresentationController?.sourceView =
+                    tableView.cellForRow(at: indexPath) ?? view
+                present(activity, animated: true)
+            case .qr, .username, .email, .phone:
+                break
             }
-            present(scanner, animated: true)
         case .friends:
             guard !friends.isEmpty else { return }
             let detail = FriendDetailViewController(friend: friends[indexPath.row]) { [weak self] in

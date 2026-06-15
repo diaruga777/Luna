@@ -21,6 +21,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         DiagnosticLog.shared.record("app launch", category: "lifecycle")
+        // Move reader settings into the App Group so the share-extension reader
+        // honors them (WPM, font, highlight color, …).
+        ReaderSettings.migrateFromStandardIfNeeded()
         recordEnvironmentSnapshot()
 
         // Retry any items whose content download didn't finish (e.g. saved from the

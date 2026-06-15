@@ -145,30 +145,28 @@ final class SocialMessageCenterTests: XCTestCase {
         XCTAssertEqual(savedArticleURLs, ["https://example.com/lagged"])
     }
 
-    func testPushWithCarriedRecordProcessesWithoutFetch() async throws {
+    func testPushFetchesReferencedRecordByIDWithoutQuery() async throws {
         let alice = makeSender()
         friendsStore.add(alice.card)
-        let payload = try MessageCrypto.seal(
-            body: .readingListItem(urlString: "https://example.com/pushed", title: "Pushed"),
-            senderSigningKey: alice.signingKey,
-            recipientEncryptionPublicKey: me.card.encryptionPublicKey)
-        // Simulate a push that carried the record's fields inline.
-        transport.pushRecord = InboxRecord(
-            recordID: "rec-1", senderUUID: alice.uuid, payload: payload)
+        // The sender's message lives in the transport; the push references its ID.
+        try await inject(
+            body: .readingListItem(urlString: "https://example.com/pushed", title: "Pushed"), from: alice)
+        let recordID = transport.messages.first!.recordID
+        transport.pushRecordID = recordID
 
         await center.processPush(userInfo: ["ck": "fake"])
 
-        XCTAssertEqual(transport.fetchInboxCallCount, 0, "fast path must not query")
+        XCTAssertEqual(transport.fetchInboxCallCount, 0, "fetch-by-id path must not query")
         XCTAssertEqual(savedArticleURLs, ["https://example.com/pushed"])
-        XCTAssertEqual(transport.deletedRecordIDs, ["rec-1"])
+        XCTAssertEqual(transport.deletedRecordIDs, [recordID])
     }
 
-    func testPushWithoutCarriedRecordFallsBackToFetch() async throws {
+    func testPushWithoutRecordIDFallsBackToQuery() async throws {
         let alice = makeSender()
         friendsStore.add(alice.card)
         try await inject(
             body: .readingListItem(urlString: "https://example.com/fetched", title: nil), from: alice)
-        transport.pushRecord = nil
+        transport.pushRecordID = nil
 
         await center.processPush(userInfo: ["ck": "fake"])
 

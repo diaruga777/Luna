@@ -163,20 +163,22 @@ final class SocialMessageCenter {
         }
     }
 
-    /// Handles a silent push. If the push carried the record's fields (the fast
-    /// path — no query, so no public-DB index lag), processes that record
-    /// directly. Otherwise falls back to draining the inbox by query.
+    /// Handles a silent push. The push carries the triggering record's ID, so we
+    /// fetch THAT record by ID (strongly consistent — no eventually-consistent
+    /// query-index lag, no retry). Falls back to a query drain only if the push
+    /// carried no ID or the fetch failed (e.g. a coalesced push).
     func processPush(userInfo: [AnyHashable: Any]) async {
         guard let identity = identityStore.loadIdentity() else { return }
-        if let record = transport.inboxRecord(fromPush: userInfo) {
-            logger.notice("push carried record \(record.recordID, privacy: .public)")
+        if let recordID = transport.recordID(fromPush: userInfo),
+           let record = try? await transport.fetchRecord(recordID: recordID) {
+            logger.notice("push fetched record \(recordID, privacy: .public) by id")
             DiagnosticLog.shared.record(
-                "push carried record \(record.recordID) (no fetch needed)", category: "social")
+                "push fetched record \(recordID) by id (strongly consistent)", category: "social")
             process(record, identity: identity)
             try? await transport.delete(recordID: record.recordID)
         } else {
             DiagnosticLog.shared.record(
-                "push had no record fields; draining by query", category: "social")
+                "push had no usable record id; draining by query", category: "social")
             await processInbox(trigger: "push")
         }
     }

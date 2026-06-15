@@ -38,7 +38,9 @@ final class RSVPViewController: UIViewController {
     private let wordLabel = UILabel()
     /// Liquid-glass capsule behind the focal word, replacing the old red
     /// guideline notches.
-    private let focusPill = GlassStyle.focusPill()
+    /// Glass reticule marks above and below the ORP letter (replaces the pill).
+    private let reticuleTop = GlassStyle.reticuleMark()
+    private let reticuleBottom = GlassStyle.reticuleMark()
     private let playPauseButton = UIButton(type: .system)
     private let scrubber = UISlider()
     private let controlsStack = UIStackView()
@@ -141,19 +143,29 @@ final class RSVPViewController: UIViewController {
     // MARK: - Setup
 
     private func configureFocusPill() {
-        // Added before the word label so the word draws on top of the glass and
-        // stays fully legible.
-        view.addSubview(focusPill)
+        view.addSubview(reticuleTop)
+        view.addSubview(reticuleBottom)
     }
 
+    /// Positions the two reticule marks as short vertical bars centered on the
+    /// focal column, just above and below the word band, pointing at the ORP
+    /// letter.
     private func layoutFocusPill() {
+        let focalX = view.bounds.width * Self.focalFraction
         let centerY = view.bounds.midY - 40
-        let pillHeight: CGFloat = 84
-        focusPill.frame = CGRect(
-            x: 24, y: centerY - pillHeight / 2,
-            width: view.bounds.width - 48, height: pillHeight)
+        let wordHalfHeight: CGFloat = 30
+        let markWidth: CGFloat = 7
+        let markHeight: CGFloat = 20
+        let gap: CGFloat = 10
+        reticuleTop.frame = CGRect(
+            x: focalX - markWidth / 2, y: centerY - wordHalfHeight - gap - markHeight,
+            width: markWidth, height: markHeight)
+        reticuleBottom.frame = CGRect(
+            x: focalX - markWidth / 2, y: centerY + wordHalfHeight + gap,
+            width: markWidth, height: markHeight)
         if #unavailable(iOS 26.0) {
-            focusPill.layer.cornerRadius = pillHeight / 2
+            reticuleTop.layer.cornerRadius = markWidth / 2
+            reticuleBottom.layer.cornerRadius = markWidth / 2
         }
     }
 

@@ -48,6 +48,20 @@ final class GmailIMAPClientTests: XCTestCase {
         XCTAssertTrue(urls.map(\.absoluteString).contains("https://news.example.com/story"))
     }
 
+    func testExtractURLsUnwrapsQuotedPrintableSoftBreak() {
+        // A long URL split across lines by a QP soft break must rejoin.
+        let body = "Read this: https://example.com/very/long/=\r\npath/article\r\n"
+        let urls = GmailIMAPClient.extractURLs(from: body)
+        XCTAssertEqual(urls.map(\.absoluteString), ["https://example.com/very/long/path/article"])
+    }
+
+    func testExtractURLsDecodesQuotedPrintableHref() {
+        // QP-encoded HTML: href=3D"..." with =3F/=3D inside the URL.
+        let body = "<a href=3D\"https://news.example.com/story=3Fid=3D5\">x</a>=\r\n"
+        let urls = GmailIMAPClient.extractURLs(from: body)
+        XCTAssertTrue(urls.map(\.absoluteString).contains("https://news.example.com/story?id=5"))
+    }
+
     func testQuotedEscapesSpecials() {
         XCTAssertEqual(GmailIMAPClient.quoted("a@b.com"), "\"a@b.com\"")
         XCTAssertEqual(GmailIMAPClient.quoted("a\"b"), "\"a\\\"b\"")

@@ -34,10 +34,13 @@ protocol MessageTransport {
     /// Installs the server-side subscription that pings this client when a
     /// message arrives for `recipientUUID`. Safe to call on every launch.
     func ensureSubscription(for recipientUUID: UUID) async throws
-    /// Reconstructs an inbox record from a push payload when the subscription
-    /// carried the record's fields along (no fetch needed). Returns nil if the
-    /// push didn't include them — the caller should fall back to `fetchInbox`.
-    func inboxRecord(fromPush userInfo: [AnyHashable: Any]) -> InboxRecord?
+    /// The record name the push notification referenced, if any (lets the
+    /// client fetch that exact record by ID — strongly consistent — instead of
+    /// querying the eventually-consistent index).
+    func recordID(fromPush userInfo: [AnyHashable: Any]) -> String?
+    /// Strongly-consistent fetch of one record by its name. nil if it's gone or
+    /// missing required fields.
+    func fetchRecord(recordID: String) async throws -> InboxRecord?
     /// Current account availability for messaging.
     func availability() async -> MessagingAvailability
 }
@@ -61,9 +64,9 @@ final class InMemoryMessageTransport: MessageTransport {
     /// visible.
     var emptyFetchesBeforeVisible = 0
     private(set) var fetchInboxCallCount = 0
-    /// When set, `inboxRecord(fromPush:)` returns this — simulating a push that
-    /// carried the record's fields.
-    var pushRecord: InboxRecord?
+    /// `recordID(fromPush:)` returns this; `fetchRecord` returns the matching
+    /// stored message (simulating the strongly-consistent fetch-by-ID).
+    var pushRecordID: String?
 
     func send(payload: Data, to recipientUUID: UUID, from senderUUID: UUID) async throws {
         if let sendError { throw sendError }
@@ -92,7 +95,12 @@ final class InMemoryMessageTransport: MessageTransport {
         subscribedUUIDs.append(recipientUUID)
     }
 
-    func inboxRecord(fromPush userInfo: [AnyHashable: Any]) -> InboxRecord? { pushRecord }
+    func recordID(fromPush userInfo: [AnyHashable: Any]) -> String? { pushRecordID }
+
+    func fetchRecord(recordID: String) async throws -> InboxRecord? {
+        messages.first { $0.recordID == recordID }
+            .map { InboxRecord(recordID: $0.recordID, senderUUID: $0.senderUUID, payload: $0.payload) }
+    }
 
     func availability() async -> MessagingAvailability { .available }
 }

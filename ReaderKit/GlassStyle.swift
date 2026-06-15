@@ -8,26 +8,28 @@ import UIKit
 /// Liquid Glass styling for floating controls, falling back to material fills
 /// on OS versions without the glass APIs.
 enum GlassStyle {
-    /// The reading accent — replaces the old red focus color across the readers,
-    /// matching the app icon's indigo.
-    static let readingAccent = UIColor.systemIndigo
+    /// The reading accent (RSVP reticule + ORP letter, scroll/chunk highlight),
+    /// user-configurable via `ReaderSettings.accent`.
+    static var readingAccent: UIColor { ReaderSettings.accent.color }
 
-    /// A capsule of liquid glass to sit behind the focused word in the RSVP
-    /// reader (the word label is drawn on top, so it stays crisp). Falls back to
-    /// a thin material capsule pre-iOS 26.
-    static func focusPill() -> UIVisualEffectView {
-        let pill: UIVisualEffectView
+    /// A small liquid-glass mark for the RSVP focal reticule — one sits above
+    /// and one below the ORP letter. Glass-tinted with the reading accent
+    /// (a glassy tint, not a solid fill). Falls back to a tinted material mark
+    /// pre-iOS 26.
+    static func reticuleMark() -> UIVisualEffectView {
+        let mark: UIVisualEffectView
         if #available(iOS 26.0, *) {
             let glass = UIGlassEffect()
-            glass.tintColor = readingAccent.withAlphaComponent(0.16)
-            pill = UIVisualEffectView(effect: glass)
-            pill.cornerConfiguration = .capsule()
+            glass.tintColor = readingAccent.withAlphaComponent(0.6)
+            mark = UIVisualEffectView(effect: glass)
+            mark.cornerConfiguration = .capsule()
         } else {
-            pill = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
-            pill.layer.cornerCurve = .continuous
-            pill.clipsToBounds = true
+            mark = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+            mark.contentView.backgroundColor = readingAccent.withAlphaComponent(0.45)
+            mark.layer.cornerCurve = .continuous
+            mark.clipsToBounds = true
         }
-        return pill
+        return mark
     }
 
     /// A capsule glass configuration for circular floating buttons.

@@ -51,7 +51,8 @@ final class ReadingListStore {
 
     // MARK: - List operations
 
-    /// All items in saved order — FIFO (oldest first), reorderable by the user.
+    /// All items in saved order — newest first (new items prepend), reorderable
+    /// by the user.
     func items() -> [ReadingListItem] {
         guard let data = try? Data(contentsOf: listFileURL),
               let items = try? JSONDecoder().decode([ReadingListItem].self, from: data)
@@ -91,7 +92,7 @@ final class ReadingListStore {
             return existing
         }
         let item = ReadingListItem(urlString: urlString)
-        all.append(item) // FIFO: newest at the end
+        all.insert(item, at: 0) // newest first
         save(all)
         return item
     }

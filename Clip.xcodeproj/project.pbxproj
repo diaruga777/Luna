@@ -7,10 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7958393C2FE0A62700C775CA /* ClipShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* ClipShare.appex */; };
+		7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
 		AA0100000000000000000001 /* ClipSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000002 /* ClipSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AA0100000000000000000002 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
-		AA0100000000000000000003 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
-		AA0100000000000000000003 /* ClipShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* ClipShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA0100000000000000000003 /* ClipShare.appex in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* ClipShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,7 +46,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				AA0100000000000000000001 /* ClipSafari.appex in Embed Foundation Extensions */,
-				AA0100000000000000000003 /* ClipShare.appex in Embed Foundation Extensions */,
+				7958393C2FE0A62700C775CA /* ClipShare.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -118,7 +119,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AA0100000000000000000003 /* SwiftSoup in Frameworks */,
+				7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */,
+				AA0100000000000000000003 /* ClipShare.appex in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -704,12 +706,12 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		AA0300000000000000000003 /* SwiftSoup */ = {
+		AA0300000000000000000002 /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;
 		};
-		AA0300000000000000000002 /* SwiftSoup */ = {
+		AA0300000000000000000003 /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;

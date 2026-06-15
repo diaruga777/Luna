@@ -52,6 +52,11 @@ final class InMemoryMessageTransport: MessageTransport {
     private(set) var deletedRecordIDs: [String] = []
     private(set) var subscribedUUIDs: [UUID] = []
     var sendError: Error?
+    /// Simulates the public DB query-index lag a push can outrun: the next
+    /// this-many `fetchInbox` calls return empty before stored messages become
+    /// visible.
+    var emptyFetchesBeforeVisible = 0
+    private(set) var fetchInboxCallCount = 0
 
     func send(payload: Data, to recipientUUID: UUID, from senderUUID: UUID) async throws {
         if let sendError { throw sendError }
@@ -61,7 +66,12 @@ final class InMemoryMessageTransport: MessageTransport {
     }
 
     func fetchInbox(for recipientUUID: UUID) async throws -> [InboxRecord] {
-        messages
+        fetchInboxCallCount += 1
+        if emptyFetchesBeforeVisible > 0 {
+            emptyFetchesBeforeVisible -= 1
+            return []
+        }
+        return messages
             .filter { $0.recipientUUID == recipientUUID }
             .map { InboxRecord(recordID: $0.recordID, senderUUID: $0.senderUUID, payload: $0.payload) }
     }

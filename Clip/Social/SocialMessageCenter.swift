@@ -29,6 +29,14 @@ final class SocialMessageCenter {
     private let drainLock = NSLock()
     private var isDraining = false
 
+    /// Delays (seconds) between inbox re-fetches when a push- or
+    /// background-refresh-triggered drain finds nothing. A silent push fires
+    /// the instant a sender creates the record, but the PUBLIC database's query
+    /// index is eventually consistent — the record often isn't returned by a
+    /// query until a few seconds later. Retrying closes that gap. Overridable
+    /// in tests to avoid real delays.
+    var pushRetryDelaysSeconds: [UInt64] = [2, 4, 8]
+
     init(identityStore: IdentityStoring = KeychainIdentityStore.shared,
          friendsStore: FriendsStore = .shared,
          transport: MessageTransport = CloudKitMessageTransport(),
@@ -149,18 +157,31 @@ final class SocialMessageCenter {
             drainLock.unlock()
         }
 
-        let records: [InboxRecord]
-        do {
-            records = try await transport.fetchInbox(for: identity.uuid)
-        } catch {
-            logger.error("inbox fetch failed (\(trigger, privacy: .public)): \(String(describing: error), privacy: .public)")
-            DiagnosticLog.shared.record(
-                "processInbox (\(trigger)) FAILED: \(String(describing: error))", category: "social")
-            return
+        // A push fires the moment a record is created, but the public DB query
+        // index lags by a few seconds, so an immediate query can miss it. When
+        // a push (or bg refresh) signals an arrival, retry the query before
+        // concluding the inbox is empty. User-initiated drains don't retry.
+        let retryDelays: [UInt64] =
+            (trigger == "push" || trigger == "bgRefresh") ? pushRetryDelaysSeconds : []
+
+        var records: [InboxRecord] = []
+        var attempt = 0
+        while true {
+            do {
+                records = try await transport.fetchInbox(for: identity.uuid)
+            } catch {
+                logger.error("inbox fetch failed (\(trigger, privacy: .public)): \(String(describing: error), privacy: .public)")
+                DiagnosticLog.shared.record(
+                    "processInbox (\(trigger)) FAILED: \(String(describing: error))", category: "social")
+                return
+            }
+            if !records.isEmpty || attempt >= retryDelays.count { break }
+            try? await Task.sleep(nanoseconds: retryDelays[attempt] * 1_000_000_000)
+            attempt += 1
         }
-        logger.notice("processInbox (\(trigger, privacy: .public)) fetched \(records.count) record(s) for \(identity.uuid.uuidString, privacy: .public)")
+        logger.notice("processInbox (\(trigger, privacy: .public)) fetched \(records.count) record(s) after \(attempt + 1) attempt(s) for \(identity.uuid.uuidString, privacy: .public)")
         DiagnosticLog.shared.record(
-            "processInbox (\(trigger)) fetched \(records.count) record(s)", category: "social")
+            "processInbox (\(trigger)) fetched \(records.count) record(s) after \(attempt + 1) attempt(s)", category: "social")
 
         var seenRecordIDs = Set<String>()
         for record in records {

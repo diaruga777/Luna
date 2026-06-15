@@ -134,6 +134,23 @@ Incoming `readingListItem`: dropped entirely when the URL is already saved
 - **Inbox drains** on: launch (AppDelegate), foreground (SceneDelegate),
   silent push (`didReceiveRemoteNotification`), pull-to-refresh. Push is
   best-effort (coalesced, dead after force-quit) — polling is authoritative.
+- **Push outruns the record (public DB query-index lag).** A silent push fires
+  the instant the sender creates the `Message` record, but the public
+  database's query index is eventually consistent — an immediate query can
+  return 0 for several seconds. So `processInbox(trigger:)` retries the fetch on
+  empty for `push`/`bgRefresh` triggers only: delays `pushRetryDelaysSeconds`
+  (default `[2,4,8]`s, settable in tests), stopping as soon as records appear.
+  Manual/launch drains fetch once (the user can pull again). The diagnostic
+  line records the attempt count: `processInbox (push) fetched N record(s)
+  after K attempt(s)`.
+- **First-run CloudKit gotcha (resolved):** creating the query subscription in
+  the **production** container fails with `CKError 2006 "attempting to create a
+  subscription in a production container"` until the subscription *shape*
+  (record type + predicate fields + options — value-agnostic) has been
+  registered in **Development** and deployed Dev→Prod once. After that, every
+  client creates its own `inbox-<uuid>` at runtime with no further steps. The
+  shape was bootstrapped by running a dev-signed build once; see the
+  `clip-weblink-reader` memory for the exact recovery steps.
 
 ## Wiring
 

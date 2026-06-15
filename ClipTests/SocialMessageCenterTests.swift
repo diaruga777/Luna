@@ -130,6 +130,35 @@ final class SocialMessageCenterTests: XCTestCase {
         XCTAssertTrue(notifiedShares.isEmpty)
     }
 
+    func testPushDrainRetriesUntilLaggedRecordIsVisible() async throws {
+        center.pushRetryDelaysSeconds = [0, 0, 0] // no real sleeping in tests
+        let alice = makeSender()
+        friendsStore.add(alice.card)
+        try await inject(
+            body: .readingListItem(urlString: "https://example.com/lagged", title: nil), from: alice)
+        // The record exists but the query index lags for the first two fetches.
+        transport.emptyFetchesBeforeVisible = 2
+
+        await center.processInbox(trigger: "push")
+
+        XCTAssertEqual(transport.fetchInboxCallCount, 3, "should retry past the empty fetches")
+        XCTAssertEqual(savedArticleURLs, ["https://example.com/lagged"])
+    }
+
+    func testManualDrainDoesNotRetryOnEmpty() async throws {
+        center.pushRetryDelaysSeconds = [0, 0, 0]
+        let alice = makeSender()
+        friendsStore.add(alice.card)
+        try await inject(
+            body: .readingListItem(urlString: "https://example.com/lagged", title: nil), from: alice)
+        transport.emptyFetchesBeforeVisible = 2
+
+        await center.processInbox(trigger: "manual")
+
+        XCTAssertEqual(transport.fetchInboxCallCount, 1, "manual drains fetch once and don't retry")
+        XCTAssertTrue(savedArticleURLs.isEmpty)
+    }
+
     func testIncomingDuplicateURLIsDroppedEntirely() async throws {
         let alice = makeSender()
         friendsStore.add(alice.card)

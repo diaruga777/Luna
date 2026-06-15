@@ -6,15 +6,6 @@
 	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Clip uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>audio</string>
-		<string>remote-notification</string>
-	</array>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>youtube</string>
-	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -26,8 +17,14 @@
 			</array>
 		</dict>
 	</array>
-	<key>UILaunchScreen</key>
-	<dict/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>youtube</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.hpiddy.clip.inboxRefresh</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -45,5 +42,13 @@
 			</array>
 		</dict>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>remote-notification</string>
+		<string>fetch</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
 </dict>
 </plist>

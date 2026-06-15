@@ -6,26 +6,25 @@
 import Foundation
 
 /// Whether the user gets a local notification when a friend shares an article.
-/// Defaults to ON for every friend; the per-friend toggle stores the muted
-/// ones, so notifications work out of the box and can be silenced per friend.
+/// Off by default; the per-friend toggle stores the friends opted IN.
 enum FriendNotificationSettings {
-    private static let mutedKey = "mutedShareNotificationFriendUUIDs"
+    private static let enabledKey = "notifyOnShareFriendUUIDs"
 
     static func isNotifyEnabled(friendUUID: UUID) -> Bool {
-        !mutedUUIDs().contains(friendUUID.uuidString)
+        enabledUUIDs().contains(friendUUID.uuidString)
     }
 
     static func setNotify(_ enabled: Bool, friendUUID: UUID) {
-        var ids = mutedUUIDs()
+        var ids = enabledUUIDs()
         if enabled {
-            ids.remove(friendUUID.uuidString)
-        } else {
             ids.insert(friendUUID.uuidString)
+        } else {
+            ids.remove(friendUUID.uuidString)
         }
-        UserDefaults.standard.set(Array(ids), forKey: mutedKey)
+        UserDefaults.standard.set(Array(ids), forKey: enabledKey)
     }
 
-    private static func mutedUUIDs() -> Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: mutedKey) ?? [])
+    private static func enabledUUIDs() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: enabledKey) ?? [])
     }
 }

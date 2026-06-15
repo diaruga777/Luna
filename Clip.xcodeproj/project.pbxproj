@@ -85,7 +85,7 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AA0700000000000000000001 /* Clip */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Clip; sourceTree = "<group>"; };
 		AA0700000000000000000002 /* ClipSafari */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ClipSafari; sourceTree = "<group>"; };
-		AA0700000000000000000003 /* ClipTests */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (); explicitFileTypes = {}; explicitFolders = (); path = ClipTests; sourceTree = "<group>"; };
+		AA0700000000000000000003 /* ClipTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ClipTests; sourceTree = "<group>"; };
 		AA0700000000000000000004 /* ClipShare */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ClipShare; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
@@ -195,28 +195,6 @@
 			productReference = AA0200000000000000000002 /* ClipSafari.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		AAE300000000000000000000 /* ClipShare */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = AAD400000000000000000000 /* Build configuration list for PBXNativeTarget "ClipShare" */;
-			buildPhases = (
-				AA1000000000000000000004 /* Sources */,
-				AA0800000000000000000004 /* Frameworks */,
-				AA1100000000000000000004 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				AA0700000000000000000004 /* ClipShare */,
-			);
-			name = ClipShare;
-			packageProductDependencies = (
-			);
-			productName = ClipShare;
-			productReference = AA0200000000000000000004 /* ClipShare.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
 		AAE200000000000000000000 /* ClipTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AAD300000000000000000000 /* Build configuration list for PBXNativeTarget "ClipTests" */;
@@ -239,6 +217,28 @@
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		AAE300000000000000000000 /* ClipShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAD400000000000000000000 /* Build configuration list for PBXNativeTarget "ClipShare" */;
+			buildPhases = (
+				AA1000000000000000000004 /* Sources */,
+				AA0800000000000000000004 /* Frameworks */,
+				AA1100000000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000004 /* ClipShare */,
+			);
+			name = ClipShare;
+			packageProductDependencies = (
+			);
+			productName = ClipShare;
+			productReference = AA0200000000000000000004 /* ClipShare.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -440,10 +440,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Clip/Clip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Clip/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Clip uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -467,10 +469,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Clip/Clip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Clip/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Clip uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -492,7 +496,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ClipSafari/ClipSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClipSafari/Info.plist;
@@ -518,7 +522,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ClipSafari/ClipSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClipSafari/Info.plist;
@@ -539,12 +543,50 @@
 			};
 			name = Release;
 		};
+		AAC700000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 24;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Clip.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Clip";
+			};
+			name = Debug;
+		};
+		AAC800000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 24;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Clip.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Clip";
+			};
+			name = Release;
+		};
 		AAC900000000000000000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ClipShare/ClipShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClipShare/Info.plist;
@@ -570,7 +612,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ClipShare/ClipShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
+				CURRENT_PROJECT_VERSION = 24;
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClipShare/Info.plist;
@@ -588,44 +630,6 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Release;
-		};
-		AAC700000000000000000000 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
-				DEVELOPMENT_TEAM = MM5QBNLXR6;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Clip.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Clip";
-			};
-			name = Debug;
-		};
-		AAC800000000000000000000 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 23;
-				DEVELOPMENT_TEAM = MM5QBNLXR6;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.hpiddy.clip.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Clip.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Clip";
 			};
 			name = Release;
 		};
@@ -659,20 +663,20 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AAD400000000000000000000 /* Build configuration list for PBXNativeTarget "ClipShare" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				AAC900000000000000000000 /* Debug */,
-				AACA00000000000000000000 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		AAD300000000000000000000 /* Build configuration list for PBXNativeTarget "ClipTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AAC700000000000000000000 /* Debug */,
 				AAC800000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAD400000000000000000000 /* Build configuration list for PBXNativeTarget "ClipShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAC900000000000000000000 /* Debug */,
+				AACA00000000000000000000 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

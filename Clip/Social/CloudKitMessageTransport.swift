@@ -58,19 +58,25 @@ final class CloudKitMessageTransport: MessageTransport {
     }
 
     func ensureSubscription(for recipientUUID: UUID) async throws {
+        let subscriptionID = "inbox-\(recipientUUID.uuidString)"
+        // CloudKit's `save` only CREATES — it rejects an existing subscription
+        // ID rather than updating it. So delete any prior subscription first,
+        // guaranteeing the live one matches the current config (an older or
+        // half-saved subscription would otherwise squat on this ID forever).
+        do {
+            _ = try await database.deleteSubscription(withID: subscriptionID)
+        } catch let error as CKError where error.code == .unknownItem {
+            // No prior subscription — expected on first run.
+        }
         let subscription = CKQuerySubscription(
             recordType: Self.recordType,
             predicate: NSPredicate(format: "recipientUUID == %@", recipientUUID.uuidString),
-            subscriptionID: "inbox-\(recipientUUID.uuidString)",
+            subscriptionID: subscriptionID,
             options: .firesOnRecordCreation)
         let info = CKSubscription.NotificationInfo()
         info.shouldSendContentAvailable = true
         subscription.notificationInfo = info
-        do {
-            _ = try await database.save(subscription)
-        } catch let error as CKError where error.code == .serverRejectedRequest {
-            // Same-ID subscription already exists server-side — fine.
-        }
+        _ = try await database.save(subscription)
     }
 
     func availability() async -> MessagingAvailability {

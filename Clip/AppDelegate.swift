@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import BackgroundTasks
 import UIKit
 import UserNotifications
 import os
@@ -11,6 +12,9 @@ import os
 final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
     private let logger = Logger(subsystem: "com.hpiddy.clip", category: "push")
+    /// Background inbox poll — a fallback for unreliable silent pushes (it
+    /// doesn't depend on the push pipeline at all).
+    private static let inboxRefreshTaskID = "com.hpiddy.clip.inboxRefresh"
 
     func application(
         _ application: UIApplication,
@@ -28,18 +32,53 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // they show as banners while the app is open (delegate below).
         UNUserNotificationCenter.current().delegate = self
         NotificationManager.requestAuthorization()
+
+        // Background polling fallback: silent CloudKit pushes are unreliable
+        // (and currently broken by an iOS 26.4 regression), so also drain the
+        // inbox on the system's periodic background-refresh schedule.
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: Self.inboxRefreshTaskID, using: nil
+        ) { [weak self] task in
+            self?.handleInboxRefresh(task as? BGAppRefreshTask)
+        }
+
         Task {
             await SocialMessageCenter.shared.ensureSubscription()
             await SocialMessageCenter.shared.processInbox()
         }
+        scheduleInboxRefresh()
         return true
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        scheduleInboxRefresh()
+    }
+
+    private func scheduleInboxRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: Self.inboxRefreshTaskID)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            logger.error("Couldn't schedule inbox refresh: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func handleInboxRefresh(_ task: BGAppRefreshTask?) {
+        guard let task else { return }
+        scheduleInboxRefresh() // chain the next one
+        let work = Task {
+            await SocialMessageCenter.shared.processInbox(trigger: "bgRefresh")
+            task.setTaskCompleted(success: true)
+        }
+        task.expirationHandler = { work.cancel() }
     }
 
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        logger.info("Registered for remote notifications (\(deviceToken.count) byte token).")
+        logger.notice("Registered for remote notifications (\(deviceToken.count) byte token).")
     }
 
     /// Silent push from the CloudKit subscription: a message record matching
@@ -49,8 +88,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
+        logger.notice("Remote notification received (keys: \(userInfo.keys.map { "\($0)" }.joined(separator: ","), privacy: .public)).")
         Task {
-            await SocialMessageCenter.shared.processInbox()
+            await SocialMessageCenter.shared.processInbox(trigger: "push")
             completionHandler(.newData)
         }
     }

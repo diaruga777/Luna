@@ -112,7 +112,7 @@ final class SocialMessageCenter {
         guard let identity = identityStore.loadIdentity() else { return }
         do {
             try await transport.ensureSubscription(for: identity.uuid)
-            logger.info("inbox subscription ensured for \(identity.uuid.uuidString, privacy: .public)")
+            logger.notice("inbox subscription ensured for \(identity.uuid.uuidString, privacy: .public)")
         } catch {
             logger.error("subscription failed: \(String(describing: error), privacy: .public)")
         }
@@ -121,7 +121,7 @@ final class SocialMessageCenter {
     /// Fetches everything addressed to us, processes each message, and
     /// deletes it. Undecryptable or unrecognized messages are deleted and
     /// ignored (forward compatibility). Safe to call repeatedly.
-    func processInbox() async {
+    func processInbox(trigger: String = "manual") async {
         guard let identity = identityStore.loadIdentity() else { return }
 
         drainLock.lock()
@@ -139,9 +139,10 @@ final class SocialMessageCenter {
         do {
             records = try await transport.fetchInbox(for: identity.uuid)
         } catch {
-            logger.error("inbox fetch failed: \(String(describing: error), privacy: .public)")
+            logger.error("inbox fetch failed (\(trigger, privacy: .public)): \(String(describing: error), privacy: .public)")
             return
         }
+        logger.notice("processInbox (\(trigger, privacy: .public)) fetched \(records.count) record(s) for \(identity.uuid.uuidString, privacy: .public)")
 
         var seenRecordIDs = Set<String>()
         for record in records {

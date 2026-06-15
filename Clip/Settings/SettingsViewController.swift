@@ -78,7 +78,7 @@ final class SettingsViewController: UITableViewController {
 
 /// RSVP speed, serif toggle, and text size.
 final class ReaderSettingsScreen: UITableViewController {
-    private enum Row: Int, CaseIterable { case speed, serif, textSize }
+    private enum Row: Int, CaseIterable { case speed, serif, textSize, shareSheet }
     private let wpmLabel = UILabel()
 
     init() { super.init(style: .insetGrouped) }
@@ -141,9 +141,37 @@ final class ReaderSettingsScreen: UITableViewController {
             control.selectedSegmentIndex = scales.firstIndex(of: ReaderSettings.fontScale) ?? 1
             control.addTarget(self, action: #selector(textSizeChanged(_:)), for: .valueChanged)
             cell.accessoryView = control
+        case .shareSheet:
+            content.text = "Share Sheet"
+            cell.accessoryView = makeExperienceButton()
         }
         cell.contentConfiguration = content
         return cell
+    }
+
+    /// A pull-down button choosing what the share sheet does with a link.
+    private func makeExperienceButton() -> UIButton {
+        let button = UIButton(type: .system)
+        button.showsMenuAsPrimaryAction = true
+        button.changesSelectionAsPrimaryAction = false
+        updateExperienceButton(button)
+        button.sizeToFit()
+        return button
+    }
+
+    private func updateExperienceButton(_ button: UIButton) {
+        let current = ShareSheetExperience.current
+        button.setTitle(current.displayName, for: .normal)
+        button.menu = UIMenu(children: ShareSheetExperience.allCases.map { option in
+            UIAction(title: option.displayName, state: option == current ? .on : .off) {
+                [weak self, weak button] _ in
+                ShareSheetExperience.current = option
+                if let button {
+                    self?.updateExperienceButton(button)
+                    button.sizeToFit()
+                }
+            }
+        })
     }
 
     @objc private func wpmChanged(_ slider: UISlider) {

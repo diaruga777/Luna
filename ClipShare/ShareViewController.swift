@@ -77,16 +77,36 @@ final class ShareViewController: UIViewController {
 
     private func handleURL(_ provider: NSItemProvider) {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
+            guard let self else { return }
             if let url = value as? URL {
                 if url.absoluteString.hasPrefix("http") {
                     SharedReadingListAppender.append(urlString: url.absoluteString)
+                    // Optionally open the article in an in-sheet reader.
+                    if let mode = ShareReaderViewController.Mode(rawValue: self.shareExperience()) {
+                        DispatchQueue.main.async { self.presentReader(url: url, mode: mode) }
+                        return
+                    }
                 } else if url.isFileURL {
-                    // A file delivered only as a URL — import it as a document.
                     SharedReadingListAppender.appendDocument(sourceURL: url)
                 }
             }
+            self.complete()
+        }
+    }
+
+    /// The configured share-sheet experience (read from the App Group, written
+    /// by the main app's settings). "off" / unknown → save silently.
+    private func shareExperience() -> String {
+        UserDefaults(suiteName: SharedReadingListAppender.appGroupID)?
+            .string(forKey: "shareSheetExperience") ?? "off"
+    }
+
+    private func presentReader(url: URL, mode: ShareReaderViewController.Mode) {
+        let reader = ShareReaderViewController(url: url, mode: mode) { [weak self] in
             self?.complete()
         }
+        reader.modalPresentationStyle = .fullScreen
+        present(reader, animated: true)
     }
 
     private func handleDocument(_ provider: NSItemProvider, type: UTType) {

@@ -38,10 +38,25 @@ final class DiagnosticsViewController: UIViewController {
             textView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .action, target: self, action: #selector(share))
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: "Clear", style: .plain, target: self, action: #selector(clear))
+        // Keep both actions on the right so the navigation back button (the way
+        // out of this screen) stays in place. When presented modally rather than
+        // pushed, add an explicit Done button.
+        navigationItem.rightBarButtonItems = [
+            UIBarButtonItem(barButtonSystemItem: .action, target: self, action: #selector(share)),
+            UIBarButtonItem(title: "Clear", style: .plain, target: self, action: #selector(clear)),
+        ]
+        if navigationController?.viewControllers.first === self || navigationController == nil {
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                barButtonSystemItem: .done, target: self, action: #selector(done))
+        }
+    }
+
+    @objc private func done() {
+        if let navigationController, navigationController.viewControllers.count > 1 {
+            navigationController.popViewController(animated: true)
+        } else {
+            dismiss(animated: true)
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {

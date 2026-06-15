@@ -5,9 +5,14 @@
 
 import UIKit
 
-/// The home screen. Two sections: unread articles (unopened bright, opened
-/// dimmed, intermingled chronologically) and finished articles below, with a
-/// delete-all button. Tap to read; swipe to delete or jump into RSVP.
+/// The home screen. Items are grouped into three sections, each in FIFO
+/// (oldest-saved first) order:
+/// - **Reading**: unread items saved within the last week (always expanded).
+/// - **Read**: finished items (collapsed by default).
+/// - **Archive**: unread items older than a week by save date (collapsed by
+///   default).
+/// Read and Archive headers expand/collapse on tap. Tap a row to read; press
+/// the drag handle to reorder within Reading; long-press for the action menu.
 final class ReadingListViewController: UITableViewController {
 
     init() {
@@ -15,6 +20,27 @@ final class ReadingListViewController: UITableViewController {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Items older than this (by save date) move to the Archive section.
+    private static let archiveAge: TimeInterval = 7 * 24 * 60 * 60
+
+    /// The three list groups, in display order.
+    private enum Section: Int, CaseIterable {
+        case reading
+        case read
+        case archive
+
+        var title: String {
+            switch self {
+            case .reading: return "Reading"
+            case .read: return "Read"
+            case .archive: return "Archive"
+            }
+        }
+
+        /// Reading is always open; Read and Archive can collapse.
+        var isCollapsible: Bool { self != .reading }
+    }
 
     /// What the list shows: everything, only articles, or only videos.
     private enum ListFilter: Int, CaseIterable {
@@ -40,6 +66,7 @@ final class ReadingListViewController: UITableViewController {
     }
 
     private static let filterDefaultsKey = "readingListFilter"
+    private static let collapsedDefaultsKey = "readingListCollapsedSections"
 
     private var filter: ListFilter {
         get {
@@ -49,9 +76,28 @@ final class ReadingListViewController: UITableViewController {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.filterDefaultsKey) }
     }
 
+    /// Persisted collapsed sections. Absent (first run) means Read and Archive
+    /// start collapsed.
+    private var collapsedSections: Set<Section> {
+        get {
+            guard let raw = UserDefaults.standard.array(forKey: Self.collapsedDefaultsKey) as? [Int]
+            else { return [.read, .archive] }
+            return Set(raw.compactMap(Section.init(rawValue:)))
+        }
+        set {
+            UserDefaults.standard.set(newValue.map(\.rawValue), forKey: Self.collapsedDefaultsKey)
+        }
+    }
+
     private let store = ReadingListStore.shared
-    private var unreadItems: [ReadingListItem] = []
-    private var readItems: [ReadingListItem] = []
+
+    /// Non-empty groups in display order; rebuilt on every `reload`.
+    private var groups: [(section: Section, items: [ReadingListItem])] = []
+
+    /// Set while persisting a manual reorder so the resulting
+    /// `.readingListChanged` notification doesn't reload the table mid-drop
+    /// (which mangles the layout).
+    private var isApplyingReorder = false
 
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -95,7 +141,7 @@ final class ReadingListViewController: UITableViewController {
         ])
         tableView.tableHeaderView = header
 
-        // Permanent reorder mode: every row shows a drag handle you can press
+        // Permanent reorder mode: Reading rows show a drag handle you can press
         // and drag, while taps still open the article (selection-during-editing)
         // and there's no delete badge (editingStyle .none). Delete/RSVP live in
         // the long-press menu.
@@ -108,9 +154,30 @@ final class ReadingListViewController: UITableViewController {
     }
 
     @objc private func reload() {
+        // A reorder we just persisted fires this notification; ignore it so the
+        // drop animation isn't interrupted by a full reloadData.
+        if isApplyingReorder { return }
+
         let all = store.items().filter { filter.includes($0) }
-        unreadItems = all.filter { $0.readState != .read }
-        readItems = all.filter { $0.readState == .read }
+        let now = Date()
+        var reading: [ReadingListItem] = []
+        var read: [ReadingListItem] = []
+        var archive: [ReadingListItem] = []
+        for item in all {
+            if item.readState == .read {
+                read.append(item)
+            } else if now.timeIntervalSince(item.dateAdded) > Self.archiveAge {
+                archive.append(item)
+            } else {
+                reading.append(item)
+            }
+        }
+        let bySection: [Section: [ReadingListItem]] =
+            [.reading: reading, .read: read, .archive: archive]
+        groups = Section.allCases.compactMap { section in
+            let items = bySection[section] ?? []
+            return items.isEmpty ? nil : (section, items)
+        }
         tableView.reloadData()
     }
 
@@ -158,8 +225,9 @@ final class ReadingListViewController: UITableViewController {
     }
 
     @objc private func deleteAllReadTapped() {
+        let readCount = groups.first { $0.section == .read }?.items.count ?? 0
         let alert = UIAlertController(
-            title: "Delete \(readItems.count) read article\(readItems.count == 1 ? "" : "s")?",
+            title: "Delete \(readCount) read article\(readCount == 1 ? "" : "s")?",
             message: nil, preferredStyle: .actionSheet)
         alert.addAction(UIAlertAction(title: "Delete All Read", style: .destructive) { [weak self] _ in
             self?.store.deleteAllRead()
@@ -168,64 +236,91 @@ final class ReadingListViewController: UITableViewController {
         present(alert, animated: true)
     }
 
+    // MARK: - Section / collapse helpers
+
+    private func section(at index: Int) -> Section { groups[index].section }
+
+    private func isCollapsed(_ section: Section) -> Bool {
+        section.isCollapsible && collapsedSections.contains(section)
+    }
+
+    @objc private func headerTapped(_ gesture: UITapGestureRecognizer) {
+        guard let raw = gesture.view?.tag, let section = Section(rawValue: raw),
+              section.isCollapsible,
+              let index = groups.firstIndex(where: { $0.section == section })
+        else { return }
+        var collapsed = collapsedSections
+        if collapsed.contains(section) { collapsed.remove(section) } else { collapsed.insert(section) }
+        collapsedSections = collapsed
+        tableView.reloadSections(IndexSet(integer: index), with: .automatic)
+    }
+
     // MARK: - Table
 
     private func item(at indexPath: IndexPath) -> ReadingListItem {
-        indexPath.section == 0 ? unreadItems[indexPath.row] : readItems[indexPath.row]
+        groups[indexPath.section].items[indexPath.row]
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { 2 }
+    override func numberOfSections(in tableView: UITableView) -> Int { groups.count }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? unreadItems.count : readItems.count
+        let group = groups[section]
+        return isCollapsed(group.section) ? 0 : group.items.count
     }
 
     override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        if section == 0 {
-            guard !unreadItems.isEmpty else { return nil }
-            let header = UIView()
-            let label = UILabel()
-            label.text = "Unread"
-            label.font = .preferredFont(forTextStyle: .headline)
-            label.textColor = .secondaryLabel
-            label.translatesAutoresizingMaskIntoConstraints = false
-            header.addSubview(label)
-            NSLayoutConstraint.activate([
-                label.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 20),
-                label.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            ])
-            return header
-        }
-        guard !readItems.isEmpty else { return nil }
+        let group = groups[section]
+        let kind = group.section
 
         let header = UIView()
+        header.tag = kind.rawValue
+
         let label = UILabel()
-        label.text = "Read"
         label.font = .preferredFont(forTextStyle: .headline)
         label.textColor = .secondaryLabel
-
-        let deleteButton = UIButton(type: .system)
-        deleteButton.setTitle("Delete All", for: .normal)
-        deleteButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
-        deleteButton.tintColor = .systemRed
-        deleteButton.addTarget(self, action: #selector(deleteAllReadTapped), for: .touchUpInside)
-
         label.translatesAutoresizingMaskIntoConstraints = false
-        deleteButton.translatesAutoresizingMaskIntoConstraints = false
+
+        if kind.isCollapsible {
+            let collapsed = isCollapsed(kind)
+            let chevron = collapsed ? "chevron.right" : "chevron.down"
+            let glyph = NSTextAttachment()
+            glyph.image = UIImage(systemName: chevron)?
+                .withConfiguration(UIImage.SymbolConfiguration(textStyle: .caption1))
+                .withTintColor(.secondaryLabel, renderingMode: .alwaysOriginal)
+            let title = NSMutableAttributedString(attachment: glyph)
+            title.append(NSAttributedString(string: "  \(kind.title) (\(group.items.count))"))
+            label.attributedText = title
+
+            let tap = UITapGestureRecognizer(target: self, action: #selector(headerTapped(_:)))
+            header.addGestureRecognizer(tap)
+        } else {
+            label.text = kind.title
+        }
+
         header.addSubview(label)
-        header.addSubview(deleteButton)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 20),
             label.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            deleteButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -20),
-            deleteButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
         ])
+
+        if kind == .read {
+            let deleteButton = UIButton(type: .system)
+            deleteButton.setTitle("Delete All", for: .normal)
+            deleteButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
+            deleteButton.tintColor = .systemRed
+            deleteButton.addTarget(self, action: #selector(deleteAllReadTapped), for: .touchUpInside)
+            deleteButton.translatesAutoresizingMaskIntoConstraints = false
+            header.addSubview(deleteButton)
+            NSLayoutConstraint.activate([
+                deleteButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -20),
+                deleteButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            ])
+        }
         return header
     }
 
     override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        if section == 0 { return unreadItems.isEmpty ? 0 : 36 }
-        return readItems.isEmpty ? 0 : 44
+        44
     }
 
     override func tableView(
@@ -236,35 +331,8 @@ final class ReadingListViewController: UITableViewController {
 
         var config = cell.defaultContentConfiguration()
         config.text = item.title ?? item.urlString
-        let host = item.url?.host ?? ""
-        let stateSuffix: String
-        switch item.state {
-        case .pending: stateSuffix = " · downloading…"
-        case .failed: stateSuffix = " · failed (pull to retry)"
-        case .ready: stateSuffix = ""
-        }
-        let leadingLabel = item.channelName
-            ?? (item.isDocument ? (item.documentType?.uppercased() ?? "Document") : host)
-        var infoParts = [leadingLabel, dateFormatter.string(from: item.dateAdded)]
-        if !item.isYouTubeVideo {
-            if ReaderSettings.showReadingTime, let words = item.wordCount, words > 0 {
-                infoParts.append("\(max(1, Int((Double(words) / 220.0).rounded(.up)))) min")
-            }
-            if ReaderSettings.showReadingProgress, item.readState != .read,
-               let progress = item.readingProgress, progress > 0.01 {
-                infoParts.append("\(Int(progress * 100))%")
-            }
-        }
-        if let sharedBy = item.sharedByUsername {
-            infoParts.append("from \(sharedBy)")
-        }
-        switch item.sendState {
-        case .sent: infoParts.append("sent to Kindle")
-        case .failed: infoParts.append("send failed")
-        case .queued: infoParts.append("sending…")
-        case nil: break
-        }
-        config.secondaryText = infoParts.joined(separator: " · ") + stateSuffix
+        config.secondaryAttributedText = secondaryText(for: item)
+        config.textProperties.numberOfLines = 2
 
         if item.isYouTubeVideo {
             config.image = videoThumbnail(for: item)
@@ -273,13 +341,54 @@ final class ReadingListViewController: UITableViewController {
         }
         // Unopened articles pop; anything touched fades back (but stays legible).
         config.textProperties.color = item.readState == .unopened ? .label : .secondaryLabel
-        config.secondaryTextProperties.color = item.readState == .unopened
-            ? .secondaryLabel : .tertiaryLabel
-        config.textProperties.numberOfLines = 2
         cell.contentConfiguration = config
         cell.accessoryType = item.state == .ready ? .disclosureIndicator : .none
         cell.showsReorderControl = true
         return cell
+    }
+
+    /// Builds the grey metadata line, with the "from <friend>" attribution in
+    /// the accent color so social shares stand out.
+    private func secondaryText(for item: ReadingListItem) -> NSAttributedString {
+        let baseColor: UIColor = item.readState == .unopened ? .secondaryLabel : .tertiaryLabel
+        let host = item.url?.host ?? ""
+        let leadingLabel = item.channelName
+            ?? (item.isDocument ? (item.documentType?.uppercased() ?? "Document") : host)
+        var parts = [leadingLabel, dateFormatter.string(from: item.dateAdded)]
+        if !item.isYouTubeVideo {
+            if ReaderSettings.showReadingTime, let words = item.wordCount, words > 0 {
+                parts.append("\(max(1, Int((Double(words) / 220.0).rounded(.up)))) min")
+            }
+            if ReaderSettings.showReadingProgress, item.readState != .read,
+               let progress = item.readingProgress, progress > 0.01 {
+                parts.append("\(Int(progress * 100))%")
+            }
+        }
+        switch item.sendState {
+        case .sent: parts.append("sent to Kindle")
+        case .failed: parts.append("send failed")
+        case .queued: parts.append("sending…")
+        case nil: break
+        }
+        switch item.state {
+        case .pending: parts.append("downloading…")
+        case .failed: parts.append("failed (pull to retry)")
+        case .ready: break
+        }
+
+        let result = NSMutableAttributedString(
+            string: parts.joined(separator: " · "),
+            attributes: [.foregroundColor: baseColor])
+        if let sharedBy = item.sharedByUsername {
+            if !result.string.isEmpty {
+                result.append(NSAttributedString(
+                    string: " · ", attributes: [.foregroundColor: baseColor]))
+            }
+            result.append(NSAttributedString(
+                string: "from \(sharedBy)",
+                attributes: [.foregroundColor: view.tintColor ?? .systemBlue]))
+        }
+        return result
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -344,7 +453,7 @@ final class ReadingListViewController: UITableViewController {
         }
     }
 
-    // MARK: - Reordering
+    // MARK: - Reordering (Reading section only)
 
     override func tableView(
         _ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath
@@ -359,10 +468,10 @@ final class ReadingListViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-        true
+        section(at: indexPath.section) == .reading
     }
 
-    /// Keep drags within their section (reordering doesn't change read state).
+    /// Keep drags within the Reading section.
     override func tableView(
         _ tableView: UITableView,
         targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath,
@@ -376,15 +485,19 @@ final class ReadingListViewController: UITableViewController {
     override func tableView(
         _ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath
     ) {
-        if sourceIndexPath.section == 0 {
-            let moved = unreadItems.remove(at: sourceIndexPath.row)
-            unreadItems.insert(moved, at: destinationIndexPath.row)
-        } else {
-            let moved = readItems.remove(at: sourceIndexPath.row)
-            readItems.insert(moved, at: destinationIndexPath.row)
-        }
-        // Persist the new global order (display order = unread then read).
-        store.setOrder((unreadItems + readItems).map(\.id))
+        guard let groupIndex = groups.firstIndex(where: { $0.section == .reading }) else { return }
+        var reading = groups[groupIndex].items
+        let moved = reading.remove(at: sourceIndexPath.row)
+        reading.insert(moved, at: destinationIndexPath.row)
+        groups[groupIndex].items = reading
+
+        // Persist the full order across all sections, preserving each section's
+        // (now-updated) order. Suppress the reload this triggers so the drop
+        // animation finishes cleanly.
+        let fullOrder = groups.flatMap(\.items).map(\.id)
+        isApplyingReorder = true
+        store.setOrder(fullOrder)
+        DispatchQueue.main.async { [weak self] in self?.isApplyingReorder = false }
     }
 
     // MARK: - Long-press menu

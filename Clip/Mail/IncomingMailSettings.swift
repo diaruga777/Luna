@@ -13,10 +13,18 @@ enum IncomingMailSettings {
     private static let sendersKey = "incomingMailAllowedSenders"
     private static let lastUIDKey = "incomingMailLastUID"
     private static let uidValidityKey = "incomingMailUIDValidity"
+    private static let autoSendKey = "incomingMailAutoSendToKindle"
 
     static var isEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: enabledKey) }
         set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+    }
+
+    /// When on (and Send-to-Kindle is configured), imported-email articles are
+    /// also sent to Kindle.
+    static var autoSendToKindle: Bool {
+        get { UserDefaults.standard.bool(forKey: autoSendKey) }
+        set { UserDefaults.standard.set(newValue, forKey: autoSendKey) }
     }
 
     /// Allowed sender email addresses; mail from these is imported.

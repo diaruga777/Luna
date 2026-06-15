@@ -19,6 +19,12 @@ final class ReaderViewController: UIViewController {
     private var audioOn = false
     private var currentChild: UIViewController?
 
+    /// The mode switcher lives in an inline header bar (not the nav title) so it
+    /// doesn't slide during push/pop transitions. Child readers fill the area
+    /// below it.
+    private let headerBar = UIView()
+    private let contentContainer = UIView()
+
     /// Sharing affordances (nil in the share extension → no share button/footer).
     private let shareProvider: ReaderShareProviding?
     /// Gaze-tracker factory (nil in the share extension → no eye tracking).
@@ -56,7 +62,27 @@ final class ReaderViewController: UIViewController {
         }
         modeControl.selectedSegmentIndex = Self.orderedModes.firstIndex(of: mode) ?? 0
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
-        navigationItem.titleView = modeControl
+
+        // Inline header bar with the mode switcher, then the child reader below.
+        headerBar.translatesAutoresizingMaskIntoConstraints = false
+        modeControl.translatesAutoresizingMaskIntoConstraints = false
+        headerBar.addSubview(modeControl)
+        contentContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(headerBar)
+        view.addSubview(contentContainer)
+        NSLayoutConstraint.activate([
+            headerBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            headerBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            headerBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            modeControl.centerXAnchor.constraint(equalTo: headerBar.centerXAnchor),
+            modeControl.topAnchor.constraint(equalTo: headerBar.topAnchor, constant: 6),
+            modeControl.bottomAnchor.constraint(equalTo: headerBar.bottomAnchor, constant: -6),
+            modeControl.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
+            contentContainer.topAnchor.constraint(equalTo: headerBar.bottomAnchor),
+            contentContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            contentContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            contentContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
 
         updateAudioButton()
         audioButton.addTarget(self, action: #selector(audioToggled), for: .touchUpInside)
@@ -121,9 +147,14 @@ final class ReaderViewController: UIViewController {
         }
 
         addChild(child)
-        child.view.frame = view.bounds
-        child.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(child.view)
+        child.view.translatesAutoresizingMaskIntoConstraints = false
+        contentContainer.addSubview(child.view)
+        NSLayoutConstraint.activate([
+            child.view.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+            child.view.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            child.view.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+            child.view.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
+        ])
         child.didMove(toParent: self)
         currentChild = child
     }

@@ -70,7 +70,9 @@ final class RSVPViewController: UIViewController {
         self.item = item
         self.isSpeechMode = audioEnabled
         self.shareProvider = shareProvider
-        self.wordFont = Self.makeWordFont(forWidth: UIScreen.main.bounds.width)
+        // Cap the sizing width so the word/font stays readable on wide screens
+        // (iPad / landscape) rather than scaling up to the full display width.
+        self.wordFont = Self.makeWordFont(forWidth: min(UIScreen.main.bounds.width, 600))
         self.engine = RSVPEngine(
             content: content, maxCharactersPerWord: Self.targetCharactersAcross)
         super.init(nibName: nil, bundle: nil)

@@ -27,7 +27,16 @@ final class IncomingMailImporter {
         self.credentials = credentials
         self.store = store
         self.ingest = ingest ?? { item in
-            Task { await ReadingListIngestor.shared.ingest(item) }
+            Task {
+                await ReadingListIngestor.shared.ingest(item)
+                // Optionally forward the imported article to Kindle once parsed.
+                if IncomingMailSettings.autoSendToKindle,
+                   ArticleSendCoordinator.shared.isConfigured,
+                   let ready = ReadingListStore.shared.item(withID: item.id),
+                   ready.state == .ready {
+                    await ArticleSendCoordinator.shared.send(ready)
+                }
+            }
         }
     }
 

@@ -24,6 +24,7 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.hpiddy.clip.inboxRefresh</string>
+		<string>com.hpiddy.clip.mailFetch</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
@@ -47,6 +48,7 @@
 		<string>audio</string>
 		<string>remote-notification</string>
 		<string>fetch</string>
+		<string>processing</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

@@ -15,6 +15,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     /// Background inbox poll — a fallback for unreliable silent pushes (it
     /// doesn't depend on the push pipeline at all).
     private static let inboxRefreshTaskID = "com.hpiddy.clip.inboxRefresh"
+    /// Heavier periodic task (~twice daily) that fetches new email and forwards
+    /// it to Kindle, so newsletters are delivered even if the app is never
+    /// opened. Separate from the inbox refresh: it needs network and runs less
+    /// often.
+    private static let mailFetchTaskID = "com.hpiddy.clip.mailFetch"
+    private static let mailFetchInterval: TimeInterval = 12 * 60 * 60
 
     func application(
         _ application: UIApplication,
@@ -51,6 +57,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         ) { [weak self] task in
             self?.handleInboxRefresh(task as? BGAppRefreshTask)
         }
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: Self.mailFetchTaskID, using: nil
+        ) { [weak self] task in
+            self?.handleMailFetch(task as? BGProcessingTask)
+        }
 
         Task {
             await SocialMessageCenter.shared.ensureSubscription()
@@ -59,11 +70,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         }
         Task { await IncomingMailImporter.shared.importNewMail() }
         scheduleInboxRefresh()
+        scheduleMailFetch()
         return true
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         scheduleInboxRefresh()
+        scheduleMailFetch()
     }
 
     private func scheduleInboxRefresh() {
@@ -82,10 +95,39 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         scheduleInboxRefresh() // chain the next one
         let work = Task {
             await SocialMessageCenter.shared.processInbox(trigger: "bgRefresh")
+            // Opportunistically pull mail too — the more often we run, the more
+            // likely a newsletter reaches Kindle promptly.
+            await IncomingMailImporter.shared.importNewMail()
             task.setTaskCompleted(success: true)
         }
         task.expirationHandler = {
             DiagnosticLog.shared.record("bg-refresh task expired", category: "push")
+            work.cancel()
+        }
+    }
+
+    private func scheduleMailFetch() {
+        let request = BGProcessingTaskRequest(identifier: Self.mailFetchTaskID)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: Self.mailFetchInterval)
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = false
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            logger.error("Couldn't schedule mail fetch: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func handleMailFetch(_ task: BGProcessingTask?) {
+        guard let task else { return }
+        DiagnosticLog.shared.record("mail-fetch task fired", category: "mail")
+        scheduleMailFetch() // chain the next one (~twice daily)
+        let work = Task {
+            await IncomingMailImporter.shared.importNewMail()
+            task.setTaskCompleted(success: true)
+        }
+        task.expirationHandler = {
+            DiagnosticLog.shared.record("mail-fetch task expired", category: "mail")
             work.cancel()
         }
     }

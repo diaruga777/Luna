@@ -10,7 +10,7 @@ import UIKit
 /// the shared email account, Send-to-Kindle, and Import-from-Email.
 final class EmailAndKindleSettingsScreen: UITableViewController {
 
-    private enum Section: Int, CaseIterable { case account, kindle, importMail }
+    private enum Section: Int, CaseIterable { case account, kindle, importMail, subjectFilters }
 
     /// Field tags for the text fields.
     private enum Field: Int { case host = 1, username, password, kindleAddress }
@@ -39,6 +39,7 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         case .account: return 1 /* provider */ + accountRows.count
         case .kindle: return 3 /* mode, kindle address, test send */
         case .importMail: return 2 /* enabled, auto-send */ + IncomingMailSettings.allowedSenders.count + 1 /* add */
+        case .subjectFilters: return IncomingMailSettings.subjectFilters.count + 1 /* add */
         }
     }
 
@@ -47,6 +48,7 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         case .account: return "Email Account"
         case .kindle: return "Send to Kindle"
         case .importMail: return "Import from Email"
+        case .subjectFilters: return "Subject Filters"
         }
     }
 
@@ -57,7 +59,9 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         case .kindle:
             return "Articles are emailed as EPUBs. Amazon only accepts mail from approved senders — add the account email at amazon.com → Manage Your Content and Devices → Preferences → Personal Document Settings. \"Double Save\" sends when you save the same page twice quickly."
         case .importMail:
-            return "On launch, new email from an allowed sender becomes a reading-list item (first link in the message). Optionally forward those to Kindle too."
+            return "New email from an allowed sender becomes a reading-list item. A background job also checks roughly twice a day, so newsletters arrive (and forward to Kindle, if enabled) even when the app is closed."
+        case .subjectFilters:
+            return "Also import any email whose subject contains one of these phrases, regardless of sender (e.g. \"Money Stuff\"). Matched as a case-insensitive substring."
         }
     }
 
@@ -132,6 +136,15 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
                     cell.selectionStyle = .default
                 }
             }
+
+        case .subjectFilters:
+            if indexPath.row < IncomingMailSettings.subjectFilters.count {
+                content.text = IncomingMailSettings.subjectFilters[indexPath.row]
+            } else {
+                content.text = "Add Subject Filter…"
+                content.textProperties.color = view.tintColor ?? .systemBlue
+                cell.selectionStyle = .default
+            }
         }
         cell.contentConfiguration = content
         return cell
@@ -144,15 +157,23 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
             sendTestEmail()
         case .importMail where indexPath.row - 2 == IncomingMailSettings.allowedSenders.count:
             promptForSender()
+        case .subjectFilters where indexPath.row == IncomingMailSettings.subjectFilters.count:
+            promptForSubjectFilter()
         default:
             break
         }
     }
 
     override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        Section(rawValue: indexPath.section) == .importMail
-            && indexPath.row >= 2
-            && indexPath.row - 2 < IncomingMailSettings.allowedSenders.count
+        switch Section(rawValue: indexPath.section) {
+        case .importMail:
+            return indexPath.row >= 2
+                && indexPath.row - 2 < IncomingMailSettings.allowedSenders.count
+        case .subjectFilters:
+            return indexPath.row < IncomingMailSettings.subjectFilters.count
+        default:
+            return false
+        }
     }
 
     override func tableView(
@@ -160,7 +181,14 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         forRowAt indexPath: IndexPath
     ) {
         guard editingStyle == .delete else { return }
-        IncomingMailSettings.removeSender(at: indexPath.row - 2)
+        switch Section(rawValue: indexPath.section) {
+        case .importMail:
+            IncomingMailSettings.removeSender(at: indexPath.row - 2)
+        case .subjectFilters:
+            IncomingMailSettings.removeSubjectFilter(at: indexPath.row)
+        default:
+            return
+        }
         tableView.deleteRows(at: [indexPath], with: .automatic)
     }
 
@@ -260,6 +288,25 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         alert.addAction(UIAlertAction(title: "Add", style: .default) { [weak self, weak alert] _ in
             guard let text = alert?.textFields?.first?.text else { return }
             IncomingMailSettings.addSender(text)
+            self?.tableView.reloadData()
+        })
+        present(alert, animated: true)
+    }
+
+    private func promptForSubjectFilter() {
+        let alert = UIAlertController(
+            title: "Add Subject Filter",
+            message: "Email whose subject contains this phrase will be imported, regardless of sender.",
+            preferredStyle: .alert)
+        alert.addTextField { field in
+            field.placeholder = "Money Stuff"
+            field.autocapitalizationType = .sentences
+            field.autocorrectionType = .default
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Add", style: .default) { [weak self, weak alert] _ in
+            guard let text = alert?.textFields?.first?.text else { return }
+            IncomingMailSettings.addSubjectFilter(text)
             self?.tableView.reloadData()
         })
         present(alert, animated: true)

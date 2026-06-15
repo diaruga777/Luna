@@ -11,6 +11,7 @@ import Foundation
 enum IncomingMailSettings {
     private static let enabledKey = "incomingMailEnabled"
     private static let sendersKey = "incomingMailAllowedSenders"
+    private static let subjectFiltersKey = "incomingMailSubjectFilters"
     private static let lastUIDKey = "incomingMailLastUID"
     private static let uidValidityKey = "incomingMailUIDValidity"
     private static let autoSendKey = "incomingMailAutoSendToKindle"
@@ -31,6 +32,14 @@ enum IncomingMailSettings {
     static var allowedSenders: [String] {
         get { UserDefaults.standard.stringArray(forKey: sendersKey) ?? [] }
         set { UserDefaults.standard.set(newValue, forKey: sendersKey) }
+    }
+
+    /// Subject-line substrings; mail whose subject fuzzily contains any of these
+    /// is imported regardless of sender (e.g. "Money Stuff"). Matched
+    /// server-side via IMAP `SUBJECT` search (case-insensitive substring).
+    static var subjectFilters: [String] {
+        get { UserDefaults.standard.stringArray(forKey: subjectFiltersKey) ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: subjectFiltersKey) }
     }
 
     /// Highest IMAP UID processed (dedupe cursor).
@@ -55,5 +64,18 @@ enum IncomingMailSettings {
     static func removeSender(at index: Int) {
         guard allowedSenders.indices.contains(index) else { return }
         allowedSenders.remove(at: index)
+    }
+
+    static func addSubjectFilter(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !subjectFilters.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame })
+        else { return }
+        subjectFilters.append(trimmed)
+    }
+
+    static func removeSubjectFilter(at index: Int) {
+        guard subjectFilters.indices.contains(index) else { return }
+        subjectFilters.remove(at: index)
     }
 }

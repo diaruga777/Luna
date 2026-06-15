@@ -28,6 +28,16 @@ final class GmailIMAPClientTests: XCTestCase {
         XCTAssertEqual(GmailIMAPClient.parseSearchUIDs(["* SEARCH", "a3 OK"]), [])
     }
 
+    func testNewSearchUIDsFiltersStaleHighestUID() {
+        // `UID SEARCH UID N:*` returns the highest UID even when it's <= afterUID
+        // (the cause of the re-import loop): it must be filtered out.
+        XCTAssertEqual(
+            GmailIMAPClient.newSearchUIDs(["* SEARCH 59964", "a3 OK"], afterUID: 59964), [])
+        XCTAssertEqual(
+            GmailIMAPClient.newSearchUIDs(["* SEARCH 59964 59970", "a3 OK"], afterUID: 59964),
+            [59970])
+    }
+
     func testParseHeaders() {
         let raw = "From: Alice <a@b.com>\r\nSubject: Read this\r\nDate: Mon, 16 Jun 2026 10:00:00 -0700\r\n"
         let headers = GmailIMAPClient.parseHeaders(raw)
@@ -72,12 +82,16 @@ final class GmailIMAPClientTests: XCTestCase {
 private final class MockIMAPClient: IMAPFetching {
     var outcome: IMAPFetchOutcome
     private(set) var lastAfterUID: Int?
+    private(set) var lastSenders: [String]?
+    private(set) var lastSubjectFilters: [String]?
     init(outcome: IMAPFetchOutcome) { self.outcome = outcome }
     func fetchNewMessages(
-        account: String, password: String, senders: [String],
+        account: String, password: String, senders: [String], subjectFilters: [String],
         afterUID: Int, knownUIDValidity: Int?
     ) async throws -> IMAPFetchOutcome {
         lastAfterUID = afterUID
+        lastSenders = senders
+        lastSubjectFilters = subjectFilters
         return outcome
     }
 }
@@ -101,6 +115,7 @@ final class IncomingMailImporterTests: XCTestCase {
         KindleSendSettings.smtpUsername = "me@gmail.com"
         IncomingMailSettings.isEnabled = true
         IncomingMailSettings.allowedSenders = ["sender@example.com"]
+        IncomingMailSettings.subjectFilters = []
         IncomingMailSettings.lastUID = 5
         IncomingMailSettings.uidValidity = 1
     }
@@ -109,13 +124,14 @@ final class IncomingMailImporterTests: XCTestCase {
         try? FileManager.default.removeItem(at: scratch)
         IncomingMailSettings.isEnabled = false
         IncomingMailSettings.allowedSenders = []
+        IncomingMailSettings.subjectFilters = []
         super.tearDown()
     }
 
     func testImportsEmailBodyAsArticleAndAdvancesCursor() async {
         let message = IncomingMessage(
             uid: 9, from: "Daily News <news@example.com>", subject: "Today's Stories",
-            date: "Mon, 16 Jun 2026 10:00:00 -0700",
+            date: "Mon, 16 Jun 2026 10:00:00 -0700", contentType: "text/plain", transferEncoding: "7bit",
             body: "First story paragraph.\n\nSecond story paragraph.\n\nUnsubscribe here.",
             urls: [])
         let client = MockIMAPClient(outcome: IMAPFetchOutcome(
@@ -134,6 +150,21 @@ final class IncomingMailImporterTests: XCTestCase {
         XCTAssertEqual(content?.blocks.count, 2, "footer ('Unsubscribe') trimmed")
         XCTAssertEqual(IncomingMailSettings.lastUID, 9)
         XCTAssertEqual(client.lastAfterUID, 5)
+    }
+
+    func testPassesSubjectFiltersAndRunsWithoutSenders() async {
+        IncomingMailSettings.allowedSenders = []
+        IncomingMailSettings.subjectFilters = ["Money Stuff"]
+        let client = MockIMAPClient(outcome: IMAPFetchOutcome(
+            uidValidity: 1, highestUID: 5, messages: []))
+        let importer = IncomingMailImporter(
+            makeClient: { client }, credentials: credentials, store: store, ingest: { _ in })
+
+        await importer.importNewMail()
+
+        XCTAssertEqual(client.lastSubjectFilters, ["Money Stuff"])
+        XCTAssertEqual(client.lastSenders, [])
+        XCTAssertEqual(client.lastAfterUID, 5, "subject-only config still runs")
     }
 
     func testSkipsWhenDisabled() async {

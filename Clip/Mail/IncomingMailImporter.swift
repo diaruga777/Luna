@@ -40,11 +40,12 @@ final class IncomingMailImporter {
         }
     }
 
-    /// Whether incoming import can run (enabled, has senders, has a Gmail
-    /// account + password).
+    /// Whether incoming import can run (enabled, has at least one sender or
+    /// subject filter, has a Gmail account + password).
     var isConfigured: Bool {
         IncomingMailSettings.isEnabled
-            && !IncomingMailSettings.allowedSenders.isEmpty
+            && !(IncomingMailSettings.allowedSenders.isEmpty
+                 && IncomingMailSettings.subjectFilters.isEmpty)
             && !KindleSendSettings.smtpUsername.isEmpty
             && !(credentials.smtpPassword() ?? "").isEmpty
     }
@@ -62,6 +63,7 @@ final class IncomingMailImporter {
             let outcome = try await makeClient().fetchNewMessages(
                 account: account, password: password,
                 senders: IncomingMailSettings.allowedSenders,
+                subjectFilters: IncomingMailSettings.subjectFilters,
                 afterUID: IncomingMailSettings.lastUID,
                 knownUIDValidity: IncomingMailSettings.uidValidity == 0
                     ? nil : IncomingMailSettings.uidValidity)

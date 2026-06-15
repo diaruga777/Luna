@@ -25,13 +25,16 @@ enum MailArticleBuilder {
         let title = decodeEncodedWords(message.subject).trimmingCharacters(in: .whitespacesAndNewlines)
         let author = senderName(from: message.from)
 
-        // Decode quoted-printable bodies before parsing.
-        let raw = message.body
-        let decoded = (raw.contains("=\r\n") || raw.contains("=\n") || raw.contains("=3D"))
-            ? GmailIMAPClient.decodeQuotedPrintable(raw) : raw
+        // Walk the MIME structure to the richest text part (newsletters carry a
+        // base64/quoted-printable text/html part inside multipart/alternative).
+        let extracted = MIMEBody.extract(
+            rawBody: message.body,
+            contentType: message.contentType,
+            transferEncoding: message.transferEncoding)
+        let decoded = extracted.text
 
         let blocks: [ArticleContent.Block]
-        if looksLikeHTML(decoded) {
+        if extracted.isHTML || looksLikeHTML(decoded) {
             // Reuse the readability extractor; placeholder base URL for relative links.
             let base = URL(string: "https://mail.invalid") ?? URL(fileURLWithPath: "/")
             if let extracted = try? ArticleExtractor().extract(html: decoded, baseURL: base),

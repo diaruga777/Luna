@@ -13,6 +13,10 @@ struct IncomingMessage: Equatable {
     let from: String
     let subject: String
     let date: String
+    /// Top-level `Content-Type` (carries the multipart boundary, if any).
+    let contentType: String
+    /// Top-level `Content-Transfer-Encoding` (base64 / quoted-printable / …).
+    let transferEncoding: String
     let body: String
     /// URLs detected in the body (plain text + any HTML hrefs).
     let urls: [URL]
@@ -29,11 +33,12 @@ struct IMAPFetchOutcome: Equatable {
 /// Reads new messages from allowed senders. The concrete client speaks IMAP
 /// over TLS; tests use a mock.
 protocol IMAPFetching {
-    /// Connects, logs in, and returns messages from `senders` with UID greater
-    /// than `afterUID`. `knownUIDValidity` lets the client reset `afterUID` when
-    /// the mailbox was recreated. Returns nil-equivalent empty when nothing new.
+    /// Connects, logs in, and returns messages with UID greater than `afterUID`
+    /// that match any allowed `senders` (FROM) OR any `subjectFilters` (SUBJECT,
+    /// case-insensitive substring). `knownUIDValidity` lets the client reset
+    /// `afterUID` when the mailbox was recreated. Empty when nothing new.
     func fetchNewMessages(
-        account: String, password: String, senders: [String],
+        account: String, password: String, senders: [String], subjectFilters: [String],
         afterUID: Int, knownUIDValidity: Int?
     ) async throws -> IMAPFetchOutcome
 }
@@ -63,7 +68,7 @@ final class GmailIMAPClient: IMAPFetching {
     }
 
     func fetchNewMessages(
-        account: String, password: String, senders: [String],
+        account: String, password: String, senders: [String], subjectFilters: [String],
         afterUID: Int, knownUIDValidity: Int?
     ) async throws -> IMAPFetchOutcome {
         defer { connection.cancel() }
@@ -77,52 +82,67 @@ final class GmailIMAPClient: IMAPFetching {
 
         // First run (or a mailbox reset) starts from "now" so we don't import the
         // entire backlog — only mail that arrives after the feature is enabled.
-        var startUID = afterUID + 1
+        let startUID = afterUID + 1
         if afterUID == 0 || knownUIDValidity != uidValidity {
             return IMAPFetchOutcome(uidValidity: uidValidity, highestUID: uidNext - 1, messages: [])
         }
 
-        var messages: [IncomingMessage] = []
-        var highestUID = afterUID
+        // Collect UIDs matching any allowed sender (FROM) or subject filter
+        // (SUBJECT), deduped — a message may match more than one criterion.
+        var matchedUIDs = Set<Int>()
         for sender in senders {
             let search = try await run(
                 "UID SEARCH UID \(startUID):* FROM \(Self.quoted(sender))", step: "search")
-            let uids = Self.parseSearchUIDs(search.lines)
+            let uids = Self.newSearchUIDs(search.lines, afterUID: afterUID)
             DiagnosticLog.shared.record(
                 "imap: sender \(sender) → \(uids.count) new uid(s) (after uid \(afterUID))",
                 category: "mail")
-            for uid in uids {
-                let fetch = try await run(
-                    "UID FETCH \(uid) (UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[TEXT])",
-                    step: "fetch")
-                highestUID = max(highestUID, uid)
-                guard fetch.literals.count >= 2 else {
-                    DiagnosticLog.shared.record(
-                        "imap: uid \(uid) fetch returned \(fetch.literals.count) literal(s); skipping",
-                        category: "mail")
-                    continue
-                }
-                let headers = Self.parseHeaders(String(decoding: fetch.literals[0], as: UTF8.self))
-                let body = String(decoding: fetch.literals[1], as: UTF8.self)
-                let urls = Self.extractURLs(from: body)
-                let snippet = body.prefix(140)
-                    .replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
-                DiagnosticLog.shared.record(
-                    "imap: uid \(uid) from=\(headers["from"] ?? "?") subj=\"\(headers["subject"] ?? "")\" bodyLen=\(body.count) urls=\(urls.count) head=\"\(snippet)\"",
-                    category: "mail")
-                messages.append(IncomingMessage(
-                    uid: uid,
-                    from: headers["from"] ?? sender,
-                    subject: headers["subject"] ?? "",
-                    date: headers["date"] ?? "",
-                    body: body,
-                    urls: urls))
-                // Courtesy: mark read so it doesn't show unread in Gmail. Dedup
-                // relies on UID, not this.
-                _ = try? await run("UID STORE \(uid) +FLAGS (\\Seen)", step: "store")
-            }
+            matchedUIDs.formUnion(uids)
         }
-        startUID = highestUID + 1
+        for filter in subjectFilters {
+            let search = try await run(
+                "UID SEARCH UID \(startUID):* SUBJECT \(Self.quoted(filter))", step: "search")
+            let uids = Self.newSearchUIDs(search.lines, afterUID: afterUID)
+            DiagnosticLog.shared.record(
+                "imap: subject \"\(filter)\" → \(uids.count) new uid(s) (after uid \(afterUID))",
+                category: "mail")
+            matchedUIDs.formUnion(uids)
+        }
+
+        var messages: [IncomingMessage] = []
+        var highestUID = afterUID
+        for uid in matchedUIDs.sorted() {
+            let fetch = try await run(
+                "UID FETCH \(uid) (UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE CONTENT-TYPE CONTENT-TRANSFER-ENCODING)] BODY.PEEK[TEXT])",
+                step: "fetch")
+            highestUID = max(highestUID, uid)
+            guard fetch.literals.count >= 2 else {
+                DiagnosticLog.shared.record(
+                    "imap: uid \(uid) fetch returned \(fetch.literals.count) literal(s); skipping",
+                    category: "mail")
+                continue
+            }
+            let headers = Self.parseHeaders(String(decoding: fetch.literals[0], as: UTF8.self))
+            let body = String(decoding: fetch.literals[1], as: UTF8.self)
+            let urls = Self.extractURLs(from: body)
+            let snippet = body.prefix(140)
+                .replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
+            DiagnosticLog.shared.record(
+                "imap: uid \(uid) from=\(headers["from"] ?? "?") subj=\"\(headers["subject"] ?? "")\" type=\(headers["content-type"]?.prefix(40) ?? "?") bodyLen=\(body.count) urls=\(urls.count) head=\"\(snippet)\"",
+                category: "mail")
+            messages.append(IncomingMessage(
+                uid: uid,
+                from: headers["from"] ?? "",
+                subject: headers["subject"] ?? "",
+                date: headers["date"] ?? "",
+                contentType: headers["content-type"] ?? "",
+                transferEncoding: headers["content-transfer-encoding"] ?? "",
+                body: body,
+                urls: urls))
+            // Courtesy: mark read so it doesn't show unread in Gmail. Dedup
+            // relies on UID, not this.
+            _ = try? await run("UID STORE \(uid) +FLAGS (\\Seen)", step: "store")
+        }
         try? await run("LOGOUT", step: "logout")
         return IMAPFetchOutcome(
             uidValidity: uidValidity, highestUID: highestUID, messages: messages)
@@ -198,6 +218,15 @@ final class GmailIMAPClient: IMAPFetching {
             return line.split(separator: " ").compactMap { Int($0) }
         }
         return []
+    }
+
+    /// New UIDs from a `* SEARCH` response, keeping only those strictly greater
+    /// than `afterUID`. IMAP `UID SEARCH UID N:*` returns the highest existing
+    /// UID even when it's below N — the range `N:*` is order-independent and `*`
+    /// is the last message — so without this filter the newest message would
+    /// re-import on every poll.
+    static func newSearchUIDs(_ lines: [String], afterUID: Int) -> [Int] {
+        parseSearchUIDs(lines).filter { $0 > afterUID }
     }
 
     /// Parses `Key: value` headers (lowercased keys; unfolds simple folds).

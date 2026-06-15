@@ -20,16 +20,29 @@ final class ShareViewController: UIViewController {
     /// covers .txt, .md/.markdown, and most source/plain formats.
     private static let documentTypes: [UTType] = [.pdf, .rtf, .plainText, .text]
 
+    /// True when hosted by the "Read in Click" action extension
+    /// (`com.apple.ui-services`) rather than the zero-UI share extension
+    /// (`com.apple.share-services`). The action extension always opens the
+    /// reader; the share extension only does when the user enabled it.
+    private var isActionExtension: Bool {
+        let nsExtension = Bundle.main.infoDictionary?["NSExtension"] as? [String: Any]
+        return (nsExtension?["NSExtensionPointIdentifier"] as? String) == "com.apple.ui-services"
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
 
+        let host = isActionExtension ? "action" : "share"
         guard let providers = (extensionContext?.inputItems.first as? NSExtensionItem)?.attachments,
               !providers.isEmpty
         else {
+            SharedDiagnosticLog.record("\(host) extension: no attachments, completing", category: "share")
             complete()
             return
         }
+        SharedDiagnosticLog.record(
+            "\(host) extension: \(providers.count) attachment(s)", category: "share")
 
         // Tapped a Click friend suggestion: the conversation identifier is the
         // friend's UUID. Queue the URL for the main app to send.
@@ -81,17 +94,31 @@ final class ShareViewController: UIViewController {
             if let url = value as? URL {
                 if url.absoluteString.hasPrefix("http") {
                     SharedReadingListAppender.append(urlString: url.absoluteString)
-                    // Optionally open the article in an in-sheet reader.
-                    if let mode = ShareReaderViewController.Mode(rawValue: self.shareExperience()) {
+                    SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
+                    // Open the article in an in-sheet reader: always for the
+                    // "Read in Click" action extension, and for the share
+                    // extension only when the user picked a reader experience.
+                    if let mode = self.readerMode() {
                         DispatchQueue.main.async { self.presentReader(url: url, mode: mode) }
                         return
                     }
                 } else if url.isFileURL {
                     SharedReadingListAppender.appendDocument(sourceURL: url)
+                    SharedDiagnosticLog.record("saved file \(url.lastPathComponent)", category: "share")
                 }
+            } else {
+                SharedDiagnosticLog.record("url attachment had no URL value", category: "share")
             }
             self.complete()
         }
+    }
+
+    /// The reader mode to present, or nil to save silently. The action extension
+    /// always reads (defaulting to the scroll reader); the share extension reads
+    /// only when the user picked a non-"off" share-sheet experience.
+    private func readerMode() -> ShareReaderViewController.Mode? {
+        let configured = ShareReaderViewController.Mode(rawValue: shareExperience())
+        return isActionExtension ? (configured ?? .reader) : configured
     }
 
     /// The configured share-sheet experience (read from the App Group, written

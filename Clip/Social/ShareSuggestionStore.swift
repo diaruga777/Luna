@@ -153,6 +153,23 @@ final class ShareSuggestionStore {
 
     // MARK: - Friends-screen support
 
+    /// A friend to suggest sharing a given URL with, based on this site's
+    /// history: the current streak friend, else any auto-share friend. Used by
+    /// the end-of-article share UI. nil when there's nothing to suggest.
+    func suggestedFriend(forURLString urlString: String) -> (uuid: UUID, username: String)? {
+        guard let base = Self.baseURL(of: urlString),
+              let rule = loadState().rules[base]
+        else { return nil }
+        if let uuid = rule.streakFriendUUID, let name = rule.streakFriendUsername,
+           rule.streakCount >= 1, !rule.suppressedFriendUUIDs.contains(uuid) {
+            return (uuid, name)
+        }
+        if let (uuid, name) = rule.alwaysFriends.first {
+            return (uuid, name)
+        }
+        return nil
+    }
+
     /// Whether a base URL is auto-shared to a friend.
     func isAlwaysShared(baseURL: String, friendUUID: UUID) -> Bool {
         loadState().rules[baseURL]?.alwaysFriends[friendUUID] != nil

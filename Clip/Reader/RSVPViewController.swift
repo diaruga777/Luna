@@ -41,6 +41,10 @@ final class RSVPViewController: UIViewController {
     private let focusPill = GlassStyle.focusPill()
     private let playPauseButton = UIButton(type: .system)
     private let scrubber = UISlider()
+    private let controlsStack = UIStackView()
+    /// Revealed (above the controls) when the reader reaches the end.
+    private lazy var shareView = makeShareView()
+    private var didRevealShare = false
     private let statusLabel = UILabel()
     private let wpmDownButton = UIButton(type: .system)
     private let wpmUpButton = UIButton(type: .system)
@@ -190,16 +194,28 @@ final class RSVPViewController: UIViewController {
             speedRow.addSubview(button)
         }
 
-        let controls = UIStackView(arrangedSubviews: [scrubber, statusLabel, speedRow])
-        controls.axis = .vertical
-        controls.spacing = 12
-        controls.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(controls)
+        controlsStack.addArrangedSubview(scrubber)
+        controlsStack.addArrangedSubview(statusLabel)
+        controlsStack.addArrangedSubview(speedRow)
+        controlsStack.axis = .vertical
+        controlsStack.spacing = 12
+        controlsStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(controlsStack)
+
+        // Hidden until the reader finishes; sits above the controls so it never
+        // obscures them.
+        shareView.isHidden = true
+        shareView.alpha = 0
+        shareView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(shareView)
 
         NSLayoutConstraint.activate([
-            controls.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            controls.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
-            controls.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+            controlsStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            controlsStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            controlsStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+            shareView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            shareView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            shareView.bottomAnchor.constraint(equalTo: controlsStack.topAnchor, constant: -16),
             speedRow.heightAnchor.constraint(equalToConstant: 56),
             playPauseButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             playPauseButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
@@ -208,6 +224,33 @@ final class RSVPViewController: UIViewController {
             wpmUpButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 110),
             wpmUpButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
         ])
+    }
+
+    // MARK: - End-of-article share
+
+    private func makeShareView() -> ArticleShareView {
+        let suggestion = ShareSuggestionStore.shared.suggestedFriend(forURLString: item.urlString)
+        return ArticleShareView(
+            suggestionName: suggestion?.username,
+            onShare: { [weak self] in
+                guard let self else { return }
+                SendToFriendSheet.present(
+                    from: self, sourceView: self.shareView,
+                    urlString: self.item.urlString, title: self.item.title)
+            },
+            onSendSuggested: { [weak self] in
+                guard let self, let suggestion else { return }
+                SendToFriendSheet.sendToFriend(
+                    uuid: suggestion.uuid, urlString: self.item.urlString,
+                    title: self.item.title, from: self)
+            })
+    }
+
+    private func revealShareView() {
+        guard !didRevealShare else { return }
+        didRevealShare = true
+        shareView.isHidden = false
+        UIView.animate(withDuration: 0.3) { self.shareView.alpha = 1 }
     }
 
     // MARK: - Word display
@@ -321,6 +364,7 @@ final class RSVPViewController: UIViewController {
         }
         guard currentIndex < engine.words.count - 1 else {
             pause()
+            revealShareView()
             onFinishedReading?()
             return
         }
@@ -393,6 +437,7 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
         guard sentenceEnd < engine.words.count - 1 else {
             currentIndex = engine.words.count - 1
             pause()
+            revealShareView()
             onFinishedReading?()
             return
         }

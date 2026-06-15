@@ -45,6 +45,15 @@ enum SendToFriendSheet {
         presenter.present(sheet, animated: true)
     }
 
+    /// One-tap send to a specific friend (the end-of-article suggestion),
+    /// resolving the friend by UUID. Falls back silently if the friend is gone.
+    static func sendToFriend(
+        uuid: UUID, urlString: String, title: String?, from presenter: UIViewController
+    ) {
+        guard let friend = FriendsStore.shared.friend(withUUID: uuid) else { return }
+        deliver(urlString: urlString, title: title, to: friend, presenter: presenter)
+    }
+
     private static func deliver(
         urlString: String, title: String?, to friend: Friend,
         presenter: UIViewController

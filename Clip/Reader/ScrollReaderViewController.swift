@@ -43,6 +43,10 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
     // Eye tracking
     private var gazeTracker: EyeGazeWordTracker?
 
+    /// End-of-article share affordance, pinned below the text content.
+    private lazy var shareView = makeShareView()
+    private var contentSizeObservation: NSKeyValueObservation?
+
     // Matches the RSVP reader's liquid-glass focus accent (an inline text
     // highlight, since a glass overlay would sit in front of and blur the very
     // words being read).
@@ -65,6 +69,39 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
         speech?.stop()
         chunk?.stop()
         gazeTracker?.stop()
+        contentSizeObservation?.invalidate()
+    }
+
+    private func makeShareView() -> ArticleShareView {
+        let suggestion = ShareSuggestionStore.shared.suggestedFriend(forURLString: item.urlString)
+        return ArticleShareView(
+            suggestionName: suggestion?.username,
+            onShare: { [weak self] in
+                guard let self else { return }
+                SendToFriendSheet.present(
+                    from: self, sourceView: self.shareView,
+                    urlString: self.item.urlString, title: self.content.title)
+            },
+            onSendSuggested: { [weak self] in
+                guard let self, let suggestion else { return }
+                SendToFriendSheet.sendToFriend(
+                    uuid: suggestion.uuid, urlString: self.item.urlString,
+                    title: self.content.title, from: self)
+            })
+    }
+
+    /// Positions the share view just below the text content and reserves scroll
+    /// room for it (and the floating footer) so it clears the controls.
+    private func layoutShareView() {
+        let width = textView.bounds.width
+        guard width > 0 else { return }
+        let height = shareView.systemLayoutSizeFitting(
+            CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel).height
+        shareView.frame = CGRect(x: 0, y: textView.contentSize.height, width: width, height: height)
+        let footerSpace = footer.isHidden ? 0 : footer.bounds.height
+        textView.contentInset.bottom = height + footerSpace
     }
 
     override func viewDidLoad() {
@@ -96,6 +133,11 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
 
         configureFooter()
 
+        textView.addSubview(shareView)
+        contentSizeObservation = textView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+            self?.layoutShareView()
+        }
+
         // Force full text layout shortly after first paint: one early hitch
         // while the user starts reading, so link taps / split dismissals later
         // never stall on a whole-article layout pass.
@@ -114,6 +156,11 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
             gazeTracker = EyeGazeWordTracker(
                 textView: textView, wordMap: wordMap, seedWordIndex: item.eyeTrackedWordIndex)
         }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        layoutShareView()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -225,6 +272,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
         }
         followPlayback = true
         footer.isHidden = false
+        layoutShareView()
         speech?.play(fromWordIndex: resumeWordIndex)
     }
 
@@ -236,6 +284,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
         }
         followPlayback = true
         footer.isHidden = false
+        layoutShareView()
         footerRateButton.setTitle(chunk?.speedLabel, for: .normal)
         chunk?.play(fromWordIndex: resumeWordIndex)
     }

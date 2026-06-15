@@ -68,10 +68,32 @@ final class IncomingMailImporter {
 
             var imported = 0
             for message in outcome.messages {
-                guard let url = message.urls.first else { continue }
-                let item = store.add(urlString: url.absoluteString)
-                if item.state == .pending { ingest(item) }
-                imported += 1
+                if let content = MailArticleBuilder.article(from: message) {
+                    // Newsletters etc.: the email body IS the article. Save it
+                    // directly (no fetch), tagged with the sender.
+                    let item = store.add(urlString: "clipmail://\(message.uid)")
+                    if let sender = MailArticleBuilder.senderName(from: message.from) {
+                        store.setChannelName(sender, for: item.id)
+                    }
+                    _ = store.saveContent(content, for: item)
+                    imported += 1
+                    DiagnosticLog.shared.record(
+                        "incoming mail: imported uid \(message.uid) as article \"\(content.title)\" (\(content.blocks.count) blocks)",
+                        category: "mail")
+                    autoSendToKindleIfEnabled(itemID: item.id)
+                } else if let url = message.urls.first {
+                    // No usable body but there's a link — save + ingest it.
+                    let item = store.add(urlString: url.absoluteString)
+                    if item.state == .pending { ingest(item) }
+                    imported += 1
+                    DiagnosticLog.shared.record(
+                        "incoming mail: imported uid \(message.uid) as link \(url.absoluteString)",
+                        category: "mail")
+                } else {
+                    DiagnosticLog.shared.record(
+                        "incoming mail: uid \(message.uid) skipped — no article body and no link",
+                        category: "mail")
+                }
             }
             IncomingMailSettings.uidValidity = outcome.uidValidity
             IncomingMailSettings.lastUID = outcome.highestUID
@@ -82,5 +104,14 @@ final class IncomingMailImporter {
             DiagnosticLog.shared.record(
                 "incoming mail fetch failed: \(String(describing: error))", category: "mail")
         }
+    }
+
+    /// Forwards a just-imported article to Kindle when the user enabled it and
+    /// Send-to-Kindle is configured.
+    private func autoSendToKindleIfEnabled(itemID: UUID) {
+        guard IncomingMailSettings.autoSendToKindle,
+              ArticleSendCoordinator.shared.isConfigured,
+              let ready = store.item(withID: itemID), ready.state == .ready else { return }
+        Task { await ArticleSendCoordinator.shared.send(ready) }
     }
 }

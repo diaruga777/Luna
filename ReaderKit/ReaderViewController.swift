@@ -88,8 +88,8 @@ final class ReaderViewController: UIViewController {
         audioButton.addTarget(self, action: #selector(audioToggled), for: .touchUpInside)
         let audioItem = UIBarButtonItem(customView: audioButton)
         // Share button only when sharing is available (not in the share sheet)
-        // and there's a URL (documents have none).
-        if shareProvider != nil, !item.isDocument {
+        // and there's a real web URL (documents/emails have none).
+        if shareProvider != nil, item.isShareable {
             let shareButton = UIBarButtonItem(
                 image: UIImage(systemName: "square.and.arrow.up"), style: .plain,
                 target: self, action: #selector(shareTapped))

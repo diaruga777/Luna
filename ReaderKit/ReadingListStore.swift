@@ -251,6 +251,18 @@ final class ReadingListStore {
         return previous
     }
 
+    /// Sets the leading-label source (e.g. the email sender for imported mail,
+    /// shown where the host would be).
+    func setChannelName(_ name: String, for itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        guard let index = all.firstIndex(where: { $0.id == itemID }),
+              all[index].channelName != name else { return }
+        all[index].channelName = name
+        save(all)
+    }
+
     /// Records which friend shared this item to us (set once, on acceptance).
     func setSharedBy(_ username: String, for itemID: UUID) {
         mutationLock.lock()

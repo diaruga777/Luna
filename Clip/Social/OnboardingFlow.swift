@@ -27,19 +27,26 @@ enum OnboardingFlow {
     private static func notificationsStep(
         nav: UINavigationController, onFinished: @escaping () -> Void
     ) -> UIViewController {
-        OnboardingStepViewController(
+        // The Safari extension + Action Button save flow needs iOS 27+; on older
+        // versions, notifications is the last step.
+        let proceed: () -> Void = { [weak nav] in
+            if #available(iOS 27.0, *) {
+                nav?.pushViewController(safariStep(nav: nav, onFinished: onFinished), animated: true)
+            } else {
+                onFinished()
+            }
+        }
+        return OnboardingStepViewController(
             symbol: "bell.badge",
             title: "Stay in the Loop",
             body: "Get a notification the moment a friend shares an article with you.",
-            primary: .init(title: "Enable Notifications") { [weak nav] step in
+            primary: .init(title: "Enable Notifications") { _ in
                 NotificationManager.requestAuthorization()
                 UIApplication.shared.registerForRemoteNotifications()
-                nav?.pushViewController(safariStep(nav: nav, onFinished: onFinished), animated: true)
+                proceed()
             },
             continueTitle: "Not Now",
-            onContinue: { [weak nav] in
-                nav?.pushViewController(safariStep(nav: nav, onFinished: onFinished), animated: true)
-            })
+            onContinue: proceed)
     }
 
     private static func safariStep(

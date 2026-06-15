@@ -12,6 +12,7 @@ struct IncomingMessage: Equatable {
     let uid: Int
     let from: String
     let subject: String
+    let date: String
     let body: String
     /// URLs detected in the body (plain text + any HTML hrefs).
     let urls: [URL]
@@ -86,20 +87,36 @@ final class GmailIMAPClient: IMAPFetching {
         for sender in senders {
             let search = try await run(
                 "UID SEARCH UID \(startUID):* FROM \(Self.quoted(sender))", step: "search")
-            for uid in Self.parseSearchUIDs(search.lines) {
+            let uids = Self.parseSearchUIDs(search.lines)
+            DiagnosticLog.shared.record(
+                "imap: sender \(sender) → \(uids.count) new uid(s) (after uid \(afterUID))",
+                category: "mail")
+            for uid in uids {
                 let fetch = try await run(
                     "UID FETCH \(uid) (UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[TEXT])",
                     step: "fetch")
-                guard fetch.literals.count >= 2 else { continue }
+                highestUID = max(highestUID, uid)
+                guard fetch.literals.count >= 2 else {
+                    DiagnosticLog.shared.record(
+                        "imap: uid \(uid) fetch returned \(fetch.literals.count) literal(s); skipping",
+                        category: "mail")
+                    continue
+                }
                 let headers = Self.parseHeaders(String(decoding: fetch.literals[0], as: UTF8.self))
                 let body = String(decoding: fetch.literals[1], as: UTF8.self)
+                let urls = Self.extractURLs(from: body)
+                let snippet = body.prefix(140)
+                    .replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
+                DiagnosticLog.shared.record(
+                    "imap: uid \(uid) from=\(headers["from"] ?? "?") subj=\"\(headers["subject"] ?? "")\" bodyLen=\(body.count) urls=\(urls.count) head=\"\(snippet)\"",
+                    category: "mail")
                 messages.append(IncomingMessage(
                     uid: uid,
                     from: headers["from"] ?? sender,
                     subject: headers["subject"] ?? "",
+                    date: headers["date"] ?? "",
                     body: body,
-                    urls: Self.extractURLs(from: body)))
-                highestUID = max(highestUID, uid)
+                    urls: urls))
                 // Courtesy: mark read so it doesn't show unread in Gmail. Dedup
                 // relies on UID, not this.
                 _ = try? await run("UID STORE \(uid) +FLAGS (\\Seen)", step: "store")

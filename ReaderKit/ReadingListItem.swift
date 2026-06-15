@@ -98,8 +98,15 @@ struct ReadingListItem: Codable, Identifiable {
     /// An imported document (PDF/text/etc.) rather than a web link or video.
     var isDocument: Bool { documentType != nil }
 
-    /// Documents have no real URL to send to other users.
-    var canShareToFriends: Bool { !isDocument }
+    /// Whether this item has a real web URL that can be shared (false for
+    /// documents and imported emails, whose URLs are synthetic `clip…://` ones).
+    var isShareable: Bool {
+        guard let scheme = url?.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
+    }
+
+    /// Only items with a real web URL can be sent to other users.
+    var canShareToFriends: Bool { isShareable }
 
     /// The `clipdoc://` identity used for imported documents (no web URL).
     static func documentURLString(id: UUID) -> String { "clipdoc://\(id.uuidString)" }

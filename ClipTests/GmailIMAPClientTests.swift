@@ -112,10 +112,12 @@ final class IncomingMailImporterTests: XCTestCase {
         super.tearDown()
     }
 
-    func testImportsFirstURLOfEachMessageAndAdvancesCursor() async {
+    func testImportsEmailBodyAsArticleAndAdvancesCursor() async {
         let message = IncomingMessage(
-            uid: 9, from: "sender@example.com", subject: "Hi",
-            body: "link: https://example.com/x", urls: [URL(string: "https://example.com/x")!])
+            uid: 9, from: "Daily News <news@example.com>", subject: "Today's Stories",
+            date: "Mon, 16 Jun 2026 10:00:00 -0700",
+            body: "First story paragraph.\n\nSecond story paragraph.\n\nUnsubscribe here.",
+            urls: [])
         let client = MockIMAPClient(outcome: IMAPFetchOutcome(
             uidValidity: 1, highestUID: 9, messages: [message]))
         let importer = IncomingMailImporter(
@@ -124,9 +126,12 @@ final class IncomingMailImporterTests: XCTestCase {
 
         await importer.importNewMail()
 
-        XCTAssertEqual(store.item(forURLString: "https://example.com/x")?.urlString,
-                       "https://example.com/x")
-        XCTAssertEqual(ingested, ["https://example.com/x"])
+        let item = store.item(forURLString: "clipmail://9")
+        XCTAssertNotNil(item, "email saved as a clipmail:// article")
+        XCTAssertEqual(item?.channelName, "Daily News")
+        XCTAssertEqual(item?.title, "Today's Stories")
+        let content = item.flatMap { store.content(for: $0) }
+        XCTAssertEqual(content?.blocks.count, 2, "footer ('Unsubscribe') trimmed")
         XCTAssertEqual(IncomingMailSettings.lastUID, 9)
         XCTAssertEqual(client.lastAfterUID, 5)
     }

@@ -264,8 +264,8 @@ final class RSVPViewController: UIViewController {
     }
 
     private func revealShareView() {
-        // No share affordance in the share sheet.
-        guard shareProvider != nil, !didRevealShare else { return }
+        // No share affordance in the share sheet or for non-shareable items.
+        guard shareProvider != nil, item.isShareable, !didRevealShare else { return }
         didRevealShare = true
         shareView.isHidden = false
         UIView.animate(withDuration: 0.3) { self.shareView.alpha = 1 }

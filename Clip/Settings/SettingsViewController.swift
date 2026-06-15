@@ -332,7 +332,11 @@ final class ShortcutSettingsScreen: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Save the Safari page you're reading with one press of the Action Button: enable the Clip Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"Clip Safari Page\" in Settings → Action Button.\n\n\(safariStatusText)"
+        let base = "Save the Safari page you're reading with one press of the Action Button: enable the Clip Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"Clip Safari Page\" in Settings → Action Button.\n\n\(safariStatusText)"
+        if #unavailable(iOS 27.0) {
+            return "⚠️ One-press Safari saving requires iOS 27 or later.\n\n" + base
+        }
+        return base
     }
 
     override func tableView(

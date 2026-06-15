@@ -6,10 +6,11 @@
 import AVFoundation
 import UIKit
 
-/// RSVP (one-word-at-a-time) speed reader, ReadMaxx-style: dark screen, fixed
-/// focal column with a guideline, red ORP letter, word-length-aware timing with
-/// sentence/paragraph pauses, scrubbing, live speed adjustment, and an optional
-/// read-aloud mode where speech paces the display instead of the WPM timer.
+/// RSVP (one-word-at-a-time) speed reader, ReadMaxx-style: a liquid-glass focus
+/// capsule behind the focal word, the ORP letter tinted in the reading accent,
+/// word-length-aware timing with sentence/paragraph pauses, scrubbing, live
+/// speed adjustment, and an optional read-aloud mode where speech paces the
+/// display instead of the WPM timer.
 final class RSVPViewController: UIViewController {
 
     /// Fired once when playback reaches the last word.
@@ -35,10 +36,9 @@ final class RSVPViewController: UIViewController {
     private var speechWordOffsets: [Int] = []
 
     private let wordLabel = UILabel()
-    private let guidelineTop = UIView()
-    private let guidelineBottom = UIView()
-    private let hairlineTop = UIView()
-    private let hairlineBottom = UIView()
+    /// Liquid-glass capsule behind the focal word, replacing the old red
+    /// guideline notches.
+    private let focusPill = GlassStyle.focusPill()
     private let playPauseButton = UIButton(type: .system)
     private let scrubber = UISlider()
     private let statusLabel = UILabel()
@@ -101,7 +101,7 @@ final class RSVPViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
-        configureGuidelines()
+        configureFocusPill()
         configureWordLabel()
         configureControls()
 
@@ -120,7 +120,7 @@ final class RSVPViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        layoutGuidelines()
+        layoutFocusPill()
         showWord(at: currentIndex)
     }
 
@@ -132,27 +132,21 @@ final class RSVPViewController: UIViewController {
 
     // MARK: - Setup
 
-    private func configureGuidelines() {
-        for line in [guidelineTop, guidelineBottom] {
-            line.backgroundColor = .systemRed
-            view.addSubview(line)
-        }
-        for hairline in [hairlineTop, hairlineBottom] {
-            hairline.backgroundColor = .separator
-            view.addSubview(hairline)
-        }
+    private func configureFocusPill() {
+        // Added before the word label so the word draws on top of the glass and
+        // stays fully legible.
+        view.addSubview(focusPill)
     }
 
-    private func layoutGuidelines() {
-        let focalX = view.bounds.width * Self.focalFraction
+    private func layoutFocusPill() {
         let centerY = view.bounds.midY - 40
-        let wordHalfHeight: CGFloat = 36
-        // Vertical notches above/below the focal letter…
-        guidelineTop.frame = CGRect(x: focalX - 1, y: centerY - wordHalfHeight - 14, width: 2, height: 14)
-        guidelineBottom.frame = CGRect(x: focalX - 1, y: centerY + wordHalfHeight, width: 2, height: 14)
-        // …connected by horizontal hairlines bounding the word area.
-        hairlineTop.frame = CGRect(x: 24, y: centerY - wordHalfHeight, width: view.bounds.width - 48, height: 1)
-        hairlineBottom.frame = CGRect(x: 24, y: centerY + wordHalfHeight, width: view.bounds.width - 48, height: 1)
+        let pillHeight: CGFloat = 84
+        focusPill.frame = CGRect(
+            x: 24, y: centerY - pillHeight / 2,
+            width: view.bounds.width - 48, height: pillHeight)
+        if #unavailable(iOS 26.0) {
+            focusPill.layer.cornerRadius = pillHeight / 2
+        }
     }
 
     private func configureWordLabel() {
@@ -172,7 +166,7 @@ final class RSVPViewController: UIViewController {
         scrubber.minimumValue = 0
         scrubber.maximumValue = Float(max(engine.words.count - 1, 1))
         scrubber.value = Float(currentIndex)
-        scrubber.minimumTrackTintColor = .systemRed
+        scrubber.minimumTrackTintColor = GlassStyle.readingAccent
         scrubber.addTarget(self, action: #selector(scrubbed), for: .valueChanged)
 
         statusLabel.font = .monospacedDigitSystemFont(ofSize: 14, weight: .regular)
@@ -219,7 +213,7 @@ final class RSVPViewController: UIViewController {
     // MARK: - Word display
 
     /// Positions the word so the ORP letter sits exactly on the focal column,
-    /// with the ORP letter tinted red.
+    /// with the ORP letter tinted in the reading accent.
     private func showWord(at index: Int) {
         guard engine.words.indices.contains(index) else { return }
         let word = engine.words[index]
@@ -232,7 +226,7 @@ final class RSVPViewController: UIViewController {
         let orpStart = String(characters.prefix(orp)).utf16.count
         let orpLength = String(characters[orp]).utf16.count
         attributed.addAttribute(
-            .foregroundColor, value: UIColor.systemRed,
+            .foregroundColor, value: GlassStyle.readingAccent,
             range: NSRange(location: orpStart, length: orpLength))
         wordLabel.attributedText = attributed
         wordLabel.sizeToFit()

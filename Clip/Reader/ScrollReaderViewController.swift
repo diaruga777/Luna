@@ -43,7 +43,10 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
     // Eye tracking
     private var gazeTracker: EyeGazeWordTracker?
 
-    private let highlightColor = UIColor.systemBlue.withAlphaComponent(0.3)
+    // Matches the RSVP reader's liquid-glass focus accent (an inline text
+    // highlight, since a glass overlay would sit in front of and blur the very
+    // words being read).
+    private let highlightColor = GlassStyle.readingAccent.withAlphaComponent(0.28)
 
     init(item: ReadingListItem, content: ArticleContent,
          autoHighlight: Bool = false, audioEnabled: Bool = false) {

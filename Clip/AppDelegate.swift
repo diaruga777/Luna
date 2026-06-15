@@ -112,7 +112,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         logger.notice("Remote notification received (keys: \(keys, privacy: .public)).")
         DiagnosticLog.shared.record("remote notification received (keys: \(keys))", category: "push")
         Task {
-            await SocialMessageCenter.shared.processInbox(trigger: "push")
+            await SocialMessageCenter.shared.processPush(userInfo: userInfo)
             completionHandler(.newData)
         }
     }

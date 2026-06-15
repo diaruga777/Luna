@@ -26,11 +26,18 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        // Prefer a web URL; otherwise take the first recognized document.
-        if let urlProvider = providers.first(where: {
-            $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+        // A genuine web link conforms to public.url but NOT to a document type.
+        // A shared file (e.g. a PDF) ALSO conforms to public.url (as a file-url),
+        // so it must be matched as a document first — otherwise the URL branch
+        // grabs it, sees a non-http file:// URL, and silently drops it.
+        func isDocument(_ provider: NSItemProvider) -> Bool {
+            Self.documentTypes.contains { provider.hasItemConformingToTypeIdentifier($0.identifier) }
+        }
+
+        if let webProvider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.url.identifier) && !isDocument($0)
         }) {
-            handleURL(urlProvider)
+            handleURL(webProvider)
             return
         }
         for provider in providers {
@@ -41,13 +48,25 @@ final class ShareViewController: UIViewController {
                 return
             }
         }
+        // Fallback: a plain URL we didn't classify as a web link above.
+        if let urlProvider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+        }) {
+            handleURL(urlProvider)
+            return
+        }
         complete()
     }
 
     private func handleURL(_ provider: NSItemProvider) {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
-            if let url = value as? URL, url.absoluteString.hasPrefix("http") {
-                SharedReadingListAppender.append(urlString: url.absoluteString)
+            if let url = value as? URL {
+                if url.absoluteString.hasPrefix("http") {
+                    SharedReadingListAppender.append(urlString: url.absoluteString)
+                } else if url.isFileURL {
+                    // A file delivered only as a URL — import it as a document.
+                    SharedReadingListAppender.appendDocument(sourceURL: url)
+                }
             }
             self?.complete()
         }

@@ -140,6 +140,24 @@ final class SocialMessageCenter {
         }
     }
 
+    /// Handles a silent push. If the push carried the record's fields (the fast
+    /// path — no query, so no public-DB index lag), processes that record
+    /// directly. Otherwise falls back to draining the inbox by query.
+    func processPush(userInfo: [AnyHashable: Any]) async {
+        guard let identity = identityStore.loadIdentity() else { return }
+        if let record = transport.inboxRecord(fromPush: userInfo) {
+            logger.notice("push carried record \(record.recordID, privacy: .public)")
+            DiagnosticLog.shared.record(
+                "push carried record \(record.recordID) (no fetch needed)", category: "social")
+            process(record, identity: identity)
+            try? await transport.delete(recordID: record.recordID)
+        } else {
+            DiagnosticLog.shared.record(
+                "push had no record fields; draining by query", category: "social")
+            await processInbox(trigger: "push")
+        }
+    }
+
     /// Fetches everything addressed to us, processes each message, and
     /// deletes it. Undecryptable or unrecognized messages are deleted and
     /// ignored (forward compatibility). Safe to call repeatedly.

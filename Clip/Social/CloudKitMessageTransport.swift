@@ -75,8 +75,25 @@ final class CloudKitMessageTransport: MessageTransport {
             options: .firesOnRecordCreation)
         let info = CKSubscription.NotificationInfo()
         info.shouldSendContentAvailable = true
+        // Ride the record's fields along in the push so the client can process
+        // without a follow-up query (which lags behind push delivery on the
+        // public DB). CloudKit drops these if the payload exceeds the APNs size
+        // limit, in which case we fall back to fetching.
+        info.desiredKeys = ["senderUUID", "payload"]
         subscription.notificationInfo = info
         _ = try await database.save(subscription)
+    }
+
+    func inboxRecord(fromPush userInfo: [AnyHashable: Any]) -> InboxRecord? {
+        guard let notification = CKNotification(fromRemoteNotificationDictionary: userInfo)
+                as? CKQueryNotification,
+              let recordID = notification.recordID,
+              let fields = notification.recordFields,
+              let senderString = fields["senderUUID"] as? String,
+              let senderUUID = UUID(uuidString: senderString),
+              let payload = fields["payload"] as? Data
+        else { return nil }
+        return InboxRecord(recordID: recordID.recordName, senderUUID: senderUUID, payload: payload)
     }
 
     func availability() async -> MessagingAvailability {

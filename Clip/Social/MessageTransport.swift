@@ -34,6 +34,10 @@ protocol MessageTransport {
     /// Installs the server-side subscription that pings this client when a
     /// message arrives for `recipientUUID`. Safe to call on every launch.
     func ensureSubscription(for recipientUUID: UUID) async throws
+    /// Reconstructs an inbox record from a push payload when the subscription
+    /// carried the record's fields along (no fetch needed). Returns nil if the
+    /// push didn't include them — the caller should fall back to `fetchInbox`.
+    func inboxRecord(fromPush userInfo: [AnyHashable: Any]) -> InboxRecord?
     /// Current account availability for messaging.
     func availability() async -> MessagingAvailability
 }
@@ -57,6 +61,9 @@ final class InMemoryMessageTransport: MessageTransport {
     /// visible.
     var emptyFetchesBeforeVisible = 0
     private(set) var fetchInboxCallCount = 0
+    /// When set, `inboxRecord(fromPush:)` returns this — simulating a push that
+    /// carried the record's fields.
+    var pushRecord: InboxRecord?
 
     func send(payload: Data, to recipientUUID: UUID, from senderUUID: UUID) async throws {
         if let sendError { throw sendError }
@@ -84,6 +91,8 @@ final class InMemoryMessageTransport: MessageTransport {
     func ensureSubscription(for recipientUUID: UUID) async throws {
         subscribedUUIDs.append(recipientUUID)
     }
+
+    func inboxRecord(fromPush userInfo: [AnyHashable: Any]) -> InboxRecord? { pushRecord }
 
     func availability() async -> MessagingAvailability { .available }
 }

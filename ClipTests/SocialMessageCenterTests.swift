@@ -145,6 +145,37 @@ final class SocialMessageCenterTests: XCTestCase {
         XCTAssertEqual(savedArticleURLs, ["https://example.com/lagged"])
     }
 
+    func testPushWithCarriedRecordProcessesWithoutFetch() async throws {
+        let alice = makeSender()
+        friendsStore.add(alice.card)
+        let payload = try MessageCrypto.seal(
+            body: .readingListItem(urlString: "https://example.com/pushed", title: "Pushed"),
+            senderSigningKey: alice.signingKey,
+            recipientEncryptionPublicKey: me.card.encryptionPublicKey)
+        // Simulate a push that carried the record's fields inline.
+        transport.pushRecord = InboxRecord(
+            recordID: "rec-1", senderUUID: alice.uuid, payload: payload)
+
+        await center.processPush(userInfo: ["ck": "fake"])
+
+        XCTAssertEqual(transport.fetchInboxCallCount, 0, "fast path must not query")
+        XCTAssertEqual(savedArticleURLs, ["https://example.com/pushed"])
+        XCTAssertEqual(transport.deletedRecordIDs, ["rec-1"])
+    }
+
+    func testPushWithoutCarriedRecordFallsBackToFetch() async throws {
+        let alice = makeSender()
+        friendsStore.add(alice.card)
+        try await inject(
+            body: .readingListItem(urlString: "https://example.com/fetched", title: nil), from: alice)
+        transport.pushRecord = nil
+
+        await center.processPush(userInfo: ["ck": "fake"])
+
+        XCTAssertGreaterThanOrEqual(transport.fetchInboxCallCount, 1, "must fall back to query")
+        XCTAssertEqual(savedArticleURLs, ["https://example.com/fetched"])
+    }
+
     func testManualDrainDoesNotRetryOnEmpty() async throws {
         center.pushRetryDelaysSeconds = [0, 0, 0]
         let alice = makeSender()

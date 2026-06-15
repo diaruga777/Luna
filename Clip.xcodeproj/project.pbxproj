@@ -9,12 +9,22 @@
 /* Begin PBXBuildFile section */
 		7958393C2FE0A62700C775CA /* ClipShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* ClipShare.appex */; };
 		7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
+		AA0100000000000000000004 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000004 /* SwiftSoup */; };
+		79583DFF2FE0BAD100C775CA /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */; };
+		79583E0B2FE0BAD200C775CA /* Clip Action Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AA0100000000000000000001 /* ClipSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000002 /* ClipSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AA0100000000000000000002 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
 		AA0100000000000000000003 /* ClipShare.appex in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* ClipShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		79583E092FE0BAD200C775CA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 79583DFB2FE0BAD100C775CA;
+			remoteInfo = "Clip Action Extension";
+		};
 		AA0400000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AAA000000000000000000000 /* Project object */;
@@ -47,6 +57,7 @@
 			files = (
 				AA0100000000000000000001 /* ClipSafari.appex in Embed Foundation Extensions */,
 				7958393C2FE0A62700C775CA /* ClipShare.appex in Embed Foundation Extensions */,
+				79583E0B2FE0BAD200C775CA /* Clip Action Extension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -54,6 +65,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Clip Action Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
 		AA0200000000000000000001 /* Clip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Clip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000002 /* ClipSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClipSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000003 /* ClipTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClipTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -61,6 +74,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		79583E0F2FE0BAD200C775CA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 79583DFB2FE0BAD100C775CA /* Clip Action Extension */;
+		};
 		AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -85,14 +105,25 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		79583E002FE0BAD100C775CA /* Clip Action Extension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (79583E0F2FE0BAD200C775CA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Clip Action Extension"; sourceTree = "<group>"; };
 		AA0700000000000000000001 /* Clip */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Clip; sourceTree = "<group>"; };
 		AA0700000000000000000002 /* ClipSafari */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ClipSafari; sourceTree = "<group>"; };
 		AA0700000000000000000003 /* ClipTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ClipTests; sourceTree = "<group>"; };
 		AA0700000000000000000004 /* ClipShare */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ClipShare; sourceTree = "<group>"; };
 		AA0700000000000000000005 /* ReaderKit */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ReaderKit; sourceTree = "<group>"; };
+		AA0700000000000000000006 /* ShareKit */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ShareKit; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		79583DF92FE0BAD100C775CA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				79583DFF2FE0BAD100C775CA /* UniformTypeIdentifiers.framework in Frameworks */,
+				AA0100000000000000000004 /* SwiftSoup in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0800000000000000000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -127,6 +158,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		79583DFD2FE0BAD100C775CA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		AA0900000000000000000001 = {
 			isa = PBXGroup;
 			children = (
@@ -135,6 +174,8 @@
 				AA0700000000000000000002 /* ClipSafari */,
 				AA0700000000000000000004 /* ClipShare */,
 				AA0700000000000000000003 /* ClipTests */,
+				79583E002FE0BAD100C775CA /* Clip Action Extension */,
+				79583DFD2FE0BAD100C775CA /* Frameworks */,
 				AA0900000000000000000002 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -146,6 +187,7 @@
 				AA0200000000000000000002 /* ClipSafari.appex */,
 				AA0200000000000000000004 /* ClipShare.appex */,
 				AA0200000000000000000003 /* ClipTests.xctest */,
+				79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -153,6 +195,31 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		79583DFB2FE0BAD100C775CA /* Clip Action Extension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 79583E0E2FE0BAD200C775CA /* Build configuration list for PBXNativeTarget "Clip Action Extension" */;
+			buildPhases = (
+				79583DF82FE0BAD100C775CA /* Sources */,
+				79583DF92FE0BAD100C775CA /* Frameworks */,
+				79583DFA2FE0BAD100C775CA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				79583E002FE0BAD100C775CA /* Clip Action Extension */,
+				AA0700000000000000000005 /* ReaderKit */,
+				AA0700000000000000000006 /* ShareKit */,
+			);
+			name = "Clip Action Extension";
+			packageProductDependencies = (
+				AA0300000000000000000004 /* SwiftSoup */,
+			);
+			productName = "Clip Action Extension";
+			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		AAE000000000000000000000 /* Clip */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AAD100000000000000000000 /* Build configuration list for PBXNativeTarget "Clip" */;
@@ -167,10 +234,12 @@
 			dependencies = (
 				AA1200000000000000000001 /* PBXTargetDependency */,
 				AA1200000000000000000003 /* PBXTargetDependency */,
+				79583E0A2FE0BAD200C775CA /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				AA0700000000000000000001 /* Clip */,
 				AA0700000000000000000005 /* ReaderKit */,
+				AA0700000000000000000006 /* ShareKit */,
 			);
 			name = Clip;
 			packageProductDependencies = (
@@ -240,6 +309,7 @@
 			fileSystemSynchronizedGroups = (
 				AA0700000000000000000004 /* ClipShare */,
 				AA0700000000000000000005 /* ReaderKit */,
+				AA0700000000000000000006 /* ShareKit */,
 			);
 			name = ClipShare;
 			packageProductDependencies = (
@@ -256,9 +326,12 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1620;
+				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 1620;
 				TargetAttributes = {
+					79583DFB2FE0BAD100C775CA = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					AAE000000000000000000000 = {
 						CreatedOnToolsVersion = 16.2;
 						DevelopmentTeam = MM5QBNLXR6;
@@ -302,11 +375,19 @@
 				AAE100000000000000000000 /* ClipSafari */,
 				AAE300000000000000000000 /* ClipShare */,
 				AAE200000000000000000000 /* ClipTests */,
+				79583DFB2FE0BAD100C775CA /* Clip Action Extension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		79583DFA2FE0BAD100C775CA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA1100000000000000000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -338,6 +419,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		79583DF82FE0BAD100C775CA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA1000000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -369,6 +457,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		79583E0A2FE0BAD200C775CA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 79583DFB2FE0BAD100C775CA /* Clip Action Extension */;
+			targetProxy = 79583E092FE0BAD200C775CA /* PBXContainerItemProxy */;
+		};
 		AA1200000000000000000001 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = AAE100000000000000000000 /* ClipSafari */;
@@ -387,6 +480,130 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		79583E0C2FE0BAD200C775CA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Clip Action Extension/Clip Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 30;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Clip Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Clip Action Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.hpiddy.clip.Clip-Action-Extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		79583E0D2FE0BAD200C775CA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Clip Action Extension/Clip Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 30;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Clip Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Clip Action Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.hpiddy.clip.Clip-Action-Extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		AAC100000000000000000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -647,6 +864,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		79583E0E2FE0BAD200C775CA /* Build configuration list for PBXNativeTarget "Clip Action Extension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				79583E0C2FE0BAD200C775CA /* Debug */,
+				79583E0D2FE0BAD200C775CA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		AAD000000000000000000000 /* Build configuration list for PBXProject "Clip" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -712,6 +938,11 @@
 			productName = SwiftSoup;
 		};
 		AA0300000000000000000003 /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
+		};
+		AA0300000000000000000004 /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;

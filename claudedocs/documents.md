@@ -7,10 +7,12 @@ shared to friends or via the system share sheet (no URL).
 
 ## Flow
 
-1. **Share extension** (`ClipShare`): activation rule now also matches files
-   (`NSExtensionActivationSupportsFileWithMaxCount`). `ShareViewController`
-   prefers a web URL; otherwise takes the first attachment conforming to
-   `.pdf`/`.rtf`/`.plainText`/`.text` and `loadFileRepresentation`s it.
+1. **Share extension** (`ClipShare`) and **action extension** (`Clip Action
+   Extension`): both activation rules match files
+   (`NSExtensionActivationSupportsFileWithMaxCount`) and share the same
+   `ShareKit/ShareViewController`. It prefers a web URL; otherwise takes the
+   first attachment conforming to `.pdf`/`.rtf`/`.plainText`/`.text` and
+   `loadFileRepresentation`s it.
    `SharedReadingListAppender.appendDocument` copies the file into the App
    Group at `Articles/<id>-source.<ext>` and appends a pending item with
    `urlString = clipdoc://<id>`, `documentType = ext`, `title = filename`.

@@ -1,15 +1,15 @@
 # Readers
 
 > **Location: `ReaderKit/`** — the entire reader stack lives in a `ReaderKit/`
-> synchronized folder that is a member of BOTH the `Clip` (main app) and
-> `ClipShare` (share extension) targets, so the share-sheet reader is the
-> EXACT same code. ReaderKit is free of CloudKit/ARKit/camera: the camera
-> (`EyeGazeWordTracker`) and the social/CloudKit share stack
+> synchronized folder that is a member of the `Clip` (main app), `ClipShare`
+> (share extension), and `Clip Action Extension` targets, so the share-sheet
+> reader is the EXACT same code. ReaderKit is free of CloudKit/ARKit/camera: the
+> camera (`EyeGazeWordTracker`) and the social/CloudKit share stack
 > (`AppReaderProviders`/`SendToFriendSheet`) stay main-app-only and are injected
 > via `ReaderShareProviding` / `GazeTrackerFactory` (`ReaderKit/ReaderProviders.swift`).
-> The extension passes nil providers (no share button/footer, no eye tracking).
-> SwiftSoup is linked to ClipShare too (the extension ingests the shared URL via
-> `ArticleFetcher` + `ArticleExtractor`). ReaderKit also holds the models it
+> The extensions pass nil providers (no share button/footer, no eye tracking).
+> SwiftSoup is linked to both extension targets too (they ingest the shared URL
+> via `ArticleFetcher` + `ArticleExtractor`). ReaderKit also holds the models it
 > needs: `ArticleContent`, `ReadingListItem`, `ReadingListStore`, `ReaderSettings`.
 
 THREE reading modes for extracted articles, with read-aloud, nested inline readers, position memory, and (device-only, main-app-only) eye tracking. Hosted by `ReaderKit/ReaderViewController.swift` — a container with a **3-way nav-bar segmented switcher** (`text.alignleft` scroll / `highlighter` highlight / `bolt.fill` RSVP) plus a **separate audio toggle** (speaker bar button) that turns read-aloud on/off for whichever mode is showing. It persists `lastReaderMode` per article AND globally (`ReaderSettings.lastReaderMode`) — a new article with no per-article preference opens in the global last-used mode. Changing mode/audio rebuilds the child VC. Tracks read state (marks `.opened` on open; children call back `onFinishedReading` → `.read`).
@@ -54,7 +54,7 @@ no nav bar of its own beyond Done.
 
 ## Share-sheet reader experience
 
-`ShareSheetExperience` (off/reader/rsvp/chunk, App Group default, `Settings → Reader → Share Sheet`). When not off, sharing a link into Click saves it AND presents `ClipShare/ShareReaderViewController`, which fetches + extracts the page (`ArticleFetcher` + `ArticleExtractor`) and presents the **real** `ReaderViewController` (forceMode mapped from the setting) with **nil** `shareProvider` + `gazeTrackerFactory` — so it's the exact same reader UI/business code, minus the share footer/button and eye tracking. All three modes, audio (foreground only — no lock-screen controls), and the inline split-web link viewer work. A Done button (the loading screen's, then the reader's left bar item) exits; no access to the rest of the app. Resume with no gaze starts from the first word visible on screen (`ScrollReaderViewController.firstVisibleWordIndex`). See `save-link-intent.md`.
+`ShareSheetExperience` (off/reader/rsvp/chunk, App Group default, `Settings → Reader → Share Sheet`). When not off, sharing a link into Click saves it AND presents `ShareKit/ShareReaderViewController`, which fetches + extracts the page (`ArticleFetcher` + `ArticleExtractor`) and presents the **real** `ReaderViewController` (forceMode mapped from the setting) with **nil** `shareProvider` + `gazeTrackerFactory` — so it's the exact same reader UI/business code, minus the share footer/button and eye tracking. All three modes, audio (foreground only — no lock-screen controls), and the inline split-web link viewer work. A Done button (the loading screen's, then the reader's left bar item) exits; no access to the rest of the app. Resume with no gaze starts from the first word visible on screen (`ScrollReaderViewController.firstVisibleWordIndex`). See `save-link-intent.md`.
 
 ## Inline images
 

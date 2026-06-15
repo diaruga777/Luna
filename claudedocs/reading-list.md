@@ -2,6 +2,12 @@
 
 Clip is a weblink reader: links saved from Safari (extension + intent) or pasted in-app are downloaded, stripped to readable text, and read in two reader modes.
 
+> **Note:** the reader-shared models + ingest helpers moved to `ReaderKit/`
+> (shared with the ClipShare target): `ReadingListItem`, `ReadingListStore`,
+> `ArticleContent`, `ArticleFetcher`, `ArticleExtractor`. Paths below that say
+> `Clip/ReadingList/...` for those files now live under `ReaderKit/`. See
+> `readers.md`.
+
 ## Key files
 
 - `Clip/ReadingList/ReadingListItem.swift` — model. Content state: `pending → ready | failed` (failed retries on launch/foreground/pull-to-refresh). Read state: `unopened → opened → read` (never downgrades). `lastReaderMode` remembers scroll vs rsvp per article. Decoding defaults `readState` for pre-existing items.

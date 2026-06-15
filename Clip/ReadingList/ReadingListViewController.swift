@@ -399,7 +399,10 @@ final class ReadingListViewController: UITableViewController {
             return
         }
         guard item.state == .ready, let content = store.content(for: item) else { return }
-        let reader = ReaderViewController(item: item, content: content)
+        let reader = ReaderViewController(
+            item: item, content: content,
+            shareProvider: AppReaderShareProvider.shared,
+            gazeTrackerFactory: AppGazeTracker.factory)
         navigationController?.pushViewController(reader, animated: true)
     }
 
@@ -532,7 +535,10 @@ final class ReadingListViewController: UITableViewController {
                 guard let self, item.state == .ready,
                       let content = self.store.content(for: item) else { return }
                 self.navigationController?.pushViewController(
-                    ReaderViewController(item: item, content: content, forceMode: .rsvp),
+                    ReaderViewController(
+                        item: item, content: content, forceMode: .rsvp,
+                        shareProvider: AppReaderShareProvider.shared,
+                        gazeTrackerFactory: AppGazeTracker.factory),
                     animated: true)
             }
             let delete = UIAction(

@@ -19,6 +19,11 @@ final class ReaderViewController: UIViewController {
     private var audioOn = false
     private var currentChild: UIViewController?
 
+    /// Sharing affordances (nil in the share extension → no share button/footer).
+    private let shareProvider: ReaderShareProviding?
+    /// Gaze-tracker factory (nil in the share extension → no eye tracking).
+    private let gazeTrackerFactory: GazeTrackerFactory?
+
     private let modeControl = UISegmentedControl()
     private let audioButton = UIButton(type: .system)
 
@@ -26,9 +31,13 @@ final class ReaderViewController: UIViewController {
     private static let modeSymbols = ["text.alignleft", "highlighter", "bolt.fill"]
 
     init(item: ReadingListItem, content: ArticleContent,
-         forceMode: ReadingListItem.ReaderMode? = nil) {
+         forceMode: ReadingListItem.ReaderMode? = nil,
+         shareProvider: ReaderShareProviding? = nil,
+         gazeTrackerFactory: GazeTrackerFactory? = nil) {
         self.item = item
         self.content = content
+        self.shareProvider = shareProvider
+        self.gazeTrackerFactory = gazeTrackerFactory
         // First time on this article, fall back to the global last-used mode.
         self.mode = forceMode ?? item.lastReaderMode ?? ReaderSettings.lastReaderMode
         super.init(nibName: nil, bundle: nil)
@@ -51,12 +60,17 @@ final class ReaderViewController: UIViewController {
 
         updateAudioButton()
         audioButton.addTarget(self, action: #selector(audioToggled), for: .touchUpInside)
-        let shareButton = UIBarButtonItem(
-            image: UIImage(systemName: "square.and.arrow.up"), style: .plain,
-            target: self, action: #selector(shareTapped))
         let audioItem = UIBarButtonItem(customView: audioButton)
-        // Documents have no URL to share.
-        navigationItem.rightBarButtonItems = item.isDocument ? [audioItem] : [shareButton, audioItem]
+        // Share button only when sharing is available (not in the share sheet)
+        // and there's a URL (documents have none).
+        if shareProvider != nil, !item.isDocument {
+            let shareButton = UIBarButtonItem(
+                image: UIImage(systemName: "square.and.arrow.up"), style: .plain,
+                target: self, action: #selector(shareTapped))
+            navigationItem.rightBarButtonItems = [shareButton, audioItem]
+        } else {
+            navigationItem.rightBarButtonItems = [audioItem]
+        }
 
         store.markReadState(.opened, for: item.id)
         showCurrentMode()
@@ -100,7 +114,8 @@ final class ReaderViewController: UIViewController {
         case .highlight:
             child = makeScrollReader(autoHighlight: true)
         case .rsvp:
-            let rsvp = RSVPViewController(item: item, content: content, audioEnabled: audioOn)
+            let rsvp = RSVPViewController(
+                item: item, content: content, audioEnabled: audioOn, shareProvider: shareProvider)
             rsvp.onFinishedReading = { [weak self] in self?.markRead() }
             child = rsvp
         }
@@ -115,15 +130,16 @@ final class ReaderViewController: UIViewController {
 
     private func makeScrollReader(autoHighlight: Bool) -> ScrollReaderViewController {
         let scroll = ScrollReaderViewController(
-            item: item, content: content, autoHighlight: autoHighlight, audioEnabled: audioOn)
+            item: item, content: content, autoHighlight: autoHighlight, audioEnabled: audioOn,
+            shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory)
         scroll.onFinishedReading = { [weak self] in self?.markRead() }
         return scroll
     }
 
     @objc private func shareTapped() {
-        SendToFriendSheet.present(
-            from: self, sourceView: view,
-            urlString: item.urlString, title: item.title ?? content.title)
+        shareProvider?.presentShareSheet(
+            urlString: item.urlString, title: item.title ?? content.title,
+            from: self, sourceView: view)
     }
 
     private func markRead() {

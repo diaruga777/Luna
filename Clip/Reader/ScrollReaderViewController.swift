@@ -40,11 +40,15 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
     private var highlightedRange: NSRange?
     private var followPlayback = true
 
-    // Eye tracking
-    private var gazeTracker: EyeGazeWordTracker?
+    // Eye tracking (nil unless a gaze factory provided one — never in the sheet).
+    private var gazeTracker: GazeTracking?
+    private let gazeTrackerFactory: GazeTrackerFactory?
 
-    /// End-of-article share affordance, pinned below the text content.
-    private lazy var shareView = makeShareView()
+    /// Sharing affordances; nil → no end-of-article share footer (share sheet).
+    private let shareProvider: ReaderShareProviding?
+    /// End-of-article share affordance, pinned below the text content (nil when
+    /// there's no share provider).
+    private lazy var shareView: ArticleShareView? = makeShareView()
     private var contentSizeObservation: NSKeyValueObservation?
 
     // Matches the RSVP reader's liquid-glass focus accent (an inline text
@@ -53,11 +57,15 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
     private let highlightColor = GlassStyle.readingAccent.withAlphaComponent(0.28)
 
     init(item: ReadingListItem, content: ArticleContent,
-         autoHighlight: Bool = false, audioEnabled: Bool = false) {
+         autoHighlight: Bool = false, audioEnabled: Bool = false,
+         shareProvider: ReaderShareProviding? = nil,
+         gazeTrackerFactory: GazeTrackerFactory? = nil) {
         self.item = item
         self.content = content
         self.autoHighlight = autoHighlight
         self.audioEnabled = audioEnabled
+        self.shareProvider = shareProvider
+        self.gazeTrackerFactory = gazeTrackerFactory
         self.rendered = ArticleTextRenderer.render(content)
         self.wordMap = WordMap(content: content, rendered: rendered)
         super.init(nibName: nil, bundle: nil)
@@ -72,27 +80,28 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
         contentSizeObservation?.invalidate()
     }
 
-    private func makeShareView() -> ArticleShareView {
-        let suggestion = ShareSuggestionStore.shared.suggestedFriend(forURLString: item.urlString)
+    private func makeShareView() -> ArticleShareView? {
+        guard let shareProvider else { return nil }
+        let suggestionName = shareProvider.suggestedFriendName(forURLString: item.urlString)
         return ArticleShareView(
-            suggestionName: suggestion?.username,
+            suggestionName: suggestionName,
             onShare: { [weak self] in
-                guard let self else { return }
-                SendToFriendSheet.present(
-                    from: self, sourceView: self.shareView,
-                    urlString: self.item.urlString, title: self.content.title)
+                guard let self, let shareView = self.shareView else { return }
+                shareProvider.presentShareSheet(
+                    urlString: self.item.urlString, title: self.content.title,
+                    from: self, sourceView: shareView)
             },
             onSendSuggested: { [weak self] in
-                guard let self, let suggestion else { return }
-                SendToFriendSheet.sendToFriend(
-                    uuid: suggestion.uuid, urlString: self.item.urlString,
-                    title: self.content.title, from: self)
+                guard let self else { return }
+                shareProvider.sendToSuggestedFriend(
+                    urlString: self.item.urlString, title: self.content.title, from: self)
             })
     }
 
     /// Positions the share view just below the text content and reserves scroll
     /// room for it (and the floating footer) so it clears the controls.
     private func layoutShareView() {
+        guard let shareView else { return }
         let width = textView.bounds.width
         guard width > 0 else { return }
         let height = shareView.systemLayoutSizeFitting(
@@ -133,9 +142,11 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
 
         configureFooter()
 
-        textView.addSubview(shareView)
-        contentSizeObservation = textView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
-            self?.layoutShareView()
+        if let shareView {
+            textView.addSubview(shareView)
+            contentSizeObservation = textView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+                self?.layoutShareView()
+            }
         }
 
         // Force full text layout shortly after first paint: one early hitch
@@ -152,10 +163,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
             applyHighlight(range)
         }
 
-        if ReaderSettings.eyeTrackingEnabled {
-            gazeTracker = EyeGazeWordTracker(
-                textView: textView, wordMap: wordMap, seedWordIndex: item.eyeTrackedWordIndex)
-        }
+        gazeTracker = gazeTrackerFactory?(textView, wordMap, item.eyeTrackedWordIndex)
     }
 
     override func viewDidLayoutSubviews() {
@@ -199,7 +207,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
         if let position = speech?.currentWordIndex ?? chunk?.currentWordIndex {
             store.setLastSpokenWordIndex(position, for: item.id)
         }
-        if ReaderSettings.eyeTrackingEnabled, let gazeIndex = gazeTracker?.estimatedWordIndex {
+        if let gazeIndex = gazeTracker?.estimatedWordIndex {
             store.setEyeTrackedWordIndex(gazeIndex, for: item.id)
         }
     }
@@ -251,15 +259,30 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
         ])
     }
 
-    /// First word to resume from: where playback left off, else (on first play)
-    /// the eye-tracked last-read word when available.
+    /// First word to resume from: where playback left off, else the eye-tracked
+    /// last-read word (only when a gaze tracker is active), else the first word
+    /// currently visible on screen (so playback starts where the reader is
+    /// looking, not the top of the article — matching behavior when eye
+    /// tracking is off/unavailable or in the share sheet).
     private var resumeWordIndex: Int? {
         if let resume = item.lastSpokenWordIndex {
             return resume
-        } else if ReaderSettings.eyeTrackingEnabled {
-            return gazeTracker?.estimatedWordIndex ?? item.eyeTrackedWordIndex
         }
-        return nil
+        if let gazeTracker {
+            return gazeTracker.estimatedWordIndex ?? item.eyeTrackedWordIndex
+        }
+        return firstVisibleWordIndex()
+    }
+
+    /// The word index of the first word at the top of the visible text.
+    private func firstVisibleWordIndex() -> Int? {
+        let topPoint = CGPoint(
+            x: textView.textContainerInset.left + 1,
+            y: textView.contentOffset.y + textView.textContainerInset.top + 1)
+        let charIndex = textView.layoutManager.characterIndex(
+            for: topPoint, in: textView.textContainer,
+            fractionOfDistanceBetweenInsertionPoints: nil)
+        return wordMap.wordIndex(nearCharacterIndex: charIndex)
     }
 
     private func startSpeech() {

@@ -42,6 +42,8 @@ final class RSVPViewController: UIViewController {
     private let playPauseButton = UIButton(type: .system)
     private let scrubber = UISlider()
     private let controlsStack = UIStackView()
+    /// Sharing affordances; nil → the end-of-article share view never reveals.
+    private let shareProvider: ReaderShareProviding?
     /// Revealed (above the controls) when the reader reaches the end.
     private lazy var shareView = makeShareView()
     private var didRevealShare = false
@@ -61,9 +63,11 @@ final class RSVPViewController: UIViewController {
     /// characters fit beside the focal column without running off-screen.
     private let wordFont: UIFont
 
-    init(item: ReadingListItem, content: ArticleContent, audioEnabled: Bool = false) {
+    init(item: ReadingListItem, content: ArticleContent, audioEnabled: Bool = false,
+         shareProvider: ReaderShareProviding? = nil) {
         self.item = item
         self.isSpeechMode = audioEnabled
+        self.shareProvider = shareProvider
         self.wordFont = Self.makeWordFont(forWidth: UIScreen.main.bounds.width)
         self.engine = RSVPEngine(
             content: content, maxCharactersPerWord: Self.targetCharactersAcross)
@@ -229,25 +233,25 @@ final class RSVPViewController: UIViewController {
     // MARK: - End-of-article share
 
     private func makeShareView() -> ArticleShareView {
-        let suggestion = ShareSuggestionStore.shared.suggestedFriend(forURLString: item.urlString)
+        let suggestionName = shareProvider?.suggestedFriendName(forURLString: item.urlString)
         return ArticleShareView(
-            suggestionName: suggestion?.username,
+            suggestionName: suggestionName,
             onShare: { [weak self] in
                 guard let self else { return }
-                SendToFriendSheet.present(
-                    from: self, sourceView: self.shareView,
-                    urlString: self.item.urlString, title: self.item.title)
+                self.shareProvider?.presentShareSheet(
+                    urlString: self.item.urlString, title: self.item.title,
+                    from: self, sourceView: self.shareView)
             },
             onSendSuggested: { [weak self] in
-                guard let self, let suggestion else { return }
-                SendToFriendSheet.sendToFriend(
-                    uuid: suggestion.uuid, urlString: self.item.urlString,
-                    title: self.item.title, from: self)
+                guard let self else { return }
+                self.shareProvider?.sendToSuggestedFriend(
+                    urlString: self.item.urlString, title: self.item.title, from: self)
             })
     }
 
     private func revealShareView() {
-        guard !didRevealShare else { return }
+        // No share affordance in the share sheet.
+        guard shareProvider != nil, !didRevealShare else { return }
         didRevealShare = true
         shareView.isHidden = false
         UIView.animate(withDuration: 0.3) { self.shareView.alpha = 1 }

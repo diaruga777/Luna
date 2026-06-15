@@ -27,14 +27,13 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let window = UIWindow(windowScene: windowScene)
 
         if KeychainIdentityStore.shared.loadIdentity() == nil {
-            let onboarding = OnboardingViewController { [weak self] in
+            window.rootViewController = OnboardingFlow.make { [weak self] in
                 self?.showMainUI()
                 if let url = self?.pendingFriendURL {
                     self?.pendingFriendURL = nil
                     self?.handleFriendURL(url)
                 }
             }
-            window.rootViewController = onboarding
         } else {
             window.rootViewController = UINavigationController(
                 rootViewController: ReadingListViewController())

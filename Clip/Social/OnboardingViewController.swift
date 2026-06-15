@@ -33,7 +33,7 @@ final class OnboardingViewController: UIViewController, UITextFieldDelegate {
         view.backgroundColor = .systemBackground
 
         let titleLabel = UILabel()
-        titleLabel.text = "Welcome to Clip"
+        titleLabel.text = "Welcome to Click Reader"
         titleLabel.font = .systemFont(ofSize: 32, weight: .bold)
 
         let subtitleLabel = UILabel()

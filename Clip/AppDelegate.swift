@@ -34,7 +34,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Needed so the "friend shared" local notifications can appear, and so
         // they show as banners while the app is open (delegate below).
         UNUserNotificationCenter.current().delegate = self
-        NotificationManager.requestAuthorization()
+        // New users get the prompt during onboarding's notifications step (with
+        // context); only auto-request here for already-onboarded users.
+        if KeychainIdentityStore.shared.loadIdentity() != nil {
+            NotificationManager.requestAuthorization()
+        }
 
         // Background polling fallback: silent CloudKit pushes are unreliable
         // (and currently broken by an iOS 26.4 regression), so also drain the

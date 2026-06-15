@@ -15,7 +15,15 @@ enum NotificationManager {
     /// Requests alert/sound authorization (no-op if already decided).
     static func requestAuthorization() {
         UNUserNotificationCenter.current().requestAuthorization(
-            options: [.alert, .sound]) { _, _ in }
+            options: [.alert, .sound]) { granted, error in
+            if let error {
+                DiagnosticLog.shared.record(
+                    "notification authorization error: \(String(describing: error))", category: "push")
+            } else {
+                DiagnosticLog.shared.record(
+                    "notification authorization granted: \(granted)", category: "push")
+            }
+        }
     }
 
     /// Posts "X shared an article" when a friend with notifications enabled

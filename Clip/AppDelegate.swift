@@ -20,6 +20,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        DiagnosticLog.shared.record("app launch", category: "lifecycle")
+        recordEnvironmentSnapshot()
+
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
         ReadingListIngestor.shared.ingestAllPending()
@@ -66,12 +69,27 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
     private func handleInboxRefresh(_ task: BGAppRefreshTask?) {
         guard let task else { return }
+        DiagnosticLog.shared.record("bg-refresh task fired", category: "push")
         scheduleInboxRefresh() // chain the next one
         let work = Task {
             await SocialMessageCenter.shared.processInbox(trigger: "bgRefresh")
             task.setTaskCompleted(success: true)
         }
-        task.expirationHandler = { work.cancel() }
+        task.expirationHandler = {
+            DiagnosticLog.shared.record("bg-refresh task expired", category: "push")
+            work.cancel()
+        }
+    }
+
+    /// Records iCloud availability and our messaging identity at launch — the
+    /// context most useful for diagnosing why a friend's share didn't arrive.
+    private func recordEnvironmentSnapshot() {
+        let identity = KeychainIdentityStore.shared.loadIdentity()?.uuid.uuidString ?? "none"
+        DiagnosticLog.shared.record("messaging identity: \(identity)", category: "social")
+        Task {
+            let availability = await SocialMessageCenter.shared.availability()
+            DiagnosticLog.shared.record("iCloud availability: \(availability)", category: "social")
+        }
     }
 
     func application(
@@ -79,6 +97,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
         logger.notice("Registered for remote notifications (\(deviceToken.count) byte token).")
+        DiagnosticLog.shared.record(
+            "registered for remote notifications (\(deviceToken.count)-byte token)", category: "push")
     }
 
     /// Silent push from the CloudKit subscription: a message record matching
@@ -88,7 +108,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        logger.notice("Remote notification received (keys: \(userInfo.keys.map { "\($0)" }.joined(separator: ","), privacy: .public)).")
+        let keys = userInfo.keys.map { "\($0)" }.joined(separator: ",")
+        logger.notice("Remote notification received (keys: \(keys, privacy: .public)).")
+        DiagnosticLog.shared.record("remote notification received (keys: \(keys))", category: "push")
         Task {
             await SocialMessageCenter.shared.processInbox(trigger: "push")
             completionHandler(.newData)
@@ -101,6 +123,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     ) {
         // Expected on simulators without push support; foreground polling covers it.
         logger.error("Remote notification registration failed: \(String(describing: error), privacy: .public)")
+        DiagnosticLog.shared.record(
+            "remote notification registration FAILED: \(String(describing: error))", category: "push")
     }
 
     /// Show friend-share notifications as banners even while the app is open.

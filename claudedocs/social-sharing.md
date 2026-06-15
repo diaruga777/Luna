@@ -94,6 +94,30 @@ suppressed set, always-share set, plus one `pendingSuggestion` slot.
   `ShareSuggestionStore.setAlwaysShare`), Notify-When-They-Share switch, and
   Remove Friend (deletes friend + wipes suggestion/notify state).
 
+## Diagnostics (`Clip/Diagnostics/`)
+
+On-device log capture, because Console.app can't read an iOS-beta device's
+log archive on an older macOS (format-version mismatch), and `log collect`
+needs root.
+
+- **`DiagnosticLog`** (`DiagnosticLogging` protocol + `.shared`): appends
+  timestamped `[category] message` lines to `clip-diagnostics.log` in the App
+  Group container. Serialized on a private queue; trimmed to the most recent
+  half once it passes `maxBytes` (1 MB). `exportFile()` writes a `.txt` with a
+  header (app version/build, iOS version, identity UUID, container) for
+  sharing. Survives relaunches and background (push / bg-refresh) wakeups.
+- **Instrumented sites** (mirror their `os.Logger` calls): AppDelegate —
+  launch, identity + iCloud availability snapshot, remote-notification
+  register success/failure, remote notification received, bg-refresh fired/
+  expired; `NotificationManager` — authorization granted/error;
+  `SocialMessageCenter` — subscription ensured/failed, `processInbox`
+  fetched-count/failed, article sent/send-failed, accepted shared article.
+- **UI**: Settings → **Diagnostics** (`DiagnosticsViewController`) shows the log
+  in a monospaced text view with Share (`UIActivityViewController` over the
+  `.txt`) and Clear.
+- Tests: `DiagnosticLogTests` (append order, clear, export header+body, size-
+  cap trim).
+
 ## Recipient-side rules
 
 Incoming `readingListItem`: dropped entirely when the URL is already saved

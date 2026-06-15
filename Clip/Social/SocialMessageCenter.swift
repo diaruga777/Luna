@@ -83,7 +83,17 @@ final class SocialMessageCenter {
             body: .readingListItem(urlString: urlString, title: title),
             senderSigningKey: identity.signingKey,
             recipientEncryptionPublicKey: friend.card.encryptionPublicKey)
-        try await transport.send(payload: payload, to: friend.card.uuid, from: identity.uuid)
+        do {
+            try await transport.send(payload: payload, to: friend.card.uuid, from: identity.uuid)
+            DiagnosticLog.shared.record(
+                "sent article to \(friend.card.username) [\(friend.card.uuid.uuidString)]",
+                category: "social")
+        } catch {
+            DiagnosticLog.shared.record(
+                "send article to \(friend.card.username) FAILED: \(String(describing: error))",
+                category: "social")
+            throw error
+        }
         if countsAsManualShare {
             ShareSuggestionStore.shared.recordManualShare(
                 urlString: urlString,
@@ -113,8 +123,12 @@ final class SocialMessageCenter {
         do {
             try await transport.ensureSubscription(for: identity.uuid)
             logger.notice("inbox subscription ensured for \(identity.uuid.uuidString, privacy: .public)")
+            DiagnosticLog.shared.record(
+                "inbox subscription ensured for \(identity.uuid.uuidString)", category: "social")
         } catch {
             logger.error("subscription failed: \(String(describing: error), privacy: .public)")
+            DiagnosticLog.shared.record(
+                "inbox subscription FAILED: \(String(describing: error))", category: "social")
         }
     }
 
@@ -140,9 +154,13 @@ final class SocialMessageCenter {
             records = try await transport.fetchInbox(for: identity.uuid)
         } catch {
             logger.error("inbox fetch failed (\(trigger, privacy: .public)): \(String(describing: error), privacy: .public)")
+            DiagnosticLog.shared.record(
+                "processInbox (\(trigger)) FAILED: \(String(describing: error))", category: "social")
             return
         }
         logger.notice("processInbox (\(trigger, privacy: .public)) fetched \(records.count) record(s) for \(identity.uuid.uuidString, privacy: .public)")
+        DiagnosticLog.shared.record(
+            "processInbox (\(trigger)) fetched \(records.count) record(s)", category: "social")
 
         var seenRecordIDs = Set<String>()
         for record in records {
@@ -197,6 +215,8 @@ final class SocialMessageCenter {
             readingListStore.setSharedBy(friend.card.username, for: saved.id)
             startIngest(saved)
             logger.info("accepted shared article from \(friend.card.username, privacy: .public)")
+            DiagnosticLog.shared.record(
+                "accepted shared article from \(friend.card.username)", category: "social")
             if FriendNotificationSettings.isNotifyEnabled(friendUUID: friend.card.uuid) {
                 notifyArticleShared(friend.card.username, title)
             }

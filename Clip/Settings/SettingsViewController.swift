@@ -38,6 +38,7 @@ final class SettingsViewController: UITableViewController {
         Category(title: "Send to Kindle", symbol: "paperplane") { KindleSettingsScreen() },
         Category(title: "YouTube", symbol: "play.rectangle") { YouTubeSettingsScreen() },
         Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
+        Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
     ]
 
     init() { super.init(style: .insetGrouped) }

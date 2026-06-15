@@ -105,8 +105,9 @@ final class ShareViewController: UIViewController {
         let reader = ShareReaderViewController(url: url, mode: mode) { [weak self] in
             self?.complete()
         }
-        reader.modalPresentationStyle = .fullScreen
-        present(reader, animated: true)
+        let nav = UINavigationController(rootViewController: reader)
+        nav.modalPresentationStyle = .fullScreen
+        present(nav, animated: true)
     }
 
     private func handleDocument(_ provider: NSItemProvider, type: UTType) {

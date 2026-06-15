@@ -54,6 +54,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             await SocialMessageCenter.shared.drainPendingFriendShares()
             await SocialMessageCenter.shared.processInbox()
         }
+        Task { await IncomingMailImporter.shared.importNewMail() }
         scheduleInboxRefresh()
         return true
     }

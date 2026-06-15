@@ -59,6 +59,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             await SocialMessageCenter.shared.drainPendingFriendShares()
             await SocialMessageCenter.shared.processInbox()
         }
+        Task { await IncomingMailImporter.shared.importNewMail() }
     }
 
     private func showMainUI() {

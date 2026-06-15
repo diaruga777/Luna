@@ -25,9 +25,20 @@ send-to-Kindle Gmail account + app password. Runs on launch/foreground only
 
 ## Settings
 
-`Settings → Import from Email` (`IncomingMailSettingsScreen`): on/off toggle +
-add/remove allowed sender addresses (swipe to delete). Footer warns if the
-Send-to-Kindle account isn't set up.
+Merged into `Settings → Email & Kindle` (`EmailAndKindleSettingsScreen`): one
+shared "Email Account" section (provider + Gmail address + app password) powers
+both Send-to-Kindle and import. The "Import from Email" section has the on/off
+toggle, an **"Also Send to Kindle"** toggle (`IncomingMailSettings.autoSendToKindle`
+— forwards imported articles to Kindle after they're ingested, when Kindle send
+is configured), and add/remove allowed senders (swipe to delete).
+
+## URL extraction
+
+Gmail bodies are usually quoted-printable. `GmailIMAPClient.extractURLs` detects
+QP (soft break / `=3D`) and fully decodes via `decodeQuotedPrintable` BEFORE
+NSDataDetector + href parsing. Decode iterates **Unicode scalars** — Swift
+clusters `\r\n` into one `Character`, which would hide the soft break and leave
+split URLs broken (the original "imported 0 of N" bug).
 
 ## Wiring
 

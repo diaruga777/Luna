@@ -158,15 +158,18 @@ Incoming `readingListItem`: dropped entirely when the URL is already saved
 - **Inbox drains** on: launch (AppDelegate), foreground (SceneDelegate),
   silent push (`didReceiveRemoteNotification`), pull-to-refresh. Push is
   best-effort (coalesced, dead after force-quit) — polling is authoritative.
-- **Push outruns the record (public DB query-index lag).** A silent push fires
-  the instant the sender creates the `Message` record, but the public
-  database's query index is eventually consistent — an immediate query can
-  return 0 for several seconds. So `processInbox(trigger:)` retries the fetch on
-  empty for `push`/`bgRefresh` triggers only: delays `pushRetryDelaysSeconds`
-  (default `[2,4,8]`s, settable in tests), stopping as soon as records appear.
-  Manual/launch drains fetch once (the user can pull again). The diagnostic
-  line records the attempt count: `processInbox (push) fetched N record(s)
-  after K attempt(s)`.
+- **Push handling = fetch-by-ID, not query.** A silent push (`CKQueryNotification`)
+  carries the triggering record's ID, so `processPush` fetches THAT record via
+  `database.record(for:)` — **strongly consistent**, so it sees the just-created
+  record immediately (no query-index lag, no retry, and no per-device read-delay
+  asymmetry from query-index replicas converging at different rates).
+  `transport.recordID(fromPush:)` + `fetchRecord(recordID:)`. Falls back to a
+  query drain (`processInbox`, which keeps the `[2,4,8]`s retry-on-empty for the
+  `bgRefresh`/fallback paths) only if the push had no usable record ID.
+- **Do NOT set `CKSubscription.NotificationInfo.desiredKeys`** — including the
+  Bytes `payload` field makes CloudKit reject the subscription with `CKError
+  12/2018 "unsupported field type in notification"`. (The encrypted payload
+  can't ride an APNs push anyway; that's why we fetch by ID instead.)
 - **First-run CloudKit gotcha (resolved):** creating the query subscription in
   the **production** container fails with `CKError 2006 "attempting to create a
   subscription in a production container"` until the subscription *shape*

@@ -32,9 +32,24 @@ The scroll reader (`ScrollReaderViewController`) backs both Scroll and Highlight
 - `Clip/Reader/RSVPViewController.swift` — word positioned so the ORP letter (tinted in the reading accent) sits on a fixed focal column (40% width) behind a **liquid-glass focus capsule** (`GlassStyle.focusPill()` — `UIGlassEffect` capsule, subtle indigo tint; replaced the old red guideline notches/hairlines); tap = play/pause; scrubber (accent tint, pauses while scrubbing); ±25 wpm buttons (persisted via `ReaderSettings.baseWPM`, 100–900, default 300); "% · wpm" status; light haptic at sentence/paragraph ends; resume via `ReadingListItem.lastWordIndex` saved on pause/close.
 - `Clip/Settings/ReaderSettings.swift` — base WPM in standard defaults (also adjustable in Settings screen slider).
 
+## Header bar
+
+The 3-mode switcher lives in an **inline header bar** at the top of the reader's
+content (a `contentContainer` hosts the child reader below it), NOT in
+`navigationItem.titleView` — so it doesn't slide right→left during push/pop. The
+nav bar holds only the back button + audio/share. The share-extension reader has
+no nav bar of its own beyond Done.
+
 ## Focus styling + end-of-article share
 
-- `GlassStyle.readingAccent` (systemIndigo, matching the app icon) is the shared reader accent (replaced red). Scroll/chunk highlight = inline text-background tint in that accent (a glass overlay would blur the words); RSVP = glass capsule behind the opaque on-top word.
+- **Accent is configurable**: `ReaderAccent` enum (blue default + red/green/
+  purple/yellow/orange/teal/pink/indigo), stored in `ReaderSettings.accent`
+  (App Group); `GlassStyle.readingAccent` returns it. Picked via Settings →
+  Reader → Highlight Color.
+- **RSVP focus = glass reticule**, not a pill: two `GlassStyle.reticuleMark()`
+  glass capsules (accent-tinted) sit above and below the ORP letter at the
+  focal column. Scroll/chunk highlight = inline text-background tint in the
+  accent (a glass overlay would blur the words being read).
 - **End-of-article share** (`Clip/Reader/ArticleShareView.swift`): separator + "Done reading? Share it." + Share button + one-tap "Send to <friend>" suggestion (`ShareSuggestionStore.suggestedFriend(forURLString:)` → `SendToFriendSheet.sendToFriend`). Scroll reader appends it below the text (subview positioned via a `contentSize` observer; `contentInset.bottom` reserved so it clears the floating footer); RSVP fades it in above the controls on finish.
 
 ## Share-sheet reader experience

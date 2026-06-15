@@ -94,6 +94,30 @@ suppressed set, always-share set, plus one `pendingSuggestion` slot.
   `ShareSuggestionStore.setAlwaysShare`), Notify-When-They-Share switch, and
   Remove Friend (deletes friend + wipes suggestion/notify state).
 
+## Intent donation + share-sheet friend target
+
+- **`ShareIntentDonor`**: on every friend share (`SocialMessageCenter.sendArticle`
+  success) donates an outgoing `INSendMessageIntent` (recipient `INPerson` with
+  an email>phone>username handle; `conversationIdentifier` = friend UUID). This
+  teaches iOS the conversation so friends surface in the system share sheet's
+  people row and learns the share habit. Tested: handle preference.
+- **Share-sheet target**: the extension declares `IntentsSupported` +
+  `NSUserActivityTypes` = `INSendMessageIntent`. Tapping a Click friend
+  suggestion launches the extension with that intent; it reads the conversation
+  UUID and queues the URL via `PendingFriendShareStore` (the extension has no
+  crypto/CloudKit). The main app's `SocialMessageCenter.drainPendingFriendShares`
+  (launch + foreground) performs the real send. Suggestions only appear on a
+  physical device.
+
+## Onboarding (`OnboardingFlow`, `OnboardingStepViewController`)
+
+First launch (no identity) runs a 4-step nav flow: username (existing
+`OnboardingViewController`, creates identity) → notifications (Enable) → Safari
+extension (Open Settings; explains data is local-only) → shortcut/Action Button
+(Install Shortcut) → Done. Each step skippable. `AppDelegate` only auto-requests
+notification authorization for already-onboarded users, so new users get the
+prompt (with context) during the notifications step.
+
 ## Diagnostics (`Clip/Diagnostics/`)
 
 On-device log capture, because Console.app can't read an iOS-beta device's

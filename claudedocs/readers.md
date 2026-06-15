@@ -17,8 +17,17 @@ The scroll reader (`ScrollReaderViewController`) backs both Scroll and Highlight
 ## RSVP reader (ReadMaxx-style)
 
 - `Clip/Reader/RSVPEngine.swift` — pure logic, unit-tested. Tokenizes blocks into `RSVPWord`s. ORP index by length: 1→0, 2–5→1, 6–9→2, 10+→3. `duration(at:wpm:)` = 60/wpm × length factor (≤5: 1.0, 6–9: 1.3, 10+: 1.6) × pause factor (paragraph end 2.5, sentence end 1.8, clause `,;:` 1.3).
-- `Clip/Reader/RSVPViewController.swift` — black full-screen; word positioned so the ORP letter (red) sits on a fixed focal column (40% width) between guideline notches + hairlines; tap = play/pause; scrubber (pauses while scrubbing); ±25 wpm buttons (persisted via `ReaderSettings.baseWPM`, 100–900, default 300); "% · wpm" status; light haptic at sentence/paragraph ends; resume via `ReadingListItem.lastWordIndex` saved on pause/close.
+- `Clip/Reader/RSVPViewController.swift` — word positioned so the ORP letter (tinted in the reading accent) sits on a fixed focal column (40% width) behind a **liquid-glass focus capsule** (`GlassStyle.focusPill()` — `UIGlassEffect` capsule, subtle indigo tint; replaced the old red guideline notches/hairlines); tap = play/pause; scrubber (accent tint, pauses while scrubbing); ±25 wpm buttons (persisted via `ReaderSettings.baseWPM`, 100–900, default 300); "% · wpm" status; light haptic at sentence/paragraph ends; resume via `ReadingListItem.lastWordIndex` saved on pause/close.
 - `Clip/Settings/ReaderSettings.swift` — base WPM in standard defaults (also adjustable in Settings screen slider).
+
+## Focus styling + end-of-article share
+
+- `GlassStyle.readingAccent` (systemIndigo, matching the app icon) is the shared reader accent (replaced red). Scroll/chunk highlight = inline text-background tint in that accent (a glass overlay would blur the words); RSVP = glass capsule behind the opaque on-top word.
+- **End-of-article share** (`Clip/Reader/ArticleShareView.swift`): separator + "Done reading? Share it." + Share button + one-tap "Send to <friend>" suggestion (`ShareSuggestionStore.suggestedFriend(forURLString:)` → `SendToFriendSheet.sendToFriend`). Scroll reader appends it below the text (subview positioned via a `contentSize` observer; `contentInset.bottom` reserved so it clears the floating footer); RSVP fades it in above the controls on finish.
+
+## Share-sheet reader experience
+
+`ShareSheetExperience` (off/reader/rsvp/chunk, App Group default, `Settings → Reader → Share Sheet`). When not off, sharing a link into Click saves it AND presents `ClipShare/ShareReaderViewController` — a **self-contained** single-article reader (WebKit + UIKit only; independent of this reader stack, which pulls in CloudKit/camera/SwiftSoup): `reader` = WKWebView; `rsvp`/`chunk` extract `document.body.innerText` and run a compact speed reader. Done to exit; no access to the rest of the app. See `save-link-intent.md`.
 
 ## Inline images
 

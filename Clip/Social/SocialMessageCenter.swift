@@ -96,6 +96,8 @@ final class SocialMessageCenter {
             DiagnosticLog.shared.record(
                 "sent article to \(friend.card.username) [\(friend.card.uuid.uuidString)]",
                 category: "social")
+            // Teach iOS this conversation so the friend surfaces in the share sheet.
+            ShareIntentDonor.donateShare(to: friend.card)
         } catch {
             DiagnosticLog.shared.record(
                 "send article to \(friend.card.username) FAILED: \(String(describing: error))",
@@ -120,6 +122,27 @@ final class SocialMessageCenter {
             logger.info("auto-shared to \(friend.card.username, privacy: .public)")
         } catch {
             logger.error("auto-share failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Sends any friend-shares the share extension queued (it can't send
+    /// directly). Call on launch and foreground.
+    func drainPendingFriendShares() async {
+        let pending = PendingFriendShareStore.drainAll()
+        for share in pending {
+            guard let friend = friendsStore.friend(withUUID: share.friendUUID) else {
+                logger.info("pending share for unknown friend \(share.friendUUID, privacy: .public)")
+                continue
+            }
+            do {
+                try await sendArticle(urlString: share.urlString, title: nil, to: friend)
+                DiagnosticLog.shared.record(
+                    "sent share-sheet share to \(friend.card.username)", category: "social")
+            } catch {
+                DiagnosticLog.shared.record(
+                    "pending share to \(friend.card.username) FAILED: \(String(describing: error))",
+                    category: "social")
+            }
         }
     }
 

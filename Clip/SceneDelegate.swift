@@ -56,7 +56,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
         ReadingListIngestor.shared.ingestAllPending()
-        Task { await SocialMessageCenter.shared.processInbox() }
+        Task {
+            await SocialMessageCenter.shared.drainPendingFriendShares()
+            await SocialMessageCenter.shared.processInbox()
+        }
     }
 
     private func showMainUI() {

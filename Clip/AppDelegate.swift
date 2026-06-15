@@ -47,6 +47,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
         Task {
             await SocialMessageCenter.shared.ensureSubscription()
+            await SocialMessageCenter.shared.drainPendingFriendShares()
             await SocialMessageCenter.shared.processInbox()
         }
         scheduleInboxRefresh()

@@ -3,12 +3,17 @@
 //  ClipShare
 //
 
+import Intents
 import UIKit
 import UniformTypeIdentifiers
 
 /// Zero-UI share extension: receives a web URL or a document (PDF/text/
 /// Markdown/RTF) from the share sheet, appends it to the shared reading list,
 /// and completes immediately. The main app downloads/parses on next launch.
+///
+/// When launched by tapping a Click friend in the share sheet's people row, the
+/// shared URL is queued as an outgoing friend-share for the main app to send
+/// (the extension has no crypto/CloudKit access).
 final class ShareViewController: UIViewController {
 
     /// Document file types accepted from the share sheet. `.text` (public.text)
@@ -23,6 +28,18 @@ final class ShareViewController: UIViewController {
               !providers.isEmpty
         else {
             complete()
+            return
+        }
+
+        // Tapped a Click friend suggestion: the conversation identifier is the
+        // friend's UUID. Queue the URL for the main app to send.
+        if let intent = extensionContext?.intent as? INSendMessageIntent,
+           let conversationID = intent.conversationIdentifier,
+           let friendUUID = UUID(uuidString: conversationID),
+           let urlProvider = providers.first(where: {
+               $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+           }) {
+            handleFriendShare(urlProvider, friendUUID: friendUUID)
             return
         }
 
@@ -83,9 +100,44 @@ final class ShareViewController: UIViewController {
         }
     }
 
+    private func handleFriendShare(_ provider: NSItemProvider, friendUUID: UUID) {
+        provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
+            if let url = value as? URL, url.absoluteString.hasPrefix("http") {
+                PendingFriendShareWriter.enqueue(
+                    friendUUID: friendUUID, urlString: url.absoluteString)
+            }
+            self?.complete()
+        }
+    }
+
     private func complete() {
         DispatchQueue.main.async { [weak self] in
             self?.extensionContext?.completeRequest(returningItems: nil)
+        }
+    }
+}
+
+/// Writes outgoing friend-shares to the App Group queue the main app drains.
+/// (The JSON shape must match the app's `PendingFriendShare`.)
+private enum PendingFriendShareWriter {
+    private struct Share: Codable {
+        let friendUUID: UUID
+        let urlString: String
+    }
+
+    static func enqueue(friendUUID: UUID, urlString: String) {
+        guard let fileURL = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: SharedReadingListAppender.appGroupID)?
+            .appendingPathComponent("pendingFriendShares.json")
+        else { return }
+        var queue: [Share] = []
+        if let data = try? Data(contentsOf: fileURL),
+           let decoded = try? JSONDecoder().decode([Share].self, from: data) {
+            queue = decoded
+        }
+        queue.append(Share(friendUUID: friendUUID, urlString: urlString))
+        if let data = try? JSONEncoder().encode(queue) {
+            try? data.write(to: fileURL, options: .atomic)
         }
     }
 }

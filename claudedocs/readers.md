@@ -58,7 +58,11 @@ no nav bar of its own beyond Done.
 
 ## Share-sheet reader experience
 
-`ShareSheetExperience` (off/reader/rsvp/chunk, App Group default, `Settings → Reader → Share Sheet`). When not off, sharing a link into Click saves it AND presents `ShareKit/ShareReaderViewController`, which fetches + extracts the page (`ArticleFetcher` + `ArticleExtractor`) and presents the **real** `ReaderViewController` (forceMode mapped from the setting) with **nil** `shareProvider` + `gazeTrackerFactory` — so it's the exact same reader UI/business code, minus the share footer/button and eye tracking. All three modes, audio (foreground only — no lock-screen controls), and the inline split-web link viewer work. A Done button (the loading screen's, then the reader's left bar item) exits; no access to the rest of the app. Resume with no gaze starts from the first word visible on screen (`ScrollReaderViewController.firstVisibleWordIndex`). See `save-link-intent.md`.
+Fixed behavior (NO in-app setting as of build 38): the **share extension** always saves + dismisses; the **"Read in Click" action extension** always presents `ShareKit/ShareReaderViewController`, which fetches + extracts the page (`ArticleFetcher` + `ArticleExtractor`) and presents the **real** `ReaderViewController` with **nil** `shareProvider` + `gazeTrackerFactory` — the exact same reader UI/business code, minus the share footer/button and eye tracking. The action extension keeps its OWN last-used reader mode in `ShareKit/ActionReaderMode` (its private `UserDefaults.standard`, not the App Group); `ReaderViewController(persistsModePreference: false, onModeChange:)` makes mode switches write there instead of the shared `ReaderSettings`. All three modes, audio (foreground only), and the inline split-web link viewer work. A Done button exits. Resume with no gaze starts from the first fully-visible word (`ScrollReaderViewController.firstFullyVisibleWordIndex`).
+
+**Gaze highlight** (`ReaderSettings.highlightGazeWord`, Settings → Eye Tracking, opt-in): in plain scroll mode with eye tracking active, a 0.3s timer highlights the word the gaze tracker estimates you're reading (no auto-scroll).
+
+**Deep links**: `clickreader://read?url=…` (`ClickDeepLink`) opens the app and loads that article in the reader (`SceneDelegate.openReader`). The in-app "Share Link…" shares this link. (A custom scheme opens the app only when installed; App-Store fallback would need a Universal Link.)
 
 ## Inline images
 

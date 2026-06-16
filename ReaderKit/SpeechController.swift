@@ -101,7 +101,7 @@ final class SpeechController: NSObject {
         synthesizer.pauseSpeaking(at: .word)
         // Yield the audio session so interrupted audio (e.g. Picture-in-Picture
         // video) resumes while we're paused; `resume()` reactivates it.
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        ReaderAudioSession.deactivate()
         updateNowPlaying()
         delegate?.speechPlaybackStateDidChange(self)
     }
@@ -159,7 +159,7 @@ final class SpeechController: NSObject {
         synthesizer.stopSpeaking(at: .immediate)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         teardownRemoteCommands()
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        ReaderAudioSession.deactivate()
         delegate?.speechPlaybackStateDidChange(self)
     }
 
@@ -215,9 +215,7 @@ final class SpeechController: NSObject {
     // MARK: - Audio session & media controls
 
     private func configureAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio)
-        try? session.setActive(true)
+        ReaderAudioSession.activate()
     }
 
     private func setupRemoteCommands() {

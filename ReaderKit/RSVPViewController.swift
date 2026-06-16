@@ -156,16 +156,8 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     /// Read-aloud uses a non-mixing category so it takes over playback; pairing
     /// every deactivation with `.notifyOthersOnDeactivation` lets interrupted
     /// audio (e.g. Picture-in-Picture video) RESUME rather than stay stopped.
-    private func activateAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio)
-        try? session.setActive(true)
-    }
-
-    private func deactivateAudioSession() {
-        try? AVAudioSession.sharedInstance().setActive(
-            false, options: .notifyOthersOnDeactivation)
-    }
+    private func activateAudioSession() { ReaderAudioSession.activate() }
+    private func deactivateAudioSession() { ReaderAudioSession.deactivate() }
 
     // MARK: - Setup
 

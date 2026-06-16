@@ -29,9 +29,27 @@ final class ShareViewController: UIViewController {
         return (nsExtension?["NSExtensionPointIdentifier"] as? String) == "com.apple.ui-services"
     }
 
+    private let spinner = UIActivityIndicatorView(style: .large)
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .clear
+
+        // The action extension shows a brief loading view: it presents the
+        // reader, so it must stay on screen (a clear, empty `com.apple.ui-services`
+        // view controller can be torn down before async item-loading finishes).
+        // The zero-UI share extension stays invisible and just saves.
+        if isActionExtension {
+            view.backgroundColor = .systemBackground
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            spinner.startAnimating()
+            view.addSubview(spinner)
+            NSLayoutConstraint.activate([
+                spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            ])
+        } else {
+            view.backgroundColor = .clear
+        }
 
         let host = isActionExtension ? "action" : "share"
         // Flatten attachments across ALL input items (action extensions may
@@ -106,22 +124,27 @@ final class ShareViewController: UIViewController {
     /// Handles the Safari JavaScript-preprocessing result: a property-list whose
     /// `NSExtensionJavaScriptPreprocessingResultsKey` holds `{URL, title}`.
     private func handleJavaScriptResult(_ provider: NSItemProvider) {
-        provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier) { [weak self] item, _ in
-            guard let self else { return }
-            let results = (item as? [String: Any])?[
-                NSExtensionJavaScriptPreprocessingResultsKey] as? [String: Any]
-            if let urlString = results?["URL"] as? String, urlString.hasPrefix("http"),
-               let url = URL(string: urlString) {
-                SharedReadingListAppender.append(urlString: urlString)
-                SharedDiagnosticLog.record("saved url (js) \(urlString)", category: "share")
-                if let mode = self.readerMode() {
-                    DispatchQueue.main.async { self.presentReader(url: url, mode: mode) }
-                    return
+        SharedDiagnosticLog.record("action: loading JS result", category: "share")
+        // Strong self: the work + reader presentation need the VC alive, and
+        // there's no retain cycle (nothing holds the closure once it runs).
+        provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier, options: nil) { item, error in
+            let dict = item as? NSDictionary
+            let results = dict?[NSExtensionJavaScriptPreprocessingResultsKey] as? NSDictionary
+            let urlString = results?["URL"] as? String
+            SharedDiagnosticLog.record(
+                "action: JS callback url=\(urlString ?? "nil") err=\(error.map { String(describing: $0) } ?? "nil")",
+                category: "share")
+            DispatchQueue.main.async {
+                if let urlString, urlString.hasPrefix("http"), let url = URL(string: urlString) {
+                    SharedReadingListAppender.append(urlString: urlString)
+                    SharedDiagnosticLog.record("saved url (js) \(urlString)", category: "share")
+                    if let mode = self.readerMode() {
+                        self.presentReader(url: url, mode: mode)
+                        return
+                    }
                 }
-            } else {
-                SharedDiagnosticLog.record("js result had no http URL", category: "share")
+                self.complete()
             }
-            self.complete()
         }
     }
 

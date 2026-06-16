@@ -35,6 +35,19 @@ enum MIMEBody {
 
     private static func parse(rawBody: String, contentType: String, transferEncoding: String) -> Extracted? {
         let type = contentType.lowercased()
+
+        // A forwarded-as-attachment email: the part body is a full nested
+        // message (its own headers + body). Recurse into it.
+        if type.contains("message/rfc822") {
+            let decoded = decode(rawBody, transferEncoding: transferEncoding)
+            if let (headers, body) = splitHeaders(decoded) {
+                return parse(
+                    rawBody: body,
+                    contentType: headers["content-type"] ?? "text/plain",
+                    transferEncoding: headers["content-transfer-encoding"] ?? "7bit")
+            }
+        }
+
         guard type.contains("multipart/"), let boundary = boundary(in: contentType) else {
             // A leaf part.
             let decoded = decode(rawBody, transferEncoding: transferEncoding)

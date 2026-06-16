@@ -201,11 +201,11 @@ final class SocialMessageCenter {
         }
 
         // A push fires the moment a record is created, but the public DB query
-        // index lags by a few seconds, so an immediate query can miss it. When
-        // a push (or bg refresh) signals an arrival, retry the query before
-        // concluding the inbox is empty. User-initiated drains don't retry.
-        let retryDelays: [UInt64] =
-            (trigger == "push" || trigger == "bgRefresh") ? pushRetryDelaysSeconds : []
+        // index lags by a few seconds, so an immediate query can miss it — only
+        // a push retries the query before concluding the inbox is empty. The
+        // background refresh and user-initiated drains do a single fetch (a
+        // periodic poll re-checks soon enough; no need to burn time retrying).
+        let retryDelays: [UInt64] = trigger == "push" ? pushRetryDelaysSeconds : []
 
         var records: [InboxRecord] = []
         var attempt = 0

@@ -547,11 +547,11 @@ final class ReadingListViewController: UITableViewController {
                 self?.store.delete(item)
             }
             // Videos: share to friends + delete. Documents: Kindle + read + delete.
-            // Articles: everything.
+            // Articles: everything. "Send to Kindle" only when Kindle is set up.
             var children: [UIAction] = []
             if item.canShareToFriends { children.append(sendToFriend) }
             if !item.isYouTubeVideo {
-                children.append(sendToKindle)
+                if ArticleSendCoordinator.shared.isConfigured { children.append(sendToKindle) }
                 children.append(speedRead)
             }
             children.append(delete)

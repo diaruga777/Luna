@@ -11,7 +11,7 @@ import UIKit
 /// word-length-aware timing with sentence/paragraph pauses, scrubbing, live
 /// speed adjustment, and an optional read-aloud mode where speech paces the
 /// display instead of the WPM timer.
-final class RSVPViewController: UIViewController {
+final class RSVPViewController: UIViewController, ReaderPositionTracking {
 
     /// Fired once when playback reaches the last word.
     var onFinishedReading: (() -> Void)?
@@ -29,7 +29,15 @@ final class RSVPViewController: UIViewController {
     // normal pace) and the display flashes each word as it's voiced — the WPM
     // setting is ignored.
     private let isSpeechMode: Bool
-    private let synthesizer = AVSpeechSynthesizer()
+    /// Created lazily so the SILENT speed reader never instantiates a speech
+    /// synthesizer — instantiating one can claim the system audio session and
+    /// interrupt other audio (e.g. Picture-in-Picture video). Only read-aloud
+    /// mode ever touches it.
+    private lazy var synthesizer: AVSpeechSynthesizer = {
+        let synthesizer = AVSpeechSynthesizer()
+        synthesizer.delegate = self
+        return synthesizer
+    }()
     /// First word index of the sentence currently being spoken.
     private var speechSentenceBase = 0
     /// UTF-16 offset of each word within the current utterance string.
@@ -66,7 +74,7 @@ final class RSVPViewController: UIViewController {
     private let wordFont: UIFont
 
     init(item: ReadingListItem, content: ArticleContent, audioEnabled: Bool = false,
-         shareProvider: ReaderShareProviding? = nil) {
+         shareProvider: ReaderShareProviding? = nil, resumeWordIndex: Int? = nil) {
         self.item = item
         self.isSpeechMode = audioEnabled
         self.shareProvider = shareProvider
@@ -76,7 +84,10 @@ final class RSVPViewController: UIViewController {
         self.engine = RSVPEngine(
             content: content, maxCharactersPerWord: Self.targetCharactersAcross)
         super.init(nibName: nil, bundle: nil)
-        if let resume = item.lastWordIndex, engine.words.indices.contains(resume) {
+        if let resume = resumeWordIndex, engine.words.indices.contains(resume) {
+            // Carried over from another reader mode — start exactly there.
+            currentIndex = resume
+        } else if let resume = item.lastWordIndex, engine.words.indices.contains(resume) {
             currentIndex = resume
         } else if ReaderSettings.eyeTrackingEnabled,
                   let gazeIndex = item.eyeTrackedWordIndex,
@@ -85,10 +96,12 @@ final class RSVPViewController: UIViewController {
             // eyes were tracked on.
             currentIndex = gazeIndex
         }
-        synthesizer.delegate = self
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// The focal word currently displayed — carried to other modes on a switch.
+    var currentReadingWordIndex: Int? { currentIndex }
 
     /// Picks the monospaced font size so `targetCharactersAcross` characters
     /// fit beside the focal column. The right side binds: a word that long has
@@ -117,11 +130,9 @@ final class RSVPViewController: UIViewController {
         configureWordLabel()
         configureControls()
 
-        if isSpeechMode {
-            // Read-aloud paces the display; prepare the audio session up front.
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-            try? AVAudioSession.sharedInstance().setActive(true)
-        }
+        // NB: the audio session is NOT touched here — only when read-aloud
+        // actually starts playing (see `play()`), so opening the silent speed
+        // reader never interrupts other audio / Picture-in-Picture.
 
         view.addGestureRecognizer(
             UITapGestureRecognizer(target: self, action: #selector(togglePlayPause)))
@@ -140,6 +151,20 @@ final class RSVPViewController: UIViewController {
         super.viewWillDisappear(animated)
         pause()
         saveProgress()
+    }
+
+    /// Read-aloud uses a non-mixing category so it takes over playback; pairing
+    /// every deactivation with `.notifyOthersOnDeactivation` lets interrupted
+    /// audio (e.g. Picture-in-Picture video) RESUME rather than stay stopped.
+    private func activateAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .spokenAudio)
+        try? session.setActive(true)
+    }
+
+    private func deactivateAudioSession() {
+        try? AVAudioSession.sharedInstance().setActive(
+            false, options: .notifyOthersOnDeactivation)
     }
 
     // MARK: - Setup
@@ -316,6 +341,7 @@ final class RSVPViewController: UIViewController {
         isPlaying = true
         playPauseButton.configuration?.image = UIImage(systemName: "pause.fill")
         if isSpeechMode {
+            activateAudioSession()
             speakCurrentSentence()
         } else {
             scheduleNext()
@@ -326,7 +352,12 @@ final class RSVPViewController: UIViewController {
         isPlaying = false
         timer?.invalidate()
         timer = nil
-        synthesizer.stopSpeaking(at: .immediate)
+        // Only touch speech/audio in read-aloud mode — the silent reader must
+        // never instantiate the synthesizer or claim the audio session.
+        if isSpeechMode {
+            synthesizer.stopSpeaking(at: .immediate)
+            deactivateAudioSession()
+        }
         playPauseButton.configuration?.image = UIImage(systemName: "play.fill")
         saveProgress()
     }

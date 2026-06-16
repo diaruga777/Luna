@@ -34,3 +34,12 @@ protocol GazeTracking: AnyObject {
 /// Builds a gaze tracker for a reader's text view, or returns nil when eye
 /// tracking is off/unsupported (or in the share extension).
 typealias GazeTrackerFactory = (_ textView: UITextView, _ wordMap: WordMap, _ seedWordIndex: Int?) -> GazeTracking?
+
+/// A child reader that can report the word it's currently on, so the host can
+/// carry the reading position across a mode switch.
+protocol ReaderPositionTracking: AnyObject {
+    /// Best estimate of the word index currently being read. For the scrolling
+    /// reader with no playback this is the eye-tracked word (when available),
+    /// falling back to the first word fully visible on screen.
+    var currentReadingWordIndex: Int? { get }
+}

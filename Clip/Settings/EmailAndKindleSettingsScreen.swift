@@ -61,7 +61,7 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         case .importMail:
             return "New email from an allowed sender becomes a reading-list item. A background job also checks roughly twice a day, so newsletters arrive (and forward to Kindle, if enabled) even when the app is closed."
         case .subjectFilters:
-            return "Also import any email whose subject contains one of these phrases, regardless of sender (e.g. \"Money Stuff\"). Matched as a case-insensitive substring."
+            return "Also import any email whose subject contains one of these phrases, regardless of sender. Matched as a case-insensitive substring."
         }
     }
 
@@ -299,7 +299,7 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
             message: "Email whose subject contains this phrase will be imported, regardless of sender.",
             preferredStyle: .alert)
         alert.addTextField { field in
-            field.placeholder = "Money Stuff"
+            field.placeholder = "Subject contains…"
             field.autocapitalizationType = .sentences
             field.autocorrectionType = .default
         }

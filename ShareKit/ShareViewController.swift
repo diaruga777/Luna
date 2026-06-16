@@ -34,15 +34,21 @@ final class ShareViewController: UIViewController {
         view.backgroundColor = .clear
 
         let host = isActionExtension ? "action" : "share"
-        guard let providers = (extensionContext?.inputItems.first as? NSExtensionItem)?.attachments,
-              !providers.isEmpty
-        else {
-            SharedDiagnosticLog.record("\(host) extension: no attachments, completing", category: "share")
+        // Flatten attachments across ALL input items (action extensions may
+        // split content across items differently than share extensions).
+        let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
+        let providers = items.flatMap { $0.attachments ?? [] }
+        guard !providers.isEmpty else {
+            SharedDiagnosticLog.record(
+                "\(host) extension: no attachments (\(items.count) item(s)), completing",
+                category: "share")
             complete()
             return
         }
+        let types = providers.map { $0.registeredTypeIdentifiers.joined(separator: "|") }
+            .joined(separator: ", ")
         SharedDiagnosticLog.record(
-            "\(host) extension: \(providers.count) attachment(s)", category: "share")
+            "\(host) extension: \(providers.count) attachment(s) types=[\(types)]", category: "share")
 
         // Tapped a Click friend suggestion: the conversation identifier is the
         // friend's UUID. Queue the URL for the main app to send.
@@ -53,6 +59,15 @@ final class ShareViewController: UIViewController {
                $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
            }) {
             handleFriendShare(urlProvider, friendUUID: friendUUID)
+            return
+        }
+
+        // Safari (action extension) delivers the page URL via the JavaScript
+        // preprocessing result — a property-list attachment — NOT a public.url.
+        if let plistProvider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.propertyList.identifier)
+        }) {
+            handleJavaScriptResult(plistProvider)
             return
         }
 
@@ -86,6 +101,28 @@ final class ShareViewController: UIViewController {
             return
         }
         complete()
+    }
+
+    /// Handles the Safari JavaScript-preprocessing result: a property-list whose
+    /// `NSExtensionJavaScriptPreprocessingResultsKey` holds `{URL, title}`.
+    private func handleJavaScriptResult(_ provider: NSItemProvider) {
+        provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier) { [weak self] item, _ in
+            guard let self else { return }
+            let results = (item as? [String: Any])?[
+                NSExtensionJavaScriptPreprocessingResultsKey] as? [String: Any]
+            if let urlString = results?["URL"] as? String, urlString.hasPrefix("http"),
+               let url = URL(string: urlString) {
+                SharedReadingListAppender.append(urlString: urlString)
+                SharedDiagnosticLog.record("saved url (js) \(urlString)", category: "share")
+                if let mode = self.readerMode() {
+                    DispatchQueue.main.async { self.presentReader(url: url, mode: mode) }
+                    return
+                }
+            } else {
+                SharedDiagnosticLog.record("js result had no http URL", category: "share")
+            }
+            self.complete()
+        }
     }
 
     private func handleURL(_ provider: NSItemProvider) {

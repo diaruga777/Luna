@@ -18,6 +18,9 @@ final class ReaderViewController: UIViewController {
     private var mode: ReadingListItem.ReaderMode
     private var audioOn = false
     private var currentChild: UIViewController?
+    /// Reading position carried from the outgoing child to the next on a mode
+    /// switch (nil on first open → each child uses its own persisted default).
+    private var resumeWordIndex: Int?
 
     /// The mode switcher lives in an inline header bar (not the nav title) so it
     /// doesn't slide during push/pop transitions. Child readers fill the area
@@ -128,6 +131,10 @@ final class ReaderViewController: UIViewController {
 
     private func showCurrentMode() {
         if let old = currentChild {
+            // Carry the reading position forward before tearing the child down.
+            if let position = (old as? ReaderPositionTracking)?.currentReadingWordIndex {
+                resumeWordIndex = position
+            }
             old.willMove(toParent: nil)
             old.view.removeFromSuperview()
             old.removeFromParent()
@@ -141,7 +148,8 @@ final class ReaderViewController: UIViewController {
             child = makeScrollReader(autoHighlight: true)
         case .rsvp:
             let rsvp = RSVPViewController(
-                item: item, content: content, audioEnabled: audioOn, shareProvider: shareProvider)
+                item: item, content: content, audioEnabled: audioOn,
+                shareProvider: shareProvider, resumeWordIndex: resumeWordIndex)
             rsvp.onFinishedReading = { [weak self] in self?.markRead() }
             child = rsvp
         }
@@ -162,7 +170,8 @@ final class ReaderViewController: UIViewController {
     private func makeScrollReader(autoHighlight: Bool) -> ScrollReaderViewController {
         let scroll = ScrollReaderViewController(
             item: item, content: content, autoHighlight: autoHighlight, audioEnabled: audioOn,
-            shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory)
+            shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory,
+            resumeWordIndex: resumeWordIndex)
         scroll.onFinishedReading = { [weak self] in self?.markRead() }
         return scroll
     }

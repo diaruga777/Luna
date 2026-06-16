@@ -99,6 +99,9 @@ final class SpeechController: NSObject {
         isPlaying = false
         isPausedMidUtterance = true
         synthesizer.pauseSpeaking(at: .word)
+        // Yield the audio session so interrupted audio (e.g. Picture-in-Picture
+        // video) resumes while we're paused; `resume()` reactivates it.
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         updateNowPlaying()
         delegate?.speechPlaybackStateDidChange(self)
     }

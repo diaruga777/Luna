@@ -10,10 +10,15 @@ import UIKit
 /// or web frame — see SplitWebOverlayViewController). Supports read-aloud with
 /// word highlighting + follow-scroll, remembers the scroll position, and
 /// estimates the last-read word via eye tracking on supported devices.
-final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
+final class ScrollReaderViewController: UIViewController, UITextViewDelegate, ReaderPositionTracking {
 
     /// Fired once when the user reaches the end of the article.
     var onFinishedReading: (() -> Void)?
+
+    /// A word index carried in from another reader mode. When set (and this is
+    /// the plain scrolling mode), the view scrolls so that word sits 25% from
+    /// the top on first appearance instead of restoring the saved offset.
+    private let explicitResumeWordIndex: Int?
 
     private let item: ReadingListItem
     private let content: ArticleContent
@@ -59,16 +64,28 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
     init(item: ReadingListItem, content: ArticleContent,
          autoHighlight: Bool = false, audioEnabled: Bool = false,
          shareProvider: ReaderShareProviding? = nil,
-         gazeTrackerFactory: GazeTrackerFactory? = nil) {
+         gazeTrackerFactory: GazeTrackerFactory? = nil,
+         resumeWordIndex: Int? = nil) {
         self.item = item
         self.content = content
         self.autoHighlight = autoHighlight
         self.audioEnabled = audioEnabled
         self.shareProvider = shareProvider
         self.gazeTrackerFactory = gazeTrackerFactory
+        self.explicitResumeWordIndex = resumeWordIndex
         self.rendered = ArticleTextRenderer.render(content)
         self.wordMap = WordMap(content: content, rendered: rendered)
         super.init(nibName: nil, bundle: nil)
+    }
+
+    /// The word currently being read — read-aloud / chunk position when playing,
+    /// else the eye-tracked word, else the first word fully visible on screen.
+    /// Carried to other modes on a switch.
+    var currentReadingWordIndex: Int? {
+        if let speech, let word = speech.currentWordIndex { return word }
+        if let chunk, let word = chunk.currentWordIndex { return word }
+        if let gaze = gazeTracker?.estimatedWordIndex { return gaze }
+        return firstFullyVisibleWordIndex()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -181,7 +198,13 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
         super.viewDidAppear(animated)
         if !didRestoreScroll {
             didRestoreScroll = true
-            if let saved = item.lastScrollOffset {
+            // Carried in from another mode (plain scroll only): place that word
+            // 25% from the top. Highlight/audio modes instead start playback at
+            // the carried word and follow-scroll centers it.
+            if let resume = explicitResumeWordIndex, !autoHighlight, !audioEnabled,
+               wordMap.attributedRange(forWord: resume) != nil {
+                scrollWord(resume, toFractionFromTop: 0.25)
+            } else if let saved = item.lastScrollOffset {
                 restoreScroll(to: CGFloat(saved))
             }
         }
@@ -271,24 +294,55 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate {
     /// looking, not the top of the article — matching behavior when eye
     /// tracking is off/unavailable or in the share sheet).
     private var resumeWordIndex: Int? {
+        if let explicitResumeWordIndex {
+            return explicitResumeWordIndex
+        }
         if let resume = item.lastSpokenWordIndex {
             return resume
         }
         if let gazeTracker {
             return gazeTracker.estimatedWordIndex ?? item.eyeTrackedWordIndex
         }
-        return firstVisibleWordIndex()
+        return firstFullyVisibleWordIndex()
     }
 
-    /// The word index of the first word at the top of the visible text.
-    private func firstVisibleWordIndex() -> Int? {
-        let topPoint = CGPoint(
-            x: textView.textContainerInset.left + 1,
-            y: textView.contentOffset.y + textView.textContainerInset.top + 1)
-        let charIndex = textView.layoutManager.characterIndex(
-            for: topPoint, in: textView.textContainer,
-            fractionOfDistanceBetweenInsertionPoints: nil)
+    /// The word index of the first word whose line is FULLY visible (not clipped
+    /// by the top edge) — what a reader has actually read up to.
+    private func firstFullyVisibleWordIndex() -> Int? {
+        let layoutManager = textView.layoutManager
+        let container = textView.textContainer
+        // Visible top expressed in text-container coordinates (text is offset by
+        // the container inset within the text view).
+        let visibleTop = textView.contentOffset.y - textView.textContainerInset.top
+        let probe = CGPoint(x: 1, y: max(0, visibleTop) + 1)
+        let glyph = layoutManager.glyphIndex(for: probe, in: container)
+        var lineRange = NSRange()
+        let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &lineRange)
+        // If that line is clipped at the top, advance to the next line's start.
+        var firstGlyph = lineRange.location
+        if lineRect.minY < visibleTop - 0.5 {
+            let nextGlyph = NSMaxRange(lineRange)
+            if nextGlyph < layoutManager.numberOfGlyphs { firstGlyph = nextGlyph }
+        }
+        let charIndex = layoutManager.characterIndexForGlyph(at: firstGlyph)
         return wordMap.wordIndex(nearCharacterIndex: charIndex)
+    }
+
+    /// Scrolls so the given word sits `fraction` of the screen height down from
+    /// the top, clamped so it never overscrolls past either end.
+    private func scrollWord(_ wordIndex: Int, toFractionFromTop fraction: CGFloat) {
+        guard let range = wordMap.attributedRange(forWord: wordIndex) else { return }
+        let layoutManager = textView.layoutManager
+        layoutManager.ensureLayout(for: textView.textContainer)
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer)
+        rect.origin.y += textView.textContainerInset.top
+        let target = rect.minY - fraction * textView.bounds.height
+        let minOffset = -textView.adjustedContentInset.top
+        let maxOffset = max(
+            minOffset,
+            textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        textView.contentOffset.y = min(max(minOffset, target), maxOffset)
     }
 
     private func startSpeech() {

@@ -1,0 +1,78 @@
+//
+//  XPlatform.swift
+//  Clip
+//
+
+import Foundation
+
+/// Recognizes X / Twitter status links: `(x|twitter).com/<user>/status/<id>`
+/// (id is the 19-ish-digit tweet id). Pure.
+enum XLink {
+    private static let hosts: Set<String> = [
+        "x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com",
+    ]
+
+    /// The tweet id from a status URL.
+    static func tweetID(from urlString: String) -> String? {
+        guard let url = URL(string: urlString), let host = url.host?.lowercased(),
+              hosts.contains(host) else { return nil }
+        let segments = Array(url.pathComponents.dropFirst())
+        guard let statusIndex = segments.firstIndex(where: { $0 == "status" || $0 == "statuses" }),
+              statusIndex + 1 < segments.count else { return nil }
+        let id = segments[statusIndex + 1]
+        guard id.allSatisfy(\.isNumber), !id.isEmpty else { return nil }
+        return id
+    }
+
+    static func appURL(tweetID: String) -> URL? { URL(string: "twitter://status?id=\(tweetID)") }
+}
+
+/// X posts. Opens the X/Twitter app via `twitter://status?id=`, else Safari
+/// (the timeline isn't a clean embed). Metadata via the keyless fxtwitter API.
+struct XPlatform: PlatformModule {
+    let platform: ContentPlatform = .x
+    let glyphSymbolName = "bird.fill"
+
+    func classify(_ urlString: String) -> PlatformMatch? {
+        guard let id = XLink.tweetID(from: urlString) else { return nil }
+        return PlatformMatch(platform: .x, itemID: id)
+    }
+
+    func subtitle(for item: ReadingListItem) -> String? { item.channelName }
+
+    func appDeepLink(for item: ReadingListItem) -> URL? {
+        (item.platformItemID).flatMap(XLink.appURL(tweetID:))
+    }
+
+    func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
+
+    var metadataFetcher: PlatformMetadataFetching? { XMetadataFetcher() }
+}
+
+/// Best-effort tweet metadata via fxtwitter (keyless JSON; simpler + more
+/// reliable from a client than the syndication token endpoint).
+struct XMetadataFetcher: PlatformMetadataFetching {
+    private struct Response: Decodable {
+        let tweet: Tweet?
+        struct Tweet: Decodable {
+            let text: String?
+            let author: Author?
+            struct Author: Decodable { let name: String?; let screen_name: String? }
+        }
+    }
+
+    func fetchMetadata(for match: PlatformMatch, urlString: String) async -> PlatformMetadata? {
+        guard let id = match.itemID,
+              let url = URL(string: "https://api.fxtwitter.com/status/\(id)"),
+              let (data, response) = try? await URLSession.shared.data(from: url),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(Response.self, from: data),
+              let tweet = decoded.tweet
+        else { return nil }
+
+        let creator = tweet.author?.name
+            ?? tweet.author?.screen_name.map { "@\($0)" }
+        let title = tweet.text.map { String($0.prefix(140)) }
+        return PlatformMetadata(title: title, creator: creator)
+    }
+}

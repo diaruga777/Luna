@@ -20,6 +20,11 @@ final class PlatformRegistry {
         self.modules = modules ?? [
             YouTubePlatform(),
             BlueskyPlatform(),
+            XPlatform(),
+            TikTokPlatform(),
+            RedditPlatform(),
+            InstagramPlatform(),
+            FacebookPlatform(),
         ]
     }
 

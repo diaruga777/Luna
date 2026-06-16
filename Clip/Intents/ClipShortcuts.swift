@@ -42,5 +42,13 @@ struct ClipShortcuts: AppShortcutsProvider {
             shortTitle: "Save Bluesky Post",
             systemImageName: "bubble.left.and.bubble.right"
         )
+        AppShortcut(
+            intent: FindRedditPostIntent(),
+            phrases: [
+                "Save a Reddit post with \(.applicationName)",
+            ],
+            shortTitle: "Save Reddit Post",
+            systemImageName: "bubble.left.and.text.bubble.right"
+        )
     }
 }

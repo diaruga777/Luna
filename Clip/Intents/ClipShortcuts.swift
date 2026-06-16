@@ -13,9 +13,9 @@ struct ClipShortcuts: AppShortcutsProvider {
             intent: ClipSafariPageIntent(),
             phrases: [
                 "Save this page with \(.applicationName)",
-                "Save this page with \(.applicationName)",
+                "Save the current page with \(.applicationName)",
             ],
-            shortTitle: "Clip Safari Page",
+            shortTitle: "Save Safari Page",
             systemImageName: "safari"
         )
         AppShortcut(

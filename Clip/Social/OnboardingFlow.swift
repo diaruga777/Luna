@@ -80,9 +80,9 @@ enum OnboardingFlow {
         OnboardingStepViewController(
             symbol: "bolt.badge.clock",
             title: "One-Press Saving",
-            body: "Install the shortcut, then assign it to your Action Button to save the page you're reading instantly:\n\nSettings → Action Button → Shortcut → \"Clip Safari Page\".",
+            body: "Install the shortcut, then assign it to your Action Button to save the page you're reading instantly:\n\nSettings → Action Button → Shortcut → \"\(BundledShortcut.displayName)\".",
             primary: .init(title: "Install Shortcut") { step in
-                installShortcut(from: step)
+                BundledShortcut.presentInstaller(from: step)
             },
             secondary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
             continueTitle: "Done",
@@ -90,17 +90,4 @@ enum OnboardingFlow {
             onContinue: onFinished)
     }
 
-    /// Shares the bundled signed shortcut to the Shortcuts app (one-tap import).
-    private static func installShortcut(from presenter: UIViewController) {
-        guard let bundled = Bundle.main.url(
-            forResource: "Clip Safari Page", withExtension: "shortcut")
-        else { return }
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Clip Safari Page.shortcut")
-        try? FileManager.default.removeItem(at: tmp)
-        try? FileManager.default.copyItem(at: bundled, to: tmp)
-        let activity = UIActivityViewController(activityItems: [tmp], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = presenter.view
-        presenter.present(activity, animated: true)
-    }
 }

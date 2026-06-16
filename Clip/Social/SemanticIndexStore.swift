@@ -17,9 +17,6 @@ final class SemanticIndexStore {
 
     static let shared = SemanticIndexStore()
 
-    /// Minimum cosine similarity to suggest sharing. Sentence-embedding cosines
-    /// for clearly related text sit well above this; unrelated text below.
-    static let similarityThreshold: Float = 0.55
     private static let maxItemsPerPerson = 60
     private static let maxIndexedItems = 600
 
@@ -87,11 +84,12 @@ final class SemanticIndexStore {
     }
 
     /// The friend whose previously-shared items are most semantically similar to
-    /// `itemID` (max cosine over every chunk pair), above the threshold and not
-    /// already shared this item. nil when the item isn't indexed or nothing is
-    /// close enough — but the best sub-threshold score is still reported via the
-    /// `bestScore` out-param for logging.
-    func bestMatch(forItemID itemID: UUID, bestScore: inout Float, bestUsername: inout String?,
+    /// `itemID` (max cosine over every chunk pair), at or above `threshold` and
+    /// not already shared this item. nil when the item isn't indexed or nothing
+    /// is close enough — but the best sub-threshold score is still reported via
+    /// the `bestScore` out-param for logging.
+    func bestMatch(forItemID itemID: UUID, threshold: Float,
+                   bestScore: inout Float, bestUsername: inout String?,
                    bestItemID: inout UUID?) -> Match? {
         let state = loadState()
         bestScore = 0; bestUsername = nil; bestItemID = nil
@@ -108,7 +106,7 @@ final class SemanticIndexStore {
                     bestUsername = person.username
                     bestItemID = UUID(uuidString: sharedID)
                 }
-                if score >= Self.similarityThreshold, score > (match?.score ?? 0) {
+                if score >= threshold, score > (match?.score ?? 0) {
                     match = Match(uuid: uuid, username: person.username, score: score,
                                   matchedItemID: UUID(uuidString: sharedID))
                 }

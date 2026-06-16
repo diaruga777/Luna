@@ -101,10 +101,11 @@ final class SemanticIndexer {
         var bestScore: Float = 0
         var bestUsername: String?
         var bestItemID: UUID?
+        let threshold = SemanticSharingSettings.similarityThreshold
         let match = index.bestMatch(
-            forItemID: itemID, bestScore: &bestScore, bestUsername: &bestUsername, bestItemID: &bestItemID)
+            forItemID: itemID, threshold: threshold,
+            bestScore: &bestScore, bestUsername: &bestUsername, bestItemID: &bestItemID)
         let neighborTitle = bestItemID.flatMap { ReadingListStore.shared.item(withID: $0)?.title } ?? "—"
-        let threshold = SemanticIndexStore.similarityThreshold
         log("\(context): nearest = \"\(neighborTitle)\" shared to \(bestUsername ?? "—") score \(String(format: "%.3f", bestScore)) (threshold \(String(format: "%.2f", threshold)))")
         guard let match, FriendsStore.shared.friend(withUUID: match.uuid) != nil else {
             log("\(context): no suggestion (below threshold or friend missing)")

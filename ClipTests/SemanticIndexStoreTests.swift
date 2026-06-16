@@ -32,10 +32,15 @@ final class SemanticIndexStoreTests: XCTestCase {
         XCTAssertEqual(SemanticIndexStore.cosine([1, 2], [1]), 0, "length mismatch → 0")
     }
 
+    /// A fixed threshold for deterministic assertions, independent of the
+    /// user-facing sensitivity slider.
+    private let testThreshold: Float = 0.55
+
     /// bestMatch with throwaway out-params, for terse assertions.
     private func match(_ itemID: UUID) -> SemanticIndexStore.Match? {
         var s: Float = 0; var u: String?; var i: UUID?
-        return store.bestMatch(forItemID: itemID, bestScore: &s, bestUsername: &u, bestItemID: &i)
+        return store.bestMatch(forItemID: itemID, threshold: testThreshold,
+                               bestScore: &s, bestUsername: &u, bestItemID: &i)
     }
 
     func testMaxChunkSimilarityUsesClosestPair() {
@@ -57,7 +62,7 @@ final class SemanticIndexStoreTests: XCTestCase {
         let m = match(newItem)
         XCTAssertEqual(m?.uuid, alice)
         XCTAssertEqual(m?.matchedItemID, shareToAlice)
-        XCTAssertGreaterThanOrEqual(m?.score ?? 0, SemanticIndexStore.similarityThreshold)
+        XCTAssertGreaterThanOrEqual(m?.score ?? 0, testThreshold)
     }
 
     func testBestMatchNilWhenNothingClose() {
@@ -81,10 +86,11 @@ final class SemanticIndexStoreTests: XCTestCase {
         store.setVectors([[0.5, 0.87, 0]], forItemID: newItem) // ~0.5 cosine, below 0.55
         store.recordShare(itemID: shareToBob, personUUID: bob, username: "bob")
         var s: Float = 0; var u: String?; var i: UUID?
-        _ = store.bestMatch(forItemID: newItem, bestScore: &s, bestUsername: &u, bestItemID: &i)
+        _ = store.bestMatch(forItemID: newItem, threshold: testThreshold,
+                            bestScore: &s, bestUsername: &u, bestItemID: &i)
         XCTAssertEqual(u, "bob")
         XCTAssertGreaterThan(s, 0)
-        XCTAssertLessThan(s, SemanticIndexStore.similarityThreshold)
+        XCTAssertLessThan(s, testThreshold)
     }
 
     func testItemIDsNeedingVectorsCoversSharedItems() {
@@ -119,5 +125,26 @@ final class SuggestionKeyTests: XCTestCase {
             ShareSuggestionStore.suggestionKey(
                 urlString: "https://www.theverge.com/x", channelName: nil),
             "theverge.com")
+    }
+}
+
+final class SemanticSensitivityTests: XCTestCase {
+
+    func testThresholdIsMonotonicAndBounded() {
+        let off = SemanticSharingSettings.threshold(forSensitivity: 0)
+        let mid = SemanticSharingSettings.threshold(forSensitivity: 0.5)
+        let often = SemanticSharingSettings.threshold(forSensitivity: 1)
+        // Higher sensitivity → lower threshold → more suggestions.
+        XCTAssertGreaterThan(off, mid)
+        XCTAssertGreaterThan(mid, often)
+        XCTAssertEqual(off, SemanticSharingSettings.strictestThreshold, accuracy: 0.0001)
+        XCTAssertEqual(often, SemanticSharingSettings.loosestThreshold, accuracy: 0.0001)
+    }
+
+    func testThresholdClampsOutOfRange() {
+        XCTAssertEqual(SemanticSharingSettings.threshold(forSensitivity: -5),
+                       SemanticSharingSettings.strictestThreshold, accuracy: 0.0001)
+        XCTAssertEqual(SemanticSharingSettings.threshold(forSensitivity: 5),
+                       SemanticSharingSettings.loosestThreshold, accuracy: 0.0001)
     }
 }

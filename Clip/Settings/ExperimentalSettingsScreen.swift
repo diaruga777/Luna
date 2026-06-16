@@ -32,7 +32,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .semantic: return "Semantic Sharing Suggestions"
+        case .semantic: return "Suggest Shares Based on Content"
         case .youtube: return "YouTube"
         }
     }
@@ -40,7 +40,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .semantic:
-            return "Suggests sharing a newly saved article with a friend when it's similar to things you've shared with them before. Off by default."
+            return "When you save something that resembles things you've shared with a friend before, Click can suggest sharing it with them. Slide all the way left to turn this off."
         case .youtube:
             return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read."
         }
@@ -51,17 +51,49 @@ final class ExperimentalSettingsScreen: UITableViewController {
     ) -> UITableViewCell {
         switch Section(rawValue: indexPath.section)! {
         case .semantic:
-            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-            var content = cell.defaultContentConfiguration()
-            content.text = "Suggest by Content Similarity"
-            cell.contentConfiguration = content
-            cell.selectionStyle = .none
-            cell.accessoryView = makeToggle(
-                isOn: SemanticSharingSettings.isEnabled, action: #selector(semanticToggled(_:)))
-            return cell
+            return semanticSensitivityCell()
         case .youtube:
             return youTubeCell(for: YouTubeRow(rawValue: indexPath.row)!)
         }
+    }
+
+    /// A slider from "Never" (off) to "Often", with no exposed numbers.
+    private func semanticSensitivityCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+
+        let slider = UISlider()
+        slider.minimumValue = 0
+        slider.maximumValue = 1
+        slider.value = Float(SemanticSharingSettings.sensitivity)
+        slider.addTarget(self, action: #selector(sensitivityChanged(_:)), for: .valueChanged)
+
+        let endLabels = UIStackView(arrangedSubviews: [
+            endCaption("Never"), UIView(), endCaption("Often"),
+        ])
+        endLabels.axis = .horizontal
+        endLabels.distribution = .fill
+
+        let stack = UIStackView(arrangedSubviews: [slider, endLabels])
+        stack.axis = .vertical
+        stack.spacing = 2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        cell.contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 10),
+            stack.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -10),
+        ])
+        return cell
+    }
+
+    private func endCaption(_ text: String) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = .secondaryLabel
+        return label
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -74,9 +106,10 @@ final class ExperimentalSettingsScreen: UITableViewController {
         }
     }
 
-    @objc private func semanticToggled(_ sender: UISwitch) {
-        SemanticSharingSettings.isEnabled = sender.isOn
-        if sender.isOn { SemanticIndexer.shared.scheduleRun() }
+    @objc private func sensitivityChanged(_ sender: UISlider) {
+        SemanticSharingSettings.sensitivity = Double(sender.value)
+        // Build the index once it's on so live matches have history to compare to.
+        if SemanticSharingSettings.isEnabled { SemanticIndexer.shared.scheduleRun() }
     }
 
     // MARK: - YouTube

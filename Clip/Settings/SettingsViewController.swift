@@ -336,7 +336,7 @@ final class ShortcutSettingsScreen: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        let base = "Save the Safari page you're reading with one press of the Action Button: enable the Click Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"Clip Safari Page\" in Settings → Action Button.\n\n\(safariStatusText)"
+        let base = "Save the Safari page you're reading with one press of the Action Button: enable the Click Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
         if #unavailable(iOS 27.0) {
             return "⚠️ One-press Safari saving requires iOS 27 or later.\n\n" + base
         }
@@ -368,7 +368,8 @@ final class ShortcutSettingsScreen: UITableViewController {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Row(rawValue: indexPath.row)! {
         case .install:
-            installShortcut(from: tableView.cellForRow(at: indexPath) ?? view)
+            BundledShortcut.presentInstaller(
+                from: self, sourceView: tableView.cellForRow(at: indexPath))
         case .openShortcuts:
             if let url = URL(string: "shortcuts://") { UIApplication.shared.open(url) }
         case .refreshStatus:
@@ -377,20 +378,6 @@ final class ShortcutSettingsScreen: UITableViewController {
         }
     }
 
-    /// Shares the bundled signed shortcut to the Shortcuts app (one-tap import;
-    /// `shortcuts://import-workflow` rejects local file URLs).
-    private func installShortcut(from sourceView: UIView) {
-        guard let bundled = Bundle.main.url(
-            forResource: "Clip Safari Page", withExtension: "shortcut")
-        else { return }
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Clip Safari Page.shortcut")
-        try? FileManager.default.removeItem(at: tmp)
-        try? FileManager.default.copyItem(at: bundled, to: tmp)
-        let activity = UIActivityViewController(activityItems: [tmp], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = sourceView
-        present(activity, animated: true)
-    }
 
     private func refreshSafariStatus() {
         if let url = SafariURLStore.lastURL {

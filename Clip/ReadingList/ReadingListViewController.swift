@@ -511,11 +511,18 @@ final class ReadingListViewController: UITableViewController {
                 parts.append("\(Int(progress * 100))%")
             }
         }
-        switch item.sendState {
-        case .sent: parts.append("sent to Kindle")
-        case .failed: parts.append("send failed")
-        case .queued: parts.append("sending…")
-        case nil: break
+        // Per-destination send status (e.g. "sent to Kindle", "Boox send failed").
+        let destinationNames = [
+            ArticleDestinationID.kindle: "Kindle",
+            ArticleDestinationID.boox: "Boox",
+        ]
+        for (destinationID, state) in item.sendStates.sorted(by: { $0.key < $1.key }) {
+            let name = destinationNames[destinationID] ?? destinationID
+            switch state {
+            case .sent: parts.append("sent to \(name)")
+            case .failed: parts.append("\(name) send failed")
+            case .queued: parts.append("sending to \(name)…")
+            }
         }
         switch item.state {
         case .pending: parts.append("downloading…")
@@ -679,7 +686,13 @@ final class ReadingListViewController: UITableViewController {
                 title: "Send to Kindle",
                 image: UIImage(systemName: "paperplane")
             ) { _ in
-                self?.sendToKindle(item)
+                self?.sendToEreader(item, destinationID: ArticleDestinationID.kindle)
+            }
+            let sendToBoox = UIAction(
+                title: "Send to Boox",
+                image: UIImage(systemName: "books.vertical")
+            ) { _ in
+                self?.sendToEreader(item, destinationID: ArticleDestinationID.boox)
             }
             let shareEbook = UIAction(
                 title: "Share eBook…",
@@ -707,12 +720,18 @@ final class ReadingListViewController: UITableViewController {
             ) { _ in
                 self?.store.delete(item)
             }
-            // Videos: share to friends + delete. Documents: Kindle + read + delete.
-            // Articles: everything. "Send to Kindle" only when Kindle is set up.
+            // Videos: share to friends + delete. Documents: ereaders + read +
+            // delete. Articles: everything. Each ereader row shows only when
+            // that destination is set up.
             var children: [UIAction] = []
             if item.canShareToFriends { children.append(sendToFriend) }
             if !item.isYouTubeVideo {
-                if ArticleSendCoordinator.shared.isConfigured { children.append(sendToKindle) }
+                if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) {
+                    children.append(sendToKindle)
+                }
+                if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.boox) {
+                    children.append(sendToBoox)
+                }
                 // Share the article as an EPUB to any ereader/app, once it's ready.
                 if item.state == .ready { children.append(shareEbook) }
                 children.append(speedRead)
@@ -722,17 +741,10 @@ final class ReadingListViewController: UITableViewController {
         })
     }
 
-    private func sendToKindle(_ item: ReadingListItem) {
-        guard ArticleSendCoordinator.shared.isConfigured else {
-            let alert = UIAlertController(
-                title: "Set Up Send to Kindle",
-                message: "Add your Kindle address and email account in Settings first.",
-                preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default))
-            present(alert, animated: true)
-            return
-        }
-        Task { await ArticleSendCoordinator.shared.send(item) }
+    /// Explicit send of one article to one ereader destination (the long-press
+    /// menu only offers a destination when it's configured).
+    private func sendToEreader(_ item: ReadingListItem, destinationID: String) {
+        Task { await ArticleSendCoordinator.shared.send(item, toDestinationID: destinationID) }
     }
 
     /// Builds the article's EPUB off-main and presents the system share sheet so

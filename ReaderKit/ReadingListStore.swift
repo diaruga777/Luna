@@ -223,15 +223,18 @@ final class ReadingListStore {
         save(all)
     }
 
-    /// Updates the Kindle delivery status; `.sent` also stamps `dateSent`.
-    func setSendState(_ sendState: ReadingListItem.SendState, for itemID: UUID) {
+    /// Updates a destination's delivery status; `.sent` also stamps the
+    /// destination's `datesSent` (the once-per-day resend guard).
+    func setSendState(
+        _ sendState: ReadingListItem.SendState, for itemID: UUID, destination: String
+    ) {
         mutationLock.lock()
         defer { mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == itemID }) else { return }
-        all[index].sendState = sendState
+        all[index].sendStates[destination] = sendState
         if sendState == .sent {
-            all[index].dateSent = Date()
+            all[index].datesSent[destination] = Date()
         }
         save(all)
     }

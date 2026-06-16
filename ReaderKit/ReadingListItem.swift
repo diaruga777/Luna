@@ -83,10 +83,12 @@ struct ReadingListItem: Codable, Identifiable {
     /// document with no web URL. The raw file lives at
     /// `Articles/<id>-source.<documentType>`.
     var documentType: String?
-    /// Send-to-Kindle status; nil until a send is first requested.
-    var sendState: SendState?
-    /// When the article was last delivered to Kindle (for the once-per-day guard).
-    var dateSent: Date?
+    /// Per-destination send status (e.g. "kindle", "boox"), keyed by destination
+    /// id. Absent = never requested for that destination.
+    var sendStates: [String: SendState]
+    /// When the article was last delivered to each destination (the once-per-day
+    /// resend guard), keyed by destination id.
+    var datesSent: [String: Date]
     /// When the user last pressed save for this URL while it was already in the
     /// list (the double-save-to-send detection window).
     var lastSaveAttemptDate: Date?
@@ -108,6 +110,11 @@ struct ReadingListItem: Codable, Identifiable {
     /// Only items with a real web URL can be sent to other users.
     var canShareToFriends: Bool { isShareable }
 
+    /// Send status for one destination (e.g. "kindle", "boox").
+    func sendState(for destinationID: String) -> SendState? { sendStates[destinationID] }
+    /// Last delivery time for one destination.
+    func dateSent(for destinationID: String) -> Date? { datesSent[destinationID] }
+
     init(urlString: String) {
         self.id = UUID()
         self.urlString = urlString
@@ -128,9 +135,16 @@ struct ReadingListItem: Codable, Identifiable {
         self.thumbnailFileName = nil
         self.sharedByUsername = nil
         self.documentType = nil
-        self.sendState = nil
-        self.dateSent = nil
+        self.sendStates = [:]
+        self.datesSent = [:]
         self.lastSaveAttemptDate = nil
+    }
+
+    /// Legacy single-destination send keys, read only to migrate old reading-list
+    /// JSON into the per-destination `sendStates`/`datesSent` (folded under the
+    /// "kindle" id, which is all that existed before).
+    private enum LegacyCodingKeys: String, CodingKey {
+        case sendState, dateSent
     }
 
     // Manual decoding so items saved before readState existed still decode.
@@ -155,8 +169,27 @@ struct ReadingListItem: Codable, Identifiable {
         thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
         sharedByUsername = try container.decodeIfPresent(String.self, forKey: .sharedByUsername)
         documentType = try container.decodeIfPresent(String.self, forKey: .documentType)
-        sendState = try container.decodeIfPresent(SendState.self, forKey: .sendState)
-        dateSent = try container.decodeIfPresent(Date.self, forKey: .dateSent)
+        if let states = try container.decodeIfPresent([String: SendState].self, forKey: .sendStates) {
+            sendStates = states
+        } else {
+            // Migrate the pre-multi-destination single `sendState` → "kindle".
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            if let old = try legacy.decodeIfPresent(SendState.self, forKey: .sendState) {
+                sendStates = ["kindle": old]
+            } else {
+                sendStates = [:]
+            }
+        }
+        if let dates = try container.decodeIfPresent([String: Date].self, forKey: .datesSent) {
+            datesSent = dates
+        } else {
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            if let old = try legacy.decodeIfPresent(Date.self, forKey: .dateSent) {
+                datesSent = ["kindle": old]
+            } else {
+                datesSent = [:]
+            }
+        }
         lastSaveAttemptDate = try container.decodeIfPresent(Date.self, forKey: .lastSaveAttemptDate)
     }
 }

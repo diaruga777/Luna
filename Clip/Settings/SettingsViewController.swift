@@ -36,6 +36,7 @@ final class SettingsViewController: UITableViewController {
         Category(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
         Category(title: "Eye Tracking", symbol: "eye") { EyeTrackingSettingsScreen() },
         Category(title: "Email & Kindle", symbol: "envelope") { EmailAndKindleSettingsScreen() },
+        Category(title: "Send to Boox", symbol: "books.vertical") { BooxSettingsScreen() },
         Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
         Category(title: "Experimental", symbol: "flask") { ExperimentalSettingsScreen() },
         Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },

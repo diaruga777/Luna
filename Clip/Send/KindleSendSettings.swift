@@ -9,23 +9,8 @@ import Foundation
 /// lives in the Keychain via `SendCredentialsStoring`).
 enum KindleSendSettings {
 
-    /// When articles are sent automatically.
-    enum SendMode: String, CaseIterable {
-        /// Never send automatically (long-press send still works).
-        case off
-        /// Every saved article is sent once it's ingested.
-        case allSaves
-        /// Pressing save twice within a few seconds sends that article.
-        case doubleSave
-
-        var displayName: String {
-            switch self {
-            case .off: return "Off"
-            case .allSaves: return "All Saved Articles"
-            case .doubleSave: return "Double Save"
-            }
-        }
-    }
+    /// Send timing is the shared `ArticleSendMode`.
+    typealias SendMode = ArticleSendMode
 
     /// SMTP presets; custom exposes the host field.
     enum Provider: String, CaseIterable {

@@ -313,14 +313,15 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
     }
 
     private func sendTestEmail() {
-        guard ArticleSendCoordinator.shared.isConfigured else {
+        guard ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) else {
             presentInfoAlert(title: "Not Configured",
                              message: "Fill in the email account and Kindle address first.")
             return
         }
         Task { [weak self] in
             do {
-                try await ArticleSendCoordinator.shared.sendTestDocument()
+                try await ArticleSendCoordinator.shared.sendTestDocument(
+                    toDestinationID: ArticleDestinationID.kindle)
                 self?.presentInfoAlert(
                     title: "Test Sent",
                     message: "Check your Kindle library in a few minutes. If nothing arrives, confirm the sender is on Amazon's approved list.")

@@ -59,25 +59,36 @@ final class ReadingListStoreTests: XCTestCase {
 
     func testSetSendStateStampsDateSentOnlyWhenSent() {
         let item = store.add(urlString: "https://example.com/send")
+        let kindle = ArticleDestinationID.kindle
 
-        store.setSendState(.queued, for: item.id)
-        XCTAssertEqual(store.item(withID: item.id)?.sendState, .queued)
-        XCTAssertNil(store.item(withID: item.id)?.dateSent)
+        store.setSendState(.queued, for: item.id, destination: kindle)
+        XCTAssertEqual(store.item(withID: item.id)?.sendState(for: kindle), .queued)
+        XCTAssertNil(store.item(withID: item.id)?.dateSent(for: kindle))
 
-        store.setSendState(.sent, for: item.id)
-        XCTAssertEqual(store.item(withID: item.id)?.sendState, .sent)
-        XCTAssertNotNil(store.item(withID: item.id)?.dateSent)
+        store.setSendState(.sent, for: item.id, destination: kindle)
+        XCTAssertEqual(store.item(withID: item.id)?.sendState(for: kindle), .sent)
+        XCTAssertNotNil(store.item(withID: item.id)?.dateSent(for: kindle))
+    }
+
+    func testSendStatesAreIndependentPerDestination() {
+        let item = store.add(urlString: "https://example.com/multi")
+        store.setSendState(.sent, for: item.id, destination: ArticleDestinationID.kindle)
+        store.setSendState(.failed, for: item.id, destination: ArticleDestinationID.boox)
+
+        let fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.sendState(for: ArticleDestinationID.kindle), .sent)
+        XCTAssertEqual(fresh?.sendState(for: ArticleDestinationID.boox), .failed)
     }
 
     func testTargetedSendMutationsDoNotClobberOtherFields() {
         let item = store.add(urlString: "https://example.com/fields")
         store.setLastWordIndex(42, for: item.id)
-        store.setSendState(.sent, for: item.id)
+        store.setSendState(.sent, for: item.id, destination: ArticleDestinationID.kindle)
         store.recordSaveAttempt(for: item.id)
 
         let fresh = store.item(withID: item.id)
         XCTAssertEqual(fresh?.lastWordIndex, 42)
-        XCTAssertEqual(fresh?.sendState, .sent)
+        XCTAssertEqual(fresh?.sendState(for: ArticleDestinationID.kindle), .sent)
         XCTAssertNotNil(fresh?.lastSaveAttemptDate)
     }
 
@@ -92,9 +103,26 @@ final class ReadingListStoreTests: XCTestCase {
 
         let items = store.items()
         XCTAssertEqual(items.count, 1)
-        XCTAssertNil(items.first?.sendState)
-        XCTAssertNil(items.first?.dateSent)
+        XCTAssertTrue(items.first?.sendStates.isEmpty ?? false)
+        XCTAssertTrue(items.first?.datesSent.isEmpty ?? false)
         XCTAssertNil(items.first?.lastSaveAttemptDate)
+    }
+
+    func testLegacySingleSendStateMigratesToKindle() throws {
+        // Pre-multi-destination JSON used a single `sendState`/`dateSent`.
+        let legacyJSON = """
+            [{"id":"\(UUID().uuidString)","urlString":"https://example.com/legacy",\
+            "dateAdded":700000000,"state":"ready","readState":"read",\
+            "sendState":"sent","dateSent":700000500}]
+            """
+        try Data(legacyJSON.utf8).write(
+            to: scratchDirectory.appendingPathComponent("readingList.json"))
+
+        let item = store.items().first
+        XCTAssertEqual(item?.sendState(for: ArticleDestinationID.kindle), .sent)
+        XCTAssertEqual(
+            item?.dateSent(for: ArticleDestinationID.kindle),
+            Date(timeIntervalSinceReferenceDate: 700000500))
     }
 
     func testSaveAndLoadContentRoundTrip() {

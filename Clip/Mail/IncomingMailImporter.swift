@@ -31,10 +31,11 @@ final class IncomingMailImporter {
                 await ReadingListIngestor.shared.ingest(item)
                 // Optionally forward the imported article to Kindle once parsed.
                 if IncomingMailSettings.autoSendToKindle,
-                   ArticleSendCoordinator.shared.isConfigured,
+                   ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle),
                    let ready = ReadingListStore.shared.item(withID: item.id),
                    ready.state == .ready {
-                    await ArticleSendCoordinator.shared.send(ready)
+                    await ArticleSendCoordinator.shared.send(
+                        ready, toDestinationID: ArticleDestinationID.kindle)
                 }
             }
         }
@@ -115,8 +116,10 @@ final class IncomingMailImporter {
     /// Send-to-Kindle is configured.
     private func autoSendToKindleIfEnabled(itemID: UUID) {
         guard IncomingMailSettings.autoSendToKindle,
-              ArticleSendCoordinator.shared.isConfigured,
+              ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle),
               let ready = store.item(withID: itemID), ready.state == .ready else { return }
-        Task { await ArticleSendCoordinator.shared.send(ready) }
+        Task {
+            await ArticleSendCoordinator.shared.send(ready, toDestinationID: ArticleDestinationID.kindle)
+        }
     }
 }

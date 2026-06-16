@@ -78,7 +78,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             let result = await ReadingListIngestor.shared.handleSavePress(urlString: articleURL)
             let itemID: UUID?
             switch result {
-            case .saved(let item), .sentToKindle(let item): itemID = item.id
+            case .saved(let item), .sentToEreaders(let item): itemID = item.id
             case .ignored: itemID = ReadingListStore.shared.item(forURLString: articleURL)?.id
             }
             nav.popToRootViewController(animated: false)

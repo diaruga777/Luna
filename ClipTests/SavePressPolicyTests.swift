@@ -9,12 +9,16 @@ import XCTest
 final class SavePressPolicyTests: XCTestCase {
 
     private let now = Date(timeIntervalSince1970: 1_000_000)
+    private let kindle = ArticleDestinationID.kindle
+    private let boox = ArticleDestinationID.boox
 
-    private func item(sendState: ReadingListItem.SendState? = nil,
-                      dateSent: Date? = nil) -> ReadingListItem {
+    private func item(
+        sendState: ReadingListItem.SendState? = nil, dateSent: Date? = nil,
+        destination: String = ArticleDestinationID.kindle
+    ) -> ReadingListItem {
         var item = ReadingListItem(urlString: "https://example.com/a")
-        item.sendState = sendState
-        item.dateSent = dateSent
+        if let sendState { item.sendStates[destination] = sendState }
+        if let dateSent { item.datesSent[destination] = dateSent }
         return item
     }
 
@@ -22,7 +26,7 @@ final class SavePressPolicyTests: XCTestCase {
         XCTAssertEqual(
             SavePressPolicy.decide(
                 existingItem: nil, previousPressDate: nil, now: now,
-                sendMode: .doubleSave, kindleConfigured: true),
+                doubleSaveDestinationIDs: [kindle]),
             .saveNew)
     }
 
@@ -31,8 +35,8 @@ final class SavePressPolicyTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: item(),
                 previousPressDate: now.addingTimeInterval(-5), now: now,
-                sendMode: .doubleSave, kindleConfigured: true),
-            .sendToKindle)
+                doubleSaveDestinationIDs: [kindle]),
+            .sendToEreaders(destinationIDs: [kindle]))
     }
 
     func testSecondPressOutsideWindowIsIgnored() {
@@ -40,36 +44,18 @@ final class SavePressPolicyTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: item(),
                 previousPressDate: now.addingTimeInterval(-60), now: now,
-                sendMode: .doubleSave, kindleConfigured: true),
+                doubleSaveDestinationIDs: [kindle]),
             .ignore)
     }
 
-    func testDoublePressIgnoredWhenModeIsOff() {
+    func testDoublePressIgnoredWhenNoDoubleSaveDestinations() {
+        // Covers both "mode off" and "all saves" (neither is in double-save mode),
+        // and "not configured".
         XCTAssertEqual(
             SavePressPolicy.decide(
                 existingItem: item(),
                 previousPressDate: now.addingTimeInterval(-5), now: now,
-                sendMode: .off, kindleConfigured: true),
-            .ignore)
-    }
-
-    func testDoublePressIgnoredWhenModeIsAllSaves() {
-        // All-saves mode already sent the article at ingestion; a double press
-        // shouldn't trigger anything extra.
-        XCTAssertEqual(
-            SavePressPolicy.decide(
-                existingItem: item(),
-                previousPressDate: now.addingTimeInterval(-5), now: now,
-                sendMode: .allSaves, kindleConfigured: true),
-            .ignore)
-    }
-
-    func testDoublePressIgnoredWhenKindleNotConfigured() {
-        XCTAssertEqual(
-            SavePressPolicy.decide(
-                existingItem: item(),
-                previousPressDate: now.addingTimeInterval(-5), now: now,
-                sendMode: .doubleSave, kindleConfigured: false),
+                doubleSaveDestinationIDs: []),
             .ignore)
     }
 
@@ -78,19 +64,29 @@ final class SavePressPolicyTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: item(sendState: .sent, dateSent: now.addingTimeInterval(-3600)),
                 previousPressDate: now.addingTimeInterval(-5), now: now,
-                sendMode: .doubleSave, kindleConfigured: true),
+                doubleSaveDestinationIDs: [kindle]),
             .ignore)
     }
 
     func testDoublePressResendsWhenLastSentOverADayAgo() {
         XCTAssertEqual(
             SavePressPolicy.decide(
-                existingItem: item(
-                    sendState: .sent,
-                    dateSent: now.addingTimeInterval(-25 * 60 * 60)),
+                existingItem: item(sendState: .sent, dateSent: now.addingTimeInterval(-25 * 60 * 60)),
                 previousPressDate: now.addingTimeInterval(-5), now: now,
-                sendMode: .doubleSave, kindleConfigured: true),
-            .sendToKindle)
+                doubleSaveDestinationIDs: [kindle]),
+            .sendToEreaders(destinationIDs: [kindle]))
+    }
+
+    func testOnlyDestinationsNotRecentlySentAreEligible() {
+        // kindle sent an hour ago (skip); boox never sent (send).
+        var item = self.item(sendState: .sent, dateSent: now.addingTimeInterval(-3600), destination: kindle)
+        item.sendStates[boox] = nil
+        XCTAssertEqual(
+            SavePressPolicy.decide(
+                existingItem: item,
+                previousPressDate: now.addingTimeInterval(-5), now: now,
+                doubleSaveDestinationIDs: [kindle, boox]),
+            .sendToEreaders(destinationIDs: [boox]))
     }
 
     func testDoublePressOnVideoIsIgnored() {
@@ -100,7 +96,7 @@ final class SavePressPolicyTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: video,
                 previousPressDate: now.addingTimeInterval(-5), now: now,
-                sendMode: .doubleSave, kindleConfigured: true),
+                doubleSaveDestinationIDs: [kindle]),
             .ignore)
     }
 
@@ -109,7 +105,7 @@ final class SavePressPolicyTests: XCTestCase {
             SavePressPolicy.decide(
                 existingItem: item(sendState: .failed),
                 previousPressDate: now.addingTimeInterval(-5), now: now,
-                sendMode: .doubleSave, kindleConfigured: true),
-            .sendToKindle)
+                doubleSaveDestinationIDs: [kindle]),
+            .sendToEreaders(destinationIDs: [kindle]))
     }
 }

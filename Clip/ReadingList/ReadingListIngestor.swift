@@ -170,8 +170,8 @@ final class ReadingListIngestor {
     enum SavePressResult {
         /// New URL — saved; ingestion may still be running.
         case saved(ReadingListItem)
-        /// Double press — the article was (re)sent to Kindle.
-        case sentToKindle(ReadingListItem)
+        /// Double press — the article was (re)sent to one or more ereaders.
+        case sentToEreaders(ReadingListItem)
         /// Duplicate press — nothing happened.
         case ignored
     }
@@ -189,8 +189,7 @@ final class ReadingListIngestor {
             existingItem: existing,
             previousPressDate: previousPress,
             now: Date(),
-            sendMode: KindleSendSettings.sendMode,
-            kindleConfigured: ArticleSendCoordinator.shared.isConfigured)
+            doubleSaveDestinationIDs: ArticleSendCoordinator.shared.doubleSaveDestinationIDs())
 
         switch decision {
         case .saveNew:
@@ -201,11 +200,13 @@ final class ReadingListIngestor {
             await ingest(item)
             armSemanticSuggestionIfNeeded(urlString: urlString, itemID: item.id)
             return .saved(item)
-        case .sendToKindle:
+        case .sendToEreaders(let destinationIDs):
             // The policy only returns this for an existing item.
             guard let existing else { return .ignored }
-            await ArticleSendCoordinator.shared.send(existing)
-            return .sentToKindle(existing)
+            for destinationID in destinationIDs {
+                await ArticleSendCoordinator.shared.send(existing, toDestinationID: destinationID)
+            }
+            return .sentToEreaders(existing)
         case .ignore:
             return .ignored
         }

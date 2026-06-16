@@ -72,7 +72,7 @@ enum IntentIngestHelper {
                 let result = await ReadingListIngestor.shared.handleSavePress(urlString: urlString)
                 switch result {
                 case .saved(let item): return item.urlString
-                case .sentToKindle(let item): return item.urlString
+                case .sentToEreaders(let item): return item.urlString
                 case .ignored: return urlString
                 }
             }

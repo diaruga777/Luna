@@ -13,12 +13,15 @@ enum MessageBody: Equatable {
     case friendAdd(IdentityCard)
     /// A shared reading-list link.
     case readingListItem(urlString: String, title: String?)
+    /// A shared URL-less music/podcast item (artist+track or show+episode).
+    case mediaItem(kind: ContentPlatform, creator: String, title: String)
     /// A type this client doesn't know — ignore, never an error.
     case unknown(type: String)
 
     private enum TypeName {
         static let friendAdd = "friendAdd"
         static let readingListItem = "readingListItem"
+        static let mediaItem = "mediaItem"
     }
 
     /// Wire shape: {"type": "...", plus type-specific fields}.
@@ -27,6 +30,9 @@ enum MessageBody: Equatable {
         var card: IdentityCard?
         var urlString: String?
         var title: String?
+        var kind: String?
+        var creator: String?
+        var mediaTitle: String?
     }
 
     func encoded() throws -> Data {
@@ -36,6 +42,9 @@ enum MessageBody: Equatable {
             wire = Wire(type: TypeName.friendAdd, card: card)
         case .readingListItem(let urlString, let title):
             wire = Wire(type: TypeName.readingListItem, urlString: urlString, title: title)
+        case .mediaItem(let kind, let creator, let title):
+            wire = Wire(type: TypeName.mediaItem,
+                        kind: kind.rawValue, creator: creator, mediaTitle: title)
         case .unknown(let type):
             wire = Wire(type: type)
         }
@@ -51,6 +60,11 @@ enum MessageBody: Equatable {
         case TypeName.readingListItem:
             guard let urlString = wire.urlString else { return .unknown(type: wire.type) }
             return .readingListItem(urlString: urlString, title: wire.title)
+        case TypeName.mediaItem:
+            guard let kindRaw = wire.kind, let kind = ContentPlatform(rawValue: kindRaw),
+                  let creator = wire.creator, let title = wire.mediaTitle
+            else { return .unknown(type: wire.type) }
+            return .mediaItem(kind: kind, creator: creator, title: title)
         default:
             return .unknown(type: wire.type)
         }

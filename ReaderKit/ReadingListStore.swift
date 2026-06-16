@@ -298,6 +298,22 @@ final class ReadingListStore {
         return all[index]
     }
 
+    /// Creates (or returns the existing) URL-less music/podcast item from a
+    /// synthetic `clickmusic://`/`clickpodcast://` key, marked ready. Used by the
+    /// media intents and incoming media shares.
+    @discardableResult
+    func createURLlessMediaItem(
+        platform: ContentPlatform, creator: String, title: String
+    ) -> ReadingListItem {
+        let key = MediaItemKey.url(platform: platform, creator: creator, title: title)
+        let item = add(urlString: key)
+        let display = creator.isEmpty ? title : "\(creator) — \(title)"
+        return savePlatformMetadata(
+            platform: platform, platformItemID: nil, title: display, creator: creator,
+            thumbnailFileName: nil, mediaCreatorName: creator, mediaItemTitle: title,
+            mediaSourceService: nil, for: item.id) ?? item
+    }
+
     /// Fills in metadata for a recognized platform item and marks it ready
     /// (platform items have no `ArticleContent`). Best-effort: any field may be
     /// nil and the item still renders (logo + deep link). Mirrors

@@ -576,7 +576,10 @@ final class ReadingListViewController: UITableViewController {
             return
         }
         if let platform = item.contentPlatform {
-            openPlatformItem(item, platform: platform)
+            switch platform {
+            case .music, .podcast: openMediaItem(item, platform: platform)
+            default: openPlatformItem(item, platform: platform)
+            }
             return
         }
         guard item.state == .ready, let content = store.content(for: item) else { return }
@@ -605,6 +608,85 @@ final class ReadingListViewController: UITableViewController {
             return
         }
         InAppBrowser.present(urlString: item.urlString, from: self)
+    }
+
+    /// Opens a music/podcast item in the user's preferred provider (exact link
+    /// when same-provider, else a search), prompting to pick a provider if unset.
+    private func openMediaItem(_ item: ReadingListItem, platform: ContentPlatform) {
+        guard let provider = MediaProviderSettings.preferredProvider(for: platform) else {
+            promptChooseMediaProvider()
+            return
+        }
+        let query = [item.mediaCreatorName, item.mediaItemTitle ?? item.title]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        let markRead: (Bool) -> Void = { [weak self] success in
+            if success { self?.store.markReadState(.read, for: item.id) }
+        }
+
+        if item.mediaSourceService == provider,
+           let appURL = MediaLink.appSchemeURL(forWebURL: item.urlString),
+           UIApplication.shared.canOpenURL(appURL) {
+            UIApplication.shared.open(appURL, completionHandler: markRead)
+            return
+        }
+        if !query.isEmpty, let appSearch = provider.appSearchURL(query: query),
+           UIApplication.shared.canOpenURL(appSearch) {
+            UIApplication.shared.open(appSearch, completionHandler: markRead)
+            return
+        }
+        // Web fallback: the original http URL, else a web search in the provider.
+        if let url = URL(string: item.urlString), let scheme = url.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            InAppBrowser.present(urlString: item.urlString, from: self)
+        } else if !query.isEmpty, let webSearch = provider.webSearchURL(query: query) {
+            InAppBrowser.present(urlString: webSearch.absoluteString, from: self)
+        }
+    }
+
+    private func promptChooseMediaProvider() {
+        let alert = UIAlertController(
+            title: "Choose a Music App",
+            message: "Pick which app opens songs and podcasts.",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { [weak self] _ in
+            self?.navigationController?.pushViewController(MediaProviderSettingsScreen(), animated: true)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
+    }
+
+    /// Sends a URL-less music/podcast item to a friend (via the CloudKit media case).
+    private func sendMediaToFriend(_ item: ReadingListItem, from sourceView: UIView) {
+        let friends = FriendsStore.shared.items()
+        guard !friends.isEmpty else {
+            presentInfoAlert(
+                title: "No Friends Yet",
+                message: "Add friends from the Friends screen to share directly.")
+            return
+        }
+        let sheet = UIAlertController(
+            title: item.title ?? "Share", message: nil, preferredStyle: .actionSheet)
+        let kind = item.contentPlatform ?? .music
+        let creator = item.mediaCreatorName ?? ""
+        let title = item.mediaItemTitle ?? item.title ?? ""
+        for friend in friends {
+            sheet.addAction(UIAlertAction(title: "Send to \(friend.card.username)", style: .default) { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    guard await ICloudGate.requireICloud(presenting: self) else { return }
+                    do {
+                        try await SocialMessageCenter.shared.sendMediaItem(
+                            kind: kind, creator: creator, title: title, to: friend)
+                        Toast.show("Sent to \(friend.card.username)", from: self)
+                    } catch {
+                        self.presentInfoAlert(title: "Couldn't Send", message: "\(error)")
+                    }
+                }
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = sourceView
+        present(sheet, animated: true)
     }
 
     // MARK: - Video playback
@@ -766,9 +848,23 @@ final class ReadingListViewController: UITableViewController {
             // Videos: share to friends + delete. Documents: ereaders + read +
             // delete. Articles: everything. Each ereader row shows only when
             // that destination is set up.
+            let sendMediaToFriend = UIAction(
+                title: "Send to Friend…",
+                image: UIImage(systemName: "person.2")
+            ) { _ in
+                guard let self else { return }
+                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+                self.sendMediaToFriend(item, from: sourceView)
+            }
+
             var children: [UIAction] = []
-            if item.canShareToFriends { children.append(sendToFriend) }
-            if !item.isYouTubeVideo {
+            if item.canShareToFriends {
+                children.append(sendToFriend)
+            } else if item.isURLlessMedia {
+                children.append(sendMediaToFriend)
+            }
+            // Article-only actions — never for platform items (videos/posts/media).
+            if !item.isPlatformItem {
                 if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) {
                     children.append(sendToKindle)
                 }

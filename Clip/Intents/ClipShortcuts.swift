@@ -50,5 +50,21 @@ struct ClipShortcuts: AppShortcutsProvider {
             shortTitle: "Save Reddit Post",
             systemImageName: "bubble.left.and.text.bubble.right"
         )
+        AppShortcut(
+            intent: SaveMusicItemIntent(),
+            phrases: [
+                "Save a song with \(.applicationName)",
+            ],
+            shortTitle: "Save Song",
+            systemImageName: "music.note"
+        )
+        AppShortcut(
+            intent: SavePodcastItemIntent(),
+            phrases: [
+                "Save a podcast with \(.applicationName)",
+            ],
+            shortTitle: "Save Podcast",
+            systemImageName: "mic"
+        )
     }
 }

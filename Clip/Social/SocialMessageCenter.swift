@@ -120,6 +120,24 @@ final class SocialMessageCenter {
         }
     }
 
+    /// Sends a URL-less music/podcast item to a friend (the new `mediaItem`
+    /// case). Used to share songs/episodes that have no shareable http URL.
+    func sendMediaItem(
+        kind: ContentPlatform, creator: String, title: String, to friend: Friend
+    ) async throws {
+        guard let identity = identityStore.loadIdentity() else {
+            throw MessageCrypto.CryptoError(reason: "no identity")
+        }
+        let payload = try MessageCrypto.seal(
+            body: .mediaItem(kind: kind, creator: creator, title: title),
+            senderSigningKey: identity.signingKey,
+            recipientEncryptionPublicKey: friend.card.encryptionPublicKey)
+        try await transport.send(payload: payload, to: friend.card.uuid, from: identity.uuid)
+        ShareIntentDonor.donateShare(to: friend.card)
+        DiagnosticLog.shared.record(
+            "sent media item to \(friend.card.username)", category: "social")
+    }
+
     /// Always-share automation for a newly saved URL: fire-and-forget send
     /// that never feeds the suggestion streak.
     func autoShare(urlString: String, toFriendUUID uuid: UUID) async {
@@ -289,6 +307,25 @@ final class SocialMessageCenter {
             logger.info("accepted shared article from \(friend.card.username, privacy: .public)")
             DiagnosticLog.shared.record(
                 "accepted shared article from \(friend.card.username)", category: "social")
+            if FriendNotificationSettings.isNotifyEnabled(friendUUID: friend.card.uuid) {
+                notifyArticleShared(friend.card.username, title)
+            }
+
+        case .mediaItem(let kind, let creator, let title):
+            guard let friend = friendsStore.friend(withUUID: record.senderUUID),
+                  friend.card.signingPublicKey == senderSigningKey
+            else {
+                logger.info("dropping media item from non-friend \(record.senderUUID, privacy: .public)")
+                return
+            }
+            let key = MediaItemKey.url(platform: kind, creator: creator, title: title)
+            guard readingListStore.item(forURLString: key) == nil else {
+                logger.info("dropping duplicate shared media item")
+                return
+            }
+            let saved = readingListStore.createURLlessMediaItem(
+                platform: kind, creator: creator, title: title)
+            readingListStore.setSharedBy(friend.card.username, for: saved.id)
             if FriendNotificationSettings.isNotifyEnabled(friendUUID: friend.card.uuid) {
                 notifyArticleShared(friend.card.username, title)
             }

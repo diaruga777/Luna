@@ -24,6 +24,17 @@ enum OnboardingFlow {
         return nav
     }
 
+    /// Re-runs ONLY the device-setup steps (notifications, Safari extension,
+    /// shortcut) — not the username/identity step, which would create a new
+    /// identity and orphan existing friends. Used by the Settings "Replay
+    /// Setup" button.
+    static func makeSetupOnly(onFinished: @escaping () -> Void) -> UIViewController {
+        let nav = UINavigationController()
+        nav.setNavigationBarHidden(true, animated: false)
+        nav.viewControllers = [notificationsStep(nav: nav, onFinished: onFinished)]
+        return nav
+    }
+
     private static func notificationsStep(
         nav: UINavigationController, onFinished: @escaping () -> Void
     ) -> UIViewController {

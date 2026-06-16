@@ -48,8 +48,6 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     // Eye tracking (nil unless a gaze factory provided one — never in the sheet).
     private var gazeTracker: GazeTracking?
     private let gazeTrackerFactory: GazeTrackerFactory?
-    /// Live highlight of the word the gaze tracker thinks you're reading (opt-in).
-    private var gazeHighlightTimer: Timer?
 
     /// Sharing affordances; nil → no end-of-article share footer (share sheet).
     private let shareProvider: ReaderShareProviding?
@@ -96,7 +94,6 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         speech?.stop()
         chunk?.stop()
         gazeTracker?.stop()
-        gazeHighlightTimer?.invalidate()
         contentSizeObservation?.invalidate()
     }
 
@@ -184,6 +181,18 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         }
 
         gazeTracker = gazeTrackerFactory?(textView, wordMap, item.eyeTrackedWordIndex)
+
+        // Hide the text until the saved scroll position is applied, so the
+        // article never flashes at the top and then jumps. Fresh articles (no
+        // saved position) start at the top and stay visible.
+        if hasInitialScrollPosition { textView.alpha = 0 }
+    }
+
+    /// Whether there's a saved/carried position to restore before revealing.
+    private var hasInitialScrollPosition: Bool {
+        if let resume = explicitResumeWordIndex, !autoHighlight, !audioEnabled,
+           wordMap.attributedRange(forWord: resume) != nil { return true }
+        return item.lastScrollOffset != nil
     }
 
     override func viewDidLayoutSubviews() {
@@ -195,22 +204,41 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
                 top: 20, left: horizontal, bottom: 40, right: horizontal)
         }
         layoutShareView()
+
+        // Restore the scroll position as soon as we have real bounds — BEFORE
+        // the view is on screen — then reveal, so there's no top-flash + jump.
+        if !didRestoreScroll, textView.bounds.width > 0 {
+            didRestoreScroll = true
+            applyInitialScrollPosition()
+            revealContent()
+        }
+    }
+
+    private func applyInitialScrollPosition() {
+        // Carried in from another mode (plain scroll only): place that word 25%
+        // from the top. Highlight/audio modes start playback at the carried word
+        // and follow-scroll centers it.
+        if let resume = explicitResumeWordIndex, !autoHighlight, !audioEnabled,
+           wordMap.attributedRange(forWord: resume) != nil {
+            scrollWord(resume, toFractionFromTop: 0.25)
+        } else if let saved = item.lastScrollOffset {
+            restoreScroll(to: CGFloat(saved))
+        }
+    }
+
+    private func revealContent() {
+        guard textView.alpha < 1 else { return }
+        UIView.animate(withDuration: 0.15) { self.textView.alpha = 1 }
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // Fallback if layout hasn't run yet (shouldn't normally happen).
         if !didRestoreScroll {
             didRestoreScroll = true
-            // Carried in from another mode (plain scroll only): place that word
-            // 25% from the top. Highlight/audio modes instead start playback at
-            // the carried word and follow-scroll centers it.
-            if let resume = explicitResumeWordIndex, !autoHighlight, !audioEnabled,
-               wordMap.attributedRange(forWord: resume) != nil {
-                scrollWord(resume, toFractionFromTop: 0.25)
-            } else if let saved = item.lastScrollOffset {
-                restoreScroll(to: CGFloat(saved))
-            }
+            applyInitialScrollPosition()
         }
+        revealContent()
         // An article that fits on one screen can never scroll — seeing it at
         // all means it's been read.
         checkFinishedReading()
@@ -224,17 +252,21 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
                 startSpeech()
             } else if autoHighlight {
                 startChunkHighlight()
-            } else if gazeTracker != nil, ReaderSettings.highlightGazeWord {
-                // Plain scroll with eye tracking: live-highlight the gaze word.
-                startGazeHighlight()
+            } else {
+                // Plain scroll: optionally live-highlight the gaze word.
+                SharedDiagnosticLog.record(
+                    "reader opened (scroll): gazeTracker=\(gazeTracker != nil) highlightSetting=\(ReaderSettings.highlightGazeWord)",
+                    category: "gaze")
+                if gazeTracker != nil, ReaderSettings.highlightGazeWord {
+                    enableGazeHighlight()
+                }
             }
         }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        gazeHighlightTimer?.invalidate()
-        gazeHighlightTimer = nil
+        gazeTracker?.onWordIndexChange = nil
         store.setLastScrollOffset(Double(textView.contentOffset.y), for: item.id)
         if textView.contentSize.height > 0 {
             let visibleBottom = textView.contentOffset.y + textView.bounds.height
@@ -380,13 +412,20 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         chunk?.play(fromWordIndex: resumeWordIndex)
     }
 
-    /// Periodically highlights the word the gaze tracker estimates you're
-    /// reading. No auto-scroll — the page shouldn't jump as your eyes move.
-    private func startGazeHighlight() {
-        gazeHighlightTimer = Timer.scheduledTimer(
-            withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-            guard let self, let index = self.gazeTracker?.estimatedWordIndex,
-                  let range = self.wordMap.attributedRange(forWord: index) else { return }
+    /// Live-highlights the word the gaze tracker estimates you're reading,
+    /// driven by the tracker's update callback (no auto-scroll — the page
+    /// shouldn't jump as your eyes move).
+    private var gazeHighlightLogCount = 0
+    private func enableGazeHighlight() {
+        SharedDiagnosticLog.record("gaze highlight enabled", category: "gaze")
+        gazeTracker?.onWordIndexChange = { [weak self] index in
+            guard let self else { return }
+            // Throttled visibility into whether estimates are flowing.
+            self.gazeHighlightLogCount += 1
+            if self.gazeHighlightLogCount % 20 == 1 {
+                SharedDiagnosticLog.record("gaze word index = \(index)", category: "gaze")
+            }
+            guard let range = self.wordMap.attributedRange(forWord: index) else { return }
             self.applyHighlight(range)
         }
     }

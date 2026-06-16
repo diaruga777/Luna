@@ -12,7 +12,7 @@ struct ClipShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: ClipSafariPageIntent(),
             phrases: [
-                "Clip this page with \(.applicationName)",
+                "Save this page with \(.applicationName)",
                 "Save this page with \(.applicationName)",
             ],
             shortTitle: "Clip Safari Page",

@@ -27,6 +27,9 @@ protocol ReaderShareProviding: AnyObject {
 protocol GazeTracking: AnyObject {
     /// The most recent word-index estimate, if any.
     var estimatedWordIndex: Int? { get }
+    /// Called (on the main thread) whenever the estimate changes — drives the
+    /// optional live "highlight the word you're looking at" affordance.
+    var onWordIndexChange: ((Int) -> Void)? { get set }
     /// Stops the camera session.
     func stop()
 }

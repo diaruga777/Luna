@@ -35,7 +35,7 @@ final class SMTPArticleEmailSender: ArticleEmailSending {
             from: KindleSendSettings.smtpUsername,
             to: KindleSendSettings.kindleAddress,
             subject: title,
-            bodyText: "Sent to Kindle by Clip.",
+            bodyText: "Sent to Kindle by Click.",
             attachmentFileName: fileName,
             attachmentMimeType: "application/epub+zip",
             attachmentData: epubData)
@@ -151,17 +151,17 @@ final class ArticleSendCoordinator {
     /// and approved-sender configuration end to end.
     func sendTestDocument() async throws {
         let content = ArticleContent(
-            title: "Clip Test Document",
+            title: "Click Test Document",
             blocks: [ArticleContent.Block(
                 kind: .paragraph,
-                text: "If you can read this on your Kindle, Clip's send-to-Kindle setup works.",
+                text: "If you can read this on your Kindle, Click's send-to-Kindle setup works.",
                 links: [])])
         let epub = EpubBuilder().build(
             content: content,
             sourceURLString: "https://clip.local/test",
             imagesDirectory: store.articlesDirectory)
         try await sender.sendArticle(
-            epubData: epub, fileName: "Clip Test Document.epub", title: content.title)
+            epubData: epub, fileName: "Click Test Document.epub", title: content.title)
     }
 
     /// A filesystem- and MIME-safe attachment name derived from the title.

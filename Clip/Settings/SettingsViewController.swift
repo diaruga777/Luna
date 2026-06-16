@@ -36,7 +36,6 @@ final class SettingsViewController: UITableViewController {
         Category(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
         Category(title: "Eye Tracking", symbol: "eye") { EyeTrackingSettingsScreen() },
         Category(title: "Email & Kindle", symbol: "envelope") { EmailAndKindleSettingsScreen() },
-        Category(title: "YouTube (Experimental)", symbol: "play.rectangle") { YouTubeSettingsScreen() },
         Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
         Category(title: "Experimental", symbol: "flask") { ExperimentalSettingsScreen() },
         Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
@@ -51,26 +50,43 @@ final class SettingsViewController: UITableViewController {
         navigationItem.largeTitleDisplayMode = .never
     }
 
+    /// Section 1 holds a single "Replay Setup" action (presented modally), kept
+    /// out of the pushed `categories` list.
+    override func numberOfSections(in tableView: UITableView) -> Int { 2 }
+
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        categories.count
+        section == 0 ? categories.count : 1
     }
 
     override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        let category = categories[indexPath.row]
         var content = cell.defaultContentConfiguration()
-        content.text = category.title
-        content.image = UIImage(systemName: category.symbol)
+        if indexPath.section == 0 {
+            let category = categories[indexPath.row]
+            content.text = category.title
+            content.image = UIImage(systemName: category.symbol)
+            cell.accessoryType = .disclosureIndicator
+        } else {
+            content.text = "Replay Setup"
+            content.image = UIImage(systemName: "sparkles")
+        }
         cell.contentConfiguration = content
-        cell.accessoryType = .disclosureIndicator
         return cell
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        navigationController?.pushViewController(categories[indexPath.row].make(), animated: true)
+        if indexPath.section == 0 {
+            navigationController?.pushViewController(categories[indexPath.row].make(), animated: true)
+        } else {
+            let onboarding = OnboardingFlow.makeSetupOnly { [weak self] in
+                self?.dismiss(animated: true)
+            }
+            onboarding.modalPresentationStyle = .fullScreen
+            present(onboarding, animated: true)
+        }
     }
 }
 
@@ -95,7 +111,7 @@ final class ReaderSettingsScreen: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        "RSVP Speed & Appearance"
+        "Speed Reading & Appearance"
     }
 
     override func tableView(
@@ -266,7 +282,7 @@ final class EyeTrackingSettingsScreen: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Uses the front camera (on supported devices) to estimate the last word you read, so audio and RSVP can start there. \"Highlight Looked-At Word\" shows a live highlight on the word you're reading in the scrolling reader. Turning tracking off clears all stored estimates."
+        "Uses the front camera to start audio and speed reading where you left off. \"Highlight Looked-At Word\" highlights the word you're reading."
     }
 
     override func tableView(
@@ -320,7 +336,7 @@ final class ShortcutSettingsScreen: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        let base = "Save the Safari page you're reading with one press of the Action Button: enable the Clip Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"Clip Safari Page\" in Settings → Action Button.\n\n\(safariStatusText)"
+        let base = "Save the Safari page you're reading with one press of the Action Button: enable the Click Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"Clip Safari Page\" in Settings → Action Button.\n\n\(safariStatusText)"
         if #unavailable(iOS 27.0) {
             return "⚠️ One-press Safari saving requires iOS 27 or later.\n\n" + base
         }
@@ -383,7 +399,7 @@ final class ShortcutSettingsScreen: UITableViewController {
             } ?? "unknown time"
             safariStatusText = "Last tracked Safari URL (\(when)): \(url)"
         } else {
-            safariStatusText = "No Safari URL tracked yet. Enable the Clip extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page."
+            safariStatusText = "No Safari URL tracked yet. Enable the Click extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page."
         }
     }
 }

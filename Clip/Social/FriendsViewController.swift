@@ -136,7 +136,7 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
             }
             return footer
         case .friends:
-            return "Adding is two-way: when someone adds you, you're added back automatically. Friends can send articles to your reading list. You can also scan a Clip code with the system Camera app."
+            return "Adding is two-way: when someone adds you, you're added back automatically. Friends can send articles to your reading list. You can also scan a Click QR code with the system Camera app."
         }
     }
 

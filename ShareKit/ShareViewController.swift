@@ -181,7 +181,7 @@ final class ShareViewController: UIViewController {
                     if let mode = self.readerMode() {
                         self.presentReader(url: url, mode: mode)
                     } else {
-                        self.complete()
+                        self.confirmSavedThenComplete()
                     }
                 } else {
                     self.failOrComplete("Couldn't read the shared page's address.")
@@ -202,12 +202,12 @@ final class ShareViewController: UIViewController {
                 if let mode = self.readerMode() {
                     DispatchQueue.main.async { self.presentReader(url: url, mode: mode) }
                 } else {
-                    self.complete()
+                    self.confirmSavedThenComplete()
                 }
             } else if let url = value as? URL, url.isFileURL {
                 SharedReadingListAppender.appendDocument(sourceURL: url)
                 SharedDiagnosticLog.record("saved file \(url.lastPathComponent)", category: "share")
-                self.complete()
+                self.confirmSavedThenComplete()
             } else {
                 SharedDiagnosticLog.record("url attachment had no URL value", category: "share")
                 self.failOrComplete("Couldn't read the shared link.")
@@ -240,7 +240,7 @@ final class ShareViewController: UIViewController {
             if let url {
                 SharedReadingListAppender.appendDocument(sourceURL: url)
                 SharedDiagnosticLog.record("saved document \(url.lastPathComponent)", category: "share")
-                self.complete()
+                self.confirmSavedThenComplete()
             } else {
                 self.failOrComplete("Couldn't read the shared file.")
             }
@@ -260,6 +260,59 @@ final class ShareViewController: UIViewController {
     private func complete() {
         DispatchQueue.main.async { [weak self] in
             self?.extensionContext?.completeRequest(returningItems: nil)
+        }
+    }
+
+    /// Shows a brief liquid-glass "Saved" checkmark, then completes. Call only
+    /// after an actual save (no reader is being presented).
+    private func confirmSavedThenComplete() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.showSavedBadge()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) { self.complete() }
+        }
+    }
+
+    private func showSavedBadge() {
+        let badge = UIVisualEffectView(effect: GlassStyle.barEffect())
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        badge.layer.cornerRadius = 24
+        badge.layer.cornerCurve = .continuous
+        badge.clipsToBounds = true
+
+        let check = UIImageView(image: UIImage(
+            systemName: "checkmark",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 42, weight: .semibold)))
+        check.tintColor = GlassStyle.readingAccent
+        check.contentMode = .center
+        let label = UILabel()
+        label.text = "Saved"
+        label.font = .systemFont(ofSize: 16, weight: .semibold)
+        label.textColor = .label
+        let stack = UIStackView(arrangedSubviews: [check, label])
+        stack.axis = .vertical
+        stack.spacing = 6
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        badge.contentView.addSubview(stack)
+        view.addSubview(badge)
+        NSLayoutConstraint.activate([
+            badge.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            badge.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            badge.widthAnchor.constraint(equalToConstant: 136),
+            badge.heightAnchor.constraint(equalToConstant: 122),
+            stack.centerXAnchor.constraint(equalTo: badge.contentView.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: badge.contentView.centerYAnchor),
+        ])
+
+        badge.transform = CGAffineTransform(scaleX: 0.7, y: 0.7)
+        badge.alpha = 0
+        UIView.animate(
+            withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.65, initialSpringVelocity: 0.4
+        ) {
+            badge.transform = .identity
+            badge.alpha = 1
         }
     }
 }

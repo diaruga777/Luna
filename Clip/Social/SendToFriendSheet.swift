@@ -34,10 +34,14 @@ enum SendToFriendSheet {
         }
 
         sheet.addAction(UIAlertAction(title: "Share Link…", style: .default) { _ in
-            // Share a clickreader:// deep link so recipients with Click installed
-            // open it straight in the reader (falls back to the plain URL if the
-            // link can't be built).
-            let shared = ClickDeepLink.readLink(forArticleURL: urlString)?.absoluteString ?? urlString
+            // Share the original URL (works for everyone) plus a clickreader://
+            // deep link that opens the article in Click for people who have it.
+            let shared: String
+            if let deepLink = ClickDeepLink.readLink(forArticleURL: urlString)?.absoluteString {
+                shared = "\(urlString)\n\nRead on Click: \(deepLink)"
+            } else {
+                shared = urlString
+            }
             let activity = UIActivityViewController(
                 activityItems: [shared], applicationActivities: nil)
             activity.popoverPresentationController?.sourceView = sourceView
@@ -81,15 +85,11 @@ enum SendToFriendSheet {
         }
     }
 
-    /// A title-only alert that dismisses itself — lightweight send confirmation.
+    /// A lightweight, self-dismissing send confirmation — a bottom liquid-glass toast.
     @MainActor
     private static func showTransientConfirmation(
         _ text: String, from presenter: UIViewController
     ) {
-        let alert = UIAlertController(title: text, message: nil, preferredStyle: .alert)
-        presenter.present(alert, animated: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak alert] in
-            alert?.dismiss(animated: true)
-        }
+        Toast.show(text, from: presenter)
     }
 }

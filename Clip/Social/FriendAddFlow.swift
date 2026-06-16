@@ -29,10 +29,11 @@ enum FriendAddFlow {
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Add", style: .default) { _ in
-            Task {
+            Task { @MainActor in
                 guard await ICloudGate.requireICloud(presenting: presenter) else { return }
                 FriendsStore.shared.add(card)
                 await SocialMessageCenter.shared.sendFriendAdd(to: card)
+                Toast.show("Added \(card.username)", from: presenter)
             }
         })
         presenter.present(alert, animated: true)

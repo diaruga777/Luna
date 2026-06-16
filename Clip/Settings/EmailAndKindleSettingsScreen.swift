@@ -57,11 +57,11 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         case .account:
             return "Used for both sending to Kindle and importing email. For Gmail, use an app password (myaccount.google.com → Security → App passwords)."
         case .kindle:
-            return "Articles are emailed as EPUBs. Amazon only accepts mail from approved senders — add the account email at amazon.com → Manage Your Content and Devices → Preferences → Personal Document Settings. \"Double Save\" sends when you save the same page twice quickly."
+            return "Amazon only accepts mail from approved senders — add this account at amazon.com → Preferences → Personal Document Settings. \"Double Save\" sends when you save the same page twice quickly."
         case .importMail:
             return "New email from an allowed sender becomes a reading-list item. A background job also checks roughly twice a day, so newsletters arrive (and forward to Kindle, if enabled) even when the app is closed."
         case .subjectFilters:
-            return "Also import any email whose subject contains one of these phrases, regardless of sender. Matched as a case-insensitive substring."
+            return "Also import any email whose subject contains one of these phrases, regardless of sender."
         }
     }
 

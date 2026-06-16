@@ -18,8 +18,17 @@ final class EyeGazeWordTracker: NSObject {
 
     static var isSupported: Bool { ARFaceTrackingConfiguration.isSupported }
 
-    /// Current best estimate of the last word read, in the shared word-index space.
-    private(set) var estimatedWordIndex: Int?
+    /// Current best estimate of the last word read, in the shared word-index
+    /// space. Notifies `onWordIndexChange` (on main) whenever it changes.
+    private(set) var estimatedWordIndex: Int? {
+        didSet {
+            guard let index = estimatedWordIndex, index != oldValue else { return }
+            onWordIndexChange?(index)
+        }
+    }
+
+    /// Live callback for the "highlight the looked-at word" affordance.
+    var onWordIndexChange: ((Int) -> Void)?
 
     private let session = ARSession()
     private weak var textView: UITextView?

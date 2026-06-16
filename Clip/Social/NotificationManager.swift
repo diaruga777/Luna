@@ -31,7 +31,7 @@ enum NotificationManager {
     static func postArticleShared(fromUsername username: String, title: String?) {
         let content = UNMutableNotificationContent()
         content.title = "\(username) shared an article"
-        content.body = title ?? "Open Clip to read it."
+        content.body = title ?? "Open Click to read it."
         content.sound = .default
 
         let request = UNNotificationRequest(

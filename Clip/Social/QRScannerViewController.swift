@@ -36,7 +36,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
 
         let hintLabel = UILabel()
-        hintLabel.text = "Point at a friend's Clip code"
+        hintLabel.text = "Point at a friend's Click QR code"
         hintLabel.textColor = .white
         hintLabel.font = .preferredFont(forTextStyle: .headline)
         hintLabel.textAlignment = .center

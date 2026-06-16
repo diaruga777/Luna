@@ -22,7 +22,22 @@ struct BooxEnvelope<T: Decodable>: Decodable {
 
 struct BooxLoginData: Decodable { let token: String }
 
-struct BooxUserData: Decodable { let uid: String }
+struct BooxUserData: Decodable {
+    let uid: String
+    // The API may encode uid as a string or a number — accept both.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let string = try? container.decode(String.self, forKey: .uid) {
+            uid = string
+        } else if let number = try? container.decode(Int.self, forKey: .uid) {
+            uid = String(number)
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .uid, in: container, debugDescription: "uid is neither String nor Int")
+        }
+    }
+    enum CodingKeys: String, CodingKey { case uid }
+}
 
 struct BooxBucketsData: Decodable {
     let onyxCloud: Bucket

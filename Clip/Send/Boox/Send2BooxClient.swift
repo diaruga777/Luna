@@ -44,6 +44,10 @@ final class Send2BooxClient: Send2BooxUploading {
 
         // 1. Account id + cloud bucket/endpoint + temporary OSS credentials.
         let user = try await api.value(path: "users/me", token: token, as: BooxUserData.self)
+        // The reference client also pings these before pushing (likely session/
+        // device activation). Best-effort — mirror it, ignore the bodies.
+        try? await api.send(path: "users/getDevice", method: "GET", token: token, body: nil)
+        try? await api.send(path: "im/getSig?user=\(user.uid)", method: "GET", token: token, body: nil)
         let buckets = try await api.value(path: "config/buckets", token: token, as: BooxBucketsData.self)
         let sts = try await api.value(path: "config/stss", token: token, as: BooxSTSData.self)
 
@@ -80,7 +84,10 @@ final class Send2BooxClient: Send2BooxUploading {
                 "parent": NSNull(),
                 "resourceDisplayName": fileName,
                 "resourceKey": objectKey,
-                "resourceType": "epub",
+                // The reference hardcodes "txt" regardless of the real extension
+                // (which lives in resourceKey) — it's the only proven value, so
+                // match it rather than guess "epub".
+                "resourceType": "txt",
                 "title": title,
             ],
         ])

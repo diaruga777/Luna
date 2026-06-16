@@ -10,17 +10,17 @@ import Foundation
 /// Mirrors `KindleSendSettings`.
 enum BooxSendSettings {
 
-    /// Onyx accounts are region-bound; the API host differs per region.
+    /// Onyx accounts are region-bound; the API host differs per region. Only the
+    /// two verified Send2Boox API hosts are offered (the reference client
+    /// defaults to `eur.boox.com`; `send2boox.com` is the non-EU push host).
     enum Region: String, CaseIterable {
         case europe
         case unitedStates
-        case global
 
         var displayName: String {
             switch self {
             case .europe: return "Europe"
-            case .unitedStates: return "United States"
-            case .global: return "Global / Other"
+            case .unitedStates: return "US / Other"
             }
         }
 
@@ -29,7 +29,6 @@ enum BooxSendSettings {
             switch self {
             case .europe: return "eur.boox.com"
             case .unitedStates: return "send2boox.com"
-            case .global: return "www.boox.com"
             }
         }
     }

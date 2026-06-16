@@ -378,11 +378,17 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer)
         rect.origin.y += textView.textContainerInset.top
         let target = rect.minY - fraction * textView.bounds.height
+        textView.contentOffset.y = clampedContentOffsetY(target)
+    }
+
+    /// A target content offset clamped to the scrollable range, accounting for
+    /// the content insets at both ends (so the last line can still be reached).
+    private func clampedContentOffsetY(_ target: CGFloat) -> CGFloat {
         let minOffset = -textView.adjustedContentInset.top
         let maxOffset = max(
             minOffset,
             textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
-        textView.contentOffset.y = min(max(minOffset, target), maxOffset)
+        return min(max(minOffset, target), maxOffset)
     }
 
     private func startSpeech() {
@@ -472,9 +478,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer)
         rect.origin.y += textView.textContainerInset.top
         let target = rect.midY - textView.bounds.height / 2
-        let minOffset = -textView.adjustedContentInset.top
-        let maxOffset = max(minOffset, textView.contentSize.height - textView.bounds.height)
-        let clamped = min(max(minOffset, target), maxOffset)
+        let clamped = clampedContentOffsetY(target)
         UIView.animate(withDuration: 0.25, delay: 0, options: [.curveLinear, .allowUserInteraction]) {
             self.textView.contentOffset.y = clamped
         }
@@ -574,12 +578,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     private func restoreScroll(to offset: CGFloat) {
         textView.layoutManager.ensureLayout(for: textView.textContainer)
         textView.layoutIfNeeded()
-        let minOffset = -textView.adjustedContentInset.top
-        let maxOffset = max(
-            minOffset,
-            textView.contentSize.height + textView.adjustedContentInset.bottom
-                - textView.bounds.height)
-        textView.contentOffset.y = min(max(minOffset, offset), maxOffset)
+        textView.contentOffset.y = clampedContentOffsetY(offset)
     }
 }
 

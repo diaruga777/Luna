@@ -1,9 +1,10 @@
 # Semantic Sharing Suggestions (experimental)
 
 On-device content-similarity sharing suggestions. **Off by default** (Settings →
-Experimental → "Suggest by Content Similarity"). When a newly saved article/video
-is conceptually similar to things you've already shared with a friend, it arms a
-share suggestion for that friend.
+Experimental → "Suggest Shares Based on Content" — a "Never → Often" slider, no
+numbers exposed). When a newly saved article/video is conceptually similar to
+things you've already shared with a friend, it arms a share suggestion for that
+friend.
 
 ## When suggestions fire
 
@@ -30,21 +31,35 @@ ONLY two places (never on past saves at launch — that's bad UX):
 - The intent runner does at most ONE embed (the just-saved item) plus cheap
   cosine math. `recordShare`/`bestMatch`/vector reads load no model.
 - Vectors persist to disk (App Group), computed once.
-- The Settings flag is the safety valve if the single in-runner embed is ever
-  a problem on a given device.
+- Sliding the slider to "Never" (sensitivity 0) is the safety valve / off switch
+  if the single in-runner embed is ever a problem on a given device.
+
+## Sensitivity → threshold
+
+`SemanticSharingSettings.sensitivity` is a single `Double` (0...1, App Group,
+default 0). `0` = off (`isEnabled == false`). Higher = more eager. It maps to a
+cosine threshold via the pure `threshold(forSensitivity:)`: `strictestThreshold`
+0.82 (sensitivity→0) … `loosestThreshold` 0.62 (sensitivity 1). Raised from the
+old flat 0.55 so suggestions are less aggressive even at "Often". `bestMatch`
+takes the threshold explicitly (the store stays pure/threshold-agnostic).
 
 ## Key files (`Clip/Social/`)
 
-- **`SemanticSharingSettings`** — `isEnabled` flag (App Group UserDefaults, default false).
+- **`SemanticSharingSettings`** — `sensitivity` (0...1; default 0 = off),
+  `isEnabled` (`sensitivity > 0`), `similarityThreshold` + pure
+  `threshold(forSensitivity:)`. Migrates the legacy `semanticSharingEnabled` bool
+  to sensitivity 0.5.
 - **`SemanticEmbedder`** (main app) — `NLEmbedding.sentenceEmbedding(for: .english)`;
   `embed(text) -> [Float]?` (text capped at 1200 chars); `release()` frees the model.
 - **`SemanticIndexStore`** (App Group JSON `semanticIndex.json`) — all cheap, runner-safe:
-  - `itemVectors: [itemID: [Float]]`, `persons: [personUUID: {username, itemIDs}]`,
-    `checkQueue: [itemID]`.
-  - `recordShare` (append id; no vector needed), `setVector`/`hasVector`/`vector`,
-    `itemIDsNeedingVectors(limit:)`, `bestMatch(forItemID:) -> Match?`, `removePerson`.
-  - `cosine(_:_:)` (pure, tested); `similarityThreshold = 0.60`.
-  - Empty `[]` vector = tombstone for deleted/unembeddable items (stops retry).
+  - `itemVectors: [itemID: [[Float]]]` (one vector per paragraph chunk),
+    `persons: [personUUID: {username, itemIDs}]`.
+  - `recordShare` (append id; no vector needed), `setVectors`/`hasVectors`,
+    `itemIDsNeedingVectors(limit:)`,
+    `bestMatch(forItemID:threshold:bestScore:bestUsername:bestItemID:) -> Match?`,
+    `removePerson`.
+  - `cosine(_:_:)` + `maxChunkSimilarity(_:_:)` (max cosine over chunk pairs), pure/tested.
+  - Empty `[]` vectors = tombstone for deleted/unembeddable items (stops retry).
 - **`SemanticIndexer`** — `scheduleRun()` (main app, vectors only, no arming),
   `immediateSuggestion(forItemID:)` (save intent — one embed + match),
   `cachedSuggestion(forItemID:)` (end-of-article — cached match, no embed).
@@ -62,7 +77,8 @@ ONLY two places (never on past saves at launch — that's bad UX):
 
 ## Tests
 
-`ClipTests/SemanticIndexStoreTests.swift` — cosine, bestMatch (close/none/already-shared),
-needs-vectors.
+`ClipTests/SemanticIndexStoreTests.swift` — cosine, maxChunkSimilarity, bestMatch
+(close/none/already-shared), needs-vectors; `SemanticSensitivityTests` — the
+sensitivity→threshold mapping (monotonic + clamped).
 
 See `social-sharing.md` for the streak/auto-share suggestion engine this layers on.

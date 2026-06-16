@@ -22,12 +22,12 @@ The prefix is the menu-option count. Usernames cannot contain `:` (enforced in `
 
 ## Bundled shortcut
 
-`Clip/Resources/Clip Safari Page.shortcut` — an AEA1-signed `.shortcut` bundle. It is **hand-edited by the user in the Shortcuts app**, then re-exported, because the AEA-wrapped/LZFSE payload can't be regenerated headlessly (see memory). New flow shape the user wires: Get Current App → ClipSafariPageIntent (returns the token string) → split the token on `:` → branch on the prefix (`""` do nothing, `"2"` → 2-option Yes/No menu, `"3"` → 3-option Yes/Always/No menu over `<username>`) → SetShareChoiceIntent with the chosen literal. Settings → "Install Shortcut" shares the bundled file to the Shortcuts app; users RE-IMPORT after changes. NOTE: `shortcuts://import-workflow?url=` REJECTS local file URLs, so install stays share-sheet based.
+`Clip/Resources/Click Shortcut.shortcut` — an AEA1-signed `.shortcut` bundle (display name "Click Shortcut", the single source of truth is `BundledShortcut.displayName`). It is **hand-edited by the user in the Shortcuts app**, then re-exported, because the AEA-wrapped/LZFSE payload can't be regenerated headlessly (see memory). New flow shape the user wires: Get Current App → ClipSafariPageIntent (returns the token string) → split the token on `:` → branch on the prefix (`""` do nothing, `"2"` → 2-option Yes/No menu, `"3"` → 3-option Yes/Always/No menu over `<username>`) → SetShareChoiceIntent with the chosen literal. Settings → "Install Shortcut" (`BundledShortcut.presentInstaller`) shares the bundled file to the Shortcuts app; users RE-IMPORT after changes. NOTE: `shortcuts://import-workflow?url=` REJECTS local file URLs, so install stays share-sheet based.
 
 ## User setup (documented in-app: Settings → Action Button Setup)
 
 1. Enable the Safari extension (see safari-extension.md).
 2. Settings → Install Shortcut → share to Shortcuts → Add Shortcut. (First run prompts to allow sharing app info with Clip — Always Allow.)
-3. Settings → Action Button → Shortcut → pick "Clip Safari Page".
+3. Settings → Action Button → Shortcut → pick "Click Shortcut".
 
 Action Button can't be assigned programmatically; the simulator has no Action Button (test by running the shortcut from the Shortcuts app).

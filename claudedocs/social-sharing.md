@@ -55,8 +55,16 @@ articles into each other's reading lists.
 
 ## Share suggestions (`Social/ShareSuggestionStore.swift`)
 
-Per base URL (host minus www.): consecutive-share streak to one friend,
-suppressed set, always-share set, plus one `pendingSuggestion` slot.
+Per suggestion key (`ShareSuggestionStore.suggestionKey`): host minus www. for
+the web, but **YouTube keys on the channel** (`youtube-channel:<name>`) since the
+host is always youtube.com — so streaks are per-channel. YouTube's channel is
+only known post-oEmbed, so its `handleNewSave` runs in `ReadingListIngestor`
+after ingest (not at save time, where the channel is nil and it no-ops);
+`recordManualShare`/`suggestedFriend` resolve the channel from the reading-list
+item. Each key tracks: consecutive-share streak to one friend, suppressed set,
+always-share set, plus one shared `pendingSuggestion` slot.
+- A `pendingSuggestion` may instead be `isSemantic` (armed by the semantic
+  index, see `semantic-sharing.md`); those never promote to always-share.
 - `recordManualShare` — from `sendArticle(countsAsManualShare: true)` (in-app
   sheet sends, Share Once); same friend streak+1, new friend resets to 1,
   clears that friend's suppression.

@@ -69,6 +69,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             await SocialMessageCenter.shared.processInbox()
         }
         Task { await IncomingMailImporter.shared.importNewMail() }
+        // Experimental semantic sharing index — main app only (loads an NL
+        // model; never run in the memory-limited intent runner). No-op when off.
+        SemanticIndexer.shared.scheduleRun()
         scheduleInboxRefresh()
         scheduleMailFetch()
         return true

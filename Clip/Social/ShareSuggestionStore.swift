@@ -39,6 +39,10 @@ final class ShareSuggestionStore {
         var friendUUID: UUID
         var friendUsername: String
         var urlString: String
+        /// Armed by the semantic index (content similarity) rather than a
+        /// same-site/-channel streak. Semantic suggestions offer only
+        /// share/don't — never "always".
+        var isSemantic: Bool = false
     }
 
     private struct State: Codable {
@@ -71,11 +75,28 @@ final class ShareSuggestionStore {
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
+    /// The grouping key a suggestion streak is tracked under. For YouTube the
+    /// host is always "youtube.com", so streaks key on the CHANNEL instead
+    /// (nil — and thus no streak — until the channel is known post-ingest).
+    /// Everything else keys on the base URL (host).
+    static func suggestionKey(urlString: String, channelName: String?) -> String? {
+        if YouTubeURL.videoID(from: urlString) != nil {
+            guard let channel = channelName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !channel.isEmpty
+            else { return nil }
+            return "youtube-channel:" + channel.lowercased()
+        }
+        return baseURL(of: urlString)
+    }
+
     // MARK: - Events
 
     /// A user-initiated share (in-app sheet, or a Share Once / Always choice).
-    func recordManualShare(urlString: String, friendUUID: UUID, friendUsername: String) {
-        guard let base = Self.baseURL(of: urlString) else { return }
+    func recordManualShare(
+        urlString: String, channelName: String? = nil,
+        friendUUID: UUID, friendUsername: String
+    ) {
+        guard let base = Self.suggestionKey(urlString: urlString, channelName: channelName) else { return }
         mutate { state in
             var rule = state.rules[base] ?? SiteRule()
             if rule.streakFriendUUID == friendUUID {
@@ -93,8 +114,10 @@ final class ShareSuggestionStore {
 
     /// A NEW URL was just saved (never called for duplicate presses). Returns
     /// the friends to auto-share to, and arms/clears the pending suggestion.
-    func handleNewSave(urlString: String) -> [(uuid: UUID, username: String)] {
-        guard let base = Self.baseURL(of: urlString) else { return [] }
+    func handleNewSave(
+        urlString: String, channelName: String? = nil
+    ) -> [(uuid: UUID, username: String)] {
+        guard let base = Self.suggestionKey(urlString: urlString, channelName: channelName) else { return [] }
         var autoShareTargets: [(UUID, String)] = []
         mutate { state in
             let rule = state.rules[base] ?? SiteRule()
@@ -113,6 +136,21 @@ final class ShareSuggestionStore {
             }
         }
         return autoShareTargets.map { (uuid: $0.0, username: $0.1) }
+    }
+
+    /// Arms a semantic suggestion (content similarity) for a friend, unless a
+    /// suggestion is already pending (an explicit streak suggestion wins). Keyed
+    /// by the item's URL so a choice can be applied/suppressed like any other.
+    func armSemanticSuggestion(urlString: String, friendUUID: UUID, friendUsername: String) {
+        let base = Self.baseURL(of: urlString) ?? "semantic"
+        mutate { state in
+            guard state.pending == nil else { return }
+            // Don't re-suggest a friend already suppressed for this site.
+            if state.rules[base]?.suppressedFriendUUIDs.contains(friendUUID) == true { return }
+            state.pending = PendingSuggestion(
+                baseURL: base, friendUUID: friendUUID, friendUsername: friendUsername,
+                urlString: urlString, isSemantic: true)
+        }
     }
 
     /// The suggestion armed by the last save, if any.
@@ -144,7 +182,11 @@ final class ShareSuggestionStore {
             case .shareOnce:
                 break // recordManualShare runs after the send succeeds
             case .alwaysShare:
-                rule.alwaysFriends[pending.friendUUID] = pending.friendUsername
+                // Semantic suggestions never become always-share (no streak to
+                // promote); treat it as a one-off send.
+                if !pending.isSemantic {
+                    rule.alwaysFriends[pending.friendUUID] = pending.friendUsername
+                }
             }
             state.rules[pending.baseURL] = rule
         }
@@ -156,8 +198,10 @@ final class ShareSuggestionStore {
     /// A friend to suggest sharing a given URL with, based on this site's
     /// history: the current streak friend, else any auto-share friend. Used by
     /// the end-of-article share UI. nil when there's nothing to suggest.
-    func suggestedFriend(forURLString urlString: String) -> (uuid: UUID, username: String)? {
-        guard let base = Self.baseURL(of: urlString),
+    func suggestedFriend(
+        forURLString urlString: String, channelName: String? = nil
+    ) -> (uuid: UUID, username: String)? {
+        guard let base = Self.suggestionKey(urlString: urlString, channelName: channelName),
               let rule = loadState().rules[base]
         else { return nil }
         if let uuid = rule.streakFriendUUID, let name = rule.streakFriendUsername,

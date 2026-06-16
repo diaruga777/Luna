@@ -115,6 +115,7 @@ final class FriendDetailViewController: UITableViewController {
             guard let self else { return }
             FriendsStore.shared.delete(uuid: self.friend.card.uuid)
             ShareSuggestionStore.shared.wipe(friendUUID: self.friend.card.uuid)
+            SemanticIndexStore.shared.removePerson(self.friend.card.uuid)
             FriendNotificationSettings.setNotify(false, friendUUID: self.friend.card.uuid)
             self.onRemoved()
             self.navigationController?.popViewController(animated: true)

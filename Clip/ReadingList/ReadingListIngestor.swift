@@ -99,6 +99,15 @@ final class ReadingListIngestor {
                 thumbnailFileName: thumbnailFileName, for: item.id)
             else { return }
             await WatchLaterAutoAdder.shared.videoBecameReady(updated)
+            // YouTube suggestion streaks key on the CHANNEL, which is only known
+            // now (post-oEmbed) — so the streak/auto-share check runs here, not
+            // at save time (where handleNewSave saw no channel and no-oped).
+            let autoShareTargets = ShareSuggestionStore.shared.handleNewSave(
+                urlString: updated.urlString, channelName: metadata.channelName)
+            for target in autoShareTargets {
+                await SocialMessageCenter.shared.autoShare(
+                    urlString: updated.urlString, toFriendUUID: target.uuid)
+            }
         } catch {
             store.markFailed(item.id)
         }
@@ -195,6 +204,9 @@ final class ReadingListIngestor {
                         urlString: urlString, toFriendUUID: target.uuid)
                 }
             }
+            // Queue a semantic-similarity suggestion check (runs LATER in the
+            // main app — never embeds here in the memory-limited intent runner).
+            SemanticIndexStore.shared.enqueueSemanticCheck(itemID: item.id)
             await ingest(item)
             return .saved(item)
         case .sendToKindle:

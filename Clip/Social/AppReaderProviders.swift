@@ -13,7 +13,9 @@ final class AppReaderShareProvider: ReaderShareProviding {
     static let shared = AppReaderShareProvider()
 
     func suggestedFriendName(forURLString urlString: String) -> String? {
-        ShareSuggestionStore.shared.suggestedFriend(forURLString: urlString)?.username
+        let channelName = ReadingListStore.shared.item(forURLString: urlString)?.channelName
+        return ShareSuggestionStore.shared
+            .suggestedFriend(forURLString: urlString, channelName: channelName)?.username
     }
 
     func presentShareSheet(
@@ -24,7 +26,9 @@ final class AppReaderShareProvider: ReaderShareProviding {
     }
 
     func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController) {
-        guard let suggestion = ShareSuggestionStore.shared.suggestedFriend(forURLString: urlString)
+        let channelName = ReadingListStore.shared.item(forURLString: urlString)?.channelName
+        guard let suggestion = ShareSuggestionStore.shared
+            .suggestedFriend(forURLString: urlString, channelName: channelName)
         else { return }
         SendToFriendSheet.sendToFriend(
             uuid: suggestion.uuid, urlString: urlString, title: title, from: presenter)

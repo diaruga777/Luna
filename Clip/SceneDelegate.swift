@@ -60,6 +60,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             await SocialMessageCenter.shared.processInbox()
         }
         Task { await IncomingMailImporter.shared.importNewMail() }
+        SemanticIndexer.shared.scheduleRun()
     }
 
     private func showMainUI() {

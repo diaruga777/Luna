@@ -38,6 +38,7 @@ final class SettingsViewController: UITableViewController {
         Category(title: "Email & Kindle", symbol: "envelope") { EmailAndKindleSettingsScreen() },
         Category(title: "YouTube", symbol: "play.rectangle") { YouTubeSettingsScreen() },
         Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
+        Category(title: "Experimental", symbol: "flask") { ExperimentalSettingsScreen() },
         Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
     ]
 

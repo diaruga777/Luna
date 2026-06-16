@@ -104,11 +104,19 @@ final class SocialMessageCenter {
                 category: "social")
             throw error
         }
+        let sharedItem = readingListStore.item(forURLString: urlString)
         if countsAsManualShare {
             ShareSuggestionStore.shared.recordManualShare(
                 urlString: urlString,
+                channelName: sharedItem?.channelName,
                 friendUUID: friend.card.uuid,
                 friendUsername: friend.card.username)
+        }
+        // Remember what we shared with this friend, to drive semantic
+        // suggestions later (cheap: records the item id, no model loaded here).
+        if let itemID = sharedItem?.id {
+            SemanticIndexStore.shared.recordShare(
+                itemID: itemID, personUUID: friend.card.uuid, username: friend.card.username)
         }
     }
 

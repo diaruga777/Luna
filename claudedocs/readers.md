@@ -4,13 +4,17 @@
 > synchronized folder that is a member of the `Clip` (main app), `ClipShare`
 > (share extension), and `Clip Action Extension` targets, so the share-sheet
 > reader is the EXACT same code. ReaderKit is free of CloudKit/ARKit/camera: the
-> camera (`EyeGazeWordTracker`) and the social/CloudKit share stack
-> (`AppReaderProviders`/`SendToFriendSheet`) stay main-app-only and are injected
-> via `ReaderShareProviding` / `GazeTrackerFactory` (`ReaderKit/ReaderProviders.swift`).
-> The extensions pass nil providers (no share button/footer, no eye tracking).
-> SwiftSoup is linked to both extension targets too (they ingest the shared URL
-> via `ArticleFetcher` + `ArticleExtractor`). ReaderKit also holds the models it
-> needs: `ArticleContent`, `ReadingListItem`, `ReadingListStore`, `ReaderSettings`.
+> camera (`EyeGazeWordTracker`) and the main-app social/CloudKit share stack
+> (`AppReaderProviders`/`SendToFriendSheet`/`ReaderShareSheet`) stay main-app-only
+> and are injected via `ReaderShareProviding` / `GazeTrackerFactory`
+> (`ReaderKit/ReaderProviders.swift`). The share extension passes nil providers;
+> the action extension injects a lightweight `ShareKit/ExtensionReaderShareProvider`
+> (friend-share via the App Group queue, no CloudKit) so its reader has a working
+> share button/footer (no eye tracking). SwiftSoup is linked to both extension
+> targets too (they ingest the shared URL via `ArticleFetcher` + `ArticleExtractor`).
+> ReaderKit also holds the models/helpers it needs: `ArticleContent`,
+> `ReadingListItem`, `ReadingListStore`, `ReaderSettings`, `YouTubeURL`,
+> `ClickDeepLink`, `NonTextualContent`.
 
 THREE reading modes for extracted articles, with read-aloud, nested inline readers, position memory, and (device-only, main-app-only) eye tracking. Hosted by `ReaderKit/ReaderViewController.swift` — a container with a **3-way nav-bar segmented switcher** (`text.alignleft` scroll / `highlighter` highlight / `bolt.fill` RSVP) plus a **separate audio toggle** (speaker bar button) that turns read-aloud on/off for whichever mode is showing. It persists `lastReaderMode` per article AND globally (`ReaderSettings.lastReaderMode`) — a new article with no per-article preference opens in the global last-used mode. Changing mode/audio rebuilds the child VC. Tracks read state (marks `.opened` on open; children call back `onFinishedReading` → `.read`).
 
@@ -54,11 +58,19 @@ no nav bar of its own beyond Done.
   glass capsules (accent-tinted) sit above and below the ORP letter at the
   focal column. Scroll/chunk highlight = inline text-background tint in the
   accent (a glass overlay would blur the words being read).
-- **End-of-article share** (`Clip/Reader/ArticleShareView.swift`): separator + "Done reading? Share it." + Share button + one-tap "Send to <friend>" suggestion (`ShareSuggestionStore.suggestedFriend(forURLString:)` → `SendToFriendSheet.sendToFriend`). Scroll reader appends it below the text (subview positioned via a `contentSize` observer; `contentInset.bottom` reserved so it clears the floating footer); RSVP fades it in above the controls on finish.
+- **End-of-article share** (`Clip/Reader/ArticleShareView.swift`): separator + "Done reading? Share it." + Share button + one-tap "Send to <friend>" suggestion. The Share button → `ReaderShareProviding.presentShareSheet`. Scroll reader appends it below the text (subview positioned via a `contentSize` observer; `contentInset.bottom` reserved so it clears the floating footer); RSVP fades it in above the controls on finish.
+
+## Reader share sheet (the share button) — Feature C
+
+The reader's nav-bar/footer Share button routes through `ReaderShareProviding.presentShareSheet`. In the main app, `AppReaderShareProvider` presents `Clip/Social/ReaderShareSheet.swift` — a medium-detent `UISheetPresentationController` with up to four options: **Send to {suggested friend}** (one tap, shown only when a streak/semantic suggestion exists), **Send to a Friend…** (`SendToFriendSheet.presentFriendPicker`), **Share Link…** (`SendToFriendSheet.shareLink` — URL + `clickreader://` deep link), **Share eBook…** (`ArticleExportService.presentShareSheet`, see article-export.md). Rows are a pure `ReaderShareSheet.rows(…)` list (testable visibility/actions); tapping dismisses the sheet then runs the action. `SendToFriendSheet` keeps reusable `shareLink`/`presentFriendPicker`/`sendToFriend` pieces (its action-sheet `present(…)` still backs the reading-list row).
 
 ## Share-sheet reader experience
 
-Fixed behavior (NO in-app setting as of build 38): the **share extension** always saves + dismisses; the **"Read in Click" action extension** always presents `ShareKit/ShareReaderViewController`, which fetches + extracts the page (`ArticleFetcher` + `ArticleExtractor`) and presents the **real** `ReaderViewController` with **nil** `shareProvider` + `gazeTrackerFactory` — the exact same reader UI/business code, minus the share footer/button and eye tracking. The action extension keeps its OWN last-used reader mode in `ShareKit/ActionReaderMode` (its private `UserDefaults.standard`, not the App Group); `ReaderViewController(persistsModePreference: false, onModeChange:)` makes mode switches write there instead of the shared `ReaderSettings`. All three modes, audio (foreground only), and the inline split-web link viewer work. A Done button exits. Resume with no gaze starts from the first fully-visible word (`ScrollReaderViewController.firstFullyVisibleWordIndex`). If fetch/extract fails, `presentFailure()` shows a red error state (warning glyph + "Couldn't load this article.") with the Done button still available.
+Fixed behavior: the **share extension** (`com.apple.share-services`) always saves + dismisses, for every URL. The **"Read in Click" action extension** (`com.apple.ui-services`) routes via `ShareViewController.presentSavedOrReader`:
+- **Article URLs** → `ShareKit/ShareReaderViewController` fetches + extracts (`ArticleFetcher` + `ArticleExtractor`) and presents the **real** `ReaderViewController` with `gazeTrackerFactory: nil` but a lightweight **`ExtensionReaderShareProvider`** (Feature D) — so the end-of-article share affordance works: it offers a friend picker (friends read from the App Group via `ExtensionFriendsReader`; the send is QUEUED to `pendingFriendShares.json` via `PendingFriendShareWriter` for the main app to deliver — no CloudKit in the extension) plus a link share. No suggestion engine in the extension, so no one-tap suggested send. The action ext keeps its OWN last-used mode in `ShareKit/ActionReaderMode` (private `UserDefaults.standard`); `ReaderViewController(persistsModePreference:false, onModeChange:)` writes there, not the shared `ReaderSettings`. If fetch/extract fails, `presentFailure()` shows a red error state (warning glyph + message) with Done available.
+- **Non-textual URLs** (YouTube; generalizes via `ReaderKit/NonTextualContent`) → saved, then `ShareKit/SavedNonTextualViewController`: embedded webview playback + **"Open in Click"** (`extensionContext.open` of the `clickreader://` deep link) + Done — instead of running the text extractor.
+
+All three reader modes, audio (foreground only), and the inline split-web link viewer work; a Done button exits the extension. Resume with no gaze starts from the first fully-visible word (`ScrollReaderViewController.firstFullyVisibleWordIndex`).
 
 **Gaze highlight** (`ReaderSettings.highlightGazeWord`, Settings → Eye Tracking, opt-in): in plain scroll mode with eye tracking active, a 0.3s timer highlights the word the gaze tracker estimates you're reading (no auto-scroll).
 

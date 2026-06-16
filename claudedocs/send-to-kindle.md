@@ -1,9 +1,23 @@
-# Send to Kindle
+# Send to Ereaders (Kindle & Boox)
 
-Background delivery of saved articles to the user's `@kindle.com` address: the
-article is rendered to EPUB on-device and emailed through the user's own SMTP
-account (Gmail app password or custom host, implicit TLS port 465 only). No UI
-taps needed once configured.
+Background delivery of saved articles to an ereader. The article is rendered to
+EPUB on-device once, then delivered to each configured destination:
+
+- **Kindle** — emailed to the user's `@kindle.com` address through their own SMTP
+  account (Gmail app password or custom host, implicit TLS port 465 only).
+- **Boox** — uploaded to the user's Onyx account via the **unofficial** Send2Boox
+  service; the device pulls it over WiFi. See "Boox" below.
+
+No UI taps needed once configured.
+
+## Destinations
+
+`ArticleDestination` (`Clip/Send/ArticleSendCoordinator.swift`) abstracts a
+target: `id` (`ArticleDestinationID.kindle` / `.boox`), `displayName`,
+`isConfigured`, `sendMode` (`ArticleSendMode`), and `send(epubData:fileName:title:)`.
+`KindleDestination` wraps `SMTPArticleEmailSender`; `BooxDestination` wraps
+`Send2BooxClient`. `ArticleSendCoordinator` holds `[ArticleDestination]` and is
+destination-agnostic.
 
 ## Gating (save-press state machine)
 
@@ -11,70 +25,88 @@ All save entry points (`ClipSafariPageIntent`, `SaveLinkIntent`, in-app add)
 funnel through `ReadingListIngestor.handleSavePress(urlString:)`:
 
 1. URL not in list → save + ingest.
-2. URL already in list AND previous press < 12 s ago AND mode == `.doubleSave`
-   AND configured AND NOT sent within past 24 h → send to Kindle.
+2. URL already in list AND previous press < 12 s ago → send to every
+   destination currently in `.doubleSave` mode that hasn't been sent in the past
+   24 h (`SavePressPolicy.Decision.sendToEreaders(destinationIDs:)`).
 3. Any other press on an existing URL → ignored entirely (no re-ingest).
 
-Decision logic is pure: `SavePressPolicy.decide(...)` (`Clip/Send/SavePressPolicy.swift`).
-Modes (`KindleSendSettings.SendMode`): `off` / `allSaves` (send after every
-ingestion) / `doubleSave`. Long-press a reading-list row → "Send to Kindle"
-context menu, always available when configured.
+Decision logic is pure: `SavePressPolicy.decide(…, doubleSaveDestinationIDs:)`
+where the caller supplies `ArticleSendCoordinator.doubleSaveDestinationIDs()`.
+Modes (`ArticleSendMode`): `off` / `allSaves` (send after every ingestion) /
+`doubleSave`. Long-press a reading-list row → "Send to Kindle" / "Send to Boox"
+context-menu rows, each shown only when that destination is configured.
 
-## Key files (`Clip/Send/`)
+## Coordinator
 
-- `ArticleSendCoordinator.swift` — orchestration. `send(item)` queues if the
-  article is still `.pending`, else EPUB → email → `sendState` `.sent`/`.failed`
-  (`.queued` is written first so a process death mid-send is retried).
-  `articleBecameReady(item)` (called by ingestor post-`saveContent`) fires
-  queued sends and, in `allSaves` mode, everything new. `retryPendingSends()`
-  runs on pull-to-refresh. `sendTestDocument()` backs the settings test row.
-  `SMTPArticleEmailSender` is the production `ArticleEmailSending`.
-- `EpubBuilder.swift` — EPUB 3 from `ArticleContent`: `mimetype` (stored,
-  first), container.xml, content.opf, nav.xhtml, single chapter.xhtml,
-  downloaded images embedded (jpg/png/gif/webp only).
+`ArticleSendCoordinator.swift`:
+- `send(_:toDestinationID:)` — explicit single-destination send (context menu).
+- `articleBecameReady(_:)` (called by the ingestor post-`saveContent`) — per
+  destination, fires queued sends and, in `allSaves` mode, everything new.
+- `retryPendingSends()` — pull-to-refresh; per destination retries `.queued`/`.failed`.
+- `sendTestDocument(toDestinationID:)` — backs each settings test row.
+- EPUB built once per delivery; in-flight dedup keyed `"<itemID>|<destID>"`;
+  `.queued` written first so a mid-send process death is retried.
+
+## Boox (Send2Boox — unofficial)
+
+Ported from `hrw/onyx-send2boox`. Files in `Clip/Send/Boox/`:
+- `BooxAuthClient.swift` — OTP login: `users/sendMobileCode` (request code) →
+  `users/signupByPhoneOrEmail` (code → long-lived token). Token in Keychain.
+- `Send2BooxClient.swift` — `upload(epubData:fileName:title:)`: `users/me` (uid) →
+  `users/getDevice` + `im/getSig` (best-effort session pings, mirroring the
+  reference) → `config/buckets` (bucket + OSS endpoint) → `config/stss` (OSS STS
+  creds) → **signed OSS PUT** of the EPUB to `<uid>/push/<uuid>.epub` →
+  `push/saveAndPush` (registers the object; `resourceType` is `"txt"` to match
+  the reference). `BooxDestination` is the `ArticleDestination`.
+- `BooxAPIClient.swift` — `https://{host}/api/1/{path}`; Bearer token; a JSON body
+  implies POST; decodes the `{data:…}` envelope. Response models incl. tolerant
+  string-or-int `uid`.
+- `OSSRequestSigner.swift` — Alibaba OSS **V1 HMAC-SHA1** request signing
+  (StringToSign = VERB\n\nContent-Type\nDate\nCanonicalizedOSSHeaders +
+  CanonicalizedResource; `x-oss-security-token` header; virtual-hosted URL).
+- `BooxSendSettings.swift` — `sendMode`, `accountIdentity`, `region`
+  (eur.boox.com / send2boox.com), `isConfigured` (token present).
+
+**CAVEAT (unverified):** Send2Boox is unofficial and the OSS signing is
+reproduced by hand (the reference used the `oss2` SDK). It is NOT validated
+against a live Onyx account/device — gated behind explicit setup with an in-app
+disclosure; a friend tests post-publication. Known risk: `URLSession` may strip
+the signed `Date` header (→ switch to a presigned URL if uploads 403).
+
+## Other shared send files (`Clip/Send/`)
+
+- `EpubBuilder.swift` — EPUB 3 from `ArticleContent` (mimetype stored first,
+  container.xml, content.opf, nav.xhtml, one chapter.xhtml, embedded jpg/png/gif/webp).
 - `ZipArchiveWriter.swift` — minimal stored-entry ZIP (own CRC32, no deps).
-- `MIMEMessage.swift` — multipart/mixed, base64 EPUB attachment, RFC 2047
-  subject.
-- `SMTPClient.swift` — `SMTPTransport` protocol; EHLO → AUTH PLAIN (LOGIN
-  fallback) → MAIL/RCPT/DATA (dot-stuffed) → QUIT. `TLSConnectionTransport` =
-  NWConnection implicit TLS. STARTTLS/587 NOT supported (iCloud won't work).
-- `KindleSendSettings.swift` — UserDefaults-backed settings: `sendMode`,
-  `kindleAddress`, `provider` (gmail/custom), `customHost`, `smtpUsername`,
-  fixed `port` 465. `isConfigured(credentials:)`.
-- `SendCredentialsStore.swift` — Keychain for the SMTP app password
-  (`SendCredentialsStoring`; in-memory mock for tests).
+- `MIMEMessage.swift` — multipart/mixed, base64 EPUB, RFC 2047 subject.
+- `SMTPClient.swift` — `SMTPTransport`; EHLO → AUTH PLAIN (LOGIN fallback) →
+  MAIL/RCPT/DATA → QUIT; `TLSConnectionTransport` = NWConnection implicit TLS
+  (30 s timeout + cancellation). STARTTLS/587 NOT supported.
+- `KindleSendSettings.swift` — Kindle SMTP settings; `SendMode` is a typealias of
+  `ArticleSendMode`.
+- `SendCredentialsStore.swift` — Keychain for the SMTP password AND the Boox token
+  (`smtpPassword`/`booxToken`; in-memory mock for tests).
 
 ## Model & store
 
-`ReadingListItem`: `sendState` (`queued`/`sent`/`failed`, nil = never),
-`dateSent`, `lastSaveAttemptDate` (all `decodeIfPresent` back-compat; mirrored
-in `ClipShare/SharedReadingListAppender.swift`). Store mutations:
-`setSendState(_:for:)` (stamps `dateSent` on `.sent`),
-`recordSaveAttempt(for:) -> Date?` (returns previous press time, defaults to
-`dateAdded`), `item(forURLString:)`, `item(withID:)`.
+`ReadingListItem`: `sendStates: [String: SendState]` and `datesSent: [String: Date]`
+keyed by destination id (`sendState(for:)` / `dateSent(for:)` helpers). A Codable
+migration folds the legacy single `sendState`/`dateSent` under `"kindle"`.
+`ReadingListStore.setSendState(_:for:destination:)` stamps `datesSent[destination]`
+on `.sent`.
 
 ## UI
 
-- `SettingsViewController` "Send to Kindle" section: mode menu button, Kindle
-  address / email / app-password field cells (persist on editingDidEnd; password
-  in Keychain), provider segmented control (custom shows a host row —
-  `sendRows` computed), "Send Test to Kindle" row. Footer covers Gmail app
-  passwords + Amazon approved-sender setup.
-- `ReadingListViewController`: context menu (long-press) send; subtitle gains
-  `sent to Kindle` / `send failed` / `sending…`.
-
-## Constraints
-
-- Kindle accepts mail only from addresses on the user's Approved Personal
-  Document E-mail List; the From = `smtpUsername`.
-- EPUB is the recommended Send-to-Kindle format; 50 MB cap (article EPUBs are
-  far below).
-- Direct/unauthenticated email from a phone isn't deliverable (port 25, SPF) —
-  hence the embedded authenticated SMTP submission client.
+- Settings → "Email & Kindle" (mode, address/account fields, test) and a separate
+  "Send to Boox" screen (`BooxSettingsScreen`: region, OTP login/logout, mode,
+  test send, unofficial-API disclosure footer).
+- `ReadingListViewController`: per-destination context-menu rows; subtitle shows
+  `sent to Kindle` / `Boox send failed` / `sending to …` per destination.
 
 ## Tests (`ClipTests/`)
 
-`ZipArchiveWriterTests`, `EpubBuilderTests`, `MIMEMessageTests`,
-`SMTPClientTests` (scripted transport), `SavePressPolicyTests` (full gating
-matrix), `ArticleSendCoordinatorTests` (mock sender; settings keys snapshotted
-and restored), plus send-field cases in `ReadingListStoreTests`.
+`ZipArchiveWriterTests`, `EpubBuilderTests`, `MIMEMessageTests`, `SMTPClientTests`,
+`SavePressPolicyTests` (per-destination eligibility matrix), `ArticleSendCoordinatorTests`
+(multi-destination fan-out via a mock destination), `OSSRequestSignerTests`
+(canonicalization + signing), `BooxClientTests` (auth + upload happy-path via a
+mock `URLProtocol`), plus send-state + legacy-migration cases in `ReadingListStoreTests`.

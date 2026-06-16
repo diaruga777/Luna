@@ -480,6 +480,15 @@ final class ReadingListViewController: UITableViewController {
             config.image = videoThumbnail(for: item)
             config.imageProperties.maximumSize = CGSize(width: 96, height: 54)
             config.imageProperties.cornerRadius = 6
+        } else if let platform = item.contentPlatform,
+                  let module = PlatformRegistry.shared.module(for: platform) {
+            let artPath = item.thumbnailFileName.map {
+                store.articlesDirectory.appendingPathComponent($0).path
+            }
+            config.image = PlatformThumbnailRenderer.thumbnail(
+                cachedArtPath: artPath, glyphSymbolName: module.glyphSymbolName)
+            config.imageProperties.maximumSize = CGSize(width: 96, height: 54)
+            config.imageProperties.cornerRadius = 6
         }
         if item.state == .failed {
             // Items in the "Couldn't Load" section read in red.
@@ -556,12 +565,36 @@ final class ReadingListViewController: UITableViewController {
             openVideo(item)
             return
         }
+        if let platform = item.contentPlatform {
+            openPlatformItem(item, platform: platform)
+            return
+        }
         guard item.state == .ready, let content = store.content(for: item) else { return }
         let reader = ReaderViewController(
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
             gazeTrackerFactory: AppGazeTracker.factory)
         navigationController?.pushViewController(reader, animated: true)
+    }
+
+    // MARK: - Platform item playback / open
+
+    /// The launch ladder for a non-YouTube platform item: native app → in-app
+    /// embed → in-app Safari.
+    private func openPlatformItem(_ item: ReadingListItem, platform: ContentPlatform) {
+        guard let module = PlatformRegistry.shared.module(for: platform) else { return }
+
+        if let appURL = module.appDeepLink(for: item), UIApplication.shared.canOpenURL(appURL) {
+            UIApplication.shared.open(appURL) { [weak self] success in
+                if success { self?.store.markReadState(.read, for: item.id) }
+            }
+            return
+        }
+        if let embed = module.embed(for: item) {
+            present(PlatformEmbedViewController(embed: embed, itemID: item.id), animated: true)
+            return
+        }
+        InAppBrowser.present(urlString: item.urlString, from: self)
     }
 
     // MARK: - Video playback

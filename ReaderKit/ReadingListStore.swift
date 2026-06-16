@@ -288,9 +288,38 @@ final class ReadingListStore {
         var all = items()
         guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
         all[index].youtubeVideoID = videoID
+        all[index].platform = .youtube
+        all[index].platformItemID = videoID
         all[index].title = title
         all[index].channelName = channelName
         all[index].thumbnailFileName = thumbnailFileName
+        all[index].state = .ready
+        save(all)
+        return all[index]
+    }
+
+    /// Fills in metadata for a recognized platform item and marks it ready
+    /// (platform items have no `ArticleContent`). Best-effort: any field may be
+    /// nil and the item still renders (logo + deep link). Mirrors
+    /// `saveYouTubeMetadata` for the generic platform path.
+    func savePlatformMetadata(
+        platform: ContentPlatform, platformItemID: String?, title: String?,
+        creator: String?, thumbnailFileName: String?,
+        mediaCreatorName: String?, mediaItemTitle: String?,
+        mediaSourceService: MusicProvider?, for itemID: UUID
+    ) -> ReadingListItem? {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
+        all[index].platform = platform
+        all[index].platformItemID = platformItemID
+        if let title, !title.isEmpty { all[index].title = title }
+        if let creator, !creator.isEmpty { all[index].channelName = creator }
+        if let thumbnailFileName { all[index].thumbnailFileName = thumbnailFileName }
+        all[index].mediaCreatorName = mediaCreatorName
+        all[index].mediaItemTitle = mediaItemTitle
+        all[index].mediaSourceService = mediaSourceService
         all[index].state = .ready
         save(all)
         return all[index]

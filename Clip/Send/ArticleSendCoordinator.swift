@@ -143,7 +143,7 @@ final class ArticleSendCoordinator {
     /// delivers anything queued by an earlier press, plus everything when that
     /// destination's mode is "all saves".
     func articleBecameReady(_ item: ReadingListItem) {
-        guard !item.isYouTubeVideo else { return }
+        guard !item.isPlatformItem else { return }
         for destination in destinations where destination.isConfigured {
             let state = item.sendState(for: destination.id)
             let shouldSend = state == .queued
@@ -170,7 +170,7 @@ final class ArticleSendCoordinator {
     private func sendBuildingEPUB(_ item: ReadingListItem, to destination: ArticleDestination) async {
         guard destination.isConfigured else { return }
         guard let fresh = store.item(withID: item.id) else { return }
-        guard !fresh.isYouTubeVideo else { return } // videos have no article EPUB
+        guard !fresh.isPlatformItem else { return } // platform items have no article EPUB
 
         guard fresh.state == .ready else {
             store.setSendState(.queued, for: fresh.id, destination: destination.id)

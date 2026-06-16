@@ -44,6 +44,14 @@ final class ReadingListIngestor {
             return
         }
 
+        // A recognized platform URL (X, Bluesky, …) is accepted as a no-content
+        // item — NEVER run through the article extractor (which would fail and
+        // mark it "Couldn't Load").
+        if let match = PlatformRegistry.shared.detect(item.urlString) {
+            await ingestPlatformItem(item, match: match)
+            return
+        }
+
         do {
             let html = try await fetcher.fetchHTML(from: url)
             var content = try extractor.extract(html: html, baseURL: url)
@@ -111,6 +119,35 @@ final class ReadingListIngestor {
         } catch {
             store.markFailed(item.id)
         }
+    }
+
+    /// Ingests a recognized platform item: best-effort metadata (title/creator/
+    /// thumbnail via the module's optional fetcher), then marks `.ready`.
+    /// Recognized platform items NEVER enter `.failed` — they render from a logo
+    /// + deep link even when metadata is unavailable.
+    private func ingestPlatformItem(_ item: ReadingListItem, match: PlatformMatch) async {
+        let module = PlatformRegistry.shared.module(for: match.platform)
+        let metadata = await module?.metadataFetcher?.fetchMetadata(
+            for: match, urlString: item.urlString)
+
+        var thumbnailFileName: String?
+        if let data = metadata?.thumbnailData, !data.isEmpty {
+            let fileName = "\(item.id.uuidString)-thumb.jpg"
+            try? data.write(
+                to: store.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
+            thumbnailFileName = fileName
+        }
+
+        _ = store.savePlatformMetadata(
+            platform: match.platform,
+            platformItemID: match.itemID,
+            title: metadata?.title,
+            creator: metadata?.creator,
+            thumbnailFileName: thumbnailFileName,
+            mediaCreatorName: metadata?.mediaCreatorName,
+            mediaItemTitle: metadata?.mediaItemTitle,
+            mediaSourceService: match.sourceService,
+            for: item.id)
     }
 
     /// Downloads up to `maxImages` article images to the Articles directory and

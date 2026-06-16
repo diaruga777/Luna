@@ -39,8 +39,9 @@ enum SavePressPolicy {
         doubleSaveDestinationIDs: [String]
     ) -> Decision {
         guard let existingItem else { return .saveNew }
-        // Videos have no ereader EPUB target — every repeat press is a no-op.
-        guard !existingItem.isYouTubeVideo else { return .ignore }
+        // Platform items (videos, posts, tracks) have no ereader EPUB target —
+        // every repeat press is a no-op.
+        guard !existingItem.isPlatformItem else { return .ignore }
 
         let isDoublePress = previousPressDate.map {
             now.timeIntervalSince($0) < doublePressWindow

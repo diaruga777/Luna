@@ -93,9 +93,32 @@ struct ReadingListItem: Codable, Identifiable {
     /// list (the double-save-to-send detection window).
     var lastSaveAttemptDate: Date?
 
+    /// The content platform this item belongs to (nil = a plain article/document).
+    var platform: ContentPlatform?
+    /// Platform item id (tweet id, post shortcode, etc.) — generalizes `youtubeVideoID`.
+    var platformItemID: String?
+    /// Artist (music) or show (podcast).
+    var mediaCreatorName: String?
+    /// Track (music) or episode (podcast) title.
+    var mediaItemTitle: String?
+    /// Which service the original URL came from (music/podcast), if any.
+    var mediaSourceService: MusicProvider?
+
     var url: URL? { URL(string: urlString) }
 
-    var isYouTubeVideo: Bool { youtubeVideoID != nil }
+    var isYouTubeVideo: Bool { youtubeVideoID != nil || platform == .youtube }
+
+    /// The platform for rendering/routing — falls back to `.youtube` for legacy
+    /// items saved before `platform` existed.
+    var contentPlatform: ContentPlatform? {
+        platform ?? (youtubeVideoID != nil ? .youtube : nil)
+    }
+
+    /// A recognized platform item (vs. a plain article/document).
+    var isPlatformItem: Bool { contentPlatform != nil }
+
+    /// A provider-agnostic media item with no shareable http URL.
+    var isURLlessMedia: Bool { contentPlatform?.isURLless ?? false }
 
     /// An imported document (PDF/text/etc.) rather than a web link or video.
     var isDocument: Bool { documentType != nil }
@@ -138,6 +161,11 @@ struct ReadingListItem: Codable, Identifiable {
         self.sendStates = [:]
         self.datesSent = [:]
         self.lastSaveAttemptDate = nil
+        self.platform = nil
+        self.platformItemID = nil
+        self.mediaCreatorName = nil
+        self.mediaItemTitle = nil
+        self.mediaSourceService = nil
     }
 
     /// Legacy single-destination send keys, read only to migrate old reading-list
@@ -191,5 +219,10 @@ struct ReadingListItem: Codable, Identifiable {
             }
         }
         lastSaveAttemptDate = try container.decodeIfPresent(Date.self, forKey: .lastSaveAttemptDate)
+        platform = try container.decodeIfPresent(ContentPlatform.self, forKey: .platform)
+        platformItemID = try container.decodeIfPresent(String.self, forKey: .platformItemID)
+        mediaCreatorName = try container.decodeIfPresent(String.self, forKey: .mediaCreatorName)
+        mediaItemTitle = try container.decodeIfPresent(String.self, forKey: .mediaItemTitle)
+        mediaSourceService = try container.decodeIfPresent(MusicProvider.self, forKey: .mediaSourceService)
     }
 }

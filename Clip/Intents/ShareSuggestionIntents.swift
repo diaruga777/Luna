@@ -17,7 +17,7 @@ import Foundation
 struct SetShareChoiceIntent: AppIntent {
     static let title: LocalizedStringResource = "Apply Share Choice"
     static let description = IntentDescription(
-        "Responds to a share suggestion from Get Share Suggestion.")
+        "Responds to the share suggestion returned when you save a page or video.")
     static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Choice",

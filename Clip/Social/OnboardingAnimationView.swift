@@ -24,7 +24,8 @@ final class OnboardingAnimationView: UIView {
         self.kind = kind
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        heightAnchor.constraint(equalToConstant: 150).isActive = true
+        // The phone facsimile is portrait, so its step gets a taller canvas.
+        heightAnchor.constraint(equalToConstant: kind == .actionButton ? 230 : 150).isActive = true
         widthAnchor.constraint(equalToConstant: 260).isActive = true
         clipsToBounds = true
         switch kind {
@@ -175,97 +176,176 @@ final class OnboardingAnimationView: UIView {
         }
     }
 
-    // MARK: - Action Button
+    // MARK: - Action Button (portrait phone running Safari)
 
     private let pressRipple = UIView()
-    private let savedCard = UIView()
+    private let savedToast = UIView()
 
     private func buildActionButton() {
-        // A phone edge with the Action Button on the left.
+        // Portrait phone.
         let phone = UIView()
+        phone.backgroundColor = .systemBackground
         phone.layer.borderColor = UIColor.systemGray3.cgColor
         phone.layer.borderWidth = 3
         phone.layer.cornerRadius = 26
         phone.layer.cornerCurve = .continuous
+        phone.clipsToBounds = true
         phone.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(phone)
 
+        // The Action Button on the left edge.
         let button = UIView()
         button.backgroundColor = .systemGray
-        button.layer.cornerRadius = 3
+        button.layer.cornerRadius = 2.5
         button.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(button)
 
         pressRipple.backgroundColor = accent.withAlphaComponent(0.35)
-        pressRipple.layer.cornerRadius = 18
+        pressRipple.layer.cornerRadius = 16
         pressRipple.alpha = 0
         pressRipple.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(pressRipple)
 
-        savedCard.backgroundColor = accent
-        savedCard.layer.cornerRadius = 12
-        savedCard.layer.cornerCurve = .continuous
-        savedCard.alpha = 0
-        savedCard.translatesAutoresizingMaskIntoConstraints = false
-        let check = UIImageView(image: UIImage(systemName: "checkmark"))
+        // A Safari facsimile inside the phone: a page, then a bottom address bar.
+        let page = UIView()
+        page.backgroundColor = .secondarySystemBackground
+        page.translatesAutoresizingMaskIntoConstraints = false
+        phone.addSubview(page)
+        let headline = bar(width: 0.7, height: 9, color: .label.withAlphaComponent(0.7))
+        let line1 = bar(width: 0.92, height: 5)
+        let line2 = bar(width: 0.85, height: 5)
+        let line3 = bar(width: 0.6, height: 5)
+        let lines = UIStackView(arrangedSubviews: [headline, line1, line2, line3])
+        lines.axis = .vertical
+        lines.spacing = 7
+        lines.alignment = .leading
+        lines.setCustomSpacing(12, after: headline)
+        lines.translatesAutoresizingMaskIntoConstraints = false
+        page.addSubview(lines)
+
+        let addressBar = UIView()
+        addressBar.backgroundColor = .systemBackground
+        addressBar.translatesAutoresizingMaskIntoConstraints = false
+        phone.addSubview(addressBar)
+        let urlPill = UIView()
+        urlPill.backgroundColor = .secondarySystemBackground
+        urlPill.layer.cornerRadius = 9
+        urlPill.translatesAutoresizingMaskIntoConstraints = false
+        let lock = UIImageView(image: UIImage(
+            systemName: "lock.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 8)))
+        lock.tintColor = .secondaryLabel
+        let host = UILabel()
+        host.text = "example.com"
+        host.font = .systemFont(ofSize: 9, weight: .medium)
+        host.textColor = .secondaryLabel
+        let urlStack = UIStackView(arrangedSubviews: [lock, host])
+        urlStack.spacing = 3
+        urlStack.alignment = .center
+        urlStack.translatesAutoresizingMaskIntoConstraints = false
+        addressBar.addSubview(urlPill)
+        urlPill.addSubview(urlStack)
+
+        // "Saved to Click" toast inside the phone screen.
+        savedToast.backgroundColor = accent
+        savedToast.layer.cornerRadius = 11
+        savedToast.layer.cornerCurve = .continuous
+        savedToast.alpha = 0
+        savedToast.translatesAutoresizingMaskIntoConstraints = false
+        phone.addSubview(savedToast)
+        let check = UIImageView(image: UIImage(
+            systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold)))
         check.tintColor = .white
-        check.contentMode = .center
         let savedLabel = UILabel()
         savedLabel.text = "Saved to Click"
         savedLabel.textColor = .white
-        savedLabel.font = .systemFont(ofSize: 14, weight: .semibold)
-        let cardStack = UIStackView(arrangedSubviews: [check, savedLabel])
-        cardStack.axis = .horizontal
-        cardStack.spacing = 8
-        cardStack.translatesAutoresizingMaskIntoConstraints = false
+        savedLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        let toastStack = UIStackView(arrangedSubviews: [check, savedLabel])
+        toastStack.spacing = 5
+        toastStack.alignment = .center
+        toastStack.translatesAutoresizingMaskIntoConstraints = false
+        savedToast.addSubview(toastStack)
 
-        addSubview(phone)
-        phone.addSubview(button)
-        phone.addSubview(pressRipple)
-        savedCard.addSubview(cardStack)
-        addSubview(savedCard)
         NSLayoutConstraint.activate([
-            phone.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            phone.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            phone.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 70),
-            phone.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -70),
-            button.leadingAnchor.constraint(equalTo: phone.leadingAnchor, constant: -3),
-            button.topAnchor.constraint(equalTo: phone.topAnchor, constant: 34),
-            button.widthAnchor.constraint(equalToConstant: 6),
+            phone.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            phone.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+            phone.centerXAnchor.constraint(equalTo: centerXAnchor),
+            phone.widthAnchor.constraint(equalTo: phone.heightAnchor, multiplier: 0.49),
+
+            button.trailingAnchor.constraint(equalTo: phone.leadingAnchor, constant: 3),
+            button.topAnchor.constraint(equalTo: phone.topAnchor, constant: 46),
+            button.widthAnchor.constraint(equalToConstant: 5),
             button.heightAnchor.constraint(equalToConstant: 34),
             pressRipple.centerXAnchor.constraint(equalTo: phone.leadingAnchor),
             pressRipple.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-            pressRipple.widthAnchor.constraint(equalToConstant: 36),
-            pressRipple.heightAnchor.constraint(equalToConstant: 36),
-            savedCard.centerXAnchor.constraint(equalTo: phone.centerXAnchor),
-            savedCard.centerYAnchor.constraint(equalTo: phone.centerYAnchor),
-            savedCard.heightAnchor.constraint(equalToConstant: 40),
-            cardStack.leadingAnchor.constraint(equalTo: savedCard.leadingAnchor, constant: 12),
-            cardStack.trailingAnchor.constraint(equalTo: savedCard.trailingAnchor, constant: -12),
-            cardStack.centerYAnchor.constraint(equalTo: savedCard.centerYAnchor),
+            pressRipple.widthAnchor.constraint(equalToConstant: 32),
+            pressRipple.heightAnchor.constraint(equalToConstant: 32),
+
+            page.topAnchor.constraint(equalTo: phone.topAnchor),
+            page.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
+            addressBar.topAnchor.constraint(equalTo: page.bottomAnchor),
+            addressBar.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
+            addressBar.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
+            addressBar.bottomAnchor.constraint(equalTo: phone.bottomAnchor),
+            addressBar.heightAnchor.constraint(equalToConstant: 30),
+            lines.topAnchor.constraint(equalTo: page.topAnchor, constant: 16),
+            lines.leadingAnchor.constraint(equalTo: page.leadingAnchor, constant: 12),
+            lines.trailingAnchor.constraint(equalTo: page.trailingAnchor, constant: -12),
+            urlPill.centerYAnchor.constraint(equalTo: addressBar.centerYAnchor),
+            urlPill.leadingAnchor.constraint(equalTo: addressBar.leadingAnchor, constant: 12),
+            urlPill.trailingAnchor.constraint(equalTo: addressBar.trailingAnchor, constant: -12),
+            urlPill.heightAnchor.constraint(equalToConstant: 18),
+            urlStack.centerXAnchor.constraint(equalTo: urlPill.centerXAnchor),
+            urlStack.centerYAnchor.constraint(equalTo: urlPill.centerYAnchor),
+
+            savedToast.centerXAnchor.constraint(equalTo: page.centerXAnchor),
+            savedToast.bottomAnchor.constraint(equalTo: page.bottomAnchor, constant: -10),
+            savedToast.heightAnchor.constraint(equalToConstant: 28),
+            toastStack.leadingAnchor.constraint(equalTo: savedToast.leadingAnchor, constant: 10),
+            toastStack.trailingAnchor.constraint(equalTo: savedToast.trailingAnchor, constant: -10),
+            toastStack.centerYAnchor.constraint(equalTo: savedToast.centerYAnchor),
         ])
+    }
+
+    /// A rounded gray "text line" bar, width as a fraction of its container.
+    private func bar(width: CGFloat, height: CGFloat, color: UIColor = .systemGray3) -> UIView {
+        let v = UIView()
+        v.backgroundColor = color
+        v.layer.cornerRadius = height / 2
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.heightAnchor.constraint(equalToConstant: height).isActive = true
+        let parent = UIView()
+        parent.translatesAutoresizingMaskIntoConstraints = false
+        parent.addSubview(v)
+        NSLayoutConstraint.activate([
+            v.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
+            v.topAnchor.constraint(equalTo: parent.topAnchor),
+            v.bottomAnchor.constraint(equalTo: parent.bottomAnchor),
+            v.widthAnchor.constraint(equalTo: parent.widthAnchor, multiplier: width),
+            parent.heightAnchor.constraint(equalToConstant: height),
+        ])
+        return parent
     }
 
     private func animateActionButton() {
         pressRipple.alpha = 0
         pressRipple.transform = CGAffineTransform(scaleX: 0.3, y: 0.3)
-        savedCard.alpha = 0
-        savedCard.transform = CGAffineTransform(translationX: 0, y: 14)
-        UIView.animateKeyframes(
-            withDuration: 3.0, delay: 0.3, options: [.repeat]
-        ) {
-            // Press ripple.
-            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.12) {
+        savedToast.alpha = 0
+        savedToast.transform = CGAffineTransform(translationX: 0, y: 12)
+        UIView.animateKeyframes(withDuration: 3.0, delay: 0.4, options: [.repeat]) {
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.1) {
                 self.pressRipple.alpha = 1
                 self.pressRipple.transform = .identity
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.12, relativeDuration: 0.12) {
+            UIView.addKeyframe(withRelativeStartTime: 0.1, relativeDuration: 0.1) {
                 self.pressRipple.alpha = 0
             }
-            // Saved card pops in.
-            UIView.addKeyframe(withRelativeStartTime: 0.22, relativeDuration: 0.15) {
-                self.savedCard.alpha = 1
-                self.savedCard.transform = .identity
+            UIView.addKeyframe(withRelativeStartTime: 0.22, relativeDuration: 0.13) {
+                self.savedToast.alpha = 1
+                self.savedToast.transform = .identity
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.82, relativeDuration: 0.12) {
-                self.savedCard.alpha = 0
+            UIView.addKeyframe(withRelativeStartTime: 0.85, relativeDuration: 0.12) {
+                self.savedToast.alpha = 0
             }
         }
     }

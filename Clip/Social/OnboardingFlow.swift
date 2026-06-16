@@ -67,7 +67,7 @@ enum OnboardingFlow {
         OnboardingStepViewController(
             symbol: "safari",
             title: "Save from Safari",
-            body: "Turn on the Click extension to save whatever you're reading in Safari with one tap. Everything stays on your device — nothing is uploaded to read it.",
+            body: "Everything stays on device. The app remembers your last visited site so it can be saved instantly.\n\nTurn on the Click extension in Settings → Apps → Safari → Extensions.",
             primary: .init(title: "Open Settings") { _ in
                 if let url = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(url)
@@ -84,7 +84,7 @@ enum OnboardingFlow {
         OnboardingStepViewController(
             symbol: "bolt.badge.clock",
             title: "One-Press Saving",
-            body: "Install the Click shortcut and assign it to your Action Button (or Control Center) to save the current page instantly.",
+            body: "Install the shortcut, then assign it to your Action Button to save the page you're reading instantly:\n\nSettings → Action Button → Shortcut → \"Clip Safari Page\".",
             primary: .init(title: "Install Shortcut") { step in
                 installShortcut(from: step)
             },

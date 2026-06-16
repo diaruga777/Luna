@@ -15,7 +15,12 @@ struct GetShareSuggestionIntent: AppIntent {
     static let openAppWhenRun: Bool = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String?> {
-        .result(value: ShareSuggestionStore.shared.pendingSuggestion()?.friendUsername)
+        // Only streak/channel MATCH suggestions are offered through the shortcut
+        // (whose menu includes "Always Share"). Semantic recommendations must
+        // NOT show "Always", so they're surfaced in-app (end-of-article) instead
+        // — returning nil here keeps them out of the shortcut's menu.
+        let pending = ShareSuggestionStore.shared.pendingSuggestion()
+        return .result(value: pending?.isSemantic == true ? nil : pending?.friendUsername)
     }
 }
 

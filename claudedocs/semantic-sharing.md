@@ -12,8 +12,10 @@ ONLY two places (never on past saves at launch — that's bad UX):
    share/don't suggestion. `SemanticIndexer.immediateSuggestion(forItemID:)`
    embeds JUST the one new item (a single inference, model released right after)
    and matches it against the already-cached per-friend vectors. Armed only if
-   no same-site/-channel streak suggestion already armed one. Surfaced by
-   `GetShareSuggestionIntent` (next shortcut step).
+   no same-site/-channel streak suggestion already armed one. Surfaced by the
+   **token returned from the save intent** (`"2:<username>"`, since a semantic
+   match is `isSemantic` and offers Yes/No only — no "always"; see
+   save-link-intent.md).
 2. **End of an article** — `AppReaderShareProvider.suggestedFriendName` falls
    back to `SemanticIndexer.cachedSuggestion` (a cheap `bestMatch` over the
    already-cached vector — NO embedding).

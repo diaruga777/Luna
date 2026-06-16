@@ -105,14 +105,31 @@ final class ShareReaderViewController: UIViewController {
 
     private func presentFailure() {
         spinner.stopAnimating()
+
+        let icon = UIImageView(image: UIImage(
+            systemName: "exclamationmark.triangle.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 40, weight: .semibold)))
+        icon.tintColor = .systemRed
+        icon.contentMode = .center
+
         let label = UILabel()
         label.text = "Couldn't load this article."
-        label.textColor = .secondaryLabel
-        label.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(label)
+        label.textColor = .systemRed
+        label.font = .preferredFont(forTextStyle: .headline)
+        label.textAlignment = .center
+        label.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [icon, label])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
         NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
         ])
     }
 }

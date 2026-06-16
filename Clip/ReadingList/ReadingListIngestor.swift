@@ -197,21 +197,9 @@ final class ReadingListIngestor {
             let item = store.add(urlString: urlString)
             // New-save automation runs HERE and only here — repeat presses
             // (e.g. double-save for Kindle) never re-share or re-suggest.
-            let autoShareTargets = ShareSuggestionStore.shared.handleNewSave(urlString: urlString)
-            for target in autoShareTargets {
-                Task {
-                    await SocialMessageCenter.shared.autoShare(
-                        urlString: urlString, toFriendUUID: target.uuid)
-                }
-            }
+            fireAutoShares(urlString: urlString)
             await ingest(item)
-            // Immediate content-similarity suggestion (one embed of just this
-            // item) — only when no same-site/-channel streak already armed one.
-            if ShareSuggestionStore.shared.pendingSuggestion() == nil,
-               let match = SemanticIndexer.shared.immediateSuggestion(forItemID: item.id) {
-                ShareSuggestionStore.shared.armSemanticSuggestion(
-                    urlString: urlString, friendUUID: match.uuid, friendUsername: match.username)
-            }
+            armSemanticSuggestionIfNeeded(urlString: urlString, itemID: item.id)
             return .saved(item)
         case .sendToKindle:
             // The policy only returns this for an existing item.
@@ -221,5 +209,42 @@ final class ReadingListIngestor {
         case .ignore:
             return .ignored
         }
+    }
+
+    /// Saves a NEW URL whose article content was already fetched (the pasteboard
+    /// preview), persisting it directly so we skip a redundant network fetch.
+    /// Runs the same new-save automation as a fresh save press.
+    @discardableResult
+    func saveNewWithContent(urlString: String, content: ArticleContent) async -> ReadingListItem {
+        let item = store.add(urlString: urlString)
+        fireAutoShares(urlString: urlString)
+        let saved = store.saveContent(content, for: item)
+        if saved.state == .ready {
+            ArticleSendCoordinator.shared.articleBecameReady(saved)
+        }
+        armSemanticSuggestionIfNeeded(urlString: urlString, itemID: item.id)
+        return saved
+    }
+
+    /// Auto-shares a newly saved URL to every friend the user set to always
+    /// receive that site.
+    private func fireAutoShares(urlString: String) {
+        let autoShareTargets = ShareSuggestionStore.shared.handleNewSave(urlString: urlString)
+        for target in autoShareTargets {
+            Task {
+                await SocialMessageCenter.shared.autoShare(
+                    urlString: urlString, toFriendUUID: target.uuid)
+            }
+        }
+    }
+
+    /// Arms the immediate content-similarity suggestion (one embed of just this
+    /// item) — only when no same-site/-channel streak already armed one.
+    private func armSemanticSuggestionIfNeeded(urlString: String, itemID: UUID) {
+        guard ShareSuggestionStore.shared.pendingSuggestion() == nil,
+              let match = SemanticIndexer.shared.immediateSuggestion(forItemID: itemID)
+        else { return }
+        ShareSuggestionStore.shared.armSemanticSuggestion(
+            urlString: urlString, friendUUID: match.uuid, friendUsername: match.username)
     }
 }

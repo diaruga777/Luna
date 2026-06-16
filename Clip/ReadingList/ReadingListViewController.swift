@@ -5,14 +5,18 @@
 
 import UIKit
 
-/// The home screen. Items are grouped into three sections, each in FIFO
-/// (oldest-saved first) order:
+/// The home screen. Items are grouped into sections in FIFO (oldest-saved
+/// first) order:
+/// - **From Pasteboard**: a one-tap suggestion for a readable URL on the
+///   clipboard, shown above the list and only until tapped (not yet saved).
 /// - **Reading**: unread items saved within the last week (always expanded).
 /// - **Read**: finished items (collapsed by default).
 /// - **Archive**: unread items older than a week by save date (collapsed by
 ///   default).
-/// Read and Archive headers expand/collapse on tap. Tap a row to read; press
-/// the drag handle to reorder within Reading; long-press for the action menu.
+/// - **Couldn't Load**: items whose content failed to download/extract, in red,
+///   at the very bottom (collapsed by default; pull to retry).
+/// Collapsible headers expand/collapse on tap. Tap a row to read; press the drag
+/// handle to reorder within Reading; long-press for the action menu.
 final class ReadingListViewController: UITableViewController {
 
     init() {
@@ -24,23 +28,38 @@ final class ReadingListViewController: UITableViewController {
     /// Items older than this (by save date) move to the Archive section.
     private static let archiveAge: TimeInterval = 7 * 24 * 60 * 60
 
-    /// The three list groups, in display order.
+    /// The list groups. Raw values are STABLE (persisted in `collapsedSections`),
+    /// so new cases append at the end; display order is `displayOrder`, not the
+    /// declaration order.
     private enum Section: Int, CaseIterable {
-        case reading
-        case read
-        case archive
+        case reading = 0
+        case read = 1
+        case archive = 2
+        case error = 3
+        case pasteboard = 4
 
         var title: String {
             switch self {
             case .reading: return "Reading"
             case .read: return "Read"
             case .archive: return "Archive"
+            case .error: return "Couldn't Load"
+            case .pasteboard: return "From Pasteboard"
             }
         }
 
-        /// Reading is always open; Read and Archive can collapse.
-        var isCollapsible: Bool { self != .reading }
+        /// Reading and the pasteboard suggestion are always open; the rest collapse.
+        var isCollapsible: Bool {
+            switch self {
+            case .reading, .pasteboard: return false
+            case .read, .archive, .error: return true
+            }
+        }
     }
+
+    /// Top-to-bottom display order: a pasteboard suggestion sits above the list,
+    /// failed items in a collapsible section at the very bottom.
+    private static let displayOrder: [Section] = [.pasteboard, .reading, .read, .archive, .error]
 
     /// What the list shows: everything, only articles, or only videos.
     private enum ListFilter: Int, CaseIterable {
@@ -81,7 +100,7 @@ final class ReadingListViewController: UITableViewController {
     private var collapsedSections: Set<Section> {
         get {
             guard let raw = UserDefaults.standard.array(forKey: Self.collapsedDefaultsKey) as? [Int]
-            else { return [.read, .archive] }
+            else { return [.read, .archive, .error] }
             return Set(raw.compactMap(Section.init(rawValue:)))
         }
         set {
@@ -90,6 +109,13 @@ final class ReadingListViewController: UITableViewController {
     }
 
     private let store = ReadingListStore.shared
+
+    /// A readable URL found on the system pasteboard, shown as a one-tap "From
+    /// Pasteboard" row until saved. nil when there's nothing to suggest.
+    private var pasteboardCandidate: PasteboardCandidate?
+    /// The pasteboard `changeCount` last evaluated, so we only read its contents
+    /// (which shows the system paste banner) when it has actually changed.
+    private var lastCheckedPasteboardChangeCount = -1
 
     /// The Articles/Videos filter — only shown when the list actually has both
     /// (a video and an article), otherwise it's pointless.
@@ -157,7 +183,68 @@ final class ReadingListViewController: UITableViewController {
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(checkPasteboard),
+            name: UIApplication.didBecomeActiveNotification, object: nil)
         reload()
+        checkPasteboard()
+    }
+
+    // MARK: - Pasteboard suggestion
+
+    /// If the pasteboard holds a new URL with extractable content, surface it as
+    /// the top "From Pasteboard" row. Gated on `changeCount` so the system paste
+    /// banner shows at most once per newly copied URL.
+    @objc private func checkPasteboard() {
+        let pasteboard = UIPasteboard.general
+        guard pasteboard.changeCount != lastCheckedPasteboardChangeCount else { return }
+        lastCheckedPasteboardChangeCount = pasteboard.changeCount
+
+        guard pasteboard.hasURLs, let url = pasteboard.url else {
+            // Pasteboard changed to something with no URL — drop any stale row.
+            if pasteboardCandidate != nil { pasteboardCandidate = nil; reload() }
+            return
+        }
+        Task { [weak self] in
+            let candidate = await PasteboardSuggester.shared.evaluate(urlString: url.absoluteString)
+            await MainActor.run {
+                guard let self else { return }
+                self.pasteboardCandidate = candidate
+                self.reload()
+            }
+        }
+    }
+
+    /// Saves the pasteboard candidate and opens it. On return, the row is gone
+    /// and the item sits in its normal section.
+    private func openPasteboardCandidate() {
+        guard let candidate = pasteboardCandidate else { return }
+        pasteboardCandidate = nil
+        reload() // drop the row immediately
+
+        if candidate.isVideo {
+            Task { [weak self] in
+                await ReadingListIngestor.shared.handleSavePress(urlString: candidate.urlString)
+                await MainActor.run {
+                    guard let self, let item = self.store.item(forURLString: candidate.urlString)
+                    else { return }
+                    self.openVideo(item)
+                }
+            }
+        } else if let content = candidate.content {
+            Task { [weak self] in
+                let item = await ReadingListIngestor.shared.saveNewWithContent(
+                    urlString: candidate.urlString, content: content)
+                await MainActor.run {
+                    guard let self, let saved = self.store.content(for: item) else { return }
+                    let reader = ReaderViewController(
+                        item: item, content: saved,
+                        shareProvider: AppReaderShareProvider.shared,
+                        gazeTrackerFactory: AppGazeTracker.factory)
+                    self.navigationController?.pushViewController(reader, animated: true)
+                }
+            }
+        }
     }
 
     @objc private func reload() {
@@ -171,8 +258,11 @@ final class ReadingListViewController: UITableViewController {
         var reading: [ReadingListItem] = []
         var read: [ReadingListItem] = []
         var archive: [ReadingListItem] = []
+        var failed: [ReadingListItem] = []
         for item in all {
-            if item.readState == .read {
+            if item.state == .failed {
+                failed.append(item)
+            } else if item.readState == .read {
                 read.append(item)
             } else if now.timeIntervalSince(item.dateAdded) > Self.archiveAge {
                 archive.append(item)
@@ -180,13 +270,33 @@ final class ReadingListViewController: UITableViewController {
                 reading.append(item)
             }
         }
-        let bySection: [Section: [ReadingListItem]] =
-            [.reading: reading, .read: read, .archive: archive]
-        groups = Section.allCases.compactMap { section in
+        var bySection: [Section: [ReadingListItem]] =
+            [.reading: reading, .read: read, .archive: archive, .error: failed]
+
+        // The pasteboard suggestion, unless it's since been saved by some path.
+        if let candidate = pasteboardCandidate {
+            if store.item(forURLString: candidate.urlString) != nil {
+                pasteboardCandidate = nil
+            } else {
+                bySection[.pasteboard] = [displayItem(for: candidate)]
+            }
+        }
+
+        groups = Self.displayOrder.compactMap { section in
             let items = bySection[section] ?? []
             return items.isEmpty ? nil : (section, items)
         }
         tableView.reloadData()
+    }
+
+    /// A transient (unsaved) item used to render the pasteboard suggestion row.
+    private func displayItem(for candidate: PasteboardCandidate) -> ReadingListItem {
+        var item = ReadingListItem(urlString: candidate.urlString)
+        item.title = candidate.title
+        item.state = .ready
+        item.youtubeVideoID = candidate.videoID
+        item.channelName = candidate.channelName
+        return item
     }
 
     @objc private func filterChanged(_ control: UISegmentedControl) {
@@ -304,9 +414,12 @@ final class ReadingListViewController: UITableViewController {
         let header = UIView()
         header.tag = kind.rawValue
 
+        // The error section is tinted red to flag it; the rest are muted.
+        let headerColor: UIColor = kind == .error ? .systemRed : .secondaryLabel
+
         let label = UILabel()
         label.font = .preferredFont(forTextStyle: .headline)
-        label.textColor = .secondaryLabel
+        label.textColor = headerColor
         label.translatesAutoresizingMaskIntoConstraints = false
 
         if kind.isCollapsible {
@@ -315,7 +428,7 @@ final class ReadingListViewController: UITableViewController {
             let glyph = NSTextAttachment()
             glyph.image = UIImage(systemName: chevron)?
                 .withConfiguration(UIImage.SymbolConfiguration(textStyle: .caption1))
-                .withTintColor(.secondaryLabel, renderingMode: .alwaysOriginal)
+                .withTintColor(headerColor, renderingMode: .alwaysOriginal)
             let title = NSMutableAttributedString(attachment: glyph)
             title.append(NSAttributedString(string: "  \(kind.title) (\(group.items.count))"))
             label.attributedText = title
@@ -368,8 +481,13 @@ final class ReadingListViewController: UITableViewController {
             config.imageProperties.maximumSize = CGSize(width: 96, height: 54)
             config.imageProperties.cornerRadius = 6
         }
-        // Unopened articles pop; anything touched fades back (but stays legible).
-        config.textProperties.color = item.readState == .unopened ? .label : .secondaryLabel
+        if item.state == .failed {
+            // Items in the "Couldn't Load" section read in red.
+            config.textProperties.color = .systemRed
+        } else {
+            // Unopened articles pop; anything touched fades back (but stays legible).
+            config.textProperties.color = item.readState == .unopened ? .label : .secondaryLabel
+        }
         cell.contentConfiguration = config
         cell.accessoryType = item.state == .ready ? .disclosureIndicator : .none
         cell.showsReorderControl = true
@@ -401,7 +519,7 @@ final class ReadingListViewController: UITableViewController {
         }
         switch item.state {
         case .pending: parts.append("downloading…")
-        case .failed: parts.append("failed (pull to retry)")
+        case .failed: parts.append("pull to retry")
         case .ready: break
         }
 
@@ -422,6 +540,10 @@ final class ReadingListViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
+        if section(at: indexPath.section) == .pasteboard {
+            openPasteboardCandidate()
+            return
+        }
         let item = item(at: indexPath)
         if item.isYouTubeVideo {
             openVideo(item)
@@ -539,6 +661,8 @@ final class ReadingListViewController: UITableViewController {
         contextMenuConfigurationForRowAt indexPath: IndexPath,
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
+        // The pasteboard suggestion isn't saved yet — no row actions apply.
+        guard section(at: indexPath.section) != .pasteboard else { return nil }
         let item = item(at: indexPath)
         return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
             let sendToFriend = UIAction(

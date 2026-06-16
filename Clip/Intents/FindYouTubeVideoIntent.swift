@@ -41,7 +41,7 @@ struct FindYouTubeVideoIntent: AppIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String?> {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
         guard GoogleAuthClient.shared.isSignedIn else { throw FindError.notSignedIn }
         guard let parsed = YouTubeQuery.parse(query) else { throw FindError.badQuery }
         let api = YouTubeAPIClient()
@@ -54,7 +54,8 @@ struct FindYouTubeVideoIntent: AppIntent {
         else { throw FindError.videoNotFound }
 
         let urlString = YouTubeURL.watchURLString(videoID: match.videoID)
-        let savedURL = await IntentIngestHelper.handleSavePressWithTimeout(urlString: urlString)
-        return .result(value: savedURL)
+        _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: urlString)
+        // Return the share-suggestion token (see ClipSafariPageIntent).
+        return .result(value: ShareSuggestionStore.shared.pendingSuggestionToken())
     }
 }

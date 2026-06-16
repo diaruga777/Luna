@@ -19,6 +19,7 @@ final class OnboardingStepViewController: UIViewController {
     private let stepTitle: String
     private let body: String
     private let primaryAction: PrimaryAction?
+    private let secondaryAction: PrimaryAction?
     private let continueTitle: String
     private let onContinue: () -> Void
     /// When set, a looping illustration of the iOS change replaces the static icon.
@@ -26,15 +27,17 @@ final class OnboardingStepViewController: UIViewController {
     private var animationView: OnboardingAnimationView?
 
     private let primaryButton = UIButton(type: .system)
+    private let secondaryButton = UIButton(type: .system)
 
     init(symbol: String, title: String, body: String,
-         primary: PrimaryAction?, continueTitle: String,
+         primary: PrimaryAction?, secondary: PrimaryAction? = nil, continueTitle: String,
          animation: OnboardingAnimationView.Kind? = nil,
          onContinue: @escaping () -> Void) {
         self.symbolName = symbol
         self.stepTitle = title
         self.body = body
         self.primaryAction = primary
+        self.secondaryAction = secondary
         self.continueTitle = continueTitle
         self.animationKind = animation
         self.onContinue = onContinue
@@ -96,6 +99,14 @@ final class OnboardingStepViewController: UIViewController {
             buttonStack.addArrangedSubview(primaryButton)
         }
 
+        if let secondaryAction {
+            secondaryButton.setTitle(secondaryAction.title, for: .normal)
+            secondaryButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .medium)
+            secondaryButton.tintColor = GlassStyle.readingAccent
+            secondaryButton.addTarget(self, action: #selector(secondaryTapped), for: .touchUpInside)
+            buttonStack.addArrangedSubview(secondaryButton)
+        }
+
         let continueButton = UIButton(type: .system)
         continueButton.setTitle(continueTitle, for: .normal)
         continueButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .medium)
@@ -126,5 +137,6 @@ final class OnboardingStepViewController: UIViewController {
     }
 
     @objc private func primaryTapped() { primaryAction?.handler(self) }
+    @objc private func secondaryTapped() { secondaryAction?.handler(self) }
     @objc private func continueTapped() { onContinue() }
 }

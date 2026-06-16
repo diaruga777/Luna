@@ -40,7 +40,7 @@ struct ClipSafariPageIntent: AppIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String?> {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let isSafari = app?.localizedCaseInsensitiveContains("safari") ?? true
         guard isSafari else { throw ClipError.notInSafari }
 
@@ -51,8 +51,10 @@ struct ClipSafariPageIntent: AppIntent {
             throw ClipError.trackedURLMismatch
         }
 
-        let savedURL = await IntentIngestHelper.handleSavePressWithTimeout(urlString: tracked)
-        return .result(value: savedURL)
+        _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: tracked)
+        // Return the share-suggestion token so the shortcut can offer the right
+        // menu ("" none / "3:name" yes-always-no / "2:name" yes-no).
+        return .result(value: ShareSuggestionStore.shared.pendingSuggestionToken())
     }
 }
 

@@ -266,10 +266,13 @@ final class ShareViewController: UIViewController {
     /// Shows a brief liquid-glass "Saved" checkmark, then completes. Call only
     /// after an actual save (no reader is being presented).
     private func confirmSavedThenComplete() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.showSavedBadge()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) { self.complete() }
+        // GUARANTEE completion via the captured context (not `self`/the badge) —
+        // a share extension must never hang on screen if the confirmation view
+        // misbehaves, so the request always finishes after the delay.
+        let context = extensionContext
+        DispatchQueue.main.async { [weak self] in self?.showSavedBadge() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
+            context?.completeRequest(returningItems: nil)
         }
     }
 

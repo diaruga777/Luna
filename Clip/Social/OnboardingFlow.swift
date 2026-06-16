@@ -68,11 +68,7 @@ enum OnboardingFlow {
             symbol: "safari",
             title: "Save from Safari",
             body: "Everything stays on device. The app remembers your last visited site so it can be saved instantly.\n\nTurn on the Click extension in Settings → Apps → Safari → Extensions.",
-            primary: .init(title: "Open Settings") { _ in
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            },
+            primary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
             continueTitle: "Continue",
             animation: .settingsToggle,
             onContinue: { [weak nav] in
@@ -88,6 +84,7 @@ enum OnboardingFlow {
             primary: .init(title: "Install Shortcut") { step in
                 installShortcut(from: step)
             },
+            secondary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
             continueTitle: "Done",
             animation: .actionButton,
             onContinue: onFinished)

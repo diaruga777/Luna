@@ -158,6 +158,18 @@ final class ShareSuggestionStore {
         loadState().pending
     }
 
+    /// Compact token the save intents return for the shortcut to branch on:
+    ///   ""          — no suggestion.
+    ///   "3:<name>"  — streak/channel match: offer Yes / Always / No.
+    ///   "2:<name>"  — semantic recommendation: offer Yes / No (no "always").
+    /// Usernames can't contain ":" (see `ProfileValidation`), so the split is
+    /// unambiguous.
+    func pendingSuggestionToken() -> String {
+        guard let pending = loadState().pending else { return "" }
+        let prefix = pending.isSemantic ? "2" : "3"
+        return "\(prefix):\(pending.friendUsername)"
+    }
+
     /// The user's answer to a surfaced suggestion.
     enum Choice: String, CaseIterable {
         case dontShare = "Don't Share"

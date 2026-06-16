@@ -48,10 +48,13 @@ enum ProfileValidation {
     static let usernameMaxLength = 20
     static let contactFieldMaxLength = 60
 
-    /// Trims and validates a username: 1–20 characters after trimming.
+    /// Trims and validates a username: 1–20 characters after trimming, with no
+    /// ":" (reserved as the delimiter in the share-suggestion intent token,
+    /// e.g. "3:username").
     static func normalizedUsername(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.count <= usernameMaxLength else { return nil }
+        guard !trimmed.isEmpty, trimmed.count <= usernameMaxLength,
+              !trimmed.contains(":") else { return nil }
         return trimmed
     }
 

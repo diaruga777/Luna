@@ -6,42 +6,10 @@
 import AppIntents
 import Foundation
 
-/// Returns the friend suggested for sharing by the most recent save (nil when
-/// there is no suggestion). Used by the shortcut for the "Share with X?" prompt.
-struct GetShareSuggestionIntent: AppIntent {
-    static let title: LocalizedStringResource = "Get Share Suggestion"
-    static let description = IntentDescription(
-        "After saving a link, returns the name of a friend you usually share such links with — or nothing.")
-    static let openAppWhenRun: Bool = false
-
-    func perform() async throws -> some IntentResult & ReturnsValue<String?> {
-        // Only streak/channel MATCH suggestions are offered through the shortcut
-        // (whose menu includes "Always Share"). Semantic recommendations must
-        // NOT show "Always", so they're surfaced in-app (end-of-article) instead
-        // — returning nil here keeps them out of the shortcut's menu.
-        let pending = ShareSuggestionStore.shared.pendingSuggestion()
-        return .result(value: pending?.isSemantic == true ? nil : pending?.friendUsername)
-    }
-}
-
-/// Returns the KIND of the pending share suggestion so the shortcut can offer
-/// the right replies:
-///   "none"      — no suggestion (do nothing).
-///   "match"     — same-site/-channel history (replies: No / Just Once / Always).
-///   "recommend" — content-similarity match (replies: No / Yes only).
-struct GetShareSuggestionKindIntent: AppIntent {
-    static let title: LocalizedStringResource = "Get Share Suggestion Kind"
-    static let description = IntentDescription(
-        "Returns 'none', 'match', or 'recommend' for the current share suggestion.")
-    static let openAppWhenRun: Bool = false
-
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        guard let pending = ShareSuggestionStore.shared.pendingSuggestion() else {
-            return .result(value: "none")
-        }
-        return .result(value: pending.isSemantic ? "recommend" : "match")
-    }
-}
+// NOTE: the former GetShareSuggestionIntent / GetShareSuggestionKindIntent were
+// removed — the save intents (ClipSafariPageIntent, FindYouTubeVideoIntent) now
+// return the share-suggestion token directly (see ShareSuggestionStore.
+// pendingSuggestionToken), so the shortcut needs only the save action + this.
 
 /// Applies the user's answer to a share suggestion: "Don't Share" suppresses
 /// it, "Share Once" sends now and keeps suggesting, "Always Share" sends now

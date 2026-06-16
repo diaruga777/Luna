@@ -87,12 +87,13 @@ final class ShareReaderViewController: UIViewController {
 
     private func presentReader(item: ReadingListItem, content: ArticleContent) {
         spinner.stopAnimating()
-        // nil providers: no share button/footer, no eye tracking — the rest of
-        // the reader (modes, audio, inline link viewer) is the real thing. The
-        // reader marks the (real, shared) item opened/read via ReadingListStore.
+        // A lightweight share provider (friend-share via the App Group queue +
+        // link share — no CloudKit in the extension) so the end-of-article share
+        // affordance works; still no eye tracking (nil gaze factory). The reader
+        // marks the (real, shared) item opened/read via ReadingListStore.
         let reader = ReaderViewController(
             item: item, content: content, forceMode: mode.readerMode,
-            shareProvider: nil, gazeTrackerFactory: nil,
+            shareProvider: ExtensionReaderShareProvider(), gazeTrackerFactory: nil,
             // The action extension keeps its OWN last-used mode, separate from
             // the main app — persist switches locally, don't touch the shared
             // ReaderSettings.

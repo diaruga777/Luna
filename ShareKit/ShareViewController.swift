@@ -195,11 +195,7 @@ final class ShareViewController: UIViewController {
                 if let urlString, urlString.hasPrefix("http"), let url = URL(string: urlString) {
                     SharedReadingListAppender.append(urlString: urlString)
                     SharedDiagnosticLog.record("saved url (js) \(urlString)", category: "share")
-                    if let mode = self.readerMode() {
-                        self.presentReader(url: url, mode: mode)
-                    } else {
-                        self.confirmSavedThenComplete()
-                    }
+                    self.presentSavedOrReader(url: url)
                 } else {
                     self.failOrComplete("Couldn't read the shared page's address.")
                 }
@@ -214,14 +210,7 @@ final class ShareViewController: UIViewController {
             if let url = value as? URL, url.absoluteString.hasPrefix("http") {
                 SharedReadingListAppender.append(urlString: url.absoluteString)
                 SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
-                // Open the article in an in-sheet reader: always for the
-                // "Read in Click" action extension, and for the share
-                // extension only when the user picked a reader experience.
-                if let mode = self.readerMode() {
-                    DispatchQueue.main.async { self.presentReader(url: url, mode: mode) }
-                } else {
-                    self.confirmSavedThenComplete()
-                }
+                self.presentSavedOrReader(url: url)
             } else if let url = value as? URL, url.isFileURL {
                 SharedReadingListAppender.appendDocument(sourceURL: url)
                 SharedDiagnosticLog.record("saved file \(url.lastPathComponent)", category: "share")
@@ -241,11 +230,41 @@ final class ShareViewController: UIViewController {
         isActionExtension ? ActionReaderMode.last : nil
     }
 
+    /// Routes a saved web URL: the share extension always just saves and closes;
+    /// the action extension opens the in-sheet reader for articles, or — for
+    /// non-textual content (a video, …) — the saved-content screen with playback
+    /// and an "Open in Click" button. Safe to call from any thread.
+    private func presentSavedOrReader(url: URL) {
+        guard let mode = readerMode() else {
+            // Share extension (no reader mode): save and close, always.
+            confirmSavedThenComplete()
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if let content = NonTextualContent.detect(urlString: url.absoluteString) {
+                self.presentSavedNonTextual(url: url, content: content)
+            } else {
+                self.presentReader(url: url, mode: mode)
+            }
+        }
+    }
+
     private func presentReader(url: URL, mode: ShareReaderViewController.Mode) {
         let reader = ShareReaderViewController(url: url, mode: mode) { [weak self] in
             self?.complete()
         }
         let nav = UINavigationController(rootViewController: reader)
+        nav.modalPresentationStyle = .fullScreen
+        present(nav, animated: true)
+    }
+
+    private func presentSavedNonTextual(url: URL, content: NonTextualContent) {
+        let saved = SavedNonTextualViewController(
+            articleURLString: url.absoluteString, content: content) { [weak self] in
+            self?.complete()
+        }
+        let nav = UINavigationController(rootViewController: saved)
         nav.modalPresentationStyle = .fullScreen
         present(nav, animated: true)
     }
@@ -355,31 +374,6 @@ final class ShareViewController: UIViewController {
         ) {
             badge.transform = .identity
             badge.alpha = 1
-        }
-    }
-}
-
-/// Writes outgoing friend-shares to the App Group queue the main app drains.
-/// (The JSON shape must match the app's `PendingFriendShare`.)
-private enum PendingFriendShareWriter {
-    private struct Share: Codable {
-        let friendUUID: UUID
-        let urlString: String
-    }
-
-    static func enqueue(friendUUID: UUID, urlString: String) {
-        guard let fileURL = FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: SharedReadingListAppender.appGroupID)?
-            .appendingPathComponent("pendingFriendShares.json")
-        else { return }
-        var queue: [Share] = []
-        if let data = try? Data(contentsOf: fileURL),
-           let decoded = try? JSONDecoder().decode([Share].self, from: data) {
-            queue = decoded
-        }
-        queue.append(Share(friendUUID: friendUUID, urlString: urlString))
-        if let data = try? JSONEncoder().encode(queue) {
-            try? data.write(to: fileURL, options: .atomic)
         }
     }
 }

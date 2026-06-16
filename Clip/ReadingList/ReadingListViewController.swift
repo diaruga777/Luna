@@ -681,6 +681,14 @@ final class ReadingListViewController: UITableViewController {
             ) { _ in
                 self?.sendToKindle(item)
             }
+            let shareEbook = UIAction(
+                title: "Share eBook…",
+                image: UIImage(systemName: "square.and.arrow.up")
+            ) { _ in
+                guard let self else { return }
+                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+                self.shareEbook(item, from: sourceView)
+            }
             let speedRead = UIAction(
                 title: "Speed Read",
                 image: UIImage(systemName: "bolt.fill")
@@ -705,6 +713,8 @@ final class ReadingListViewController: UITableViewController {
             if item.canShareToFriends { children.append(sendToFriend) }
             if !item.isYouTubeVideo {
                 if ArticleSendCoordinator.shared.isConfigured { children.append(sendToKindle) }
+                // Share the article as an EPUB to any ereader/app, once it's ready.
+                if item.state == .ready { children.append(shareEbook) }
                 children.append(speedRead)
             }
             children.append(delete)
@@ -723,5 +733,26 @@ final class ReadingListViewController: UITableViewController {
             return
         }
         Task { await ArticleSendCoordinator.shared.send(item) }
+    }
+
+    /// Builds the article's EPUB off-main and presents the system share sheet so
+    /// the user can send it to Apple Books, Kobo, reMarkable, Boox, Files, etc.
+    private func shareEbook(_ item: ReadingListItem, from sourceView: UIView) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let fileURL = try? ArticleExportService().writeEPUB(for: item)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard let fileURL else {
+                    self.presentInfoAlert(
+                        title: "Couldn't Create eBook",
+                        message: "This article has no readable content to export.")
+                    return
+                }
+                let activity = UIActivityViewController(
+                    activityItems: [fileURL], applicationActivities: nil)
+                activity.popoverPresentationController?.sourceView = sourceView
+                self.present(activity, animated: true)
+            }
+        }
     }
 }

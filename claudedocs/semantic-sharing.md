@@ -5,18 +5,31 @@ Experimental → "Suggest by Content Similarity"). When a newly saved article/vi
 is conceptually similar to things you've already shared with a friend, it arms a
 share suggestion for that friend.
 
-## Memory discipline (the whole point of the flag)
+## When suggestions fire
 
-App-Intent runners have tight memory limits, so the embedding model is **only
-ever loaded in the main app**, never in the intent runner:
+ONLY two places (never on past saves at launch — that's bad UX):
+1. **The save app-intent** (`handleSavePress`, after ingest) — the live
+   share/don't suggestion. `SemanticIndexer.immediateSuggestion(forItemID:)`
+   embeds JUST the one new item (a single inference, model released right after)
+   and matches it against the already-cached per-friend vectors. Armed only if
+   no same-site/-channel streak suggestion already armed one. Surfaced by
+   `GetShareSuggestionIntent` (next shortcut step).
+2. **End of an article** — `AppReaderShareProvider.suggestedFriendName` falls
+   back to `SemanticIndexer.cachedSuggestion` (a cheap `bestMatch` over the
+   already-cached vector — NO embedding).
 
-- The runner (save intents) does only cheap work: `enqueueSemanticCheck(itemID)`
-  (append an id) and `recordShare` (append an id) — no model.
-- `SemanticIndexer` (main app) loads `NLEmbedding`, embeds, and **releases** it
-  per batch; capped at `embedLimit` (20) items/run; serialized on a utility
-  queue. Triggered from `AppDelegate.didFinishLaunching` + `SceneDelegate`
-  foreground only.
-- Vectors persist to disk (App Group), so they're computed once.
+## Memory discipline
+
+- The expensive batch work — embedding the items you've shared to friends so
+  matches have history to compare to — runs ONLY in the main app
+  (`SemanticIndexer.scheduleRun()` → `buildMissingVectors`, utility queue,
+  `embedLimit` 20/run, model released after). It arms NO suggestions.
+  Triggered from `AppDelegate`/`SceneDelegate` lifecycle.
+- The intent runner does at most ONE embed (the just-saved item) plus cheap
+  cosine math. `recordShare`/`bestMatch`/vector reads load no model.
+- Vectors persist to disk (App Group), computed once.
+- The Settings flag is the safety valve if the single in-runner embed is ever
+  a problem on a given device.
 
 ## Key files (`Clip/Social/`)
 
@@ -26,20 +39,20 @@ ever loaded in the main app**, never in the intent runner:
 - **`SemanticIndexStore`** (App Group JSON `semanticIndex.json`) — all cheap, runner-safe:
   - `itemVectors: [itemID: [Float]]`, `persons: [personUUID: {username, itemIDs}]`,
     `checkQueue: [itemID]`.
-  - `enqueueSemanticCheck`, `recordShare` (append id; no vector needed),
-    `setVector`/`hasVector`, `itemIDsNeedingVectors(limit:)`, `dequeueChecks()` (≤10),
-    `bestMatch(forItemID:) -> Match?`, `removePerson`.
+  - `recordShare` (append id; no vector needed), `setVector`/`hasVector`/`vector`,
+    `itemIDsNeedingVectors(limit:)`, `bestMatch(forItemID:) -> Match?`, `removePerson`.
   - `cosine(_:_:)` (pure, tested); `similarityThreshold = 0.60`.
   - Empty `[]` vector = tombstone for deleted/unembeddable items (stops retry).
-- **`SemanticIndexer`** (main app) — `scheduleRun()`: embed referenced items
-  lacking vectors, then for each dequeued check with a vector arm a semantic
-  suggestion (`ShareSuggestionStore.armSemanticSuggestion`) if `bestMatch` clears
-  the threshold, the friend still exists, and nothing's already pending.
+- **`SemanticIndexer`** — `scheduleRun()` (main app, vectors only, no arming),
+  `immediateSuggestion(forItemID:)` (save intent — one embed + match),
+  `cachedSuggestion(forItemID:)` (end-of-article — cached match, no embed).
 
 ## Wiring
 
-- `ReadingListIngestor.handleSavePress` (.saveNew) → `enqueueSemanticCheck`.
+- `ReadingListIngestor.handleSavePress` (.saveNew), after ingest → arm a semantic
+  `pendingSuggestion` from `immediateSuggestion` when no streak already armed one.
 - `SocialMessageCenter.sendArticle` success → `recordShare(itemID, personUUID, username)`.
+- `AppReaderShareProvider.suggestedFriendName` → streak, else `cachedSuggestion`.
 - `ShareSuggestionStore.PendingSuggestion.isSemantic`: semantic suggestions never
   become "always share" — `applyChoice(.alwaysShare)` is treated as a one-off send
   (so the user effectively only gets share / don't-share).
@@ -48,6 +61,6 @@ ever loaded in the main app**, never in the intent runner:
 ## Tests
 
 `ClipTests/SemanticIndexStoreTests.swift` — cosine, bestMatch (close/none/already-shared),
-queue, needs-vectors.
+needs-vectors.
 
 See `social-sharing.md` for the streak/auto-share suggestion engine this layers on.

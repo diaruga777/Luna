@@ -64,25 +64,14 @@ final class SemanticIndexStoreTests: XCTestCase {
         XCTAssertNil(store.bestMatch(forItemID: item))
     }
 
-    func testCheckQueueEnqueueDequeue() {
-        let a = UUID(), b = UUID()
-        store.enqueueSemanticCheck(itemID: a)
-        store.enqueueSemanticCheck(itemID: a) // dedup
-        store.enqueueSemanticCheck(itemID: b)
-        XCTAssertEqual(Set(store.dequeueChecks()), [a, b])
-        XCTAssertTrue(store.dequeueChecks().isEmpty)
-    }
-
-    func testItemIDsNeedingVectorsCoversQueueAndShares() {
-        let queued = UUID(), shared = UUID(), indexed = UUID()
+    func testItemIDsNeedingVectorsCoversSharedItems() {
+        let shared = UUID(), indexed = UUID()
         let person = UUID()
-        store.enqueueSemanticCheck(itemID: queued)
         store.recordShare(itemID: shared, personUUID: person, username: "p")
         store.setVector([1, 0], forItemID: indexed)
         store.recordShare(itemID: indexed, personUUID: person, username: "p")
         let needed = Set(store.itemIDsNeedingVectors(limit: 10))
-        XCTAssertTrue(needed.contains(queued))
-        XCTAssertTrue(needed.contains(shared))
+        XCTAssertTrue(needed.contains(shared), "shared item without a vector")
         XCTAssertFalse(needed.contains(indexed), "already has a vector")
     }
 }

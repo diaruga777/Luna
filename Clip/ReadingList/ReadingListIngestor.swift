@@ -204,10 +204,14 @@ final class ReadingListIngestor {
                         urlString: urlString, toFriendUUID: target.uuid)
                 }
             }
-            // Queue a semantic-similarity suggestion check (runs LATER in the
-            // main app — never embeds here in the memory-limited intent runner).
-            SemanticIndexStore.shared.enqueueSemanticCheck(itemID: item.id)
             await ingest(item)
+            // Immediate content-similarity suggestion (one embed of just this
+            // item) — only when no same-site/-channel streak already armed one.
+            if ShareSuggestionStore.shared.pendingSuggestion() == nil,
+               let match = SemanticIndexer.shared.immediateSuggestion(forItemID: item.id) {
+                ShareSuggestionStore.shared.armSemanticSuggestion(
+                    urlString: urlString, friendUUID: match.uuid, friendUsername: match.username)
+            }
             return .saved(item)
         case .sendToKindle:
             // The policy only returns this for an existing item.

@@ -13,9 +13,21 @@ final class AppReaderShareProvider: ReaderShareProviding {
     static let shared = AppReaderShareProvider()
 
     func suggestedFriendName(forURLString urlString: String) -> String? {
-        let channelName = ReadingListStore.shared.item(forURLString: urlString)?.channelName
-        return ShareSuggestionStore.shared
-            .suggestedFriend(forURLString: urlString, channelName: channelName)?.username
+        bestFriend(forURLString: urlString)?.username
+    }
+
+    /// The friend to surface at the end of an article: the same-site/-channel
+    /// streak suggestion, else a cached content-similarity match (no embedding).
+    private func bestFriend(forURLString urlString: String) -> (uuid: UUID, username: String)? {
+        let item = ReadingListStore.shared.item(forURLString: urlString)
+        if let streak = ShareSuggestionStore.shared.suggestedFriend(
+            forURLString: urlString, channelName: item?.channelName) {
+            return streak
+        }
+        if let itemID = item?.id {
+            return SemanticIndexer.shared.cachedSuggestion(forItemID: itemID)
+        }
+        return nil
     }
 
     func presentShareSheet(
@@ -26,10 +38,7 @@ final class AppReaderShareProvider: ReaderShareProviding {
     }
 
     func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController) {
-        let channelName = ReadingListStore.shared.item(forURLString: urlString)?.channelName
-        guard let suggestion = ShareSuggestionStore.shared
-            .suggestedFriend(forURLString: urlString, channelName: channelName)
-        else { return }
+        guard let suggestion = bestFriend(forURLString: urlString) else { return }
         SendToFriendSheet.sendToFriend(
             uuid: suggestion.uuid, urlString: urlString, title: title, from: presenter)
     }

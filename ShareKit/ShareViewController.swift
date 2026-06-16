@@ -30,37 +30,29 @@ final class ShareViewController: UIViewController {
     }
 
     private let spinner = UIActivityIndicatorView(style: .large)
+    private let statusLabel = UILabel()
+    private let closeButton = UIButton(type: .system)
 
     override func viewDidLoad() {
         super.viewDidLoad()
-
-        // The action extension shows a brief loading view: it presents the
-        // reader, so it must stay on screen (a clear, empty `com.apple.ui-services`
-        // view controller can be torn down before async item-loading finishes).
-        // The zero-UI share extension stays invisible and just saves.
+        // Build the loading UI FIRST, before any processing, so the action
+        // extension always shows *something* and stays on screen — and so any
+        // failure can surface as visible error text instead of a silent death.
         if isActionExtension {
-            view.backgroundColor = .systemBackground
-            spinner.translatesAutoresizingMaskIntoConstraints = false
-            spinner.startAnimating()
-            view.addSubview(spinner)
-            NSLayoutConstraint.activate([
-                spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-                spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            ])
+            setUpStatusUI()
         } else {
             view.backgroundColor = .clear
         }
 
+        // Defensive: never let a thrown error or unexpected state kill the
+        // extension outright — the worst case is the error UI.
         let host = isActionExtension ? "action" : "share"
-        // Flatten attachments across ALL input items (action extensions may
-        // split content across items differently than share extensions).
         let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
         let providers = items.flatMap { $0.attachments ?? [] }
         guard !providers.isEmpty else {
             SharedDiagnosticLog.record(
-                "\(host) extension: no attachments (\(items.count) item(s)), completing",
-                category: "share")
-            complete()
+                "\(host) extension: no attachments (\(items.count) item(s))", category: "share")
+            failOrComplete("Nothing to read was shared.")
             return
         }
         let types = providers.map { $0.registeredTypeIdentifiers.joined(separator: "|") }
@@ -118,7 +110,51 @@ final class ShareViewController: UIViewController {
             handleURL(urlProvider)
             return
         }
-        complete()
+        failOrComplete("This type of content can't be read in Click.")
+    }
+
+    // MARK: - Status / error UI (action extension)
+
+    private func setUpStatusUI() {
+        view.backgroundColor = .systemBackground
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.startAnimating()
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+        statusLabel.text = "Opening in Click…"
+        statusLabel.textColor = .secondaryLabel
+        statusLabel.font = .preferredFont(forTextStyle: .body)
+        statusLabel.textAlignment = .center
+        statusLabel.numberOfLines = 0
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.setTitle("Close", for: .normal)
+        closeButton.isHidden = true
+        closeButton.addAction(UIAction { [weak self] _ in self?.complete() }, for: .touchUpInside)
+        view.addSubview(spinner)
+        view.addSubview(statusLabel)
+        view.addSubview(closeButton)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            statusLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 16),
+            statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            closeButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 20),
+            closeButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+        ])
+    }
+
+    /// Action extension: surface a failure as visible error text (never a silent
+    /// death). Share extension: stay zero-UI and just complete.
+    private func failOrComplete(_ message: String) {
+        SharedDiagnosticLog.record("share extension finished: \(message)", category: "share")
+        guard isActionExtension else { complete(); return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.spinner.stopAnimating()
+            self.statusLabel.textColor = .label
+            self.statusLabel.text = message
+            self.closeButton.isHidden = false
+        }
     }
 
     /// Handles the Safari JavaScript-preprocessing result: a property-list whose
@@ -140,10 +176,12 @@ final class ShareViewController: UIViewController {
                     SharedDiagnosticLog.record("saved url (js) \(urlString)", category: "share")
                     if let mode = self.readerMode() {
                         self.presentReader(url: url, mode: mode)
-                        return
+                    } else {
+                        self.complete()
                     }
+                } else {
+                    self.failOrComplete("Couldn't read the shared page's address.")
                 }
-                self.complete()
             }
         }
     }
@@ -151,25 +189,25 @@ final class ShareViewController: UIViewController {
     private func handleURL(_ provider: NSItemProvider) {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
             guard let self else { return }
-            if let url = value as? URL {
-                if url.absoluteString.hasPrefix("http") {
-                    SharedReadingListAppender.append(urlString: url.absoluteString)
-                    SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
-                    // Open the article in an in-sheet reader: always for the
-                    // "Read in Click" action extension, and for the share
-                    // extension only when the user picked a reader experience.
-                    if let mode = self.readerMode() {
-                        DispatchQueue.main.async { self.presentReader(url: url, mode: mode) }
-                        return
-                    }
-                } else if url.isFileURL {
-                    SharedReadingListAppender.appendDocument(sourceURL: url)
-                    SharedDiagnosticLog.record("saved file \(url.lastPathComponent)", category: "share")
+            if let url = value as? URL, url.absoluteString.hasPrefix("http") {
+                SharedReadingListAppender.append(urlString: url.absoluteString)
+                SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
+                // Open the article in an in-sheet reader: always for the
+                // "Read in Click" action extension, and for the share
+                // extension only when the user picked a reader experience.
+                if let mode = self.readerMode() {
+                    DispatchQueue.main.async { self.presentReader(url: url, mode: mode) }
+                } else {
+                    self.complete()
                 }
+            } else if let url = value as? URL, url.isFileURL {
+                SharedReadingListAppender.appendDocument(sourceURL: url)
+                SharedDiagnosticLog.record("saved file \(url.lastPathComponent)", category: "share")
+                self.complete()
             } else {
                 SharedDiagnosticLog.record("url attachment had no URL value", category: "share")
+                self.failOrComplete("Couldn't read the shared link.")
             }
-            self.complete()
         }
     }
 
@@ -199,12 +237,16 @@ final class ShareViewController: UIViewController {
 
     private func handleDocument(_ provider: NSItemProvider, type: UTType) {
         provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { [weak self] url, _ in
+            guard let self else { return }
             // The system deletes `url` when this callback returns, so the
             // appender copies it synchronously here.
             if let url {
                 SharedReadingListAppender.appendDocument(sourceURL: url)
+                SharedDiagnosticLog.record("saved document \(url.lastPathComponent)", category: "share")
+                self.complete()
+            } else {
+                self.failOrComplete("Couldn't read the shared file.")
             }
-            self?.complete()
         }
     }
 

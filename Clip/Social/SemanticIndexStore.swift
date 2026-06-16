@@ -21,7 +21,6 @@ final class SemanticIndexStore {
     static let similarityThreshold: Float = 0.60
     private static let maxItemsPerPerson = 60
     private static let maxIndexedItems = 600
-    private static let maxChecksPerRun = 10
 
     struct Person: Codable {
         var username: String
@@ -31,7 +30,6 @@ final class SemanticIndexStore {
     private struct State: Codable {
         var itemVectors: [String: [Float]] = [:]
         var persons: [String: Person] = [:]
-        var checkQueue: [String] = []
     }
 
     struct Match {
@@ -55,14 +53,6 @@ final class SemanticIndexStore {
 
     // MARK: - Cheap operations (runner-safe)
 
-    /// Queues an item for a (later, main-app) semantic-suggestion check.
-    func enqueueSemanticCheck(itemID: UUID) {
-        mutate { state in
-            let key = itemID.uuidString
-            if !state.checkQueue.contains(key) { state.checkQueue.append(key) }
-        }
-    }
-
     /// Records that `itemID` was shared to a friend (no vector needed now).
     func recordShare(itemID: UUID, personUUID: UUID, username: String) {
         mutate { state in
@@ -80,6 +70,10 @@ final class SemanticIndexStore {
 
     func hasVector(forItemID itemID: UUID) -> Bool {
         loadState().itemVectors[itemID.uuidString] != nil
+    }
+
+    func vector(forItemID itemID: UUID) -> [Float]? {
+        loadState().itemVectors[itemID.uuidString]
     }
 
     /// The friend whose previously-shared items are most semantically similar to
@@ -119,18 +113,15 @@ final class SemanticIndexStore {
 
     // MARK: - Main-app operations (called by SemanticIndexer)
 
-    /// Item ids that are referenced (queued for a check, or shared to someone)
-    /// but have no vector yet — the indexer embeds these.
+    /// Item ids shared to someone but lacking a vector — the main-app indexer
+    /// embeds these so future matches have the recipient's history to compare to.
     func itemIDsNeedingVectors(limit: Int) -> [UUID] {
         let state = loadState()
         var needed: [String] = []
         var seen = Set<String>()
-        func consider(_ key: String) {
-            guard state.itemVectors[key] == nil, seen.insert(key).inserted else { return }
-            needed.append(key)
+        for key in state.persons.values.flatMap(\.itemIDs) where state.itemVectors[key] == nil {
+            if seen.insert(key).inserted { needed.append(key) }
         }
-        state.checkQueue.forEach(consider)
-        state.persons.values.flatMap(\.itemIDs).forEach(consider)
         return needed.prefix(limit).compactMap { UUID(uuidString: $0) }
     }
 
@@ -138,24 +129,14 @@ final class SemanticIndexStore {
         mutate { state in
             state.itemVectors[itemID.uuidString] = vector
             if state.itemVectors.count > Self.maxIndexedItems {
-                // Drop vectors no longer referenced by any person or the queue.
-                let referenced = Set(state.persons.values.flatMap(\.itemIDs) + state.checkQueue)
+                // Drop vectors no longer referenced by any person.
+                let referenced = Set(state.persons.values.flatMap(\.itemIDs))
                 for key in state.itemVectors.keys where !referenced.contains(key) {
                     state.itemVectors.removeValue(forKey: key)
                     if state.itemVectors.count <= Self.maxIndexedItems { break }
                 }
             }
         }
-    }
-
-    /// Pops up to `maxChecksPerRun` queued item ids for evaluation.
-    func dequeueChecks() -> [UUID] {
-        var popped: [String] = []
-        mutate { state in
-            popped = Array(state.checkQueue.prefix(Self.maxChecksPerRun))
-            state.checkQueue.removeFirst(popped.count)
-        }
-        return popped.compactMap { UUID(uuidString: $0) }
     }
 
     func removePerson(_ personUUID: UUID) {

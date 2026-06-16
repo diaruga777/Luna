@@ -33,8 +33,31 @@ final class AppReaderShareProvider: ReaderShareProviding {
     func presentShareSheet(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) {
-        SendToFriendSheet.present(
-            from: presenter, sourceView: sourceView, urlString: urlString, title: title)
+        let suggestion = bestFriend(forURLString: urlString)
+        let item = ReadingListStore.shared.item(forURLString: urlString)
+        let rows = ReaderShareSheet.rows(
+            suggestedFriendName: suggestion?.username,
+            onSendToSuggested: { [weak presenter] in
+                guard let presenter, let suggestion else { return }
+                SendToFriendSheet.sendToFriend(
+                    uuid: suggestion.uuid, urlString: urlString, title: title, from: presenter)
+            },
+            onPickFriend: { [weak presenter] in
+                guard let presenter else { return }
+                SendToFriendSheet.presentFriendPicker(
+                    from: presenter, sourceView: sourceView, urlString: urlString, title: title)
+            },
+            onShareLink: { [weak presenter] in
+                guard let presenter else { return }
+                SendToFriendSheet.shareLink(
+                    urlString: urlString, from: presenter, sourceView: sourceView)
+            },
+            onShareEbook: { [weak presenter] in
+                guard let presenter, let item else { return }
+                ArticleExportService().presentShareSheet(
+                    for: item, from: presenter, sourceView: sourceView)
+            })
+        ReaderShareSheet.present(from: presenter, rows: rows)
     }
 
     func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController) {

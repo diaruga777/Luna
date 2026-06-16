@@ -3,7 +3,7 @@
 //  Clip
 //
 
-import Foundation
+import UIKit
 import UniformTypeIdentifiers
 
 /// Builds a shareable EPUB file for a saved article, for the generic "Share
@@ -55,5 +55,32 @@ struct ArticleExportService {
             throw ExportError.noContent
         }
         return provider
+    }
+
+    /// Builds the EPUB off the main thread and presents the system share sheet
+    /// anchored to `sourceView`, or an alert if the article has no content.
+    @MainActor
+    func presentShareSheet(
+        for item: ReadingListItem, from presenter: UIViewController, sourceView: UIView
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let fileURL = try? self.writeEPUB(for: item)
+            DispatchQueue.main.async { [weak presenter] in
+                guard let presenter else { return }
+                guard let fileURL else {
+                    let alert = UIAlertController(
+                        title: "Couldn't Create eBook",
+                        message: "This article has no readable content to export.",
+                        preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    presenter.present(alert, animated: true)
+                    return
+                }
+                let activity = UIActivityViewController(
+                    activityItems: [fileURL], applicationActivities: nil)
+                activity.popoverPresentationController?.sourceView = sourceView
+                presenter.present(activity, animated: true)
+            }
+        }
     }
 }

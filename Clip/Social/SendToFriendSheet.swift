@@ -34,23 +34,57 @@ enum SendToFriendSheet {
         }
 
         sheet.addAction(UIAlertAction(title: "Share Link…", style: .default) { _ in
-            // Share the original URL (works for everyone) plus a clickreader://
-            // deep link that opens the article in Click for people who have it.
-            let shared: String
-            if let deepLink = ClickDeepLink.readLink(forArticleURL: urlString)?.absoluteString {
-                shared = "\(urlString)\n\nRead on Click: \(deepLink)"
-            } else {
-                shared = urlString
-            }
-            let activity = UIActivityViewController(
-                activityItems: [shared], applicationActivities: nil)
-            activity.popoverPresentationController?.sourceView = sourceView
-            presenter.present(activity, animated: true)
+            shareLink(urlString: urlString, from: presenter, sourceView: sourceView)
         })
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 
         sheet.popoverPresentationController?.sourceView = sourceView
         presenter.present(sheet, animated: true)
+    }
+
+    /// Presents an action sheet of just the user's friends; picking one sends the
+    /// article to their reading list. Used by the reader's share sheet (where
+    /// "Share Link…" is already a separate option).
+    static func presentFriendPicker(
+        from presenter: UIViewController, sourceView: UIView, urlString: String, title: String?
+    ) {
+        let friends = FriendsStore.shared.items()
+        guard !friends.isEmpty else {
+            let alert = UIAlertController(
+                title: "No Friends Yet",
+                message: "Add friends from the Friends screen to send articles directly.",
+                preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            presenter.present(alert, animated: true)
+            return
+        }
+        let sheet = UIAlertController(
+            title: title ?? urlString, message: nil, preferredStyle: .actionSheet)
+        for friend in friends {
+            sheet.addAction(UIAlertAction(
+                title: "Send to \(friend.card.username)", style: .default
+            ) { _ in
+                deliver(urlString: urlString, title: title, to: friend, presenter: presenter)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = sourceView
+        presenter.present(sheet, animated: true)
+    }
+
+    /// Shares the original URL (works for everyone) plus a `clickreader://` deep
+    /// link that opens the article in Click for people who have it.
+    static func shareLink(urlString: String, from presenter: UIViewController, sourceView: UIView) {
+        let shared: String
+        if let deepLink = ClickDeepLink.readLink(forArticleURL: urlString)?.absoluteString {
+            shared = "\(urlString)\n\nRead on Click: \(deepLink)"
+        } else {
+            shared = urlString
+        }
+        let activity = UIActivityViewController(
+            activityItems: [shared], applicationActivities: nil)
+        activity.popoverPresentationController?.sourceView = sourceView
+        presenter.present(activity, animated: true)
     }
 
     /// One-tap send to a specific friend (the end-of-article suggestion),

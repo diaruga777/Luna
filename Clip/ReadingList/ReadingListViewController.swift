@@ -738,21 +738,6 @@ final class ReadingListViewController: UITableViewController {
     /// Builds the article's EPUB off-main and presents the system share sheet so
     /// the user can send it to Apple Books, Kobo, reMarkable, Boox, Files, etc.
     private func shareEbook(_ item: ReadingListItem, from sourceView: UIView) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let fileURL = try? ArticleExportService().writeEPUB(for: item)
-            DispatchQueue.main.async {
-                guard let self else { return }
-                guard let fileURL else {
-                    self.presentInfoAlert(
-                        title: "Couldn't Create eBook",
-                        message: "This article has no readable content to export.")
-                    return
-                }
-                let activity = UIActivityViewController(
-                    activityItems: [fileURL], applicationActivities: nil)
-                activity.popoverPresentationController?.sourceView = sourceView
-                self.present(activity, animated: true)
-            }
-        }
+        ArticleExportService().presentShareSheet(for: item, from: self, sourceView: sourceView)
     }
 }

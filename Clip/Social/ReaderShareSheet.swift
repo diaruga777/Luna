@@ -1,0 +1,129 @@
+//
+//  ReaderShareSheet.swift
+//  Clip
+//
+
+import UIKit
+
+/// The reader's share affordance: a custom medium-detent bottom sheet offering
+/// up to four explicit options — send to the suggested friend (one tap), pick a
+/// friend, share the link, or share the article as an EPUB. Replaces the old
+/// `UIAlertController(.actionSheet)`. The rows' actions are injected so the
+/// sheet stays UI-only; `AppReaderShareProvider` wires them to the social /
+/// export stack.
+final class ReaderShareSheet: UIViewController {
+
+    /// One tappable option. `isPrimary` gives the suggested-friend row an accent
+    /// fill; the rest are plain.
+    struct Row {
+        let title: String
+        let systemImage: String
+        let isPrimary: Bool
+        let action: () -> Void
+    }
+
+    /// Builds the ordered rows. The suggested-friend row is included only when a
+    /// suggestion name is present — pure, so the ordering/visibility is testable.
+    static func rows(
+        suggestedFriendName: String?,
+        onSendToSuggested: @escaping () -> Void,
+        onPickFriend: @escaping () -> Void,
+        onShareLink: @escaping () -> Void,
+        onShareEbook: @escaping () -> Void
+    ) -> [Row] {
+        var rows: [Row] = []
+        if let name = suggestedFriendName {
+            rows.append(Row(
+                title: "Send to \(name)", systemImage: "paperplane.fill",
+                isPrimary: true, action: onSendToSuggested))
+        }
+        rows.append(Row(
+            title: "Send to a Friend…", systemImage: "person.2",
+            isPrimary: false, action: onPickFriend))
+        rows.append(Row(
+            title: "Share Link…", systemImage: "link",
+            isPrimary: false, action: onShareLink))
+        rows.append(Row(
+            title: "Share eBook…", systemImage: "book",
+            isPrimary: false, action: onShareEbook))
+        return rows
+    }
+
+    private let rows: [Row]
+
+    init(rows: [Row]) {
+        self.rows = rows
+        super.init(nibName: nil, bundle: nil)
+        if let sheet = sheetPresentationController {
+            sheet.detents = [.medium()]
+            sheet.prefersGrabberVisible = true
+            sheet.preferredCornerRadius = 24
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Convenience: build the sheet and present it from `presenter`.
+    static func present(from presenter: UIViewController, rows: [Row]) {
+        presenter.present(ReaderShareSheet(rows: rows), animated: true)
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        let titleLabel = UILabel()
+        titleLabel.text = "Share"
+        titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
+        titleLabel.textAlignment = .center
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.setCustomSpacing(20, after: titleLabel)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        for (index, row) in rows.enumerated() {
+            stack.addArrangedSubview(makeButton(for: row, tag: index))
+        }
+
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+        ])
+    }
+
+    private func makeButton(for row: Row, tag: Int) -> UIButton {
+        var config = UIButton.Configuration.plain()
+        config.title = row.title
+        config.image = UIImage(systemName: row.systemImage)
+        config.imagePadding = 10
+        config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
+        config.baseForegroundColor = row.isPrimary ? .white : GlassStyle.readingAccent
+        if row.isPrimary {
+            config.background.backgroundColor = GlassStyle.readingAccent
+            config.background.cornerRadius = 14
+        } else {
+            config.background.backgroundColor = .secondarySystemBackground
+            config.background.cornerRadius = 14
+        }
+        config.titleAlignment = .leading
+
+        let button = UIButton(configuration: config)
+        button.contentHorizontalAlignment = .leading
+        button.tag = tag
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
+        button.addTarget(self, action: #selector(rowTapped(_:)), for: .touchUpInside)
+        return button
+    }
+
+    @objc private func rowTapped(_ sender: UIButton) {
+        guard rows.indices.contains(sender.tag) else { return }
+        let action = rows[sender.tag].action
+        // Dismiss first so the action can present its own sheet on the original
+        // presenter without a "already presenting" conflict.
+        dismiss(animated: true) { action() }
+    }
+}

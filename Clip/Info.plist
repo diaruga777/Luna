@@ -16,6 +16,14 @@
 				<string>clipreader</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.hpiddy.clip.read</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>clickreader</string>
+			</array>
+		</dict>
 	</array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>

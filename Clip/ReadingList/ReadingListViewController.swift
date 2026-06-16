@@ -91,6 +91,11 @@ final class ReadingListViewController: UITableViewController {
 
     private let store = ReadingListStore.shared
 
+    /// The Articles/Videos filter — only shown when the list actually has both
+    /// (a video and an article), otherwise it's pointless.
+    private let filterControl = UISegmentedControl()
+    private var filterHeaderView: UIView?
+
     /// Non-empty groups in display order; rebuilt on every `reload`.
     private var groups: [(section: Section, items: [ReadingListItem])] = []
 
@@ -127,8 +132,10 @@ final class ReadingListViewController: UITableViewController {
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(pulledToRefresh), for: .valueChanged)
 
-        let filterControl = UISegmentedControl(
-            items: ListFilter.allCases.map(\.displayName))
+        filterControl.removeAllSegments()
+        for (index, option) in ListFilter.allCases.enumerated() {
+            filterControl.insertSegment(withTitle: option.displayName, at: index, animated: false)
+        }
         filterControl.selectedSegmentIndex = filter.rawValue
         filterControl.addTarget(self, action: #selector(filterChanged(_:)), for: .valueChanged)
         let header = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
@@ -139,7 +146,7 @@ final class ReadingListViewController: UITableViewController {
             filterControl.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -20),
             filterControl.centerYAnchor.constraint(equalTo: header.centerYAnchor),
         ])
-        tableView.tableHeaderView = header
+        filterHeaderView = header
 
         // Permanent reorder mode: Reading rows show a drag handle you can press
         // and drag, while taps still open the article (selection-during-editing)
@@ -158,6 +165,7 @@ final class ReadingListViewController: UITableViewController {
         // drop animation isn't interrupted by a full reloadData.
         if isApplyingReorder { return }
 
+        updateFilterVisibility()
         let all = store.items().filter { filter.includes($0) }
         let now = Date()
         var reading: [ReadingListItem] = []
@@ -184,6 +192,27 @@ final class ReadingListViewController: UITableViewController {
     @objc private func filterChanged(_ control: UISegmentedControl) {
         filter = ListFilter(rawValue: control.selectedSegmentIndex) ?? .all
         reload()
+    }
+
+    /// Shows the Articles/Videos filter only when the list has BOTH a video and
+    /// an article; otherwise it's meaningless. Resets to "All" when hidden so a
+    /// stale "Videos"/"Articles" selection can't leave the list empty.
+    private func updateFilterVisibility() {
+        let items = store.items()
+        let hasVideo = items.contains { $0.isYouTubeVideo }
+        let hasArticle = items.contains { !$0.isYouTubeVideo }
+        let shouldShow = hasVideo && hasArticle
+        if shouldShow {
+            if tableView.tableHeaderView !== filterHeaderView {
+                tableView.tableHeaderView = filterHeaderView
+            }
+        } else {
+            if filter != .all {
+                filter = .all
+                filterControl.selectedSegmentIndex = ListFilter.all.rawValue
+            }
+            if tableView.tableHeaderView != nil { tableView.tableHeaderView = nil }
+        }
     }
 
     @objc private func pulledToRefresh() {

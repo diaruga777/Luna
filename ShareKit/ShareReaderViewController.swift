@@ -22,6 +22,14 @@ final class ShareReaderViewController: UIViewController {
             case .chunk: return .highlight
             }
         }
+
+        init(readerMode: ReadingListItem.ReaderMode) {
+            switch readerMode {
+            case .scroll: self = .reader
+            case .rsvp: self = .rsvp
+            case .highlight: self = .chunk
+            }
+        }
     }
 
     private let url: URL
@@ -84,7 +92,12 @@ final class ShareReaderViewController: UIViewController {
         // reader marks the (real, shared) item opened/read via ReadingListStore.
         let reader = ReaderViewController(
             item: item, content: content, forceMode: mode.readerMode,
-            shareProvider: nil, gazeTrackerFactory: nil)
+            shareProvider: nil, gazeTrackerFactory: nil,
+            // The action extension keeps its OWN last-used mode, separate from
+            // the main app — persist switches locally, don't touch the shared
+            // ReaderSettings.
+            persistsModePreference: false,
+            onModeChange: { ActionReaderMode.last = ShareReaderViewController.Mode(readerMode: $0) })
         reader.navigationItem.leftBarButtonItem = doneButton()
         // Replace this loading screen with the reader as the sole VC (no back).
         navigationController?.setViewControllers([reader], animated: false)

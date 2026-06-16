@@ -34,8 +34,12 @@ enum SendToFriendSheet {
         }
 
         sheet.addAction(UIAlertAction(title: "Share Link…", style: .default) { _ in
+            // Share a clickreader:// deep link so recipients with Click installed
+            // open it straight in the reader (falls back to the plain URL if the
+            // link can't be built).
+            let shared = ClickDeepLink.readLink(forArticleURL: urlString)?.absoluteString ?? urlString
             let activity = UIActivityViewController(
-                activityItems: [urlString], applicationActivities: nil)
+                activityItems: [shared], applicationActivities: nil)
             activity.popoverPresentationController?.sourceView = sourceView
             presenter.present(activity, animated: true)
         })

@@ -215,19 +215,12 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    /// The reader mode to present, or nil to save silently. The action extension
-    /// always reads (defaulting to the scroll reader); the share extension reads
-    /// only when the user picked a non-"off" share-sheet experience.
+    /// The reader mode to present, or nil to save silently. Fixed behavior (no
+    /// in-app setting): the share extension always saves and dismisses; the
+    /// "Read in Click" action extension always opens the reader, in whichever
+    /// mode it was last used in (state local to the extension).
     private func readerMode() -> ShareReaderViewController.Mode? {
-        let configured = ShareReaderViewController.Mode(rawValue: shareExperience())
-        return isActionExtension ? (configured ?? .reader) : configured
-    }
-
-    /// The configured share-sheet experience (read from the App Group, written
-    /// by the main app's settings). "off" / unknown → save silently.
-    private func shareExperience() -> String {
-        UserDefaults(suiteName: SharedReadingListAppender.appGroupID)?
-            .string(forKey: "shareSheetExperience") ?? "off"
+        isActionExtension ? ActionReaderMode.last : nil
     }
 
     private func presentReader(url: URL, mode: ShareReaderViewController.Mode) {

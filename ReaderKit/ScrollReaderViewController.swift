@@ -48,6 +48,8 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     // Eye tracking (nil unless a gaze factory provided one — never in the sheet).
     private var gazeTracker: GazeTracking?
     private let gazeTrackerFactory: GazeTrackerFactory?
+    /// Live highlight of the word the gaze tracker thinks you're reading (opt-in).
+    private var gazeHighlightTimer: Timer?
 
     /// Sharing affordances; nil → no end-of-article share footer (share sheet).
     private let shareProvider: ReaderShareProviding?
@@ -94,6 +96,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         speech?.stop()
         chunk?.stop()
         gazeTracker?.stop()
+        gazeHighlightTimer?.invalidate()
         contentSizeObservation?.invalidate()
     }
 
@@ -221,12 +224,17 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
                 startSpeech()
             } else if autoHighlight {
                 startChunkHighlight()
+            } else if gazeTracker != nil, ReaderSettings.highlightGazeWord {
+                // Plain scroll with eye tracking: live-highlight the gaze word.
+                startGazeHighlight()
             }
         }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        gazeHighlightTimer?.invalidate()
+        gazeHighlightTimer = nil
         store.setLastScrollOffset(Double(textView.contentOffset.y), for: item.id)
         if textView.contentSize.height > 0 {
             let visibleBottom = textView.contentOffset.y + textView.bounds.height
@@ -370,6 +378,17 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         layoutShareView()
         footerRateButton.setTitle(chunk?.speedLabel, for: .normal)
         chunk?.play(fromWordIndex: resumeWordIndex)
+    }
+
+    /// Periodically highlights the word the gaze tracker estimates you're
+    /// reading. No auto-scroll — the page shouldn't jump as your eyes move.
+    private func startGazeHighlight() {
+        gazeHighlightTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+            guard let self, let index = self.gazeTracker?.estimatedWordIndex,
+                  let range = self.wordMap.attributedRange(forWord: index) else { return }
+            self.applyHighlight(range)
+        }
     }
 
     @objc private func togglePlayback() {

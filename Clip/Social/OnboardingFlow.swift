@@ -46,6 +46,7 @@ enum OnboardingFlow {
                 proceed()
             },
             continueTitle: "Not Now",
+            animation: .notification,
             onContinue: proceed)
     }
 
@@ -62,6 +63,7 @@ enum OnboardingFlow {
                 }
             },
             continueTitle: "Continue",
+            animation: .settingsToggle,
             onContinue: { [weak nav] in
                 nav?.pushViewController(shortcutStep(onFinished: onFinished), animated: true)
             })
@@ -76,6 +78,7 @@ enum OnboardingFlow {
                 installShortcut(from: step)
             },
             continueTitle: "Done",
+            animation: .actionButton,
             onContinue: onFinished)
     }
 

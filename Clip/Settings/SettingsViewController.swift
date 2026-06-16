@@ -36,7 +36,7 @@ final class SettingsViewController: UITableViewController {
         Category(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
         Category(title: "Eye Tracking", symbol: "eye") { EyeTrackingSettingsScreen() },
         Category(title: "Email & Kindle", symbol: "envelope") { EmailAndKindleSettingsScreen() },
-        Category(title: "YouTube", symbol: "play.rectangle") { YouTubeSettingsScreen() },
+        Category(title: "YouTube (Experimental)", symbol: "play.rectangle") { YouTubeSettingsScreen() },
         Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
         Category(title: "Experimental", symbol: "flask") { ExperimentalSettingsScreen() },
         Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
@@ -78,7 +78,7 @@ final class SettingsViewController: UITableViewController {
 
 /// RSVP speed, serif toggle, and text size.
 final class ReaderSettingsScreen: UITableViewController {
-    private enum Row: Int, CaseIterable { case speed, serif, textSize, accentColor, shareSheet }
+    private enum Row: Int, CaseIterable { case speed, serif, textSize, accentColor }
     private let wpmLabel = UILabel()
 
     init() { super.init(style: .insetGrouped) }
@@ -144,9 +144,6 @@ final class ReaderSettingsScreen: UITableViewController {
         case .accentColor:
             content.text = "Highlight Color"
             cell.accessoryView = makeAccentButton()
-        case .shareSheet:
-            content.text = "Share Sheet"
-            cell.accessoryView = makeExperienceButton()
         }
         cell.contentConfiguration = content
         return cell
@@ -179,31 +176,6 @@ final class ReaderSettingsScreen: UITableViewController {
                 ReaderSettings.accent = accent
                 if let button {
                     self?.updateAccentButton(button)
-                    button.sizeToFit()
-                }
-            }
-        })
-    }
-
-    /// A pull-down button choosing what the share sheet does with a link.
-    private func makeExperienceButton() -> UIButton {
-        let button = UIButton(type: .system)
-        button.showsMenuAsPrimaryAction = true
-        button.changesSelectionAsPrimaryAction = false
-        updateExperienceButton(button)
-        button.sizeToFit()
-        return button
-    }
-
-    private func updateExperienceButton(_ button: UIButton) {
-        let current = ShareSheetExperience.current
-        button.setTitle(current.displayName, for: .normal)
-        button.menu = UIMenu(children: ShareSheetExperience.allCases.map { option in
-            UIAction(title: option.displayName, state: option == current ? .on : .off) {
-                [weak self, weak button] _ in
-                ShareSheetExperience.current = option
-                if let button {
-                    self?.updateExperienceButton(button)
                     button.sizeToFit()
                 }
             }
@@ -287,10 +259,14 @@ final class EyeTrackingSettingsScreen: UITableViewController {
         navigationItem.largeTitleDisplayMode = .never
     }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 1 }
+    private enum Row: Int, CaseIterable { case track, highlight }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        Row.allCases.count
+    }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Uses the front camera (on supported devices) to estimate the last word you read, so audio and RSVP can start there. Turning this off clears all stored estimates."
+        "Uses the front camera (on supported devices) to estimate the last word you read, so audio and RSVP can start there. \"Highlight Looked-At Word\" shows a live highlight on the word you're reading in the scrolling reader. Turning tracking off clears all stored estimates."
     }
 
     override func tableView(
@@ -298,17 +274,28 @@ final class EyeTrackingSettingsScreen: UITableViewController {
     ) -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
-        content.text = "Track Reading Position"
-        cell.contentConfiguration = content
-        cell.accessoryView = makeToggle(
-            isOn: ReaderSettings.eyeTrackingEnabled, action: #selector(eyeTrackingToggled(_:)))
         cell.selectionStyle = .none
+        switch Row(rawValue: indexPath.row)! {
+        case .track:
+            content.text = "Track Reading Position"
+            cell.accessoryView = makeToggle(
+                isOn: ReaderSettings.eyeTrackingEnabled, action: #selector(eyeTrackingToggled(_:)))
+        case .highlight:
+            content.text = "Highlight Looked-At Word"
+            cell.accessoryView = makeToggle(
+                isOn: ReaderSettings.highlightGazeWord, action: #selector(highlightToggled(_:)))
+        }
+        cell.contentConfiguration = content
         return cell
     }
 
     @objc private func eyeTrackingToggled(_ toggle: UISwitch) {
         ReaderSettings.eyeTrackingEnabled = toggle.isOn
         if !toggle.isOn { ReadingListStore.shared.clearAllEyeTracking() }
+    }
+
+    @objc private func highlightToggled(_ toggle: UISwitch) {
+        ReaderSettings.highlightGazeWord = toggle.isOn
     }
 }
 

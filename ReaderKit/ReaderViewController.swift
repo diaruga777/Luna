@@ -33,6 +33,12 @@ final class ReaderViewController: UIViewController {
     /// Gaze-tracker factory (nil in the share extension → no eye tracking).
     private let gazeTrackerFactory: GazeTrackerFactory?
 
+    /// When false, switching modes does NOT write the shared `ReaderSettings`/
+    /// per-item mode (used by the action extension, which keeps its own
+    /// preference). When set, `onModeChange` is called instead.
+    private let persistsModePreference: Bool
+    private let onModeChange: ((ReadingListItem.ReaderMode) -> Void)?
+
     private let modeControl = UISegmentedControl()
     private let audioButton = UIButton(type: .system)
 
@@ -42,11 +48,15 @@ final class ReaderViewController: UIViewController {
     init(item: ReadingListItem, content: ArticleContent,
          forceMode: ReadingListItem.ReaderMode? = nil,
          shareProvider: ReaderShareProviding? = nil,
-         gazeTrackerFactory: GazeTrackerFactory? = nil) {
+         gazeTrackerFactory: GazeTrackerFactory? = nil,
+         persistsModePreference: Bool = true,
+         onModeChange: ((ReadingListItem.ReaderMode) -> Void)? = nil) {
         self.item = item
         self.content = content
         self.shareProvider = shareProvider
         self.gazeTrackerFactory = gazeTrackerFactory
+        self.persistsModePreference = persistsModePreference
+        self.onModeChange = onModeChange
         // First time on this article, fall back to the global last-used mode.
         self.mode = forceMode ?? item.lastReaderMode ?? ReaderSettings.lastReaderMode
         super.init(nibName: nil, bundle: nil)
@@ -112,8 +122,11 @@ final class ReaderViewController: UIViewController {
             max(0, min(modeControl.selectedSegmentIndex, Self.orderedModes.count - 1))]
         guard newMode != mode else { return }
         mode = newMode
-        store.setReaderMode(newMode, for: item.id)
-        ReaderSettings.lastReaderMode = newMode
+        if persistsModePreference {
+            store.setReaderMode(newMode, for: item.id)
+            ReaderSettings.lastReaderMode = newMode
+        }
+        onModeChange?(newMode)
         showCurrentMode()
     }
 

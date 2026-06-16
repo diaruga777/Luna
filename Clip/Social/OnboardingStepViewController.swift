@@ -21,17 +21,22 @@ final class OnboardingStepViewController: UIViewController {
     private let primaryAction: PrimaryAction?
     private let continueTitle: String
     private let onContinue: () -> Void
+    /// When set, a looping illustration of the iOS change replaces the static icon.
+    private let animationKind: OnboardingAnimationView.Kind?
+    private var animationView: OnboardingAnimationView?
 
     private let primaryButton = UIButton(type: .system)
 
     init(symbol: String, title: String, body: String,
          primary: PrimaryAction?, continueTitle: String,
+         animation: OnboardingAnimationView.Kind? = nil,
          onContinue: @escaping () -> Void) {
         self.symbolName = symbol
         self.stepTitle = title
         self.body = body
         self.primaryAction = primary
         self.continueTitle = continueTitle
+        self.animationKind = animation
         self.onContinue = onContinue
         super.init(nibName: nil, bundle: nil)
     }
@@ -43,10 +48,20 @@ final class OnboardingStepViewController: UIViewController {
         view.backgroundColor = .systemBackground
         navigationItem.hidesBackButton = true
 
-        let icon = UIImageView(image: UIImage(systemName: symbolName,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 64, weight: .semibold)))
-        icon.tintColor = GlassStyle.readingAccent
-        icon.contentMode = .center
+        // An animated illustration of the iOS change, or the static icon.
+        let topVisual: UIView
+        if let animationKind {
+            let animation = OnboardingAnimationView(kind: animationKind)
+            animationView = animation
+            topVisual = animation
+        } else {
+            let icon = UIImageView(image: UIImage(systemName: symbolName,
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 64, weight: .semibold)))
+            icon.tintColor = GlassStyle.readingAccent
+            icon.contentMode = .center
+            topVisual = icon
+        }
+        let icon = topVisual
 
         let titleLabel = UILabel()
         titleLabel.text = stepTitle
@@ -103,6 +118,11 @@ final class OnboardingStepViewController: UIViewController {
             layout.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 60),
             layout.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -32),
         ])
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        animationView?.start()
     }
 
     @objc private func primaryTapped() { primaryAction?.handler(self) }

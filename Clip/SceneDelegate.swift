@@ -17,6 +17,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// A friend URL that arrived before onboarding finished; replayed once an
     /// identity exists.
     private var pendingFriendURL: URL?
+    /// A `clickreader://read` article URL that arrived before the main UI was up.
+    private var pendingReadURL: String?
 
     func scene(
         _ scene: UIScene,
@@ -33,6 +35,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     self?.pendingFriendURL = nil
                     self?.handleFriendURL(url)
                 }
+                if let articleURL = self?.pendingReadURL {
+                    self?.pendingReadURL = nil
+                    self?.openReader(articleURL: articleURL)
+                }
             }
         } else {
             window.rootViewController = UINavigationController(
@@ -42,13 +48,49 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.makeKeyAndVisible()
 
         if let url = connectionOptions.urlContexts.first?.url {
-            handleFriendURL(url)
+            route(url)
         }
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         guard let url = URLContexts.first?.url else { return }
-        handleFriendURL(url)
+        route(url)
+    }
+
+    /// Dispatches an incoming URL: a `clickreader://read` link opens the reader;
+    /// anything else is treated as a `clipreader://friend` link.
+    private func route(_ url: URL) {
+        if let articleURL = ClickDeepLink.articleURL(from: url) {
+            openReader(articleURL: articleURL)
+        } else {
+            handleFriendURL(url)
+        }
+    }
+
+    /// Saves the article (if new), then opens it in the reader once its content
+    /// is ready. Stashes the URL if the main UI isn't up yet (onboarding).
+    private func openReader(articleURL: String) {
+        guard let nav = window?.rootViewController as? UINavigationController else {
+            pendingReadURL = articleURL
+            return
+        }
+        Task { @MainActor in
+            let result = await ReadingListIngestor.shared.handleSavePress(urlString: articleURL)
+            let itemID: UUID?
+            switch result {
+            case .saved(let item), .sentToKindle(let item): itemID = item.id
+            case .ignored: itemID = ReadingListStore.shared.item(forURLString: articleURL)?.id
+            }
+            nav.popToRootViewController(animated: false)
+            guard let itemID, let item = ReadingListStore.shared.item(withID: itemID),
+                  item.state == .ready, let content = ReadingListStore.shared.content(for: item)
+            else { return } // not readable yet — it's in the list to retry
+            let reader = ReaderViewController(
+                item: item, content: content,
+                shareProvider: AppReaderShareProvider.shared,
+                gazeTrackerFactory: AppGazeTracker.factory)
+            nav.pushViewController(reader, animated: true)
+        }
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {

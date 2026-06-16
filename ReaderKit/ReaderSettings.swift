@@ -13,6 +13,7 @@ enum ReaderSettings {
 
     private static let wpmKey = "rsvpBaseWPM"
     private static let eyeTrackingKey = "eyeTrackingEnabled"
+    private static let highlightGazeWordKey = "highlightGazeWord"
     private static let fontScaleKey = "readerFontScale"
     private static let serifKey = "readerSerifFont"
     private static let readingTimeKey = "showReadingTime"
@@ -39,6 +40,14 @@ enum ReaderSettings {
     static var eyeTrackingEnabled: Bool {
         get { (defaults.object(forKey: eyeTrackingKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: eyeTrackingKey) }
+    }
+
+    /// When on (and eye tracking is active), the scrolling reader highlights the
+    /// word the gaze tracker currently estimates you're looking at. Off by
+    /// default — it's a live, slightly distracting affordance.
+    static var highlightGazeWord: Bool {
+        get { defaults.bool(forKey: highlightGazeWordKey) }
+        set { defaults.set(newValue, forKey: highlightGazeWordKey) }
     }
 
     /// The reader mode the user last used — the default for new articles that

@@ -1,5 +1,10 @@
 # YouTube Support
 
+> YouTube is now also one entry in the platform registry (`YouTubePlatform`) —
+> see `content-platforms.md` for the multi-platform architecture. It keeps its
+> bespoke ingest (oEmbed + watch-later + channel-keyed suggestions) and
+> `openVideo`/thumbnail path described here; `YouTubeURL` moved to `ReaderKit/`.
+
 YouTube links are first-class reading-list items: thumbnail rows, app/in-app
 playback, playlist auto-add, and a channel+title search intent. Videos are
 NEVER sent to Kindle; social sharing works normally.

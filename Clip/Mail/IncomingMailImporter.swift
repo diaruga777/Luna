@@ -79,8 +79,11 @@ final class IncomingMailImporter {
                     }
                     _ = store.saveContent(content, for: item)
                     imported += 1
+                    let firstBlock = content.blocks.first(where: {
+                        !$0.text.trimmingCharacters(in: .whitespaces).isEmpty
+                    })?.text.prefix(120) ?? ""
                     DiagnosticLog.shared.record(
-                        "incoming mail: imported uid \(message.uid) as article \"\(content.title)\" (\(content.blocks.count) blocks)",
+                        "incoming mail: imported uid \(message.uid) as article \"\(content.title)\" (\(content.blocks.count) blocks) first=\"\(firstBlock)\"",
                         category: "mail")
                     autoSendToKindleIfEnabled(itemID: item.id)
                 } else if let url = message.urls.first {

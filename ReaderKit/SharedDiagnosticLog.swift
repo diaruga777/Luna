@@ -13,25 +13,27 @@ import Foundation
 /// Diagnostics alongside everything else.
 enum SharedDiagnosticLog {
 
-    private static let queue = DispatchQueue(label: "com.hpiddy.clip.shareddiagnosticlog")
+    private static let lock = NSLock()
 
     /// Appends one timestamped line tagged with `category` to the shared log.
+    /// SYNCHRONOUS: an extension can be killed the instant after it logs, so the
+    /// write must complete before returning — an async queue would silently lose
+    /// the most diagnostic lines (the ones right before the death).
     static func record(_ message: String, category: String) {
-        let date = Date()
-        queue.async {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let line = "\(formatter.string(from: date)) [\(category)] \(message)\n"
-            guard let data = line.data(using: .utf8), let fileURL = logFileURL() else { return }
-            if !FileManager.default.fileExists(atPath: fileURL.path) {
-                try? data.write(to: fileURL)
-                return
-            }
-            guard let handle = try? FileHandle(forWritingTo: fileURL) else { return }
-            defer { try? handle.close() }
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: data)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let line = "\(formatter.string(from: Date())) [\(category)] \(message)\n"
+        guard let data = line.data(using: .utf8), let fileURL = logFileURL() else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        if !FileManager.default.fileExists(atPath: fileURL.path) {
+            try? data.write(to: fileURL)
+            return
         }
+        guard let handle = try? FileHandle(forWritingTo: fileURL) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: data)
     }
 
     private static func logFileURL() -> URL? {

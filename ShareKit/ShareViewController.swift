@@ -60,9 +60,13 @@ final class ShareViewController: UIViewController {
         SharedDiagnosticLog.record(
             "\(host) extension: \(providers.count) attachment(s) types=[\(types)]", category: "share")
 
-        // Tapped a Click friend suggestion: the conversation identifier is the
-        // friend's UUID. Queue the URL for the main app to send.
-        if let intent = extensionContext?.intent as? INSendMessageIntent,
+        // Tapped a Click friend suggestion in the share sheet's PEOPLE ROW: the
+        // conversation identifier is the friend's UUID. This only happens for
+        // the share extension — guard the `intent` access behind that, since
+        // touching `extensionContext.intent` in a `com.apple.ui-services` action
+        // extension is unnecessary and a likely crash point.
+        if !isActionExtension,
+           let intent = extensionContext?.intent as? INSendMessageIntent,
            let conversationID = intent.conversationIdentifier,
            let friendUUID = UUID(uuidString: conversationID),
            let urlProvider = providers.first(where: {

@@ -103,10 +103,16 @@ enum MailArticleBuilder {
             .map { ArticleContent.Block(kind: .paragraph, text: $0, links: []) }
     }
 
-    /// Drops trailing blocks once a footer marker appears (footers sit at the end).
+    /// Drops trailing blocks once a footer marker appears — but only in the
+    /// latter part of the article, so an early "©"/"unsubscribe" (e.g. in a
+    /// masthead) doesn't nuke the whole body. Keeps everything if the only
+    /// markers are near the top, or if trimming would drop most of the content.
     static func trimFooterBlocks(_ blocks: [ArticleContent.Block]) -> [ArticleContent.Block] {
-        if let cut = blocks.firstIndex(where: { block in
-            let l = block.text.lowercased()
+        guard blocks.count > 4 else { return blocks }
+        let earliestTrimmable = blocks.count / 2
+        if let cut = blocks.indices.first(where: { index in
+            guard index >= earliestTrimmable else { return false }
+            let l = blocks[index].text.lowercased()
             return footerMarkers.contains { l.contains($0) }
         }) {
             return Array(blocks.prefix(cut))

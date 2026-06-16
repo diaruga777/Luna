@@ -50,6 +50,9 @@ final class GmailIMAPClient: IMAPFetching {
 
     static let host = "imap.gmail.com"
     static let port: UInt16 = 993
+    /// Cap on the raw bytes fetched per message — enough for an article's text,
+    /// bounded so a huge newsletter can't blow up memory.
+    static let maxFetchBytes = 512 * 1024
 
     struct IMAPError: Error, CustomStringConvertible {
         let step: String
@@ -112,23 +115,23 @@ final class GmailIMAPClient: IMAPFetching {
         var messages: [IncomingMessage] = []
         var highestUID = afterUID
         for uid in matchedUIDs.sorted() {
-            let fetch = try await run(
-                "UID FETCH \(uid) (UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE CONTENT-TYPE CONTENT-TRANSFER-ENCODING)] BODY.PEEK[TEXT])",
-                step: "fetch")
+            // Fetch the FULL raw message (capped) and parse it ourselves.
+            // `BODY[TEXT]` of the top level can be a tiny forwarding stub while
+            // the real multipart content sits below — the whole message + our
+            // own MIME walk handles forwards, nesting, and base64/QP parts.
+            let fetch = try await run("UID FETCH \(uid) (UID BODY.PEEK[]<0.\(Self.maxFetchBytes)>)", step: "fetch")
             highestUID = max(highestUID, uid)
-            guard fetch.literals.count >= 2 else {
+            guard let raw = fetch.literals.first else {
                 DiagnosticLog.shared.record(
-                    "imap: uid \(uid) fetch returned \(fetch.literals.count) literal(s); skipping",
-                    category: "mail")
+                    "imap: uid \(uid) fetch returned no body; skipping", category: "mail")
                 continue
             }
-            let headers = Self.parseHeaders(String(decoding: fetch.literals[0], as: UTF8.self))
-            let body = String(decoding: fetch.literals[1], as: UTF8.self)
+            let rawString = String(decoding: raw, as: UTF8.self)
+            let (headerText, body) = Self.splitMessage(rawString)
+            let headers = Self.parseHeaders(headerText)
             let urls = Self.extractURLs(from: body)
-            let snippet = body.prefix(140)
-                .replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
             DiagnosticLog.shared.record(
-                "imap: uid \(uid) from=\(headers["from"] ?? "?") subj=\"\(headers["subject"] ?? "")\" type=\(headers["content-type"]?.prefix(40) ?? "?") bodyLen=\(body.count) urls=\(urls.count) head=\"\(snippet)\"",
+                "imap: uid \(uid) from=\(headers["from"] ?? "?") subj=\"\(headers["subject"] ?? "")\" type=\(headers["content-type"]?.prefix(60) ?? "?") rawLen=\(rawString.count) bodyLen=\(body.count) urls=\(urls.count)",
                 category: "mail")
             messages.append(IncomingMessage(
                 uid: uid,
@@ -227,6 +230,18 @@ final class GmailIMAPClient: IMAPFetching {
     /// re-import on every poll.
     static func newSearchUIDs(_ lines: [String], afterUID: Int) -> [Int] {
         parseSearchUIDs(lines).filter { $0 > afterUID }
+    }
+
+    /// Splits a raw RFC822 message into its top-level header block and body at
+    /// the first blank line (CRLFCRLF, or LFLF as a fallback).
+    static func splitMessage(_ raw: String) -> (headers: String, body: String) {
+        if let range = raw.range(of: "\r\n\r\n") {
+            return (String(raw[..<range.lowerBound]), String(raw[range.upperBound...]))
+        }
+        if let range = raw.range(of: "\n\n") {
+            return (String(raw[..<range.lowerBound]), String(raw[range.upperBound...]))
+        }
+        return (raw, "")
     }
 
     /// Parses `Key: value` headers (lowercased keys; unfolds simple folds).

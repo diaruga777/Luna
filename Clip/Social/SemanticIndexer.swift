@@ -10,27 +10,31 @@ import Foundation
 ///
 /// - `scheduleRun()` — MAIN APP ONLY. A background pass that embeds the items
 ///   you've shared to friends so future matches have that history to compare
-///   against. It does NOT arm any suggestion (suggestions on past saves at
-///   launch would be terrible UX).
-/// - `immediateSuggestion(forItemID:)` — runs in the SAVE app-intent (and the
-///   in-app add) to drive the live share/don't suggestion. It embeds ONLY the
-///   one just-saved item (a single inference, then the model is released) and
-///   compares it to the already-cached per-friend vectors.
+///   against. Arms no suggestion.
+/// - `immediateSuggestion(forItemID:)` — runs in the SAVE app-intent to drive
+///   the live share/don't suggestion. Embeds ONLY the one just-saved item.
 ///
-/// Memory: one embedder per call, released immediately; the launch pass is
-/// capped and serialized on a utility queue. Vectors persist so they're never
-/// recomputed.
+/// Each item is embedded as several PARAGRAPH CHUNKS (title + lead paragraphs),
+/// and two items match on their closest chunk pair — so "both about Meta"
+/// matches even when the wording differs. Logs copiously to the shared
+/// diagnostic log (category "semantic") so the user can see it run.
 final class SemanticIndexer {
 
     static let shared = SemanticIndexer()
 
     private static let embedLimit = 20
+    private static let maxChunks = 8
+    private static let maxChunkChars = 800
 
     private let queue = DispatchQueue(label: "com.hpiddy.clip.semanticindexer", qos: .utility)
     private let index = SemanticIndexStore.shared
 
-    /// Background pass (main app): embed shared-but-unindexed items. No
-    /// suggestion side effects. Safe to call on every launch/foreground.
+    private func log(_ message: String) {
+        SharedDiagnosticLog.record(message, category: "semantic")
+    }
+
+    // MARK: - Background indexing (main app)
+
     func scheduleRun() {
         guard SemanticSharingSettings.isEnabled else { return }
         queue.async { [weak self] in self?.buildMissingVectors() }
@@ -38,56 +42,94 @@ final class SemanticIndexer {
 
     private func buildMissingVectors() {
         let needed = index.itemIDsNeedingVectors(limit: Self.embedLimit)
+        let stats = index.stats()
+        log("index pass: \(needed.count) item(s) to embed; \(stats.persons) friend(s), \(stats.sharedItems) shared, \(stats.indexedItems) indexed")
         guard !needed.isEmpty else { return }
         let embedder = SemanticEmbedder()
         defer { embedder.release() }
         for itemID in needed {
-            guard let item = ReadingListStore.shared.item(withID: itemID),
-                  let vector = embedder.embed(embeddingText(for: item)) else {
-                index.setVector([], forItemID: itemID) // tombstone: don't retry
-                continue
-            }
-            index.setVector(vector, forItemID: itemID)
+            embedAndStore(itemID, embedder: embedder)
         }
     }
+
+    /// Embeds an item's chunks and stores them (empty = tombstone). Returns the
+    /// chunk count for logging.
+    @discardableResult
+    private func embedAndStore(_ itemID: UUID, embedder: SemanticEmbedder) -> Int {
+        guard let item = ReadingListStore.shared.item(withID: itemID) else {
+            index.setVectors([], forItemID: itemID)
+            log("embed: item \(itemID.uuidString.prefix(8)) gone — tombstoned")
+            return 0
+        }
+        let chunks = embeddingChunks(for: item)
+        let vectors = chunks.compactMap { embedder.embed($0) }
+        index.setVectors(vectors, forItemID: itemID)
+        log("embed: \"\(item.title ?? item.urlString)\" → \(vectors.count) chunk vector(s) (dim \(vectors.first?.count ?? 0))")
+        return vectors.count
+    }
+
+    // MARK: - Live suggestion (save intent)
 
     /// The friend to suggest sharing `itemID` with based on content similarity,
-    /// or nil. Embeds the item now (one inference) if it isn't already indexed.
-    /// Returns nil immediately when the feature is off. Intended for the save
-    /// app-intent — keep heavier batch work out of the intent runner.
+    /// or nil. Embeds the item now if needed (one item, chunked). Logs the
+    /// nearest neighbor and score regardless of outcome.
     func immediateSuggestion(forItemID itemID: UUID) -> (uuid: UUID, username: String)? {
-        guard SemanticSharingSettings.isEnabled else { return nil }
-        if !index.hasVector(forItemID: itemID),
-           let item = ReadingListStore.shared.item(withID: itemID) {
-            let embedder = SemanticEmbedder()
-            defer { embedder.release() }
-            index.setVector(embedder.embed(embeddingText(for: item)) ?? [], forItemID: itemID)
+        guard SemanticSharingSettings.isEnabled else {
+            log("suggestion skipped — feature disabled")
+            return nil
         }
-        guard let match = index.bestMatch(forItemID: itemID),
-              FriendsStore.shared.friend(withUUID: match.uuid) != nil
-        else { return nil }
-        return (match.uuid, match.username)
+        // One model load for the whole batch: embed the just-saved item AND any
+        // shared-history items still lacking vectors, so the match works even
+        // before a background indexing pass has run (e.g. you just shared a few
+        // articles, then saved a similar one via the share sheet).
+        let embedder = SemanticEmbedder()
+        defer { embedder.release() }
+        if !index.hasVectors(forItemID: itemID) { embedAndStore(itemID, embedder: embedder) }
+        for needID in index.itemIDsNeedingVectors(limit: Self.embedLimit) {
+            embedAndStore(needID, embedder: embedder)
+        }
+        return evaluate(itemID, context: "save")
     }
 
-    /// A cached-only similarity match (no embedding) for the end-of-article
-    /// share affordance — cheap, returns nil if the item isn't indexed yet.
+    /// A cached-only match (no embedding) for the end-of-article affordance.
     func cachedSuggestion(forItemID itemID: UUID) -> (uuid: UUID, username: String)? {
-        guard SemanticSharingSettings.isEnabled,
-              let match = index.bestMatch(forItemID: itemID),
-              FriendsStore.shared.friend(withUUID: match.uuid) != nil
-        else { return nil }
+        guard SemanticSharingSettings.isEnabled, index.hasVectors(forItemID: itemID) else { return nil }
+        return evaluate(itemID, context: "reader")
+    }
+
+    private func evaluate(_ itemID: UUID, context: String) -> (uuid: UUID, username: String)? {
+        var bestScore: Float = 0
+        var bestUsername: String?
+        var bestItemID: UUID?
+        let match = index.bestMatch(
+            forItemID: itemID, bestScore: &bestScore, bestUsername: &bestUsername, bestItemID: &bestItemID)
+        let neighborTitle = bestItemID.flatMap { ReadingListStore.shared.item(withID: $0)?.title } ?? "—"
+        let threshold = SemanticIndexStore.similarityThreshold
+        log("\(context): nearest = \"\(neighborTitle)\" shared to \(bestUsername ?? "—") score \(String(format: "%.3f", bestScore)) (threshold \(String(format: "%.2f", threshold)))")
+        guard let match, FriendsStore.shared.friend(withUUID: match.uuid) != nil else {
+            log("\(context): no suggestion (below threshold or friend missing)")
+            return nil
+        }
+        log("\(context): suggesting \(match.username)")
         return (match.uuid, match.username)
     }
 
-    /// The text embedded for an item: title + channel + a sample of the body.
-    private func embeddingText(for item: ReadingListItem) -> String {
-        var parts: [String] = []
-        if let title = item.title, !title.isEmpty { parts.append(title) }
-        if let channel = item.channelName, !channel.isEmpty { parts.append(channel) }
-        if let content = ReadingListStore.shared.content(for: item) {
-            let body = content.blocks.prefix(8).map(\.text).joined(separator: " ")
-            if !body.isEmpty { parts.append(body) }
+    // MARK: - Chunking
+
+    /// Paragraph chunks for an item: title+channel, then lead content blocks.
+    private func embeddingChunks(for item: ReadingListItem) -> [String] {
+        var chunks: [String] = []
+        var head = item.title ?? ""
+        if let channel = item.channelName, !channel.isEmpty {
+            head += head.isEmpty ? channel : ". \(channel)"
         }
-        return parts.joined(separator: ". ")
+        if !head.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { chunks.append(head) }
+        if let content = ReadingListStore.shared.content(for: item) {
+            for block in content.blocks where !block.text.trimmingCharacters(in: .whitespaces).isEmpty {
+                chunks.append(String(block.text.prefix(Self.maxChunkChars)))
+                if chunks.count >= Self.maxChunks { break }
+            }
+        }
+        return chunks
     }
 }

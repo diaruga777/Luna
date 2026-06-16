@@ -32,6 +32,9 @@ struct SMTPError: Error, CustomStringConvertible {
 final class SMTPClient {
 
     private let transport: SMTPTransport
+    /// Hard ceiling on the whole exchange, so a stalled socket can't park a
+    /// receive continuation forever (closing the transport unblocks it).
+    private static let timeoutSeconds: UInt64 = 30
 
     init(transport: SMTPTransport) {
         self.transport = transport
@@ -40,6 +43,19 @@ final class SMTPClient {
     /// Submits one message. `username`/`password` authenticate; the message's
     /// own From/To headers should match `from`/`to`.
     func submit(message: MIMEMessage, username: String, password: String) async throws {
+        let watchdog = Task { [transport] in
+            try? await Task.sleep(nanoseconds: Self.timeoutSeconds * 1_000_000_000)
+            transport.close()
+        }
+        defer { watchdog.cancel() }
+        try await withTaskCancellationHandler {
+            try await performSubmit(message: message, username: username, password: password)
+        } onCancel: {
+            transport.close()
+        }
+    }
+
+    private func performSubmit(message: MIMEMessage, username: String, password: String) async throws {
         defer { transport.close() }
         try await transport.connect()
 
@@ -153,6 +169,8 @@ final class TLSConnectionTransport: SMTPTransport {
                     result = .success(())
                 case .failed(let error), .waiting(let error):
                     result = .failure(error)
+                case .cancelled:
+                    result = .failure(SMTPError(step: "connect", reply: "cancelled"))
                 default:
                     return
                 }

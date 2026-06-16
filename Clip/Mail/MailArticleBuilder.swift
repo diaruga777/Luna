@@ -69,6 +69,7 @@ enum MailArticleBuilder {
         return from
     }
 
+    /// Heuristic: does this body contain HTML markup (vs. plain text)?
     static func looksLikeHTML(_ s: String) -> Bool {
         let lower = s.lowercased()
         return lower.contains("<html") || lower.contains("<body") || lower.contains("<div")

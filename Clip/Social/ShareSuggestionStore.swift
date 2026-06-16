@@ -256,13 +256,6 @@ final class ShareSuggestionStore {
             .sorted()
     }
 
-    /// Stops auto-sharing one base URL to a friend.
-    func removeAlwaysShare(baseURL: String, friendUUID: UUID) {
-        mutate { state in
-            state.rules[baseURL]?.alwaysFriends.removeValue(forKey: friendUUID)
-        }
-    }
-
     /// Wipes ALL suggestion/automation state involving a friend.
     func wipe(friendUUID: UUID) {
         mutate { state in

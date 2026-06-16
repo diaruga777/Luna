@@ -33,6 +33,16 @@ final class ShareViewController: UIViewController {
     private let statusLabel = UILabel()
     private let closeButton = UIButton(type: .system)
 
+    /// True once the request has been completed, so completion happens at most
+    /// once (a double `completeRequest` is undefined behavior). Main-thread only.
+    private var hasCompleted = false
+
+    /// Backstop that completes/surfaces an error if an attachment's async
+    /// `loadItem` callback never fires — `loadItem` has no timeout of its own, so
+    /// a stalled provider would otherwise hang the extension on screen forever.
+    private var loadWatchdog: DispatchWorkItem?
+    private static let loadTimeout: TimeInterval = 15
+
     override func viewDidLoad() {
         super.viewDidLoad()
         // Build the loading UI FIRST, before any processing, so the action
@@ -59,6 +69,10 @@ final class ShareViewController: UIViewController {
             .joined(separator: ", ")
         SharedDiagnosticLog.record(
             "\(host) extension: \(providers.count) attachment(s) types=[\(types)]", category: "share")
+
+        // Every path below loads an attachment asynchronously; guard against a
+        // provider whose callback never fires.
+        armLoadWatchdog()
 
         // Tapped a Click friend suggestion in the share sheet's PEOPLE ROW: the
         // conversation identifier is the friend's UUID. This only happens for
@@ -151,6 +165,7 @@ final class ShareViewController: UIViewController {
     /// death). Share extension: stay zero-UI and just complete.
     private func failOrComplete(_ message: String) {
         SharedDiagnosticLog.record("share extension finished: \(message)", category: "share")
+        cancelLoadWatchdog()
         guard isActionExtension else { complete(); return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -167,7 +182,9 @@ final class ShareViewController: UIViewController {
         SharedDiagnosticLog.record("action: loading JS result", category: "share")
         // Strong self: the work + reader presentation need the VC alive, and
         // there's no retain cycle (nothing holds the closure once it runs).
-        provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier, options: nil) { item, error in
+        provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier, options: nil) { [weak self] item, error in
+            guard let self else { return }
+            self.cancelLoadWatchdog()
             let dict = item as? NSDictionary
             let results = dict?[NSExtensionJavaScriptPreprocessingResultsKey] as? NSDictionary
             let urlString = results?["URL"] as? String
@@ -193,6 +210,7 @@ final class ShareViewController: UIViewController {
     private func handleURL(_ provider: NSItemProvider) {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
             guard let self else { return }
+            self.cancelLoadWatchdog()
             if let url = value as? URL, url.absoluteString.hasPrefix("http") {
                 SharedReadingListAppender.append(urlString: url.absoluteString)
                 SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
@@ -235,6 +253,7 @@ final class ShareViewController: UIViewController {
     private func handleDocument(_ provider: NSItemProvider, type: UTType) {
         provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { [weak self] url, _ in
             guard let self else { return }
+            self.cancelLoadWatchdog()
             // The system deletes `url` when this callback returns, so the
             // appender copies it synchronously here.
             if let url {
@@ -249,6 +268,7 @@ final class ShareViewController: UIViewController {
 
     private func handleFriendShare(_ provider: NSItemProvider, friendUUID: UUID) {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
+            self?.cancelLoadWatchdog()
             if let url = value as? URL, url.absoluteString.hasPrefix("http") {
                 PendingFriendShareWriter.enqueue(
                     friendUUID: friendUUID, urlString: url.absoluteString)
@@ -258,22 +278,41 @@ final class ShareViewController: UIViewController {
     }
 
     private func complete() {
-        DispatchQueue.main.async { [weak self] in
-            self?.extensionContext?.completeRequest(returningItems: nil)
-        }
+        DispatchQueue.main.async { [weak self] in self?.finishRequest() }
+    }
+
+    /// The single completion chokepoint: idempotent (so the watchdog firing
+    /// alongside a slow callback can't double-complete) and always cancels the
+    /// watchdog. Main-thread only.
+    private func finishRequest() {
+        guard !hasCompleted else { return }
+        hasCompleted = true
+        cancelLoadWatchdog()
+        extensionContext?.completeRequest(returningItems: nil)
     }
 
     /// Shows a brief liquid-glass "Saved" checkmark, then completes. Call only
     /// after an actual save (no reader is being presented).
     private func confirmSavedThenComplete() {
-        // GUARANTEE completion via the captured context (not `self`/the badge) —
-        // a share extension must never hang on screen if the confirmation view
-        // misbehaves, so the request always finishes after the delay.
-        let context = extensionContext
-        DispatchQueue.main.async { [weak self] in self?.showSavedBadge() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
-            context?.completeRequest(returningItems: nil)
+        cancelLoadWatchdog()
+        DispatchQueue.main.async { [weak self] in
+            self?.showSavedBadge()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { self?.finishRequest() }
         }
+    }
+
+    private func armLoadWatchdog() {
+        let work = DispatchWorkItem { [weak self] in
+            SharedDiagnosticLog.record("share extension: attachment load timed out", category: "share")
+            self?.failOrComplete("Couldn't read the shared content in time.")
+        }
+        loadWatchdog = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.loadTimeout, execute: work)
+    }
+
+    private func cancelLoadWatchdog() {
+        loadWatchdog?.cancel()
+        loadWatchdog = nil
     }
 
     private func showSavedBadge() {

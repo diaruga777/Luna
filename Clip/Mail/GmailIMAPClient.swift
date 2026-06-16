@@ -53,6 +53,10 @@ final class GmailIMAPClient: IMAPFetching {
     /// Cap on the raw bytes fetched per message — enough for an article's text,
     /// bounded so a huge newsletter can't blow up memory.
     static let maxFetchBytes = 512 * 1024
+    /// Hard ceiling on the whole exchange. A stalled socket can't be interrupted
+    /// by `Task.cancel` alone (an `NWConnection` receive continuation just parks),
+    /// so we cap it and cancel the connection to unblock.
+    static let timeoutSeconds: UInt64 = 30
 
     struct IMAPError: Error, CustomStringConvertible {
         let step: String
@@ -71,6 +75,24 @@ final class GmailIMAPClient: IMAPFetching {
     }
 
     func fetchNewMessages(
+        account: String, password: String, senders: [String], subjectFilters: [String],
+        afterUID: Int, knownUIDValidity: Int?
+    ) async throws -> IMAPFetchOutcome {
+        let watchdog = Task { [connection] in
+            try? await Task.sleep(nanoseconds: Self.timeoutSeconds * 1_000_000_000)
+            connection.cancel()
+        }
+        defer { watchdog.cancel() }
+        return try await withTaskCancellationHandler {
+            try await performFetch(
+                account: account, password: password, senders: senders,
+                subjectFilters: subjectFilters, afterUID: afterUID, knownUIDValidity: knownUIDValidity)
+        } onCancel: {
+            connection.cancel()
+        }
+    }
+
+    private func performFetch(
         account: String, password: String, senders: [String], subjectFilters: [String],
         afterUID: Int, knownUIDValidity: Int?
     ) async throws -> IMAPFetchOutcome {
@@ -146,7 +168,7 @@ final class GmailIMAPClient: IMAPFetching {
             // relies on UID, not this.
             _ = try? await run("UID STORE \(uid) +FLAGS (\\Seen)", step: "store")
         }
-        try? await run("LOGOUT", step: "logout")
+        _ = try? await run("LOGOUT", step: "logout")
         return IMAPFetchOutcome(
             uidValidity: uidValidity, highestUID: highestUID, messages: messages)
     }
@@ -337,6 +359,8 @@ final class GmailIMAPClient: IMAPFetching {
                 switch state {
                 case .ready: result = .success(())
                 case .failed(let error), .waiting(let error): result = .failure(error)
+                case .cancelled:
+                    result = .failure(IMAPError(step: "connect", detail: "cancelled"))
                 default: return
                 }
                 let isFirst = resumed.withLock { done in defer { done = true }; return !done }

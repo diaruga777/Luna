@@ -108,9 +108,6 @@ struct ReadingListItem: Codable, Identifiable {
     /// Only items with a real web URL can be sent to other users.
     var canShareToFriends: Bool { isShareable }
 
-    /// The `clipdoc://` identity used for imported documents (no web URL).
-    static func documentURLString(id: UUID) -> String { "clipdoc://\(id.uuidString)" }
-
     init(urlString: String) {
         self.id = UUID()
         self.urlString = urlString

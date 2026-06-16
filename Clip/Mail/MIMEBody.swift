@@ -28,7 +28,7 @@ enum MIMEBody {
         // No MIME structure recognized: decode by the top-level encoding and
         // guess HTML from the content.
         let decoded = decode(rawBody, transferEncoding: transferEncoding)
-        return Extracted(text: decoded, isHTML: looksLikeHTML(decoded))
+        return Extracted(text: decoded, isHTML: MailArticleBuilder.looksLikeHTML(decoded))
     }
 
     // MARK: - Recursive part walk
@@ -138,9 +138,4 @@ enum MIMEBody {
         }
     }
 
-    private static func looksLikeHTML(_ s: String) -> Bool {
-        let lower = s.lowercased()
-        return lower.contains("<html") || lower.contains("<body") || lower.contains("<div")
-            || lower.contains("<table") || lower.contains("<p>") || lower.contains("<p ")
-    }
 }

@@ -116,7 +116,7 @@ final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
         let identity = KeychainIdentityStore.shared.loadIdentity()?.uuid.uuidString ?? "none"
         let exportedAt = ISO8601DateFormatter().string(from: Date())
         return """
-        Clip diagnostics
+        Click diagnostics
         App: \(version) (\(build))
         OS: \(systemDescription())
         Identity UUID: \(identity)

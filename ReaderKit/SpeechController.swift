@@ -219,6 +219,10 @@ final class SpeechController: NSObject {
     }
 
     private func setupRemoteCommands() {
+        // Clear any prior targets first — `play()` calls this each time, and the
+        // command center is a shared singleton, so without this a play/pause/play
+        // cycle would stack duplicate handlers and fire each one repeatedly.
+        teardownRemoteCommands()
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
             self?.resume(); return .success
@@ -249,7 +253,7 @@ final class SpeechController: NSObject {
     private func updateNowPlaying() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
             MPMediaItemPropertyTitle: nowPlayingTitle,
-            MPMediaItemPropertyArtist: "Clip",
+            MPMediaItemPropertyArtist: "Click",
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
         ]
     }

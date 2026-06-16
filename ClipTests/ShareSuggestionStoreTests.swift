@@ -108,13 +108,15 @@ final class ShareSuggestionStoreTests: XCTestCase {
         XCTAssertNil(store.pendingSuggestion())
     }
 
-    func testRemoveAlwaysShareStopsAutomation() {
+    func testDisablingAlwaysShareStopsAutomation() {
         shareToAlice("https://example.com/1")
         shareToAlice("https://example.com/2")
         _ = store.handleNewSave(urlString: "https://example.com/3")
         store.applyChoice(.alwaysShare)
 
-        store.removeAlwaysShare(baseURL: "example.com", friendUUID: alice.uuid)
+        store.setAlwaysShare(
+            baseURL: "example.com", friendUUID: alice.uuid,
+            friendUsername: alice.name, enabled: false)
         XCTAssertTrue(store.handleNewSave(urlString: "https://example.com/4").isEmpty)
         XCTAssertTrue(store.alwaysSharedBaseURLs(friendUUID: alice.uuid).isEmpty)
     }

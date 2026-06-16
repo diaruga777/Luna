@@ -72,8 +72,7 @@ enum SendToFriendSheet {
                 try await SocialMessageCenter.shared.sendArticle(
                     urlString: urlString, title: title, to: friend)
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                showTransientConfirmation(
-                    "Sent to \(friend.card.username)", from: presenter)
+                Toast.show("Sent to \(friend.card.username)", from: presenter)
             } catch {
                 let alert = UIAlertController(
                     title: "Couldn't Send",
@@ -83,13 +82,5 @@ enum SendToFriendSheet {
                 presenter.present(alert, animated: true)
             }
         }
-    }
-
-    /// A lightweight, self-dismissing send confirmation — a bottom liquid-glass toast.
-    @MainActor
-    private static func showTransientConfirmation(
-        _ text: String, from presenter: UIViewController
-    ) {
-        Toast.show(text, from: presenter)
     }
 }

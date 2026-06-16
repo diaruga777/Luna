@@ -14,8 +14,20 @@ struct PasteboardCandidate {
     let channelName: String?
     let videoID: String?
     /// Article content already extracted during the preview, so tapping can open
-    /// the reader instantly without re-fetching. nil for videos.
+    /// the reader instantly without re-fetching. nil for videos/platform items.
     let content: ArticleContent?
+    /// Set for a recognized non-YouTube platform URL (X, Bluesky, …).
+    let platform: ContentPlatform?
+
+    init(urlString: String, title: String, channelName: String?, videoID: String?,
+         content: ArticleContent?, platform: ContentPlatform? = nil) {
+        self.urlString = urlString
+        self.title = title
+        self.channelName = channelName
+        self.videoID = videoID
+        self.content = content
+        self.platform = platform
+    }
 
     var isVideo: Bool { videoID != nil }
 }
@@ -57,6 +69,14 @@ final class PasteboardSuggester: PasteboardSuggesting {
             return PasteboardCandidate(
                 urlString: trimmed, title: metadata.title,
                 channelName: metadata.channelName, videoID: videoID, content: nil)
+        }
+
+        // A recognized platform URL (tweet, skeet, …) surfaces as a platform
+        // candidate (saved + ingested on tap; no article preview).
+        if let match = PlatformRegistry.shared.detect(trimmed) {
+            return PasteboardCandidate(
+                urlString: trimmed, title: match.platform.displayName,
+                channelName: nil, videoID: nil, content: nil, platform: match.platform)
         }
 
         guard let html = try? await fetcher.fetchHTML(from: url),

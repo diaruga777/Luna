@@ -19,6 +19,7 @@ final class PlatformRegistry {
         // Modules are added per platform as they're implemented.
         self.modules = modules ?? [
             YouTubePlatform(),
+            BlueskyPlatform(),
         ]
     }
 

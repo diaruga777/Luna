@@ -231,6 +231,15 @@ final class ReadingListViewController: UITableViewController {
                     self.openVideo(item)
                 }
             }
+        } else if let platform = candidate.platform {
+            Task { [weak self] in
+                await ReadingListIngestor.shared.handleSavePress(urlString: candidate.urlString)
+                await MainActor.run {
+                    guard let self, let item = self.store.item(forURLString: candidate.urlString)
+                    else { return }
+                    self.openPlatformItem(item, platform: platform)
+                }
+            }
         } else if let content = candidate.content {
             Task { [weak self] in
                 let item = await ReadingListIngestor.shared.saveNewWithContent(
@@ -296,6 +305,7 @@ final class ReadingListViewController: UITableViewController {
         item.state = .ready
         item.youtubeVideoID = candidate.videoID
         item.channelName = candidate.channelName
+        item.platform = candidate.platform
         return item
     }
 

@@ -34,5 +34,13 @@ struct ClipShortcuts: AppShortcutsProvider {
             shortTitle: "Save YouTube Video",
             systemImageName: "play.rectangle"
         )
+        AppShortcut(
+            intent: FindBlueskyPostIntent(),
+            phrases: [
+                "Save a Bluesky post with \(.applicationName)",
+            ],
+            shortTitle: "Save Bluesky Post",
+            systemImageName: "bubble.left.and.bubble.right"
+        )
     }
 }

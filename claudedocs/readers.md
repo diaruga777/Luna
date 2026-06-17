@@ -43,15 +43,24 @@ The scroll reader (`ScrollReaderViewController`) backs both Scroll and Highlight
   re-grows. A taller (68pt) liquid-glass header (softer `.systemThinMaterial`)
   holds the ✕ + save inset 16pt from the horizontal edges (the save glyph optically
   centered in its circle) with the content scrolling under it (top content inset).
-  When the linked page is article-like (probed via `ArticleFetcher`+`ArticleExtractor`,
-  ≥600 chars / ≥3 blocks) the card hides the web view and embeds the app reader as a
-  child below the header (`embedReader`), and the header reveals the scroll/highlight/RSVP
-  **mode selector** (`modeControl`, `ReaderModeIcons`) that swaps the child in place;
-  a link inside that reader opens its own split overlay. Non-article pages stay in the
-  `WKWebView`. The chevron is blue and straddles the card's bottom edge. `openSplit`
-  clamps `cutY` to within the safe area (window coords) before snapshotting, so a link
-  near the top/bottom edge doesn't stretch the peeks. Also backs the RSVP link pill
-  (nil peeks → grows from the screen center over a dim backdrop).
+  The card hosts a **navigation stack** of `InlineReaderPageViewController`s (a child
+  `UINavigationController`, bar hidden — our glass header drives it). Each page loads
+  its URL in a THEMED `WKWebView` (`ReaderDepth` background + `underPageBackgroundColor`,
+  so no white flash and dark-capable sites render dark when the device is dark) and
+  probes it (`ArticleFetcher`+`ArticleExtractor`, ≥600 chars / ≥3 blocks); when
+  article-like it hides the web view and embeds the app reader (`embedReader`), and the
+  header reveals the scroll/highlight/RSVP **mode selector** (`modeControl`,
+  `ReaderModeIcons`) that swaps the child in place. A link tapped inside an embedded
+  reader is routed up via `onLinkActivated` and **PUSHED as the next page** (not a
+  nested overlay); the ✕ becomes a back chevron that pops, while the bottom chevron /
+  peek-drag dismiss the WHOLE stack. Links in a raw web view navigate it in place. The
+  chevron is blue and straddles the card's bottom edge. The OUTER reader's header is
+  tucked out of sight while open: a themed strip (`topCover`) covers the status-bar
+  band, and `openSplit` clamps `cutY` below the reader content top (window coords) so
+  the bottom peek never slices the nav bar. The seamless progress=1 layout is set in
+  `viewIsAppearing` (before the first frame) so opening never flashes a mis-positioned
+  copy. Also backs the RSVP link pill (nil peeks → grows from the screen center over an
+  OPAQUE themed backdrop so the outer header is fully hidden).
   <!-- older single-outer-scroll description follows; superseded -->
 - `ReaderKit/SplitWebOverlayViewController.swift` (legacy notes) — On a link tap the reader is snapshotted at the TOP of the link's line: the part above parks as a one-line peek at the top, the link's line as a one-line peek at the bottom (both are `resizableSnapshotView` halves), and an inset rounded liquid-glass card (`ReaderDepth.backgroundColor(0)`, 14pt inset, 26pt corners, hairline border + sibling drop-shadow) grows out from the cut to fill the space between them (`animateOpen`, spring). The card's `WKWebView` (WebJunkBlocker applied) scrolls AND navigates INDEPENDENTLY — its gestures never reach the reader. Three dismissals, all animating the card's height to zero from its center while the peeks rejoin (`applyCompression(progress)` → `animateDismiss`): (1) the ✕ at the card's top-left, (2) the `chevron.compact.down` on the card's bottom edge, (3) an interactive `UIPanGestureRecognizer` on either peek — the card loses height equal to TWICE the drag distance (`progress = 2·|dy| / openHeight`), dismissing at progress ≥ 0.5 or a fast flick. A `square.and.arrow.down` save button (→ checkmark) sits top-right when a `shareProvider` is present. Presented `.overFullScreen` (no transition; the grow animation is the entrance). The same VC also backs the RSVP link pill, presented with nil peeks + `lineTopScreen = midY` so the card grows from the screen center. `onDismiss` re-asserts the reader's offset (it never moved).
 

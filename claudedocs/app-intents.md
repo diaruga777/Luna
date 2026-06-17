@@ -48,14 +48,20 @@ discoverable in the action search but not in the prominent list.)
   `subreddit ; title ; author`, Music/Spotify `artist ; title`, Podcasts
   `show ; episode title`, X/TikTok/Instagram/Facebook `handle ; phrase`. Safari and
   unknown apps may pass an empty/nil `details` — a `http…` link in the response is
-  used if present, else `SafariURLStore.lastURL` (the tracked page).
+  used if present, else `SafariURLStore.lastURL` (the tracked page). Returns the
+  share-suggestion token (`ShareSuggestionStore.pendingSuggestionToken` — `"3:<name>"`
+  streak / `"2:<name>"` semantic / `""`) for the shortcut to branch on.
 - **`ScreenAnalysisPromptIntent`** (`app`, optional): returns the per-app prompt
   (`AppNamePlatform.screenPrompt`) telling an image model to read the current app's
   screen and respond with a **single line** in exactly the `" ; "`-joined format
-  `SaveFromAppIntent.parseFields` expects, or `"none"`. The bundled shortcut: Get
-  Current App → Screen Analysis Prompt → (screenshot + prompt → image model) →
-  Save from App (`details` = that model response string). A model error / "none"
-  passes through as empty → nothing to save (Safari still saves the tracked URL).
+  `SaveFromAppIntent.parseFields` expects, or `"none"`. Returns the exact string
+  `"unsupported"` when the current app is neither a known platform nor Safari
+  (`AppNamePlatform.isSupported` is false — the shortcut branches on it), and `""`
+  for a supported app that needs no prompt (Safari → the tracked page URL is saved).
+  The bundled shortcut: Get Current App → Screen Analysis Prompt → (screenshot +
+  prompt → image model) → Save from App (`details` = that model response string). A
+  model error / "none" passes through as empty → nothing to save (Safari still saves
+  the tracked URL).
 
 > **ITMS-90626**: an App Intent `title`/`description`/parameter string must NEVER
 > contain "apple" or Siri references, or App Store processing silently drops the

@@ -37,20 +37,15 @@ final class SavedNonTextualViewController: UIViewController {
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             systemItem: .done, primaryAction: UIAction { _ in onDone() })
 
-        let configuration = WKWebViewConfiguration()
-        configuration.allowsInlineMediaPlayback = true
-        configuration.allowsPictureInPictureMediaPlayback = true
-        configuration.mediaTypesRequiringUserActionForPlayback = []
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.isOpaque = false
-        webView.backgroundColor = .black
-        webView.scrollView.isScrollEnabled = false
-        webView.layer.cornerRadius = 12
-        webView.clipsToBounds = true
-        self.webView = webView
+        // A confirmation badge with a checkmark + the platform name.
+        let badge = UIImageView(image: UIImage(
+            systemName: "checkmark.circle.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 44, weight: .semibold)))
+        badge.tintColor = GlassStyle.readingAccent
+        badge.contentMode = .center
 
         let savedLabel = UILabel()
-        savedLabel.text = "Saved to your Click reading list."
+        savedLabel.text = "Saved \(content.kindLabel) to your Click reading list."
         savedLabel.font = .preferredFont(forTextStyle: .body)
         savedLabel.textColor = .secondaryLabel
         savedLabel.textAlignment = .center
@@ -64,7 +59,30 @@ final class SavedNonTextualViewController: UIViewController {
         let openButton = UIButton(configuration: openConfig)
         openButton.addAction(UIAction { [weak self] _ in self?.openInApp() }, for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [webView, savedLabel, openButton])
+        // YouTube embeds play inline; other platforms show the confirmation badge.
+        let topView: UIView
+        if let embedURL = content.embedURL {
+            let configuration = WKWebViewConfiguration()
+            configuration.allowsInlineMediaPlayback = true
+            configuration.allowsPictureInPictureMediaPlayback = true
+            configuration.mediaTypesRequiringUserActionForPlayback = []
+            let webView = WKWebView(frame: .zero, configuration: configuration)
+            webView.isOpaque = false
+            webView.backgroundColor = .black
+            webView.scrollView.isScrollEnabled = false
+            webView.layer.cornerRadius = 12
+            webView.clipsToBounds = true
+            webView.heightAnchor.constraint(equalTo: webView.widthAnchor, multiplier: 9.0 / 16.0).isActive = true
+            self.webView = webView
+            topView = webView
+            var request = URLRequest(url: embedURL)
+            request.setValue(content.embedReferer, forHTTPHeaderField: "Referer")
+            webView.load(request)
+        } else {
+            topView = badge
+        }
+
+        let stack = UIStackView(arrangedSubviews: [topView, savedLabel, openButton])
         stack.axis = .vertical
         stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -73,14 +91,7 @@ final class SavedNonTextualViewController: UIViewController {
             stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            webView.heightAnchor.constraint(equalTo: webView.widthAnchor, multiplier: 9.0 / 16.0),
         ])
-
-        if let embedURL = content.embedURL {
-            var request = URLRequest(url: embedURL)
-            request.setValue(content.embedReferer, forHTTPHeaderField: "Referer")
-            webView.load(request)
-        }
     }
 
     /// Opens the saved item in the main app via the deep link. `extensionContext.

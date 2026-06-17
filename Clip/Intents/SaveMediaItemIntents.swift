@@ -19,10 +19,14 @@ struct SaveMusicItemIntent: AppIntent {
     @Parameter(title: "Title") var title: String
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        let cleanArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let item = ReadingListStore.shared.createURLlessMediaItem(
-            platform: .music,
-            creator: artist.trimmingCharacters(in: .whitespacesAndNewlines),
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines))
+            platform: .music, creator: cleanArtist, title: cleanTitle)
+        if let art = await MediaArtFetcher.fetchArtwork(
+            creator: cleanArtist, title: cleanTitle, isPodcast: false) {
+            ReadingListStore.shared.setThumbnail(art, for: item.id)
+        }
         return .result(value: item.urlString)
     }
 }
@@ -38,10 +42,14 @@ struct SavePodcastItemIntent: AppIntent {
     @Parameter(title: "Episode") var episode: String
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        let cleanShow = show.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanEpisode = episode.trimmingCharacters(in: .whitespacesAndNewlines)
         let item = ReadingListStore.shared.createURLlessMediaItem(
-            platform: .podcast,
-            creator: show.trimmingCharacters(in: .whitespacesAndNewlines),
-            title: episode.trimmingCharacters(in: .whitespacesAndNewlines))
+            platform: .podcast, creator: cleanShow, title: cleanEpisode)
+        if let art = await MediaArtFetcher.fetchArtwork(
+            creator: cleanShow, title: cleanEpisode, isPodcast: true) {
+            ReadingListStore.shared.setThumbnail(art, for: item.id)
+        }
         return .result(value: item.urlString)
     }
 }

@@ -57,7 +57,14 @@ struct XMetadataFetcher: PlatformMetadataFetching {
         struct Tweet: Decodable {
             let text: String?
             let author: Author?
+            let media: Media?
             struct Author: Decodable { let name: String?; let screen_name: String? }
+            struct Media: Decodable {
+                let photos: [Photo]?
+                let videos: [Video]?
+                struct Photo: Decodable { let url: String? }
+                struct Video: Decodable { let thumbnail_url: String? }
+            }
         }
     }
 
@@ -73,6 +80,14 @@ struct XMetadataFetcher: PlatformMetadataFetching {
         let creator = tweet.author?.name
             ?? tweet.author?.screen_name.map { "@\($0)" }
         let title = tweet.text.map { String($0.prefix(140)) }
-        return PlatformMetadata(title: title, creator: creator)
+
+        // Attached photo or video still frame, if any.
+        var thumbnailData: Data?
+        let imageURLString = tweet.media?.photos?.first?.url
+            ?? tweet.media?.videos?.first?.thumbnail_url
+        if let imageURLString, let imageURL = URL(string: imageURLString) {
+            thumbnailData = try? await URLSession.shared.data(from: imageURL).0
+        }
+        return PlatformMetadata(title: title, creator: creator, thumbnailData: thumbnailData)
     }
 }

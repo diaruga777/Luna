@@ -73,6 +73,25 @@ struct RedditMetadataFetcher: PlatformMetadataFetching {
         let title = postData["title"] as? String
         let subreddit = postData["subreddit_name_prefixed"] as? String
             ?? (postData["subreddit"] as? String).map { "r/\($0)" }
-        return PlatformMetadata(title: title, creator: subreddit)
+
+        // Post image: prefer the preview source (largest), else a direct image
+        // `url`, else the thumbnail. Reddit JSON HTML-escapes `&` in preview URLs.
+        var imageURLString: String?
+        if let preview = postData["preview"] as? [String: Any],
+           let images = preview["images"] as? [[String: Any]],
+           let source = images.first?["source"] as? [String: Any],
+           let url = source["url"] as? String {
+            imageURLString = url.replacingOccurrences(of: "&amp;", with: "&")
+        } else if let directURL = postData["url_overridden_by_dest"] as? String,
+                  directURL.hasSuffix(".jpg") || directURL.hasSuffix(".png") {
+            imageURLString = directURL
+        } else if let thumb = postData["thumbnail"] as? String, thumb.hasPrefix("http") {
+            imageURLString = thumb
+        }
+        var thumbnailData: Data?
+        if let imageURLString, let imageURL = URL(string: imageURLString) {
+            thumbnailData = try? await URLSession.shared.data(from: imageURL).0
+        }
+        return PlatformMetadata(title: title, creator: subreddit, thumbnailData: thumbnailData)
     }
 }

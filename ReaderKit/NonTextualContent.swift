@@ -12,22 +12,29 @@ import Foundation
 /// URL the same way.
 enum NonTextualContent: Equatable {
     case youTube(videoID: String)
+    /// Any recognized non-YouTube platform (X, Bluesky, Reddit, music, …).
+    case platform(ContentPlatform, itemID: String?)
 
-    /// Classifies a URL, or nil when it's (probably) a readable article/document.
-    /// Add new platforms here as they're supported.
+    /// Classifies a URL via the shared `PlatformClassifier`, or nil when it's a
+    /// readable article/document.
     static func detect(urlString: String) -> NonTextualContent? {
-        if let videoID = YouTubeURL.videoID(from: urlString) {
+        guard let classification = PlatformClassifier.classify(urlString) else { return nil }
+        if classification.platform == .youtube, let videoID = classification.itemID {
             return .youTube(videoID: videoID)
         }
-        return nil
+        return .platform(classification.platform, itemID: classification.itemID)
+    }
+
+    /// The classified platform.
+    var platform: ContentPlatform {
+        switch self {
+        case .youTube: return .youtube
+        case .platform(let platform, _): return platform
+        }
     }
 
     /// A short human label for the kind of content.
-    var kindLabel: String {
-        switch self {
-        case .youTube: return "Video"
-        }
-    }
+    var kindLabel: String { platform.displayName }
 
     /// The page to load in a webview for in-app playback. For YouTube this is
     /// the `/embed/` URL loaded directly — `loadHTMLString` origins and
@@ -44,6 +51,8 @@ enum NonTextualContent: Equatable {
                 URLQueryItem(name: "rel", value: "0"),
             ]
             return components?.url
+        case .platform:
+            return nil // non-YouTube platforms aren't embedded in the extension
         }
     }
 

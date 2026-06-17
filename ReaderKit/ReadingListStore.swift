@@ -266,6 +266,18 @@ final class ReadingListStore {
         save(all)
     }
 
+    /// Writes downloaded art bytes to the Articles dir and points the item at it.
+    func setThumbnail(_ data: Data, for itemID: UUID) {
+        let fileName = "\(itemID.uuidString)-thumb.jpg"
+        try? data.write(to: articlesDirectory.appendingPathComponent(fileName), options: .atomic)
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        guard let index = all.firstIndex(where: { $0.id == itemID }) else { return }
+        all[index].thumbnailFileName = fileName
+        save(all)
+    }
+
     /// Records which friend shared this item to us (set once, on acceptance).
     func setSharedBy(_ username: String, for itemID: UUID) {
         mutationLock.lock()

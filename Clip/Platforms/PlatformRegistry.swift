@@ -30,12 +30,11 @@ final class PlatformRegistry {
         ]
     }
 
-    /// Classifies a URL, or nil if no platform recognizes it.
+    /// Classifies a URL via the single shared `PlatformClassifier` (one source of
+    /// truth, broad host coverage). Returns nil if no platform recognizes it.
     func detect(_ urlString: String) -> PlatformMatch? {
-        for module in modules {
-            if let match = module.classify(urlString) { return match }
-        }
-        return nil
+        guard let c = PlatformClassifier.classify(urlString) else { return nil }
+        return PlatformMatch(platform: c.platform, itemID: c.itemID, sourceService: c.sourceService)
     }
 
     /// The module for a platform (for rendering/opening).

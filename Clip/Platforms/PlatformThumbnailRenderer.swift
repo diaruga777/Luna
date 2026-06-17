@@ -12,8 +12,14 @@ import UIKit
 enum PlatformThumbnailRenderer {
     static let size = CGSize(width: 96, height: 54)
 
-    static func thumbnail(cachedArtPath: String?, glyphSymbolName: String) -> UIImage {
+    static func thumbnail(
+        cachedArtPath: String?, glyphSymbolName: String, logoAssetName: String? = nil
+    ) -> UIImage {
         let baseImage = cachedArtPath.flatMap { UIImage(contentsOfFile: $0) }
+        // Prefer a bundled brand logo asset; else the SF Symbol glyph.
+        let mark = logoAssetName.flatMap { UIImage(named: $0) }
+            ?? UIImage(systemName: glyphSymbolName)
+
         return UIGraphicsImageRenderer(size: size).image { _ in
             UIColor.secondarySystemFill.setFill()
             UIRectFill(CGRect(origin: .zero, size: size))
@@ -27,15 +33,13 @@ enum PlatformThumbnailRenderer {
                     x: (size.width - drawSize.width) / 2,
                     y: (size.height - drawSize.height) / 2,
                     width: drawSize.width, height: drawSize.height))
-                // Small glyph badge bottom-left so the platform is identifiable.
+                // Small badge bottom-left so the platform is identifiable.
                 let badge: CGFloat = 18
-                UIImage(systemName: glyphSymbolName)?
-                    .withTintColor(.white.withAlphaComponent(0.95), renderingMode: .alwaysOriginal)
+                mark?.withTintColor(.white.withAlphaComponent(0.95), renderingMode: .alwaysOriginal)
                     .draw(in: CGRect(x: 4, y: size.height - badge - 4, width: badge, height: badge))
             } else {
                 let glyph: CGFloat = 26
-                UIImage(systemName: glyphSymbolName)?
-                    .withTintColor(.secondaryLabel, renderingMode: .alwaysOriginal)
+                mark?.withTintColor(.secondaryLabel, renderingMode: .alwaysOriginal)
                     .draw(in: CGRect(
                         x: (size.width - glyph) / 2, y: (size.height - glyph) / 2,
                         width: glyph, height: glyph))

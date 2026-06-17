@@ -496,7 +496,8 @@ final class ReadingListViewController: UITableViewController {
                 store.articlesDirectory.appendingPathComponent($0).path
             }
             config.image = PlatformThumbnailRenderer.thumbnail(
-                cachedArtPath: artPath, glyphSymbolName: module.glyphSymbolName)
+                cachedArtPath: artPath, glyphSymbolName: module.glyphSymbolName,
+                logoAssetName: platform.logoAssetName)
             config.imageProperties.maximumSize = CGSize(width: 96, height: 54)
             config.imageProperties.cornerRadius = 6
         }

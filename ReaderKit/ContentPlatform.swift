@@ -38,6 +38,30 @@ enum ContentPlatform: String, Codable, CaseIterable {
     /// Whether items of this platform carry no shareable http URL (provider-
     /// agnostic media items keyed by a synthetic scheme).
     var isURLless: Bool { self == .music || self == .podcast }
+
+    /// Asset name for a bundled brand logo, when one ships (else nil → SF Symbol).
+    var logoAssetName: String? {
+        switch self {
+        case .x: return "logo-x"
+        case .reddit: return "logo-reddit"
+        default: return nil
+        }
+    }
+
+    /// SF Symbol glyph fallback for the row / saved screen.
+    var glyphSymbolName: String {
+        switch self {
+        case .youtube: return "play.rectangle.fill"
+        case .x: return "bird.fill"
+        case .bluesky: return "bubble.left.and.bubble.right.fill"
+        case .reddit: return "bubble.left.and.text.bubble.right.fill"
+        case .tiktok: return "music.note"
+        case .instagram: return "camera.fill"
+        case .facebook: return "play.tv.fill"
+        case .music: return "music.note"
+        case .podcast: return "mic.fill"
+        }
+    }
 }
 
 /// Which streaming service a music/podcast item came from, or the user's

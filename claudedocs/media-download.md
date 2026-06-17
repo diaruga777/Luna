@@ -14,7 +14,11 @@ snapinsta, …) with keyless, client-side extraction.
    exits via Done), on failure it shows the error and re-enables to retry.
 2. **Reading list row long-press** — `ReadingListViewController.downloadMediaToPhotos`
    adds a **"Download Media to Photos"** action (`photo.badge.arrow.down`) for the same
-   platforms; shows a "Saving media…" toast then a success/error toast.
+   platforms. Progress + result show in a **non-blocking bottom pill**
+   (`MediaDownloadStatusView`, `isUserInteractionEnabled=false`) — the list stays
+   tappable and the pill is a subview of the list so it never appears over the reader.
+   The download + save continues if the app is backgrounded (a `beginBackgroundTask`
+   assertion around the work).
 
 ## Core (`ReaderKit/MediaDownload/`, shared by app + action ext)
 

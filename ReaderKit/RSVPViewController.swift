@@ -63,6 +63,14 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
 
     private let sentenceHaptic = UIImpactFeedbackGenerator(style: .light)
 
+    /// A glass pill below the word showing the link of the currently-displayed
+    /// linkified word; tapping it opens the inline reader. Persists while link
+    /// words show, plus a short buffer afterward.
+    private let linkPill = UIButton(type: .system)
+    private var linkPillURL: URL?
+    private var linkPillHideTimer: Timer?
+    private let playPauseTap = UITapGestureRecognizer()
+
     /// Horizontal position of the focal (ORP) column, as a fraction of width.
     private static let focalFraction: CGFloat = 0.4
     /// Target characters visible on one line — the font is sized so a word this
@@ -128,14 +136,16 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
 
         configureFocusPill()
         configureWordLabel()
+        configureLinkPill()
         configureControls()
 
         // NB: the audio session is NOT touched here — only when read-aloud
         // actually starts playing (see `play()`), so opening the silent speed
         // reader never interrupts other audio / Picture-in-Picture.
 
-        view.addGestureRecognizer(
-            UITapGestureRecognizer(target: self, action: #selector(togglePlayPause)))
+        playPauseTap.addTarget(self, action: #selector(togglePlayPause))
+        playPauseTap.delegate = self
+        view.addGestureRecognizer(playPauseTap)
 
         showWord(at: currentIndex)
         updateStatus()
@@ -144,6 +154,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutFocusPill()
+        layoutLinkPill()
         showWord(at: currentIndex)
     }
 
@@ -192,6 +203,73 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         wordLabel.font = wordFont
         wordLabel.textColor = .label
         view.addSubview(wordLabel)
+    }
+
+    private func configureLinkPill() {
+        var config = UIButton.Configuration.gray()
+        config.cornerStyle = .capsule
+        config.image = UIImage(systemName: "link")
+        config.imagePadding = 6
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 12)
+        // Desaturated text/icon so the pill stays quiet behind the reading word.
+        config.baseForegroundColor = .secondaryLabel
+        config.contentInsets = NSDirectionalEdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14)
+        linkPill.configuration = config
+        linkPill.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
+        linkPill.alpha = 0
+        linkPill.addTarget(self, action: #selector(linkPillTapped), for: .touchUpInside)
+        view.addSubview(linkPill)
+    }
+
+    /// Centers the link pill below the focal word band.
+    private func layoutLinkPill() {
+        let centerY = view.bounds.midY - 40
+        let maxWidth = view.bounds.width - 64
+        let fitted = linkPill.systemLayoutSizeFitting(
+            CGSize(width: maxWidth, height: 40),
+            withHorizontalFittingPriority: .fittingSizeLevel,
+            verticalFittingPriority: .required)
+        let width = min(max(fitted.width, 80), maxWidth)
+        linkPill.frame = CGRect(
+            x: (view.bounds.width - width) / 2, y: centerY + 84, width: width, height: 36)
+    }
+
+    /// Shows/refreshes the pill for a linkified word, or starts the post-link
+    /// buffer when a non-link word arrives (a new link replaces it immediately).
+    private func updateLinkPill(for url: URL?) {
+        if let url {
+            linkPillHideTimer?.invalidate()
+            linkPillHideTimer = nil
+            if url != linkPillURL {
+                linkPillURL = url
+                let host = url.host?.replacingOccurrences(of: "www.", with: "") ?? url.absoluteString
+                linkPill.configuration?.title = host
+                view.setNeedsLayout()
+            }
+            if linkPill.alpha < 1 {
+                UIView.animate(withDuration: 0.2) { self.linkPill.alpha = 1 }
+            }
+        } else if linkPillURL != nil, linkPillHideTimer == nil {
+            linkPillHideTimer = Timer.scheduledTimer(withTimeInterval: 1.4, repeats: false) {
+                [weak self] _ in self?.hideLinkPill()
+            }
+        }
+    }
+
+    private func hideLinkPill() {
+        linkPillHideTimer?.invalidate()
+        linkPillHideTimer = nil
+        linkPillURL = nil
+        UIView.animate(withDuration: 0.25) { self.linkPill.alpha = 0 }
+    }
+
+    @objc private func linkPillTapped() {
+        guard let url = linkPillURL else { return }
+        pause()
+        let inline = InlineReaderViewController(url: url, shareProvider: shareProvider)
+        inline.modalPresentationStyle = .overFullScreen
+        inline.modalTransitionStyle = .crossDissolve
+        present(inline, animated: true)
     }
 
     private func configureControls() {
@@ -321,6 +399,8 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         wordLabel.frame.origin = CGPoint(
             x: focalX - prefixWidth - orpWidth / 2,
             y: centerY - wordLabel.bounds.height / 2)
+
+        updateLinkPill(for: word.url)
     }
 
     // MARK: - Playback
@@ -487,5 +567,18 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
         scrubber.value = Float(currentIndex)
         updateStatus()
         speakCurrentSentence()
+    }
+}
+
+extension RSVPViewController: UIGestureRecognizerDelegate {
+    /// The full-screen play/pause tap must ignore touches that land on the link
+    /// pill (so tapping the pill opens the inline reader instead of pausing).
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
+    ) -> Bool {
+        if linkPill.alpha > 0, linkPill.frame.contains(touch.location(in: view)) {
+            return false
+        }
+        return true
     }
 }

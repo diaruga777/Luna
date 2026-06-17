@@ -5,9 +5,9 @@
 
 import UIKit
 
-/// Full-screen scrolling text reader. Tapping an inline link "cuts" the text at
-/// that line and parts it vertically to reveal the link inline (nested reader
-/// or web frame — see SplitWebOverlayViewController). Supports read-aloud with
+/// Full-screen scrolling text reader. Tapping an inline link opens it in the
+/// inline reader glass panel (`InlineReaderViewController`); long-press offers
+/// save/share. Supports read-aloud with
 /// word highlighting + follow-scroll, remembers the scroll position, and
 /// estimates the last-read word via eye tracking on supported devices.
 final class ScrollReaderViewController: UIViewController, UITextViewDelegate, ReaderPositionTracking {
@@ -51,6 +51,10 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
 
     /// Sharing affordances; nil → no end-of-article share footer (share sheet).
     private let shareProvider: ReaderShareProviding?
+    /// When set, tapping an inline link calls this instead of opening the inline
+    /// reader split — used when this reader is itself embedded in the inline
+    /// reader card, so nested links push onto that card's page stack.
+    var onLinkTapped: ((URL) -> Void)?
     /// End-of-article share affordance, pinned below the text content (nil when
     /// there's no share provider).
     private lazy var shareView: ArticleShareView? = makeShareView()
@@ -516,7 +520,12 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     ) -> UIAction? {
         if case .link(let url) = textItem.content {
             return UIAction { [weak self] _ in
-                self?.openSplit(for: url, tappedRange: textItem.range)
+                guard let self else { return }
+                if let onLinkTapped = self.onLinkTapped {
+                    onLinkTapped(url)
+                } else {
+                    self.openSplit(for: url, tappedRange: textItem.range)
+                }
             }
         }
         return defaultAction
@@ -545,59 +554,18 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         return UITextItem.MenuConfiguration(menu: UIMenu(children: custom + defaultMenu.children))
     }
 
+    /// Opens the tapped link in the inline reader glass panel (overlaying the
+    /// article; the reader's own scroll position is untouched).
     private func openSplit(for url: URL, tappedRange: NSRange) {
-        // Geometry of the tapped link: its full line fragment (the cut happens
-        // around that line) and the link text's own rect (anchors the notch),
-        // both in text-view content coordinates.
-        let layoutManager = textView.layoutManager
-        let glyphRange = layoutManager.glyphRange(
-            forCharacterRange: tappedRange, actualCharacterRange: nil)
-        var lineRect = layoutManager.lineFragmentRect(
-            forGlyphAt: glyphRange.location, effectiveRange: nil)
-        var linkRect = layoutManager.boundingRect(
-            forGlyphRange: glyphRange, in: textView.textContainer)
-        lineRect.origin.y += textView.textContainerInset.top
-        linkRect.origin.y += textView.textContainerInset.top
-        linkRect.origin.x += textView.textContainerInset.left
-
-        // Snapshots of the on-screen halves drive the part-open animation —
-        // pixel-perfect and free of any text re-layout. Both include the
-        // link's full line, so parting them replicates it on each side.
-        let readerOffset = textView.contentOffset.y
-        let cutBottomScreen = lineRect.maxY - readerOffset
-        let cutTopScreen = lineRect.minY - readerOffset
-        let width = view.bounds.width
-        let height = view.bounds.height
-        let topSnapshot = view.resizableSnapshotView(
-            from: CGRect(x: 0, y: 0, width: width, height: max(cutBottomScreen, 1)),
-            afterScreenUpdates: false, withCapInsets: .zero)
-        let bottomSnapshot = view.resizableSnapshotView(
-            from: CGRect(x: 0, y: cutTopScreen, width: width,
-                         height: max(height - cutTopScreen, 1)),
-            afterScreenUpdates: false, withCapInsets: .zero)
-
-        textView.layoutManager.ensureLayout(for: textView.textContainer)
-        let overlay = SplitWebOverlayViewController(
-            url: url,
-            articleText: textView.attributedText,
-            lineRect: lineRect,
-            linkRect: linkRect,
-            linkRange: tappedRange,
-            readerOffset: readerOffset,
-            textHeight: textView.contentSize.height,
-            topSnapshot: topSnapshot,
-            bottomSnapshot: bottomSnapshot,
-            depth: 0)
-        overlay.modalPresentationStyle = .overFullScreen
-        overlay.onDismiss = { [weak self] restoredOffset in
-            self?.restoreScroll(to: restoredOffset)
-        }
-        present(overlay, animated: false)
+        let inline = InlineReaderViewController(url: url, shareProvider: shareProvider)
+        inline.modalPresentationStyle = .overFullScreen
+        inline.modalTransitionStyle = .crossDissolve
+        present(inline, animated: true)
     }
 
-    /// Restores the reader to a content offset handed back by the split overlay.
-    /// Forces full text layout first — the text view lays out lazily, and
-    /// clamping against a not-yet-final contentSize breaks scrolling.
+    /// Restores the reader to a saved content offset. Forces full text layout
+    /// first — the text view lays out lazily, and clamping against a not-yet-final
+    /// contentSize breaks scrolling.
     private func restoreScroll(to offset: CGFloat) {
         textView.layoutManager.ensureLayout(for: textView.textContainer)
         textView.layoutIfNeeded()

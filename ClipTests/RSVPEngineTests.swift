@@ -92,4 +92,14 @@ final class RSVPEngineTests: XCTestCase {
         XCTAssertTrue(engine.words.last?.endsParagraph ?? false)
         XCTAssertEqual(engine.words.dropLast().filter { $0.endsParagraph }.count, 0)
     }
+
+    func testWordsCarryLinkURL() {
+        // "Visit Apple today" — link covers "Apple" (UTF-16 range 6..<11).
+        let link = ArticleContent.Link(start: 6, length: 5, urlString: "https://apple.com")
+        let block = ArticleContent.Block(kind: .paragraph, text: "Visit Apple today", links: [link])
+        let engine = RSVPEngine(content: ArticleContent(title: "t", blocks: [block]))
+        XCTAssertEqual(engine.words.first { $0.text == "Apple" }?.url?.absoluteString, "https://apple.com")
+        XCTAssertNil(engine.words.first { $0.text == "Visit" }?.url)
+        XCTAssertNil(engine.words.first { $0.text == "today" }?.url)
+    }
 }

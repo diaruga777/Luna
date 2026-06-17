@@ -16,6 +16,8 @@ struct RSVPWord {
     let endsParagraph: Bool
     /// True when the word ends with a minor pause mark (, ; :).
     let endsClause: Bool
+    /// The link this word belongs to, if it falls inside a block link range.
+    let url: URL?
 }
 
 /// Turns extracted article blocks into a timed word stream for RSVP reading.
@@ -28,23 +30,60 @@ struct RSVPEngine {
     init(content: ArticleContent, maxCharactersPerWord: Int = .max) {
         var words: [RSVPWord] = []
         for block in content.blocks {
-            let tokens = block.text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            let tokens = Self.tokensWithURLs(in: block)
             for (tokenIndex, token) in tokens.enumerated() {
                 let isLastToken = tokenIndex == tokens.count - 1
-                let parts = WordSplitter.split(token, maxCharacters: maxCharactersPerWord)
+                let parts = WordSplitter.split(token.text, maxCharacters: maxCharactersPerWord)
                 for (partIndex, part) in parts.enumerated() {
                     let isLastPart = partIndex == parts.count - 1
                     // Only the final part carries the token's sentence/paragraph
                     // pause; continuation parts end in "-" and read straight on.
+                    // Every part inherits the token's link.
                     words.append(Self.makeWord(
-                        part, isLastInBlock: isLastToken && isLastPart))
+                        part, isLastInBlock: isLastToken && isLastPart, url: token.url))
                 }
             }
         }
         self.words = words
     }
 
-    static func makeWord(_ token: String, isLastInBlock: Bool) -> RSVPWord {
+    /// Whitespace-separated tokens with their link (if the token's UTF-16 range
+    /// overlaps one of the block's link ranges).
+    private static func tokensWithURLs(in block: ArticleContent.Block) -> [(text: String, url: URL?)] {
+        var result: [(String, URL?)] = []
+        var current = ""
+        var currentStart = 0
+        var utf16Offset = 0
+
+        func linkURL(start: Int, length: Int) -> URL? {
+            for link in block.links
+            where start < link.start + link.length && start + length > link.start {
+                return URL(string: link.urlString)
+            }
+            return nil
+        }
+        func flush() {
+            guard !current.isEmpty else { return }
+            let length = utf16Offset - currentStart
+            result.append((current, linkURL(start: currentStart, length: length)))
+            current = ""
+        }
+
+        for character in block.text {
+            let characterLength = String(character).utf16.count
+            if character.isWhitespace {
+                flush()
+            } else {
+                if current.isEmpty { currentStart = utf16Offset }
+                current.append(character)
+            }
+            utf16Offset += characterLength
+        }
+        flush()
+        return result
+    }
+
+    static func makeWord(_ token: String, isLastInBlock: Bool, url: URL? = nil) -> RSVPWord {
         let trailing = token.last
         let endsSentence = trailing.map { ".!?…".contains($0) } ?? false
         let endsClause = trailing.map { ",;:".contains($0) } ?? false
@@ -53,7 +92,8 @@ struct RSVPEngine {
             orpIndex: orpIndex(forLength: token.count),
             endsSentence: endsSentence,
             endsParagraph: isLastInBlock,
-            endsClause: endsClause)
+            endsClause: endsClause,
+            url: url)
     }
 
     /// Spritz-style ORP: slightly left of center, drifting right for long words.

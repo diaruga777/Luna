@@ -147,18 +147,23 @@ final class ReadingListItemCell: UITableViewCell {
         subtitleLabel.attributedText = subtitle
 
         // A trailing tappable button (pasteboard "Save") takes the accessory slot;
-        // otherwise the usual chevron.
+        // otherwise the usual chevron. The list runs in permanent edit mode, so the
+        // button must be the EDITING accessory too (the plain `accessoryView` is
+        // hidden while editing) — that's why it didn't appear before.
         self.onTrailingButton = onTrailingButton
         if let symbol = trailingButtonSymbol {
             trailingButton.setImage(
                 UIImage(systemName: symbol, withConfiguration:
-                    UIImage.SymbolConfiguration(pointSize: 22, weight: .regular)), for: .normal)
+                    UIImage.SymbolConfiguration(pointSize: 24, weight: .regular)), for: .normal)
             trailingButton.sizeToFit()
             trailingButton.tintColor = GlassStyle.readingAccent
             accessoryView = trailingButton
+            editingAccessoryView = trailingButton
         } else {
             accessoryView = nil
+            editingAccessoryView = nil
             accessoryType = showsDisclosure ? .disclosureIndicator : .none
+            editingAccessoryType = .none
         }
 
         switch thumbnail {

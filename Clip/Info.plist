@@ -6,6 +6,8 @@
 	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Clip uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Queue saves photos, GIFs, and videos you download from social posts to your photo library.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

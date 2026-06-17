@@ -950,6 +950,16 @@ final class ReadingListViewController: UITableViewController {
             if item.isShareable {
                 children.append(shareLink)
             }
+            // X / Instagram / TikTok posts: download the post's media to Photos.
+            if MediaDownloadablePlatform.supports(item.urlString) {
+                let downloadMedia = UIAction(
+                    title: "Download Media to Photos",
+                    image: UIImage(systemName: "photo.badge.arrow.down")
+                ) { _ in
+                    self?.downloadMediaToPhotos(item)
+                }
+                children.append(downloadMedia)
+            }
             // Article-only actions — ereader sends, and the eBook for text-only
             // no-url articles (email/document) that can't share a link.
             if !item.isPlatformItem {
@@ -966,6 +976,28 @@ final class ReadingListViewController: UITableViewController {
             children.append(delete)
             return UIMenu(children: children)
         })
+    }
+
+    /// Downloads the first media item of an X/Instagram/TikTok post to the photo
+    /// library, with a starting toast and a success/error toast on completion.
+    private func downloadMediaToPhotos(_ item: ReadingListItem) {
+        guard let url = URL(string: item.urlString) else { return }
+        Toast.show("Saving media…", symbol: "arrow.down.circle", from: self)
+        Task { [weak self] in
+            do {
+                _ = try await MediaDownloadService().downloadFirstMediaToPhotos(from: url) { _ in }
+                await MainActor.run {
+                    guard let self else { return }
+                    Toast.show("Saved to Photos", symbol: "checkmark.circle.fill", from: self)
+                }
+            } catch {
+                let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
+                await MainActor.run {
+                    guard let self else { return }
+                    Toast.show(message, symbol: "exclamationmark.triangle.fill", from: self)
+                }
+            }
+        }
     }
 
     /// Explicit send of one article to one ereader destination (the long-press

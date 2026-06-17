@@ -19,6 +19,12 @@ final class SavedNonTextualViewController: UIViewController {
     private let onDone: () -> Void
     private var webView: WKWebView?
 
+    // "Download media to photo roll" affordance (X / Instagram / TikTok only): a
+    // button that becomes a progress bar while downloading, then a checkmark.
+    private let downloadButton = UIButton(type: .system)
+    private let downloadProgress = UIProgressView(progressViewStyle: .default)
+    private let downloadStatus = UILabel()
+
     init(articleURLString: String, content: NonTextualContent, onDone: @escaping () -> Void) {
         self.articleURLString = articleURLString
         self.content = content
@@ -75,7 +81,7 @@ final class SavedNonTextualViewController: UIViewController {
             topView = badge
         }
 
-        let arranged: [UIView] = [topView, savedLabel] + shareButtons()
+        let arranged: [UIView] = [topView, savedLabel] + mediaDownloadViews() + shareButtons()
         let stack = UIStackView(arrangedSubviews: arranged)
         stack.axis = .vertical
         stack.spacing = 16
@@ -87,6 +93,74 @@ final class SavedNonTextualViewController: UIViewController {
             stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
+    }
+
+    /// The "Download media to photo roll" button + (hidden) progress bar/status,
+    /// shown only for platforms whose posts expose downloadable media.
+    private func mediaDownloadViews() -> [UIView] {
+        guard MediaDownloadablePlatform.supports(articleURLString) else { return [] }
+
+        var config = UIButton.Configuration.filled()
+        config.title = "Download media to photo roll"
+        config.image = UIImage(systemName: "photo.badge.arrow.down")
+        config.imagePadding = 8
+        config.baseBackgroundColor = GlassStyle.readingAccent
+        downloadButton.configuration = config
+        downloadButton.addAction(UIAction { [weak self] _ in self?.startMediaDownload() }, for: .touchUpInside)
+
+        downloadProgress.isHidden = true
+        downloadProgress.progressTintColor = GlassStyle.readingAccent
+
+        downloadStatus.isHidden = true
+        downloadStatus.font = .preferredFont(forTextStyle: .subheadline)
+        downloadStatus.textColor = .secondaryLabel
+        downloadStatus.textAlignment = .center
+        downloadStatus.numberOfLines = 0
+
+        return [downloadButton, downloadProgress, downloadStatus]
+    }
+
+    private func startMediaDownload() {
+        guard let url = URL(string: articleURLString) else { return }
+        downloadButton.isHidden = true
+        downloadProgress.progress = 0
+        downloadProgress.isHidden = false
+        downloadStatus.text = "Downloading…"
+        downloadStatus.textColor = .secondaryLabel
+        downloadStatus.isHidden = false
+
+        Task { [weak self] in
+            do {
+                _ = try await MediaDownloadService().downloadFirstMediaToPhotos(from: url) { progress in
+                    Task { @MainActor in self?.downloadProgress.setProgress(Float(progress), animated: true) }
+                }
+                await MainActor.run { self?.finishMediaDownload(message: "Saved to Photos", success: true) }
+            } catch {
+                let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
+                await MainActor.run { self?.finishMediaDownload(message: message, success: false) }
+            }
+        }
+    }
+
+    /// On success show a checkmark + message (user exits via Done); on failure show
+    /// the error and re-enable the button to retry.
+    private func finishMediaDownload(message: String, success: Bool) {
+        downloadProgress.isHidden = true
+        downloadStatus.text = message
+        downloadStatus.isHidden = false
+        if success {
+            var config = downloadButton.configuration
+            config?.title = "Saved to Photos"
+            config?.image = UIImage(systemName: "checkmark.circle.fill")
+            config?.baseBackgroundColor = .systemGreen
+            downloadButton.configuration = config
+            downloadButton.isEnabled = false
+            downloadButton.isHidden = false
+            downloadStatus.textColor = .secondaryLabel
+        } else {
+            downloadStatus.textColor = .systemRed
+            downloadButton.isHidden = false
+        }
     }
 
     /// A "Send to a Friend" button when the link is shareable and friends exist.

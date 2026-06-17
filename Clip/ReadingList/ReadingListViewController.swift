@@ -134,6 +134,9 @@ final class ReadingListViewController: UITableViewController {
     private let filterControl = UISegmentedControl()
     private var filterHeaderView: UIView?
 
+    /// Non-blocking bottom pill for media-download progress/result (created lazily).
+    private weak var mediaDownloadStatus: MediaDownloadStatusView?
+
     /// Non-empty groups in display order; rebuilt on every `reload`.
     private var groups: [(section: Section, items: [ReadingListItem])] = []
 
@@ -591,6 +594,9 @@ final class ReadingListViewController: UITableViewController {
             showsDisclosure: item.state == .ready,
             reuseKey: "\(item.id.uuidString)|\(item.thumbnailFileName ?? "")|\(item.state.rawValue)")
         cell.showsReorderControl = true
+        if AppEnvironment.isSimulator {
+            cell.setSimulatorMenu(rowMenu(for: item, at: indexPath))
+        }
         return cell
     }
 
@@ -883,121 +889,161 @@ final class ReadingListViewController: UITableViewController {
         guard section(at: indexPath.section) != .pasteboard else { return nil }
         let item = item(at: indexPath)
         return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
-            let sendToFriend = UIAction(
-                title: "Send to Friend…",
-                image: UIImage(systemName: "person.2")
-            ) { _ in
-                guard let self else { return }
-                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-                SendToFriendSheet.present(
-                    from: self, sourceView: sourceView,
-                    urlString: item.urlString, title: item.title)
-            }
-            let sendToKindle = UIAction(
-                title: "Send to Kindle",
-                image: UIImage(systemName: "paperplane")
-            ) { _ in
-                self?.sendToEreader(item, destinationID: ArticleDestinationID.kindle)
-            }
-            let sendToBoox = UIAction(
-                title: "Send to Boox",
-                image: UIImage(systemName: "books.vertical")
-            ) { _ in
-                self?.sendToEreader(item, destinationID: ArticleDestinationID.boox)
-            }
-            let shareEbook = UIAction(
-                title: "Share eBook…",
-                image: UIImage(systemName: "square.and.arrow.up")
-            ) { _ in
-                guard let self else { return }
-                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-                self.shareEbook(item, from: sourceView)
-            }
-            let shareLink = UIAction(
-                title: "Share Link…",
-                image: UIImage(systemName: "link")
-            ) { _ in
-                guard let self else { return }
-                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-                SendToFriendSheet.shareLink(
-                    urlString: item.urlString, from: self, sourceView: sourceView)
-            }
-            let delete = UIAction(
-                title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
-            ) { _ in
-                self?.deleteItemAnimated(item)
-            }
-            // Videos: share to friends + delete. Documents: ereaders + read +
-            // delete. Articles: everything. Each ereader row shows only when
-            // that destination is set up.
-            let sendMediaToFriend = UIAction(
-                title: "Send to Friend…",
-                image: UIImage(systemName: "person.2")
-            ) { _ in
-                guard let self else { return }
-                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-                self.sendMediaToFriend(item, from: sourceView)
-            }
-
-            var children: [UIAction] = []
-            if item.canShareToFriends {
-                children.append(sendToFriend)
-            } else if item.isURLlessMedia {
-                children.append(sendMediaToFriend)
-            }
-            // Any item that kept a real web URL (articles AND platform items like
-            // Reddit/Spotify/X) can share that link.
-            if item.isShareable {
-                children.append(shareLink)
-            }
-            // X / Instagram / TikTok posts: download the post's media to Photos.
-            if MediaDownloadablePlatform.supports(item.urlString) {
-                let downloadMedia = UIAction(
-                    title: "Download Media to Photos",
-                    image: UIImage(systemName: "photo.badge.arrow.down")
-                ) { _ in
-                    self?.downloadMediaToPhotos(item)
-                }
-                children.append(downloadMedia)
-            }
-            // Article-only actions — ereader sends, and the eBook for text-only
-            // no-url articles (email/document) that can't share a link.
-            if !item.isPlatformItem {
-                if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) {
-                    children.append(sendToKindle)
-                }
-                if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.boox) {
-                    children.append(sendToBoox)
-                }
-                if !item.isShareable, item.state == .ready {
-                    children.append(shareEbook)
-                }
-            }
-            children.append(delete)
-            return UIMenu(children: children)
+            self?.rowMenu(for: item, at: indexPath)
         })
     }
 
+    /// Builds the long-press row menu. Also driven by a simulator-only tap button on
+    /// the cell (see `cellForRowAt`) so the menu is testable without a synthesized
+    /// long-press.
+    private func rowMenu(for item: ReadingListItem, at indexPath: IndexPath) -> UIMenu {
+        let sendToFriend = UIAction(
+            title: "Send to Friend…",
+            image: UIImage(systemName: "person.2")
+        ) { [weak self] _ in
+            guard let self else { return }
+            let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+            SendToFriendSheet.present(
+                from: self, sourceView: sourceView,
+                urlString: item.urlString, title: item.title)
+        }
+        let sendToKindle = UIAction(
+            title: "Send to Kindle",
+            image: UIImage(systemName: "paperplane")
+        ) { [weak self] _ in
+            self?.sendToEreader(item, destinationID: ArticleDestinationID.kindle)
+        }
+        let sendToBoox = UIAction(
+            title: "Send to Boox",
+            image: UIImage(systemName: "books.vertical")
+        ) { [weak self] _ in
+            self?.sendToEreader(item, destinationID: ArticleDestinationID.boox)
+        }
+        let shareEbook = UIAction(
+            title: "Share eBook…",
+            image: UIImage(systemName: "square.and.arrow.up")
+        ) { [weak self] _ in
+            guard let self else { return }
+            let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+            self.shareEbook(item, from: sourceView)
+        }
+        let shareLink = UIAction(
+            title: "Share Link…",
+            image: UIImage(systemName: "link")
+        ) { [weak self] _ in
+            guard let self else { return }
+            let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+            SendToFriendSheet.shareLink(
+                urlString: item.urlString, from: self, sourceView: sourceView)
+        }
+        let delete = UIAction(
+            title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
+        ) { [weak self] _ in
+            self?.deleteItemAnimated(item)
+        }
+        // Videos: share to friends + delete. Documents: ereaders + read +
+        // delete. Articles: everything. Each ereader row shows only when
+        // that destination is set up.
+        let sendMediaToFriend = UIAction(
+            title: "Send to Friend…",
+            image: UIImage(systemName: "person.2")
+        ) { [weak self] _ in
+            guard let self else { return }
+            let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+            self.sendMediaToFriend(item, from: sourceView)
+        }
+
+        var children: [UIAction] = []
+        if item.canShareToFriends {
+            children.append(sendToFriend)
+        } else if item.isURLlessMedia {
+            children.append(sendMediaToFriend)
+        }
+        // Any item that kept a real web URL (articles AND platform items like
+        // Reddit/Spotify/X) can share that link.
+        if item.isShareable {
+            children.append(shareLink)
+        }
+        // X / Instagram / TikTok posts: download the post's media to Photos.
+        if MediaDownloadablePlatform.supports(item.urlString) {
+            let downloadMedia = UIAction(
+                title: "Download Media to Photos",
+                image: UIImage(systemName: "photo.badge.arrow.down")
+            ) { [weak self] _ in
+                self?.downloadMediaToPhotos(item)
+            }
+            children.append(downloadMedia)
+        }
+        // Article-only actions — ereader sends, and the eBook for text-only
+        // no-url articles (email/document) that can't share a link.
+        if !item.isPlatformItem {
+            if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) {
+                children.append(sendToKindle)
+            }
+            if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.boox) {
+                children.append(sendToBoox)
+            }
+            if !item.isShareable, item.state == .ready {
+                children.append(shareEbook)
+            }
+        }
+        children.append(delete)
+        return UIMenu(children: children)
+    }
+
     /// Downloads the first media item of an X/Instagram/TikTok post to the photo
-    /// library, with a starting toast and a success/error toast on completion.
+    /// library. Progress + result show in a non-blocking bottom status pill (the
+    /// list stays interactive and the pill never appears over the reader), and the
+    /// work continues if the app is backgrounded (a background task assertion).
     private func downloadMediaToPhotos(_ item: ReadingListItem) {
         guard let url = URL(string: item.urlString) else { return }
-        Toast.show("Saving media…", symbol: "arrow.down.circle", from: self)
+        let status = mediaDownloadStatusView()
+        status.startProgress()
+
+        var backgroundTask = UIBackgroundTaskIdentifier.invalid
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "media-download") {
+            UIApplication.shared.endBackgroundTask(backgroundTask)
+            backgroundTask = .invalid
+        }
+        let endBackground = {
+            if backgroundTask != .invalid {
+                UIApplication.shared.endBackgroundTask(backgroundTask)
+                backgroundTask = .invalid
+            }
+        }
+
         Task { [weak self] in
             do {
-                _ = try await MediaDownloadService().downloadFirstMediaToPhotos(from: url) { _ in }
+                _ = try await MediaDownloadService().downloadFirstMediaToPhotos(from: url) { progress in
+                    Task { @MainActor in self?.mediaDownloadStatus?.update(progress: progress) }
+                }
                 await MainActor.run {
-                    guard let self else { return }
-                    Toast.show("Saved to Photos", symbol: "checkmark.circle.fill", from: self)
+                    self?.mediaDownloadStatus?.showResult(message: "Saved to Photos", success: true)
+                    endBackground()
                 }
             } catch {
                 let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
                 await MainActor.run {
-                    guard let self else { return }
-                    Toast.show(message, symbol: "exclamationmark.triangle.fill", from: self)
+                    self?.mediaDownloadStatus?.showResult(message: message, success: false)
+                    endBackground()
                 }
             }
         }
+    }
+
+    /// Lazily creates the bottom status pill, pinned above the safe area.
+    private func mediaDownloadStatusView() -> MediaDownloadStatusView {
+        if let existing = mediaDownloadStatus { return existing }
+        let status = MediaDownloadStatusView()
+        view.addSubview(status)
+        NSLayoutConstraint.activate([
+            status.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
+            status.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
+            status.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            status.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+        ])
+        mediaDownloadStatus = status
+        return status
     }
 
     /// Explicit send of one article to one ereader destination (the long-press

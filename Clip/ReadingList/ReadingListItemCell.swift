@@ -39,6 +39,9 @@ final class ReadingListItemCell: UITableViewCell {
     private let thumbImageView = UIImageView()
     private let spinner = UIActivityIndicatorView(style: .medium)
     private let trailingButton = UIButton(type: .system)
+    /// Simulator-only: a small bottom-left hit target that opens the row's
+    /// context menu on a plain tap (the automation harness can't long-press).
+    private let simulatorMenuButton = UIButton(type: .system)
 
     /// Identifies the item currently configured, so an async art load that
     /// resolves after the cell is reused is discarded.
@@ -99,6 +102,29 @@ final class ReadingListItemCell: UITableViewCell {
             spinner.centerXAnchor.constraint(equalTo: thumbContainer.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: thumbContainer.centerYAnchor),
         ])
+
+        if AppEnvironment.isSimulator {
+            simulatorMenuButton.translatesAutoresizingMaskIntoConstraints = false
+            simulatorMenuButton.showsMenuAsPrimaryAction = true
+            simulatorMenuButton.tintColor = .tertiaryLabel
+            simulatorMenuButton.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
+            simulatorMenuButton.accessibilityLabel = "Row actions"
+            simulatorMenuButton.isHidden = true
+            contentView.addSubview(simulatorMenuButton)
+            NSLayoutConstraint.activate([
+                simulatorMenuButton.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 2),
+                simulatorMenuButton.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -2),
+                simulatorMenuButton.widthAnchor.constraint(equalToConstant: 30),
+                simulatorMenuButton.heightAnchor.constraint(equalToConstant: 30),
+            ])
+        }
+    }
+
+    /// Simulator-only: install the row's context menu on the bottom-left tap target.
+    func setSimulatorMenu(_ menu: UIMenu?) {
+        guard AppEnvironment.isSimulator else { return }
+        simulatorMenuButton.menu = menu
+        simulatorMenuButton.isHidden = menu == nil
     }
 
     override func prepareForReuse() {
@@ -107,6 +133,7 @@ final class ReadingListItemCell: UITableViewCell {
         thumbImageView.image = nil
         spinner.stopAnimating()
         onTrailingButton = nil
+        setSimulatorMenu(nil)
     }
 
     func configure(

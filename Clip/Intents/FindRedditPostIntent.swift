@@ -11,7 +11,7 @@ import Foundation
 struct FindRedditPostIntent: AppIntent {
     static let title: LocalizedStringResource = "Save Reddit Post"
     static let description = IntentDescription(
-        "Finds a Reddit post by subreddit + title (and optional author) and saves it to your Click reading list.")
+        "Finds a Reddit post by subreddit + title (and optional author) and saves it to your Queue reading list.")
     static let openAppWhenRun: Bool = false
 
     @Parameter(

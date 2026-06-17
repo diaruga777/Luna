@@ -338,7 +338,7 @@ final class ShortcutSettingsScreen: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        let base = "Save the Safari page you're reading with one press of the Action Button: enable the Click Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
+        let base = "Save the Safari page you're reading with one press of the Action Button: enable the Queue Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
         if #unavailable(iOS 27.0) {
             return "⚠️ One-press Safari saving requires iOS 27 or later.\n\n" + base
         }
@@ -388,7 +388,7 @@ final class ShortcutSettingsScreen: UITableViewController {
             } ?? "unknown time"
             safariStatusText = "Last tracked Safari URL (\(when)): \(url)"
         } else {
-            safariStatusText = "No Safari URL tracked yet. Enable the Click extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page."
+            safariStatusText = "No Safari URL tracked yet. Enable the Queue extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page."
         }
     }
 }

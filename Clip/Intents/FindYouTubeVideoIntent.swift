@@ -12,7 +12,7 @@ import Foundation
 struct FindYouTubeVideoIntent: AppIntent {
     static let title: LocalizedStringResource = "Save YouTube Video"
     static let description = IntentDescription(
-        "Finds a video by channel name + title on YouTube and saves it to your Click reading list.")
+        "Finds a video by channel name + title on YouTube and saves it to your Queue reading list.")
     static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Channel", description: "The channel name — e.g. \"Veritasium\".")
@@ -30,7 +30,7 @@ struct FindYouTubeVideoIntent: AppIntent {
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .notSignedIn:
-                return "Sign in to YouTube in Click's settings first."
+                return "Sign in to YouTube in Queue's settings first."
             case .badQuery:
                 return "Enter both a channel name and a video title."
             case .channelNotFound:

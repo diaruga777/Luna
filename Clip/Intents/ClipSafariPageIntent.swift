@@ -14,7 +14,7 @@ import Foundation
 struct ClipSafariPageIntent: AppIntent {
     static let title: LocalizedStringResource = "Save Current Safari Page"
     static let description = IntentDescription(
-        "Saves the page currently open in Safari to your Click reading list (requires the Click Safari extension).")
+        "Saves the page currently open in Safari to your Queue reading list (requires the Queue Safari extension).")
     static let openAppWhenRun: Bool = false
 
     @Parameter(title: "App", description: "The current app, from Get Current App. Used to check you're in Safari.")
@@ -33,7 +33,7 @@ struct ClipSafariPageIntent: AppIntent {
             case .notInSafari:
                 return "Not in Safari — nothing saved."
             case .noTrackedURL:
-                return "No Safari page tracked yet. Is the Click extension enabled?"
+                return "No Safari page tracked yet. Is the Queue extension enabled?"
             case .trackedURLMismatch:
                 return "The tracked Safari page doesn't match the current site — nothing saved."
             }

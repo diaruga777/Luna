@@ -65,7 +65,7 @@ final class OnboardingAnimationView: UIView {
         appIcon.translatesAutoresizingMaskIntoConstraints = false
 
         let title = UILabel()
-        title.text = "Click"
+        title.text = "Queue"
         title.font = .systemFont(ofSize: 14, weight: .semibold)
         let bodyText = UILabel()
         bodyText.text = "htest shared an article"
@@ -123,7 +123,7 @@ final class OnboardingAnimationView: UIView {
         row.translatesAutoresizingMaskIntoConstraints = false
 
         let label = UILabel()
-        label.text = "Click"
+        label.text = "Queue"
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.translatesAutoresizingMaskIntoConstraints = false
 
@@ -245,7 +245,7 @@ final class OnboardingAnimationView: UIView {
         addressBar.addSubview(urlPill)
         urlPill.addSubview(urlStack)
 
-        // "Saved to Click" toast inside the phone screen.
+        // "Saved to Queue" toast inside the phone screen.
         savedToast.backgroundColor = accent
         savedToast.layer.cornerRadius = 11
         savedToast.layer.cornerCurve = .continuous
@@ -256,7 +256,7 @@ final class OnboardingAnimationView: UIView {
             systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold)))
         check.tintColor = .white
         let savedLabel = UILabel()
-        savedLabel.text = "Saved to Click"
+        savedLabel.text = "Saved to Queue"
         savedLabel.textColor = .white
         savedLabel.font = .systemFont(ofSize: 11, weight: .semibold)
         let toastStack = UIStackView(arrangedSubviews: [check, savedLabel])

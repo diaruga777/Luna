@@ -67,7 +67,7 @@ enum OnboardingFlow {
         OnboardingStepViewController(
             symbol: "safari",
             title: "Save from Safari",
-            body: "Everything stays on device. The app remembers your last visited site so it can be saved instantly.\n\nTurn on the Click extension in Settings → Apps → Safari → Extensions.",
+            body: "Everything stays on device. The app remembers your last visited site so it can be saved instantly.\n\nTurn on the Queue extension in Settings → Apps → Safari → Extensions.",
             primary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
             continueTitle: "Continue",
             animation: .settingsToggle,

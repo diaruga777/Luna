@@ -10,7 +10,7 @@ import AppIntents
 /// appends a screenshot and runs prompt + image through an image-understanding
 /// model; the result feeds `SaveFromAppIntent`. Returns an empty string for a
 /// supported app that needs no prompt (Safari — the tracked page URL is saved), and
-/// the exact string "unsupported" when the current app isn't one Click can save from
+/// the exact string "unsupported" when the current app isn't one Queue can save from
 /// (the shortcut branches on that).
 struct ScreenAnalysisPromptIntent: AppIntent {
     static let title: LocalizedStringResource = "Screen Analysis Prompt"

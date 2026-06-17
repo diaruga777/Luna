@@ -40,7 +40,7 @@ struct SaveFromAppIntent: AppIntent {
             switch self {
             case .missingValues: return "Nothing to save was provided."
             case .notFound: return "Couldn't find a matching item."
-            case .youTubeNotSignedIn: return "Sign in to YouTube in Click's settings first."
+            case .youTubeNotSignedIn: return "Sign in to YouTube in Queue's settings first."
             }
         }
     }

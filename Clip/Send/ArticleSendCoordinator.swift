@@ -60,7 +60,7 @@ final class SMTPArticleEmailSender: ArticleEmailSending {
             from: KindleSendSettings.smtpUsername,
             to: KindleSendSettings.kindleAddress,
             subject: title,
-            bodyText: "Sent to Kindle by Click.",
+            bodyText: "Sent to Kindle by Queue.",
             attachmentFileName: fileName,
             attachmentMimeType: "application/epub+zip",
             attachmentData: epubData)
@@ -241,17 +241,17 @@ final class ArticleSendCoordinator {
     func sendTestDocument(toDestinationID id: String) async throws {
         guard let destination = destination(id: id) else { return }
         let content = ArticleContent(
-            title: "Click Test Document",
+            title: "Queue Test Document",
             blocks: [ArticleContent.Block(
                 kind: .paragraph,
-                text: "If you can read this on your ereader, Click's send setup works.",
+                text: "If you can read this on your ereader, Queue's send setup works.",
                 links: [])])
         let epub = EpubBuilder().build(
             content: content,
             sourceURLString: "https://clip.local/test",
             imagesDirectory: store.articlesDirectory)
         try await destination.send(
-            epubData: epub, fileName: "Click Test Document.epub", title: content.title)
+            epubData: epub, fileName: "Queue Test Document.epub", title: content.title)
     }
 
     /// A filesystem- and MIME-safe attachment name derived from the title.

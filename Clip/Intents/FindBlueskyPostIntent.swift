@@ -11,7 +11,7 @@ import Foundation
 struct FindBlueskyPostIntent: AppIntent {
     static let title: LocalizedStringResource = "Save Bluesky Post"
     static let description = IntentDescription(
-        "Finds a Bluesky post by author handle + a phrase from it and saves it to your Click reading list.")
+        "Finds a Bluesky post by author handle + a phrase from it and saves it to your Queue reading list.")
     static let openAppWhenRun: Bool = false
 
     @Parameter(

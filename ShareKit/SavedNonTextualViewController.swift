@@ -33,7 +33,7 @@ final class SavedNonTextualViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        title = "Saved to Click"
+        title = "Saved to Queue"
 
         let onDone = self.onDone
         navigationItem.leftBarButtonItem = UIBarButtonItem(
@@ -112,7 +112,7 @@ final class SavedNonTextualViewController: UIViewController {
         let friends = ExtensionFriendsReader.friends()
         let sheet = UIAlertController(
             title: "Send to a Friend",
-            message: "They'll get it in their Click reading list when you next open Click.",
+            message: "They'll get it in their Queue reading list when you next open Queue.",
             preferredStyle: .actionSheet)
         for friend in friends {
             sheet.addAction(UIAlertAction(title: friend.username, style: .default) { [weak self] _ in
@@ -129,7 +129,7 @@ final class SavedNonTextualViewController: UIViewController {
     private func confirmQueued(friendName: String) {
         let alert = UIAlertController(
             title: "Will Send to \(friendName)",
-            message: "Open Click to finish sending.", preferredStyle: .alert)
+            message: "Open Queue to finish sending.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in self?.onDone() })
         present(alert, animated: true)
     }

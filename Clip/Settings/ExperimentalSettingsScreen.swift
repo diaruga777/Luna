@@ -40,7 +40,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .semantic:
-            return "When you save something that resembles things you've shared with a friend before, Click can suggest sharing it with them. Slide all the way left to turn this off."
+            return "When you save something that resembles things you've shared with a friend before, Queue can suggest sharing it with them. Slide all the way left to turn this off."
         case .youtube:
             return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read."
         }
@@ -188,10 +188,10 @@ final class ExperimentalSettingsScreen: UITableViewController {
                 self?.tableView.reloadData()
             })
         }
-        sheet.addAction(UIAlertAction(title: "Create \"Watch Later (Click)\"", style: .default) { [weak self] _ in
+        sheet.addAction(UIAlertAction(title: "Create \"Watch Later (Queue)\"", style: .default) { [weak self] _ in
             Task {
                 do {
-                    let created = try await YouTubeAPIClient().createPlaylist(title: "Watch Later (Click)")
+                    let created = try await YouTubeAPIClient().createPlaylist(title: "Watch Later (Queue)")
                     YouTubeSettings.playlistID = created.id
                     YouTubeSettings.playlistTitle = created.title
                     self?.tableView.reloadData()

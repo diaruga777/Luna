@@ -11,7 +11,7 @@ import UniformTypeIdentifiers
 /// Markdown/RTF) from the share sheet, appends it to the shared reading list,
 /// and completes immediately. The main app downloads/parses on next launch.
 ///
-/// When launched by tapping a Click friend in the share sheet's people row, the
+/// When launched by tapping a Queue friend in the share sheet's people row, the
 /// shared URL is queued as an outgoing friend-share for the main app to send
 /// (the extension has no crypto/CloudKit access).
 final class ShareViewController: UIViewController {
@@ -20,7 +20,7 @@ final class ShareViewController: UIViewController {
     /// covers .txt, .md/.markdown, and most source/plain formats.
     private static let documentTypes: [UTType] = [.pdf, .rtf, .plainText, .text]
 
-    /// True when hosted by the "Read in Click" action extension
+    /// True when hosted by the "Read in Queue" action extension
     /// (`com.apple.ui-services`) rather than the zero-UI share extension
     /// (`com.apple.share-services`). The action extension always opens the
     /// reader; the share extension only does when the user enabled it.
@@ -74,7 +74,7 @@ final class ShareViewController: UIViewController {
         // provider whose callback never fires.
         armLoadWatchdog()
 
-        // Tapped a Click friend suggestion in the share sheet's PEOPLE ROW: the
+        // Tapped a Queue friend suggestion in the share sheet's PEOPLE ROW: the
         // conversation identifier is the friend's UUID. This only happens for
         // the share extension — guard the `intent` access behind that, since
         // touching `extensionContext.intent` in a `com.apple.ui-services` action
@@ -136,7 +136,7 @@ final class ShareViewController: UIViewController {
             handleText(textProvider)
             return
         }
-        failOrComplete("This type of content can't be read in Click.")
+        failOrComplete("This type of content can't be read in Queue.")
     }
 
     // MARK: - Status / error UI (action extension)
@@ -146,7 +146,7 @@ final class ShareViewController: UIViewController {
         spinner.translatesAutoresizingMaskIntoConstraints = false
         spinner.startAnimating()
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.text = "Opening in Click…"
+        statusLabel.text = "Opening in Queue…"
         statusLabel.textColor = .secondaryLabel
         statusLabel.font = .preferredFont(forTextStyle: .body)
         statusLabel.textAlignment = .center
@@ -232,7 +232,7 @@ final class ShareViewController: UIViewController {
 
     /// The reader mode to present, or nil to save silently. Fixed behavior (no
     /// in-app setting): the share extension always saves and dismisses; the
-    /// "Read in Click" action extension always opens the reader, in whichever
+    /// "Read in Queue" action extension always opens the reader, in whichever
     /// mode it was last used in (state local to the extension).
     private func readerMode() -> ShareReaderViewController.Mode? {
         isActionExtension ? ActionReaderMode.last : nil
@@ -241,7 +241,7 @@ final class ShareViewController: UIViewController {
     /// Routes a saved web URL: the share extension always just saves and closes;
     /// the action extension opens the in-sheet reader for articles, or — for
     /// non-textual content (a video, …) — the saved-content screen with playback
-    /// and an "Open in Click" button. Safe to call from any thread.
+    /// and an "Open in Queue" button. Safe to call from any thread.
     private func presentSavedOrReader(url: URL) {
         guard let mode = readerMode() else {
             // Share extension (no reader mode): save and close, always.

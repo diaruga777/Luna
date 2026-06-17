@@ -73,11 +73,11 @@ enum SendToFriendSheet {
     }
 
     /// Shares the original URL (works for everyone) plus a `clickreader://` deep
-    /// link that opens the article in Click for people who have it.
+    /// link that opens the article in Queue for people who have it.
     static func shareLink(urlString: String, from presenter: UIViewController, sourceView: UIView) {
         let shared: String
         if let deepLink = ClickDeepLink.readLink(forArticleURL: urlString)?.absoluteString {
-            shared = "\(urlString)\n\nRead on Click: \(deepLink)"
+            shared = "\(urlString)\n\nRead on Queue: \(deepLink)"
         } else {
             shared = urlString
         }

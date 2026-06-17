@@ -54,7 +54,8 @@ final class CatchUpCardHeader: UIView {
 
     init(item: ReadingListItem) {
         super.init(frame: .zero)
-        backgroundColor = ReaderDepth.backgroundColor(for: 0)
+        // Clear so the card's glass backdrop shows through the forehead.
+        backgroundColor = .clear
 
         let dateLabel = UILabel()
         let bumped = item.bumpDate != nil
@@ -64,13 +65,17 @@ final class CatchUpCardHeader: UIView {
         dateLabel.text = text
         dateLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         dateLabel.textColor = .secondaryLabel
+        // Centered, so the top corners stay empty for the Bump / Read glass pills.
+        dateLabel.textAlignment = .center
+        dateLabel.numberOfLines = 1
         dateLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(dateLabel)
         NSLayoutConstraint.activate([
-            dateLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            dateLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
-            dateLabel.topAnchor.constraint(equalTo: topAnchor, constant: 14),
-            dateLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            // Inset from the corners so the date never sits under the corner pills.
+            dateLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 96),
+            dateLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -96),
+            dateLabel.topAnchor.constraint(equalTo: topAnchor, constant: 22),
+            dateLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
         ])
     }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -84,7 +89,8 @@ final class CatchUpMediaCardBody: UIView {
     init(item: ReadingListItem, store: ReadingListStore, onTap: @escaping () -> Void) {
         self.onTap = onTap
         super.init(frame: .zero)
-        backgroundColor = ReaderDepth.backgroundColor(for: 0)
+        // Clear so the card's glass backdrop shows through.
+        backgroundColor = .clear
 
         let thumb = UIImageView()
         thumb.contentMode = .scaleAspectFill
@@ -117,8 +123,11 @@ final class CatchUpMediaCardBody: UIView {
         stack.setCustomSpacing(20, after: thumb)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
+        // Centered vertically so the top of the card stays clear (a "forehead" for
+        // the Bump / Read pills) rather than the media hugging the top edge.
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 24),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 56),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -24),

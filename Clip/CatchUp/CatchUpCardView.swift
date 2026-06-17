@@ -21,24 +21,35 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
     let contentContainer = UIView()
 
     private let tintOverlay = UIView()
-    private let bumpLabel = CatchUpCardView.cornerLabel(text: "BUMP", color: GlassStyle.readingAccent)
-    private let readLabel = CatchUpCardView.cornerLabel(text: "READ", color: .systemGreen)
+    private let bumpLabel = CatchUpCardView.cornerBadge(symbol: "arrow.up", text: "Bump", color: GlassStyle.readingAccent)
+    private let readLabel = CatchUpCardView.cornerBadge(symbol: "checkmark", text: "Read", color: .systemGreen)
 
     private static let rotationPerWidth: CGFloat = 0.18   // radians at full-width drag
 
+    private let glassBackdrop = UIVisualEffectView(effect: GlassStyle.barEffect())
+
     init() {
         super.init(frame: .zero)
-        backgroundColor = ReaderDepth.backgroundColor(for: 0)
-        layer.cornerRadius = 22
-        layer.cornerCurve = .continuous
+        // The card itself is transparent — a liquid-glass backdrop fills it, so the
+        // forehead / empty areas read as glass over the off-color screen.
+        backgroundColor = .clear
         layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.25
+        layer.shadowOpacity = 0.22
         layer.shadowRadius = 20
         layer.shadowOffset = CGSize(width: 0, height: 8)
+
+        glassBackdrop.translatesAutoresizingMaskIntoConstraints = false
+        glassBackdrop.layer.cornerRadius = 22
+        glassBackdrop.layer.cornerCurve = .continuous
+        glassBackdrop.clipsToBounds = true
+        glassBackdrop.layer.borderWidth = 0.5
+        glassBackdrop.layer.borderColor = UIColor.separator.withAlphaComponent(0.6).cgColor
+        addSubview(glassBackdrop)
 
         contentContainer.layer.cornerRadius = 22
         contentContainer.layer.cornerCurve = .continuous
         contentContainer.clipsToBounds = true
+        contentContainer.backgroundColor = .clear
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
         addSubview(contentContainer)
 
@@ -57,6 +68,10 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         bumpLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
+            glassBackdrop.topAnchor.constraint(equalTo: topAnchor),
+            glassBackdrop.bottomAnchor.constraint(equalTo: bottomAnchor),
+            glassBackdrop.leadingAnchor.constraint(equalTo: leadingAnchor),
+            glassBackdrop.trailingAnchor.constraint(equalTo: trailingAnchor),
             contentContainer.topAnchor.constraint(equalTo: topAnchor),
             contentContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
             contentContainer.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -79,28 +94,41 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    private static func cornerLabel(text: String, color: UIColor) -> UILabel {
+    /// A corner action badge — a liquid-glass capsule hovering over the card, with a
+    /// tinted SF Symbol + label inside (no outline, mixed case).
+    private static func cornerBadge(symbol: String, text: String, color: UIColor) -> UIVisualEffectView {
+        let pill = UIVisualEffectView(effect: GlassStyle.barEffect())
+        if #available(iOS 26.0, *) {
+            pill.cornerConfiguration = .capsule()
+        } else {
+            pill.layer.cornerRadius = 19
+            pill.clipsToBounds = true
+        }
+        let icon = UIImageView(image: UIImage(systemName: symbol))
+        icon.tintColor = color
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
+        icon.contentMode = .center
         let label = UILabel()
         label.text = text
-        label.font = .systemFont(ofSize: 30, weight: .heavy)
+        label.font = .systemFont(ofSize: 22, weight: .bold)
         label.textColor = color
-        label.layer.borderColor = color.cgColor
-        label.layer.borderWidth = 3
-        label.layer.cornerRadius = 8
-        label.textAlignment = .center
-        label.layer.masksToBounds = true
-        // Padding via attributed-ish spacing: use intrinsic + insets through frame.
-        label.setContentHuggingPriority(.required, for: .horizontal)
-        return label
+        let stack = UIStackView(arrangedSubviews: [icon, label])
+        stack.axis = .horizontal
+        stack.spacing = 6
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        pill.contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: pill.contentView.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: pill.contentView.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: pill.contentView.topAnchor, constant: 9),
+            stack.bottomAnchor.constraint(equalTo: pill.contentView.bottomAnchor, constant: -9),
+        ])
+        return pill
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // Give the corner labels a little internal padding.
-        for label in [readLabel, bumpLabel] {
-            label.bounds.size.width = label.intrinsicContentSize.width + 20
-            label.bounds.size.height = label.intrinsicContentSize.height + 8
-        }
         layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: 22).cgPath
     }
 

@@ -71,6 +71,10 @@ final class AppReaderShareProvider: ReaderShareProviding {
         SendToFriendSheet.sendToFriend(
             uuid: suggestion.uuid, urlString: urlString, title: title, from: presenter)
     }
+
+    func saveLink(urlString: String) {
+        Task { await ReadingListIngestor.shared.handleSavePress(urlString: urlString) }
+    }
 }
 
 /// Main-app gaze-tracker factory: a real `EyeGazeWordTracker` when eye tracking

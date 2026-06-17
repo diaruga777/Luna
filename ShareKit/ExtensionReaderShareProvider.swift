@@ -55,6 +55,11 @@ final class ExtensionReaderShareProvider: ReaderShareProviding {
         // No suggestion engine in the extension — nothing to do.
     }
 
+    func saveLink(urlString: String) {
+        // No ingestor in the extension — queue the URL; the main app ingests it.
+        SharedReadingListAppender.append(urlString: urlString)
+    }
+
     /// The send is queued, not sent yet (no CloudKit here) — say so honestly.
     private static func confirmQueued(friendName: String, from presenter: UIViewController) {
         let alert = UIAlertController(

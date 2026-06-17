@@ -522,6 +522,29 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         return defaultAction
     }
 
+    /// Long-press on an inline link → save or share that link.
+    func textView(
+        _ textView: UITextView,
+        menuConfigurationFor textItem: UITextItem,
+        defaultMenu: UIMenu
+    ) -> UITextItem.MenuConfiguration? {
+        guard case .link(let url) = textItem.content else {
+            return UITextItem.MenuConfiguration(menu: defaultMenu)
+        }
+        let save = UIAction(title: "Save to Click", image: UIImage(systemName: "plus.circle")) { [weak self] _ in
+            self?.shareProvider?.saveLink(urlString: url.absoluteString)
+        }
+        let share = UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
+            guard let self else { return }
+            let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            activity.popoverPresentationController?.sourceView = self.textView
+            self.present(activity, animated: true)
+        }
+        // Only offer Save when there's a provider to save through.
+        let custom = shareProvider != nil ? [save, share] : [share]
+        return UITextItem.MenuConfiguration(menu: UIMenu(children: custom + defaultMenu.children))
+    }
+
     private func openSplit(for url: URL, tappedRange: NSRange) {
         // Geometry of the tapped link: its full line fragment (the cut happens
         // around that line) and the link text's own rect (anchors the notch),

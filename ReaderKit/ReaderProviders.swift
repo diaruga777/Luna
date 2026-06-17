@@ -18,6 +18,9 @@ protocol ReaderShareProviding: AnyObject {
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView)
     /// One-tap send to the currently suggested friend.
     func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController)
+    /// Saves an arbitrary link (e.g. a link long-pressed inside the reader) to
+    /// the reading list.
+    func saveLink(urlString: String)
 }
 
 /// Estimates the last-read word from the front camera. The reader depends only

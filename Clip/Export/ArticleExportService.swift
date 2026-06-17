@@ -59,7 +59,7 @@ struct ArticleExportService {
 
     /// Builds the EPUB off the main thread and presents the system share sheet
     /// anchored to `sourceView`, or an alert if the article has no content.
-    @MainActor
+    /// Call on the main thread; it hops to a background queue to build, then back.
     func presentShareSheet(
         for item: ReadingListItem, from presenter: UIViewController, sourceView: UIView
     ) {

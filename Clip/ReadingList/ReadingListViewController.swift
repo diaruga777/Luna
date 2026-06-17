@@ -828,18 +828,14 @@ final class ReadingListViewController: UITableViewController {
                 let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
                 self.shareEbook(item, from: sourceView)
             }
-            let speedRead = UIAction(
-                title: "Speed Read",
-                image: UIImage(systemName: "bolt.fill")
+            let shareLink = UIAction(
+                title: "Share Link…",
+                image: UIImage(systemName: "link")
             ) { _ in
-                guard let self, item.state == .ready,
-                      let content = self.store.content(for: item) else { return }
-                self.navigationController?.pushViewController(
-                    ReaderViewController(
-                        item: item, content: content, forceMode: .rsvp,
-                        shareProvider: AppReaderShareProvider.shared,
-                        gazeTrackerFactory: AppGazeTracker.factory),
-                    animated: true)
+                guard let self else { return }
+                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+                SendToFriendSheet.shareLink(
+                    urlString: item.urlString, from: self, sourceView: sourceView)
             }
             let delete = UIAction(
                 title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
@@ -872,9 +868,13 @@ final class ReadingListViewController: UITableViewController {
                 if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.boox) {
                     children.append(sendToBoox)
                 }
-                // Share the article as an EPUB to any ereader/app, once it's ready.
-                if item.state == .ready { children.append(shareEbook) }
-                children.append(speedRead)
+                // URL articles share the link; text-only no-url articles (email/
+                // document) share the eBook (the only portable form they have).
+                if item.isShareable {
+                    children.append(shareLink)
+                } else if item.state == .ready {
+                    children.append(shareEbook)
+                }
             }
             children.append(delete)
             return UIMenu(children: children)

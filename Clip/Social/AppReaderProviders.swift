@@ -33,8 +33,14 @@ final class AppReaderShareProvider: ReaderShareProviding {
     func presentShareSheet(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) {
-        let suggestion = bestFriend(forURLString: urlString)
         let item = ReadingListStore.shared.item(forURLString: urlString)
+        // No-url articles (email/document) can only be shared as an eBook.
+        if let item, !item.isShareable {
+            ArticleExportService().presentShareSheet(
+                for: item, from: presenter, sourceView: sourceView)
+            return
+        }
+        let suggestion = bestFriend(forURLString: urlString)
         let rows = ReaderShareSheet.rows(
             suggestedFriendName: suggestion?.username,
             onSendToSuggested: { [weak presenter] in

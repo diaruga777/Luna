@@ -57,7 +57,7 @@ when `platform == .youtube`.
 | Instagram | `InstagramLink` | og: scrape (login-walled → logo) | — | — | none |
 | Facebook | `FacebookLink` | og: scrape | — | — | none |
 | Music | `MediaLink` | iTunes Lookup / Spotify oEmbed | preferred app | — | `SaveMusicItemIntent` (URL-less) |
-| Podcast | `MediaLink` | iTunes Lookup / Spotify oEmbed | preferred app | — | `SavePodcastItemIntent` (URL-less) |
+| Podcast | `MediaLink` | iTunes Lookup (`entity=podcastEpisode`, strips `id` path prefix → episode title + show name) / Spotify oEmbed | preferred app | — | `SavePodcastItemIntent` (URL-less) |
 
 X/TikTok/Instagram/Facebook have **no free search**, so they have no find-intent
 (an always-failing intent is worse than none) — captured via the share sheet /

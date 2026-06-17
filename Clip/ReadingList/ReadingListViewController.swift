@@ -15,8 +15,9 @@ import UIKit
 ///   default).
 /// - **Couldn't Load**: items whose content failed to download/extract, in red,
 ///   at the very bottom (collapsed by default; pull to retry).
-/// Collapsible headers expand/collapse on tap. Tap a row to read; press the drag
-/// handle to reorder within Reading; long-press for the action menu.
+/// Collapsible headers expand/collapse on tap. Tap a row to read; long-press for
+/// the action menu, whose "Edit List" enters edit mode (selection radios +
+/// drag-anywhere reorder within Reading, no handle).
 final class ReadingListViewController: UITableViewController {
 
     init() {
@@ -137,9 +138,11 @@ final class ReadingListViewController: UITableViewController {
     /// Non-blocking bottom pill for media-download progress/result (created lazily).
     private weak var mediaDownloadStatus: MediaDownloadStatusView?
 
-    /// The "catch up" nav button; pulses + glows when there are many unread items.
+    /// The "catch up" button, pinned to the large-title row; its red dot badge
+    /// shows when there are unread items to catch up on.
     private let catchUpButton = UIButton(type: .system)
-    private static let catchUpPulseThreshold = 12
+    private let catchUpBadge = UIView()
+    private var catchUpPinnedToNavBar = false
 
     /// Non-empty groups in display order; rebuilt on every `reload`.
     private var groups: [(section: Section, items: [ReadingListItem])] = []
@@ -167,22 +170,8 @@ final class ReadingListViewController: UITableViewController {
         tableView.register(
             ReadingListItemCell.self, forCellReuseIdentifier: ReadingListItemCell.reuseID)
 
-        catchUpButton.setImage(UIImage(systemName: "rectangle.stack"), for: .normal)
-        catchUpButton.tintColor = GlassStyle.readingAccent
-        catchUpButton.accessibilityLabel = "Catch up"
-        catchUpButton.addTarget(self, action: #selector(catchUpTapped), for: .touchUpInside)
-        catchUpButton.frame = CGRect(x: 0, y: 0, width: 34, height: 34)
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(
-                barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
-            UIBarButtonItem(
-                image: UIImage(systemName: "person.2"), style: .plain,
-                target: self, action: #selector(friendsTapped)),
-            UIBarButtonItem(customView: catchUpButton),
-        ]
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "gearshape"), style: .plain,
-            target: self, action: #selector(settingsTapped))
+        setDefaultNavItems()
+        configureCatchUpButton()
 
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(pulledToRefresh), for: .valueChanged)
@@ -203,12 +192,12 @@ final class ReadingListViewController: UITableViewController {
         ])
         filterHeaderView = header
 
-        // Permanent reorder mode: Reading rows show a drag handle you can press
-        // and drag, while taps still open the article (selection-during-editing)
-        // and there's no delete badge (editingStyle .none). Delete/RSVP live in
-        // the long-press menu.
-        tableView.allowsSelectionDuringEditing = true
-        tableView.setEditing(true, animated: false)
+        // Edit mode is entered on demand from the row's long-press menu ("Edit
+        // List"); it shows selection radios and enables drag-anywhere reorder (no
+        // handle). Normally the list isn't editing — taps just open rows.
+        tableView.allowsMultipleSelectionDuringEditing = true
+        tableView.dragDelegate = self
+        tableView.dropDelegate = self
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
@@ -217,6 +206,19 @@ final class ReadingListViewController: UITableViewController {
             name: UIApplication.didBecomeActiveNotification, object: nil)
         reload()
         checkPasteboard()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        pinCatchUpButtonToNavBar()
+        catchUpButton.isHidden = isEditing
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // The nav bar is shared with pushed screens — take our title-row button off.
+        catchUpButton.removeFromSuperview()
+        catchUpPinnedToNavBar = false
     }
 
     // MARK: - Pasteboard suggestion
@@ -400,53 +402,120 @@ final class ReadingListViewController: UITableViewController {
     // MARK: - Catch up
 
     /// Items worth catching up on: unread (incl. partially read), and renderable
-    /// (ready articles, or any platform/media item).
+    /// (ready articles, or any platform/media item), oldest first by bump/save date.
     private func catchUpQueue() -> [ReadingListItem] {
         store.items().filter { item in
             guard item.readState != .read else { return false }
             return Self.rendersAsReader(item) ? item.state == .ready : true
-        }
+        }.sorted { ($0.bumpDate ?? $0.dateAdded) < ($1.bumpDate ?? $1.dateAdded) }
     }
 
-    /// Starts/stops the pulse-and-glow when the unread count crosses the threshold.
+    private func configureCatchUpButton() {
+        catchUpButton.setImage(
+            UIImage(systemName: "rectangle.stack",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)),
+            for: .normal)
+        catchUpButton.tintColor = GlassStyle.readingAccent
+        catchUpButton.accessibilityLabel = "Catch up"
+        catchUpButton.addTarget(self, action: #selector(catchUpTapped), for: .touchUpInside)
+        catchUpButton.translatesAutoresizingMaskIntoConstraints = false
+
+        // A red "action needed" dot in the top-right corner of the icon.
+        catchUpBadge.backgroundColor = .systemRed
+        catchUpBadge.layer.cornerRadius = 4.5
+        catchUpBadge.isUserInteractionEnabled = false
+        catchUpBadge.isHidden = true
+        catchUpBadge.translatesAutoresizingMaskIntoConstraints = false
+        catchUpButton.addSubview(catchUpBadge)
+        NSLayoutConstraint.activate([
+            catchUpBadge.widthAnchor.constraint(equalToConstant: 9),
+            catchUpBadge.heightAnchor.constraint(equalToConstant: 9),
+            catchUpBadge.trailingAnchor.constraint(equalTo: catchUpButton.trailingAnchor, constant: 2),
+            catchUpBadge.topAnchor.constraint(equalTo: catchUpButton.topAnchor, constant: -2),
+        ])
+    }
+
+    /// Pins the catch-up button to the bottom-right of the nav bar — i.e. the
+    /// trailing edge of the large "Reading List" title row. (Re-pinned each
+    /// appearance since the nav bar is shared across pushed screens.)
+    private func pinCatchUpButtonToNavBar() {
+        guard !catchUpPinnedToNavBar, let navBar = navigationController?.navigationBar else { return }
+        catchUpPinnedToNavBar = true
+        navBar.addSubview(catchUpButton)
+        NSLayoutConstraint.activate([
+            catchUpButton.trailingAnchor.constraint(equalTo: navBar.trailingAnchor, constant: -16),
+            catchUpButton.bottomAnchor.constraint(equalTo: navBar.bottomAnchor, constant: -8),
+            catchUpButton.widthAnchor.constraint(equalToConstant: 34),
+            catchUpButton.heightAnchor.constraint(equalToConstant: 34),
+        ])
+    }
+
+    /// Shows the red dot when there's anything unread to catch up on, and hides the
+    /// whole button in edit mode (the nav bar is taken over by edit controls).
     private func updateCatchUpButton() {
         let unread = store.items().filter { $0.readState != .read }.count
-        if unread > Self.catchUpPulseThreshold {
-            startCatchUpPulse()
-        } else {
-            catchUpButton.layer.removeAnimation(forKey: "catchUpPulse")
-            catchUpButton.layer.removeAnimation(forKey: "catchUpGlow")
-            catchUpButton.layer.shadowOpacity = 0
-        }
-    }
-
-    private func startCatchUpPulse() {
-        guard catchUpButton.layer.animation(forKey: "catchUpPulse") == nil else { return }
-        let scale = CABasicAnimation(keyPath: "transform.scale")
-        scale.fromValue = 1.0
-        scale.toValue = 1.14
-        scale.duration = 0.8
-        scale.autoreverses = true
-        scale.repeatCount = .infinity
-        scale.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        catchUpButton.layer.add(scale, forKey: "catchUpPulse")
-
-        catchUpButton.layer.shadowColor = GlassStyle.readingAccent.cgColor
-        catchUpButton.layer.shadowRadius = 8
-        catchUpButton.layer.shadowOffset = .zero
-        let glow = CABasicAnimation(keyPath: "shadowOpacity")
-        glow.fromValue = 0.1
-        glow.toValue = 0.9
-        glow.duration = 0.8
-        glow.autoreverses = true
-        glow.repeatCount = .infinity
-        glow.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        catchUpButton.layer.add(glow, forKey: "catchUpGlow")
+        catchUpBadge.isHidden = unread == 0
+        catchUpButton.isHidden = isEditing
     }
 
     @objc private func catchUpTapped() {
         let catchUp = CatchUpViewController(unread: catchUpQueue(), router: self)
         present(catchUp, animated: true)
+    }
+
+    // MARK: - Edit mode
+
+    /// The normal (non-editing) nav bar: settings (left); add + friends (right).
+    private func setDefaultNavItems() {
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            image: UIImage(systemName: "gearshape"), style: .plain,
+            target: self, action: #selector(settingsTapped))
+        navigationItem.rightBarButtonItems = [
+            UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
+            UIBarButtonItem(
+                image: UIImage(systemName: "person.2"), style: .plain,
+                target: self, action: #selector(friendsTapped)),
+        ]
+    }
+
+    @objc private func doneEditing() { setEditing(false, animated: true) }
+
+    override func setEditing(_ editing: Bool, animated: Bool) {
+        super.setEditing(editing, animated: animated)
+        tableView.dragInteractionEnabled = editing
+        if isEditing {
+            navigationItem.leftBarButtonItem = nil
+            let done = UIBarButtonItem(
+                barButtonSystemItem: .done, target: self, action: #selector(doneEditing))
+            let selectAll = UIBarButtonItem(
+                title: "Select All", style: .plain, target: self, action: #selector(selectAllTapped))
+            let deleteSelected = UIBarButtonItem(
+                image: UIImage(systemName: "trash"), style: .plain,
+                target: self, action: #selector(deleteSelectedTapped))
+            deleteSelected.tintColor = .systemRed
+            // Laid out right-to-left: Done, Select All, Delete Selected.
+            navigationItem.rightBarButtonItems = [done, selectAll, deleteSelected]
+        } else {
+            setDefaultNavItems()
+        }
+        updateCatchUpButton()
+    }
+
+    @objc private func selectAllTapped() {
+        for section in 0..<tableView.numberOfSections {
+            for row in 0..<tableView.numberOfRows(inSection: section) {
+                let indexPath = IndexPath(row: row, section: section)
+                guard tableView(tableView, canEditRowAt: indexPath) else { continue }
+                tableView.selectRow(at: indexPath, animated: false, scrollPosition: .none)
+            }
+        }
+    }
+
+    @objc private func deleteSelectedTapped() {
+        guard let selected = tableView.indexPathsForSelectedRows, !selected.isEmpty else { return }
+        let items = selected.map { item(at: $0) }   // capture before any mutation
+        for item in items { store.delete(item) }     // each posts .readingListChanged → reload
+        setEditing(false, animated: true)
     }
 
     // MARK: - Add
@@ -656,7 +725,7 @@ final class ReadingListViewController: UITableViewController {
             thumbnail: thumbnail(for: item, isPasteboard: isPasteboard),
             showsDisclosure: item.state == .ready,
             reuseKey: "\(item.id.uuidString)|\(item.thumbnailFileName ?? "")|\(item.state.rawValue)")
-        cell.showsReorderControl = true
+        cell.showsReorderControl = false   // reorder is drag-anywhere in edit mode, no handle
         if AppEnvironment.isSimulator {
             cell.setSimulatorMenu(rowMenu(for: item, at: indexPath))
         }
@@ -724,6 +793,9 @@ final class ReadingListViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        // In edit mode a tap toggles the selection radio (UIKit handles it) — don't
+        // open the row or clear the selection.
+        if isEditing { return }
         tableView.deselectRow(at: indexPath, animated: true)
         if section(at: indexPath.section) == .pasteboard {
             previewPasteboardCandidate()
@@ -908,51 +980,19 @@ final class ReadingListViewController: UITableViewController {
         return fetchFinished ? .none : .loading
     }
 
-    // MARK: - Reordering (Reading section only)
+    // MARK: - Editing rows
 
+    /// No delete badge — the multi-select radio (left) handles selection in edit
+    /// mode, and reorder is drag-and-drop (no handle).
     override func tableView(
         _ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath
     ) -> UITableViewCell.EditingStyle {
-        .none // reorder handle only, no delete badge
+        .none
     }
 
-    override func tableView(
-        _ tableView: UITableView, shouldIndentWhileEditingRowAt indexPath: IndexPath
-    ) -> Bool {
-        false
-    }
-
-    override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-        section(at: indexPath.section) == .reading
-    }
-
-    /// Keep drags within the Reading section.
-    override func tableView(
-        _ tableView: UITableView,
-        targetIndexPathForMoveFromRowAt sourceIndexPath: IndexPath,
-        toProposedIndexPath proposedDestinationIndexPath: IndexPath
-    ) -> IndexPath {
-        proposedDestinationIndexPath.section == sourceIndexPath.section
-            ? proposedDestinationIndexPath
-            : sourceIndexPath
-    }
-
-    override func tableView(
-        _ tableView: UITableView, moveRowAt sourceIndexPath: IndexPath, to destinationIndexPath: IndexPath
-    ) {
-        guard let groupIndex = groups.firstIndex(where: { $0.section == .reading }) else { return }
-        var reading = groups[groupIndex].items
-        let moved = reading.remove(at: sourceIndexPath.row)
-        reading.insert(moved, at: destinationIndexPath.row)
-        groups[groupIndex].items = reading
-
-        // Persist the full order across all sections, preserving each section's
-        // (now-updated) order. Suppress the reload this triggers so the drop
-        // animation finishes cleanly.
-        let fullOrder = groups.flatMap(\.items).map(\.id)
-        isApplyingReorder = true
-        store.setOrder(fullOrder)
-        DispatchQueue.main.async { [weak self] in self?.isApplyingReorder = false }
+    /// The pasteboard suggestion isn't a saved item — not selectable/deletable.
+    override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
+        section(at: indexPath.section) != .pasteboard
     }
 
     // MARK: - Long-press menu
@@ -1065,7 +1105,13 @@ final class ReadingListViewController: UITableViewController {
             }
         }
         children.append(delete)
-        return UIMenu(children: children)
+        // "Edit List" enters multi-select / drag-reorder edit mode (bottom item).
+        let editList = UIAction(
+            title: "Edit List", image: UIImage(systemName: "arrow.up.arrow.down")
+        ) { [weak self] _ in
+            self?.setEditing(true, animated: true)
+        }
+        return UIMenu(children: children + [editList])
     }
 
     /// Downloads the first media item of an X/Instagram/TikTok post to the photo
@@ -1133,5 +1179,59 @@ final class ReadingListViewController: UITableViewController {
     /// the user can send it to Apple Books, Kobo, reMarkable, Boox, Files, etc.
     private func shareEbook(_ item: ReadingListItem, from sourceView: UIView) {
         ArticleExportService().presentShareSheet(for: item, from: self, sourceView: sourceView)
+    }
+}
+
+// MARK: - Drag-and-drop reorder (edit mode, Reading section)
+
+/// In edit mode, a long-press on any Reading row starts a drag (no handle) and the
+/// drop reorders within the Reading section, persisting the new order.
+extension ReadingListViewController: UITableViewDragDelegate, UITableViewDropDelegate {
+
+    func tableView(
+        _ tableView: UITableView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath
+    ) -> [UIDragItem] {
+        guard isEditing, section(at: indexPath.section) == .reading else { return [] }
+        let dragged = item(at: indexPath)
+        let item = UIDragItem(itemProvider: NSItemProvider())
+        item.localObject = dragged.id
+        return [item]
+    }
+
+    func tableView(
+        _ tableView: UITableView, dropSessionDidUpdate session: UIDropSession,
+        withDestinationIndexPath destinationIndexPath: IndexPath?
+    ) -> UITableViewDropProposal {
+        guard isEditing, session.localDragSession != nil,
+              let destination = destinationIndexPath, section(at: destination.section) == .reading
+        else { return UITableViewDropProposal(operation: .cancel) }
+        return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+    }
+
+    func tableView(_ tableView: UITableView, performDropWith coordinator: UITableViewDropCoordinator) {
+        guard let dropItem = coordinator.items.first,
+              let source = dropItem.sourceIndexPath,
+              let groupIndex = groups.firstIndex(where: { $0.section == .reading })
+        else { return }
+        var reading = groups[groupIndex].items
+        let readingCount = reading.count
+        let destination = coordinator.destinationIndexPath
+            ?? IndexPath(row: readingCount - 1, section: source.section)
+        let moved = reading.remove(at: source.row)
+        let destinationRow = min(max(destination.row, 0), reading.count)
+        reading.insert(moved, at: destinationRow)
+        groups[groupIndex].items = reading
+
+        // Persist the full order; suppress the reload this triggers so the drop
+        // animation finishes cleanly.
+        isApplyingReorder = true
+        store.setOrder(groups.flatMap(\.items).map(\.id))
+        let destinationPath = IndexPath(row: destinationRow, section: source.section)
+        tableView.performBatchUpdates {
+            tableView.deleteRows(at: [source], with: .automatic)
+            tableView.insertRows(at: [destinationPath], with: .automatic)
+        }
+        coordinator.drop(dropItem.dragItem, toRowAt: destinationPath)
+        DispatchQueue.main.async { [weak self] in self?.isApplyingReorder = false }
     }
 }

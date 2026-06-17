@@ -26,4 +26,22 @@ enum AutoDownloadSettings {
     static func setEnabled(_ enabled: Bool, for platform: ContentPlatform) {
         defaults.set(enabled, forKey: key(for: platform))
     }
+
+    // Dedup: which URLs have already been auto-downloaded, so the in-process
+    // download (share ext / intent) and the main-app ingest fallback never both
+    // save the same post. A bounded recent list.
+    private static let downloadedKey = "autoDownloadedURLs"
+    private static let downloadedCap = 300
+
+    static func wasDownloaded(_ urlString: String) -> Bool {
+        (defaults.array(forKey: downloadedKey) as? [String])?.contains(urlString) ?? false
+    }
+
+    static func markDownloaded(_ urlString: String) {
+        var list = (defaults.array(forKey: downloadedKey) as? [String]) ?? []
+        guard !list.contains(urlString) else { return }
+        list.append(urlString)
+        if list.count > downloadedCap { list.removeFirst(list.count - downloadedCap) }
+        defaults.set(list, forKey: downloadedKey)
+    }
 }

@@ -167,7 +167,9 @@ final class ReadingListIngestor {
             for: item.id)
 
         // Auto-download the post's media to Photos when enabled for this platform.
-        MediaAutoDownloader.runIfEnabled(forURLString: item.urlString)
+        // Awaited so an app intent finishes the download before it returns; dedup'd
+        // so it never double-saves a post already downloaded by the share extension.
+        await MediaAutoDownloader.runIfEnabledAwaiting(forURLString: item.urlString)
     }
 
     /// Downloads up to `maxImages` article images to the Articles directory and

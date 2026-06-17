@@ -244,8 +244,9 @@ final class ShareViewController: UIViewController {
     /// and an "Open in Queue" button. Safe to call from any thread.
     private func presentSavedOrReader(url: URL) {
         guard let mode = readerMode() else {
-            // Share extension (no reader mode): save and close, always.
-            confirmSavedThenComplete()
+            // Share extension (no reader mode): save and close. If auto-download is
+            // on for this platform, stay alive and download the media first.
+            autoDownloadThenComplete(urlString: url.absoluteString)
             return
         }
         DispatchQueue.main.async { [weak self] in
@@ -354,6 +355,66 @@ final class ShareViewController: UIViewController {
             self?.showSavedBadge()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { self?.finishRequest() }
         }
+    }
+
+    /// When auto-download is on for the shared link's platform, the extension STAYS
+    /// alive showing a "Saving media…" spinner until the download finishes, then the
+    /// "Saved" checkmark, then dismisses — so the download completes before the
+    /// process is killed. Otherwise it just saves and dismisses normally.
+    private func autoDownloadThenComplete(urlString: String) {
+        cancelLoadWatchdog()
+        guard MediaAutoDownloader.isEnabled(forURLString: urlString) else {
+            confirmSavedThenComplete()
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let downloading = self.showDownloadingBadge()
+            Task {
+                _ = await MediaAutoDownloader.runIfEnabledAwaiting(forURLString: urlString)
+                await MainActor.run {
+                    downloading.removeFromSuperview()
+                    self.showSavedBadge()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { self.finishRequest() }
+                }
+            }
+        }
+    }
+
+    /// A liquid-glass badge with a spinner + "Saving media…" (returned so it can be
+    /// swapped for the saved checkmark when the download finishes).
+    @discardableResult
+    private func showDownloadingBadge() -> UIVisualEffectView {
+        let badge = UIVisualEffectView(effect: GlassStyle.barEffect())
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        badge.layer.cornerRadius = 24
+        badge.layer.cornerCurve = .continuous
+        badge.clipsToBounds = true
+
+        let spinner = UIActivityIndicatorView(style: .large)
+        spinner.color = GlassStyle.readingAccent
+        spinner.startAnimating()
+        let label = UILabel()
+        label.text = "Saving media…"
+        label.font = .systemFont(ofSize: 16, weight: .semibold)
+        label.textColor = .label
+        let stack = UIStackView(arrangedSubviews: [spinner, label])
+        stack.axis = .vertical
+        stack.spacing = 8
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        badge.contentView.addSubview(stack)
+        view.addSubview(badge)
+        NSLayoutConstraint.activate([
+            badge.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            badge.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            badge.widthAnchor.constraint(equalToConstant: 160),
+            badge.heightAnchor.constraint(equalToConstant: 122),
+            stack.centerXAnchor.constraint(equalTo: badge.contentView.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: badge.contentView.centerYAnchor),
+        ])
+        return badge
     }
 
     private func armLoadWatchdog() {

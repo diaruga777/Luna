@@ -590,8 +590,17 @@ final class ReadingListViewController: UITableViewController {
     private func secondaryText(for item: ReadingListItem) -> NSAttributedString {
         let baseColor: UIColor = item.readState == .unopened ? .secondaryLabel : .tertiaryLabel
         let host = item.url?.host ?? ""
-        let leadingLabel = item.channelName
-            ?? (item.isDocument ? (item.documentType?.uppercased() ?? "Document") : host)
+        // Platform items show a logical container (subreddit / author / channel /
+        // artist), never the bare host. Falls back to the platform name.
+        let leadingLabel: String
+        if let platform = item.contentPlatform,
+           let module = PlatformRegistry.shared.module(for: platform) {
+            leadingLabel = module.subtitle(for: item) ?? platform.displayName
+        } else if item.isDocument {
+            leadingLabel = item.documentType?.uppercased() ?? "Document"
+        } else {
+            leadingLabel = item.channelName ?? host
+        }
         var parts = [leadingLabel, dateFormatter.string(from: item.dateAdded)]
         if !item.isYouTubeVideo {
             if ReaderSettings.showReadingTime, let words = item.wordCount, words > 0 {
@@ -927,7 +936,13 @@ final class ReadingListViewController: UITableViewController {
             } else if item.isURLlessMedia {
                 children.append(sendMediaToFriend)
             }
-            // Article-only actions — never for platform items (videos/posts/media).
+            // Any item that kept a real web URL (articles AND platform items like
+            // Reddit/Spotify/X) can share that link.
+            if item.isShareable {
+                children.append(shareLink)
+            }
+            // Article-only actions — ereader sends, and the eBook for text-only
+            // no-url articles (email/document) that can't share a link.
             if !item.isPlatformItem {
                 if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) {
                     children.append(sendToKindle)
@@ -935,11 +950,7 @@ final class ReadingListViewController: UITableViewController {
                 if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.boox) {
                     children.append(sendToBoox)
                 }
-                // URL articles share the link; text-only no-url articles (email/
-                // document) share the eBook (the only portable form they have).
-                if item.isShareable {
-                    children.append(shareLink)
-                } else if item.state == .ready {
+                if !item.isShareable, item.state == .ready {
                     children.append(shareEbook)
                 }
             }

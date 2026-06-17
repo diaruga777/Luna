@@ -17,7 +17,12 @@ struct BlueskyPlatform: PlatformModule {
         return PlatformMatch(platform: .bluesky, itemID: post.rkey)
     }
 
-    func subtitle(for item: ReadingListItem) -> String? { item.channelName }
+    func subtitle(for item: ReadingListItem) -> String? {
+        if let channel = item.channelName { return channel }
+        guard let author = BlueskyLink.post(from: item.urlString)?.author else { return nil }
+        // Real handles get an "@"; opaque DIDs fall through to the platform name.
+        return author.hasPrefix("did:") ? nil : "@\(author)"
+    }
     func appDeepLink(for item: ReadingListItem) -> URL? { nil }
     func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
 

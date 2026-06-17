@@ -284,12 +284,7 @@ final class ShareViewController: UIViewController {
             guard let self else { return }
             self.cancelLoadWatchdog()
             let text = (value as? String) ?? (value as? NSAttributedString)?.string
-            guard let text,
-                  let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue),
-                  let match = detector.firstMatch(
-                    in: text, range: NSRange(text.startIndex..., in: text)),
-                  let url = match.url, url.absoluteString.hasPrefix("http")
-            else {
+            guard let text, let url = ShareTextURL.extract(from: text) else {
                 self.failOrComplete("No link found to save.")
                 return
             }
@@ -305,13 +300,24 @@ final class ShareViewController: UIViewController {
             self.cancelLoadWatchdog()
             // The system deletes `url` when this callback returns, so the
             // appender copies it synchronously here.
-            if let url {
-                SharedReadingListAppender.appendDocument(sourceURL: url)
-                SharedDiagnosticLog.record("saved document \(url.lastPathComponent)", category: "share")
-                self.confirmSavedThenComplete()
-            } else {
+            guard let url else {
                 self.failOrComplete("Couldn't read the shared file.")
+                return
             }
+            // A text file that's essentially just a link → import the link, not
+            // the file (drop the surrounding text).
+            if type.conforms(to: .text),
+               let contents = try? String(contentsOf: url, encoding: .utf8),
+               let extracted = ShareTextURL.extract(from: contents) {
+                SharedReadingListAppender.append(urlString: extracted.absoluteString)
+                SharedDiagnosticLog.record(
+                    "saved url (text file) \(extracted.absoluteString)", category: "share")
+                self.presentSavedOrReader(url: extracted)
+                return
+            }
+            SharedReadingListAppender.appendDocument(sourceURL: url)
+            SharedDiagnosticLog.record("saved document \(url.lastPathComponent)", category: "share")
+            self.confirmSavedThenComplete()
         }
     }
 

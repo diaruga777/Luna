@@ -12,6 +12,15 @@ enum RedditLink {
         return host == "reddit.com" || host.hasSuffix(".reddit.com") || host == "redd.it"
     }
 
+    /// The subreddit ("r/<name>") from a permalink path, if present.
+    static func subreddit(from urlString: String) -> String? {
+        guard let url = URL(string: urlString) else { return nil }
+        let segments = Array(url.pathComponents.dropFirst())
+        guard let index = segments.firstIndex(where: { $0.lowercased() == "r" }),
+              index + 1 < segments.count, !segments[index + 1].isEmpty else { return nil }
+        return "r/\(segments[index + 1])"
+    }
+
     /// The base-36 post id from a `/comments/<id>/…` permalink.
     static func postID(from urlString: String) -> String? {
         guard let url = URL(string: urlString), isReddit(urlString) else { return nil }
@@ -45,7 +54,9 @@ struct RedditPlatform: PlatformModule {
         return PlatformMatch(platform: .reddit, itemID: RedditLink.postID(from: urlString))
     }
 
-    func subtitle(for item: ReadingListItem) -> String? { item.channelName }
+    func subtitle(for item: ReadingListItem) -> String? {
+        item.channelName ?? RedditLink.subreddit(from: item.urlString)
+    }
     func appDeepLink(for item: ReadingListItem) -> URL? { nil }
     func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
 

@@ -24,6 +24,12 @@ enum TikTokLink {
         let id = segments[videoIndex + 1]
         return id.allSatisfy(\.isNumber) && !id.isEmpty ? id : nil
     }
+
+    /// The creator handle ("@user") from `/@user/video/<id>`, if present.
+    static func handle(from urlString: String) -> String? {
+        guard let url = URL(string: urlString), isTikTok(urlString) else { return nil }
+        return url.pathComponents.dropFirst().first { $0.hasPrefix("@") && $0.count > 1 }
+    }
 }
 
 /// TikTok videos. Opens in Safari (no reliable per-video app scheme); oEmbed
@@ -37,7 +43,9 @@ struct TikTokPlatform: PlatformModule {
         return PlatformMatch(platform: .tiktok, itemID: TikTokLink.videoID(from: urlString))
     }
 
-    func subtitle(for item: ReadingListItem) -> String? { item.channelName }
+    func subtitle(for item: ReadingListItem) -> String? {
+        item.channelName ?? TikTokLink.handle(from: item.urlString)
+    }
     func appDeepLink(for item: ReadingListItem) -> URL? { nil }
     func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
 

@@ -25,6 +25,18 @@ enum XLink {
     }
 
     static func appURL(tweetID: String) -> URL? { URL(string: "twitter://status?id=\(tweetID)") }
+
+    /// The author handle ("@user") from `(x|twitter).com/<user>/status/<id>`.
+    static func handle(from urlString: String) -> String? {
+        guard let url = URL(string: urlString), let host = url.host?.lowercased(),
+              hosts.contains(host) else { return nil }
+        let segments = Array(url.pathComponents.dropFirst())
+        guard let statusIndex = segments.firstIndex(where: { $0 == "status" || $0 == "statuses" }),
+              statusIndex >= 1 else { return nil }
+        let user = segments[statusIndex - 1]
+        guard !user.isEmpty, user.lowercased() != "i" else { return nil }
+        return "@\(user)"
+    }
 }
 
 /// X posts. Opens the X/Twitter app via `twitter://status?id=`, else Safari
@@ -38,7 +50,9 @@ struct XPlatform: PlatformModule {
         return PlatformMatch(platform: .x, itemID: id)
     }
 
-    func subtitle(for item: ReadingListItem) -> String? { item.channelName }
+    func subtitle(for item: ReadingListItem) -> String? {
+        item.channelName ?? XLink.handle(from: item.urlString)
+    }
 
     func appDeepLink(for item: ReadingListItem) -> URL? {
         (item.platformItemID).flatMap(XLink.appURL(tweetID:))

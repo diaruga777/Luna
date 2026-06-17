@@ -38,6 +38,7 @@ final class SettingsViewController: UITableViewController {
         Category(title: "Email & Kindle", symbol: "envelope") { EmailAndKindleSettingsScreen() },
         Category(title: "Send to Boox", symbol: "books.vertical") { BooxSettingsScreen() },
         Category(title: "Music & Podcasts", symbol: "music.note") { MediaProviderSettingsScreen() },
+        Category(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") { AutoDownloadSettingsScreen() },
         Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
         Category(title: "Experimental", symbol: "flask") { ExperimentalSettingsScreen() },
         Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },

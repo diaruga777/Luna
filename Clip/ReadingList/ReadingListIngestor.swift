@@ -165,6 +165,9 @@ final class ReadingListIngestor {
             mediaItemTitle: metadata?.mediaItemTitle,
             mediaSourceService: match.sourceService,
             for: item.id)
+
+        // Auto-download the post's media to Photos when enabled for this platform.
+        MediaAutoDownloader.runIfEnabled(forURLString: item.urlString)
     }
 
     /// Downloads up to `maxImages` article images to the Articles directory and

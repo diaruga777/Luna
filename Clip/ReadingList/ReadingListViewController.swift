@@ -719,7 +719,7 @@ final class ReadingListViewController: UITableViewController {
             UIApplication.shared.open(appURL, completionHandler: markRead)
             return
         }
-        if !query.isEmpty, let appSearch = provider.appSearchURL(query: query),
+        if !query.isEmpty, let appSearch = provider.appSearchURL(query: query, platform: platform),
            UIApplication.shared.canOpenURL(appSearch) {
             UIApplication.shared.open(appSearch, completionHandler: markRead)
             return
@@ -728,7 +728,7 @@ final class ReadingListViewController: UITableViewController {
         if let url = URL(string: item.urlString), let scheme = url.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {
             InAppBrowser.present(urlString: item.urlString, from: self)
-        } else if !query.isEmpty, let webSearch = provider.webSearchURL(query: query) {
+        } else if !query.isEmpty, let webSearch = provider.webSearchURL(query: query, platform: platform) {
             InAppBrowser.present(urlString: webSearch.absoluteString, from: self)
         }
     }

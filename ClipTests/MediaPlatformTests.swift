@@ -37,9 +37,24 @@ final class MediaPlatformTests: XCTestCase {
 
     func testProviderSearchLinks() {
         XCTAssertEqual(
-            MusicProvider.spotify.appSearchURL(query: "a b")?.absoluteString, "spotify:search:a%20b")
+            MusicProvider.spotify.appSearchURL(query: "a b", platform: .music)?.absoluteString,
+            "spotify:search:a%20b")
         XCTAssertTrue(
-            MusicProvider.apple.appSearchURL(query: "a b")?.absoluteString.hasPrefix("music://music.apple.com/search?term=") ?? false)
+            MusicProvider.apple.appSearchURL(query: "a b", platform: .music)?.absoluteString
+                .hasPrefix("music://music.apple.com/search?term=") ?? false)
+    }
+
+    func testApplePodcastSearchUsesPodcastsApp() {
+        XCTAssertTrue(
+            MusicProvider.apple.appSearchURL(query: "a b", platform: .podcast)?.absoluteString
+                .hasPrefix("podcasts://podcasts.apple.com/search?term=") ?? false)
+        XCTAssertTrue(
+            MusicProvider.apple.webSearchURL(query: "a b", platform: .podcast)?.absoluteString
+                .hasPrefix("https://podcasts.apple.com/search?term=") ?? false)
+        // Spotify uses one app/scheme for songs and podcasts.
+        XCTAssertEqual(
+            MusicProvider.spotify.appSearchURL(query: "a b", platform: .podcast)?.absoluteString,
+            "spotify:search:a%20b")
     }
 
     func testRegistryRoutesMediaToMusicAndPodcast() {

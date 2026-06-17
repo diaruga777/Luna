@@ -60,20 +60,28 @@ enum MediaLink {
 
 extension MusicProvider {
     /// App-scheme search deep link for "artist track" (provider-portable open).
-    func appSearchURL(query: String) -> URL? {
+    /// `platform` routes Apple podcasts to the Podcasts app rather than Music (which
+    /// can't play them); Spotify searches songs and podcasts in one app/scheme.
+    func appSearchURL(query: String, platform: ContentPlatform) -> URL? {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         switch self {
-        case .apple: return URL(string: "music://music.apple.com/search?term=\(encoded)")
-        case .spotify: return URL(string: "spotify:search:\(encoded)")
+        case .apple:
+            return platform == .podcast
+                ? URL(string: "podcasts://podcasts.apple.com/search?term=\(encoded)")
+                : URL(string: "music://music.apple.com/search?term=\(encoded)")
+        case .spotify:
+            return URL(string: "spotify:search:\(encoded)")
         }
     }
 
     /// Web search URL (Safari fallback when the app isn't installed).
-    func webSearchURL(query: String) -> URL? {
+    func webSearchURL(query: String, platform: ContentPlatform) -> URL? {
         let queryEncoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         switch self {
         case .apple:
-            return URL(string: "https://music.apple.com/search?term=\(queryEncoded)")
+            return platform == .podcast
+                ? URL(string: "https://podcasts.apple.com/search?term=\(queryEncoded)")
+                : URL(string: "https://music.apple.com/search?term=\(queryEncoded)")
         case .spotify:
             let pathEncoded = query.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? query
             return URL(string: "https://open.spotify.com/search/\(pathEncoded)")

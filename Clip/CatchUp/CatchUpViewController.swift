@@ -67,9 +67,13 @@ final class CatchUpViewController: UIViewController {
     // MARK: - Layout
 
     private func configureBackground() {
-        // The app's own grouped background (cards sit at the reader's depth-0 color),
-        // not Slack's purple — keep the liquid-glass aesthetic.
-        view.backgroundColor = .systemGroupedBackground
+        // An off-color backdrop the glass cards read against: a lighter gray in dark
+        // mode (so the near-black cards aren't black-on-black), grouped gray in light.
+        view.backgroundColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.17, alpha: 1)
+                : .systemGroupedBackground
+        }
     }
 
     private func configureBars() {

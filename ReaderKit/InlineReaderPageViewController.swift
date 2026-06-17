@@ -30,12 +30,14 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
     /// mode switcher for this page).
     var onBecameArticle: (() -> Void)?
 
-    private let webView: WKWebView
     private let spinner = UIActivityIndicatorView(style: .medium)
     private var articleProbe: Task<Void, Never>?
     private var articleContent: ArticleContent?
     private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
     private weak var readerChild: UIViewController?
+    /// Created LAZILY in `showWebView` (not init) — instantiating a WKWebView spins
+    /// up the web content process, which would lag the overlay's open animation.
+    private var webView: WKWebView?
     /// Set once the probe has committed to reader OR web view (so neither is
     /// applied twice).
     private var didDecide = false
@@ -47,7 +49,6 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
         self.url = url
         self.shareProvider = shareProvider
         self.headerHeight = headerHeight
-        self.webView = WKWebView(frame: .zero, configuration: WebJunkBlocker.makeConfiguration())
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -78,6 +79,9 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
     private func showWebView() {
         guard isViewLoaded, !didDecide else { return }
         didDecide = true
+        // Create the (expensive) web view only now that we know we need it.
+        let webView = WKWebView(frame: .zero, configuration: WebJunkBlocker.makeConfiguration())
+        self.webView = webView
         let themed = ReaderDepth.backgroundColor(for: 0)
         // Non-opaque + themed: no white flash, and dark-capable sites render dark
         // when the device is in dark mode (the web view inherits the app's style).

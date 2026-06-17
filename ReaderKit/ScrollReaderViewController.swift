@@ -127,7 +127,9 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             verticalFittingPriority: .fittingSizeLevel).height
         shareView.frame = CGRect(x: 0, y: textView.contentSize.height, width: width, height: height)
         let footerSpace = footer.isHidden ? 0 : footer.bounds.height
-        textView.contentInset.bottom = height + footerSpace
+        // Add the bottom safe area so the last lines + share footer clear the
+        // home indicator instead of sitting under it.
+        textView.contentInset.bottom = height + footerSpace + view.safeAreaInsets.bottom + 16
     }
 
     override func viewDidLoad() {
@@ -561,13 +563,20 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         // window and split it there — pixel-perfect, no text relayout, and
         // unaffected by the reader's offset from the screen top (nav bar etc.).
         let lineTopInTextView = lineRect.minY - textView.contentOffset.y
-        let cutY = textView.convert(CGPoint(x: 0, y: lineTopInTextView), to: nil).y
+        let rawCutY = textView.convert(CGPoint(x: 0, y: lineTopInTextView), to: nil).y
         let readerOffset = textView.contentOffset.y
 
         var topHalf: UIView?
         var bottomHalf: UIView?
+        var cutY = rawCutY
         if let window = view.window {
             let bounds = window.bounds
+            let safe = window.safeAreaInsets
+            let lineHeight = lineRect.height
+            // Clamp the cut so a full one-line peek fits above and below — and so
+            // the snapshots are captured AT the clamped cut (no later resize/glitch
+            // when the tapped link is very high or low on screen).
+            cutY = min(max(rawCutY, safe.top + lineHeight), bounds.height - safe.bottom - lineHeight)
             topHalf = window.resizableSnapshotView(
                 from: CGRect(x: 0, y: 0, width: bounds.width, height: max(cutY, 1)),
                 afterScreenUpdates: false, withCapInsets: .zero)

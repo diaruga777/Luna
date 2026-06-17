@@ -22,11 +22,11 @@ final class ReaderViewController: UIViewController {
     /// switch (nil on first open → each child uses its own persisted default).
     private var resumeWordIndex: Int?
 
-    /// The mode switcher lives in an inline header bar (not the nav title) so it
-    /// doesn't slide during push/pop transitions. Child readers fill the area
-    /// below it.
-    private let headerBar = UIView()
+    /// Child readers fill the area below the (compact) nav bar, which holds the
+    /// mode switcher as its title view (between Back and the audio toggle).
     private let contentContainer = UIView()
+    /// Hovering glass share button, bottom-right above the footer controls.
+    private let floatingShareButton = UIButton(type: .system)
 
     /// Sharing affordances (nil in the share extension → no share button/footer).
     private let shareProvider: ReaderShareProviding?
@@ -75,23 +75,21 @@ final class ReaderViewController: UIViewController {
         }
         modeControl.selectedSegmentIndex = Self.orderedModes.firstIndex(of: mode) ?? 0
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
+        // Compact header: the mode switcher tucks into the nav bar between the
+        // Back button and the audio toggle.
+        navigationItem.titleView = modeControl
 
-        // Inline header bar with the mode switcher, then the child reader below.
-        headerBar.translatesAutoresizingMaskIntoConstraints = false
-        modeControl.translatesAutoresizingMaskIntoConstraints = false
-        headerBar.addSubview(modeControl)
+        // The nav bar keeps a blurred material background even at the scroll edge,
+        // so content reads under a frosted header as it scrolls.
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithDefaultBackground()
+        navigationItem.standardAppearance = appearance
+        navigationItem.scrollEdgeAppearance = appearance
+
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(headerBar)
         view.addSubview(contentContainer)
         NSLayoutConstraint.activate([
-            headerBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            headerBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            headerBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            modeControl.centerXAnchor.constraint(equalTo: headerBar.centerXAnchor),
-            modeControl.topAnchor.constraint(equalTo: headerBar.topAnchor, constant: 6),
-            modeControl.bottomAnchor.constraint(equalTo: headerBar.bottomAnchor, constant: -6),
-            modeControl.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
-            contentContainer.topAnchor.constraint(equalTo: headerBar.bottomAnchor),
+            contentContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             contentContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             contentContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -99,21 +97,31 @@ final class ReaderViewController: UIViewController {
 
         updateAudioButton()
         audioButton.addTarget(self, action: #selector(audioToggled), for: .touchUpInside)
-        let audioItem = UIBarButtonItem(customView: audioButton)
-        // Share button whenever sharing is available (not in the share sheet).
-        // Documents/emails have no web URL — the provider then offers only the
-        // eBook form.
+        navigationItem.rightBarButtonItems = [UIBarButtonItem(customView: audioButton)]
+
+        // Share moved to a hovering glass circle, bottom-right (above the footer
+        // controls). Shown whenever sharing is available (not in the share sheet).
         if shareProvider != nil {
-            let shareButton = UIBarButtonItem(
-                image: UIImage(systemName: "square.and.arrow.up"), style: .plain,
-                target: self, action: #selector(shareTapped))
-            navigationItem.rightBarButtonItems = [shareButton, audioItem]
-        } else {
-            navigationItem.rightBarButtonItems = [audioItem]
+            setUpFloatingShareButton()
         }
 
         store.markReadState(.opened, for: item.id)
         showCurrentMode()
+    }
+
+    private func setUpFloatingShareButton() {
+        floatingShareButton.configuration = GlassStyle.circularButtonConfiguration(
+            symbol: "square.and.arrow.up", padding: 14)
+        floatingShareButton.tintColor = GlassStyle.readingAccent
+        floatingShareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
+        floatingShareButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(floatingShareButton)
+        NSLayoutConstraint.activate([
+            floatingShareButton.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            floatingShareButton.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -92),
+        ])
     }
 
     // MARK: - Mode & audio switching

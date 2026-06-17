@@ -52,18 +52,26 @@ struct SocialMediaResolver: SocialMediaResolving {
     }
 
     private func resolveInstagram(url: URL, shortcode: String?) async -> [MediaAsset] {
-        // The lightweight embed page exposes the media without a login wall more
-        // often than the full post page; fall back to the post page.
+        // Post page FIRST — it exposes `og:video` for video posts. The embed page
+        // only carries the poster image, so trying it first would save a still from
+        // a video (the bug this fixes). A crawler UA reliably gets the og preview.
+        var assets: [MediaAsset] = []
+        if let data = await fetch(metaScrapeRequest(url)),
+           let html = String(data: data, encoding: .utf8) {
+            assets = InstagramMediaParser.assets(fromHTML: html)
+        }
+        if assets.contains(where: { $0.kind == .video }) { return assets }
+
+        // Embed fallback (sometimes carries a `video_url`, otherwise the image).
         if let code = shortcode,
            let embed = URL(string: "https://www.instagram.com/p/\(code)/embed/captioned/"),
            let data = await fetch(htmlRequest(embed)),
-           let html = String(data: data, encoding: .utf8),
-           let assets = InstagramMediaParser.assets(fromHTML: html).nonEmpty {
-            return assets
+           let html = String(data: data, encoding: .utf8) {
+            let embedAssets = InstagramMediaParser.assets(fromHTML: html)
+            if embedAssets.contains(where: { $0.kind == .video }) { return embedAssets }
+            if assets.isEmpty { return embedAssets }
         }
-        guard let data = await fetch(htmlRequest(url)),
-              let html = String(data: data, encoding: .utf8) else { return [] }
-        return InstagramMediaParser.assets(fromHTML: html)
+        return assets
     }
 
     // MARK: - Requests
@@ -77,6 +85,15 @@ struct SocialMediaResolver: SocialMediaResolving {
     private func htmlRequest(_ url: URL) -> URLRequest {
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        return request
+    }
+
+    /// A request with a link-unfurler UA — sites serve the Open Graph preview
+    /// (`og:video`/`og:image`) to it even when they'd otherwise show a login wall.
+    private func metaScrapeRequest(_ url: URL) -> URLRequest {
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.setValue("facebookexternalhit/1.1", forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         return request
     }
@@ -95,10 +112,6 @@ enum MediaDownloadHTTP {
     static let browserUserAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
         "(KHTML, like Gecko) Version/17.4 Safari/605.1.15"
-}
-
-private extension Array where Element == MediaAsset {
-    var nonEmpty: [MediaAsset]? { isEmpty ? nil : self }
 }
 
 // MARK: - Pure parsers (unit-tested against fixtures)

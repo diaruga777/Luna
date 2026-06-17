@@ -1,0 +1,353 @@
+//
+//  CatchUpViewController.swift
+//  Clip
+//
+
+import UIKit
+
+/// A Slack-style "catch up" experience over the reading list's UNREAD items. Each
+/// unread item is a swipeable card: drag left to **Bump** (re-sort to the top with a
+/// new bump date) or right to **Mark Read** (same actions on the bottom buttons).
+/// Article cards embed a live reader (scroll mode, mode switcher, scrollable);
+/// media/link cards show the row preview and open on tap. After the last card, an
+/// optional "Delete all read?" screen, then an "All done!" screen with Undo.
+final class CatchUpViewController: UIViewController {
+
+    private enum Phase { case cards, deletePrompt, done }
+
+    private let store = ReadingListStore.shared
+    private weak var router: ReadingListViewController?
+
+    /// Whole-list snapshot taken at entry; "Undo" restores it in one shot.
+    private let snapshot: [ReadingListItem]
+    private var queue: [ReadingListItem]
+    private var index = 0
+    private var pendingDeleteRead = false
+    private var phase: Phase = .cards
+
+    private let titleLabel = UILabel()
+    private let leftButton = UIButton(type: .system)
+    private let rightButton = UIButton(type: .system)
+    private let cardArea = UIView()
+    private let messageView = CatchUpMessageView()
+    private let primaryButton = UIButton(type: .system)    // Bump / Keep
+    private let secondaryButton = UIButton(type: .system)  // Mark Read / Delete All / Done
+
+    private var currentCard: CatchUpCardView?
+    private var currentReaderNav: UINavigationController?
+    private var currentItem: ReadingListItem? {
+        index < queue.count ? queue[index] : nil
+    }
+
+    /// - Parameter unread: the unread items to catch up, in display order.
+    init(unread: [ReadingListItem], router: ReadingListViewController) {
+        self.snapshot = ReadingListStore.shared.items()
+        self.queue = unread
+        self.router = router
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .fullScreen
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        configureBackground()
+        configureBars()
+        configureCardArea()
+        configureBottomButtons()
+        if queue.isEmpty {
+            advanceToEndScreens()
+        } else {
+            showCard()
+            updateChrome()
+        }
+    }
+
+    // MARK: - Layout
+
+    private func configureBackground() {
+        // The app's own grouped background (cards sit at the reader's depth-0 color),
+        // not Slack's purple — keep the liquid-glass aesthetic.
+        view.backgroundColor = .systemGroupedBackground
+    }
+
+    private func configureBars() {
+        leftButton.tintColor = GlassStyle.readingAccent
+        leftButton.addTarget(self, action: #selector(leftTapped), for: .touchUpInside)
+        leftButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(leftButton)
+
+        rightButton.tintColor = GlassStyle.readingAccent
+        rightButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        rightButton.addTarget(self, action: #selector(rightTapped), for: .touchUpInside)
+        rightButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(rightButton)
+
+        titleLabel.font = .systemFont(ofSize: 17, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.textAlignment = .center
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(titleLabel)
+
+        NSLayoutConstraint.activate([
+            leftButton.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            leftButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            leftButton.widthAnchor.constraint(equalToConstant: 44),
+            leftButton.heightAnchor.constraint(equalToConstant: 44),
+            rightButton.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            rightButton.centerYAnchor.constraint(equalTo: leftButton.centerYAnchor),
+            rightButton.heightAnchor.constraint(equalToConstant: 44),
+            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: leftButton.centerYAnchor),
+        ])
+    }
+
+    private func configureCardArea() {
+        cardArea.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(cardArea)
+
+        messageView.translatesAutoresizingMaskIntoConstraints = false
+        messageView.isHidden = true
+        view.addSubview(messageView)
+
+        NSLayoutConstraint.activate([
+            cardArea.topAnchor.constraint(equalTo: leftButton.bottomAnchor, constant: 12),
+            cardArea.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
+            cardArea.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            messageView.topAnchor.constraint(equalTo: cardArea.topAnchor),
+            messageView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 30),
+            messageView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -30),
+            messageView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+    }
+
+    private func configureBottomButtons() {
+        for button in [primaryButton, secondaryButton] {
+            button.titleLabel?.font = .systemFont(ofSize: 18, weight: .bold)
+            button.layer.cornerRadius = 16
+            button.layer.cornerCurve = .continuous
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.heightAnchor.constraint(equalToConstant: 58).isActive = true
+            view.addSubview(button)
+        }
+        primaryButton.addTarget(self, action: #selector(primaryTapped), for: .touchUpInside)
+        secondaryButton.addTarget(self, action: #selector(secondaryTapped), for: .touchUpInside)
+
+        NSLayoutConstraint.activate([
+            primaryButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            primaryButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            secondaryButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            secondaryButton.bottomAnchor.constraint(equalTo: primaryButton.bottomAnchor),
+            secondaryButton.leadingAnchor.constraint(equalTo: primaryButton.trailingAnchor, constant: 12),
+            primaryButton.widthAnchor.constraint(equalTo: secondaryButton.widthAnchor),
+            cardArea.bottomAnchor.constraint(equalTo: primaryButton.topAnchor, constant: -16),
+        ])
+    }
+
+    // MARK: - Cards
+
+    private func showCard() {
+        guard let item = currentItem else { advanceToEndScreens(); return }
+        let card = CatchUpCardView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.onAction = { [weak self] action in self?.commitAction(action) }
+        cardArea.addSubview(card)
+        NSLayoutConstraint.activate([
+            card.topAnchor.constraint(equalTo: cardArea.topAnchor),
+            card.bottomAnchor.constraint(equalTo: cardArea.bottomAnchor),
+            card.leadingAnchor.constraint(equalTo: cardArea.leadingAnchor),
+            card.trailingAnchor.constraint(equalTo: cardArea.trailingAnchor),
+        ])
+        currentCard = card
+        populate(card, with: item)
+    }
+
+    private func populate(_ card: CatchUpCardView, with item: ReadingListItem) {
+        let header = CatchUpCardHeader(item: item)
+        header.translatesAutoresizingMaskIntoConstraints = false
+        card.contentContainer.addSubview(header)
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: card.contentContainer.topAnchor),
+            header.leadingAnchor.constraint(equalTo: card.contentContainer.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: card.contentContainer.trailingAnchor),
+        ])
+
+        let body: UIView
+        if ReadingListViewController.rendersAsReader(item), item.state == .ready,
+           let content = store.content(for: item) {
+            let reader = ReaderViewController(
+                item: item, content: content, forceMode: .scroll,
+                shareProvider: nil, gazeTrackerFactory: nil,
+                persistsModePreference: false, marksOpenedOnLoad: false)
+            let nav = UINavigationController(rootViewController: reader)
+            nav.navigationBar.prefersLargeTitles = false
+            addChild(nav)
+            body = nav.view
+            currentReaderNav = nav
+            defer { nav.didMove(toParent: self) }
+        } else {
+            body = CatchUpMediaCardBody(item: item, store: store) { [weak self] in
+                self?.openMediaItem(item)
+            }
+        }
+        body.translatesAutoresizingMaskIntoConstraints = false
+        card.contentContainer.addSubview(body)
+        NSLayoutConstraint.activate([
+            body.topAnchor.constraint(equalTo: header.bottomAnchor),
+            body.leadingAnchor.constraint(equalTo: card.contentContainer.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: card.contentContainer.trailingAnchor),
+            body.bottomAnchor.constraint(equalTo: card.contentContainer.bottomAnchor),
+        ])
+    }
+
+    /// Opens a media/link card's item from the catch-up screen, then marks it read.
+    private func openMediaItem(_ item: ReadingListItem) {
+        router?.openItem(item, presentingFrom: self)
+        store.markReadState(.read, for: item.id)
+    }
+
+    private func commitAction(_ action: CatchUpCardView.Action) {
+        guard let item = currentItem else { return }
+        switch action {
+        case .bump: store.bump(item.id)
+        case .markRead: store.markReadState(.read, for: item.id)
+        }
+        tearDownCurrentCard()
+        index += 1
+        if currentItem != nil {
+            showCard()
+            updateChrome()
+        } else {
+            advanceToEndScreens()
+        }
+    }
+
+    private func tearDownCurrentCard() {
+        if let nav = currentReaderNav {
+            nav.willMove(toParent: nil)
+            nav.view.removeFromSuperview()
+            nav.removeFromParent()
+            currentReaderNav = nil
+        }
+        currentCard?.removeFromSuperview()
+        currentCard = nil
+    }
+
+    // MARK: - End screens
+
+    private func advanceToEndScreens() {
+        tearDownCurrentCard()
+        let hasReadItems = store.items().contains { $0.readState == .read }
+        phase = (hasReadItems && phase == .cards) ? .deletePrompt : .done
+        if phase == .deletePrompt {
+            messageView.show(symbol: "trash", tint: .systemRed, text: "Delete all read items?")
+        } else {
+            messageView.show(symbol: "checkmark.circle.fill", tint: GlassStyle.readingAccent, text: "All done!")
+        }
+        messageView.isHidden = false
+        updateChrome()
+    }
+
+    // MARK: - Chrome (per phase)
+
+    private func updateChrome() {
+        switch phase {
+        case .cards:
+            titleLabel.text = "\(queue.count - index) left"
+            leftButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+            rightButton.setTitle(nil, for: .normal)
+            rightButton.setImage(UIImage(systemName: "square.and.arrow.up"), for: .normal)
+            rightButton.isHidden = false
+            styleButton(primaryButton, title: "Bump", filled: false)
+            styleButton(secondaryButton, title: "Mark Read", filled: true)
+            setBottomButtons(hidden: false, singleFullWidth: false)
+        case .deletePrompt:
+            titleLabel.text = nil
+            leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+            rightButton.isHidden = true
+            styleButton(primaryButton, title: "Keep", filled: false)
+            styleButton(secondaryButton, title: "Delete All", filled: true, destructive: true)
+            setBottomButtons(hidden: false, singleFullWidth: false)
+        case .done:
+            titleLabel.text = nil
+            leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+            rightButton.setImage(nil, for: .normal)
+            rightButton.setTitle("Undo", for: .normal)
+            rightButton.isHidden = false
+            styleButton(secondaryButton, title: "Done", filled: true)
+            setBottomButtons(hidden: false, singleFullWidth: true)
+        }
+    }
+
+    private func styleButton(_ button: UIButton, title: String, filled: Bool, destructive: Bool = false) {
+        // Primary actions: filled accent (or red for destructive). Secondary: a
+        // tinted-accent glass pill — the app's liquid-glass button language.
+        var config = filled ? UIButton.Configuration.filled() : UIButton.Configuration.tinted()
+        config.title = title
+        let accent = destructive ? UIColor.systemRed : GlassStyle.readingAccent
+        config.baseBackgroundColor = accent
+        config.baseForegroundColor = filled ? .white : accent
+        config.cornerStyle = .large
+        button.configuration = config
+    }
+
+    /// On the done screen the single button spans full width (primary hidden).
+    private func setBottomButtons(hidden: Bool, singleFullWidth: Bool) {
+        primaryButton.isHidden = hidden || singleFullWidth
+        secondaryButton.isHidden = hidden
+        primaryLeadingToSecondary?.isActive = !singleFullWidth
+        secondaryLeadingToView?.isActive = singleFullWidth
+    }
+    private lazy var primaryLeadingToSecondary: NSLayoutConstraint? =
+        secondaryButton.leadingAnchor.constraint(equalTo: primaryButton.trailingAnchor, constant: 12)
+    private lazy var secondaryLeadingToView: NSLayoutConstraint? =
+        secondaryButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16)
+
+    // MARK: - Actions
+
+    @objc private func primaryTapped() {
+        switch phase {
+        case .cards: currentCard?.performAction(.bump)
+        case .deletePrompt: pendingDeleteRead = false; phase = .done; transitionToDone()
+        case .done: break
+        }
+    }
+
+    @objc private func secondaryTapped() {
+        switch phase {
+        case .cards: currentCard?.performAction(.markRead)
+        case .deletePrompt: pendingDeleteRead = true; phase = .done; transitionToDone()
+        case .done: commitAndClose()
+        }
+    }
+
+    private func transitionToDone() {
+        messageView.show(symbol: "checkmark.circle.fill", tint: GlassStyle.readingAccent, text: "All done!")
+        updateChrome()
+    }
+
+    @objc private func leftTapped() {
+        // Cards back / end-screen X — close, applying any pending deletion.
+        commitAndClose()
+    }
+
+    @objc private func rightTapped() {
+        switch phase {
+        case .cards:
+            guard let item = currentItem, item.isShareable else { return }
+            AppReaderShareProvider.shared.presentShareSheet(
+                urlString: item.urlString, title: item.title, from: self, sourceView: rightButton)
+        case .done:
+            store.restore(snapshot)
+            dismiss(animated: true)
+        case .deletePrompt:
+            break
+        }
+    }
+
+    private func commitAndClose() {
+        if pendingDeleteRead { store.deleteAllRead() }
+        dismiss(animated: true)
+    }
+}

@@ -52,6 +52,9 @@ struct ReadingListItem: Codable, Identifiable {
     var urlString: String
     var title: String?
     var dateAdded: Date
+    /// When the user last "bumped" this item in catch-up — re-sorts it to the top of
+    /// the reading list and is shown (instead of the save date) on its catch-up card.
+    var bumpDate: Date?
     var state: State
     /// File name (inside the Articles directory) of the extracted `ArticleContent` JSON.
     var contentFileName: String?
@@ -149,6 +152,7 @@ struct ReadingListItem: Codable, Identifiable {
         self.urlString = urlString
         self.title = nil
         self.dateAdded = Date()
+        self.bumpDate = nil
         self.state = .pending
         self.contentFileName = nil
         self.lastWordIndex = nil
@@ -189,6 +193,7 @@ struct ReadingListItem: Codable, Identifiable {
         urlString = try container.decode(String.self, forKey: .urlString)
         title = try container.decodeIfPresent(String.self, forKey: .title)
         dateAdded = try container.decode(Date.self, forKey: .dateAdded)
+        bumpDate = try container.decodeIfPresent(Date.self, forKey: .bumpDate)
         state = try container.decode(State.self, forKey: .state)
         contentFileName = try container.decodeIfPresent(String.self, forKey: .contentFileName)
         lastWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastWordIndex)

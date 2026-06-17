@@ -43,6 +43,10 @@ final class ReaderViewController: UIViewController {
     private let persistsModePreference: Bool
     private let onModeChange: ((ReadingListItem.ReaderMode) -> Void)?
 
+    /// When false, opening does NOT mark the item `.opened` (a catch-up card just
+    /// previews the article; only an explicit Mark Read changes its state).
+    private let marksOpenedOnLoad: Bool
+
     private let modeControl = UISegmentedControl()
     private let audioButton = UIButton(type: .system)
 
@@ -53,12 +57,14 @@ final class ReaderViewController: UIViewController {
          shareProvider: ReaderShareProviding? = nil,
          gazeTrackerFactory: GazeTrackerFactory? = nil,
          persistsModePreference: Bool = true,
+         marksOpenedOnLoad: Bool = true,
          onModeChange: ((ReadingListItem.ReaderMode) -> Void)? = nil) {
         self.item = item
         self.content = content
         self.shareProvider = shareProvider
         self.gazeTrackerFactory = gazeTrackerFactory
         self.persistsModePreference = persistsModePreference
+        self.marksOpenedOnLoad = marksOpenedOnLoad
         self.onModeChange = onModeChange
         // First time on this article, fall back to the global last-used mode.
         self.mode = forceMode ?? item.lastReaderMode ?? ReaderSettings.lastReaderMode
@@ -108,7 +114,9 @@ final class ReaderViewController: UIViewController {
             setUpFloatingShareButton()
         }
 
-        store.markReadState(.opened, for: item.id)
+        if marksOpenedOnLoad {
+            store.markReadState(.opened, for: item.id)
+        }
         showCurrentMode()
     }
 

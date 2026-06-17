@@ -369,6 +369,30 @@ final class ReadingListStore {
         save(all)
     }
 
+    // MARK: - Catch-up
+
+    /// Stamps a new bump date on an item and moves it to the top of the list (it
+    /// re-sorts up in the reading list and shows the bump date on future catch-up
+    /// cards).
+    func bump(_ itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        guard let index = all.firstIndex(where: { $0.id == itemID }) else { return }
+        var item = all.remove(at: index)
+        item.bumpDate = Date()
+        all.insert(item, at: 0)
+        save(all)
+    }
+
+    /// Overwrites the entire list with `items` — used to UNDO a whole catch-up
+    /// session (bumps + read marks) in one shot from a pre-session snapshot.
+    func restore(_ items: [ReadingListItem]) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        save(items)
+    }
+
     // MARK: - Article content
 
     func saveContent(_ content: ArticleContent, for item: ReadingListItem) -> ReadingListItem {

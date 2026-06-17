@@ -137,6 +137,10 @@ final class ReadingListViewController: UITableViewController {
     /// Non-blocking bottom pill for media-download progress/result (created lazily).
     private weak var mediaDownloadStatus: MediaDownloadStatusView?
 
+    /// The "catch up" nav button; pulses + glows when there are many unread items.
+    private let catchUpButton = UIButton(type: .system)
+    private static let catchUpPulseThreshold = 12
+
     /// Non-empty groups in display order; rebuilt on every `reload`.
     private var groups: [(section: Section, items: [ReadingListItem])] = []
 
@@ -163,12 +167,18 @@ final class ReadingListViewController: UITableViewController {
         tableView.register(
             ReadingListItemCell.self, forCellReuseIdentifier: ReadingListItemCell.reuseID)
 
+        catchUpButton.setImage(UIImage(systemName: "rectangle.stack"), for: .normal)
+        catchUpButton.tintColor = GlassStyle.readingAccent
+        catchUpButton.accessibilityLabel = "Catch up"
+        catchUpButton.addTarget(self, action: #selector(catchUpTapped), for: .touchUpInside)
+        catchUpButton.frame = CGRect(x: 0, y: 0, width: 34, height: 34)
         navigationItem.rightBarButtonItems = [
             UIBarButtonItem(
                 barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
             UIBarButtonItem(
                 image: UIImage(systemName: "person.2"), style: .plain,
                 target: self, action: #selector(friendsTapped)),
+            UIBarButtonItem(customView: catchUpButton),
         ]
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "gearshape"), style: .plain,
@@ -278,9 +288,9 @@ final class ReadingListViewController: UITableViewController {
         transient.state = .ready
 
         if candidate.isVideo {
-            openVideo(transient)
+            openVideo(transient, from: self)
         } else if let platform = candidate.platform {
-            openPlatformItem(transient, platform: platform)
+            openPlatformItem(transient, platform: platform, from: self)
         } else if let content = candidate.content {
             let reader = ReaderViewController(
                 item: transient, content: content,
@@ -296,6 +306,7 @@ final class ReadingListViewController: UITableViewController {
         if isApplyingReorder || isAnimatingRowChange { return }
 
         updateFilterVisibility()
+        updateCatchUpButton()
         let all = store.items().filter { filter.includes($0) }
         let now = Date()
         var reading: [ReadingListItem] = []
@@ -384,6 +395,58 @@ final class ReadingListViewController: UITableViewController {
 
     @objc private func friendsTapped() {
         navigationController?.pushViewController(FriendsViewController(), animated: true)
+    }
+
+    // MARK: - Catch up
+
+    /// Items worth catching up on: unread (incl. partially read), and renderable
+    /// (ready articles, or any platform/media item).
+    private func catchUpQueue() -> [ReadingListItem] {
+        store.items().filter { item in
+            guard item.readState != .read else { return false }
+            return Self.rendersAsReader(item) ? item.state == .ready : true
+        }
+    }
+
+    /// Starts/stops the pulse-and-glow when the unread count crosses the threshold.
+    private func updateCatchUpButton() {
+        let unread = store.items().filter { $0.readState != .read }.count
+        if unread > Self.catchUpPulseThreshold {
+            startCatchUpPulse()
+        } else {
+            catchUpButton.layer.removeAnimation(forKey: "catchUpPulse")
+            catchUpButton.layer.removeAnimation(forKey: "catchUpGlow")
+            catchUpButton.layer.shadowOpacity = 0
+        }
+    }
+
+    private func startCatchUpPulse() {
+        guard catchUpButton.layer.animation(forKey: "catchUpPulse") == nil else { return }
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 1.0
+        scale.toValue = 1.14
+        scale.duration = 0.8
+        scale.autoreverses = true
+        scale.repeatCount = .infinity
+        scale.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        catchUpButton.layer.add(scale, forKey: "catchUpPulse")
+
+        catchUpButton.layer.shadowColor = GlassStyle.readingAccent.cgColor
+        catchUpButton.layer.shadowRadius = 8
+        catchUpButton.layer.shadowOffset = .zero
+        let glow = CABasicAnimation(keyPath: "shadowOpacity")
+        glow.fromValue = 0.1
+        glow.toValue = 0.9
+        glow.duration = 0.8
+        glow.autoreverses = true
+        glow.repeatCount = .infinity
+        glow.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        catchUpButton.layer.add(glow, forKey: "catchUpGlow")
+    }
+
+    @objc private func catchUpTapped() {
+        let catchUp = CatchUpViewController(unread: catchUpQueue(), router: self)
+        present(catchUp, animated: true)
     }
 
     // MARK: - Add
@@ -667,17 +730,7 @@ final class ReadingListViewController: UITableViewController {
             return
         }
         let item = item(at: indexPath)
-        if item.isYouTubeVideo {
-            openVideo(item)
-            return
-        }
-        if let platform = item.contentPlatform {
-            switch platform {
-            case .music, .podcast: openMediaItem(item, platform: platform)
-            default: openPlatformItem(item, platform: platform)
-            }
-            return
-        }
+        if openItem(item, presentingFrom: self) { return }
         guard item.state == .ready, let content = store.content(for: item) else { return }
         let reader = ReaderViewController(
             item: item, content: content,
@@ -686,11 +739,33 @@ final class ReadingListViewController: UITableViewController {
         navigationController?.pushViewController(reader, animated: true)
     }
 
+    /// Opens a non-article item (video / platform post / music / podcast) the way
+    /// tapping its row does, presenting any in-app viewer from `presenter` (the
+    /// reading list, or the catch-up screen). Returns false for reader articles, so
+    /// the caller can render those itself.
+    @discardableResult
+    func openItem(_ item: ReadingListItem, presentingFrom presenter: UIViewController) -> Bool {
+        if item.isYouTubeVideo {
+            openVideo(item, from: presenter)
+            return true
+        }
+        if let platform = item.contentPlatform {
+            switch platform {
+            case .music, .podcast: openMediaItem(item, platform: platform, from: presenter)
+            default: openPlatformItem(item, platform: platform, from: presenter)
+            }
+            return true
+        }
+        return false
+    }
+
     // MARK: - Platform item playback / open
 
     /// The launch ladder for a non-YouTube platform item: native app → in-app
     /// embed → in-app Safari.
-    private func openPlatformItem(_ item: ReadingListItem, platform: ContentPlatform) {
+    private func openPlatformItem(
+        _ item: ReadingListItem, platform: ContentPlatform, from presenter: UIViewController
+    ) {
         guard let module = PlatformRegistry.shared.module(for: platform) else { return }
 
         if let appURL = module.appDeepLink(for: item), UIApplication.shared.canOpenURL(appURL) {
@@ -700,17 +775,19 @@ final class ReadingListViewController: UITableViewController {
             return
         }
         if let embed = module.embed(for: item) {
-            present(PlatformEmbedViewController(embed: embed, itemID: item.id), animated: true)
+            presenter.present(PlatformEmbedViewController(embed: embed, itemID: item.id), animated: true)
             return
         }
-        InAppBrowser.present(urlString: item.urlString, from: self)
+        InAppBrowser.present(urlString: item.urlString, from: presenter)
     }
 
     /// Opens a music/podcast item in the user's preferred provider (exact link
     /// when same-provider, else a search), prompting to pick a provider if unset.
-    private func openMediaItem(_ item: ReadingListItem, platform: ContentPlatform) {
+    private func openMediaItem(
+        _ item: ReadingListItem, platform: ContentPlatform, from presenter: UIViewController
+    ) {
         guard let provider = MediaProviderSettings.preferredProvider(for: platform) else {
-            promptChooseMediaProvider()
+            promptChooseMediaProvider(from: presenter)
             return
         }
         let query = [item.mediaCreatorName, item.mediaItemTitle ?? item.title]
@@ -733,13 +810,13 @@ final class ReadingListViewController: UITableViewController {
         // Web fallback: the original http URL, else a web search in the provider.
         if let url = URL(string: item.urlString), let scheme = url.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {
-            InAppBrowser.present(urlString: item.urlString, from: self)
+            InAppBrowser.present(urlString: item.urlString, from: presenter)
         } else if !query.isEmpty, let webSearch = provider.webSearchURL(query: query, platform: platform) {
-            InAppBrowser.present(urlString: webSearch.absoluteString, from: self)
+            InAppBrowser.present(urlString: webSearch.absoluteString, from: presenter)
         }
     }
 
-    private func promptChooseMediaProvider() {
+    private func promptChooseMediaProvider(from presenter: UIViewController) {
         let alert = UIAlertController(
             title: "Choose a Music App",
             message: "Pick which app opens songs and podcasts.",
@@ -748,7 +825,7 @@ final class ReadingListViewController: UITableViewController {
             self?.navigationController?.pushViewController(MediaProviderSettingsScreen(), animated: true)
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        present(alert, animated: true)
+        presenter.present(alert, animated: true)
     }
 
     /// Sends a URL-less music/podcast item to a friend (via the CloudKit media case).
@@ -789,7 +866,7 @@ final class ReadingListViewController: UITableViewController {
 
     /// Prefers the YouTube app (marks read on successful handoff); otherwise
     /// the in-app player (marks read when playback finishes).
-    private func openVideo(_ item: ReadingListItem) {
+    private func openVideo(_ item: ReadingListItem, from presenter: UIViewController) {
         guard let videoID = item.youtubeVideoID else { return }
         if let appURL = YouTubeURL.appURL(videoID: videoID),
            UIApplication.shared.canOpenURL(appURL) {
@@ -800,7 +877,7 @@ final class ReadingListViewController: UITableViewController {
             }
             return
         }
-        present(YouTubePlayerViewController(videoID: videoID, itemID: item.id), animated: true)
+        presenter.present(YouTubePlayerViewController(videoID: videoID, itemID: item.id), animated: true)
     }
 
     /// The thumbnail state for a row: cached art (aspect-fit) when present, a

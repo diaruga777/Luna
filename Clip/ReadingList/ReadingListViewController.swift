@@ -113,6 +113,9 @@ final class ReadingListViewController: UITableViewController {
     /// A readable URL found on the system pasteboard, shown as a one-tap "From
     /// Pasteboard" row until saved. nil when there's nothing to suggest.
     private var pasteboardCandidate: PasteboardCandidate?
+    /// While set, the pasteboard URL whose preview is still being fetched — the
+    /// row shows a spinner until the candidate (or nil) resolves.
+    private var evaluatingPasteboardURL: String?
     /// The pasteboard `changeCount` last evaluated, so we only read its contents
     /// (which shows the system paste banner) when it has actually changed.
     private var lastCheckedPasteboardChangeCount = -1
@@ -206,59 +209,72 @@ final class ReadingListViewController: UITableViewController {
 
         guard pasteboard.hasURLs, let url = pasteboard.url else {
             // Pasteboard changed to something with no URL — drop any stale row.
-            if pasteboardCandidate != nil { pasteboardCandidate = nil; reload() }
+            if pasteboardCandidate != nil || evaluatingPasteboardURL != nil {
+                pasteboardCandidate = nil
+                evaluatingPasteboardURL = nil
+                reload()
+            }
             return
         }
+        // Show a spinner row immediately, then fill it in once the preview
+        // (content + thumbnail) resolves.
+        let urlString = url.absoluteString
+        guard store.item(forURLString: urlString) == nil else { return }
+        pasteboardCandidate = nil
+        evaluatingPasteboardURL = urlString
+        reload()
         Task { [weak self] in
-            let candidate = await PasteboardSuggester.shared.evaluate(urlString: url.absoluteString)
+            let candidate = await PasteboardSuggester.shared.evaluate(urlString: urlString)
             await MainActor.run {
-                guard let self else { return }
+                guard let self, self.evaluatingPasteboardURL == urlString else { return }
+                self.evaluatingPasteboardURL = nil
                 self.pasteboardCandidate = candidate
                 self.reload()
             }
         }
     }
 
-    /// Saves the pasteboard candidate and opens it. On return, the row is gone
-    /// and the item sits in its normal section.
-    private func openPasteboardCandidate() {
+    /// The trailing Save button: persists the candidate (it then moves into the
+    /// Reading section) without opening it.
+    private func savePasteboardCandidate() {
         guard let candidate = pasteboardCandidate else { return }
         pasteboardCandidate = nil
-        reload() // drop the row immediately
+        evaluatingPasteboardURL = nil
+        reload() // drop the pasteboard row; the saved item arrives via the notification
+        if let content = candidate.content {
+            Task {
+                await ReadingListIngestor.shared.saveNewWithContent(
+                    urlString: candidate.urlString, content: content, source: .paste)
+            }
+        } else {
+            Task {
+                await ReadingListIngestor.shared.handleSavePress(
+                    urlString: candidate.urlString, source: .paste)
+            }
+        }
+    }
+
+    /// Tapping the row PREVIEWS the candidate without saving it (a transient item;
+    /// the row stays until the user taps Save).
+    private func previewPasteboardCandidate() {
+        guard let candidate = pasteboardCandidate else { return }
+        var transient = ReadingListItem(urlString: candidate.urlString)
+        transient.title = candidate.title
+        transient.youtubeVideoID = candidate.videoID
+        transient.channelName = candidate.channelName
+        transient.platform = candidate.platform
+        transient.state = .ready
 
         if candidate.isVideo {
-            Task { [weak self] in
-                await ReadingListIngestor.shared.handleSavePress(
-                    urlString: candidate.urlString, source: .paste)
-                await MainActor.run {
-                    guard let self, let item = self.store.item(forURLString: candidate.urlString)
-                    else { return }
-                    self.openVideo(item)
-                }
-            }
+            openVideo(transient)
         } else if let platform = candidate.platform {
-            Task { [weak self] in
-                await ReadingListIngestor.shared.handleSavePress(
-                    urlString: candidate.urlString, source: .paste)
-                await MainActor.run {
-                    guard let self, let item = self.store.item(forURLString: candidate.urlString)
-                    else { return }
-                    self.openPlatformItem(item, platform: platform)
-                }
-            }
+            openPlatformItem(transient, platform: platform)
         } else if let content = candidate.content {
-            Task { [weak self] in
-                let item = await ReadingListIngestor.shared.saveNewWithContent(
-                    urlString: candidate.urlString, content: content, source: .paste)
-                await MainActor.run {
-                    guard let self, let saved = self.store.content(for: item) else { return }
-                    let reader = ReaderViewController(
-                        item: item, content: saved,
-                        shareProvider: AppReaderShareProvider.shared,
-                        gazeTrackerFactory: AppGazeTracker.factory)
-                    self.navigationController?.pushViewController(reader, animated: true)
-                }
-            }
+            let reader = ReaderViewController(
+                item: transient, content: content,
+                shareProvider: AppReaderShareProvider.shared,
+                gazeTrackerFactory: AppGazeTracker.factory)
+            navigationController?.pushViewController(reader, animated: true)
         }
     }
 
@@ -288,13 +304,18 @@ final class ReadingListViewController: UITableViewController {
         var bySection: [Section: [ReadingListItem]] =
             [.reading: reading, .read: read, .archive: archive, .error: failed]
 
-        // The pasteboard suggestion, unless it's since been saved by some path.
+        // The pasteboard suggestion: a spinner row while evaluating, then the
+        // resolved candidate (unless it's since been saved by some path).
         if let candidate = pasteboardCandidate {
             if store.item(forURLString: candidate.urlString) != nil {
                 pasteboardCandidate = nil
             } else {
                 bySection[.pasteboard] = [displayItem(for: candidate)]
             }
+        } else if let evaluatingURL = evaluatingPasteboardURL {
+            var loading = ReadingListItem(urlString: evaluatingURL)
+            loading.state = .pending
+            bySection[.pasteboard] = [loading]
         }
 
         groups = Self.displayOrder.compactMap { section in
@@ -527,6 +548,32 @@ final class ReadingListViewController: UITableViewController {
             ? .systemRed
             : (item.readState == .unopened ? .label : .secondaryLabel)
 
+        if isPasteboard {
+            // Spinner while evaluating; the candidate's preview thumbnail once
+            // ready. A trailing Save button saves explicitly (tap just previews).
+            let thumbnail: ReadingListItemCell.Thumbnail
+            if let candidate = pasteboardCandidate {
+                if let image = candidate.thumbnail { thumbnail = .image(image) }
+                else if let platform = candidate.platform,
+                        let module = PlatformRegistry.shared.module(for: platform) {
+                    thumbnail = .logo(assetName: platform.logoAssetName, glyph: module.glyphSymbolName)
+                } else { thumbnail = .none }
+            } else {
+                thumbnail = .loading
+            }
+            cell.configure(
+                title: item.title ?? item.urlString, titleColor: titleColor,
+                subtitle: secondaryText(for: item), thumbnail: thumbnail,
+                showsDisclosure: false,
+                reuseKey: "pasteboard|\(item.urlString)|\(pasteboardCandidate == nil)",
+                trailingButtonSymbol: pasteboardCandidate == nil ? nil : "plus.circle.fill",
+                onTrailingButton: pasteboardCandidate == nil ? nil : { [weak self] in
+                    self?.savePasteboardCandidate()
+                })
+            cell.showsReorderControl = false
+            return cell
+        }
+
         cell.configure(
             title: item.title ?? item.urlString,
             titleColor: titleColor,
@@ -592,7 +639,7 @@ final class ReadingListViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         if section(at: indexPath.section) == .pasteboard {
-            openPasteboardCandidate()
+            previewPasteboardCandidate()
             return
         }
         let item = item(at: indexPath)

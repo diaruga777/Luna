@@ -32,7 +32,23 @@ The scroll reader (`ScrollReaderViewController`) backs both Scroll and Highlight
 
 - `Clip/Reader/ScrollReaderViewController.swift` — full-screen `UITextView`, serif type, attributed text from `ArticleTextRenderer`. Link taps intercepted via `textView(_:primaryActionFor:defaultAction:)` → opens the split instead of Safari. Bolt button → RSVP.
 - `Clip/Reader/ArticleTextRenderer.swift` — blocks → `NSAttributedString` (title, headings, quotes, bullets, `.link` attributes from stored UTF-16 ranges).
-- `ReaderKit/SplitWebOverlayViewController.swift` — the split inline reader. On a link tap the reader is snapshotted at the TOP of the link's line: the part above parks as a one-line peek at the top, the link's line as a one-line peek at the bottom (both are `resizableSnapshotView` halves), and an inset rounded liquid-glass card (`ReaderDepth.backgroundColor(0)`, 14pt inset, 26pt corners, hairline border + sibling drop-shadow) grows out from the cut to fill the space between them (`animateOpen`, spring). The card's `WKWebView` (WebJunkBlocker applied) scrolls AND navigates INDEPENDENTLY — its gestures never reach the reader. Three dismissals, all animating the card's height to zero from its center while the peeks rejoin (`applyCompression(progress)` → `animateDismiss`): (1) the ✕ at the card's top-left, (2) the `chevron.compact.down` on the card's bottom edge, (3) an interactive `UIPanGestureRecognizer` on either peek — the card loses height equal to TWICE the drag distance (`progress = 2·|dy| / openHeight`), dismissing at progress ≥ 0.5 or a fast flick. A `square.and.arrow.down` save button (→ checkmark) sits top-right when a `shareProvider` is present. Presented `.overFullScreen` (no transition; the grow animation is the entrance). The same VC also backs the RSVP link pill, presented with nil peeks + `lineTopScreen = midY` so the card grows from the screen center. `onDismiss` re-asserts the reader's offset (it never moved).
+- `ReaderKit/SplitWebOverlayViewController.swift` — the split inline reader. All
+  motion is one `apply(progress:)` (0 = open, 1 = closed onto the cut line): the
+  card interpolates between its open frame and a zero-height sliver at `cutY`, and
+  the two snapshot peeks are pinned FLUSH to the card's top/bottom edges (derived
+  from the card frame) so there's never a gap for the live reader to ghost
+  through. Open animates 1→0 starting from the link's actual on-screen position;
+  dismiss animates 0→1 (so the rejoined screen matches the reader underneath); an
+  interactive peek drag maps to progress and, once it hits 1, dismisses and never
+  re-grows. A liquid-glass header (`.systemThickMaterial`) holds the ✕ + save with
+  the content scrolling under it (top content inset). The chevron is blue and
+  straddles the card's bottom edge. When the linked page is article-like (probed
+  via `ArticleFetcher`+`ArticleExtractor`) the card shows the app reader's text
+  (`ArticleTextRenderer`) instead of the web view; a link in that reader falls
+  back to the web view in place. Also backs the RSVP link pill (nil peeks → grows
+  from the screen center over a dim backdrop).
+  <!-- older single-outer-scroll description follows; superseded -->
+- `ReaderKit/SplitWebOverlayViewController.swift` (legacy notes) — On a link tap the reader is snapshotted at the TOP of the link's line: the part above parks as a one-line peek at the top, the link's line as a one-line peek at the bottom (both are `resizableSnapshotView` halves), and an inset rounded liquid-glass card (`ReaderDepth.backgroundColor(0)`, 14pt inset, 26pt corners, hairline border + sibling drop-shadow) grows out from the cut to fill the space between them (`animateOpen`, spring). The card's `WKWebView` (WebJunkBlocker applied) scrolls AND navigates INDEPENDENTLY — its gestures never reach the reader. Three dismissals, all animating the card's height to zero from its center while the peeks rejoin (`applyCompression(progress)` → `animateDismiss`): (1) the ✕ at the card's top-left, (2) the `chevron.compact.down` on the card's bottom edge, (3) an interactive `UIPanGestureRecognizer` on either peek — the card loses height equal to TWICE the drag distance (`progress = 2·|dy| / openHeight`), dismissing at progress ≥ 0.5 or a fast flick. A `square.and.arrow.down` save button (→ checkmark) sits top-right when a `shareProvider` is present. Presented `.overFullScreen` (no transition; the grow animation is the entrance). The same VC also backs the RSVP link pill, presented with nil peeks + `lineTopScreen = midY` so the card grows from the screen center. `onDismiss` re-asserts the reader's offset (it never moved).
 
 ## RSVP reader (ReadMaxx-style)
 

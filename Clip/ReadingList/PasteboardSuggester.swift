@@ -3,11 +3,12 @@
 //  Clip
 //
 
-import Foundation
+import UIKit
 
 /// A pasteboard URL that has readable (article) or supported (YouTube) content,
 /// surfaced as a one-tap "From Pasteboard" suggestion at the top of the reading
-/// list. Not persisted until the user taps it.
+/// list. Not persisted until the user taps Save. The preview also resolves a
+/// thumbnail so the row looks like a normal saved row before it's saved.
 struct PasteboardCandidate {
     let urlString: String
     let title: String
@@ -18,15 +19,18 @@ struct PasteboardCandidate {
     let content: ArticleContent?
     /// Set for a recognized non-YouTube platform URL (X, Bluesky, …).
     let platform: ContentPlatform?
+    /// Best-effort preview thumbnail (cover art / video still / platform art).
+    let thumbnail: UIImage?
 
     init(urlString: String, title: String, channelName: String?, videoID: String?,
-         content: ArticleContent?, platform: ContentPlatform? = nil) {
+         content: ArticleContent?, platform: ContentPlatform? = nil, thumbnail: UIImage? = nil) {
         self.urlString = urlString
         self.title = title
         self.channelName = channelName
         self.videoID = videoID
         self.content = content
         self.platform = platform
+        self.thumbnail = thumbnail
     }
 
     var isVideo: Bool { videoID != nil }
@@ -66,25 +70,44 @@ final class PasteboardSuggester: PasteboardSuggesting {
         if let videoID = YouTubeURL.videoID(from: trimmed) {
             guard let metadata = try? await youTubeMetadataFetcher.fetchMetadata(videoID: videoID)
             else { return nil }
+            let thumbnail = (try? await youTubeMetadataFetcher.fetchThumbnail(videoID: videoID))
+                .flatMap { UIImage(data: $0) }
             return PasteboardCandidate(
                 urlString: trimmed, title: metadata.title,
-                channelName: metadata.channelName, videoID: videoID, content: nil)
+                channelName: metadata.channelName, videoID: videoID, content: nil,
+                thumbnail: thumbnail)
         }
 
         // A recognized platform URL (tweet, skeet, …) surfaces as a platform
         // candidate (saved + ingested on tap; no article preview).
         if let match = PlatformRegistry.shared.detect(trimmed) {
+            let art = await PlatformRegistry.shared.module(for: match.platform)?
+                .metadataFetcher?.fetchMetadata(for: match, urlString: trimmed)?
+                .thumbnailData.flatMap { UIImage(data: $0) }
             return PasteboardCandidate(
                 urlString: trimmed, title: match.platform.displayName,
-                channelName: nil, videoID: nil, content: nil, platform: match.platform)
+                channelName: nil, videoID: nil, content: nil, platform: match.platform,
+                thumbnail: art)
         }
 
         guard let html = try? await fetcher.fetchHTML(from: url),
               let content = try? extractor.extract(html: html, baseURL: url),
               !content.blocks.isEmpty
         else { return nil }
+        let cover = await coverImage(html: html, baseURL: url)
         return PasteboardCandidate(
             urlString: trimmed, title: content.title,
-            channelName: nil, videoID: nil, content: content)
+            channelName: nil, videoID: nil, content: content, thumbnail: cover)
+    }
+
+    /// Best-effort article cover image (og:image / twitter:image), short timeout.
+    private func coverImage(html: String, baseURL: URL) async -> UIImage? {
+        guard let imageURL = LeadImageExtractor.imageURL(in: html, baseURL: baseURL) else { return nil }
+        var request = URLRequest(url: imageURL, timeoutInterval: 8)
+        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
+        else { return nil }
+        return UIImage(data: data)
     }
 }

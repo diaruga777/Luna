@@ -21,6 +21,8 @@ final class ReadingListItemCell: UITableViewCell {
         case loading
         /// Fetched art on disk at this path.
         case art(path: String)
+        /// An already-loaded image (e.g. a pasteboard preview thumbnail).
+        case image(UIImage)
         /// Fetch finished with no art — show the platform logo (or SF glyph).
         case logo(assetName: String?, glyph: String)
     }
@@ -36,10 +38,13 @@ final class ReadingListItemCell: UITableViewCell {
     private let thumbContainer = UIView()
     private let thumbImageView = UIImageView()
     private let spinner = UIActivityIndicatorView(style: .medium)
+    private let trailingButton = UIButton(type: .system)
 
     /// Identifies the item currently configured, so an async art load that
     /// resolves after the cell is reused is discarded.
     private var reuseKey: String?
+    /// Action for the optional trailing button (e.g. the pasteboard row's Save).
+    private var onTrailingButton: (() -> Void)?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -58,6 +63,8 @@ final class ReadingListItemCell: UITableViewCell {
         thumbContainer.layer.cornerRadius = 6
         thumbContainer.layer.cornerCurve = .continuous
         thumbContainer.clipsToBounds = true
+
+        trailingButton.addTarget(self, action: #selector(trailingButtonTapped), for: .touchUpInside)
 
         thumbImageView.clipsToBounds = true
         thumbImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -99,17 +106,33 @@ final class ReadingListItemCell: UITableViewCell {
         reuseKey = nil
         thumbImageView.image = nil
         spinner.stopAnimating()
+        onTrailingButton = nil
     }
 
     func configure(
         title: String, titleColor: UIColor, subtitle: NSAttributedString,
-        thumbnail: Thumbnail, showsDisclosure: Bool, reuseKey: String
+        thumbnail: Thumbnail, showsDisclosure: Bool, reuseKey: String,
+        trailingButtonSymbol: String? = nil, onTrailingButton: (() -> Void)? = nil
     ) {
         self.reuseKey = reuseKey
         titleLabel.text = title
         titleLabel.textColor = titleColor
         subtitleLabel.attributedText = subtitle
-        accessoryType = showsDisclosure ? .disclosureIndicator : .none
+
+        // A trailing tappable button (pasteboard "Save") takes the accessory slot;
+        // otherwise the usual chevron.
+        self.onTrailingButton = onTrailingButton
+        if let symbol = trailingButtonSymbol {
+            trailingButton.setImage(
+                UIImage(systemName: symbol, withConfiguration:
+                    UIImage.SymbolConfiguration(pointSize: 22, weight: .regular)), for: .normal)
+            trailingButton.sizeToFit()
+            trailingButton.tintColor = GlassStyle.readingAccent
+            accessoryView = trailingButton
+        } else {
+            accessoryView = nil
+            accessoryType = showsDisclosure ? .disclosureIndicator : .none
+        }
 
         switch thumbnail {
         case .none:
@@ -124,12 +147,20 @@ final class ReadingListItemCell: UITableViewCell {
             thumbContainer.isHidden = false
             spinner.startAnimating()
             loadArt(path: path, expecting: reuseKey)
+        case .image(let image):
+            thumbContainer.isHidden = false
+            spinner.stopAnimating()
+            thumbImageView.tintColor = nil
+            thumbImageView.contentMode = Self.contentMode(for: image.size)
+            thumbImageView.image = image
         case .logo(let assetName, let glyph):
             thumbContainer.isHidden = false
             spinner.stopAnimating()
             showLogo(assetName: assetName, glyph: glyph)
         }
     }
+
+    @objc private func trailingButtonTapped() { onTrailingButton?() }
 
     private func showLogo(assetName: String?, glyph: String) {
         // Full-color brand logo (untinted) when bundled, else a tinted SF glyph.

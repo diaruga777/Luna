@@ -96,11 +96,13 @@ final class SavedNonTextualViewController: UIViewController {
         guard articleURLString.hasPrefix("http"), !ExtensionFriendsReader.friends().isEmpty else {
             return []
         }
-        var config = UIButton.Configuration.filled()
+        // Muted (tinted, not a bright filled accent) so the confirmation stays calm.
+        var config = UIButton.Configuration.tinted()
         config.title = "Send to a Friend…"
         config.image = UIImage(systemName: "person.2.fill")
         config.imagePadding = 8
-        config.baseBackgroundColor = GlassStyle.readingAccent
+        config.baseBackgroundColor = .secondaryLabel
+        config.baseForegroundColor = .secondaryLabel
         let button = UIButton(configuration: config)
         button.addAction(UIAction { [weak self] _ in self?.presentFriendPicker() }, for: .touchUpInside)
         return [button]

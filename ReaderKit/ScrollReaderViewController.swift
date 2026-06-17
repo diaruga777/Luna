@@ -556,26 +556,31 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             forGlyphAt: glyphRange.location, effectiveRange: nil)
         lineRect.origin.y += textView.textContainerInset.top
 
-        // Split at the TOP of the link's line: everything above is one snapshot,
-        // the link line and below is the other. Pixel-perfect, no text relayout.
+        // The cut is at the TOP of the link's line, in WINDOW coordinates (the
+        // overlay is full-screen, so window y == overlay y). Snapshot the whole
+        // window and split it there — pixel-perfect, no text relayout, and
+        // unaffected by the reader's offset from the screen top (nav bar etc.).
+        let lineTopInTextView = lineRect.minY - textView.contentOffset.y
+        let cutY = textView.convert(CGPoint(x: 0, y: lineTopInTextView), to: nil).y
         let readerOffset = textView.contentOffset.y
-        let lineTopScreen = lineRect.minY - readerOffset
-        let width = view.bounds.width
-        let height = view.bounds.height
-        let topHalf = view.resizableSnapshotView(
-            from: CGRect(x: 0, y: 0, width: width, height: max(lineTopScreen, 1)),
-            afterScreenUpdates: false, withCapInsets: .zero)
-        let bottomHalf = view.resizableSnapshotView(
-            from: CGRect(x: 0, y: lineTopScreen, width: width,
-                         height: max(height - lineTopScreen, 1)),
-            afterScreenUpdates: false, withCapInsets: .zero)
+
+        var topHalf: UIView?
+        var bottomHalf: UIView?
+        if let window = view.window {
+            let bounds = window.bounds
+            topHalf = window.resizableSnapshotView(
+                from: CGRect(x: 0, y: 0, width: bounds.width, height: max(cutY, 1)),
+                afterScreenUpdates: false, withCapInsets: .zero)
+            bottomHalf = window.resizableSnapshotView(
+                from: CGRect(x: 0, y: cutY, width: bounds.width,
+                             height: max(bounds.height - cutY, 1)),
+                afterScreenUpdates: false, withCapInsets: .zero)
+        }
 
         let overlay = SplitWebOverlayViewController(
             url: url, shareProvider: shareProvider, lineHeight: lineRect.height,
-            lineTopScreen: lineTopScreen, topHalf: topHalf, bottomHalf: bottomHalf)
+            cutY: cutY, topHalf: topHalf, bottomHalf: bottomHalf)
         overlay.modalPresentationStyle = .overFullScreen
-        // The reader never moved (the overlay covered it), so just re-assert its
-        // offset on dismissal in case lazy layout shifted it.
         overlay.onDismiss = { [weak self] in self?.restoreScroll(to: readerOffset) }
         present(overlay, animated: false)
     }

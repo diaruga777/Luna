@@ -8,35 +8,31 @@ import WebKit
 
 /// The inline reader shown when a link is tapped in the scroll reader.
 ///
-/// The outer reader splits along the line boundary at the tapped link: the line
-/// ABOVE the link parks as a one-line peek at the top, the link's line parks as a
-/// one-line peek at the bottom (both are live snapshots of the reader), and an
-/// inset rounded glass card grows out from the cut to fill the space between
-/// them. The card's web view scrolls and navigates INDEPENDENTLY — its gestures
-/// never reach the outer reader.
+/// The reader is snapshotted (in WINDOW coordinates) and split at the top of the
+/// tapped link's line: the part above parks as a one-line peek at the top, the
+/// link's line as a one-line peek at the bottom, and an inset rounded glass card
+/// grows out from the cut to fill the space between them. The card's web view
+/// scrolls and navigates INDEPENDENTLY.
 ///
-/// Three ways to dismiss, all animating the card's height back to zero from its
-/// center while the two peeks rejoin:
-///   1. the ✕ hovering at the card's top-left,
-///   2. the chevron on the card's bottom edge,
-///   3. an interactive drag started in either peek — the card compresses by
-///      twice the drag distance until it dismisses.
+/// Three ways to dismiss, all compressing the card to zero from its center while
+/// the peeks rejoin: the ✕ at the card's top-left, the chevron on its bottom
+/// edge, or an interactive drag started in either peek (the card loses twice the
+/// drag distance). Also backs the RSVP link pill, presented with nil peeks so the
+/// card simply grows from the screen's center over a dimmed backdrop.
 final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizerDelegate {
 
-    /// Called once on dismissal so the presenter can keep its reader untouched
-    /// (the reader never moved — the overlay covered it).
+    /// Called once on dismissal (the reader never moved — the overlay covered it).
     var onDismiss: (() -> Void)?
 
     private let url: URL
     private let shareProvider: ReaderShareProviding?
-    /// Height of one text line (the peek height top and bottom).
     private let lineHeight: CGFloat
-    /// Screen-y of the top of the tapped link's line at tap time.
-    private let lineTopScreen: CGFloat
-    /// Live snapshots of the reader above / at-and-below the link line.
+    /// Window-y of the top of the tapped link's line (screen == overlay coords).
+    private let cutY: CGFloat
     private let topHalf: UIView?
     private let bottomHalf: UIView?
 
+    private let dimView = UIView()
     private let card = UIView()
     private let cardShadow = UIView()
     private let webView = WKWebView(frame: .zero, configuration: WebJunkBlocker.makeConfiguration())
@@ -45,21 +41,21 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     private let saveButton = UIButton(type: .system)
     private let bottomChevron = UIButton(type: .system)
 
-    private static let cardInset: CGFloat = 14
+    private static let cardInset: CGFloat = 12
     private static let cardCornerRadius: CGFloat = 26
+    private static let buttonSize: CGFloat = 40
 
     private var didAnimateIn = false
     private var didDismiss = false
-    /// The two snapshot y-origins in the fully-open state (parked peeks).
     private var openTopHalfY: CGFloat = 0
     private var openBottomHalfY: CGFloat = 0
 
     init(url: URL, shareProvider: ReaderShareProviding?, lineHeight: CGFloat,
-         lineTopScreen: CGFloat, topHalf: UIView?, bottomHalf: UIView?) {
+         cutY: CGFloat, topHalf: UIView?, bottomHalf: UIView?) {
         self.url = url
         self.shareProvider = shareProvider
-        self.lineHeight = max(lineHeight, 16)
-        self.lineTopScreen = lineTopScreen
+        self.lineHeight = max(lineHeight, 18)
+        self.cutY = cutY
         self.topHalf = topHalf
         self.bottomHalf = bottomHalf
         super.init(nibName: nil, bundle: nil)
@@ -73,7 +69,16 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         super.viewDidLoad()
         view.backgroundColor = .clear
 
-        // The card's web view scrolls + navigates on its own.
+        dimView.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        dimView.frame = view.bounds
+        dimView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(dimView)
+
+        if let topHalf { view.addSubview(topHalf) }
+        if let bottomHalf { view.addSubview(bottomHalf) }
+        addPeekPan(topHalf)
+        addPeekPan(bottomHalf)
+
         webView.scrollView.isScrollEnabled = true
         webView.layer.cornerRadius = Self.cardCornerRadius
         webView.layer.cornerCurve = .continuous
@@ -81,7 +86,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
 
         cardShadow.backgroundColor = .clear
         cardShadow.layer.shadowColor = UIColor.black.cgColor
-        cardShadow.layer.shadowOpacity = 0.18
+        cardShadow.layer.shadowOpacity = 0.22
         cardShadow.layer.shadowRadius = 18
         cardShadow.layer.shadowOffset = CGSize(width: 0, height: 6)
 
@@ -101,11 +106,6 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         view.addSubview(spinner)
         configureChrome()
 
-        if let topHalf { view.insertSubview(topHalf, belowSubview: card) }
-        if let bottomHalf { view.insertSubview(bottomHalf, belowSubview: card) }
-        addPeekPanGesture(to: topHalf)
-        addPeekPanGesture(to: bottomHalf)
-
         WebJunkBlocker.applyRuleList(to: webView.configuration.userContentController)
         webView.navigationDelegate = self
         webView.load(URLRequest(url: url))
@@ -122,13 +122,14 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
 
     private var openCardFrame: CGRect {
         let width = view.bounds.width
-        let top = view.safeAreaInsets.top + lineHeight
-        let bottom = view.bounds.height - view.safeAreaInsets.bottom - lineHeight
+        let hasPeeks = topHalf != nil || bottomHalf != nil
+        let peek = hasPeeks ? lineHeight : 0
+        let top = view.safeAreaInsets.top + peek + 4
+        let bottom = view.bounds.height - view.safeAreaInsets.bottom - peek - 4
         return CGRect(x: Self.cardInset, y: top,
                       width: width - Self.cardInset * 2, height: max(bottom - top, 0))
     }
 
-    /// Lays the card (and shadow + chrome + web view) into `frame`.
     private func layoutCard(_ frame: CGRect) {
         card.frame = frame
         cardShadow.frame = frame
@@ -137,9 +138,12 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
             cornerRadius: Self.cardCornerRadius).cgPath
         webView.frame = card.bounds
         spinner.center = CGPoint(x: frame.midX, y: frame.midY)
-        closeButton.center = CGPoint(x: frame.minX + 24, y: frame.minY + 24)
-        saveButton.center = CGPoint(x: frame.maxX - 24, y: frame.minY + 24)
-        bottomChevron.center = CGPoint(x: frame.midX, y: frame.maxY - 16)
+        let s = Self.buttonSize
+        closeButton.frame = CGRect(x: frame.minX + 6, y: frame.minY + 6, width: s, height: s)
+        saveButton.frame = CGRect(x: frame.maxX - s - 6, y: frame.minY + 6, width: s, height: s)
+        // Keep the chevron clear of the home-indicator gesture zone at the very
+        // bottom (taps there get swallowed by the system).
+        bottomChevron.frame = CGRect(x: frame.midX - s / 2, y: frame.maxY - s - 12, width: s, height: s)
     }
 
     // MARK: - Open / compress / dismiss
@@ -147,16 +151,16 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     private func animateOpen() {
         let width = view.bounds.width
         let open = openCardFrame
-        openTopHalfY = view.safeAreaInsets.top + lineHeight - lineTopScreen
-        openBottomHalfY = view.bounds.height - view.safeAreaInsets.bottom - lineHeight
+        let height = view.bounds.height
+        openTopHalfY = view.safeAreaInsets.top + lineHeight - cutY
+        openBottomHalfY = height - view.safeAreaInsets.bottom - lineHeight
 
-        // Start: snapshots match the reader, card is a zero-height sliver at the cut.
-        topHalf?.frame = CGRect(x: 0, y: 0, width: width, height: max(lineTopScreen, 1))
-        bottomHalf?.frame = CGRect(
-            x: 0, y: lineTopScreen, width: width,
-            height: max(view.bounds.height - lineTopScreen, 1))
-        layoutCard(CGRect(x: open.minX, y: lineTopScreen, width: open.width, height: 0))
+        topHalf?.frame = CGRect(x: 0, y: 0, width: width, height: max(cutY, 1))
+        bottomHalf?.frame = CGRect(x: 0, y: cutY, width: width, height: max(height - cutY, 1))
+        // Card starts as a zero-height sliver at the cut.
+        layoutCard(CGRect(x: open.minX, y: cutY, width: open.width, height: 0))
         setChromeAlpha(0)
+        dimView.alpha = (topHalf == nil && bottomHalf == nil) ? 0 : 1
 
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.9,
@@ -168,8 +172,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         }
     }
 
-    /// Applies a compression `progress` in 0…1 (0 = fully open, 1 = dismissed):
-    /// the card loses height equally from top and bottom, the peeks rejoin.
+    /// progress 0 = open, 1 = dismissed: card loses height equally top + bottom.
     private func applyCompression(_ progress: CGFloat) {
         let p = min(max(progress, 0), 1)
         let open = openCardFrame
@@ -177,17 +180,17 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         let centerY = open.midY
         layoutCard(CGRect(x: open.minX, y: centerY - height / 2, width: open.width, height: height))
         topHalf?.frame.origin.y = openTopHalfY + (0 - openTopHalfY) * p
-        bottomHalf?.frame.origin.y = openBottomHalfY + (lineTopScreen - openBottomHalfY) * p
+        bottomHalf?.frame.origin.y = openBottomHalfY + (cutY - openBottomHalfY) * p
         setChromeAlpha(1 - p)
     }
 
-    /// Animates a full compress-to-zero, then dismisses.
     private func animateDismiss() {
         guard !didDismiss else { return }
         didDismiss = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        UIView.animate(withDuration: 0.32, delay: 0, options: .curveEaseIn) {
+        UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseIn) {
             self.applyCompression(1)
+            self.dimView.alpha = 0
         } completion: { _ in
             self.onDismiss?()
             self.dismiss(animated: false)
@@ -196,7 +199,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
 
     // MARK: - Interactive peek drag
 
-    private func addPeekPanGesture(to peek: UIView?) {
+    private func addPeekPan(_ peek: UIView?) {
         guard let peek else { return }
         peek.isUserInteractionEnabled = true
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePeekPan(_:)))
@@ -207,16 +210,12 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     @objc private func handlePeekPan(_ gesture: UIPanGestureRecognizer) {
         guard !didDismiss else { return }
         let openHeight = max(openCardFrame.height, 1)
-        // Height loss is double the drag distance, so progress = 2·|dy| / openHeight.
-        let distance = abs(gesture.translation(in: view).y)
-        let progress = (distance * 2) / openHeight
-
+        let progress = (abs(gesture.translation(in: view).y) * 2) / openHeight
         switch gesture.state {
         case .changed:
             applyCompression(progress)
         case .ended, .cancelled:
-            let velocity = abs(gesture.velocity(in: view).y)
-            if progress >= 0.5 || velocity > 900 {
+            if progress >= 0.5 || abs(gesture.velocity(in: view).y) > 800 {
                 animateDismiss()
             } else {
                 UIView.animate(withDuration: 0.25) { self.applyCompression(0) }
@@ -260,7 +259,6 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         saveButton.isEnabled = false
     }
 
-    // The peek pan should win over any ambient gestures.
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer

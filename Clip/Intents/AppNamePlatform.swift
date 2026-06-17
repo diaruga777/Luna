@@ -45,7 +45,7 @@ enum AppNamePlatform {
         case .reddit:
             return "Return the subreddit, post title, and author of the Reddit post on screen as \"subreddit ; title ; author\", or \"none\":"
         case .x, .tiktok, .instagram, .facebook:
-            return "Return the full URL of the post on screen, or \"none\":"
+            return "Return the author handle and a distinctive phrase from the post on screen as \"handle ; phrase\", or \"none\":"
         }
     }
 }

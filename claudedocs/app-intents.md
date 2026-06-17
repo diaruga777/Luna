@@ -33,8 +33,10 @@ discoverable in the action search but not in the prominent list.)
 - **Podcast** (`SavePodcastItemIntent`): `show` + `episode` (episode is a TITLE
   string, NOT a number — stated in the param description).
 - **X / TikTok / Instagram / Facebook** (`PlatformLinkIntents.swift`): each takes
-  a post `link` and saves it — these platforms have no free search, so a link is
-  the only way to capture a specific post.
+  the author `handle` + a content phrase and/or timestamp and FINDS the post link
+  via `SocialPostFinder` (keyless DuckDuckGo HTML search scoped to the platform's
+  domain, filtered to a post-shaped path). No public search API exists for these,
+  so this is best-effort.
 
 ## Generic / AI flow
 

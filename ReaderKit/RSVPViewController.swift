@@ -270,7 +270,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         // center (nil peeks) and the ✕ / chevron compress it shut.
         let inline = SplitWebOverlayViewController(
             url: url, shareProvider: shareProvider, lineHeight: 0,
-            lineTopScreen: view.bounds.midY, topHalf: nil, bottomHalf: nil)
+            cutY: view.bounds.midY, topHalf: nil, bottomHalf: nil)
         inline.modalPresentationStyle = .overFullScreen
         present(inline, animated: false)
     }

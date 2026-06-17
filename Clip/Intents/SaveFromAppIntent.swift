@@ -21,7 +21,7 @@ struct SaveFromAppIntent: AppIntent {
         • Reddit — [subreddit, title, author?]
         • Music or Spotify — [artist, title]
         • Podcasts — [show, episode title]
-        • X, TikTok, Instagram, or Facebook — [link]
+        • X, TikTok, Instagram, or Facebook — [handle, content phrase, time?]
         """)
     static let openAppWhenRun: Bool = false
 
@@ -67,12 +67,30 @@ struct SaveFromAppIntent: AppIntent {
             try await saveMedia(.music, creator: cleaned.first, title: cleaned.dropFirst().first)
         case .podcast:
             try await saveMedia(.podcast, creator: cleaned.first, title: cleaned.dropFirst().first)
-        case .x, .tiktok, .instagram, .facebook, nil:
-            // No free search — expect a link.
+        case .x, .tiktok, .instagram, .facebook:
+            // No public search API: find the post from [handle, content, time?].
+            guard let finderPlatform = Self.finderPlatform(for: platform) else { throw SaveError.notFound }
+            guard let url = await SocialPostFinder.findPostURL(
+                platform: finderPlatform, handle: cleaned.first ?? "",
+                content: cleaned.dropFirst().first, timestamp: cleaned.dropFirst(2).first)
+            else { throw SaveError.notFound }
+            _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
+        case nil:
+            // Safari / unknown: expect a link.
             guard let url = cleaned.first, url.hasPrefix("http") else { throw SaveError.notFound }
             _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url)
         }
         return .result(value: ShareSuggestionStore.shared.pendingSuggestionToken())
+    }
+
+    private static func finderPlatform(for platform: ContentPlatform?) -> SocialPostFinder.Platform? {
+        switch platform {
+        case .x: return .x
+        case .tiktok: return .tiktok
+        case .instagram: return .instagram
+        case .facebook: return .facebook
+        default: return nil
+        }
     }
 
     private func saveYouTube(channel: String?, title: String?) async throws {

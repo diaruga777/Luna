@@ -31,4 +31,29 @@ final class IntentQueryTests: XCTestCase {
     func testBlueskyQueryTextOnly() {
         XCTAssertEqual(BlueskyPostQuery.searchQuery(handle: "  ", text: "just text"), "just text")
     }
+
+    // MARK: - SaveFromApp single-string parsing
+
+    func testParseFieldsSplitsOnDelimiterAndTrims() {
+        XCTAssertEqual(
+            SaveFromAppIntent.parseFields(from: "Veritasium ; The math of slime"),
+            ["Veritasium", "The math of slime"])
+        XCTAssertEqual(
+            SaveFromAppIntent.parseFields(from: "  swift  ;  Concurrency tips ;  bob "),
+            ["swift", "Concurrency tips", "bob"])
+    }
+
+    func testParseFieldsTreatsNoneAndEmptyAsNothing() {
+        XCTAssertEqual(SaveFromAppIntent.parseFields(from: "none"), [])
+        XCTAssertEqual(SaveFromAppIntent.parseFields(from: "  NONE  "), [])
+        XCTAssertEqual(SaveFromAppIntent.parseFields(from: ""), [])
+        XCTAssertEqual(SaveFromAppIntent.parseFields(from: "   "), [])
+        XCTAssertEqual(SaveFromAppIntent.parseFields(from: nil), [])
+    }
+
+    func testParseFieldsSingleValuePassesThrough() {
+        XCTAssertEqual(
+            SaveFromAppIntent.parseFields(from: "https://example.com/a"),
+            ["https://example.com/a"])
+    }
 }

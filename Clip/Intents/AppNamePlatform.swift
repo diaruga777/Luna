@@ -27,25 +27,29 @@ enum AppNamePlatform {
 
     /// The screen-extraction prompt for pulling identifying metadata from a
     /// screenshot of `app`, or nil when none applies (Safari, unknown apps). The
-    /// caller appends the screenshot and runs prompt+image through an image model.
+    /// caller appends the screenshot and runs prompt+image through an image model,
+    /// then passes the model's single response string straight to "Save from App".
+    ///
+    /// Each prompt instructs the model to return one line containing exactly the
+    /// fields "Save from App" parses for that app, joined by " ; " — matching
+    /// `SaveFromAppIntent.parseFields`. "none" means nothing identifiable is on
+    /// screen; the save intent treats it (and any error/empty response) as nothing
+    /// to save.
     static func screenPrompt(forAppName app: String) -> String? {
         guard let platform = platform(forAppName: app) else { return nil }
-        // Each prompt asks for the exact ordered fields "Save from App" expects
-        // for that app, separated by " ; " so the shortcut can split them into
-        // the values list. "none" means nothing identifiable is on screen.
         switch platform {
         case .youtube:
-            return "Return the channel name and video title of the YouTube video on screen as \"channel ; title\", or \"none\":"
+            return "Respond with a single line for the YouTube video on screen, in the exact form \"channel ; title\" (the channel name, then \" ; \", then the video title). If nothing identifiable is on screen, respond with exactly \"none\"."
         case .music:
-            return "Return the artist and track title of the song on screen as \"artist ; title\", or \"none\":"
+            return "Respond with a single line for the song on screen, in the exact form \"artist ; title\" (the artist, then \" ; \", then the track title). If nothing identifiable is on screen, respond with exactly \"none\"."
         case .podcast:
-            return "Return the show name and episode title of the podcast on screen as \"show ; episode title\", or \"none\":"
+            return "Respond with a single line for the podcast on screen, in the exact form \"show ; episode title\" (the show name, then \" ; \", then the episode title). If nothing identifiable is on screen, respond with exactly \"none\"."
         case .bluesky:
-            return "Return the author handle and a distinctive phrase from the Bluesky post on screen as \"handle ; phrase\", or \"none\":"
+            return "Respond with a single line for the Bluesky post on screen, in the exact form \"handle ; phrase\" (the author handle, then \" ; \", then a distinctive phrase from the post). If nothing identifiable is on screen, respond with exactly \"none\"."
         case .reddit:
-            return "Return the subreddit, post title, and author of the Reddit post on screen as \"subreddit ; title ; author\", or \"none\":"
+            return "Respond with a single line for the Reddit post on screen, in the exact form \"subreddit ; title ; author\" (the subreddit, then \" ; \", then the post title, then \" ; \", then the author). If nothing identifiable is on screen, respond with exactly \"none\"."
         case .x, .tiktok, .instagram, .facebook:
-            return "Return the author handle and a distinctive phrase from the post on screen as \"handle ; phrase\", or \"none\":"
+            return "Respond with a single line for the post on screen, in the exact form \"handle ; phrase\" (the author handle, then \" ; \", then a distinctive phrase from the post). If nothing identifiable is on screen, respond with exactly \"none\"."
         }
     }
 }

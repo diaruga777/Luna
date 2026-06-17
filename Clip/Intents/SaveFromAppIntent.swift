@@ -7,29 +7,29 @@ import AppIntents
 import Foundation
 
 /// One generic save action that adapts to the current app. Pass the current app
-/// (from Get Current App) and the ordered values that app needs — the per-app
-/// layout is documented below. Bridges the per-platform intents into a single
-/// shortcut action. Returns the share-suggestion token (see ClipSafariPageIntent).
+/// (from Get Current App) and a single response string produced by the on-device
+/// model for that app's screen. Each app encodes its fields into one string using
+/// the format documented in `AppNamePlatform.screenPrompt` (fields joined by
+/// " ; "); this intent splits that same string back into the fields it needs.
+/// Apps that need no model response (Safari) accept a nil or empty string and fall
+/// back to the tracked page URL. If the model errors or finds nothing it returns an
+/// empty/"none" string, which is treated as "nothing to save".
+/// Returns the share-suggestion token (see ClipSafariPageIntent).
 struct SaveFromAppIntent: AppIntent {
     static let title: LocalizedStringResource = "Save from App"
     static let description = IntentDescription("""
-        Saves content based on the current app. Pass the current app and the \
-        ordered values it expects:
-        • Safari or other — [link]
-        • YouTube — [channel, title]
-        • Bluesky — [handle, text]
-        • Reddit — [subreddit, title, author?]
-        • Music or Spotify — [artist, title]
-        • Podcasts — [show, episode title]
-        • X, TikTok, Instagram, or Facebook — [handle, content phrase, time?]
+        Saves content based on the current app. Pass the current app and the single \
+        response string the model produced for that app's screen (fields joined by \
+        " ; "). Safari and unknown apps may pass an empty string — the tracked page \
+        URL is saved instead.
         """)
     static let openAppWhenRun: Bool = false
 
     @Parameter(title: "App", description: "The current app, from Get Current App.")
     var app: String?
 
-    @Parameter(title: "Values", description: "The ordered field(s) for that app — see the description.")
-    var values: [String]?
+    @Parameter(title: "Details", description: "The model's response string for the current app, or empty.")
+    var details: String?
 
     enum SaveError: Error, CustomLocalizedStringResourceConvertible {
         case missingValues
@@ -47,40 +47,51 @@ struct SaveFromAppIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         guard let app else { throw SaveError.missingValues }
-        let cleaned = (values ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let fields = Self.parseFields(from: details)
         let platform = AppNamePlatform.platform(forAppName: app)
 
         switch platform {
         case .youtube:
-            try await saveYouTube(channel: cleaned.first, title: cleaned.dropFirst().first)
+            try await saveYouTube(channel: fields.first, title: fields.dropFirst().first)
         case .bluesky:
             let query = BlueskyPostQuery.searchQuery(
-                handle: cleaned.first ?? "", text: cleaned.dropFirst().first ?? "")
+                handle: fields.first ?? "", text: fields.dropFirst().first ?? "")
             try await saveSearch(query) { try await BlueskySearchClient().topPostURL(query: $0) }
         case .reddit:
             let query = RedditPostQuery.searchQuery(
-                subreddit: cleaned.first ?? "", title: cleaned.dropFirst().first ?? "",
-                author: cleaned.dropFirst(2).first)
+                subreddit: fields.first ?? "", title: fields.dropFirst().first ?? "",
+                author: fields.dropFirst(2).first)
             try await saveSearch(query) { try await RedditSearchClient().topPostURL(query: $0) }
         case .music:
-            try await saveMedia(.music, creator: cleaned.first, title: cleaned.dropFirst().first)
+            try await saveMedia(.music, creator: fields.first, title: fields.dropFirst().first)
         case .podcast:
-            try await saveMedia(.podcast, creator: cleaned.first, title: cleaned.dropFirst().first)
+            try await saveMedia(.podcast, creator: fields.first, title: fields.dropFirst().first)
         case .x, .tiktok, .instagram, .facebook:
             // No public search API: find the post from [handle, content, time?].
             guard let finderPlatform = Self.finderPlatform(for: platform) else { throw SaveError.notFound }
             guard let url = await SocialPostFinder.findPostURL(
-                platform: finderPlatform, handle: cleaned.first ?? "",
-                content: cleaned.dropFirst().first, timestamp: cleaned.dropFirst(2).first)
+                platform: finderPlatform, handle: fields.first ?? "",
+                content: fields.dropFirst().first, timestamp: fields.dropFirst(2).first)
             else { throw SaveError.notFound }
             _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
         case nil:
-            // Safari / unknown: expect a link.
-            guard let url = cleaned.first, url.hasPrefix("http") else { throw SaveError.notFound }
-            _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url)
+            // Safari / unknown: a link in the response, else the tracked page URL.
+            let link = fields.first { $0.hasPrefix("http") } ?? SafariURLStore.lastURL
+            guard let link, link.hasPrefix("http") else { throw SaveError.notFound }
+            _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: link)
         }
         return .result(value: ShareSuggestionStore.shared.pendingSuggestionToken())
+    }
+
+    /// Splits the model's single response string into its " ; "-joined fields,
+    /// trimming each and dropping empties. A "none" response (the model's
+    /// "nothing identifiable" / error sentinel) yields no fields.
+    static func parseFields(from response: String?) -> [String] {
+        let trimmed = (response ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.lowercased() != "none" else { return [] }
+        return trimmed.components(separatedBy: " ; ")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     private static func finderPlatform(for platform: ContentPlatform?) -> SocialPostFinder.Platform? {

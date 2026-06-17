@@ -6,8 +6,8 @@
 import Foundation
 
 /// Maps the current-app name (from Shortcuts' "Get Current App") to a content
-/// platform, and supplies the Apple-Intelligence extraction prompt per platform.
-/// Shared by the generic save intent and the AI-prompt intent.
+/// platform, and supplies the screen-extraction prompt per platform.
+/// Shared by the generic save intent and the screen-prompt intent.
 enum AppNamePlatform {
 
     /// The platform for an app name, or nil (Safari / unknown → plain URL).
@@ -25,9 +25,9 @@ enum AppNamePlatform {
         return nil
     }
 
-    /// The Apple-Intelligence prompt for extracting identifying metadata from a
+    /// The screen-extraction prompt for pulling identifying metadata from a
     /// screenshot of `app`, or nil when none applies (Safari, unknown apps). The
-    /// caller appends the screenshot and sends prompt+image to Apple Intelligence.
+    /// caller appends the screenshot and runs prompt+image through an image model.
     static func screenPrompt(forAppName app: String) -> String? {
         guard let platform = platform(forAppName: app) else { return nil }
         switch platform {

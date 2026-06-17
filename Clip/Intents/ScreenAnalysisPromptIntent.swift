@@ -5,18 +5,18 @@
 
 import AppIntents
 
-/// Returns the Apple-Intelligence prompt for extracting user-visible identifying
+/// Returns the screen-analysis prompt for extracting user-visible identifying
 /// metadata from the current app's screen, or an empty string when none applies
-/// (Safari, unknown apps — the shortcut then skips taking a screenshot). When a
-/// prompt is returned, the shortcut appends a screenshot of the current screen
-/// and sends prompt + image to Apple Intelligence; the result feeds `SaveFromAppIntent`.
+/// (the shortcut then skips taking a screenshot). When a prompt is returned, the
+/// shortcut appends a screenshot and runs prompt + image through an
+/// image-understanding model; the result feeds `SaveFromAppIntent`.
 struct ScreenAnalysisPromptIntent: AppIntent {
     static let title: LocalizedStringResource = "Screen Analysis Prompt"
     static let description = IntentDescription("""
-        Returns an Apple Intelligence prompt to extract identifying metadata from \
-        the current app's screen, or empty if none applies. Pass the current app \
-        (from Get Current App). If the result is non-empty, append a screenshot of \
-        the screen and send both to Apple Intelligence; feed its answer to "Save from App".
+        Returns a prompt to extract identifying metadata from the current app's \
+        screen, or empty if none applies. Pass the current app. If the result is \
+        non-empty, attach a screenshot of the screen and run the prompt and image \
+        through an image-understanding model, then pass the answer to Save from App.
         """)
     static let openAppWhenRun: Bool = false
 

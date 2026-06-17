@@ -15,13 +15,13 @@ struct SaveFromAppIntent: AppIntent {
     static let description = IntentDescription("""
         Saves content based on the current app. Pass the current app and the \
         values that app expects:
-        • Safari / other — [url]
+        • Safari or other — [url]
         • YouTube — ["channel_name:video_title"]
         • Bluesky — [search phrase]
         • Reddit — [search phrase]
-        • Apple Music / Spotify — [artist, title]
-        • Apple Podcasts — [show, episode_title]
-        • X / TikTok / Instagram / Facebook — [url] (these have no search; pass the link)
+        • Music or Spotify — [artist, title]
+        • Podcasts — [show, episode_title]
+        • X, TikTok, Instagram, or Facebook — [url] (no search; pass the link)
         """)
     static let openAppWhenRun: Bool = false
 

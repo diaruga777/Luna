@@ -571,13 +571,17 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
 }
 
 extension RSVPViewController: UIGestureRecognizerDelegate {
-    /// The full-screen play/pause tap must ignore touches that land on the link
-    /// pill (so tapping the pill opens the inline reader instead of pausing).
+    /// The full-screen play/pause tap must ignore touches that land on any
+    /// interactive control — the ±25 speed buttons, the play/pause button, the
+    /// scrubber, and the link pill — so those taps reach the control instead of
+    /// being cancelled by the full-screen tap (which `cancelsTouchesInView`).
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
     ) -> Bool {
-        if linkPill.alpha > 0, linkPill.frame.contains(touch.location(in: view)) {
-            return false
+        var hitView = touch.view
+        while let candidate = hitView {
+            if candidate is UIControl { return false }
+            hitView = candidate.superview
         }
         return true
     }

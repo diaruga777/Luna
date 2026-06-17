@@ -7,7 +7,7 @@ import AppIntents
 import Foundation
 
 /// Saves a URL-less music item (artist + track) — the now-playing capture path
-/// for Spotify / Apple Music. Cover art + provider links resolve at render time
+/// for streaming-music apps. Cover art + provider links resolve at render time
 /// from the preferred provider.
 struct SaveMusicItemIntent: AppIntent {
     static let title: LocalizedStringResource = "Save Song"

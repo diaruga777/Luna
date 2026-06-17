@@ -27,6 +27,10 @@ final class ReaderViewController: UIViewController {
     private let contentContainer = UIView()
     /// Hovering glass share button, bottom-right above the footer controls.
     private let floatingShareButton = UIButton(type: .system)
+    /// Drives the share button's vertical position per mode so it clears each
+    /// mode's footer: low in scroll (no footer), above the chunk footer in
+    /// highlight, and above the playback controls in RSVP.
+    private var floatingShareBottomConstraint: NSLayoutConstraint?
 
     /// Sharing affordances (nil in the share extension → no share button/footer).
     private let shareProvider: ReaderShareProviding?
@@ -116,12 +120,25 @@ final class ReaderViewController: UIViewController {
         floatingShareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
         floatingShareButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(floatingShareButton)
+        let bottom = floatingShareButton.bottomAnchor.constraint(
+            equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+            constant: Self.floatingShareBottomInset(for: mode))
+        floatingShareBottomConstraint = bottom
         NSLayoutConstraint.activate([
             floatingShareButton.trailingAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            floatingShareButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -92),
+            bottom,
         ])
+    }
+
+    /// Vertical inset (from the bottom safe area) for the floating share button
+    /// in each mode, so it never overlaps that mode's footer controls.
+    private static func floatingShareBottomInset(for mode: ReadingListItem.ReaderMode) -> CGFloat {
+        switch mode {
+        case .scroll: return -24       // no footer — sit near the bottom edge
+        case .highlight: return -92    // clear the chunk-navigation footer
+        case .rsvp: return -168        // clear the scrubber + playback controls
+        }
     }
 
     // MARK: - Mode & audio switching
@@ -187,6 +204,10 @@ final class ReaderViewController: UIViewController {
         ])
         child.didMove(toParent: self)
         currentChild = child
+
+        floatingShareBottomConstraint?.constant = Self.floatingShareBottomInset(for: mode)
+        // Keep the share button above the freshly added child content.
+        view.bringSubviewToFront(floatingShareButton)
     }
 
     private func makeScrollReader(autoHighlight: Bool) -> ScrollReaderViewController {

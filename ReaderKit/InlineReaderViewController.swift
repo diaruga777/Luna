@@ -125,7 +125,7 @@ final class InlineReaderViewController: UIViewController {
         closeButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "xmark", padding: 8)
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
 
-        saveButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "plus", padding: 8)
+        saveButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "arrow.down", padding: 8)
         saveButton.tintColor = GlassStyle.readingAccent
         saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
 

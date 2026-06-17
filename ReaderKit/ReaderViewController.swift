@@ -48,7 +48,10 @@ final class ReaderViewController: UIViewController {
     private let marksOpenedOnLoad: Bool
 
     private let modeControl = UISegmentedControl()
-    private let audioButton = UIButton(type: .system)
+    /// A STANDARD bar item (not a customView UIButton) so it stays a fixed size when
+    /// the catch-up card it's inside is rotated during a swipe (a customView button
+    /// re-layouts and balloons under the parent transform).
+    private let audioButton = UIBarButtonItem()
 
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
 
@@ -104,9 +107,10 @@ final class ReaderViewController: UIViewController {
             contentContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
+        audioButton.target = self
+        audioButton.action = #selector(audioToggled)
         updateAudioButton()
-        audioButton.addTarget(self, action: #selector(audioToggled), for: .touchUpInside)
-        navigationItem.rightBarButtonItems = [UIBarButtonItem(customView: audioButton)]
+        navigationItem.rightBarButtonItems = [audioButton]
 
         // Share moved to a hovering glass circle, bottom-right (above the footer
         // controls). Shown whenever sharing is available (not in the share sheet).
@@ -197,8 +201,7 @@ final class ReaderViewController: UIViewController {
     }
 
     private func updateAudioButton() {
-        audioButton.setImage(
-            UIImage(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash"), for: .normal)
+        audioButton.image = UIImage(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash")
         audioButton.accessibilityLabel = audioOn ? "Turn off read aloud" : "Read aloud"
     }
 

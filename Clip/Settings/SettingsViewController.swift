@@ -72,7 +72,7 @@ final class SettingsViewController: UITableViewController {
             content.image = UIImage(systemName: category.symbol)
             cell.accessoryType = .disclosureIndicator
         } else {
-            content.text = "Replay Setup"
+            content.text = "Replay Onboarding"
             content.image = UIImage(systemName: "sparkles")
         }
         cell.contentConfiguration = content

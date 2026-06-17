@@ -64,8 +64,10 @@ final class PasteboardSuggester: PasteboardSuggesting {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else { return nil }
-        // Already saved → nothing to suggest.
-        guard store.item(forURLString: trimmed) == nil else { return nil }
+        // Already saved → nothing to suggest. Match loosely (tracking params, www,
+        // http/https, trailing slash) and by platform post id, since the pasteboard
+        // copy of e.g. an X link often carries `?s=…` the saved one doesn't.
+        guard !isAlreadySaved(trimmed) else { return nil }
 
         if let videoID = YouTubeURL.videoID(from: trimmed) {
             guard let metadata = try? await youTubeMetadataFetcher.fetchMetadata(videoID: videoID)
@@ -98,6 +100,33 @@ final class PasteboardSuggester: PasteboardSuggesting {
         return PasteboardCandidate(
             urlString: trimmed, title: content.title,
             channelName: nil, videoID: nil, content: content, thumbnail: cover)
+    }
+
+    /// Whether `urlString` is already in the reading list, matching exactly, by
+    /// platform post identity (same platform + item id, ignoring tracking params),
+    /// or by a normalized host+path (ignoring scheme / www / query / trailing slash).
+    private func isAlreadySaved(_ urlString: String) -> Bool {
+        let items = store.items()
+        if items.contains(where: { $0.urlString == urlString }) { return true }
+
+        if let match = PlatformClassifier.classify(urlString), let id = match.itemID,
+           items.contains(where: { $0.contentPlatform == match.platform && $0.platformItemID == id }) {
+            return true
+        }
+
+        guard let key = Self.normalizedKey(urlString) else { return false }
+        return items.contains { Self.normalizedKey($0.urlString) == key }
+    }
+
+    /// host (without `www.`) + path (without a trailing slash); ignores scheme,
+    /// query, and fragment — so the same article/post matches across variants.
+    private static func normalizedKey(_ urlString: String) -> String? {
+        guard let components = URLComponents(string: urlString),
+              var host = components.host?.lowercased() else { return nil }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        var path = components.path
+        if path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        return host + path
     }
 
     /// Best-effort article cover image (og:image / twitter:image), short timeout.

@@ -450,11 +450,11 @@ final class ReadingListViewController: UITableViewController {
         ])
     }
 
-    /// Shows the red dot when there's anything unread to catch up on, and hides the
-    /// whole button in edit mode (the nav bar is taken over by edit controls).
+    /// Shows the red "action needed" dot only once there are 10+ unread items, and
+    /// hides the whole button in edit mode (the nav bar is taken over by edit controls).
     private func updateCatchUpButton() {
         let unread = store.items().filter { $0.readState != .read }.count
-        catchUpBadge.isHidden = unread == 0
+        catchUpBadge.isHidden = unread < 10
         catchUpButton.isHidden = isEditing
     }
 

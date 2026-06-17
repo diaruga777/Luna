@@ -681,7 +681,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Clip/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Queue";
+				INFOPLIST_KEY_CFBundleDisplayName = Queue;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Clip uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -711,7 +711,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Clip/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Queue";
+				INFOPLIST_KEY_CFBundleDisplayName = Queue;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Clip uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -739,7 +739,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClipSafari/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Queue";
+				INFOPLIST_KEY_CFBundleDisplayName = Queue;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -765,7 +765,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClipSafari/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Queue";
+				INFOPLIST_KEY_CFBundleDisplayName = Queue;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -829,7 +829,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClipShare/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Queue";
+				INFOPLIST_KEY_CFBundleDisplayName = Queue;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -855,7 +855,7 @@
 				DEVELOPMENT_TEAM = MM5QBNLXR6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ClipShare/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Queue";
+				INFOPLIST_KEY_CFBundleDisplayName = Queue;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

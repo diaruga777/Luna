@@ -61,27 +61,36 @@ final class ReadingListViewController: UITableViewController {
     /// failed items in a collapsible section at the very bottom.
     private static let displayOrder: [Section] = [.pasteboard, .reading, .read, .archive, .error]
 
-    /// What the list shows: everything, only articles, or only videos.
+    /// What the list shows: everything, only articles (anything that opens in the
+    /// text reader — articles, documents, emails), or only media & links (everything
+    /// else — YouTube, platform posts, music/podcasts).
     private enum ListFilter: Int, CaseIterable {
         case all
         case articles
-        case videos
+        case mediaAndLinks
 
         var displayName: String {
             switch self {
             case .all: return "All"
             case .articles: return "Articles"
-            case .videos: return "Videos"
+            case .mediaAndLinks: return "Media & Links"
             }
         }
 
         func includes(_ item: ReadingListItem) -> Bool {
             switch self {
             case .all: return true
-            case .articles: return !item.isYouTubeVideo
-            case .videos: return item.isYouTubeVideo
+            case .articles: return ReadingListViewController.rendersAsReader(item)
+            case .mediaAndLinks: return !ReadingListViewController.rendersAsReader(item)
             }
         }
+    }
+
+    /// Whether the item opens in the text reader (articles, documents, emails), as
+    /// opposed to media & links (YouTube, platform posts, music/podcasts) which open
+    /// in a player, embed, or browser. Mirrors the tap routing in `didSelectRowAt`.
+    static func rendersAsReader(_ item: ReadingListItem) -> Bool {
+        item.contentPlatform == nil && !item.isYouTubeVideo
     }
 
     private static let filterDefaultsKey = "readingListFilter"
@@ -120,8 +129,8 @@ final class ReadingListViewController: UITableViewController {
     /// (which shows the system paste banner) when it has actually changed.
     private var lastCheckedPasteboardChangeCount = -1
 
-    /// The Articles/Videos filter — only shown when the list actually has both
-    /// (a video and an article), otherwise it's pointless.
+    /// The Articles / Media & Links filter — only shown when the list actually has
+    /// both a reader item and a media/link item, otherwise it's pointless.
     private let filterControl = UISegmentedControl()
     private var filterHeaderView: UIView?
 
@@ -341,14 +350,14 @@ final class ReadingListViewController: UITableViewController {
         reload()
     }
 
-    /// Shows the Articles/Videos filter only when the list has BOTH a video and
-    /// an article; otherwise it's meaningless. Resets to "All" when hidden so a
-    /// stale "Videos"/"Articles" selection can't leave the list empty.
+    /// Shows the Articles / Media & Links filter only when the list has BOTH a
+    /// reader item and a media/link item; otherwise it's meaningless. Resets to
+    /// "All" when hidden so a stale selection can't leave the list empty.
     private func updateFilterVisibility() {
         let items = store.items()
-        let hasVideo = items.contains { $0.isYouTubeVideo }
-        let hasArticle = items.contains { !$0.isYouTubeVideo }
-        let shouldShow = hasVideo && hasArticle
+        let hasReaderItem = items.contains { Self.rendersAsReader($0) }
+        let hasMediaOrLink = items.contains { !Self.rendersAsReader($0) }
+        let shouldShow = hasReaderItem && hasMediaOrLink
         if shouldShow {
             if tableView.tableHeaderView !== filterHeaderView {
                 tableView.tableHeaderView = filterHeaderView
@@ -440,7 +449,7 @@ final class ReadingListViewController: UITableViewController {
             }
         } completion: { [weak self] _ in
             self?.isAnimatingRowChange = false
-            // A delete can change whether the Articles/Videos filter applies.
+            // A delete can change whether the Articles / Media & Links filter applies.
             self?.updateFilterVisibility()
         }
     }

@@ -30,25 +30,22 @@ enum AppNamePlatform {
     /// caller appends the screenshot and runs prompt+image through an image model.
     static func screenPrompt(forAppName app: String) -> String? {
         guard let platform = platform(forAppName: app) else { return nil }
+        // Each prompt asks for the exact ordered fields "Save from App" expects
+        // for that app, separated by " ; " so the shortcut can split them into
+        // the values list. "none" means nothing identifiable is on screen.
         switch platform {
         case .youtube:
-            return "Return the YouTube video on screen as \"channel_name:video_title\" or \"none\":"
+            return "Return the channel name and video title of the YouTube video on screen as \"channel ; title\", or \"none\":"
         case .music:
-            return "Return the song on screen as \"artist:title\" or \"none\":"
+            return "Return the artist and track title of the song on screen as \"artist ; title\", or \"none\":"
         case .podcast:
-            return "Return the podcast on screen as \"show:episode_title\" or \"none\":"
+            return "Return the show name and episode title of the podcast on screen as \"show ; episode title\", or \"none\":"
         case .bluesky:
-            return "Return a short search phrase (author plus a few distinctive words) for the Bluesky post on screen, or \"none\":"
+            return "Return the author handle and a distinctive phrase from the Bluesky post on screen as \"handle ; phrase\", or \"none\":"
         case .reddit:
-            return "Return a short search phrase (subreddit plus the title) for the Reddit post on screen, or \"none\":"
-        case .x:
-            return "Return the X post on screen as \"author:post_text\" or \"none\":"
-        case .tiktok:
-            return "Return the TikTok on screen as \"creator:caption\" or \"none\":"
-        case .instagram:
-            return "Return the Instagram post on screen as \"account:caption\" or \"none\":"
-        case .facebook:
-            return "Return the Facebook post on screen as \"author:caption\" or \"none\":"
+            return "Return the subreddit, post title, and author of the Reddit post on screen as \"subreddit ; title ; author\", or \"none\":"
+        case .x, .tiktok, .instagram, .facebook:
+            return "Return the full URL of the post on screen, or \"none\":"
         }
     }
 }

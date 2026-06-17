@@ -57,7 +57,7 @@ struct RedditMetadataFetcher: PlatformMetadataFetching {
     func fetchMetadata(for match: PlatformMatch, urlString: String) async -> PlatformMetadata? {
         guard let url = RedditLink.jsonURL(for: urlString) else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 12)
-        request.setValue("Click/1.0 (reading list)", forHTTPHeaderField: "User-Agent")
+        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
         else { return nil }
@@ -74,24 +74,64 @@ struct RedditMetadataFetcher: PlatformMetadataFetching {
         let subreddit = postData["subreddit_name_prefixed"] as? String
             ?? (postData["subreddit"] as? String).map { "r/\($0)" }
 
-        // Post image: prefer the preview source (largest), else a direct image
-        // `url`, else the thumbnail. Reddit JSON HTML-escapes `&` in preview URLs.
-        var imageURLString: String?
-        if let preview = postData["preview"] as? [String: Any],
-           let images = preview["images"] as? [[String: Any]],
-           let source = images.first?["source"] as? [String: Any],
-           let url = source["url"] as? String {
-            imageURLString = url.replacingOccurrences(of: "&amp;", with: "&")
-        } else if let directURL = postData["url_overridden_by_dest"] as? String,
-                  directURL.hasSuffix(".jpg") || directURL.hasSuffix(".png") {
-            imageURLString = directURL
-        } else if let thumb = postData["thumbnail"] as? String, thumb.hasPrefix("http") {
-            imageURLString = thumb
-        }
         var thumbnailData: Data?
-        if let imageURLString, let imageURL = URL(string: imageURLString) {
+        if let imageURL = Self.bestImageURL(in: postData) {
             thumbnailData = try? await URLSession.shared.data(from: imageURL).0
         }
         return PlatformMetadata(title: title, creator: subreddit, thumbnailData: thumbnailData)
+    }
+
+    /// Reddit posts hide their image in several shapes depending on type — a
+    /// single image, a gallery, a direct `i.redd.it` link, a crosspost, or just a
+    /// thumbnail. Tries them in quality order. Reddit JSON HTML-escapes `&`.
+    private static func bestImageURL(in postData: [String: Any]) -> URL? {
+        func clean(_ s: String) -> URL? {
+            URL(string: s.replacingOccurrences(of: "&amp;", with: "&"))
+        }
+
+        // 1. preview.images[0].source (largest single-image preview).
+        if let preview = postData["preview"] as? [String: Any],
+           let images = preview["images"] as? [[String: Any]],
+           let source = images.first?["source"] as? [String: Any],
+           let url = source["url"] as? String, let result = clean(url) {
+            return result
+        }
+        // 2. Gallery: media_metadata holds {id: {s: {u: <url>}}} (or p[] previews).
+        if let media = postData["media_metadata"] as? [String: Any] {
+            // Honor gallery order when present, else any entry.
+            let orderedIDs = (postData["gallery_data"] as? [String: Any])
+                .flatMap { $0["items"] as? [[String: Any]] }?
+                .compactMap { $0["media_id"] as? String } ?? Array(media.keys)
+            for id in orderedIDs {
+                guard let entry = media[id] as? [String: Any] else { continue }
+                if let s = entry["s"] as? [String: Any],
+                   let u = (s["u"] ?? s["gif"]) as? String, let result = clean(u) {
+                    return result
+                }
+            }
+        }
+        // 3. Direct image link (i.redd.it or any image-extension URL).
+        if let direct = (postData["url_overridden_by_dest"] ?? postData["url"]) as? String,
+           Self.looksLikeImage(direct), let result = clean(direct) {
+            return result
+        }
+        // 4. Crosspost parent's preview.
+        if let parents = postData["crosspost_parent_list"] as? [[String: Any]],
+           let parent = parents.first, let nested = bestImageURL(in: parent) {
+            return nested
+        }
+        // 5. A usable thumbnail (skip reddit's "self"/"default"/"nsfw" sentinels).
+        if let thumb = postData["thumbnail"] as? String, thumb.hasPrefix("http"),
+           let result = clean(thumb) {
+            return result
+        }
+        return nil
+    }
+
+    private static func looksLikeImage(_ urlString: String) -> Bool {
+        let lower = urlString.lowercased()
+        if let host = URL(string: urlString)?.host?.lowercased(),
+           host == "i.redd.it" || host == "i.imgur.com" { return true }
+        return [".jpg", ".jpeg", ".png", ".webp", ".gif"].contains { lower.contains($0) }
     }
 }

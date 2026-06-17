@@ -47,7 +47,6 @@ final class ReaderViewController: UIViewController {
     private let audioButton = UIButton(type: .system)
 
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
-    private static let modeSymbols = ["text.alignleft", "text.line.first.and.arrowtriangle.forward", "bolt.fill"]
 
     init(item: ReadingListItem, content: ArticleContent,
          forceMode: ReadingListItem.ReaderMode? = nil,
@@ -73,9 +72,9 @@ final class ReaderViewController: UIViewController {
         view.backgroundColor = .systemBackground
         navigationItem.largeTitleDisplayMode = .never
 
-        for (index, symbol) in Self.modeSymbols.enumerated() {
+        for (index, mode) in Self.orderedModes.enumerated() {
             modeControl.insertSegment(
-                with: UIImage(systemName: symbol), at: index, animated: false)
+                with: ReaderModeIcons.image(for: mode), at: index, animated: false)
         }
         modeControl.selectedSegmentIndex = Self.orderedModes.firstIndex(of: mode) ?? 0
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)

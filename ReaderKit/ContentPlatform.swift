@@ -40,11 +40,17 @@ enum ContentPlatform: String, Codable, CaseIterable {
     var isURLless: Bool { self == .music || self == .podcast }
 
     /// Asset name for a bundled brand logo, when one ships (else nil → SF Symbol).
+    /// These are full-color favicon-derived PNGs, drawn untinted as the fallback.
     var logoAssetName: String? {
         switch self {
+        case .youtube: return "logo-youtube"
         case .x: return "logo-x"
+        case .bluesky: return "logo-bluesky"
         case .reddit: return "logo-reddit"
-        default: return nil
+        case .tiktok: return "logo-tiktok"
+        case .instagram: return "logo-instagram"
+        case .facebook: return "logo-facebook"
+        case .music, .podcast: return nil // cover art primary; SF Symbol fallback
         }
     }
 

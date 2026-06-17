@@ -56,13 +56,30 @@ final class ReadingListIngestor {
             let html = try await fetcher.fetchHTML(from: url)
             var content = try extractor.extract(html: html, baseURL: url)
             content = await downloadImages(for: content, itemID: item.id)
+            // Best-effort cover/banner art for the list row (kept before the
+            // ready flip so the row's spinner covers the whole fetch).
+            let coverData = await fetchCoverImageData(html: html, baseURL: url)
             let updated = store.saveContent(content, for: item)
+            if let coverData { store.setThumbnail(coverData, for: item.id) }
             if updated.state == .ready {
                 ArticleSendCoordinator.shared.articleBecameReady(updated)
             }
         } catch {
             store.markFailed(item.id)
         }
+    }
+
+    /// Downloads an article's cover image (og:image / twitter:image) with a short
+    /// timeout. Returns nil on any failure — the row then shows no thumbnail.
+    private func fetchCoverImageData(html: String, baseURL: URL) async -> Data? {
+        guard let imageURL = LeadImageExtractor.imageURL(in: html, baseURL: baseURL) else { return nil }
+        var request = URLRequest(url: imageURL, timeoutInterval: 8)
+        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              data.count > 512, data.count <= 5 * 1024 * 1024
+        else { return nil }
+        return data
     }
 
     /// Document ingestion: parse the imported file (stored at

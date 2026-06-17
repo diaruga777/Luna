@@ -268,7 +268,8 @@ final class ShareViewController: UIViewController {
     }
 
     private func presentSavedNonTextual(url: URL, content: NonTextualContent) {
-        let saved = SavedNonTextualViewController(content: content) { [weak self] in
+        let saved = SavedNonTextualViewController(
+            articleURLString: url.absoluteString, content: content) { [weak self] in
             self?.complete()
         }
         let nav = UINavigationController(rootViewController: saved)

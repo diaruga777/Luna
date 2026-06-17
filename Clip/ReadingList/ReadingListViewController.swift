@@ -145,7 +145,8 @@ final class ReadingListViewController: UITableViewController {
         title = "Reading List"
         navigationController?.navigationBar.prefersLargeTitles = true
 
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        tableView.register(
+            ReadingListItemCell.self, forCellReuseIdentifier: ReadingListItemCell.reuseID)
 
         navigationItem.rightBarButtonItems = [
             UIBarButtonItem(
@@ -516,38 +517,23 @@ final class ReadingListViewController: UITableViewController {
     override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
+        let cell = tableView.dequeueReusableCell(
+            withIdentifier: ReadingListItemCell.reuseID, for: indexPath) as? ReadingListItemCell
+            ?? ReadingListItemCell(style: .default, reuseIdentifier: ReadingListItemCell.reuseID)
         let item = item(at: indexPath)
+        let isPasteboard = section(at: indexPath.section) == .pasteboard
 
-        var config = cell.defaultContentConfiguration()
-        config.text = item.title ?? item.urlString
-        config.secondaryAttributedText = secondaryText(for: item)
-        config.textProperties.numberOfLines = 2
+        let titleColor: UIColor = item.state == .failed
+            ? .systemRed
+            : (item.readState == .unopened ? .label : .secondaryLabel)
 
-        if item.isYouTubeVideo {
-            config.image = videoThumbnail(for: item)
-            config.imageProperties.maximumSize = CGSize(width: 96, height: 54)
-            config.imageProperties.cornerRadius = 6
-        } else if let platform = item.contentPlatform,
-                  let module = PlatformRegistry.shared.module(for: platform) {
-            let artPath = item.thumbnailFileName.map {
-                store.articlesDirectory.appendingPathComponent($0).path
-            }
-            config.image = PlatformThumbnailRenderer.thumbnail(
-                cachedArtPath: artPath, glyphSymbolName: module.glyphSymbolName,
-                logoAssetName: platform.logoAssetName)
-            config.imageProperties.maximumSize = CGSize(width: 96, height: 54)
-            config.imageProperties.cornerRadius = 6
-        }
-        if item.state == .failed {
-            // Items in the "Couldn't Load" section read in red.
-            config.textProperties.color = .systemRed
-        } else {
-            // Unopened articles pop; anything touched fades back (but stays legible).
-            config.textProperties.color = item.readState == .unopened ? .label : .secondaryLabel
-        }
-        cell.contentConfiguration = config
-        cell.accessoryType = item.state == .ready ? .disclosureIndicator : .none
+        cell.configure(
+            title: item.title ?? item.urlString,
+            titleColor: titleColor,
+            subtitle: secondaryText(for: item),
+            thumbnail: thumbnail(for: item, isPasteboard: isPasteboard),
+            showsDisclosure: item.state == .ready,
+            reuseKey: "\(item.id.uuidString)|\(item.thumbnailFileName ?? "")|\(item.state.rawValue)")
         cell.showsReorderControl = true
         return cell
     }
@@ -746,36 +732,32 @@ final class ReadingListViewController: UITableViewController {
         present(YouTubePlayerViewController(videoID: videoID, itemID: item.id), animated: true)
     }
 
-    /// Thumbnail with a play glyph composited on (cached file from ingest;
-    /// falls back to a plain play tile).
-    private func videoThumbnail(for item: ReadingListItem) -> UIImage {
-        let size = CGSize(width: 96, height: 54)
-        let baseImage: UIImage? = item.thumbnailFileName.flatMap {
-            UIImage(contentsOfFile:
-                store.articlesDirectory.appendingPathComponent($0).path)
+    /// The thumbnail state for a row: cached art (aspect-fit) when present, a
+    /// spinner while the item is still being fetched, or the platform-logo
+    /// fallback once the fetch finished with no image. The pasteboard suggestion
+    /// is transient (never ingesting) so it never spins.
+    private func thumbnail(
+        for item: ReadingListItem, isPasteboard: Bool
+    ) -> ReadingListItemCell.Thumbnail {
+        if let fileName = item.thumbnailFileName {
+            return .art(path: store.articlesDirectory.appendingPathComponent(fileName).path)
         }
-        return UIGraphicsImageRenderer(size: size).image { context in
-            UIColor.black.setFill()
-            context.fill(CGRect(origin: .zero, size: size))
-            if let baseImage {
-                // hqdefault is 4:3 with letterboxing; aspect-fill crops it to 16:9.
-                let scale = max(size.width / baseImage.size.width,
-                                size.height / baseImage.size.height)
-                let drawSize = CGSize(width: baseImage.size.width * scale,
-                                      height: baseImage.size.height * scale)
-                baseImage.draw(in: CGRect(
-                    x: (size.width - drawSize.width) / 2,
-                    y: (size.height - drawSize.height) / 2,
-                    width: drawSize.width, height: drawSize.height))
-            }
-            let glyphSize: CGFloat = 24
-            let glyphRect = CGRect(
-                x: (size.width - glyphSize) / 2, y: (size.height - glyphSize) / 2,
-                width: glyphSize, height: glyphSize)
-            UIImage(systemName: "play.circle.fill")?
-                .withTintColor(.white.withAlphaComponent(0.92), renderingMode: .alwaysOriginal)
-                .draw(in: glyphRect)
+        let fetchFinished = isPasteboard || item.state == .ready || item.state == .failed
+
+        if item.isYouTubeVideo {
+            return fetchFinished
+                ? .logo(assetName: ContentPlatform.youtube.logoAssetName, glyph: "play.rectangle.fill")
+                : .loading
         }
+        if let platform = item.contentPlatform,
+           let module = PlatformRegistry.shared.module(for: platform) {
+            return fetchFinished
+                ? .logo(assetName: platform.logoAssetName, glyph: module.glyphSymbolName)
+                : .loading
+        }
+        // Plain article/document: a cover image may still be downloading. Spin
+        // while pending; show nothing once finished without one.
+        return fetchFinished ? .none : .loading
     }
 
     // MARK: - Reordering (Reading section only)

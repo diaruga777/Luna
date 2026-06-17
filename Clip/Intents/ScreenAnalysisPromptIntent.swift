@@ -21,9 +21,9 @@ struct ScreenAnalysisPromptIntent: AppIntent {
     static let openAppWhenRun: Bool = false
 
     @Parameter(title: "App", description: "The current app, from Get Current App.")
-    var app: String
+    var app: String?
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        .result(value: AppNamePlatform.screenPrompt(forAppName: app) ?? "")
+        .result(value: app.flatMap { AppNamePlatform.screenPrompt(forAppName: $0) } ?? "")
     }
 }

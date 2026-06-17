@@ -18,8 +18,10 @@ platform glyph + creator; tapping runs a launch ladder.
 - **`PlatformEmbedViewController`** — generalized WKWebView embed (16:9, optional
   Referer + "ended" watcher → mark read). Used by YouTube; available to others.
 - **`InAppBrowser`** — `SFSafariViewController` wrapper, the ultimate fallback.
-- **`PlatformThumbnailRenderer`** — 96×54 row art: cached image + glyph badge, or
-  a glyph tile.
+- **Row art** is rendered by `ReadingListItemCell` (see reading-list.md): cached
+  art aspect-fit, else the platform's bundled brand logo. `ContentPlatform.logoAssetName`
+  → full-color favicon-derived PNGs (`logo-youtube/x/bluesky/reddit/tiktok/instagram/facebook`
+  in Assets.xcassets); music/podcast fall back to the SF `glyphSymbolName`.
 
 ## Data model (`ReaderKit/ReadingListItem.swift`)
 
@@ -36,9 +38,10 @@ when `platform == .youtube`.
   `ingestPlatformItem` (best-effort metadata via the module's fetcher →
   `ReadingListStore.savePlatformMetadata`, always `.ready`), then the article
   extractor. Platform items never enter `.failed`.
-- **Cell**: YouTube keeps its thumbnail; other platforms use
-  `PlatformThumbnailRenderer` + the module glyph. Creator shows via `channelName`/
-  `mediaCreatorName`.
+- **Cell**: `ReadingListItemCell` — spinner while fetching, fetched art, or the
+  brand-logo fallback. Reddit images: `RedditMetadataFetcher.bestImageURL` tries
+  preview source → `media_metadata` gallery → direct `i.redd.it`/imgur → crosspost
+  → thumbnail. Creator shows via `channelName`/`mediaCreatorName`.
 - **Tap (launch ladder)**: native app deep link (`canOpenURL` → `open` → mark
   read) → in-app embed (`PlatformEmbedViewController`) → `InAppBrowser` (Safari).
   YouTube uses its existing `openVideo`. Music/podcast use `openMediaItem` (below).
@@ -57,7 +60,7 @@ when `platform == .youtube`.
 | Instagram | `InstagramLink` | og: scrape (login-walled → logo) | — | — | none |
 | Facebook | `FacebookLink` | og: scrape | — | — | none |
 | Music | `MediaLink` | iTunes Lookup / Spotify oEmbed | preferred app | — | `SaveMusicItemIntent` (URL-less) |
-| Podcast | `MediaLink` | iTunes Lookup (`entity=podcastEpisode`, strips `id` path prefix → episode title + show name) / Spotify oEmbed | preferred app | — | `SavePodcastItemIntent` (URL-less) |
+| Podcast | `MediaLink` | Apple: SCRAPE the page (`og:title` episode + `og:image` art) + iTunes lookup of the show id for the show name — episode ids are NOT lookup-able. Spotify: oEmbed. | preferred app | — | `SavePodcastItemIntent` (URL-less) |
 
 X/TikTok/Instagram/Facebook have **no free search**, so they have no find-intent
 (an always-failing intent is worse than none) — captured via the share sheet /

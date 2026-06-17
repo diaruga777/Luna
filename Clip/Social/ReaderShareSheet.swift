@@ -55,9 +55,18 @@ final class ReaderShareSheet: UIViewController {
         self.rows = rows
         super.init(nibName: nil, bundle: nil)
         if let sheet = sheetPresentationController {
-            sheet.detents = [.medium()]
+            // Just tall enough for the title + buttons + a bottom inset (no
+            // wasted half-screen). `rowCount` is captured (not `self`) to avoid a
+            // retain cycle through the presentation controller.
+            let rowCount = rows.count
+            sheet.detents = [.custom(identifier: .init("shareContent")) { _ in
+                let titleBlock: CGFloat = 24 + 30 + 20
+                let buttons = CGFloat(rowCount) * 52 + CGFloat(max(0, rowCount - 1)) * 12
+                return titleBlock + buttons + 44
+            }]
             sheet.prefersGrabberVisible = true
-            sheet.preferredCornerRadius = 24
+            // Round the top corners to roughly match the device's screen corners.
+            sheet.preferredCornerRadius = 44
         }
     }
 

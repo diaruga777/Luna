@@ -6,452 +6,252 @@
 import UIKit
 import WebKit
 
-/// The inline frame that "cuts" the article when a link is tapped.
+/// The inline reader shown when a link is tapped in the scroll reader.
 ///
-/// Layout is one outer scroll view stacked vertically:
-///   [ peek: article text ending with the full line containing the link ]
-///   [ top border with a notch pointing down from the tapped link        ]
-///   [ the linked page: a NESTED READER when the page is article-like,   ]
-///   [   otherwise a web view at full content height                     ]
-///   [ bottom border with a notch pointing up to the replicated line     ]
-///   [ the rest of the article, starting with that same link line        ]
+/// The outer reader splits along the line boundary at the tapped link: the line
+/// ABOVE the link parks as a one-line peek at the top, the link's line parks as a
+/// one-line peek at the bottom (both are live snapshots of the reader), and an
+/// inset rounded glass card grows out from the cut to fill the space between
+/// them. The card's web view scrolls and navigates INDEPENDENTLY — its gestures
+/// never reach the outer reader.
 ///
-/// Nested readers get a slightly lighter background per depth level and their
-/// links open further overlays (recursively, same container behavior).
-final class SplitWebOverlayViewController: UIViewController, UIScrollViewDelegate {
+/// Three ways to dismiss, all animating the card's height back to zero from its
+/// center while the two peeks rejoin:
+///   1. the ✕ hovering at the card's top-left,
+///   2. the chevron on the card's bottom edge,
+///   3. an interactive drag started in either peek — the card compresses by
+///      twice the drag distance until it dismisses.
+final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizerDelegate {
 
-    /// Called exactly once on dismissal with the reader content offset to restore.
-    var onDismiss: ((CGFloat) -> Void)?
+    /// Called once on dismissal so the presenter can keep its reader untouched
+    /// (the reader never moved — the overlay covered it).
+    var onDismiss: (() -> Void)?
 
     private let url: URL
-    /// Sharing affordances — enables the save (download-arrow) button. Nil in
-    /// contexts without a save target.
     private let shareProvider: ReaderShareProviding?
-    private let articleText: NSAttributedString
-    /// Line fragment of the tapped link, in text content coordinates.
-    private let lineRect: CGRect
-    /// Bounding rect of the tapped link text, in text content coordinates.
-    private let linkRect: CGRect
-    /// Character range of the tapped link (for highlighting the replicas).
-    private let linkRange: NSRange
-    private let readerOffset: CGFloat
-    /// Full article text height, measured by the reader (avoids re-layout here).
-    private let textHeight: CGFloat
-    /// Screen captures of the reader above/below the cut, used by the open animation.
-    private let topSnapshot: UIView?
-    private let bottomSnapshot: UIView?
-    /// Nesting level of the PARENT reader (0 = root article).
-    private let depth: Int
+    /// Height of one text line (the peek height top and bottom).
+    private let lineHeight: CGFloat
+    /// Screen-y of the top of the tapped link's line at tap time.
+    private let lineTopScreen: CGFloat
+    /// Live snapshots of the reader above / at-and-below the link line.
+    private let topHalf: UIView?
+    private let bottomHalf: UIView?
 
-    private let peekHeight: CGFloat = 96
-    private let borderHeight: CGFloat = 26
-    private let maxMiddleHeight: CGFloat = 8000
-    private let accent = UIColor.systemBlue
-
-    private let outerScroll = UIScrollView()
-    private let peekContainer = UIView()
-    private let peekTextView = UITextView()
-    private let topBorder = UIView()
-    private let bottomBorder = UIView()
-    private let webView = WKWebView(frame: .zero, configuration: WebJunkBlocker.makeConfiguration())
-    /// Rounded clipping wrapper — corner-masking the WKWebView itself breaks
-    /// its tile rendering, so the card look lives on this container.
-    private let webCard = UIView()
-    private let webSpinner = UIActivityIndicatorView(style: .medium)
-    private let tailContainer = UIView()
-    private let tailTextView = UITextView()
-    private let dismissButton = UIButton(type: .system)
-    private let saveButton = UIButton(type: .system)
-    /// Soft shadow behind the inset glass card (a sibling under the card so the
-    /// card's own `clipsToBounds` doesn't clip the shadow).
+    private let card = UIView()
     private let cardShadow = UIView()
+    private let webView = WKWebView(frame: .zero, configuration: WebJunkBlocker.makeConfiguration())
+    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let closeButton = UIButton(type: .system)
+    private let saveButton = UIButton(type: .system)
+    private let bottomChevron = UIButton(type: .system)
 
-    // Nested-reader middle content (replaces the web view when article-like).
-    private let nestedContainer = UIView()
-    private let nestedTextView = UITextView()
-    private var nestedText: NSAttributedString?
-    private var nestedTextHeight: CGFloat = 0
-    private var isNestedReader = false
+    private static let cardInset: CGFloat = 14
+    private static let cardCornerRadius: CGFloat = 26
 
-    private var middleHeight: CGFloat = 0
-    private var pendingMiddleHeight: CGFloat?
-    private var contentSizeObservation: NSKeyValueObservation?
-    private var didDismiss = false
     private var didAnimateIn = false
-    private var slicesInstalled = false
-    private var didApplySafeAreaInset = false
-    private var articleProbeTask: Task<Void, Never>?
+    private var didDismiss = false
+    /// The two snapshot y-origins in the fully-open state (parked peeks).
+    private var openTopHalfY: CGFloat = 0
+    private var openBottomHalfY: CGFloat = 0
 
-    /// Top of the link's line — the continuation below the frame starts here.
-    private var cutTop: CGFloat { lineRect.minY }
-    /// Bottom of the link's line — the peek above the frame ends here.
-    private var cutBottom: CGFloat { lineRect.maxY }
-    /// Content-y where the middle region ends (start of the continuation).
-    private var middleEnd: CGFloat { peekHeight + borderHeight + middleHeight + borderHeight }
-    private var middleStart: CGFloat { peekHeight + borderHeight }
-
-    private var parentBackground: UIColor { ReaderDepth.backgroundColor(for: depth) }
-    private var nestedBackground: UIColor { ReaderDepth.backgroundColor(for: depth + 1) }
-
-    init(url: URL, shareProvider: ReaderShareProviding?, articleText: NSAttributedString,
-         lineRect: CGRect, linkRect: CGRect,
-         linkRange: NSRange, readerOffset: CGFloat, textHeight: CGFloat,
-         topSnapshot: UIView?, bottomSnapshot: UIView?, depth: Int = 0) {
+    init(url: URL, shareProvider: ReaderShareProviding?, lineHeight: CGFloat,
+         lineTopScreen: CGFloat, topHalf: UIView?, bottomHalf: UIView?) {
         self.url = url
         self.shareProvider = shareProvider
-        self.articleText = articleText
-        self.lineRect = lineRect
-        self.linkRect = linkRect
-        self.linkRange = linkRange
-        self.readerOffset = readerOffset
-        self.textHeight = textHeight
-        self.topSnapshot = topSnapshot
-        self.bottomSnapshot = bottomSnapshot
-        self.depth = depth
+        self.lineHeight = max(lineHeight, 16)
+        self.lineTopScreen = lineTopScreen
+        self.topHalf = topHalf
+        self.bottomHalf = bottomHalf
         super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    deinit {
-        contentSizeObservation?.invalidate()
-        articleProbeTask?.cancel()
-    }
-
     // MARK: - Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = parentBackground
+        view.backgroundColor = .clear
 
-        outerScroll.delegate = self
-        outerScroll.alwaysBounceVertical = true
-        outerScroll.contentInsetAdjustmentBehavior = .never
-        outerScroll.frame = view.bounds
-        outerScroll.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(outerScroll)
+        // The card's web view scrolls + navigates on its own.
+        webView.scrollView.isScrollEnabled = true
+        webView.layer.cornerRadius = Self.cardCornerRadius
+        webView.layer.cornerCurve = .continuous
+        webView.clipsToBounds = true
 
-        peekContainer.clipsToBounds = true
-        peekContainer.backgroundColor = parentBackground
-        tailContainer.clipsToBounds = true
-        tailContainer.backgroundColor = parentBackground
-        applyCardStyle(to: nestedContainer)
-        nestedContainer.backgroundColor = nestedBackground
+        cardShadow.backgroundColor = .clear
+        cardShadow.layer.shadowColor = UIColor.black.cgColor
+        cardShadow.layer.shadowOpacity = 0.18
+        cardShadow.layer.shadowRadius = 18
+        cardShadow.layer.shadowOffset = CGSize(width: 0, height: 6)
 
-        // The web frame is a read-only preview: all gestures must reach the outer
-        // scroll view (interactive page regions would otherwise swallow pans).
-        webView.scrollView.isScrollEnabled = false
-        webView.isUserInteractionEnabled = false
-        // Transparent until the page paints, so the card's themed backing shows
-        // during load instead of WKWebView's default white.
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.scrollView.backgroundColor = .clear
-        applyCardStyle(to: webCard)
-        webCard.addSubview(webView)
-        applyCardShadow(to: cardShadow)
+        card.backgroundColor = ReaderDepth.backgroundColor(for: 0)
+        card.layer.cornerRadius = Self.cardCornerRadius
+        card.layer.cornerCurve = .continuous
+        card.layer.borderWidth = 0.5
+        card.layer.borderColor = UIColor.separator.withAlphaComponent(0.6).cgColor
+        card.clipsToBounds = true
+        card.addSubview(webView)
 
-        webSpinner.hidesWhenStopped = true
-        webSpinner.startAnimating()
+        spinner.hidesWhenStopped = true
+        spinner.startAnimating()
 
-        configureBorder(topBorder, notchPointsDown: true)
-        configureBorder(bottomBorder, notchPointsDown: false)
-        // Tapping either chevron bar collapses the frame shut (animated).
-        topBorder.addGestureRecognizer(
-            UITapGestureRecognizer(target: self, action: #selector(dismissTapped)))
-        bottomBorder.addGestureRecognizer(
-            UITapGestureRecognizer(target: self, action: #selector(dismissTapped)))
+        view.addSubview(cardShadow)
+        view.addSubview(card)
+        view.addSubview(spinner)
+        configureChrome()
 
-        outerScroll.addSubview(peekContainer)
-        outerScroll.addSubview(topBorder)
-        outerScroll.addSubview(cardShadow)
-        outerScroll.addSubview(webCard)
-        outerScroll.addSubview(webSpinner)
-        outerScroll.addSubview(bottomBorder)
-        outerScroll.addSubview(tailContainer)
+        if let topHalf { view.insertSubview(topHalf, belowSubview: card) }
+        if let bottomHalf { view.insertSubview(bottomHalf, belowSubview: card) }
+        addPeekPanGesture(to: topHalf)
+        addPeekPanGesture(to: bottomHalf)
 
-        configureDismissButton()
-        configureSaveButton()
-
-        middleHeight = view.bounds.height
-        layoutContent()
-
-        contentSizeObservation = webView.scrollView.observe(\.contentSize, options: [.new]) {
-            [weak self] scrollView, _ in
-            DispatchQueue.main.async {
-                self?.webContentSizeChanged(scrollView.contentSize.height)
-            }
-        }
-        webView.navigationDelegate = self
         WebJunkBlocker.applyRuleList(to: webView.configuration.userContentController)
+        webView.navigationDelegate = self
         webView.load(URLRequest(url: url))
-
-        probeForArticle()
-
-        dismissButton.alpha = 0
-    }
-
-    override func viewSafeAreaInsetsDidChange() {
-        super.viewSafeAreaInsetsDidChange()
-        // Keep the peek strip below the status bar initially; it still scrolls
-        // under it once the user starts scrolling.
-        guard !didApplySafeAreaInset, view.safeAreaInsets.top > 0 else { return }
-        didApplySafeAreaInset = true
-        outerScroll.contentInset.top = view.safeAreaInsets.top
-        outerScroll.contentOffset.y = -view.safeAreaInsets.top
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         guard !didAnimateIn else { return }
         didAnimateIn = true
-        animateSplitIn()
+        animateOpen()
     }
 
-    // MARK: - Article probe (nested reader)
+    // MARK: - Geometry
 
-    /// Fetches and extracts the linked page concurrently with the web load.
-    /// If it's article-like — substantial text across several blocks — the web
-    /// view is swapped for a nested reader, unless the user is already
-    /// scrolling through the web content.
-    private func probeForArticle() {
-        let targetURL = url
-        articleProbeTask = Task { [weak self] in
-            let content: ArticleContent? = await Task.detached(priority: .userInitiated) {
-                guard let html = try? await ArticleFetcher().fetchHTML(from: targetURL) else {
-                    return nil
-                }
-                return try? ArticleExtractor().extract(html: html, baseURL: targetURL)
-            }.value
+    private var openCardFrame: CGRect {
+        let width = view.bounds.width
+        let top = view.safeAreaInsets.top + lineHeight
+        let bottom = view.bounds.height - view.safeAreaInsets.bottom - lineHeight
+        return CGRect(x: Self.cardInset, y: top,
+                      width: width - Self.cardInset * 2, height: max(bottom - top, 0))
+    }
 
-            guard let self, !Task.isCancelled, let content else { return }
-            let textBlocks = content.blocks.filter { !$0.text.isEmpty }
-            let totalText = textBlocks.reduce(0) { $0 + $1.text.count }
-            let isArticle = totalText >= 1200 && textBlocks.count >= 5
-            guard isArticle else { return }
+    /// Lays the card (and shadow + chrome + web view) into `frame`.
+    private func layoutCard(_ frame: CGRect) {
+        card.frame = frame
+        cardShadow.frame = frame
+        cardShadow.layer.shadowPath = UIBezierPath(
+            roundedRect: CGRect(origin: .zero, size: frame.size),
+            cornerRadius: Self.cardCornerRadius).cgPath
+        webView.frame = card.bounds
+        spinner.center = CGPoint(x: frame.midX, y: frame.midY)
+        closeButton.center = CGPoint(x: frame.minX + 24, y: frame.minY + 24)
+        saveButton.center = CGPoint(x: frame.maxX - 24, y: frame.minY + 24)
+        bottomChevron.center = CGPoint(x: frame.midX, y: frame.maxY - 16)
+    }
 
-            await MainActor.run {
-                self.switchToNestedReader(content)
+    // MARK: - Open / compress / dismiss
+
+    private func animateOpen() {
+        let width = view.bounds.width
+        let open = openCardFrame
+        openTopHalfY = view.safeAreaInsets.top + lineHeight - lineTopScreen
+        openBottomHalfY = view.bounds.height - view.safeAreaInsets.bottom - lineHeight
+
+        // Start: snapshots match the reader, card is a zero-height sliver at the cut.
+        topHalf?.frame = CGRect(x: 0, y: 0, width: width, height: max(lineTopScreen, 1))
+        bottomHalf?.frame = CGRect(
+            x: 0, y: lineTopScreen, width: width,
+            height: max(view.bounds.height - lineTopScreen, 1))
+        layoutCard(CGRect(x: open.minX, y: lineTopScreen, width: open.width, height: 0))
+        setChromeAlpha(0)
+
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.9,
+                       initialSpringVelocity: 0.2) {
+            self.topHalf?.frame.origin.y = self.openTopHalfY
+            self.bottomHalf?.frame.origin.y = self.openBottomHalfY
+            self.layoutCard(open)
+            self.setChromeAlpha(1)
+        }
+    }
+
+    /// Applies a compression `progress` in 0…1 (0 = fully open, 1 = dismissed):
+    /// the card loses height equally from top and bottom, the peeks rejoin.
+    private func applyCompression(_ progress: CGFloat) {
+        let p = min(max(progress, 0), 1)
+        let open = openCardFrame
+        let height = open.height * (1 - p)
+        let centerY = open.midY
+        layoutCard(CGRect(x: open.minX, y: centerY - height / 2, width: open.width, height: height))
+        topHalf?.frame.origin.y = openTopHalfY + (0 - openTopHalfY) * p
+        bottomHalf?.frame.origin.y = openBottomHalfY + (lineTopScreen - openBottomHalfY) * p
+        setChromeAlpha(1 - p)
+    }
+
+    /// Animates a full compress-to-zero, then dismisses.
+    private func animateDismiss() {
+        guard !didDismiss else { return }
+        didDismiss = true
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        UIView.animate(withDuration: 0.32, delay: 0, options: .curveEaseIn) {
+            self.applyCompression(1)
+        } completion: { _ in
+            self.onDismiss?()
+            self.dismiss(animated: false)
+        }
+    }
+
+    // MARK: - Interactive peek drag
+
+    private func addPeekPanGesture(to peek: UIView?) {
+        guard let peek else { return }
+        peek.isUserInteractionEnabled = true
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePeekPan(_:)))
+        pan.delegate = self
+        peek.addGestureRecognizer(pan)
+    }
+
+    @objc private func handlePeekPan(_ gesture: UIPanGestureRecognizer) {
+        guard !didDismiss else { return }
+        let openHeight = max(openCardFrame.height, 1)
+        // Height loss is double the drag distance, so progress = 2·|dy| / openHeight.
+        let distance = abs(gesture.translation(in: view).y)
+        let progress = (distance * 2) / openHeight
+
+        switch gesture.state {
+        case .changed:
+            applyCompression(progress)
+        case .ended, .cancelled:
+            let velocity = abs(gesture.velocity(in: view).y)
+            if progress >= 0.5 || velocity > 900 {
+                animateDismiss()
+            } else {
+                UIView.animate(withDuration: 0.25) { self.applyCompression(0) }
             }
+        default:
+            break
         }
     }
 
-    private func switchToNestedReader(_ content: ArticleContent) {
-        guard !didDismiss, !isNestedReader else { return }
-        // Don't yank the web view out from under someone already reading it.
-        guard outerScroll.contentOffset.y < peekHeight else { return }
+    // MARK: - Chrome
 
-        let rendered = ArticleTextRenderer.render(content)
-        nestedText = rendered.text
+    private func configureChrome() {
+        closeButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "xmark")
+        closeButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
+        view.addSubview(closeButton)
 
-        // One-time full measure of the nested article (TextKit 1 for metric
-        // consistency with the viewport text view that will display it).
-        let measuringView = UITextView()
-        _ = measuringView.layoutManager
-        measuringView.attributedText = rendered.text
-        measuringView.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 40, right: 20)
-        let fitted = measuringView.sizeThatFits(
-            CGSize(width: view.bounds.width, height: .greatestFiniteMagnitude))
-        nestedTextHeight = fitted.height
+        bottomChevron.configuration = GlassStyle.circularButtonConfiguration(symbol: "chevron.compact.down")
+        bottomChevron.tintColor = GlassStyle.readingAccent
+        bottomChevron.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
+        view.addSubview(bottomChevron)
 
-        _ = nestedTextView.layoutManager
-        nestedTextView.attributedText = rendered.text
-        nestedTextView.isEditable = false
-        nestedTextView.isSelectable = true
-        nestedTextView.isScrollEnabled = true
-        nestedTextView.showsVerticalScrollIndicator = false
-        nestedTextView.contentInsetAdjustmentBehavior = .never
-        nestedTextView.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 40, right: 20)
-        nestedTextView.backgroundColor = nestedBackground
-        nestedTextView.linkTextAttributes = [
-            .foregroundColor: accent,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-        ]
-        // The text view is fully non-interactive so every pan reaches the
-        // outer scroll (UIScrollView silently re-enables a disabled pan
-        // recognizer, which made the nested reader scroll independently).
-        // Link taps are resolved manually via a recognizer on the CONTAINER.
-        nestedTextView.isSelectable = false
-        nestedTextView.isUserInteractionEnabled = false
-        let tap = UITapGestureRecognizer(target: self, action: #selector(nestedReaderTapped(_:)))
-        nestedContainer.addGestureRecognizer(tap)
-
-        webView.stopLoading()
-        contentSizeObservation?.invalidate()
-        contentSizeObservation = nil
-        webCard.removeFromSuperview()
-        webSpinner.stopAnimating()
-
-        nestedContainer.addSubview(nestedTextView)
-        outerScroll.addSubview(nestedContainer)
-
-        isNestedReader = true
-        applyMiddleHeight(min(nestedTextHeight, maxMiddleHeight))
-    }
-
-    /// Floats the nested reader's viewport-sized text view over the on-screen
-    /// part of its region, mirroring the tail's lazy-layout pattern.
-    private func updateNestedViewport() {
-        guard isNestedReader else { return }
-        let viewportHeight = view.bounds.height
-        let regionHeight = nestedContainer.bounds.height
-        let intoRegion = outerScroll.contentOffset.y - nestedContainer.frame.minY
-        let floatY = min(max(0, intoRegion), max(0, regionHeight - viewportHeight))
-        nestedTextView.frame = CGRect(
-            x: 0, y: floatY, width: nestedContainer.bounds.width,
-            height: min(viewportHeight, regionHeight))
-        let maxOffset = max(0, nestedTextHeight - nestedTextView.bounds.height)
-        nestedTextView.contentOffset.y = min(floatY, maxOffset)
-    }
-
-    // MARK: - Slices
-
-    /// The slices are viewport-sized SCROLLABLE text views with driven offsets:
-    /// scrollable text views lay out lazily, so the whole article is never laid
-    /// out at once.
-    private func installSliceTextViewsIfNeeded() {
-        guard !slicesInstalled else { return }
-        slicesInstalled = true
-        configureSliceTextView(peekTextView)
-        configureSliceTextView(tailTextView)
-        peekContainer.addSubview(peekTextView)
-        tailContainer.addSubview(tailTextView)
-        layoutContent()
-        // The text views clamp programmatic offsets against a stale (pre-first-
-        // layout) contentSize; one more pass on the next runloop sticks.
-        DispatchQueue.main.async { [weak self] in
-            self?.layoutContent()
-        }
-    }
-
-    private func configureSliceTextView(_ textView: UITextView) {
-        // TextKit 1 from the start, matching the reader — TK1 and TK2 break
-        // lines slightly differently, which would make the slices' text sit a
-        // hair off from the reader's and "jump" during open/close.
-        _ = textView.layoutManager
-        let text = NSMutableAttributedString(attributedString: articleText)
-        if linkRange.location + linkRange.length <= text.length {
-            text.addAttribute(
-                .backgroundColor, value: accent.withAlphaComponent(0.18), range: linkRange)
-        }
-        textView.attributedText = text
-        textView.isEditable = false
-        textView.isSelectable = false
-        textView.isScrollEnabled = true
-        textView.isUserInteractionEnabled = false
-        textView.showsVerticalScrollIndicator = false
-        textView.contentInsetAdjustmentBehavior = .never
-        textView.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 40, right: 20)
-        textView.backgroundColor = parentBackground
-        textView.linkTextAttributes = [
-            .foregroundColor: accent,
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-        ]
-    }
-
-    /// Keeps the tail's viewport-sized text view floating over the part of the
-    /// tail region that's on screen — one screen of text laid out at any time.
-    private func updateTailViewport() {
-        guard slicesInstalled else { return }
-        let viewportHeight = view.bounds.height
-        let tailHeight = tailContainer.bounds.height
-        let intoTail = outerScroll.contentOffset.y - tailContainer.frame.minY
-        let floatY = min(max(0, intoTail), max(0, tailHeight - viewportHeight))
-        tailTextView.frame = CGRect(
-            x: 0, y: floatY, width: view.bounds.width,
-            height: min(viewportHeight, tailHeight))
-        let maxOffset = max(0, textHeight - tailTextView.bounds.height)
-        tailTextView.contentOffset.y = min(cutTop + floatY, maxOffset)
-    }
-
-    /// A quiet band separating text from the inline frame; a small floating
-    /// glass chip with a chevron sits at the tapped link's x-position, tying
-    /// the frame to the link that opened it.
-    private func configureBorder(_ border: UIView, notchPointsDown: Bool) {
-        border.backgroundColor = .clear
-
-        let chip = UIVisualEffectView(effect: GlassStyle.barEffect())
-        chip.tag = 102
-        chip.clipsToBounds = true
-        chip.layer.cornerRadius = 11
-        chip.layer.cornerCurve = .continuous
-        let chevron = UIImageView(image: UIImage(
-            systemName: notchPointsDown ? "chevron.compact.down" : "chevron.compact.up"))
-        chevron.tintColor = accent
-        chevron.contentMode = .center
-        chevron.tag = 103
-        chip.contentView.addSubview(chevron)
-        border.addSubview(chip)
-    }
-
-    private func layoutBorderDecorations(_ border: UIView, notchPointsDown: Bool) {
-        let width = border.bounds.width
-        guard let chip = border.viewWithTag(102) else { return }
-        let chipWidth: CGFloat = 46
-        let chipHeight: CGFloat = 22
-        let chipX = min(max(linkRect.midX - chipWidth / 2, 20), width - chipWidth - 20)
-        chip.frame = CGRect(
-            x: chipX, y: (border.bounds.height - chipHeight) / 2,
-            width: chipWidth, height: chipHeight)
-        border.viewWithTag(103)?.frame = chip.bounds
-    }
-
-    /// Inset of the glass card from the overlay's left/right edges, and its
-    /// corner radius — shared by the card, its shadow, and the nested reader.
-    private static let cardInset: CGFloat = 14
-    private static let cardCornerRadius: CGFloat = 26
-
-    /// The inset, rounded, hairline-bordered look shared by the web card and the
-    /// nested-reader card so both read as a liquid-glass surface inset in the
-    /// parted article.
-    private func applyCardStyle(to card: UIView) {
-        card.layer.cornerRadius = Self.cardCornerRadius
-        card.layer.cornerCurve = .continuous
-        card.clipsToBounds = true
-        card.layer.borderWidth = 0.5
-        card.layer.borderColor = UIColor.separator.withAlphaComponent(0.6).cgColor
-        // Themed (depth-tinted, dark-mode-aware) backing so the initial load
-        // shows the reader's background, not a white flash, until the page paints.
-        if card === webCard { card.backgroundColor = parentBackground }
-    }
-
-    /// A soft drop shadow that lifts the card off the parted text. Lives on a
-    /// sibling view because the card itself clips to its rounded bounds.
-    private func applyCardShadow(to shadow: UIView) {
-        shadow.backgroundColor = .clear
-        shadow.layer.shadowColor = UIColor.black.cgColor
-        shadow.layer.shadowOpacity = 0.18
-        shadow.layer.shadowRadius = 18
-        shadow.layer.shadowOffset = CGSize(width: 0, height: 6)
-    }
-
-    private func configureDismissButton() {
-        dismissButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "xmark")
-        dismissButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
-        dismissButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(dismissButton)
-        NSLayoutConstraint.activate([
-            dismissButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            dismissButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-        ])
-    }
-
-    /// A download-style save button (top-right) that adds the linked page to the
-    /// reading list, briefly flipping to a checkmark to confirm. Only shown when
-    /// there's a save target.
-    private func configureSaveButton() {
         guard shareProvider != nil else { return }
         saveButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "square.and.arrow.down")
         saveButton.tintColor = GlassStyle.readingAccent
         saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
-        saveButton.translatesAutoresizingMaskIntoConstraints = false
-        saveButton.alpha = 0
         view.addSubview(saveButton)
-        NSLayoutConstraint.activate([
-            saveButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            saveButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-        ])
     }
+
+    private func setChromeAlpha(_ alpha: CGFloat) {
+        closeButton.alpha = alpha
+        bottomChevron.alpha = alpha
+        saveButton.alpha = alpha
+    }
+
+    @objc private func dismissTapped() { animateDismiss() }
 
     @objc private func saveTapped() {
         shareProvider?.saveLink(urlString: url.absoluteString)
@@ -460,325 +260,19 @@ final class SplitWebOverlayViewController: UIViewController, UIScrollViewDelegat
         saveButton.isEnabled = false
     }
 
-    // MARK: - Layout
-
-    private func layoutContent() {
-        let width = view.bounds.width
-        let tailHeight = max(0, textHeight - cutTop)
-
-        peekContainer.frame = CGRect(x: 0, y: 0, width: width, height: peekHeight)
-        if slicesInstalled {
-            peekTextView.frame = peekContainer.bounds
-            peekTextView.contentOffset.y = cutBottom - peekHeight
-        }
-
-        topBorder.frame = CGRect(x: 0, y: peekHeight, width: width, height: borderHeight)
-        layoutBorderDecorations(topBorder, notchPointsDown: true)
-
-        let cardFrame = CGRect(
-            x: Self.cardInset, y: middleStart,
-            width: width - Self.cardInset * 2, height: middleHeight)
-        cardShadow.frame = cardFrame
-        cardShadow.layer.shadowPath = UIBezierPath(
-            roundedRect: cardShadow.bounds, cornerRadius: Self.cardCornerRadius).cgPath
-        if isNestedReader {
-            nestedContainer.frame = cardFrame
-            updateNestedViewport()
-        } else {
-            webCard.frame = cardFrame
-            webView.frame = webCard.bounds
-            webSpinner.center = CGPoint(
-                x: width / 2, y: middleStart + view.bounds.height / 3)
-        }
-
-        bottomBorder.frame = CGRect(
-            x: 0, y: middleStart + middleHeight, width: width, height: borderHeight)
-        layoutBorderDecorations(bottomBorder, notchPointsDown: false)
-
-        tailContainer.frame = CGRect(x: 0, y: middleEnd, width: width, height: tailHeight)
-        updateTailViewport()
-
-        outerScroll.contentSize = CGSize(width: width, height: middleEnd + tailHeight)
-    }
-
-    /// Defers height changes while the user is scrolling so nothing jumps
-    /// mid-gesture; applies them when the scroll settles.
-    private func webContentSizeChanged(_ contentHeight: CGFloat) {
-        guard !isNestedReader else { return }
-        let newHeight = min(max(contentHeight, view.bounds.height), maxMiddleHeight)
-        guard abs(newHeight - middleHeight) > 1 else { return }
-        if outerScroll.isDragging || outerScroll.isDecelerating {
-            pendingMiddleHeight = newHeight
-            return
-        }
-        applyMiddleHeight(newHeight)
-    }
-
-    private func applyMiddleHeight(_ newHeight: CGFloat) {
-        let delta = newHeight - middleHeight
-        middleHeight = newHeight
-        pendingMiddleHeight = nil
-        // If the user is already past the middle frame, shift the offset with
-        // the content so the visible text doesn't move.
-        let wasBeyondMiddle = outerScroll.contentOffset.y > middleStart + (middleHeight - delta)
-        layoutContent()
-        if wasBeyondMiddle {
-            outerScroll.contentOffset.y += delta
-        }
-    }
-
-    private func applyPendingMiddleHeightIfIdle() {
-        guard let pending = pendingMiddleHeight,
-              !outerScroll.isDragging, !outerScroll.isDecelerating else { return }
-        applyMiddleHeight(pending)
-    }
-
-    // MARK: - Part-open animation
-
-    /// The reader's halves part vertically using screen snapshots: the half
-    /// above the cut (ending with the link's line) slides up to become the
-    /// peek; the half below — which begins with that same line — slides down
-    /// off screen, leaving the line replicated on both sides of the frame.
-    private func animateSplitIn() {
-        let height = view.bounds.height
-        let safeTop = view.safeAreaInsets.top
-        let cutBottomScreen = cutBottom - readerOffset
-        let cutTopScreen = cutTop - readerOffset
-
-        guard let topSnapshot, let bottomSnapshot else {
-            installSliceTextViewsIfNeeded()
-            dismissButton.alpha = 1
-            saveButton.alpha = 1
-            return
-        }
-
-        topSnapshot.frame = CGRect(
-            x: 0, y: 0, width: view.bounds.width, height: max(cutBottomScreen, 1))
-        bottomSnapshot.frame = CGRect(
-            x: 0, y: cutTopScreen, width: view.bounds.width,
-            height: max(height - cutTopScreen, 1))
-        view.insertSubview(topSnapshot, belowSubview: dismissButton)
-        view.insertSubview(bottomSnapshot, belowSubview: dismissButton)
-
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        UIView.animate(
-            withDuration: 0.45, delay: 0,
-            usingSpringWithDamping: 0.9, initialSpringVelocity: 0.2,
-            animations: {
-                topSnapshot.frame.origin.y = safeTop + self.peekHeight - cutBottomScreen
-                bottomSnapshot.frame.origin.y = height
-                self.dismissButton.alpha = 1
-                self.saveButton.alpha = 1
-            },
-            completion: { _ in
-                self.installSliceTextViewsIfNeeded()
-                topSnapshot.removeFromSuperview()
-                bottomSnapshot.removeFromSuperview()
-            })
-    }
-
-    // MARK: - Collapse (reverse of open)
-
-    /// The halves close back over the inline frame: the peek slides down until
-    /// the link's line sits where it was in the reader, the tail slides up to
-    /// meet it, and the frame disappears underneath.
-    private func animateCollapse() {
-        guard !didDismiss else { return }
-        didDismiss = true
-        onDismiss?(readerOffset)
-        guard slicesInstalled else {
-            dismiss(animated: false)
-            return
-        }
-
-        let width = view.bounds.width
-        let cutBottomScreen = cutBottom - readerOffset
-        let cutTopScreen = cutTop - readerOffset
-
-        // Reparent the live slices above the scroll view so they can close
-        // over the (shrinking) frame — no new text layout needed.
-        let peekFrame = outerScroll.convert(peekContainer.frame, to: view)
-        let tailFrame = outerScroll.convert(tailContainer.frame, to: view)
-        peekContainer.frame = peekFrame
-        tailContainer.frame = tailFrame
-        view.insertSubview(peekContainer, belowSubview: dismissButton)
-        view.insertSubview(tailContainer, belowSubview: dismissButton)
-
-        // Anchor the tail's viewport to the start of the continuation so the
-        // closing half shows the text the reader will show underneath.
-        tailTextView.frame.origin.y = 0
-        tailTextView.contentOffset.y = cutTop
-
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        UIView.animate(
-            withDuration: 0.4, delay: 0,
-            usingSpringWithDamping: 0.95, initialSpringVelocity: 0.2,
-            animations: {
-                let peekTarget = CGRect(x: 0, y: 0, width: width, height: max(cutBottomScreen, 1))
-                self.peekContainer.frame = peekTarget
-                self.peekTextView.frame = CGRect(origin: .zero, size: peekTarget.size)
-                self.peekTextView.contentOffset.y = self.readerOffset
-                self.tailContainer.frame.origin.y = cutTopScreen
-                self.dismissButton.alpha = 0
-                self.saveButton.alpha = 0
-            },
-            completion: { _ in
-                self.dismiss(animated: false)
-            })
-    }
-
-    // MARK: - Seamless scroll-past handoff
-
-    /// Pulling the article back down over the frame (a downward overscroll past
-    /// the resting top inset) past this distance collapses the frame shut —
-    /// scrolling the outer reader compresses the inline reader to nothing.
-    private let pullDownToCollapseThreshold: CGFloat = 96
-
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === outerScroll else { return }
-        updateTailViewport()
-        updateNestedViewport()
-        // Re-assert the peek's window (UITextView occasionally re-clamps it).
-        if slicesInstalled, !didDismiss {
-            let peekOffset = cutBottom - peekHeight
-            if abs(peekTextView.contentOffset.y - peekOffset) > 0.5 {
-                peekTextView.contentOffset.y = peekOffset
-            }
-        }
-
-        let restingTop = -outerScroll.contentInset.top
-        let pullDownDistance = restingTop - outerScroll.contentOffset.y
-        if pullDownDistance > pullDownToCollapseThreshold,
-           outerScroll.isDragging, slicesInstalled, !didDismiss {
-            animateCollapse()
-        }
-    }
-
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        guard scrollView === outerScroll else { return }
-        handOffIfPastMiddle()
-        applyPendingMiddleHeightIfIdle()
-    }
-
-    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        guard scrollView === outerScroll, !decelerate else { return }
-        handOffIfPastMiddle()
-        applyPendingMiddleHeightIfIdle()
-    }
-
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        guard scrollView === outerScroll else { return }
-        // The frame scrolled fully offscreen and the user touched again:
-        // swap back to the reader before this gesture does anything.
-        handOffIfPastMiddle()
-    }
-
-    /// Once the inline frame is fully above the viewport, the visible content
-    /// is pure article text identical to the reader — swap with zero movement.
-    private func handOffIfPastMiddle() {
-        let offset = outerScroll.contentOffset.y
-        guard offset >= middleEnd, !didDismiss else { return }
-        didDismiss = true
-        // Restore the reader to the matching position BEFORE the overlay fades,
-        // then cross-dissolve out (set in the presenter) so the handoff is a
-        // smooth fade rather than an instant snap to the reader's layout.
-        onDismiss?(cutTop + (offset - middleEnd))
-        dismiss(animated: true)
-    }
-
-    @objc private func dismissTapped() {
-        animateCollapse()
-    }
-}
-
-// MARK: - Nested reader link taps → deeper overlay
-
-extension SplitWebOverlayViewController {
-    @objc fileprivate func nestedReaderTapped(_ recognizer: UITapGestureRecognizer) {
-        let location = recognizer.location(in: nestedTextView)
-        let pointInContainer = CGPoint(
-            x: location.x - nestedTextView.textContainerInset.left,
-            y: location.y - nestedTextView.textContainerInset.top)
-        let layoutManager = nestedTextView.layoutManager
-        let characterIndex = layoutManager.characterIndex(
-            for: pointInContainer, in: nestedTextView.textContainer,
-            fractionOfDistanceBetweenInsertionPoints: nil)
-        guard let text = nestedText, characterIndex < text.length else { return }
-        var linkRange = NSRange(location: 0, length: 0)
-        guard let linkURL = text.attribute(.link, at: characterIndex, effectiveRange: &linkRange) as? URL
-        else { return }
-        openNestedSplit(for: linkURL, tappedRange: linkRange)
-    }
-
-    private func openNestedSplit(for linkURL: URL, tappedRange: NSRange) {
-        guard let nestedText else { return }
-        let layoutManager = nestedTextView.layoutManager
-        let glyphRange = layoutManager.glyphRange(
-            forCharacterRange: tappedRange, actualCharacterRange: nil)
-        var nestedLineRect = layoutManager.lineFragmentRect(
-            forGlyphAt: glyphRange.location, effectiveRange: nil)
-        var nestedLinkRect = layoutManager.boundingRect(
-            forGlyphRange: glyphRange, in: nestedTextView.textContainer)
-        nestedLineRect.origin.y += nestedTextView.textContainerInset.top
-        nestedLinkRect.origin.y += nestedTextView.textContainerInset.top
-        nestedLinkRect.origin.x += nestedTextView.textContainerInset.left
-
-        // The nested overlay treats this nested article as "the reader": its
-        // coordinates are nested-text coordinates, and the offset at the top
-        // of the screen maps back through the region start.
-        let regionStart = nestedContainer.frame.minY
-        let nestedReaderOffset = outerScroll.contentOffset.y - regionStart
-
-        let width = view.bounds.width
-        let height = view.bounds.height
-        let cutBottomScreen = nestedLineRect.maxY - nestedReaderOffset
-        let cutTopScreen = nestedLineRect.minY - nestedReaderOffset
-        let topSnap = view.resizableSnapshotView(
-            from: CGRect(x: 0, y: 0, width: width, height: max(cutBottomScreen, 1)),
-            afterScreenUpdates: false, withCapInsets: .zero)
-        let bottomSnap = view.resizableSnapshotView(
-            from: CGRect(x: 0, y: cutTopScreen, width: width,
-                         height: max(height - cutTopScreen, 1)),
-            afterScreenUpdates: false, withCapInsets: .zero)
-
-        let deeper = SplitWebOverlayViewController(
-            url: linkURL,
-            shareProvider: shareProvider,
-            articleText: nestedText,
-            lineRect: nestedLineRect,
-            linkRect: nestedLinkRect,
-            linkRange: tappedRange,
-            readerOffset: nestedReaderOffset,
-            textHeight: nestedTextHeight,
-            topSnapshot: topSnap,
-            bottomSnapshot: bottomSnap,
-            depth: depth + 1)
-        deeper.modalPresentationStyle = .overFullScreen
-        deeper.modalTransitionStyle = .crossDissolve
-        deeper.onDismiss = { [weak self] restored in
-            guard let self else { return }
-            self.outerScroll.contentOffset.y = regionStart + restored
-            self.updateNestedViewport()
-            self.updateTailViewport()
-        }
-        present(deeper, animated: false)
-    }
+    // The peek pan should win over any ambient gestures.
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool { false }
 }
 
 extension SplitWebOverlayViewController: WKNavigationDelegate {
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        webSpinner.stopAnimating()
-    }
-
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { spinner.stopAnimating() }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        webSpinner.stopAnimating()
+        spinner.stopAnimating()
     }
-
     func webView(
-        _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
-        withError error: Error
-    ) {
-        webSpinner.stopAnimating()
-    }
+        _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error
+    ) { spinner.stopAnimating() }
 }
-

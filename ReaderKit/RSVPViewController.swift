@@ -266,10 +266,13 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     @objc private func linkPillTapped() {
         guard let url = linkPillURL else { return }
         pause()
-        let inline = InlineReaderViewController(url: url, shareProvider: shareProvider)
+        // No outer text to split here, so the card grows out from the screen's
+        // center (nil peeks) and the ✕ / chevron compress it shut.
+        let inline = SplitWebOverlayViewController(
+            url: url, shareProvider: shareProvider, lineHeight: 0,
+            lineTopScreen: view.bounds.midY, topHalf: nil, bottomHalf: nil)
         inline.modalPresentationStyle = .overFullScreen
-        inline.modalTransitionStyle = .crossDissolve
-        present(inline, animated: true)
+        present(inline, animated: false)
     }
 
     private func configureControls() {

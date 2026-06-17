@@ -51,20 +51,34 @@ struct ClipShortcuts: AppShortcutsProvider {
             systemImageName: "bubble.left.and.text.bubble.right"
         )
         AppShortcut(
-            intent: SaveMusicItemIntent(),
-            phrases: [
-                "Save a song with \(.applicationName)",
-            ],
-            shortTitle: "Save Song",
-            systemImageName: "music.note"
+            intent: SaveXPostIntent(),
+            phrases: ["Save an X post with \(.applicationName)"],
+            shortTitle: "Save X Post",
+            systemImageName: "bubble.left"
         )
         AppShortcut(
-            intent: SavePodcastItemIntent(),
-            phrases: [
-                "Save a podcast with \(.applicationName)",
-            ],
-            shortTitle: "Save Podcast",
-            systemImageName: "mic"
+            intent: SaveTikTokIntent(),
+            phrases: ["Save a TikTok with \(.applicationName)"],
+            shortTitle: "Save TikTok",
+            systemImageName: "play.rectangle"
+        )
+        AppShortcut(
+            intent: SaveInstagramPostIntent(),
+            phrases: ["Save an Instagram post with \(.applicationName)"],
+            shortTitle: "Save Instagram Post",
+            systemImageName: "camera"
+        )
+        AppShortcut(
+            intent: SaveFromAppIntent(),
+            phrases: ["Save from the current app with \(.applicationName)"],
+            shortTitle: "Save from App",
+            systemImageName: "square.and.arrow.down.on.square"
+        )
+        AppShortcut(
+            intent: ScreenAnalysisPromptIntent(),
+            phrases: ["Get the screen prompt with \(.applicationName)"],
+            shortTitle: "Screen Analysis Prompt",
+            systemImageName: "text.viewfinder"
         )
     }
 }

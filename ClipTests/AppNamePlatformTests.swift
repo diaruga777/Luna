@@ -25,8 +25,8 @@ final class AppNamePlatformTests: XCTestCase {
     }
 
     func testPlatformsHaveConcretePrompts() {
-        XCTAssertTrue(AppNamePlatform.screenPrompt(forAppName: "YouTube")?.contains("channel_name:video_title") ?? false)
-        XCTAssertTrue(AppNamePlatform.screenPrompt(forAppName: "Apple Music")?.contains("artist:title") ?? false)
+        XCTAssertTrue(AppNamePlatform.screenPrompt(forAppName: "YouTube")?.contains("channel ; title") ?? false)
+        XCTAssertTrue(AppNamePlatform.screenPrompt(forAppName: "Apple Music")?.contains("artist ; title") ?? false)
         XCTAssertNotNil(AppNamePlatform.screenPrompt(forAppName: "Reddit"))
     }
 }

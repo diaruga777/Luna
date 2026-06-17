@@ -15,8 +15,8 @@ struct SaveMusicItemIntent: AppIntent {
         "Saves a song by artist + title to your Click reading list (no link needed).")
     static let openAppWhenRun: Bool = false
 
-    @Parameter(title: "Artist") var artist: String
-    @Parameter(title: "Title") var title: String
+    @Parameter(title: "Artist", description: "The artist name (text).") var artist: String
+    @Parameter(title: "Title", description: "The song / track title (text).") var title: String
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let cleanArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -33,13 +33,16 @@ struct SaveMusicItemIntent: AppIntent {
 
 /// Saves a URL-less podcast item (show + episode).
 struct SavePodcastItemIntent: AppIntent {
-    static let title: LocalizedStringResource = "Save Podcast"
+    static let title: LocalizedStringResource = "Save Podcast Episode"
     static let description = IntentDescription(
-        "Saves a podcast episode by show + episode to your Click reading list (no link needed).")
+        "Saves a podcast episode by show name + episode title (text) to your Click reading list (no link needed).")
     static let openAppWhenRun: Bool = false
 
-    @Parameter(title: "Show") var show: String
-    @Parameter(title: "Episode") var episode: String
+    @Parameter(title: "Show", description: "The podcast show's name (text).") var show: String
+    @Parameter(
+        title: "Episode Title",
+        description: "The episode's title as TEXT — not an episode number.")
+    var episode: String
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let cleanShow = show.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -36,7 +36,10 @@ snapinsta, …) with keyless, client-side extraction.
     (photo carousel) else `video.playAddr` (no-watermark) / `video.downloadAddr`.
   - `InstagramMediaParser` — post/embed HTML: `"video_url"` / `og:video` → video, else
     `"display_url"` / `EmbeddedMediaImage` / `og:image` → image; `unescape` fixes
-    `&`,`\/`,`&amp;`. Resolver tries the `/embed/captioned/` page first, then the post page.
+    `&`,`\/`,`&amp;`. The resolver fetches the POST page FIRST with a link-unfurler UA
+    (`facebookexternalhit/1.1`, which exposes `og:video`) and prefers a video asset;
+    the `/embed/captioned/` page is only the image fallback (it lacks the video — the
+    earlier embed-first order saved a still from videos).
   - Requests use a desktop Safari UA (`MediaDownloadHTTP.browserUserAgent`).
 - **`MediaDownloadService.swift`** — `downloadFirstMediaToPhotos(from:onProgress:)`:
   guards `supports`, requests add-only auth FIRST, resolves, downloads the first asset,
@@ -53,10 +56,15 @@ toggles (`AutoDownloadSettings`, App Group). Turning one on requests Photos add
 access (`PhotoLibrarySaver.requestAddAuthorization`) and reverts if denied.
 `MediaAutoDownloader.runIfEnabled(forURLString:)` is called from the ingest funnel
 (`ReadingListIngestor.ingestPlatformItem`): when the saved post's platform is
-enabled it downloads the first media item to Photos in the background. Because the
-hook is in the main-app ingest path — and the main app re-ingests pending items
-saved via the share sheet / action extension — a save by **any** method auto-saves
-its media (running where the toggle granted Photos access), with no double-download.
+enabled it downloads the first media item to Photos in the background. The download is **awaited** in the ingest funnel (`runIfEnabledAwaiting`), so an app
+intent finishes the download before returning (intents run in the main-app process,
+sharing the toggle's Photos grant). The **share extension stays alive** showing a
+"Saving media…" glass spinner until the download completes, then a "Saved" checkmark,
+then dismisses (`ShareViewController.autoDownloadThenComplete`) — so the process isn't
+killed mid-download. A bounded dedup list (`AutoDownloadSettings.markDownloaded`/
+`wasDownloaded`) means a post downloaded in one process isn't downloaded again when
+the main app re-ingests it. Note: the share extension has its OWN Photos permission
+(separate from the main app); it prompts within the extension on first use.
 
 ## Permissions
 

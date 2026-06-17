@@ -6,14 +6,23 @@ functionality, not Slack's visuals — it uses the app's liquid-glass aesthetic:
 
 ## Entry
 
-`ReadingListViewController` adds a **catch-up nav button** (`rectangle.stack`,
-accent-tinted, `accessibilityLabel "Catch up"`) to `navigationItem.rightBarButtonItems`.
-It **pulses + glows** (CABasicAnimation scale + shadowOpacity on its layer) when the
-unread count `> catchUpPulseThreshold` (12); `updateCatchUpButton()` runs on every
-`reload()`. Tapping presents `CatchUpViewController(unread:router:)` full-screen.
+`ReadingListViewController` pins a **catch-up button** (`rectangle.stack`,
+accent-tinted, `accessibilityLabel "Catch up"`) to the **"Reading List" large-title
+row** (a nav-bar subview, trailing/bottom; re-pinned each `viewWillAppear`, removed
+on disappear). A red "action needed" **dot** shows when there are unread items
+(`updateCatchUpButton()` on every `reload()`); the button is hidden in edit mode.
+Tapping presents `CatchUpViewController(unread:router:)` full-screen.
 
 The queue = `store.items()` filtered to unread (`readState != .read`) AND renderable
-(ready articles, or any platform/media item).
+(ready articles, or any platform/media item), sorted **oldest-first** by
+`bumpDate ?? dateAdded`.
+
+**Style**: the app's liquid-glass aesthetic — `.systemGroupedBackground` screen;
+each card is a `GlassStyle.barEffect()` backdrop with rounded corners + hairline
+border; the Bump / Mark Read drag labels are liquid-glass capsule pills (icon +
+mixed-case text) hovering in the card's top corners. The card header (date/sender)
+is centered and media/link bodies are vertically centered, leaving the corners clear
+for the pills.
 
 ## `Clip/CatchUp/`
 

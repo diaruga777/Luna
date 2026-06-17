@@ -46,6 +46,18 @@ snapinsta, …) with keyless, client-side extraction.
 - **`PhotoLibrarySaver.swift`** — `.addOnly` authorization; `PHAssetCreationRequest`
   `addResource(with: .video/.photo, fileURL:, options.shouldMoveFile=true)`.
 
+## Auto-download (per-platform toggle)
+
+`Settings → Auto-Download Media` (`AutoDownloadSettingsScreen`) has per-platform
+toggles (`AutoDownloadSettings`, App Group). Turning one on requests Photos add
+access (`PhotoLibrarySaver.requestAddAuthorization`) and reverts if denied.
+`MediaAutoDownloader.runIfEnabled(forURLString:)` is called from the ingest funnel
+(`ReadingListIngestor.ingestPlatformItem`): when the saved post's platform is
+enabled it downloads the first media item to Photos in the background. Because the
+hook is in the main-app ingest path — and the main app re-ingests pending items
+saved via the share sheet / action extension — a save by **any** method auto-saves
+its media (running where the toggle granted Photos access), with no double-download.
+
 ## Permissions
 
 `NSPhotoLibraryAddUsageDescription` is in both `Clip/Info.plist` and

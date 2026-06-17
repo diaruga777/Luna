@@ -62,6 +62,10 @@ enum SharedReadingListAppender {
             "dateAdded": Date().timeIntervalSinceReferenceDate,
             "state": "pending",
             "readState": "unopened",
+            // Everything appended here arrived via the iOS share sheet. Raw
+            // string (not the `CaptureSource` enum) to avoid linking ReaderKit
+            // into the extension — must match `CaptureSource.shareSheet`.
+            "captureSource": "shareSheet",
         ]
         if let title { dict["title"] = title }
         if let documentType { dict["documentType"] = documentType }

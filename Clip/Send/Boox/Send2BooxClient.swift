@@ -109,7 +109,14 @@ final class BooxDestination: ArticleDestination {
     }
 
     var isConfigured: Bool { BooxSendSettings.isConfigured(credentials: credentials) }
-    var sendMode: ArticleSendMode { BooxSendSettings.sendMode }
+
+    func sendMode(for item: ReadingListItem) -> ArticleSendMode {
+        SourceSendSettings.sendMode(
+            forDestination: id, source: item.effectiveCaptureSource,
+            friendUsername: item.sharedByUsername)
+    }
+
+    var appIntentsSendMode: ArticleSendMode { SourceSendSettings.appIntentsMode(forDestination: id) }
 
     func send(epubData: Data, fileName: String, title: String) async throws {
         // Built with the current region's host so a region change takes effect.

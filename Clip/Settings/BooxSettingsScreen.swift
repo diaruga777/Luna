@@ -46,7 +46,7 @@ final class BooxSettingsScreen: UITableViewController {
         case .account:
             return "Boox sending uses Onyx's unofficial Send2Boox service and may stop working if Onyx changes it. Log in with the email on your BOOX account; you'll get a code by email."
         case .send:
-            return "Articles are uploaded to your Onyx account; your Boox device downloads them over WiFi. \"Double Save\" sends when you save the same page twice quickly."
+            return "Articles are uploaded to your Onyx account; your Boox device downloads them over WiFi. Choose which capture sources auto-send under \"Auto-Send by Source\"."
         }
     }
 
@@ -56,6 +56,7 @@ final class BooxSettingsScreen: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
         var content = cell.defaultContentConfiguration()
         cell.accessoryView = nil
+        cell.accessoryType = .none
         cell.selectionStyle = .none
 
         switch Section(rawValue: indexPath.section)! {
@@ -85,8 +86,9 @@ final class BooxSettingsScreen: UITableViewController {
         case .send:
             switch indexPath.row {
             case 0:
-                content.text = "Send Articles"
-                cell.accessoryView = makeModeButton()
+                content.text = "Auto-Send by Source"
+                cell.accessoryType = .disclosureIndicator
+                cell.selectionStyle = .default
             default:
                 content.text = "Send Test to Boox"
                 content.textProperties.color = view.tintColor ?? .systemBlue
@@ -103,28 +105,16 @@ final class BooxSettingsScreen: UITableViewController {
         switch (Section(rawValue: indexPath.section)!, indexPath.row) {
         case (.account, 1):
             isLoggedIn ? logOut() : startLogin()
+        case (.send, 0):
+            navigationController?.pushViewController(
+                AutoSendBySourceScreen(
+                    destinationID: ArticleDestinationID.boox, destinationName: "Boox"),
+                animated: true)
         case (.send, 1):
             sendTest()
         default:
             break
         }
-    }
-
-    // MARK: - Mode
-
-    private func makeModeButton() -> UIButton {
-        let button = UIButton(type: .system)
-        button.showsMenuAsPrimaryAction = true
-        button.changesSelectionAsPrimaryAction = true
-        button.menu = UIMenu(children: ArticleSendMode.allCases.map { mode in
-            UIAction(title: mode.displayName,
-                     state: mode == BooxSendSettings.sendMode ? .on : .off) { [weak self] _ in
-                BooxSendSettings.sendMode = mode
-                self?.tableView.reloadData()
-            }
-        })
-        button.sizeToFit()
-        return button
     }
 
     @objc private func regionChanged(_ control: UISegmentedControl) {

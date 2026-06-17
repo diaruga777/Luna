@@ -74,11 +74,11 @@ final class IncomingMailImporter {
                 if let content = MailArticleBuilder.article(from: message) {
                     // Newsletters etc.: the email body IS the article. Save it
                     // directly (no fetch), tagged with the sender.
-                    let item = store.add(urlString: "clipmail://\(message.uid)")
+                    let item = store.add(urlString: "clipmail://\(message.uid)", source: .email)
                     if let sender = MailArticleBuilder.senderName(from: message.from) {
                         store.setChannelName(sender, for: item.id)
                     }
-                    _ = store.saveContent(content, for: item)
+                    let ready = store.saveContent(content, for: item)
                     imported += 1
                     let firstBlock = content.blocks.first(where: {
                         !$0.text.trimmingCharacters(in: .whitespaces).isEmpty
@@ -86,10 +86,15 @@ final class IncomingMailImporter {
                     DiagnosticLog.shared.record(
                         "incoming mail: imported uid \(message.uid) as article \"\(content.title)\" (\(content.blocks.count) blocks) first=\"\(firstBlock)\"",
                         category: "mail")
-                    autoSendToKindleIfEnabled(itemID: item.id)
+                    // Body-derived articles don't run through `ingest`, so kick the
+                    // auto-send check here. Per-destination email-source settings
+                    // decide whether (and where) it goes.
+                    if ready.state == .ready {
+                        ArticleSendCoordinator.shared.articleBecameReady(ready)
+                    }
                 } else if let url = message.urls.first {
                     // No usable body but there's a link — save + ingest it.
-                    let item = store.add(urlString: url.absoluteString)
+                    let item = store.add(urlString: url.absoluteString, source: .email)
                     if item.state == .pending { ingest(item) }
                     imported += 1
                     DiagnosticLog.shared.record(
@@ -109,17 +114,6 @@ final class IncomingMailImporter {
         } catch {
             DiagnosticLog.shared.record(
                 "incoming mail fetch failed: \(String(describing: error))", category: "mail")
-        }
-    }
-
-    /// Forwards a just-imported article to Kindle when the user enabled it and
-    /// Send-to-Kindle is configured.
-    private func autoSendToKindleIfEnabled(itemID: UUID) {
-        guard IncomingMailSettings.autoSendToKindle,
-              ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle),
-              let ready = store.item(withID: itemID), ready.state == .ready else { return }
-        Task {
-            await ArticleSendCoordinator.shared.send(ready, toDestinationID: ArticleDestinationID.kindle)
         }
     }
 }

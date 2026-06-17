@@ -71,6 +71,7 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
         var content = cell.defaultContentConfiguration()
         cell.accessoryView = nil
+        cell.accessoryType = .none
         cell.selectionStyle = .none
 
         switch Section(rawValue: indexPath.section)! {
@@ -104,8 +105,9 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         case .kindle:
             switch indexPath.row {
             case 0:
-                content.text = "Send Articles"
-                cell.accessoryView = makeModeButton()
+                content.text = "Auto-Send by Source"
+                cell.accessoryType = .disclosureIndicator
+                cell.selectionStyle = .default
             case 1:
                 return fieldCell("Kindle", placeholder: "name@kindle.com",
                                  text: KindleSendSettings.kindleAddress, field: .kindleAddress)
@@ -153,6 +155,11 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
+        case .kindle where indexPath.row == 0:
+            navigationController?.pushViewController(
+                AutoSendBySourceScreen(
+                    destinationID: ArticleDestinationID.kindle, destinationName: "Kindle"),
+                animated: true)
         case .kindle where indexPath.row == 2:
             sendTestEmail()
         case .importMail where indexPath.row - 2 == IncomingMailSettings.allowedSenders.count:
@@ -242,21 +249,6 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         case .kindleAddress: KindleSendSettings.kindleAddress = value
         case nil: break
         }
-    }
-
-    private func makeModeButton() -> UIButton {
-        let button = UIButton(type: .system)
-        button.showsMenuAsPrimaryAction = true
-        button.changesSelectionAsPrimaryAction = true
-        button.menu = UIMenu(children: KindleSendSettings.SendMode.allCases.map { mode in
-            UIAction(title: mode.displayName,
-                     state: mode == KindleSendSettings.sendMode ? .on : .off) { [weak self] _ in
-                KindleSendSettings.sendMode = mode
-                self?.tableView.reloadData()
-            }
-        })
-        button.sizeToFit()
-        return button
     }
 
     @objc private func providerChanged(_ control: UISegmentedControl) {

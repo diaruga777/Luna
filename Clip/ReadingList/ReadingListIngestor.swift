@@ -218,7 +218,7 @@ final class ReadingListIngestor {
     /// the article to Kindle (when configured); any other press on an existing
     /// URL is ignored. Awaits the resulting work (callers bound it with a timeout).
     @discardableResult
-    func handleSavePress(urlString: String) async -> SavePressResult {
+    func handleSavePress(urlString: String, source: CaptureSource = .manual) async -> SavePressResult {
         let existing = store.item(forURLString: urlString)
         let previousPress = existing.map { store.recordSaveAttempt(for: $0.id) } ?? nil
 
@@ -230,7 +230,7 @@ final class ReadingListIngestor {
 
         switch decision {
         case .saveNew:
-            let item = store.add(urlString: urlString)
+            let item = store.add(urlString: urlString, source: source)
             // New-save automation runs HERE and only here — repeat presses
             // (e.g. double-save for Kindle) never re-share or re-suggest.
             fireAutoShares(urlString: urlString)
@@ -253,8 +253,10 @@ final class ReadingListIngestor {
     /// preview), persisting it directly so we skip a redundant network fetch.
     /// Runs the same new-save automation as a fresh save press.
     @discardableResult
-    func saveNewWithContent(urlString: String, content: ArticleContent) async -> ReadingListItem {
-        let item = store.add(urlString: urlString)
+    func saveNewWithContent(
+        urlString: String, content: ArticleContent, source: CaptureSource = .manual
+    ) async -> ReadingListItem {
+        let item = store.add(urlString: urlString, source: source)
         fireAutoShares(urlString: urlString)
         let saved = store.saveContent(content, for: item)
         if saved.state == .ready {

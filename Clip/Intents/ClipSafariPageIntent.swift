@@ -69,7 +69,8 @@ enum IntentIngestHelper {
     static func handleSavePressWithTimeout(urlString: String) async -> String? {
         await withTaskGroup(of: String?.self) { group in
             group.addTask {
-                let result = await ReadingListIngestor.shared.handleSavePress(urlString: urlString)
+                let result = await ReadingListIngestor.shared.handleSavePress(
+                    urlString: urlString, source: .appIntent)
                 switch result {
                 case .saved(let item): return item.urlString
                 case .sentToEreaders(let item): return item.urlString

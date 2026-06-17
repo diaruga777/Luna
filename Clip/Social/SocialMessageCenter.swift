@@ -301,7 +301,7 @@ final class SocialMessageCenter {
                 logger.info("dropping duplicate shared article")
                 return
             }
-            let saved = readingListStore.add(urlString: urlString)
+            let saved = readingListStore.add(urlString: urlString, source: .friendShare)
             readingListStore.setSharedBy(friend.card.username, for: saved.id)
             startIngest(saved)
             logger.info("accepted shared article from \(friend.card.username, privacy: .public)")

@@ -14,27 +14,60 @@ No UI taps needed once configured.
 
 `ArticleDestination` (`Clip/Send/ArticleSendCoordinator.swift`) abstracts a
 target: `id` (`ArticleDestinationID.kindle` / `.boox`), `displayName`,
-`isConfigured`, `sendMode` (`ArticleSendMode`), and `send(epubData:fileName:title:)`.
-`KindleDestination` wraps `SMTPArticleEmailSender`; `BooxDestination` wraps
-`Send2BooxClient`. `ArticleSendCoordinator` holds `[ArticleDestination]` and is
-destination-agnostic.
+`isConfigured`, `sendMode(for: ReadingListItem)` (source-aware), `appIntentsSendMode`
+(the App-Intents/in-app mode, for double-save press detection), and
+`send(epubData:fileName:title:)`. `KindleDestination` wraps `SMTPArticleEmailSender`;
+`BooxDestination` wraps `Send2BooxClient`. `ArticleSendCoordinator` holds
+`[ArticleDestination]` and is destination-agnostic.
+
+## Auto-send by capture source
+
+Each item records where it came from: `ReadingListItem.captureSource`
+(`CaptureSource` in `ReaderKit`; nil legacy items → `.manual` via
+`effectiveCaptureSource`). Cases: `email`, `appIntent`, `friendShare`,
+`shareSheet`, `paste`, `manual`. Set at each entry point:
+
+- **email** — `IncomingMailImporter` (`store.add(…, source: .email)`).
+- **appIntent** — `IntentIngestHelper.handleSavePressWithTimeout` (→ `.appIntent`).
+- **friendShare** — `SocialMessageCenter` (`store.add(…, source: .friendShare)`;
+  resolution keys on `sharedByUsername`).
+- **shareSheet** — `SharedReadingListAppender` writes `"captureSource":"shareSheet"`
+  (raw string — the extension doesn't link ReaderKit).
+- **paste** — `ReadingListViewController` pasteboard saves.
+- **manual** — default (typed URL, reader save button, deep links).
+
+`SourceSendSettings` (`Clip/Send/SourceSendSettings.swift`) resolves, per
+destination, a source → `ArticleSendMode`:
+
+- **App Intents (Shortcuts) & in-app saves** → the destination's existing
+  `sendMode` (`off`/`allSaves`/`doubleSave`); the only source whose double-save
+  press is detected at save time.
+- **Email** → on/off. Kindle reuses `IncomingMailSettings.autoSendToKindle`.
+- **Share sheet & paste** → one on/off.
+- **Friend shares** → an on/off default plus per-friend overrides
+  (`friendShareEnabled(forDestination:username:)`, JSON map in defaults).
+
+Sources other than App Intents default to the legacy "all saves" behavior
+(`appIntentsMode == .allSaves`) so existing setups are unchanged until touched.
 
 ## Gating (save-press state machine)
 
 All save entry points (`ClipSafariPageIntent`, `SaveLinkIntent`, in-app add)
-funnel through `ReadingListIngestor.handleSavePress(urlString:)`:
+funnel through `ReadingListIngestor.handleSavePress(urlString:source:)`:
 
-1. URL not in list → save + ingest.
+1. URL not in list → save (tagged with `source`) + ingest.
 2. URL already in list AND previous press < 12 s ago → send to every
-   destination currently in `.doubleSave` mode that hasn't been sent in the past
-   24 h (`SavePressPolicy.Decision.sendToEreaders(destinationIDs:)`).
+   destination whose **App-Intents mode** is `.doubleSave` and that hasn't been
+   sent in the past 24 h (`SavePressPolicy.Decision.sendToEreaders(destinationIDs:)`).
 3. Any other press on an existing URL → ignored entirely (no re-ingest).
 
 Decision logic is pure: `SavePressPolicy.decide(…, doubleSaveDestinationIDs:)`
-where the caller supplies `ArticleSendCoordinator.doubleSaveDestinationIDs()`.
-Modes (`ArticleSendMode`): `off` / `allSaves` (send after every ingestion) /
-`doubleSave`. Long-press a reading-list row → "Send to Kindle" / "Send to Boox"
-context-menu rows, each shown only when that destination is configured.
+where the caller supplies `ArticleSendCoordinator.doubleSaveDestinationIDs()`
+(destinations whose `appIntentsSendMode == .doubleSave`). On ingestion,
+`articleBecameReady` consults `destination.sendMode(for: item)` — the item's
+capture source decides whether (and where) it auto-sends. Long-press a
+reading-list row → "Send to Kindle" / "Send to Boox" context-menu rows, each
+shown only when that destination is configured.
 
 ## Coordinator
 
@@ -97,9 +130,12 @@ on `.sent`.
 
 ## UI
 
-- Settings → "Email & Kindle" (mode, address/account fields, test) and a separate
-  "Send to Boox" screen (`BooxSettingsScreen`: region, OTP login/logout, mode,
-  test send, unofficial-API disclosure footer).
+- Settings → "Email & Kindle" (address/account fields, test) and a separate
+  "Send to Boox" screen (`BooxSettingsScreen`: region, OTP login/logout, test
+  send, unofficial-API disclosure footer). Both expose an **"Auto-Send by
+  Source"** disclosure row pushing the shared `AutoSendBySourceScreen`
+  (`Clip/Settings/`): App Intents mode + email / share-sheet-&-paste / friend
+  toggles + a per-friend list.
 - `ReadingListViewController`: per-destination context-menu rows; subtitle shows
   `sent to Kindle` / `Boox send failed` / `sending to …` per destination.
 
@@ -107,6 +143,8 @@ on `.sent`.
 
 `ZipArchiveWriterTests`, `EpubBuilderTests`, `MIMEMessageTests`, `SMTPClientTests`,
 `SavePressPolicyTests` (per-destination eligibility matrix), `ArticleSendCoordinatorTests`
-(multi-destination fan-out via a mock destination), `OSSRequestSignerTests`
+(multi-destination fan-out + capture-source gating via a mock destination),
+`SourceSendSettingsTests` (per-source resolution + per-friend overrides + legacy
+defaults) and `CaptureSourceCodableTests`, `OSSRequestSignerTests`
 (canonicalization + signing), `BooxClientTests` (auth + upload happy-path via a
 mock `URLProtocol`), plus send-state + legacy-migration cases in `ReadingListStoreTests`.

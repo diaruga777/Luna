@@ -24,8 +24,12 @@ protocol ArticleDestination {
     var displayName: String { get }
     /// Whether sends can actually go out (credentials/config present).
     var isConfigured: Bool { get }
-    /// When this destination auto-sends.
-    var sendMode: ArticleSendMode { get }
+    /// The auto-send mode for an item, resolved from its capture source (email,
+    /// App Intents, share sheet, friend shares, …).
+    func sendMode(for item: ReadingListItem) -> ArticleSendMode
+    /// The mode governing App Intents / in-app saves — the only source whose
+    /// "double save" press is detected at save time.
+    var appIntentsSendMode: ArticleSendMode { get }
     /// Delivers the EPUB. Throws on any configuration/connection/service failure.
     func send(epubData: Data, fileName: String, title: String) async throws
 }
@@ -86,7 +90,14 @@ final class KindleDestination: ArticleDestination {
     }
 
     var isConfigured: Bool { KindleSendSettings.isConfigured(credentials: credentials) }
-    var sendMode: ArticleSendMode { KindleSendSettings.sendMode }
+
+    func sendMode(for item: ReadingListItem) -> ArticleSendMode {
+        SourceSendSettings.sendMode(
+            forDestination: id, source: item.effectiveCaptureSource,
+            friendUsername: item.sharedByUsername)
+    }
+
+    var appIntentsSendMode: ArticleSendMode { SourceSendSettings.appIntentsMode(forDestination: id) }
 
     func send(epubData: Data, fileName: String, title: String) async throws {
         try await sender.sendArticle(epubData: epubData, fileName: fileName, title: title)
@@ -127,9 +138,10 @@ final class ArticleSendCoordinator {
         destination(id: destinationID)?.isConfigured ?? false
     }
 
-    /// Configured destinations currently in double-save mode (for `SavePressPolicy`).
+    /// Configured destinations whose App Intents / in-app save mode is
+    /// double-save (for `SavePressPolicy` — only active saves are double-pressed).
     func doubleSaveDestinationIDs() -> [String] {
-        destinations.filter { $0.isConfigured && $0.sendMode == .doubleSave }.map(\.id)
+        destinations.filter { $0.isConfigured && $0.appIntentsSendMode == .doubleSave }.map(\.id)
     }
 
     /// Explicit send of one article to one destination (the long-press menu).
@@ -147,7 +159,7 @@ final class ArticleSendCoordinator {
         for destination in destinations where destination.isConfigured {
             let state = item.sendState(for: destination.id)
             let shouldSend = state == .queued
-                || (destination.sendMode == .allSaves && state == nil)
+                || (destination.sendMode(for: item) == .allSaves && state == nil)
             guard shouldSend else { continue }
             Task { await self.sendBuildingEPUB(item, to: destination) }
         }

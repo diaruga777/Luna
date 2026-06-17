@@ -14,13 +14,20 @@ private final class MockDestination: ArticleDestination {
     let displayName = "Mock"
     var configured = true
     var mode: ArticleSendMode = .off
+    /// Optional per-source override; when nil, `mode` applies to every source.
+    var modeForSource: ((CaptureSource) -> ArticleSendMode)?
     var shouldFail = false
     private(set) var sentTitles: [String] = []
 
     init(id: String) { self.id = id }
 
     var isConfigured: Bool { configured }
-    var sendMode: ArticleSendMode { mode }
+
+    func sendMode(for item: ReadingListItem) -> ArticleSendMode {
+        modeForSource?(item.effectiveCaptureSource) ?? mode
+    }
+
+    var appIntentsSendMode: ArticleSendMode { mode }
 
     func send(epubData: Data, fileName: String, title: String) async throws {
         if shouldFail { throw SendFailure() }
@@ -54,8 +61,10 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeReadyItem(_ url: String = "https://example.com/article") -> ReadingListItem {
-        let item = store.add(urlString: url)
+    private func makeReadyItem(
+        _ url: String = "https://example.com/article", source: CaptureSource = .manual
+    ) -> ReadingListItem {
+        let item = store.add(urlString: url, source: source)
         let content = ArticleContent(
             title: "An Article",
             blocks: [ArticleContent.Block(kind: .paragraph, text: "Words.", links: [])])
@@ -135,6 +144,18 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         XCTAssertEqual(sendState(item, kindle.id), .sent)
         XCTAssertNil(sendState(item, boox.id))
         XCTAssertTrue(boox.sentTitles.isEmpty)
+    }
+
+    func testArticleBecameReadyRespectsCaptureSource() async {
+        // Email auto-sends; paste does not.
+        kindle.modeForSource = { $0 == .email ? .allSaves : .off }
+        let emailItem = makeReadyItem("https://example.com/email", source: .email)
+        let pasteItem = makeReadyItem("https://example.com/paste", source: .paste)
+        coordinator.articleBecameReady(emailItem)
+        coordinator.articleBecameReady(pasteItem)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(sendState(emailItem, kindle.id), .sent)
+        XCTAssertNil(sendState(pasteItem, kindle.id))
     }
 
     func testDoubleSaveDestinationIDsReflectsConfiguredDoubleSave() {

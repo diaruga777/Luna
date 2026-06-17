@@ -38,9 +38,12 @@ Kindle even if the app is never opened).
 - **`IncomingMailImporter`** (`.shared`): if configured, fetches new mail and
   saves each message **as an article** (the email body IS the content;
   `clipmail://<uid>` item + `saveContent`), falling back to the first URL when
-  there's no usable body. Forwards to Kindle when `autoSendToKindle`. Advances
-  the cursor. Coalesces overlapping runs. `isConfigured` = enabled + (senders
-  OR subject filters) + Gmail account + app password.
+  there's no usable body. Items are tagged `captureSource: .email`; auto-send is
+  then handled by `ArticleSendCoordinator.articleBecameReady` per the
+  destination's email-source setting (Kindle's reuses `autoSendToKindle`; see
+  send-to-kindle.md → "Auto-send by capture source"). Advances the cursor.
+  Coalesces overlapping runs. `isConfigured` = enabled + (senders OR subject
+  filters) + Gmail account + app password.
 
 ## Settings
 

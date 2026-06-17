@@ -224,7 +224,8 @@ final class ReadingListViewController: UITableViewController {
 
         if candidate.isVideo {
             Task { [weak self] in
-                await ReadingListIngestor.shared.handleSavePress(urlString: candidate.urlString)
+                await ReadingListIngestor.shared.handleSavePress(
+                    urlString: candidate.urlString, source: .paste)
                 await MainActor.run {
                     guard let self, let item = self.store.item(forURLString: candidate.urlString)
                     else { return }
@@ -233,7 +234,8 @@ final class ReadingListViewController: UITableViewController {
             }
         } else if let platform = candidate.platform {
             Task { [weak self] in
-                await ReadingListIngestor.shared.handleSavePress(urlString: candidate.urlString)
+                await ReadingListIngestor.shared.handleSavePress(
+                    urlString: candidate.urlString, source: .paste)
                 await MainActor.run {
                     guard let self, let item = self.store.item(forURLString: candidate.urlString)
                     else { return }
@@ -243,7 +245,7 @@ final class ReadingListViewController: UITableViewController {
         } else if let content = candidate.content {
             Task { [weak self] in
                 let item = await ReadingListIngestor.shared.saveNewWithContent(
-                    urlString: candidate.urlString, content: content)
+                    urlString: candidate.urlString, content: content, source: .paste)
                 await MainActor.run {
                     guard let self, let saved = self.store.content(for: item) else { return }
                     let reader = ReaderViewController(

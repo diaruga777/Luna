@@ -103,8 +103,14 @@ struct ReadingListItem: Codable, Identifiable {
     var mediaItemTitle: String?
     /// Which service the original URL came from (music/podcast), if any.
     var mediaSourceService: MusicProvider?
+    /// Where this item was captured from — drives per-source auto-send. Absent
+    /// on legacy items (treated as `.manual`).
+    var captureSource: CaptureSource?
 
     var url: URL? { URL(string: urlString) }
+
+    /// Capture source for routing/auto-send, defaulting legacy items to `.manual`.
+    var effectiveCaptureSource: CaptureSource { captureSource ?? .manual }
 
     var isYouTubeVideo: Bool { youtubeVideoID != nil || platform == .youtube }
 
@@ -166,6 +172,7 @@ struct ReadingListItem: Codable, Identifiable {
         self.mediaCreatorName = nil
         self.mediaItemTitle = nil
         self.mediaSourceService = nil
+        self.captureSource = nil
     }
 
     /// Legacy single-destination send keys, read only to migrate old reading-list
@@ -224,5 +231,6 @@ struct ReadingListItem: Codable, Identifiable {
         mediaCreatorName = try container.decodeIfPresent(String.self, forKey: .mediaCreatorName)
         mediaItemTitle = try container.decodeIfPresent(String.self, forKey: .mediaItemTitle)
         mediaSourceService = try container.decodeIfPresent(MusicProvider.self, forKey: .mediaSourceService)
+        captureSource = try container.decodeIfPresent(CaptureSource.self, forKey: .captureSource)
     }
 }

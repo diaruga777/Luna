@@ -84,14 +84,15 @@ final class ReadingListStore {
     }
 
     @discardableResult
-    func add(urlString: String) -> ReadingListItem {
+    func add(urlString: String, source: CaptureSource = .manual) -> ReadingListItem {
         mutationLock.lock()
         defer { mutationLock.unlock() }
         var all = items()
         if let existing = all.first(where: { $0.urlString == urlString }) {
             return existing
         }
-        let item = ReadingListItem(urlString: urlString)
+        var item = ReadingListItem(urlString: urlString)
+        item.captureSource = source
         all.insert(item, at: 0) // newest first
         save(all)
         return item

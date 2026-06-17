@@ -20,6 +20,11 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     /// its own navigation stack rather than nesting another overlay.
     var onLinkActivated: ((URL) -> Void)?
 
+    /// Fired when the end-of-article share footer scrolls into / out of view, so the
+    /// host can fade its floating share button (the footer already offers sharing).
+    var onShareFooterVisibilityChanged: ((Bool) -> Void)?
+    private var shareFooterVisible = false
+
     /// A word index carried in from another reader mode. When set (and this is
     /// the plain scrolling mode), the view scrolls so that word sits 25% from
     /// the top on first appearance instead of restoring the saved offset.
@@ -495,6 +500,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         checkFinishedReading()
+        updateShareFooterVisibility()
         if scrollView.isTracking || scrollView.isDragging {
             // User-driven scroll: stop auto-follow; drop the resume highlight
             // only when nothing is actively playing.
@@ -503,6 +509,17 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             }
             followPlayback = false
         }
+    }
+
+    /// Notifies the host when the end-of-article share footer is at least partly
+    /// scrolled into view (it sits just below the text, in the bottom inset region).
+    private func updateShareFooterVisibility() {
+        guard let shareView else { return }
+        let viewportBottom = textView.contentOffset.y + textView.bounds.height
+        let revealed = viewportBottom >= shareView.frame.minY + shareView.bounds.height * 0.3
+        guard revealed != shareFooterVisible else { return }
+        shareFooterVisible = revealed
+        onShareFooterVisibilityChanged?(revealed)
     }
 
     private func checkFinishedReading() {
@@ -543,7 +560,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         guard case .link(let url) = textItem.content else {
             return UITextItem.MenuConfiguration(menu: defaultMenu)
         }
-        let save = UIAction(title: "Save to Click", image: UIImage(systemName: "plus.circle")) { [weak self] _ in
+        let save = UIAction(title: "Save to Queue", image: UIImage(systemName: "plus.circle")) { [weak self] _ in
             self?.shareProvider?.saveLink(urlString: url.absoluteString)
         }
         let share = UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
@@ -592,8 +609,12 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             // cut (no later resize/glitch when the tapped link is very high or low).
             let cutCeiling = max(contentTopY + lineHeight, safe.top + lineHeight)
             cutY = min(max(rawCutY, cutCeiling), bounds.height - safe.bottom - lineHeight)
+            // The top peek captures ONLY the reader content (from below the nav bar):
+            // the live nav bar is tucked away separately, so excluding it here avoids
+            // a frozen second copy that would diverge from the animating live one.
             topHalf = window.resizableSnapshotView(
-                from: CGRect(x: 0, y: 0, width: bounds.width, height: max(cutY, 1)),
+                from: CGRect(x: 0, y: contentTopY, width: bounds.width,
+                             height: max(cutY - contentTopY, 1)),
                 afterScreenUpdates: false, withCapInsets: .zero)
             bottomHalf = window.resizableSnapshotView(
                 from: CGRect(x: 0, y: cutY, width: bounds.width,
@@ -605,6 +626,10 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             url: url, shareProvider: shareProvider, lineHeight: lineRect.height,
             cutY: cutY, topHalf: topHalf, bottomHalf: bottomHalf)
         overlay.modalPresentationStyle = .overFullScreen
+        // Slide the outer header off-screen while the inline reader is open.
+        let outerReader = parent as? ReaderViewController
+        overlay.onOpen = { outerReader?.setHeaderTucked(true) }
+        overlay.onClose = { outerReader?.setHeaderTucked(false) }
         overlay.onDismiss = { [weak self] in self?.restoreScroll(to: readerOffset) }
         present(overlay, animated: false)
     }

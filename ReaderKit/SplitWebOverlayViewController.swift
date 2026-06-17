@@ -29,6 +29,10 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
 
     /// Called once on dismissal (the reader never moved — the overlay covered it).
     var onDismiss: (() -> Void)?
+    /// Called as the card opens / closes, so the presenter can tuck the outer
+    /// reader's header out of sight while the inline reader is up (animated in sync).
+    var onOpen: (() -> Void)?
+    var onClose: (() -> Void)?
 
     private let url: URL
     private let shareProvider: ReaderShareProviding?
@@ -133,16 +137,13 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     }
 
     /// Establish the seamless progress = 1 layout BEFORE the first frame is shown,
-    /// so opening never flashes a half-laid-out copy of the reader.
+    /// so opening never flashes a half-laid-out copy of the reader. The peeks keep
+    /// their captured (natural) bounds; `apply` positions them by origin.
     override func viewIsAppearing(_ animated: Bool) {
         super.viewIsAppearing(animated)
         guard !didLayoutInitial else { return }
         didLayoutInitial = true
-        let width = view.bounds.width
-        let screenH = view.bounds.height
         cutY = min(max(cutY, openCardFrame.minY), openCardFrame.maxY)
-        topHalf?.frame = CGRect(x: 0, y: 0, width: width, height: max(cutY, 1))
-        bottomHalf?.frame = CGRect(x: 0, y: cutY, width: width, height: max(screenH - cutY, 1))
         apply(progress: 1)
         dimView.alpha = 1
     }
@@ -152,6 +153,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         guard !didAnimateIn else { return }
         didAnimateIn = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        onOpen?()
         UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.9,
                        initialSpringVelocity: 0.2) {
             self.apply(progress: 0)
@@ -212,6 +214,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         guard !didDismiss else { return }
         didDismiss = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        onClose?()
         UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseIn) {
             self.apply(progress: 1)
             self.dimView.alpha = 0

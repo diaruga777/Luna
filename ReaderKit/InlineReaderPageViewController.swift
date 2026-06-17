@@ -36,6 +36,9 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
     private var articleContent: ArticleContent?
     private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
     private weak var readerChild: UIViewController?
+    /// Set once the probe has committed to reader OR web view (so neither is
+    /// applied twice).
+    private var didDecide = false
 
     /// Whether this page is rendering as an article (so the mode switcher applies).
     var isArticle: Bool { articleContent != nil }
@@ -54,27 +57,10 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        let themed = ReaderDepth.backgroundColor(for: 0)
-        view.backgroundColor = themed
+        view.backgroundColor = ReaderDepth.backgroundColor(for: 0)
 
-        // Themed, non-opaque web view: no white flash before load, and dark-capable
-        // sites render dark when the device is in dark mode (the web view inherits
-        // the app's interface style).
-        webView.isOpaque = false
-        webView.backgroundColor = themed
-        webView.scrollView.backgroundColor = themed
-        webView.underPageBackgroundColor = themed
-        webView.scrollView.contentInset.top = headerHeight
-        webView.scrollView.verticalScrollIndicatorInsets.top = headerHeight
-        webView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(webView)
-        NSLayoutConstraint.activate([
-            webView.topAnchor.constraint(equalTo: view.topAnchor),
-            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-
+        // Show ONLY a themed background + spinner until the probe decides reader vs
+        // web view — never flash the raw web view first and then swap to the reader.
         spinner.hidesWhenStopped = true
         spinner.startAnimating()
         spinner.translatesAutoresizingMaskIntoConstraints = false
@@ -84,10 +70,34 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
             spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: headerHeight / 2),
         ])
 
+        probeForArticle()
+    }
+
+    /// Adds and loads the themed web view (only once the probe rules OUT a reader),
+    /// keeping the spinner until the first navigation finishes.
+    private func showWebView() {
+        guard isViewLoaded, !didDecide else { return }
+        didDecide = true
+        let themed = ReaderDepth.backgroundColor(for: 0)
+        // Non-opaque + themed: no white flash, and dark-capable sites render dark
+        // when the device is in dark mode (the web view inherits the app's style).
+        webView.isOpaque = false
+        webView.backgroundColor = themed
+        webView.scrollView.backgroundColor = themed
+        webView.underPageBackgroundColor = themed
+        webView.scrollView.contentInset.top = headerHeight
+        webView.scrollView.verticalScrollIndicatorInsets.top = headerHeight
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        view.insertSubview(webView, belowSubview: spinner)
+        NSLayoutConstraint.activate([
+            webView.topAnchor.constraint(equalTo: view.topAnchor),
+            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
         WebJunkBlocker.applyRuleList(to: webView.configuration.userContentController)
         webView.navigationDelegate = self
         webView.load(URLRequest(url: url))
-        probeForArticle()
     }
 
     /// Switches the embedded reader to `mode` (no-op unless this page is an article).
@@ -105,19 +115,27 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
                 guard let html = try? await ArticleFetcher().fetchHTML(from: target) else { return nil }
                 return try? ArticleExtractor().extract(html: html, baseURL: target)
             }.value
-            guard let self, !Task.isCancelled, let content else { return }
-            let blocks = content.blocks.filter { !$0.text.isEmpty }
-            let totalText = blocks.reduce(0) { $0 + $1.text.count }
-            guard totalText >= 600, blocks.count >= 3 else { return }   // article-like
-            await MainActor.run { self.showReader(content) }
+            guard let self, !Task.isCancelled else { return }
+            await MainActor.run {
+                if let content, Self.isArticleLike(content) {
+                    self.showReader(content)
+                } else {
+                    self.showWebView()   // not article-like → show the page
+                }
+            }
         }
     }
 
+    private static func isArticleLike(_ content: ArticleContent) -> Bool {
+        let blocks = content.blocks.filter { !$0.text.isEmpty }
+        let totalText = blocks.reduce(0) { $0 + $1.text.count }
+        return totalText >= 600 && blocks.count >= 3
+    }
+
     private func showReader(_ content: ArticleContent) {
-        guard isViewLoaded, articleContent == nil else { return }
+        guard isViewLoaded, !didDecide else { return }
+        didDecide = true
         articleContent = content
-        webView.stopLoading()
-        webView.isHidden = true
         spinner.stopAnimating()
         embedReader(mode: readerMode)
         onBecameArticle?()

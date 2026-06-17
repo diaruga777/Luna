@@ -121,7 +121,7 @@ final class ReaderViewController: UIViewController {
         view.addSubview(floatingShareButton)
         let bottom = floatingShareButton.bottomAnchor.constraint(
             equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-            constant: Self.floatingShareBottomInset(for: mode))
+            constant: Self.floatingShareBottomInset(for: mode, audioOn: audioOn))
         floatingShareBottomConstraint = bottom
         NSLayoutConstraint.activate([
             floatingShareButton.trailingAnchor.constraint(
@@ -130,13 +130,38 @@ final class ReaderViewController: UIViewController {
         ])
     }
 
-    /// Vertical inset (from the bottom safe area) for the floating share button
-    /// in each mode, so it never overlaps that mode's footer controls.
-    private static func floatingShareBottomInset(for mode: ReadingListItem.ReaderMode) -> CGFloat {
+    /// Vertical inset (from the bottom safe area) for the floating share button in
+    /// each mode, so it never overlaps that mode's footer controls. Scroll mode only
+    /// grows a playback footer when read-aloud is on, so the button sits low until
+    /// then and lifts to clear the controls once they appear.
+    private static func floatingShareBottomInset(
+        for mode: ReadingListItem.ReaderMode, audioOn: Bool) -> CGFloat {
         switch mode {
-        case .scroll: return -24       // no footer — sit near the bottom edge
-        case .highlight: return -92    // clear the chunk-navigation footer
-        case .rsvp: return -168        // clear the scrubber + playback controls
+        case .scroll: return audioOn ? -92 : -24   // lift to clear the read-aloud footer
+        case .highlight: return -92                 // clear the chunk-navigation footer
+        case .rsvp: return -168                     // clear the scrubber + playback controls
+        }
+    }
+
+    /// Tucks the nav bar (with the mode switcher) up off-screen while an inline
+    /// reader is open, and slides it back on dismissal. Called by the inline overlay
+    /// so the outer header isn't visible behind/around it.
+    func setHeaderTucked(_ tucked: Bool) {
+        guard let bar = navigationController?.navigationBar else { return }
+        UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.9,
+                       initialSpringVelocity: 0.2) {
+            bar.transform = tucked
+                ? CGAffineTransform(translationX: 0, y: -(bar.frame.maxY + 8))
+                : .identity
+            bar.alpha = tucked ? 0 : 1
+        }
+    }
+
+    /// Fades the floating share button out when the end-of-article share footer
+    /// scrolls into view (it already offers sharing), and back in otherwise.
+    private func setFloatingShareHidden(_ hidden: Bool) {
+        UIView.animate(withDuration: 0.2) {
+            self.floatingShareButton.alpha = hidden ? 0 : 1
         }
     }
 
@@ -158,6 +183,8 @@ final class ReaderViewController: UIViewController {
     @objc private func audioToggled() {
         audioOn.toggle()
         updateAudioButton()
+        // Read-aloud grows a playback footer in scroll mode — lift the share button.
+        floatingShareBottomConstraint?.constant = Self.floatingShareBottomInset(for: mode, audioOn: audioOn)
         showCurrentMode()
     }
 
@@ -204,7 +231,9 @@ final class ReaderViewController: UIViewController {
         child.didMove(toParent: self)
         currentChild = child
 
-        floatingShareBottomConstraint?.constant = Self.floatingShareBottomInset(for: mode)
+        floatingShareBottomConstraint?.constant = Self.floatingShareBottomInset(for: mode, audioOn: audioOn)
+        // A freshly shown mode starts with the share button visible.
+        floatingShareButton.alpha = 1
         // Keep the share button above the freshly added child content.
         view.bringSubviewToFront(floatingShareButton)
     }
@@ -215,6 +244,9 @@ final class ReaderViewController: UIViewController {
             shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory,
             resumeWordIndex: resumeWordIndex)
         scroll.onFinishedReading = { [weak self] in self?.markRead() }
+        scroll.onShareFooterVisibilityChanged = { [weak self] visible in
+            self?.setFloatingShareHidden(visible)
+        }
         return scroll
     }
 

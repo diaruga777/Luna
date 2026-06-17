@@ -7,18 +7,15 @@ import UIKit
 import WebKit
 
 /// Shown by the action extension for non-textual content (a video, etc.): the
-/// URL is already saved to Click, so instead of the text reader we embed the
-/// content for in-place playback and offer "Open in Click" (which launches the
-/// main app via the `clickreader://` deep link). Done dismisses the extension.
+/// URL is already saved to Click, so instead of the text reader we just confirm
+/// the save (YouTube embeds play inline). Done dismisses the extension.
 final class SavedNonTextualViewController: UIViewController {
 
-    private let articleURLString: String
     private let content: NonTextualContent
     private let onDone: () -> Void
     private var webView: WKWebView?
 
-    init(articleURLString: String, content: NonTextualContent, onDone: @escaping () -> Void) {
-        self.articleURLString = articleURLString
+    init(content: NonTextualContent, onDone: @escaping () -> Void) {
         self.content = content
         self.onDone = onDone
         super.init(nibName: nil, bundle: nil)
@@ -51,14 +48,6 @@ final class SavedNonTextualViewController: UIViewController {
         savedLabel.textAlignment = .center
         savedLabel.numberOfLines = 0
 
-        var openConfig = UIButton.Configuration.filled()
-        openConfig.title = "Open in Click"
-        openConfig.image = UIImage(systemName: "arrow.up.forward.app")
-        openConfig.imagePadding = 8
-        openConfig.baseBackgroundColor = GlassStyle.readingAccent
-        let openButton = UIButton(configuration: openConfig)
-        openButton.addAction(UIAction { [weak self] _ in self?.openInApp() }, for: .touchUpInside)
-
         // YouTube embeds play inline; other platforms show the confirmation badge.
         let topView: UIView
         if let embedURL = content.embedURL {
@@ -82,7 +71,7 @@ final class SavedNonTextualViewController: UIViewController {
             topView = badge
         }
 
-        let stack = UIStackView(arrangedSubviews: [topView, savedLabel, openButton])
+        let stack = UIStackView(arrangedSubviews: [topView, savedLabel])
         stack.axis = .vertical
         stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -92,15 +81,5 @@ final class SavedNonTextualViewController: UIViewController {
             stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
-    }
-
-    /// Opens the saved item in the main app via the deep link. `extensionContext.
-    /// open` is the only sanctioned way to leave an extension; if the host
-    /// declines it (returns false) we leave the user on this screen.
-    private func openInApp() {
-        guard let deepLink = ClickDeepLink.readLink(forArticleURL: articleURLString) else { return }
-        extensionContext?.open(deepLink) { [weak self] success in
-            if success { self?.onDone() }
-        }
     }
 }

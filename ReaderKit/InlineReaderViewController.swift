@@ -41,7 +41,7 @@ final class InlineReaderViewController: UIViewController {
     private let peek: CGFloat = 44
 
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
-    private static let modeSymbols = ["text.alignleft", "highlighter", "bolt.fill"]
+    private static let modeSymbols = ["text.alignleft", "text.line.first.and.arrowtriangle.forward", "bolt.fill"]
 
     init(url: URL, shareProvider: ReaderShareProviding?) {
         self.pages = [Page(url: url, content: nil)]

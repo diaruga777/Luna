@@ -602,6 +602,9 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             bottomSnapshot: bottomSnapshot,
             depth: 0)
         overlay.modalPresentationStyle = .overFullScreen
+        // Scroll-past handoff dismisses with a cross-fade (the open is a custom
+        // part animation presented without a transition).
+        overlay.modalTransitionStyle = .crossDissolve
         overlay.onDismiss = { [weak self] restoredOffset in
             self?.restoreScroll(to: restoredOffset)
         }

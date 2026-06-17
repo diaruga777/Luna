@@ -142,6 +142,11 @@ final class SplitWebOverlayViewController: UIViewController, UIScrollViewDelegat
         // scroll view (interactive page regions would otherwise swallow pans).
         webView.scrollView.isScrollEnabled = false
         webView.isUserInteractionEnabled = false
+        // Transparent until the page paints, so the card's themed backing shows
+        // during load instead of WKWebView's default white.
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
         applyCardStyle(to: webCard)
         webCard.addSubview(webView)
         applyCardShadow(to: cardShadow)
@@ -151,6 +156,11 @@ final class SplitWebOverlayViewController: UIViewController, UIScrollViewDelegat
 
         configureBorder(topBorder, notchPointsDown: true)
         configureBorder(bottomBorder, notchPointsDown: false)
+        // Tapping either chevron bar collapses the frame shut (animated).
+        topBorder.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(dismissTapped)))
+        bottomBorder.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(dismissTapped)))
 
         outerScroll.addSubview(peekContainer)
         outerScroll.addSubview(topBorder)
@@ -400,7 +410,9 @@ final class SplitWebOverlayViewController: UIViewController, UIScrollViewDelegat
         card.clipsToBounds = true
         card.layer.borderWidth = 0.5
         card.layer.borderColor = UIColor.separator.withAlphaComponent(0.6).cgColor
-        if card === webCard { card.backgroundColor = .systemBackground }
+        // Themed (depth-tinted, dark-mode-aware) backing so the initial load
+        // shows the reader's background, not a white flash, until the page paints.
+        if card === webCard { card.backgroundColor = parentBackground }
     }
 
     /// A soft drop shadow that lifts the card off the parted text. Lives on a
@@ -429,7 +441,7 @@ final class SplitWebOverlayViewController: UIViewController, UIScrollViewDelegat
     /// there's a save target.
     private func configureSaveButton() {
         guard shareProvider != nil else { return }
-        saveButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "arrow.down")
+        saveButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "square.and.arrow.down")
         saveButton.tintColor = GlassStyle.readingAccent
         saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
         saveButton.translatesAutoresizingMaskIntoConstraints = false
@@ -667,8 +679,11 @@ final class SplitWebOverlayViewController: UIViewController, UIScrollViewDelegat
         let offset = outerScroll.contentOffset.y
         guard offset >= middleEnd, !didDismiss else { return }
         didDismiss = true
+        // Restore the reader to the matching position BEFORE the overlay fades,
+        // then cross-dissolve out (set in the presenter) so the handoff is a
+        // smooth fade rather than an instant snap to the reader's layout.
         onDismiss?(cutTop + (offset - middleEnd))
-        dismiss(animated: false)
+        dismiss(animated: true)
     }
 
     @objc private func dismissTapped() {
@@ -739,6 +754,7 @@ extension SplitWebOverlayViewController {
             bottomSnapshot: bottomSnap,
             depth: depth + 1)
         deeper.modalPresentationStyle = .overFullScreen
+        deeper.modalTransitionStyle = .crossDissolve
         deeper.onDismiss = { [weak self] restored in
             guard let self else { return }
             self.outerScroll.contentOffset.y = regionStart + restored

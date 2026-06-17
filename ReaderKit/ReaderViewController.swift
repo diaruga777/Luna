@@ -47,7 +47,7 @@ final class ReaderViewController: UIViewController {
     private let audioButton = UIButton(type: .system)
 
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
-    private static let modeSymbols = ["text.alignleft", "highlighter", "bolt.fill"]
+    private static let modeSymbols = ["text.alignleft", "text.line.first.and.arrowtriangle.forward", "bolt.fill"]
 
     init(item: ReadingListItem, content: ArticleContent,
          forceMode: ReadingListItem.ReaderMode? = nil,

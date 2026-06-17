@@ -129,6 +129,9 @@ final class ReadingListViewController: UITableViewController {
     /// `.readingListChanged` notification doesn't reload the table mid-drop
     /// (which mangles the layout).
     private var isApplyingReorder = false
+    /// True while an animated single-row delete runs, so the `.readingListChanged`
+    /// notification doesn't full-reload mid-animation (which kills the fade).
+    private var isAnimatingRowChange = false
 
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -261,7 +264,7 @@ final class ReadingListViewController: UITableViewController {
     @objc private func reload() {
         // A reorder we just persisted fires this notification; ignore it so the
         // drop animation isn't interrupted by a full reloadData.
-        if isApplyingReorder { return }
+        if isApplyingReorder || isAnimatingRowChange { return }
 
         updateFilterVisibility()
         let all = store.items().filter { filter.includes($0) }
@@ -385,6 +388,39 @@ final class ReadingListViewController: UITableViewController {
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         present(alert, animated: true)
+    }
+
+    // MARK: - Delete
+
+    /// Removes one item with an animated row (or section) deletion instead of a
+    /// full `reloadData`, so the row fades out smoothly. The triggering row is
+    /// always in an expanded section (collapsed sections show no cells to
+    /// long-press), so an in-place `deleteRows` is safe.
+    private func deleteItemAnimated(_ item: ReadingListItem) {
+        guard let sectionIndex = groups.firstIndex(where: {
+            $0.items.contains(where: { $0.id == item.id })
+        }), let rowIndex = groups[sectionIndex].items.firstIndex(where: { $0.id == item.id }),
+            !isCollapsed(groups[sectionIndex].section) else {
+            store.delete(item) // fall back to the notification-driven reload
+            return
+        }
+
+        isAnimatingRowChange = true
+        store.delete(item)
+        groups[sectionIndex].items.remove(at: rowIndex)
+        tableView.performBatchUpdates {
+            if groups[sectionIndex].items.isEmpty {
+                groups.remove(at: sectionIndex)
+                tableView.deleteSections(IndexSet(integer: sectionIndex), with: .automatic)
+            } else {
+                tableView.deleteRows(
+                    at: [IndexPath(row: rowIndex, section: sectionIndex)], with: .automatic)
+            }
+        } completion: { [weak self] _ in
+            self?.isAnimatingRowChange = false
+            // A delete can change whether the Articles/Videos filter applies.
+            self?.updateFilterVisibility()
+        }
     }
 
     // MARK: - Section / collapse helpers
@@ -842,7 +878,7 @@ final class ReadingListViewController: UITableViewController {
             let delete = UIAction(
                 title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
             ) { _ in
-                self?.store.delete(item)
+                self?.deleteItemAnimated(item)
             }
             // Videos: share to friends + delete. Documents: ereaders + read +
             // delete. Articles: everything. Each ereader row shows only when

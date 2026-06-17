@@ -45,7 +45,7 @@ struct PodcastPlatform: PlatformModule {
 struct MediaMetadataFetcher: PlatformMetadataFetching {
     func fetchMetadata(for match: PlatformMatch, urlString: String) async -> PlatformMetadata? {
         switch match.sourceService {
-        case .apple: return await appleLookup(itemID: match.itemID)
+        case .apple: return await appleLookup(itemID: match.itemID, isPodcast: match.platform == .podcast)
         case .spotify: return await spotifyOEmbed(urlString: urlString)
         case .none: return nil
         }
@@ -61,8 +61,16 @@ struct MediaMetadataFetcher: PlatformMetadataFetching {
         }
     }
 
-    private func appleLookup(itemID: String?) async -> PlatformMetadata? {
-        guard let itemID, let url = URL(string: "https://itunes.apple.com/lookup?id=\(itemID)"),
+    private func appleLookup(itemID: String?, isPodcast: Bool) async -> PlatformMetadata? {
+        guard let itemID else { return nil }
+        // Path ids carry an "id" prefix ("id1535970232"); the lookup wants the
+        // bare number. Episode lookups require entity=podcastEpisode — without
+        // it an episode id returns zero results.
+        let numericID = itemID.hasPrefix("id") ? String(itemID.dropFirst(2)) : itemID
+        guard var components = URLComponents(string: "https://itunes.apple.com/lookup") else { return nil }
+        components.queryItems = [URLQueryItem(name: "id", value: numericID)]
+        if isPodcast { components.queryItems?.append(URLQueryItem(name: "entity", value: "podcastEpisode")) }
+        guard let url = components.url,
               let (data, response) = try? await URLSession.shared.data(from: url),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let decoded = try? JSONDecoder().decode(ITunesResult.self, from: data),
@@ -74,10 +82,12 @@ struct MediaMetadataFetcher: PlatformMetadataFetching {
            let artURL = URL(string: art.replacingOccurrences(of: "100x100", with: "300x300")) {
             thumbnailData = try? await URLSession.shared.data(from: artURL).0
         }
-        let track = entry.trackName ?? entry.collectionName
+        // Podcasts: episode title + show name. Music: track title + artist.
+        let title = entry.trackName ?? entry.collectionName
+        let creator = isPodcast ? (entry.collectionName ?? entry.artistName) : entry.artistName
         return PlatformMetadata(
-            title: track, creator: entry.artistName, thumbnailData: thumbnailData,
-            mediaCreatorName: entry.artistName, mediaItemTitle: track)
+            title: title, creator: creator, thumbnailData: thumbnailData,
+            mediaCreatorName: creator, mediaItemTitle: title)
     }
 
     private struct SpotifyOEmbed: Decodable {

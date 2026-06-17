@@ -40,13 +40,18 @@ The scroll reader (`ScrollReaderViewController`) backs both Scroll and Highlight
   through. Open animates 1→0 starting from the link's actual on-screen position;
   dismiss animates 0→1 (so the rejoined screen matches the reader underneath); an
   interactive peek drag maps to progress and, once it hits 1, dismisses and never
-  re-grows. A liquid-glass header (`.systemThickMaterial`) holds the ✕ + save with
-  the content scrolling under it (top content inset). The chevron is blue and
-  straddles the card's bottom edge. When the linked page is article-like (probed
-  via `ArticleFetcher`+`ArticleExtractor`) the card shows the app reader's text
-  (`ArticleTextRenderer`) instead of the web view; a link in that reader falls
-  back to the web view in place. Also backs the RSVP link pill (nil peeks → grows
-  from the screen center over a dim backdrop).
+  re-grows. A taller (68pt) liquid-glass header (softer `.systemThinMaterial`)
+  holds the ✕ + save inset 16pt from the horizontal edges (the save glyph optically
+  centered in its circle) with the content scrolling under it (top content inset).
+  When the linked page is article-like (probed via `ArticleFetcher`+`ArticleExtractor`,
+  ≥600 chars / ≥3 blocks) the card hides the web view and embeds the app reader as a
+  child below the header (`embedReader`), and the header reveals the scroll/highlight/RSVP
+  **mode selector** (`modeControl`, `ReaderModeIcons`) that swaps the child in place;
+  a link inside that reader opens its own split overlay. Non-article pages stay in the
+  `WKWebView`. The chevron is blue and straddles the card's bottom edge. `openSplit`
+  clamps `cutY` to within the safe area (window coords) before snapshotting, so a link
+  near the top/bottom edge doesn't stretch the peeks. Also backs the RSVP link pill
+  (nil peeks → grows from the screen center over a dim backdrop).
   <!-- older single-outer-scroll description follows; superseded -->
 - `ReaderKit/SplitWebOverlayViewController.swift` (legacy notes) — On a link tap the reader is snapshotted at the TOP of the link's line: the part above parks as a one-line peek at the top, the link's line as a one-line peek at the bottom (both are `resizableSnapshotView` halves), and an inset rounded liquid-glass card (`ReaderDepth.backgroundColor(0)`, 14pt inset, 26pt corners, hairline border + sibling drop-shadow) grows out from the cut to fill the space between them (`animateOpen`, spring). The card's `WKWebView` (WebJunkBlocker applied) scrolls AND navigates INDEPENDENTLY — its gestures never reach the reader. Three dismissals, all animating the card's height to zero from its center while the peeks rejoin (`applyCompression(progress)` → `animateDismiss`): (1) the ✕ at the card's top-left, (2) the `chevron.compact.down` on the card's bottom edge, (3) an interactive `UIPanGestureRecognizer` on either peek — the card loses height equal to TWICE the drag distance (`progress = 2·|dy| / openHeight`), dismissing at progress ≥ 0.5 or a fast flick. A `square.and.arrow.down` save button (→ checkmark) sits top-right when a `shareProvider` is present. Presented `.overFullScreen` (no transition; the grow animation is the entrance). The same VC also backs the RSVP link pill, presented with nil peeks + `lineTopScreen = midY` so the card grows from the screen center. `onDismiss` re-asserts the reader's offset (it never moved).
 

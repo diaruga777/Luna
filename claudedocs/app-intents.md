@@ -40,17 +40,22 @@ discoverable in the action search but not in the prominent list.)
 
 ## Generic / AI flow
 
-- **`SaveFromAppIntent`** (`app`, `values: [String]`, both optional): routes by the
-  current app to the right per-platform save. Per-app value order is documented in
-  its description — Safari/other `[link]`, YouTube `[channel, title]`, Bluesky
-  `[handle, text]`, Reddit `[subreddit, title, author?]`, Music/Spotify
-  `[artist, title]`, Podcasts `[show, episode title]`, X/TikTok/Instagram/Facebook
-  `[link]`.
+- **`SaveFromAppIntent`** (`app`, `details: String`, both optional): routes by the
+  current app to the right per-platform save. `details` is the **single** response
+  string the on-device model produced for that app's screen; `parseFields` splits
+  it on `" ; "` (trimming, dropping empties; `"none"`/empty → no fields). Per-app
+  field order — YouTube `channel ; title`, Bluesky `handle ; phrase`, Reddit
+  `subreddit ; title ; author`, Music/Spotify `artist ; title`, Podcasts
+  `show ; episode title`, X/TikTok/Instagram/Facebook `handle ; phrase`. Safari and
+  unknown apps may pass an empty/nil `details` — a `http…` link in the response is
+  used if present, else `SafariURLStore.lastURL` (the tracked page).
 - **`ScreenAnalysisPromptIntent`** (`app`, optional): returns the per-app prompt
-  (`AppNamePlatform.screenPrompt`) telling an image model to read the current
-  app's screen and output exactly those ordered fields, " ; "-separated, or
-  "none". The bundled shortcut: Get Current App → Screen Analysis Prompt →
-  (screenshot + prompt → image model) → split on " ; " → Save from App.
+  (`AppNamePlatform.screenPrompt`) telling an image model to read the current app's
+  screen and respond with a **single line** in exactly the `" ; "`-joined format
+  `SaveFromAppIntent.parseFields` expects, or `"none"`. The bundled shortcut: Get
+  Current App → Screen Analysis Prompt → (screenshot + prompt → image model) →
+  Save from App (`details` = that model response string). A model error / "none"
+  passes through as empty → nothing to save (Safari still saves the tracked URL).
 
 > **ITMS-90626**: an App Intent `title`/`description`/parameter string must NEVER
 > contain "apple" or Siri references, or App Store processing silently drops the

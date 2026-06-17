@@ -13,6 +13,11 @@ platform glyph + creator; tapping runs a launch ladder.
   `ReadingListItem` can store them.)
 - **`PlatformModule`** — per-platform: `classify(urlString) -> PlatformMatch?`,
   `glyphSymbolName`, `subtitle`, `appDeepLink`, `embed`, optional `metadataFetcher`.
+  `subtitle(for:)` returns a **logical platform container**, not the URL host: it
+  prefers `channelName`/`mediaCreatorName`, then derives one from the URL when absent
+  — subreddit (`RedditLink.subreddit`), post author handle (`XLink.handle`,
+  `TikTokLink.handle`, `BlueskyLink.post(...).author`), or artist/channel for
+  Music/Podcast. The reading list shows this in place of the host.
 - **`PlatformRegistry`** — ordered modules; `detect(urlString)` (replaces the old
   hardcoded YouTube `if`) and `module(for:)`. Registers all nine.
 - **`PlatformEmbedViewController`** — generalized WKWebView embed (16:9, optional

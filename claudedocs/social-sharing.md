@@ -116,7 +116,7 @@ always-share set, plus one shared `pendingSuggestion` slot.
   teaches iOS the conversation so friends surface in the system share sheet's
   people row and learns the share habit. Tested: handle preference.
 - **Share-sheet target**: the extension declares `IntentsSupported` +
-  `NSUserActivityTypes` = `INSendMessageIntent`. Tapping a Click friend
+  `NSUserActivityTypes` = `INSendMessageIntent`. Tapping a Queue friend
   suggestion launches the extension with that intent; it reads the conversation
   UUID and queues the URL via `PendingFriendShareStore` (the extension has no
   crypto/CloudKit). The main app's `SocialMessageCenter.drainPendingFriendShares`

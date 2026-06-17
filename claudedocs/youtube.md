@@ -36,8 +36,9 @@ NEVER sent to Kindle; social sharing works normally.
 - `YouTubeSettings.swift` — `googleClientID`, `playlistID`/`playlistTitle`,
   `autoAddToPlaylist`.
 - `WatchLaterAutoAdder.swift` — on FIRST ingest of a video (never repeat
-  presses): if signed in + auto-add on + playlist chosen → add to playlist +
-  mark read. The real Watch Later playlist is closed to the API (since 2016);
+  presses): if signed in + auto-add on + playlist chosen → add to playlist.
+  It does NOT mark the item read — saved inputs always stay unread on insert.
+  The real Watch Later playlist is closed to the API (since 2016);
   users pick/create a playlist (settings offers "Watch Later (Clip)").
 
 ## Ingestion & model

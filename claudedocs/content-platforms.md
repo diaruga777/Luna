@@ -1,6 +1,6 @@
 # Content Platforms
 
-Click accepts and renders links from many platforms beyond plain articles:
+Queue accepts and renders links from many platforms beyond plain articles:
 YouTube, X, Bluesky, Reddit, TikTok, Instagram, Facebook, plus provider-agnostic
 **music** and **podcast** items (Spotify / Apple). A recognized platform URL is
 saved as a no-content `.ready` item (NEVER "Couldn't Load") and rendered with a
@@ -77,8 +77,11 @@ paste / Safari, which always yield the full URL and bypass the ingestor.
 `podcast` item + `sourceService`. `MediaProviderSettings` (App Group) holds the
 preferred app per kind (nil = unset). `openMediaItem`: exact same-provider link
 (web→app scheme via `MediaLink.appSchemeURL`) → search in the preferred app
-(`MusicProvider.appSearchURL`) → Safari (original URL or web search). Unset →
-prompt to choose in Settings → "Music & Podcasts".
+(`MusicProvider.appSearchURL(query:platform:)`) → Safari (original URL or web
+search). Unset → prompt to choose in Settings → "Music & Podcasts".
+`appSearchURL`/`webSearchURL` take the platform so Apple PODCASTS open in the
+Podcasts app (`podcasts://` / podcasts.apple.com), not Apple Music (which can't
+play them); Spotify uses one app/scheme for both.
 
 **URL-less items** (no shareable http URL) come from `SaveMusicItemIntent`/
 `SavePodcastItemIntent` (now-playing OCR via the shortcut). Keyed by a synthetic

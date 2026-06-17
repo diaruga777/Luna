@@ -16,7 +16,7 @@
 > `ReadingListItem`, `ReadingListStore`, `ReaderSettings`, `YouTubeURL`,
 > `ClickDeepLink`, `NonTextualContent`.
 
-THREE reading modes for extracted articles, with read-aloud, nested inline readers, position memory, and (device-only, main-app-only) eye tracking. Hosted by `ReaderKit/ReaderViewController.swift` — a container with a **3-way nav-bar segmented switcher** (icons via `ReaderKit/ReaderModeIcons`: `text.alignleft` scroll / a stylized "Abc" highlighted-text glyph for chunk-highlight / "Abc" with the RSVP focal reticule for speed) plus a **separate audio toggle** (speaker bar button) that turns read-aloud on/off for whichever mode is showing. It persists `lastReaderMode` per article AND globally (`ReaderSettings.lastReaderMode`) — a new article with no per-article preference opens in the global last-used mode. Changing mode/audio rebuilds the child VC. Tracks read state (marks `.opened` on open; children call back `onFinishedReading` → `.read`).
+THREE reading modes for extracted articles, with read-aloud, nested inline readers, position memory, and (device-only, main-app-only) eye tracking. Hosted by `ReaderKit/ReaderViewController.swift` — a container with a **3-way nav-bar segmented switcher** (icons via `ReaderKit/ReaderModeIcons`: `text.alignleft` scroll / a stylized "Abc" highlighted-text glyph for chunk-highlight / "Abc" with the RSVP focal reticule for speed) plus a **separate audio toggle** (speaker bar button) that turns read-aloud on/off for whichever mode is showing. It persists `lastReaderMode` per article AND globally (`ReaderSettings.lastReaderMode`) — a new article with no per-article preference opens in the global last-used mode. Changing mode/audio rebuilds the child VC. Tracks read state (marks `.opened` on open; children call back `onFinishedReading` → `.read`). A **floating glass share button** (bottom-right) lifts to clear that mode's footer (`floatingShareBottomInset(for:audioOn:)` — scroll mode only reserves room when read-aloud is on), and fades out while the end-of-article share footer is scrolled into view (`ScrollReaderViewController.onShareFooterVisibilityChanged`), fading back in otherwise.
 
 **Position carry-over across mode switches** (`ReaderPositionTracking` protocol, `ReaderProviders.swift`): before tearing the outgoing child down, the host reads its `currentReadingWordIndex` and passes it as `resumeWordIndex` to the next child. Scroll plain-mode reports the gaze `estimatedWordIndex` (when eye tracking is active) else the first FULLY-visible word (`firstFullyVisibleWordIndex` — first line not clipped by the top edge); entering scroll mode scrolls that word to 25% from the top (`scrollWord(_:toFractionFromTop:)`, clamped, no overscroll). Highlight/audio start playback at the word (follow-scroll centers it). RSVP reports/accepts its `currentIndex`. First open (no switch) keeps the persisted defaults (lastScrollOffset / lastWordIndex).
 
@@ -55,12 +55,18 @@ The scroll reader (`ScrollReaderViewController`) backs both Scroll and Highlight
   nested overlay); the ✕ becomes a back chevron that pops, while the bottom chevron /
   peek-drag dismiss the WHOLE stack. Links in a raw web view navigate it in place. The
   chevron is blue and straddles the card's bottom edge. The OUTER reader's header is
-  tucked out of sight while open: a themed strip (`topCover`) covers the status-bar
-  band, and `openSplit` clamps `cutY` below the reader content top (window coords) so
-  the bottom peek never slices the nav bar. The seamless progress=1 layout is set in
-  `viewIsAppearing` (before the first frame) so opening never flashes a mis-positioned
-  copy. Also backs the RSVP link pill (nil peeks → grows from the screen center over an
-  OPAQUE themed backdrop so the outer header is fully hidden).
+  tucked out of sight while open: the overlay calls `onOpen`/`onClose` so the presenting
+  `ReaderViewController.setHeaderTucked` animates the nav bar (with the mode switcher)
+  up off-screen and back; the top peek snapshot is captured from BELOW the nav bar
+  (`contentTopY`) so there's no frozen second copy to diverge from the animating live
+  one, and a themed strip (`topCover`) covers the status-bar band. `openSplit` clamps
+  `cutY` below the reader content top so the bottom peek never slices the nav bar. The
+  seamless progress=1 layout is set in `viewIsAppearing` (before the first frame) so
+  opening never flashes a mis-positioned copy. Each page (`InlineReaderPageViewController`)
+  shows a themed background + spinner until the article probe decides reader-vs-web,
+  then applies exactly one — never a white web-view flash; the web view is themed and
+  follows the device appearance. Also backs the RSVP link pill (nil peeks → grows from
+  the screen center over an OPAQUE themed backdrop so the outer header is fully hidden).
   <!-- older single-outer-scroll description follows; superseded -->
 - `ReaderKit/SplitWebOverlayViewController.swift` (legacy notes) — On a link tap the reader is snapshotted at the TOP of the link's line: the part above parks as a one-line peek at the top, the link's line as a one-line peek at the bottom (both are `resizableSnapshotView` halves), and an inset rounded liquid-glass card (`ReaderDepth.backgroundColor(0)`, 14pt inset, 26pt corners, hairline border + sibling drop-shadow) grows out from the cut to fill the space between them (`animateOpen`, spring). The card's `WKWebView` (WebJunkBlocker applied) scrolls AND navigates INDEPENDENTLY — its gestures never reach the reader. Three dismissals, all animating the card's height to zero from its center while the peeks rejoin (`applyCompression(progress)` → `animateDismiss`): (1) the ✕ at the card's top-left, (2) the `chevron.compact.down` on the card's bottom edge, (3) an interactive `UIPanGestureRecognizer` on either peek — the card loses height equal to TWICE the drag distance (`progress = 2·|dy| / openHeight`), dismissing at progress ≥ 0.5 or a fast flick. A `square.and.arrow.down` save button (→ checkmark) sits top-right when a `shareProvider` is present. Presented `.overFullScreen` (no transition; the grow animation is the entrance). The same VC also backs the RSVP link pill, presented with nil peeks + `lineTopScreen = midY` so the card grows from the screen center. `onDismiss` re-asserts the reader's offset (it never moved).
 
@@ -96,9 +102,9 @@ The reader's nav-bar/footer Share button routes through `ReaderShareProviding.pr
 
 ## Share-sheet reader experience
 
-Fixed behavior: the **share extension** (`com.apple.share-services`) always saves + dismisses, for every URL. The **"Read in Click" action extension** (`com.apple.ui-services`) routes via `ShareViewController.presentSavedOrReader`:
+Fixed behavior: the **share extension** (`com.apple.share-services`) always saves + dismisses, for every URL. The **"Read in Queue" action extension** (`com.apple.ui-services`) routes via `ShareViewController.presentSavedOrReader`:
 - **Article URLs** → `ShareKit/ShareReaderViewController` fetches + extracts (`ArticleFetcher` + `ArticleExtractor`) and presents the **real** `ReaderViewController` with `gazeTrackerFactory: nil` but a lightweight **`ExtensionReaderShareProvider`** (Feature D) — so the end-of-article share affordance works: it offers a friend picker (friends read from the App Group via `ExtensionFriendsReader`; the send is QUEUED to `pendingFriendShares.json` via `PendingFriendShareWriter` for the main app to deliver — no CloudKit in the extension) plus a link share. No suggestion engine in the extension, so no one-tap suggested send. The action ext keeps its OWN last-used mode in `ShareKit/ActionReaderMode` (private `UserDefaults.standard`); `ReaderViewController(persistsModePreference:false, onModeChange:)` writes there, not the shared `ReaderSettings`. If fetch/extract fails, `presentFailure()` shows a red error state (warning glyph + message) with Done available.
-- **Non-textual URLs** (YouTube; generalizes via `ReaderKit/NonTextualContent`) → saved, then `ShareKit/SavedNonTextualViewController`: a saved-confirmation badge (YouTube embeds still play inline) + Done — instead of running the text extractor. (No "Open in Click" — `extensionContext.open` didn't reliably leave the action extension, so it was removed; showing nothing beyond the confirmation is fine.)
+- **Non-textual URLs** (YouTube; generalizes via `ReaderKit/NonTextualContent`) → saved, then `ShareKit/SavedNonTextualViewController`: a saved-confirmation badge (YouTube embeds still play inline) + Done — instead of running the text extractor. (No "Open in Queue" — `extensionContext.open` didn't reliably leave the action extension, so it was removed; showing nothing beyond the confirmation is fine.)
 
 All three reader modes, audio (foreground only), and the inline split-web link viewer work; a Done button exits the extension. Resume with no gaze starts from the first fully-visible word (`ScrollReaderViewController.firstFullyVisibleWordIndex`).
 

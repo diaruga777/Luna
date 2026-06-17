@@ -34,9 +34,11 @@ discoverable in the action search but not in the prominent list.)
   string, NOT a number — stated in the param description).
 - **X / TikTok / Instagram / Facebook** (`PlatformLinkIntents.swift`): each takes
   the author `handle` + a content phrase and/or timestamp and FINDS the post link
-  via `SocialPostFinder` (keyless DuckDuckGo HTML search scoped to the platform's
-  domain, filtered to a post-shaped path). No public search API exists for these,
-  so this is best-effort.
+  via `SocialPostFinder`. It tries progressively looser keyless DuckDuckGo HTML
+  queries — quoted phrase → unquoted → no `site:` filter — sanitizes the phrase
+  (strips quotes, caps length), then `bestMatch` keeps only post-shaped URLs on the
+  platform's hosts and prefers one whose path contains the handle. No public search
+  API exists, so this is best-effort.
 
 ## Generic / AI flow
 
@@ -46,7 +48,9 @@ discoverable in the action search but not in the prominent list.)
   it on `" ; "` (trimming, dropping empties; `"none"`/empty → no fields). Per-app
   field order — YouTube `channel ; title`, Bluesky `handle ; phrase`, Reddit
   `subreddit ; title ; author`, Music/Spotify `artist ; title`, Podcasts
-  `show ; episode title`, X/TikTok/Instagram/Facebook `handle ; phrase`. Safari and
+  `show ; episode title`, X/TikTok/Instagram/Facebook `handle ; phrase ; date?` (the
+  prompt asks for an exact short quote and appends the post date/time when visible —
+  the optional timestamp field helps the lookup). Safari and
   unknown apps may pass an empty/nil `details` — a `http…` link in the response is
   used if present, else `SafariURLStore.lastURL` (the tracked page). Returns the
   share-suggestion token (`ShareSuggestionStore.pendingSuggestionToken` — `"3:<name>"`

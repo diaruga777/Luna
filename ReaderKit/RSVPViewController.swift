@@ -16,6 +16,11 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     /// Fired once when playback reaches the last word.
     var onFinishedReading: (() -> Void)?
 
+    /// When set, the link pill hands the tapped link to this closure instead of
+    /// presenting a new inline split overlay — used by the inline reader to push the
+    /// link onto its own navigation stack rather than nesting another overlay.
+    var onLinkActivated: ((URL) -> Void)?
+
     private let item: ReadingListItem
     private let engine: RSVPEngine
     private let store = ReadingListStore.shared
@@ -266,6 +271,10 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     @objc private func linkPillTapped() {
         guard let url = linkPillURL else { return }
         pause()
+        if let onLinkActivated {
+            onLinkActivated(url)
+            return
+        }
         // No outer text to split here, so the card grows out from the screen's
         // center (nil peeks) and the ✕ / chevron compress it shut.
         let inline = SplitWebOverlayViewController(

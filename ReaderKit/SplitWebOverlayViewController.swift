@@ -4,25 +4,28 @@
 //
 
 import UIKit
-import WebKit
 
 /// The inline reader shown when a link is tapped in the scroll reader.
 ///
-/// The reader is snapshotted (in WINDOW coordinates) and split at the top of the
-/// tapped link's line. An inset rounded glass card grows out from the cut to the
-/// space between a one-line top peek (the line above the link) and a one-line
-/// bottom peek (the link's line). The card shows the linked page — rendered with
-/// the app's reader when the page is article-like, otherwise a web view — and
-/// scrolls/navigates INDEPENDENTLY. A liquid-glass header holds the close + save
-/// buttons; content scrolls under it.
+/// The outer reader is snapshotted (in WINDOW coordinates) and split at the top of
+/// the tapped link's line. An inset rounded glass card grows out from the cut to
+/// the space between a one-line top peek (the line above the link) and a one-line
+/// bottom peek (the link's line). A themed strip covers the status-bar band so the
+/// outer reader's header tucks out of sight while the inline reader is open.
 ///
-/// All motion is a single `progress` (0 = fully open, 1 = closed back onto the
-/// cut line). The peeks are derived FROM the interpolating card frame so they
-/// stay flush with it (no gaps / ghost copies). Dismiss via the ✕, the bottom
-/// chevron, or an interactive drag on either peek (the card loses twice the drag
-/// distance); once fully closed it dismisses and never re-grows.
+/// The card hosts a navigation stack of `InlineReaderPageViewController`s: the first
+/// is the tapped link; tapping a link inside an embedded reader PUSHES the next page
+/// (the ✕ becomes a back chevron) rather than nesting another overlay. The pages
+/// render the linked page with the app reader when it's article-like, otherwise a
+/// themed web view; a floating glass header holds the close/back, mode switcher, and
+/// save controls.
+///
+/// All split motion is a single `progress` (0 = fully open, 1 = closed back onto the
+/// cut line). The peeks are derived FROM the interpolating card frame so they stay
+/// flush with it. Dismiss via the ✕ (at the stack root), the bottom chevron, or an
+/// interactive drag on either peek — each dismisses the WHOLE stack.
 final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizerDelegate,
-                                           WKNavigationDelegate {
+                                           UINavigationControllerDelegate {
 
     /// Called once on dismissal (the reader never moved — the overlay covered it).
     var onDismiss: (() -> Void)?
@@ -36,15 +39,19 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     private let bottomHalf: UIView?
 
     private let dimView = UIView()
+    /// Themed strip over the status-bar band — hides the outer reader's header that
+    /// would otherwise show through there once the card opens.
+    private let topCover = UIView()
     private let card = UIView()
     private let cardShadow = UIView()
     private let header = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
-    private let webView = WKWebView(frame: .zero, configuration: WebJunkBlocker.makeConfiguration())
-    private let spinner = UIActivityIndicatorView(style: .medium)
     private let closeButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
     private let bottomChevron = UIButton(type: .system)
     private let modeControl = UISegmentedControl()
+
+    /// Navigation stack of inline pages (root = the tapped link).
+    private let innerNav = UINavigationController()
 
     private static let cardInset: CGFloat = 12
     private static let cardCornerRadius: CGFloat = 26
@@ -53,17 +60,12 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     private static let buttonInset: CGFloat = 16
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
 
+    private var didLayoutInitial = false
     private var didAnimateIn = false
     private var didDismiss = false
     /// Once a drag fully compresses the card it dismisses and stops responding —
     /// dragging back must not re-grow it.
     private var isClosing = false
-    private var articleProbe: Task<Void, Never>?
-    /// The extracted article, once the probe finds the link is article-like; then
-    /// the card hosts the app reader (mode-switchable) instead of the web view.
-    private var articleContent: ArticleContent?
-    private var readerMode: ReadingListItem.ReaderMode = .scroll
-    private weak var readerChild: UIViewController?
 
     init(url: URL, shareProvider: ReaderShareProviding?, lineHeight: CGFloat,
          cutY: CGFloat, topHalf: UIView?, bottomHalf: UIView?) {
@@ -78,15 +80,18 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    deinit { articleProbe?.cancel() }
-
     // MARK: - Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
 
-        dimView.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        // With peeks (from the scroll reader) the side margins show the dimmed
+        // reader; without them (the RSVP pill) the card grows from center over an
+        // OPAQUE themed backdrop so nothing of the outer screen shows through.
+        dimView.backgroundColor = hasPeeks
+            ? UIColor.black.withAlphaComponent(0.35)
+            : ReaderDepth.backgroundColor(for: 0)
         dimView.frame = view.bounds
         dimView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(dimView)
@@ -101,6 +106,11 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
             half.addGestureRecognizer(pan)
             view.addSubview(half)
         }
+
+        // Above the peeks so the slice of the outer header that the top peek would
+        // otherwise show in the status-bar band stays hidden behind a themed strip.
+        topCover.backgroundColor = ReaderDepth.backgroundColor(for: 0)
+        view.addSubview(topCover)
 
         cardShadow.backgroundColor = .clear
         cardShadow.layer.shadowColor = UIColor.black.cgColor
@@ -117,30 +127,35 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         card.clipsToBounds = true
         view.addSubview(card)
 
-        // Web view + (lazily) the nested reader fill the card; both scroll under
-        // the header via a top content inset.
-        webView.scrollView.isScrollEnabled = true
-        webView.scrollView.contentInset.top = Self.headerHeight
-        webView.scrollView.verticalScrollIndicatorInsets.top = Self.headerHeight
-        card.addSubview(webView)
-
-        configureHeader()       // glass header with the close + save buttons
-        spinner.hidesWhenStopped = true
-        spinner.startAnimating()
-        card.addSubview(spinner)
+        setUpInnerNav()         // page navigation stack fills the card
+        configureHeader()       // glass header over the pages
         configureChevron()
+    }
 
-        WebJunkBlocker.applyRuleList(to: webView.configuration.userContentController)
-        webView.navigationDelegate = self
-        webView.load(URLRequest(url: url))
-        probeForArticle()
+    /// Establish the seamless progress = 1 layout BEFORE the first frame is shown,
+    /// so opening never flashes a half-laid-out copy of the reader.
+    override func viewIsAppearing(_ animated: Bool) {
+        super.viewIsAppearing(animated)
+        guard !didLayoutInitial else { return }
+        didLayoutInitial = true
+        let width = view.bounds.width
+        let screenH = view.bounds.height
+        cutY = min(max(cutY, openCardFrame.minY), openCardFrame.maxY)
+        topHalf?.frame = CGRect(x: 0, y: 0, width: width, height: max(cutY, 1))
+        bottomHalf?.frame = CGRect(x: 0, y: cutY, width: width, height: max(screenH - cutY, 1))
+        apply(progress: 1)
+        dimView.alpha = 1
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         guard !didAnimateIn else { return }
         didAnimateIn = true
-        animateOpen()
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.9,
+                       initialSpringVelocity: 0.2) {
+            self.apply(progress: 0)
+        }
     }
 
     // MARK: - Geometry
@@ -171,14 +186,12 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         cardShadow.layer.shadowPath = UIBezierPath(
             roundedRect: CGRect(origin: .zero, size: frame.size),
             cornerRadius: Self.cardCornerRadius).cgPath
-        webView.frame = card.bounds
-        // The reader child sits below the header (content fully visible); the web
-        // view fills the card and scrolls under the header (top content inset).
-        readerChild?.view.frame = CGRect(
-            x: 0, y: Self.headerHeight,
-            width: card.bounds.width, height: max(card.bounds.height - Self.headerHeight, 0))
+        innerNav.view.frame = card.bounds
         layoutHeader()
-        spinner.center = CGPoint(x: card.bounds.midX, y: card.bounds.midY + Self.headerHeight / 2)
+
+        // Themed strip across the status-bar band (full width, behind everything
+        // but the dim) so the outer header doesn't show as the card opens.
+        topCover.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
 
         // Peeks flush to the card edges → no gap for the live reader to show through.
         if let topHalf { topHalf.frame.origin.y = cardTop - topHalf.bounds.height }
@@ -193,24 +206,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         bottomChevron.alpha = chromeAlpha
     }
 
-    // MARK: - Open / dismiss
-
-    private func animateOpen() {
-        let width = view.bounds.width
-        let screenH = view.bounds.height
-        cutY = min(max(cutY, openCardFrame.minY), openCardFrame.maxY)
-        // Peeks start as full-screen halves matching the reader (progress = 1).
-        topHalf?.frame = CGRect(x: 0, y: 0, width: width, height: max(cutY, 1))
-        bottomHalf?.frame = CGRect(x: 0, y: cutY, width: width, height: max(screenH - cutY, 1))
-        apply(progress: 1)
-        dimView.alpha = 1   // backdrop for the card's side margins (and RSVP)
-
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.9,
-                       initialSpringVelocity: 0.2) {
-            self.apply(progress: 0)
-        }
-    }
+    // MARK: - Dismiss
 
     private func animateDismiss() {
         guard !didDismiss else { return }
@@ -250,6 +246,65 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         }
     }
 
+    // MARK: - Inner navigation stack
+
+    private func setUpInnerNav() {
+        let root = makePage(url: url)
+        innerNav.setViewControllers([root], animated: false)
+        innerNav.setNavigationBarHidden(true, animated: false)
+        innerNav.delegate = self
+        // Our glass back button drives the stack; the edge-swipe would fight the
+        // peek-drag dismissal, so it's disabled.
+        innerNav.interactivePopGestureRecognizer?.isEnabled = false
+        addChild(innerNav)
+        card.addSubview(innerNav.view)
+        innerNav.didMove(toParent: self)
+    }
+
+    private func makePage(url: URL) -> InlineReaderPageViewController {
+        let page = InlineReaderPageViewController(
+            url: url, shareProvider: shareProvider, headerHeight: Self.headerHeight)
+        page.onLinkActivated = { [weak self] linkURL in self?.pushPage(url: linkURL) }
+        page.onBecameArticle = { [weak self] in self?.syncHeaderToTopPage() }
+        return page
+    }
+
+    private func pushPage(url: URL) {
+        guard !didDismiss else { return }
+        innerNav.pushViewController(makePage(url: url), animated: true)
+    }
+
+    private var topPage: InlineReaderPageViewController? {
+        innerNav.topViewController as? InlineReaderPageViewController
+    }
+
+    func navigationController(
+        _ navigationController: UINavigationController,
+        didShow viewController: UIViewController, animated: Bool
+    ) {
+        syncHeaderToTopPage()
+    }
+
+    /// Reflects the top page in the header: ✕ at the root vs. a back chevron deeper
+    /// in the stack, and the mode switcher only when the top page is an article.
+    private func syncHeaderToTopPage() {
+        let isRoot = innerNav.viewControllers.count <= 1
+        closeButton.configuration = GlassStyle.circularButtonConfiguration(
+            symbol: isRoot ? "xmark" : "chevron.backward")
+
+        let showsModes = topPage?.isArticle ?? false
+        modeControl.isHidden = !showsModes
+        if showsModes, let mode = topPage?.readerMode,
+           let index = Self.orderedModes.firstIndex(of: mode) {
+            modeControl.selectedSegmentIndex = index
+        }
+        // A fresh page can save again.
+        saveButton.configuration = Self.saveButtonConfiguration(symbol: "square.and.arrow.down")
+        saveButton.tintColor = GlassStyle.readingAccent
+        saveButton.isEnabled = true
+        layoutHeader()
+    }
+
     // MARK: - Chrome
 
     private func configureHeader() {
@@ -260,11 +315,11 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         card.addSubview(header)
 
         closeButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "xmark")
-        closeButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         header.contentView.addSubview(closeButton)
 
-        // Mode switcher (scroll / chunk / speed), shown only once the link is
-        // confirmed article-like and rendered with the app reader.
+        // Mode switcher (scroll / chunk / speed), shown only when the top page is
+        // rendered with the app reader.
         for (index, mode) in Self.orderedModes.enumerated() {
             modeControl.insertSegment(with: ReaderModeIcons.image(for: mode), at: index, animated: false)
         }
@@ -305,8 +360,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     @objc private func modeChanged() {
         let mode = Self.orderedModes[
             max(0, min(modeControl.selectedSegmentIndex, Self.orderedModes.count - 1))]
-        guard mode != readerMode else { return }
-        embedReader(mode: mode)
+        topPage?.setMode(mode)
     }
 
     private func configureChevron() {
@@ -319,10 +373,20 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         view.addSubview(bottomChevron)
     }
 
+    /// ✕ at the stack root dismisses the whole overlay; deeper in, it pops one page.
+    @objc private func closeTapped() {
+        if innerNav.viewControllers.count > 1 {
+            innerNav.popViewController(animated: true)
+        } else {
+            animateDismiss()
+        }
+    }
+
     @objc private func dismissTapped() { animateDismiss() }
 
     @objc private func saveTapped() {
-        shareProvider?.saveLink(urlString: url.absoluteString)
+        guard let target = topPage?.url else { return }
+        shareProvider?.saveLink(urlString: target.absoluteString)
         var config = GlassStyle.circularButtonConfiguration(symbol: "checkmark")
         config.baseForegroundColor = GlassStyle.readingAccent
         saveButton.configuration = config
@@ -334,76 +398,4 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
     ) -> Bool { false }
-
-    // MARK: - Reader rendering (#2)
-
-    /// Fetches + extracts the linked page off-main; if it's article-like, renders
-    /// it with the app reader's text styling instead of showing the raw web view.
-    private func probeForArticle() {
-        let target = url
-        articleProbe = Task { [weak self] in
-            let content: ArticleContent? = await Task.detached(priority: .userInitiated) {
-                guard let html = try? await ArticleFetcher().fetchHTML(from: target) else { return nil }
-                return try? ArticleExtractor().extract(html: html, baseURL: target)
-            }.value
-            guard let self, !Task.isCancelled, let content else { return }
-            let blocks = content.blocks.filter { !$0.text.isEmpty }
-            let totalText = blocks.reduce(0) { $0 + $1.text.count }
-            guard totalText >= 600, blocks.count >= 3 else { return }   // article-like
-            await MainActor.run { self.showReader(content) }
-        }
-    }
-
-    private func showReader(_ content: ArticleContent) {
-        guard !didDismiss, articleContent == nil else { return }
-        articleContent = content
-        webView.stopLoading()
-        webView.isHidden = true
-        spinner.stopAnimating()
-        modeControl.isHidden = false
-        embedReader(mode: readerMode)
-    }
-
-    /// Hosts the app reader for the linked article in the requested mode, swapping
-    /// the previous child. Links inside it open their own split overlay.
-    private func embedReader(mode: ReadingListItem.ReaderMode) {
-        guard let content = articleContent else { return }
-        if let old = readerChild {
-            old.willMove(toParent: nil)
-            old.view.removeFromSuperview()
-            old.removeFromParent()
-        }
-        var transient = ReadingListItem(urlString: url.absoluteString)
-        transient.state = .ready
-
-        let child: UIViewController
-        switch mode {
-        case .scroll:
-            child = ScrollReaderViewController(item: transient, content: content, autoHighlight: false)
-        case .highlight:
-            child = ScrollReaderViewController(item: transient, content: content, autoHighlight: true)
-        case .rsvp:
-            child = RSVPViewController(item: transient, content: content)
-        }
-        addChild(child)
-        child.view.frame = CGRect(
-            x: 0, y: Self.headerHeight,
-            width: card.bounds.width, height: max(card.bounds.height - Self.headerHeight, 0))
-        card.insertSubview(child.view, belowSubview: header)
-        child.didMove(toParent: self)
-        readerChild = child
-        readerMode = mode
-    }
-
-    // MARK: - WKNavigationDelegate
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if articleContent == nil { spinner.stopAnimating() }
-    }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        spinner.stopAnimating()
-    }
-    func webView(
-        _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error
-    ) { spinner.stopAnimating() }
 }

@@ -15,6 +15,11 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     /// Fired once when the user reaches the end of the article.
     var onFinishedReading: (() -> Void)?
 
+    /// When set, a tapped inline link is handed to this closure instead of opening
+    /// a new inline split overlay — used by the inline reader to push the link onto
+    /// its own navigation stack rather than nesting another overlay.
+    var onLinkActivated: ((URL) -> Void)?
+
     /// A word index carried in from another reader mode. When set (and this is
     /// the plain scrolling mode), the view scrolls so that word sits 25% from
     /// the top on first appearance instead of restoring the saved offset.
@@ -518,7 +523,12 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     ) -> UIAction? {
         if case .link(let url) = textItem.content {
             return UIAction { [weak self] _ in
-                self?.openSplit(for: url, tappedRange: textItem.range)
+                guard let self else { return }
+                if let onLinkActivated = self.onLinkActivated {
+                    onLinkActivated(url)
+                } else {
+                    self.openSplit(for: url, tappedRange: textItem.range)
+                }
             }
         }
         return defaultAction
@@ -566,6 +576,10 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         let rawCutY = textView.convert(CGPoint(x: 0, y: lineTopInTextView), to: nil).y
         let readerOffset = textView.contentOffset.y
 
+        // Top of the reader's content in window coords (below the nav bar). The cut
+        // must stay at or below this so the bottom peek never slices the nav bar.
+        let contentTopY = textView.convert(CGPoint.zero, to: nil).y
+
         var topHalf: UIView?
         var bottomHalf: UIView?
         var cutY = rawCutY
@@ -573,10 +587,11 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             let bounds = window.bounds
             let safe = window.safeAreaInsets
             let lineHeight = lineRect.height
-            // Clamp the cut so a full one-line peek fits above and below — and so
-            // the snapshots are captured AT the clamped cut (no later resize/glitch
-            // when the tapped link is very high or low on screen).
-            cutY = min(max(rawCutY, safe.top + lineHeight), bounds.height - safe.bottom - lineHeight)
+            // Clamp the cut so a full one-line peek fits below the nav bar and above
+            // the home indicator — and so the snapshots are captured AT the clamped
+            // cut (no later resize/glitch when the tapped link is very high or low).
+            let cutCeiling = max(contentTopY + lineHeight, safe.top + lineHeight)
+            cutY = min(max(rawCutY, cutCeiling), bounds.height - safe.bottom - lineHeight)
             topHalf = window.resizableSnapshotView(
                 from: CGRect(x: 0, y: 0, width: bounds.width, height: max(cutY, 1)),
                 afterScreenUpdates: false, withCapInsets: .zero)

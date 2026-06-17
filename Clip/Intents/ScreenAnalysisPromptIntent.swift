@@ -6,17 +6,21 @@
 import AppIntents
 
 /// Returns the screen-analysis prompt for extracting user-visible identifying
-/// metadata from the current app's screen, or an empty string when none applies
-/// (the shortcut then skips taking a screenshot). When a prompt is returned, the
-/// shortcut appends a screenshot and runs prompt + image through an
-/// image-understanding model; the result feeds `SaveFromAppIntent`.
+/// metadata from the current app's screen. When a prompt is returned, the shortcut
+/// appends a screenshot and runs prompt + image through an image-understanding
+/// model; the result feeds `SaveFromAppIntent`. Returns an empty string for a
+/// supported app that needs no prompt (Safari — the tracked page URL is saved), and
+/// the exact string "unsupported" when the current app isn't one Click can save from
+/// (the shortcut branches on that).
 struct ScreenAnalysisPromptIntent: AppIntent {
     static let title: LocalizedStringResource = "Screen Analysis Prompt"
     static let description = IntentDescription("""
         Returns a prompt to extract identifying metadata from the current app's \
-        screen, or empty if none applies. Pass the current app. If the result is \
-        non-empty, attach a screenshot of the screen and run the prompt and image \
-        through an image-understanding model, then pass the answer to Save from App.
+        screen. Pass the current app. If the result is non-empty, attach a \
+        screenshot of the screen and run the prompt and image through an \
+        image-understanding model, then pass the answer to Save from App. Returns \
+        "unsupported" when the current app can't be saved from, and empty when it \
+        needs no prompt.
         """)
     static let openAppWhenRun: Bool = false
 
@@ -24,6 +28,11 @@ struct ScreenAnalysisPromptIntent: AppIntent {
     var app: String?
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        .result(value: app.flatMap { AppNamePlatform.screenPrompt(forAppName: $0) } ?? "")
+        guard let app else { return .result(value: "unsupported") }
+        if let prompt = AppNamePlatform.screenPrompt(forAppName: app) {
+            return .result(value: prompt)
+        }
+        // Supported but no prompt (Safari) → empty; otherwise "unsupported".
+        return .result(value: AppNamePlatform.isSupported(forAppName: app) ? "" : "unsupported")
     }
 }

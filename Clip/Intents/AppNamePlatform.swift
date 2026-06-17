@@ -10,6 +10,19 @@ import Foundation
 /// Shared by the generic save intent and the screen-prompt intent.
 enum AppNamePlatform {
 
+    /// Whether the current app is one Click knows how to save from — a recognized
+    /// content platform, or Safari (whose plain page URL is saved directly). Unknown
+    /// apps are unsupported; the screen-prompt intent returns "unsupported" for them.
+    static func isSupported(forAppName app: String) -> Bool {
+        platform(forAppName: app) != nil || isSafari(forAppName: app)
+    }
+
+    /// Whether the app is Safari (supported, but needs no model prompt — the tracked
+    /// page URL is saved instead).
+    static func isSafari(forAppName app: String) -> Bool {
+        app.lowercased().contains("safari")
+    }
+
     /// The platform for an app name, or nil (Safari / unknown → plain URL).
     static func platform(forAppName app: String) -> ContentPlatform? {
         let name = app.lowercased()

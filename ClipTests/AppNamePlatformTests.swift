@@ -29,4 +29,18 @@ final class AppNamePlatformTests: XCTestCase {
         XCTAssertTrue(AppNamePlatform.screenPrompt(forAppName: "Apple Music")?.contains("artist ; title") ?? false)
         XCTAssertNotNil(AppNamePlatform.screenPrompt(forAppName: "Reddit"))
     }
+
+    func testSupportedApps() {
+        XCTAssertTrue(AppNamePlatform.isSupported(forAppName: "YouTube"))
+        XCTAssertTrue(AppNamePlatform.isSupported(forAppName: "Reddit"))
+        XCTAssertTrue(AppNamePlatform.isSupported(forAppName: "Safari"))
+        XCTAssertFalse(AppNamePlatform.isSupported(forAppName: "Calculator"))
+        XCTAssertFalse(AppNamePlatform.isSupported(forAppName: "Notes"))
+    }
+
+    func testSafariIsSupportedButPromptless() {
+        XCTAssertTrue(AppNamePlatform.isSafari(forAppName: "Safari"))
+        XCTAssertFalse(AppNamePlatform.isSafari(forAppName: "YouTube"))
+        XCTAssertNil(AppNamePlatform.screenPrompt(forAppName: "Safari"))
+    }
 }

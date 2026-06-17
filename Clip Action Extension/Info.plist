@@ -12,6 +12,8 @@
 				<integer>1</integer>
 				<key>NSExtensionActivationSupportsFileWithMaxCount</key>
 				<integer>1</integer>
+				<key>NSExtensionActivationSupportsText</key>
+				<true/>
 			</dict>
 			<key>NSExtensionJavaScriptPreprocessingFile</key>
 			<string>GetURL</string>

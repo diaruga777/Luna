@@ -128,6 +128,14 @@ final class ShareViewController: UIViewController {
             handleURL(urlProvider)
             return
         }
+        // Some apps (e.g. Apple Podcasts) share the link as TEXT, not a URL —
+        // pull the first link out of it.
+        if let textProvider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.text.identifier)
+        }) {
+            handleText(textProvider)
+            return
+        }
         failOrComplete("This type of content can't be read in Click.")
     }
 
@@ -267,6 +275,28 @@ final class ShareViewController: UIViewController {
         let nav = UINavigationController(rootViewController: saved)
         nav.modalPresentationStyle = .fullScreen
         present(nav, animated: true)
+    }
+
+    /// Handles a shared text item by extracting the first web link from it (how
+    /// Apple Podcasts and some apps share). Saves nothing if there's no link.
+    private func handleText(_ provider: NSItemProvider) {
+        provider.loadItem(forTypeIdentifier: UTType.text.identifier) { [weak self] value, _ in
+            guard let self else { return }
+            self.cancelLoadWatchdog()
+            let text = (value as? String) ?? (value as? NSAttributedString)?.string
+            guard let text,
+                  let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue),
+                  let match = detector.firstMatch(
+                    in: text, range: NSRange(text.startIndex..., in: text)),
+                  let url = match.url, url.absoluteString.hasPrefix("http")
+            else {
+                self.failOrComplete("No link found to save.")
+                return
+            }
+            SharedReadingListAppender.append(urlString: url.absoluteString)
+            SharedDiagnosticLog.record("saved url (text) \(url.absoluteString)", category: "share")
+            self.presentSavedOrReader(url: url)
+        }
     }
 
     private func handleDocument(_ provider: NSItemProvider, type: UTType) {

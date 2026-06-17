@@ -6,47 +6,24 @@
 import Foundation
 
 /// Appends a pending item to the reading-list JSON in the App Group container.
-/// The item shape mirrors the app's `ReadingListItem` (kept as a copy — no
-/// shared framework in this small project; keep field names in sync).
+///
+/// The extension can't link the app's `ReadingListItem` type, so it writes raw
+/// JSON dictionaries via `JSONSerialization` and — crucially — preserves every
+/// EXISTING item verbatim. (Decoding the whole list into a schema-locked mirror
+/// struct and re-encoding it used to silently drop any field the mirror didn't
+/// know about — e.g. `platform`/`sendStates` — corrupting other items.)
 enum SharedReadingListAppender {
     static let appGroupID = "group.com.hpiddy.clip"
 
-    private struct Item: Codable {
-        var id: UUID
-        var urlString: String
-        var title: String?
-        var dateAdded: Date
-        var state: String
-        var contentFileName: String?
-        var lastWordIndex: Int?
-        var readState: String?
-        var lastReaderMode: String?
-        var lastScrollOffset: Double?
-        var lastSpokenWordIndex: Int?
-        var eyeTrackedWordIndex: Int?
-        var wordCount: Int?
-        var readingProgress: Double?
-        var youtubeVideoID: String?
-        var channelName: String?
-        var thumbnailFileName: String?
-        var sharedByUsername: String?
-        var documentType: String?
-        var sendState: String?
-        var dateSent: Date?
-        var lastSaveAttemptDate: Date?
-    }
-
     static func append(urlString: String) {
         guard !urlString.isEmpty else { return }
-        insertIfNew { items in
-            guard !items.contains(where: { $0.urlString == urlString }) else { return nil }
-            return makeItem(id: UUID(), urlString: urlString, title: nil, documentType: nil)
+        insertIfNew(dedupeURLString: urlString) {
+            newItemDict(id: UUID(), urlString: urlString, title: nil, documentType: nil)
         }
     }
 
-    /// Copies an imported document into the App Group and appends a pending
-    /// item referencing it (`Articles/<id>-source.<ext>`). The main app parses
-    /// it into article content on next launch.
+    /// Copies an imported document into the App Group and appends a pending item
+    /// referencing it (`Articles/<id>-source.<ext>`).
     static func appendDocument(sourceURL: URL) {
         let fileManager = FileManager.default
         guard let container = fileManager.containerURL(
@@ -66,45 +43,51 @@ enum SharedReadingListAppender {
             return
         }
 
-        insertIfNew { _ in
-            makeItem(
-                id: id,
-                urlString: "clipdoc://\(id.uuidString)",
-                title: title.isEmpty ? "Document" : title,
-                documentType: ext)
+        insertIfNew(dedupeURLString: nil) {
+            newItemDict(
+                id: id, urlString: "clipdoc://\(id.uuidString)",
+                title: title.isEmpty ? "Document" : title, documentType: ext)
         }
     }
 
-    private static func makeItem(
+    /// The minimal fields a new pending item needs. Dates use the default
+    /// `JSONEncoder` representation (`timeIntervalSinceReferenceDate`) so the main
+    /// app's `JSONDecoder` reads them back; absent fields use the model defaults.
+    private static func newItemDict(
         id: UUID, urlString: String, title: String?, documentType: String?
-    ) -> Item {
-        Item(id: id, urlString: urlString, title: title, dateAdded: Date(),
-             state: "pending", contentFileName: nil, lastWordIndex: nil,
-             readState: "unopened", lastReaderMode: nil,
-             lastScrollOffset: nil, lastSpokenWordIndex: nil,
-             eyeTrackedWordIndex: nil, wordCount: nil, readingProgress: nil,
-             youtubeVideoID: nil, channelName: nil, thumbnailFileName: nil,
-             sharedByUsername: nil, documentType: documentType,
-             sendState: nil, dateSent: nil, lastSaveAttemptDate: nil)
+    ) -> [String: Any] {
+        var dict: [String: Any] = [
+            "id": id.uuidString,
+            "urlString": urlString,
+            "dateAdded": Date().timeIntervalSinceReferenceDate,
+            "state": "pending",
+            "readState": "unopened",
+        ]
+        if let title { dict["title"] = title }
+        if let documentType { dict["documentType"] = documentType }
+        return dict
     }
 
-    /// Loads the list, lets `build` produce an item to prepend (or nil to skip
-    /// on dedupe), and writes it back.
-    private static func insertIfNew(_ build: ([Item]) -> Item?) {
+    /// Reads the list as raw dictionaries (preserving unknown fields), prepends
+    /// the new item unless `dedupeURLString` already exists, and writes it back.
+    private static func insertIfNew(dedupeURLString: String?, makeItem: () -> [String: Any]) {
         let fileManager = FileManager.default
         guard let container = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupID)
         else { return }
         let fileURL = container.appendingPathComponent("readingList.json")
 
-        var items: [Item] = []
+        var array: [[String: Any]] = []
         if let data = try? Data(contentsOf: fileURL),
-           let decoded = try? JSONDecoder().decode([Item].self, from: data) {
-            items = decoded
+           let decoded = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            array = decoded
         }
-        guard let item = build(items) else { return }
-        items.insert(item, at: 0) // newest first
-        if let data = try? JSONEncoder().encode(items) {
+        if let dedupeURLString,
+           array.contains(where: { ($0["urlString"] as? String) == dedupeURLString }) {
+            return
+        }
+        array.insert(makeItem(), at: 0) // newest first
+        if let data = try? JSONSerialization.data(withJSONObject: array) {
             try? data.write(to: fileURL, options: .atomic)
         }
     }

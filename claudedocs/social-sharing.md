@@ -96,12 +96,16 @@ always-share set, plus one shared `pendingSuggestion` slot.
 - **Authorization**: `NotificationManager.requestAuthorization()` at launch —
   required before any notification can appear (silent pushes show nothing on
   their own).
-- **Local notifications**: when `processInbox` accepts a shared article from a
-  friend whose per-friend "Notify When They Share" toggle is on
-  (`FriendNotificationSettings`), `NotificationManager.postArticleShared`
-  fires "X shared an article: <title>". Injected into `SocialMessageCenter`
-  for testing. Force-quit apps won't wake on a silent push (Apple limitation)
-  — the notification then appears the next time the app runs `processInbox`.
+- **Local notifications** (`SocialMessageCenter.notifyOfReceivedShare`, both the
+  article and media-item branches): the **first share EVER from a friend always
+  notifies**, regardless of the toggle — `NotificationManager.postFirstShare` →
+  "{username} shared with you" / "To get notified of future shares from {username},
+  go to Queue settings". `FriendNotificationSettings.hasSharedBefore`/`markHasShared`
+  track this (separate UserDefaults set). After that first share, it honors the
+  per-friend "Notify When They Share" toggle → `NotificationManager.postArticleShared`
+  "X shared an article: <title>". Both closures are injected into `SocialMessageCenter`
+  for testing. Force-quit apps won't wake on a silent push (Apple limitation) — the
+  notification then appears the next time the app runs `processInbox`.
 - **Friend detail page** (`FriendDetailViewController`, pushed from a friend
   row): Auto-Send Websites sub-page (`AutoSendWebsitesViewController` —
   per-base-URL toggles over the reading list's hosts, via

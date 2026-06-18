@@ -7,9 +7,17 @@ snapinsta, …) with keyless, client-side extraction.
 
 ## Entry points
 
-1. **Action extension ("Queue it")** — `ShareKit/SavedNonTextualViewController` shows a
-   **"Download media to photo roll"** button for X/Instagram/TikTok posts (gated on
-   `MediaDownloadablePlatform.supports`). Tapping swaps the button for a `UIProgressView`
+1. **Action extension ("Queue it")** — `ShareKit/SavedNonTextualViewController` shows,
+   between the saved-confirmation label and the download button, a **fixed-height static
+   media preview** (the poster for a video) for X/Instagram/TikTok posts (gated on
+   `MediaDownloadablePlatform.supports`). The preview space is reserved from load with a
+   spinner while `MediaPreviewFetcher.fetchPreview` resolves the post (the same
+   `SocialMediaResolver` the download uses) and loads a downsampled image — the resolved
+   asset for an image, the `og:image` poster for a video. The **"Download media to photo
+   roll"** button stays invisible-but-space-holding (`alpha`, never `isHidden`) until that
+   fetch confirms media exists; if there's no media the spinner just hides. Critically the
+   preview/button reserve constant space so neither the elements above nor the friend list
+   below shift with the media state. Tapping the button swaps it for a `UIProgressView`
    + status label; on success it becomes a green checkmark + "Saved to Photos" (the user
    exits via Done), on failure it shows the error and re-enables to retry.
 2. **Reading list row long-press** — `ReadingListViewController.downloadMediaToPhotos`

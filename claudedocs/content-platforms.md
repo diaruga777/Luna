@@ -75,7 +75,8 @@ paste / Safari, which always yield the full URL and bypass the ingestor.
 
 `MediaLink` classifies Spotify/Apple URLs into a provider-agnostic `music`/
 `podcast` item + `sourceService`. `MediaProviderSettings` (App Group) holds the
-preferred app per kind (nil = unset). `openMediaItem`: exact same-provider link
+preferred app per kind, **defaulting to `.apple`** when unset (the getter is
+non-optional; the settings screen offers Apple/Spotify, no "None"). `openMediaItem`: exact same-provider link
 (web→app scheme via `MediaLink.appSchemeURL`) → search in the preferred app
 (`MusicProvider.appSearchURL(query:platform:)`) → Safari (original URL or web
 search). Unset → prompt to choose in Settings → "Music & Podcasts".

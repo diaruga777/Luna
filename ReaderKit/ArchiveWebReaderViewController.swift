@@ -31,6 +31,10 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private let progress = UIActivityIndicatorView(style: .medium)
     private let rateLimitView = UILabel()
     private var didExtract = false
+    /// Number of `429` challenge responses seen; once it loops past `loopThreshold`
+    /// we stop letting the user re-solve a CAPTCHA that can't pass and show guidance.
+    private var challengeCount = 0
+    private static let loopThreshold = 3
 
     /// Called when the user dismisses (Done). The main app dismisses the modal;
     /// extensions use this to complete their extension request. Defaults to
@@ -47,11 +51,16 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// extensions (no `UIApplication` there), where the button is hidden.
     var onOpenInBrowser: ((URL) -> Void)?
 
-    /// archive.today rate-limits aggressively; this surfaces that to the user (who
-    /// can then wait it out) rather than spinning forever.
+    /// archive.today rate-limits aggressively (HTTP 429) and, once it does, won't
+    /// honor CAPTCHA solves until the throttle clears — so surface actionable
+    /// remedies rather than letting the user re-solve a CAPTCHA that can't pass.
     private static let rateLimitMessage =
-        "archive.today is rate-limiting requests right now (you've archived a lot in a "
-        + "short time). Wait a few minutes, then try again."
+        "archive.today is rate-limiting your network right now, so solving the CAPTCHA "
+        + "won't get through.\n\nTry one of these, then reopen:\n"
+        + "•  Wait ~30 minutes\n"
+        + "•  Switch networks or turn on a VPN\n"
+        + "•  Tap the Safari button (top right), then disable Safari's content/ad "
+        + "blockers for archive.today"
 
     init(articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared) {
         self.articleURL = articleURL
@@ -102,7 +111,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
         rateLimitView.text = Self.rateLimitMessage
         rateLimitView.numberOfLines = 0
-        rateLimitView.textAlignment = .center
+        rateLimitView.textAlignment = .natural
         rateLimitView.textColor = .secondaryLabel
         rateLimitView.font = .preferredFont(forTextStyle: .callout)
         rateLimitView.isHidden = true
@@ -140,14 +149,33 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     // MARK: - WKNavigationDelegate
 
     func webView(
+        _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        // Logs WHO drives each main-frame navigation (user tap vs. the challenge
+        // page reloading itself), so a future loop log is unambiguous.
+        if navigationAction.targetFrame?.isMainFrame ?? true {
+            SharedDiagnosticLog.record(
+                "archive: navAction type=\(navigationAction.navigationType.rawValue) "
+                + "\(navigationAction.request.url?.absoluteString ?? "")", category: "archive")
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(
         _ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
-        // A 429 is archive.today's rate-limit; surface it so the user knows to wait.
+        // A 429 is archive.today's rate-limit. The first one still carries a CAPTCHA
+        // that MIGHT be solvable, so let the user try it; only once it has looped
+        // (repeated 429s) do we conclude solving won't pass and show the guidance.
         if let http = navigationResponse.response as? HTTPURLResponse {
             SharedDiagnosticLog.record(
                 "archive: response \(http.statusCode) \(http.url?.absoluteString ?? "")", category: "archive")
-            if http.statusCode == 429 { showRateLimit() }
+            if http.statusCode == 429 {
+                challengeCount += 1
+                if challengeCount >= Self.loopThreshold { showRateLimit() }
+            }
         }
         decisionHandler(.allow)
     }
@@ -214,6 +242,8 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
     private func showRateLimit() {
         progress.stopAnimating()
+        // Hide the looping challenge page so the (readable) guidance shows alone.
+        webView.isHidden = true
         rateLimitView.isHidden = false
         view.bringSubviewToFront(rateLimitView)
     }

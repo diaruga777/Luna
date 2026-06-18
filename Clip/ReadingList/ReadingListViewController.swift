@@ -441,7 +441,16 @@ final class ReadingListViewController: UITableViewController {
     private func pinCatchUpButtonToNavBar() {
         guard !catchUpPinnedToNavBar, let navBar = navigationController?.navigationBar else { return }
         catchUpPinnedToNavBar = true
-        navBar.addSubview(catchUpButton)
+        // Sit ABOVE the nav bar's blurred background but BEHIND its content (the title
+        // and the +/friends bar buttons). When the collapsing large-title bar brings
+        // this button up to the bar-button row on over-scroll, it slides UNDER those
+        // buttons — obscured by their glass — instead of drawing on top of them. The
+        // content view passes touches through its empty areas, so it stays tappable.
+        if let barBackground = navBar.subviews.first {
+            navBar.insertSubview(catchUpButton, aboveSubview: barBackground)
+        } else {
+            navBar.addSubview(catchUpButton)
+        }
         NSLayoutConstraint.activate([
             catchUpButton.trailingAnchor.constraint(equalTo: navBar.trailingAnchor, constant: -16),
             catchUpButton.bottomAnchor.constraint(equalTo: navBar.bottomAnchor, constant: -8),

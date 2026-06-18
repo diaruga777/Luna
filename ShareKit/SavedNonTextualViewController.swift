@@ -23,8 +23,17 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
     private let friendsTable = UITableView(frame: .zero, style: .plain)
     private let savedLabel = UILabel()
 
+    // A fixed-height static preview of the media that would be saved (the poster for
+    // a video). Space is reserved from load and a spinner shows while it's fetched,
+    // so the layout never shifts as the media state resolves.
+    private let previewContainer = UIView()
+    private let previewImageView = UIImageView()
+    private let previewSpinner = UIActivityIndicatorView(style: .medium)
+    private static let previewHeight: CGFloat = 200
+
     // "Download media to photo roll" affordance (X / Instagram / TikTok only): a
-    // button that becomes a progress bar while downloading, then a checkmark.
+    // button that becomes a progress bar while downloading, then a checkmark. Hidden
+    // (but holding its space) until the preview confirms downloadable media exists.
     private let downloadButton = UIButton(type: .system)
     private let downloadProgress = UIProgressView(progressViewStyle: .default)
     private let downloadStatus = UILabel()
@@ -97,6 +106,8 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
             topStack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
         ])
 
+        loadMediaPreview()
+
         // A scrolling friend list fills the rest — tapping one shares instantly.
         guard articleURLString.hasPrefix("http"), !friends.isEmpty else { return }
         let friendsHeader = UILabel()
@@ -124,10 +135,33 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         ])
     }
 
-    /// The "Download media to photo roll" button + (hidden) progress bar/status,
-    /// shown only for platforms whose posts expose downloadable media.
+    /// The media preview + the "Download media to photo roll" button + (hidden)
+    /// progress bar/status, shown only for platforms whose posts expose downloadable
+    /// media. The preview reserves fixed space and the button starts invisible (but
+    /// space-holding), so neither the elements above nor the friend list below move
+    /// as the media state resolves.
     private func mediaDownloadViews() -> [UIView] {
         guard MediaDownloadablePlatform.supports(articleURLString) else { return [] }
+
+        previewContainer.translatesAutoresizingMaskIntoConstraints = false
+        previewImageView.contentMode = .scaleAspectFit
+        previewImageView.clipsToBounds = true
+        previewImageView.layer.cornerRadius = 12
+        previewImageView.translatesAutoresizingMaskIntoConstraints = false
+        previewContainer.addSubview(previewImageView)
+        previewSpinner.hidesWhenStopped = true
+        previewSpinner.translatesAutoresizingMaskIntoConstraints = false
+        previewContainer.addSubview(previewSpinner)
+        NSLayoutConstraint.activate([
+            previewContainer.heightAnchor.constraint(equalToConstant: Self.previewHeight),
+            previewImageView.topAnchor.constraint(equalTo: previewContainer.topAnchor),
+            previewImageView.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor),
+            previewImageView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
+            previewImageView.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor),
+            previewSpinner.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
+            previewSpinner.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
+        ])
+        previewSpinner.startAnimating()
 
         var config = UIButton.Configuration.filled()
         config.title = "Download media to photo roll"
@@ -136,6 +170,9 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         config.baseBackgroundColor = GlassStyle.readingAccent
         downloadButton.configuration = config
         downloadButton.addAction(UIAction { [weak self] _ in self?.startMediaDownload() }, for: .touchUpInside)
+        // Invisible but holding its layout space until the preview confirms media.
+        downloadButton.alpha = 0
+        downloadButton.isUserInteractionEnabled = false
 
         downloadProgress.isHidden = true
         downloadProgress.progressTintColor = GlassStyle.readingAccent
@@ -146,7 +183,33 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         downloadStatus.textAlignment = .center
         downloadStatus.numberOfLines = 0
 
-        return [downloadButton, downloadProgress, downloadStatus]
+        return [previewContainer, downloadButton, downloadProgress, downloadStatus]
+    }
+
+    /// Fetches the static media preview off-main; reveals the download button only
+    /// once media is confirmed to exist. Always stops the spinner when done.
+    private func loadMediaPreview() {
+        guard MediaDownloadablePlatform.supports(articleURLString),
+              let url = URL(string: articleURLString) else { return }
+        let maxPixelSize = max(Self.previewHeight * 3, 600)
+        Task { [weak self] in
+            let result = await MediaPreviewFetcher.fetchPreview(for: url, maxPixelSize: maxPixelSize)
+            await MainActor.run { self?.applyMediaPreview(result) }
+        }
+    }
+
+    @MainActor
+    private func applyMediaPreview(_ result: MediaPreviewFetcher.Result) {
+        previewSpinner.stopAnimating()
+        switch result {
+        case .noMedia:
+            // No download to offer; the reserved space simply stays empty.
+            break
+        case .media(let image):
+            previewImageView.image = image
+            downloadButton.alpha = 1
+            downloadButton.isUserInteractionEnabled = true
+        }
     }
 
     private func startMediaDownload() {

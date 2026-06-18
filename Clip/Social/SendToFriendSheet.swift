@@ -16,35 +16,14 @@ enum SendToFriendSheet {
         urlString: String,
         title: String?
     ) {
-        let friends = FriendsStore.shared.items()
-
-        let sheet = UIAlertController(
-            title: title ?? urlString,
-            message: friends.isEmpty
-                ? "Add friends from the Friends screen to send articles directly."
-                : "Send to a friend's reading list, or share the link.",
-            preferredStyle: .actionSheet)
-
-        for friend in friends {
-            sheet.addAction(UIAlertAction(
-                title: "Send to \(friend.card.username)", style: .default
-            ) { _ in
-                deliver(urlString: urlString, title: title, to: friend, presenter: presenter)
-            })
-        }
-
-        sheet.addAction(UIAlertAction(title: "Share Link…", style: .default) { _ in
-            shareLink(urlString: urlString, from: presenter, sourceView: sourceView)
-        })
-        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-
-        sheet.popoverPresentationController?.sourceView = sourceView
-        presenter.present(sheet, animated: true)
+        // Share Link is a separate menu item at the call sites — this is the friend
+        // picker.
+        presentFriendPicker(
+            from: presenter, sourceView: sourceView, urlString: urlString, title: title)
     }
 
-    /// Presents an action sheet of just the user's friends; picking one sends the
-    /// article to their reading list. Used by the reader's share sheet (where
-    /// "Share Link…" is already a separate option).
+    /// Presents the modern friend-picker sheet; picking one sends the article to
+    /// their reading list.
     static func presentFriendPicker(
         from presenter: UIViewController, sourceView: UIView, urlString: String, title: String?
     ) {
@@ -58,17 +37,10 @@ enum SendToFriendSheet {
             presenter.present(alert, animated: true)
             return
         }
-        let sheet = UIAlertController(
-            title: title ?? urlString, message: nil, preferredStyle: .actionSheet)
-        for friend in friends {
-            sheet.addAction(UIAlertAction(
-                title: "Send to \(friend.card.username)", style: .default
-            ) { _ in
-                deliver(urlString: urlString, title: title, to: friend, presenter: presenter)
-            })
+        let sheet = FriendPickerSheet(friends: friends) { [weak presenter] friend in
+            guard let presenter else { return }
+            deliver(urlString: urlString, title: title, to: friend, presenter: presenter)
         }
-        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        sheet.popoverPresentationController?.sourceView = sourceView
         presenter.present(sheet, animated: true)
     }
 

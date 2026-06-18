@@ -169,6 +169,7 @@ final class ReadingListViewController: UITableViewController {
         super.viewDidLoad()
         title = "Reading List"
         navigationController?.navigationBar.prefersLargeTitles = true
+        suppressCollapsedTitle()
 
         tableView.register(
             ReadingListItemCell.self, forCellReuseIdentifier: ReadingListItemCell.reuseID)
@@ -535,6 +536,27 @@ final class ReadingListViewController: UITableViewController {
                 image: UIImage(systemName: "magnifyingglass"), style: .plain,
                 target: self, action: #selector(searchTapped)),
         ]
+    }
+
+    /// Keeps the large "Reading List" title (it scrolls away on its own) but hides
+    /// the COLLAPSED inline title, so it doesn't crowd the four bar buttons once the
+    /// large title has scrolled up — the title just goes offscreen with the content.
+    private func suppressCollapsedTitle() {
+        let largeTitle: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor.label]
+        let hiddenInline: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor.clear]
+
+        let atTop = UINavigationBarAppearance()
+        atTop.configureWithTransparentBackground()
+        atTop.largeTitleTextAttributes = largeTitle
+        atTop.titleTextAttributes = hiddenInline
+        navigationItem.scrollEdgeAppearance = atTop
+
+        let scrolled = UINavigationBarAppearance()
+        scrolled.configureWithDefaultBackground()
+        scrolled.largeTitleTextAttributes = largeTitle
+        scrolled.titleTextAttributes = hiddenInline   // collapsed title invisible
+        navigationItem.standardAppearance = scrolled
+        navigationItem.compactAppearance = scrolled
     }
 
     /// Opens search IN PLACE over the reading list: a child VC cross-faded in (no

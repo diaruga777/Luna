@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SwiftSoup
 
 /// The outcome of trying to read an article — directly first, then through the
 /// public web archives. Modeled so invalid states can't arise: a readable result
@@ -48,13 +49,30 @@ enum ArticleResolver {
     ) async -> ArticleResolution {
         let direct = await extractedContent(from: { try await fetcher.fetchHTML(from: url) },
                                             baseURL: url, extractor: extractor)
-        // Skip the archive fetch entirely when the direct read already succeeded.
+        // Skip everything else when the direct read already succeeded.
         if let direct, direct.0.hasReadableBody {
             return .readable(direct.0, html: direct.1)
+        }
+        // The page's AMP version is frequently served without the paywall overlay.
+        if let direct, let ampURL = Self.ampURL(in: direct.1, base: url) {
+            let amp = await extractedContent(from: { try await fetcher.fetchHTML(from: ampURL) },
+                                             baseURL: ampURL, extractor: extractor)
+            if let amp, amp.0.hasReadableBody { return .readable(amp.0, html: amp.1) }
         }
         let archived = await extractedContent(from: { try await fetcher.fetchArchivedHTML(for: url) },
                                               baseURL: url, extractor: extractor)
         return resolution(direct: direct, archived: archived)
+    }
+
+    /// The page's advertised AMP URL (`<link rel="amphtml" href="…">`), absolute,
+    /// or nil. AMP pages frequently lack the JS paywall overlay.
+    static func ampURL(in html: String, base: URL) -> URL? {
+        guard let doc = try? SwiftSoup.parse(html, base.absoluteString),
+              let link = try? doc.select("link[rel=amphtml]").first(),
+              let href = try? link.attr("abs:href"), !href.isEmpty,
+              let url = URL(string: href), url.absoluteString != base.absoluteString
+        else { return nil }
+        return url
     }
 
     /// Picks the resolution from the (optional) direct and archived attempts. Pure

@@ -31,7 +31,10 @@ enum SharedReadingListAppender {
         else { return }
 
         let id = UUID()
-        let ext = sourceURL.pathExtension.isEmpty ? "txt" : sourceURL.pathExtension.lowercased()
+        // Restrict the extension to alphanumerics so it can't smuggle path
+        // separators into the `<id>-source.<ext>` filename.
+        let rawExt = sourceURL.pathExtension.lowercased().filter { $0.isLetter || $0.isNumber }
+        let ext = rawExt.isEmpty ? "txt" : String(rawExt.prefix(8))
         let title = sourceURL.deletingPathExtension().lastPathComponent
 
         let articlesDir = container.appendingPathComponent("Articles", isDirectory: true)
@@ -81,18 +84,25 @@ enum SharedReadingListAppender {
         else { return }
         let fileURL = container.appendingPathComponent("readingList.json")
 
-        var array: [[String: Any]] = []
-        if let data = try? Data(contentsOf: fileURL),
-           let decoded = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-            array = decoded
-        }
-        if let dedupeURLString,
-           array.contains(where: { ($0["urlString"] as? String) == dedupeURLString }) {
-            return
-        }
-        array.insert(makeItem(), at: 0) // newest first
-        if let data = try? JSONSerialization.data(withJSONObject: array) {
-            try? data.write(to: fileURL, options: .atomic)
+        // Coordinate the whole read-modify-write so a concurrent write from the
+        // main app / SaveLink intent (which use NSFileCoordinator too) can't clobber
+        // this append or vice-versa.
+        let coordinator = NSFileCoordinator()
+        var coordError: NSError?
+        coordinator.coordinate(writingItemAt: fileURL, options: [], error: &coordError) { url in
+            var array: [[String: Any]] = []
+            if let data = try? Data(contentsOf: url),
+               let decoded = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                array = decoded
+            }
+            if let dedupeURLString,
+               array.contains(where: { ($0["urlString"] as? String) == dedupeURLString }) {
+                return
+            }
+            array.insert(makeItem(), at: 0) // newest first
+            if let data = try? JSONSerialization.data(withJSONObject: array) {
+                try? data.write(to: url, options: .atomic)
+            }
         }
     }
 }

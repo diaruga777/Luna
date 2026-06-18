@@ -140,6 +140,15 @@ struct ReadingListItem: Codable, Identifiable {
     /// An imported document (PDF/text/etc.) rather than a web link or video.
     var isDocument: Bool { documentType != nil }
 
+    /// `documentType` reduced to a safe file extension — lowercased alphanumerics,
+    /// capped — so a crafted value (the field is decoded from App-Group JSON any
+    /// process can write) can't smuggle path separators into a file path.
+    var sanitizedDocumentType: String? {
+        guard let documentType else { return nil }
+        let cleaned = documentType.lowercased().filter { $0.isLetter || $0.isNumber }
+        return cleaned.isEmpty ? nil : String(cleaned.prefix(8))
+    }
+
     /// Whether this item has a real web URL that can be shared (false for
     /// documents and imported emails, whose URLs are synthetic `clip…://` ones).
     var isShareable: Bool {

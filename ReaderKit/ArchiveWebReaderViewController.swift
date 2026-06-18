@@ -31,6 +31,10 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private let progress = UIActivityIndicatorView(style: .medium)
     private let rateLimitView = UILabel()
     private var didExtract = false
+    /// Set synchronously the moment we decide to extract, so the several
+    /// `didFinish` events archive.today fires (sub-frames, JS reloads) can't each
+    /// kick off a parallel extraction → double `saveContent` / double `onExtracted`.
+    private var isExtracting = false
     /// Number of `429` challenge responses seen; once it loops past `loopThreshold`
     /// we stop letting the user re-solve a CAPTCHA that can't pass and show guidance.
     private var challengeCount = 0
@@ -94,8 +98,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             navigationItem.rightBarButtonItem = UIBarButtonItem(
                 image: UIImage(systemName: "safari"),
                 primaryAction: UIAction { [weak self] _ in
-                    guard let self, let url = self.webView.url ?? URL(
-                        string: "https://archive.ph/newest/\(self.articleURL.absoluteString)")
+                    guard let self else { return }
+                    let target = ArticleFetcher.canonicalForArchiving(self.articleURL).absoluteString
+                    guard let url = self.webView.url ?? URL(string: "https://archive.ph/newest/\(target)")
                     else { return }
                     self.onOpenInBrowser?(url)
                 })
@@ -137,9 +142,10 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private func loadArchive() {
         // The target URL lives in the PATH, so archive.today opens straight to this
         // article — the user never types it into a form.
-        guard let archiveURL = URL(string: "https://archive.ph/newest/\(articleURL.absoluteString)") else {
-            return
-        }
+        let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
+        guard let archiveURL = URL(string: "https://archive.ph/newest/\(target)"),
+              archiveURL.host == "archive.ph"
+        else { return }
         SharedDiagnosticLog.record(
             "archive: loading \(archiveURL.absoluteString) ua=\(webView.customUserAgent ?? "default")",
             category: "archive")
@@ -191,7 +197,10 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             SharedDiagnosticLog.record(
                 "archive: didFinish \(self.webView.url?.absoluteString ?? "") innerTextLen=\(length)",
                 category: "archive")
-            guard !self.didExtract, length > 1500 else { return }
+            // `evaluateJavaScript` callbacks run serially on the main queue, so this
+            // check-and-set is atomic against other `didFinish` events.
+            guard !self.didExtract, !self.isExtracting, length > 1500 else { return }
+            self.isExtracting = true
             self.extractAndSave()
         }
     }
@@ -209,27 +218,39 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// Pulls the article out of the loaded snapshot's DOM and saves it to the item, so
     /// future opens use the fast in-app reader. The user keeps reading the web view now.
     private func extractAndSave() {
-        guard let itemID else { return }
+        guard let itemID else { isExtracting = false; return }
+        let baseURL = articleURL
         webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, _ in
-            guard let self, let html = result as? String else { return }
+            guard let self else { return }
+            guard let html = result as? String else { self.isExtracting = false; return }
             // The Cloudflare challenge page can be long enough to clear the
             // innerText gate; never mistake it for the article.
             if Self.isChallengePage(html) {
                 SharedDiagnosticLog.record("archive: still on CAPTCHA challenge page", category: "archive")
+                self.isExtracting = false
                 return
             }
-            let content = try? ArticleExtractor().extract(html: html, baseURL: self.articleURL)
-            guard let content, content.hasReadableBody, let item = self.store.item(withID: itemID) else {
-                SharedDiagnosticLog.record(
-                    "archive: extract not readable (bodyLen=\(content?.bodyTextLength ?? 0))",
-                    category: "archive")
-                return
+            // Parse the (potentially large) snapshot DOM OFF the main thread; only
+            // the store write + callback return to main.
+            Task.detached(priority: .utility) { [weak self] in
+                let content = try? ArticleExtractor().extract(html: html, baseURL: baseURL)
+                await MainActor.run {
+                    guard let self else { return }
+                    guard let content, content.hasReadableBody,
+                          let item = self.store.item(withID: itemID) else {
+                        SharedDiagnosticLog.record(
+                            "archive: extract not readable (bodyLen=\(content?.bodyTextLength ?? 0))",
+                            category: "archive")
+                        self.isExtracting = false
+                        return
+                    }
+                    self.didExtract = true
+                    _ = self.store.saveContent(content, for: item)
+                    SharedDiagnosticLog.record(
+                        "archive: extracted + saved (bodyLen=\(content.bodyTextLength))", category: "archive")
+                    self.onExtracted?()
+                }
             }
-            self.didExtract = true
-            _ = self.store.saveContent(content, for: item)
-            SharedDiagnosticLog.record(
-                "archive: extracted + saved (bodyLen=\(content.bodyTextLength))", category: "archive")
-            self.onExtracted?()
         }
     }
 

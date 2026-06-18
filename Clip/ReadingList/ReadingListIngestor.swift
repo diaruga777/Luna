@@ -92,7 +92,7 @@ final class ReadingListIngestor {
     /// `Articles/<id>-source.<type>`) into article content. Documents are
     /// Kindle-eligible, so the becameReady hook runs as for web articles.
     private func ingestDocument(_ item: ReadingListItem) async {
-        guard let type = item.documentType else {
+        guard let type = item.sanitizedDocumentType else {
             store.markFailed(item.id)
             return
         }

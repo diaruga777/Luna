@@ -7,17 +7,21 @@ import UIKit
 import WebKit
 
 /// Shown by the action extension for non-textual content (a video, post, etc.):
-/// the URL is already saved, so this confirms the save ("Saved to your reading
-/// list") and — for shareable links, when there are friends — offers to send it
-/// to a friend. The send is QUEUED to the App Group and performed by the app on
-/// next launch (the extension has no CloudKit/crypto). No eBook / system share
-/// here. YouTube embeds still play inline. Done dismisses the extension.
-final class SavedNonTextualViewController: UIViewController {
+/// the URL is already saved, so this confirms the save and — for shareable links,
+/// when there are friends — shows a scrolling friend list; tapping a friend QUEUES
+/// the send to the App Group (the app delivers it on next launch). The confirmation
+/// content sits near the top to leave room for the friend list. No eBook / system
+/// share. YouTube embeds play inline. Done dismisses the extension.
+final class SavedNonTextualViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
 
     private let articleURLString: String
     private let content: NonTextualContent
     private let onDone: () -> Void
     private var webView: WKWebView?
+
+    private let friends = ExtensionFriendsReader.friends()
+    private let friendsTable = UITableView(frame: .zero, style: .plain)
+    private let savedLabel = UILabel()
 
     // "Download media to photo roll" affordance (X / Instagram / TikTok only): a
     // button that becomes a progress bar while downloading, then a checkmark.
@@ -51,7 +55,6 @@ final class SavedNonTextualViewController: UIViewController {
         badge.tintColor = GlassStyle.readingAccent
         badge.contentMode = .center
 
-        let savedLabel = UILabel()
         savedLabel.text = "Saved to your reading list."
         savedLabel.font = .preferredFont(forTextStyle: .body)
         savedLabel.textColor = .secondaryLabel
@@ -81,17 +84,43 @@ final class SavedNonTextualViewController: UIViewController {
             topView = badge
         }
 
-        let arranged: [UIView] = [topView, savedLabel] + mediaDownloadViews() + shareButtons()
-        let stack = UIStackView(arrangedSubviews: arranged)
-        stack.axis = .vertical
-        stack.spacing = 16
-        stack.setCustomSpacing(24, after: savedLabel)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        // Confirmation + download controls sit at the TOP.
+        let topStack = UIStackView(arrangedSubviews: [topView, savedLabel] + mediaDownloadViews())
+        topStack.axis = .vertical
+        topStack.spacing = 16
+        topStack.setCustomSpacing(24, after: savedLabel)
+        topStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(topStack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            topStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 20),
+            topStack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            topStack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+        ])
+
+        // A scrolling friend list fills the rest — tapping one shares instantly.
+        guard articleURLString.hasPrefix("http"), !friends.isEmpty else { return }
+        let friendsHeader = UILabel()
+        friendsHeader.text = "Send to a Friend"
+        friendsHeader.font = .systemFont(ofSize: 15, weight: .semibold)
+        friendsHeader.textColor = .secondaryLabel
+        friendsHeader.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(friendsHeader)
+
+        friendsTable.dataSource = self
+        friendsTable.delegate = self
+        friendsTable.rowHeight = 52
+        friendsTable.register(UITableViewCell.self, forCellReuseIdentifier: "friend")
+        friendsTable.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(friendsTable)
+
+        NSLayoutConstraint.activate([
+            friendsHeader.topAnchor.constraint(equalTo: topStack.bottomAnchor, constant: 28),
+            friendsHeader.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            friendsHeader.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            friendsTable.topAnchor.constraint(equalTo: friendsHeader.bottomAnchor, constant: 6),
+            friendsTable.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            friendsTable.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            friendsTable.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
 
@@ -163,48 +192,30 @@ final class SavedNonTextualViewController: UIViewController {
         }
     }
 
-    /// A "Send to a Friend" button when the link is shareable and friends exist.
-    /// (The extension has no share-suggestion engine, so there's no one-tap
-    /// suggested friend; the picker covers choosing who to send to.)
-    private func shareButtons() -> [UIView] {
-        guard articleURLString.hasPrefix("http"), !ExtensionFriendsReader.friends().isEmpty else {
-            return []
-        }
-        // Muted (tinted, not a bright filled accent) so the confirmation stays calm.
-        var config = UIButton.Configuration.tinted()
-        config.title = "Send to a Friend…"
-        config.image = UIImage(systemName: "person.2.fill")
-        config.imagePadding = 8
-        config.baseBackgroundColor = .secondaryLabel
-        config.baseForegroundColor = .secondaryLabel
-        let button = UIButton(configuration: config)
-        button.addAction(UIAction { [weak self] _ in self?.presentFriendPicker() }, for: .touchUpInside)
-        return [button]
+    // MARK: - Friend list
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        friends.count
     }
 
-    private func presentFriendPicker() {
-        let friends = ExtensionFriendsReader.friends()
-        let sheet = UIAlertController(
-            title: "Send to a Friend",
-            message: "They'll get it in their Queue reading list when you next open Queue.",
-            preferredStyle: .actionSheet)
-        for friend in friends {
-            sheet.addAction(UIAlertAction(title: friend.username, style: .default) { [weak self] _ in
-                guard let self else { return }
-                PendingFriendShareWriter.enqueue(friendUUID: friend.uuid, urlString: self.articleURLString)
-                self.confirmQueued(friendName: friend.username)
-            })
-        }
-        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        sheet.popoverPresentationController?.sourceView = view
-        present(sheet, animated: true)
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "friend", for: indexPath)
+        var config = cell.defaultContentConfiguration()
+        config.text = friends[indexPath.row].username
+        config.image = UIImage(systemName: "person.crop.circle.fill")
+        config.imageProperties.tintColor = GlassStyle.readingAccent
+        cell.contentConfiguration = config
+        cell.accessoryType = .disclosureIndicator
+        return cell
     }
 
-    private func confirmQueued(friendName: String) {
-        let alert = UIAlertController(
-            title: "Will Send to \(friendName)",
-            message: "Open Queue to finish sending.", preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in self?.onDone() })
-        present(alert, animated: true)
+    /// Tapping a friend queues the send instantly, confirms briefly, then dismisses.
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        let friend = friends[indexPath.row]
+        PendingFriendShareWriter.enqueue(friendUUID: friend.uuid, urlString: articleURLString)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        savedLabel.text = "Will send to \(friend.username)."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.onDone() }
     }
 }

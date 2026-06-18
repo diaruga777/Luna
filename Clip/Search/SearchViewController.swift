@@ -12,8 +12,6 @@ protocol ReadingListItemPresenting: AnyObject {
     /// Configures a reused `ReadingListItemCell` for `item` (title, subtitle,
     /// thumbnail) identically to the reading list.
     func configureItemCell(_ cell: ReadingListItemCell, for item: ReadingListItem)
-    /// Opens `item` (reader / video / platform / archive) presenting from `presenter`.
-    func open(_ item: ReadingListItem, presenter: UIViewController)
     /// The long-press menu for a search result — same actions as the list MINUS
     /// "Edit List", always WITH "Bump to Top" (which re-sorts the list for when the
     /// user returns). `onChange` is called after a mutation so search can refresh.
@@ -22,12 +20,19 @@ protocol ReadingListItemPresenting: AnyObject {
         onChange: @escaping () -> Void) -> UIMenu
 }
 
-/// Full-screen search over the saved reading list: a bottom search field (focused
-/// immediately) with results listed above it. Two result streams merge — instant
-/// string matches first, then semantic nearest-neighbours — both refreshed on
-/// every keystroke. Rows reuse `ReadingListItemCell` and the list's open + menu
-/// behavior via `ReadingListItemPresenting`.
+/// Search over the saved reading list, hosted IN PLACE over the reading list (a
+/// child VC cross-faded in — no modal page transition): a bottom search field
+/// (focused immediately) with results listed above it. Two result streams merge —
+/// instant string matches first, then semantic nearest-neighbours — both
+/// refreshed on every keystroke. Rows reuse `ReadingListItemCell` and the list's
+/// rendering + menu via `ReadingListItemPresenting`. The host wires `onExit`
+/// (the X / done) and `onOpen` (a tapped result) to fade this out and act.
 final class SearchViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+
+    /// Called when the user leaves search (taps the X). The host fades this out.
+    var onExit: (() -> Void)?
+    /// Called when the user taps a result. The host fades search out, then opens it.
+    var onOpen: ((ReadingListItem) -> Void)?
 
     private let engine: ReadingListSearching
     private weak var presenter: ReadingListItemPresenting?
@@ -53,7 +58,6 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        navigationController?.setNavigationBarHidden(true, animated: false)
         setUpViews()
 
         // Build the search index off-main; re-run the current query when it lands.
@@ -70,10 +74,11 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
         searchField.becomeFirstResponder()
     }
 
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        navigationController?.setNavigationBarHidden(true, animated: false)
-        tableView.reloadData()   // reflect read-state/content changes from a returned reader
+    /// Focuses the field (shows the keyboard). Called by the host after the
+    /// cross-fade in, since this VC's view is hosted manually (appearance callbacks
+    /// aren't guaranteed to fire for a non-standard containment).
+    func focusSearchField() {
+        searchField.becomeFirstResponder()
     }
 
     private func setUpViews() {
@@ -128,7 +133,7 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
     private func exitSearch() {
         searchField.resignFirstResponder()
         engine.release()
-        dismiss(animated: true)
+        onExit?()
     }
 
     @objc private func textChanged() { runSearch() }
@@ -179,7 +184,9 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        presenter?.open(results[indexPath.row], presenter: self)
+        searchField.resignFirstResponder()
+        engine.release()
+        onOpen?(results[indexPath.row])
     }
 
     func tableView(

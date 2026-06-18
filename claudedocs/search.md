@@ -9,7 +9,7 @@ on-device semantic nearest-neighbour.
 - **Top-left**: a capsule **pill** (`makeLeftPill`) holding the **settings** (gearshape) and **friends** (person.2) icons.
 - **Top-right**: **add** (`+`) and **search** (magnifyingglass, `searchTapped`) — search sits where friends used to be.
 
-`searchTapped` presents `SearchViewController` wrapped in a `UINavigationController` (nav bar hidden during search; shown when a reader is pushed), `modalPresentationStyle = .fullScreen`.
+`searchTapped` hosts `SearchViewController` **in place** (no modal page transition): it's added as a child of the **navigation controller** (which owns the view that covers the nav bar — RLVC is a `UITableViewController` whose own view is the scrolling table, so it can't host it; parenting to the nav controller also avoids UIKit's appearance-forwarding assertion), its view pinned over `nav.view` and **cross-faded** (`alpha` 0→1). `onExit` fades it out (`dismissSearch`); `onOpen` removes it immediately then opens the result on the list's nav. Background is `systemBackground` (black in dark mode → the "fade to black" effect).
 
 ## Key files
 

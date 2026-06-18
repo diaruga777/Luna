@@ -10,7 +10,7 @@ import UIKit
 /// new bump date) or right to **Mark Read** (same actions on the bottom buttons).
 /// Article cards embed a live reader (scroll mode, mode switcher, scrollable);
 /// media/link cards show the row preview and open on tap. After the last card, an
-/// optional "Delete all read?" screen, then an "All done!" screen with Undo.
+/// optional "Delete all archived?" screen, then an "All done!" screen with Undo.
 final class CatchUpViewController: UIViewController {
 
     private enum Phase { case cards, deletePrompt, done }
@@ -68,14 +68,14 @@ final class CatchUpViewController: UIViewController {
         }
     }
 
-    /// Simulator-only: a tiny "Sim Swipe" button that holds the current card at a
-    /// partial left swipe, so the rotated state can be inspected (the harness can't
-    /// drag). Never shown on device.
+    /// Simulator-only: a tiny "Sim Bump" button that performs the Bump action — the
+    /// only card action without a bottom button (Keep/Archive have buttons), and the
+    /// left-then-up drag the harness can't synthesize. Never shown on device.
     private func addSimulatorSwipeHookIfNeeded() {
         guard AppEnvironment.isSimulator else { return }
         let button = UIButton(type: .system)
-        button.setTitle("Sim Swipe", for: .normal)
-        button.accessibilityLabel = "Sim Swipe"
+        button.setTitle("Sim Bump", for: .normal)
+        button.accessibilityLabel = "Sim Bump"
         button.titleLabel?.font = .systemFont(ofSize: 11)
         button.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(button)
@@ -84,7 +84,7 @@ final class CatchUpViewController: UIViewController {
             button.topAnchor.constraint(equalTo: leftButton.bottomAnchor),
         ])
         button.addAction(UIAction { [weak self] _ in
-            self?.currentCard?.simulatorHoldSwipe(fraction: 0.45)
+            self?.currentCard?.performAction(.bump)
         }, for: .touchUpInside)
     }
 
@@ -246,8 +246,9 @@ final class CatchUpViewController: UIViewController {
     private func commitAction(_ action: CatchUpCardView.Action) {
         guard let item = currentItem else { return }
         switch action {
+        case .keep: break   // leave the saved item untouched, just advance
         case .bump: store.bump(item.id)
-        case .markRead: store.markReadState(.read, for: item.id)
+        case .archive: store.markReadState(.read, for: item.id)
         }
         tearDownCurrentCard()
         index += 1
@@ -320,8 +321,8 @@ final class CatchUpViewController: UIViewController {
             rightButton.setTitle(nil, for: .normal)
             rightButton.setImage(UIImage(systemName: "square.and.arrow.up"), for: .normal)
             rightButton.isHidden = false
-            styleButton(primaryButton, title: "Bump", filled: false)
-            styleButton(secondaryButton, title: "Mark Read", filled: true)
+            styleButton(primaryButton, title: "Keep", filled: false)
+            styleButton(secondaryButton, title: "Archive", filled: true)
             setBottomButtons(hidden: false, singleFullWidth: false)
         case .deletePrompt:
             titleLabel.text = nil   // the prompt view carries its own title
@@ -369,7 +370,7 @@ final class CatchUpViewController: UIViewController {
 
     @objc private func primaryTapped() {
         switch phase {
-        case .cards: currentCard?.performAction(.bump)
+        case .cards: currentCard?.performAction(.keep)
         case .deletePrompt: pendingDeleteIDs = []; transitionToDone()  // Keep
         case .done: break
         }
@@ -377,7 +378,7 @@ final class CatchUpViewController: UIViewController {
 
     @objc private func secondaryTapped() {
         switch phase {
-        case .cards: currentCard?.performAction(.markRead)
+        case .cards: currentCard?.performAction(.archive)
         case .deletePrompt: pendingDeleteIDs = deleteReadView?.selectedItemIDs ?? []; transitionToDone()
         case .done: commitAndClose()
         }

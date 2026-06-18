@@ -27,6 +27,8 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
     private let previewContainer = UIView()
     private let previewImageView = UIImageView()
     private let previewSpinner = UIActivityIndicatorView(style: .medium)
+    /// Shown (grey box + message) when media exists but its still couldn't be loaded.
+    private let previewPlaceholder = UILabel()
     private static let previewHeight: CGFloat = 200
 
     // "Download media to photo roll" affordance (X / Instagram / TikTok only): a
@@ -134,12 +136,29 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         previewSpinner.hidesWhenStopped = true
         previewSpinner.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(previewSpinner)
+
+        previewPlaceholder.text = "Unable to load still image"
+        previewPlaceholder.font = .preferredFont(forTextStyle: .subheadline)
+        previewPlaceholder.textColor = .secondaryLabel
+        previewPlaceholder.textAlignment = .center
+        previewPlaceholder.numberOfLines = 0
+        previewPlaceholder.backgroundColor = .secondarySystemBackground
+        previewPlaceholder.layer.cornerRadius = 12
+        previewPlaceholder.clipsToBounds = true
+        previewPlaceholder.isHidden = true
+        previewPlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        previewContainer.addSubview(previewPlaceholder)
+
         NSLayoutConstraint.activate([
             previewContainer.heightAnchor.constraint(equalToConstant: Self.previewHeight),
             previewImageView.topAnchor.constraint(equalTo: previewContainer.topAnchor),
             previewImageView.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor),
             previewImageView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
             previewImageView.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor),
+            previewPlaceholder.topAnchor.constraint(equalTo: previewContainer.topAnchor),
+            previewPlaceholder.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor),
+            previewPlaceholder.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
+            previewPlaceholder.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor),
             previewSpinner.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
             previewSpinner.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
         ])
@@ -237,7 +256,13 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
             // No download to offer; the reserved space simply stays empty.
             break
         case .media(let image):
-            previewImageView.image = image
+            if let image {
+                previewImageView.image = image
+            } else {
+                // Media exists but its still couldn't be fetched — show a labeled box
+                // (not blank) so the empty space reads as a load failure, not a bug.
+                previewPlaceholder.isHidden = false
+            }
             downloadButton.alpha = 1
             downloadButton.isUserInteractionEnabled = true
         }

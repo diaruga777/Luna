@@ -84,7 +84,7 @@ final class CatchUpDeleteReadView: UIView, UITableViewDataSource, UITableViewDel
     }
 
     func updateTitle(allSelected: Bool) {
-        titleLabel.text = allSelected ? "Delete all read items?" : "Delete selected items?"
+        titleLabel.text = allSelected ? "Delete all archived items?" : "Delete selected items?"
     }
 
     private func notifySelection() {

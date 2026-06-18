@@ -34,7 +34,6 @@ final class ReadingListViewController: UITableViewController {
     /// declaration order.
     private enum Section: Int, CaseIterable {
         case reading = 0
-        case read = 1
         case archive = 2
         case error = 3
         case pasteboard = 4
@@ -42,7 +41,6 @@ final class ReadingListViewController: UITableViewController {
         var title: String {
             switch self {
             case .reading: return "Reading"
-            case .read: return "Read"
             case .archive: return "Archive"
             case .error: return "Couldn't Load"
             case .pasteboard: return "From Pasteboard"
@@ -53,14 +51,14 @@ final class ReadingListViewController: UITableViewController {
         var isCollapsible: Bool {
             switch self {
             case .reading, .pasteboard: return false
-            case .read, .archive, .error: return true
+            case .archive, .error: return true
             }
         }
     }
 
     /// Top-to-bottom display order: a pasteboard suggestion sits above the list,
     /// failed items in a collapsible section at the very bottom.
-    private static let displayOrder: [Section] = [.pasteboard, .reading, .read, .archive, .error]
+    private static let displayOrder: [Section] = [.pasteboard, .reading, .archive, .error]
 
     /// What the list shows: everything, only articles (anything that opens in the
     /// text reader — articles, documents, emails), or only media & links (everything
@@ -105,12 +103,12 @@ final class ReadingListViewController: UITableViewController {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.filterDefaultsKey) }
     }
 
-    /// Persisted collapsed sections. Absent (first run) means Read and Archive
-    /// start collapsed.
+    /// Persisted collapsed sections. Absent (first run) means Archive starts
+    /// collapsed.
     private var collapsedSections: Set<Section> {
         get {
             guard let raw = UserDefaults.standard.array(forKey: Self.collapsedDefaultsKey) as? [Int]
-            else { return [.read, .archive, .error] }
+            else { return [.archive, .error] }
             return Set(raw.compactMap(Section.init(rawValue:)))
         }
         set {
@@ -315,22 +313,22 @@ final class ReadingListViewController: UITableViewController {
         let all = store.items().filter { filter.includes($0) }
         let now = Date()
         var reading: [ReadingListItem] = []
-        var read: [ReadingListItem] = []
         var archive: [ReadingListItem] = []
         var failed: [ReadingListItem] = []
         for item in all {
             if item.state == .failed {
                 failed.append(item)
-            } else if item.readState == .read {
-                read.append(item)
-            } else if now.timeIntervalSince(item.dateAdded) > Self.archiveAge {
+            } else if item.readState == .read
+                        || now.timeIntervalSince(item.dateAdded) > Self.archiveAge {
+                // Archive holds both: items the user archived (read) and unread items
+                // that have aged out of the active Reading window.
                 archive.append(item)
             } else {
                 reading.append(item)
             }
         }
         var bySection: [Section: [ReadingListItem]] =
-            [.reading: reading, .read: read, .archive: archive, .error: failed]
+            [.reading: reading, .archive: archive, .error: failed]
 
         // The pasteboard suggestion: a spinner row while evaluating, then the
         // resolved candidate (unless it's since been saved by some path).
@@ -577,13 +575,14 @@ final class ReadingListViewController: UITableViewController {
         navigationController?.pushViewController(SettingsViewController(), animated: true)
     }
 
-    @objc private func deleteAllReadTapped() {
-        let readCount = groups.first { $0.section == .read }?.items.count ?? 0
+    @objc private func deleteAllArchiveTapped() {
+        let archived = groups.first { $0.section == .archive }?.items ?? []
+        guard !archived.isEmpty else { return }
         let alert = UIAlertController(
-            title: "Delete \(readCount) read article\(readCount == 1 ? "" : "s")?",
+            title: "Delete \(archived.count) archived item\(archived.count == 1 ? "" : "s")?",
             message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "Delete All Read", style: .destructive) { [weak self] _ in
-            self?.store.deleteAllRead()
+        alert.addAction(UIAlertAction(title: "Delete All", style: .destructive) { [weak self] _ in
+            self?.store.deleteItems(ids: Set(archived.map(\.id)))
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         present(alert, animated: true)
@@ -692,12 +691,12 @@ final class ReadingListViewController: UITableViewController {
             label.centerYAnchor.constraint(equalTo: header.centerYAnchor),
         ])
 
-        if kind == .read {
+        if kind == .archive {
             let deleteButton = UIButton(type: .system)
             deleteButton.setTitle("Delete All", for: .normal)
             deleteButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
             deleteButton.tintColor = .systemRed
-            deleteButton.addTarget(self, action: #selector(deleteAllReadTapped), for: .touchUpInside)
+            deleteButton.addTarget(self, action: #selector(deleteAllArchiveTapped), for: .touchUpInside)
             deleteButton.translatesAutoresizingMaskIntoConstraints = false
             header.addSubview(deleteButton)
             NSLayoutConstraint.activate([
@@ -1089,6 +1088,14 @@ final class ReadingListViewController: UITableViewController {
         }
 
         var children: [UIAction] = []
+        // Reading-section items only: jump an item to the top of the list.
+        if section(at: indexPath.section) == .reading {
+            children.append(UIAction(
+                title: "Bump to Top", image: UIImage(systemName: "arrow.up.to.line")
+            ) { [weak self] _ in
+                self?.store.bump(item.id)
+            })
+        }
         if item.canShareToFriends {
             children.append(sendToFriend)
         } else if item.isURLlessMedia {
@@ -1122,14 +1129,14 @@ final class ReadingListViewController: UITableViewController {
                 children.append(shareEbook)
             }
         }
-        // Read items can be put back to unread.
+        // Archived (read) items can be unarchived back to the Reading section.
         if item.readState == .read {
-            let markUnread = UIAction(
-                title: "Mark Unread", image: UIImage(systemName: "circle")
+            let unarchive = UIAction(
+                title: "Unarchive", image: UIImage(systemName: "tray.and.arrow.up")
             ) { [weak self] _ in
                 self?.store.markUnread(item.id)
             }
-            children.append(markUnread)
+            children.append(unarchive)
         }
         children.append(delete)
         // "Edit List" enters multi-select / drag-reorder edit mode (bottom item).

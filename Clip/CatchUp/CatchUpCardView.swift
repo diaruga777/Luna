@@ -5,26 +5,37 @@
 
 import UIKit
 
-/// A swipeable catch-up card: hosts arbitrary content and tracks a horizontal drag,
-/// rotating + tinting the card and fading in the action label in the corner. Past a
-/// threshold (or a fast flick) it flies off and reports the action; otherwise it
-/// springs back. Dragging LEFT = bump, RIGHT = mark read. The same fly-off is driven
-/// by the bottom buttons via `performAction`.
+/// A swipeable catch-up card. A horizontal drag rotates + tints the card and fades
+/// in a corner action badge:
+///   • drag RIGHT → **Archive** (marks the item read),
+///   • drag LEFT → **Keep** (does nothing to the item, just advances),
+///   • drag LEFT and then UP → **Bump** (moves the item to the top of the list).
+/// The left-then-up corner is used for Bump so a plain vertical drag still scrolls
+/// the reader embedded in the card. Past a threshold (or a fast flick) the card flies
+/// off and reports the action; otherwise it springs back. The bottom Keep/Archive
+/// buttons drive the same fly-off via `performAction`.
 final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
 
-    enum Action { case bump, markRead }
+    enum Action { case keep, bump, archive }
+
+    /// Which action the CURRENT drag position maps to (drives the live tint + badge).
+    private enum Zone { case none, keep, bump, archive }
 
     /// Fired once the card commits to an action (after the fly-off animation starts).
     var onAction: ((Action) -> Void)?
 
-    /// Where the hosted content goes (the article reader nav, or a media view).
+    /// Where the hosted content goes (the article reader, or a media view).
     let contentContainer = UIView()
 
     private let tintOverlay = UIView()
-    private let bumpLabel = CatchUpCardView.cornerBadge(symbol: "arrow.up", text: "Bump", color: GlassStyle.readingAccent)
-    private let readLabel = CatchUpCardView.cornerBadge(symbol: "checkmark", text: "Read", color: .systemGreen)
+    private let archiveBadge = CatchUpCardView.cornerBadge(symbol: "checkmark", text: "Archive", color: .systemGreen)
+    private let keepBadge = CatchUpCardView.cornerBadge(symbol: "tray.full.fill", text: "Keep", color: .systemGray)
+    private let bumpBadge = CatchUpCardView.cornerBadge(symbol: "arrow.up", text: "Bump", color: GlassStyle.readingAccent)
 
     private static let rotationPerWidth: CGFloat = 0.18   // radians at full-width drag
+    /// How far UP (points) the drag must go (while left) to mean Bump.
+    private static let upTrigger: CGFloat = 70
+    private static let upCommit: CGFloat = 90
 
     private let glassBackdrop = UIVisualEffectView(effect: GlassStyle.barEffect())
 
@@ -60,12 +71,11 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         tintOverlay.translatesAutoresizingMaskIntoConstraints = false
         addSubview(tintOverlay)
 
-        for label in [readLabel, bumpLabel] {
-            label.alpha = 0
-            addSubview(label)
+        for badge in [archiveBadge, keepBadge, bumpBadge] {
+            badge.alpha = 0
+            badge.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(badge)
         }
-        readLabel.translatesAutoresizingMaskIntoConstraints = false
-        bumpLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             glassBackdrop.topAnchor.constraint(equalTo: topAnchor),
@@ -80,11 +90,14 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
             tintOverlay.bottomAnchor.constraint(equalTo: bottomAnchor),
             tintOverlay.leadingAnchor.constraint(equalTo: leadingAnchor),
             tintOverlay.trailingAnchor.constraint(equalTo: trailingAnchor),
-            // READ appears top-left when swiping right; BUMP top-right when left.
-            readLabel.topAnchor.constraint(equalTo: topAnchor, constant: 24),
-            readLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 24),
-            bumpLabel.topAnchor.constraint(equalTo: topAnchor, constant: 24),
-            bumpLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -24),
+            // ARCHIVE appears top-left when swiping right; KEEP/BUMP top-right when
+            // swiping left (Bump replaces Keep once the drag turns upward).
+            archiveBadge.topAnchor.constraint(equalTo: topAnchor, constant: 24),
+            archiveBadge.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 24),
+            keepBadge.topAnchor.constraint(equalTo: topAnchor, constant: 24),
+            keepBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -24),
+            bumpBadge.topAnchor.constraint(equalTo: topAnchor, constant: 24),
+            bumpBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -24),
         ])
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
@@ -127,12 +140,6 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         return pill
     }
 
-    /// Simulator-only: hold the card at a fraction of a left/right swipe so the
-    /// rotated state (and its labels) can be inspected without a drag gesture.
-    func simulatorHoldSwipe(fraction: CGFloat) {
-        apply(translationX: fraction * (superview?.bounds.width ?? bounds.width))
-    }
-
     override func layoutSubviews() {
         super.layoutSubviews()
         layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: 22).cgPath
@@ -144,13 +151,17 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         let translation = gesture.translation(in: superview)
         switch gesture.state {
         case .changed:
-            apply(translationX: translation.x)
+            apply(translationX: translation.x, y: translation.y)
         case .ended, .cancelled:
             let width = superview?.bounds.width ?? bounds.width
-            let velocity = gesture.velocity(in: superview).x
-            let pastThreshold = abs(translation.x) > width * 0.3 || abs(velocity) > 900
-            if pastThreshold {
-                performAction(translation.x < 0 ? .bump : .markRead)
+            let velocity = gesture.velocity(in: superview)
+            let horizontalCommit = abs(translation.x) > width * 0.3 || abs(velocity.x) > 900
+            if translation.x > 0 && horizontalCommit {
+                performAction(.archive)
+            } else if translation.x < 0 && translation.y < -Self.upCommit {
+                performAction(.bump)          // left, then up
+            } else if translation.x < 0 && horizontalCommit {
+                performAction(.keep)
             } else {
                 springBack()
             }
@@ -159,37 +170,59 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         }
     }
 
-    /// Liquid-glass effects (the card backdrop, the reader's glass header + audio
-    /// button) re-render at the wrong scale under a rotation transform — they
-    /// "balloon". Rasterizing the card's layer while it's rotated bakes the glass into
-    /// a bitmap at identity scale, so the rotation just transforms that bitmap. Cleared
-    /// the moment the card returns to rest, restoring live glass.
+    /// Liquid-glass effects (the card backdrop, the reader's glass header) re-render
+    /// at the wrong scale under a rotation transform — they "balloon". Rasterizing the
+    /// card's layer while rotated bakes the glass into a bitmap at identity scale, so
+    /// the rotation just transforms that bitmap. Cleared when the card returns to rest.
     private func setRasterizedDuringRotation(_ on: Bool) {
         guard layer.shouldRasterize != on else { return }
         layer.rasterizationScale = window?.screen.scale ?? UIScreen.main.scale
         layer.shouldRasterize = on
     }
 
-    private func apply(translationX tx: CGFloat) {
-        setRasterizedDuringRotation(tx != 0)
+    private func zone(translationX tx: CGFloat, y ty: CGFloat) -> Zone {
+        if tx > 0 { return .archive }
+        if tx < 0 { return ty < -Self.upTrigger ? .bump : .keep }
+        return .none
+    }
+
+    private func apply(translationX tx: CGFloat, y ty: CGFloat) {
+        setRasterizedDuringRotation(tx != 0 || ty != 0)
         let width = max(superview?.bounds.width ?? bounds.width, 1)
-        let progress = min(abs(tx) / width, 1)
-        transform = CGAffineTransform(translationX: tx, y: 0)
+        transform = CGAffineTransform(translationX: tx, y: ty)
             .rotated(by: Self.rotationPerWidth * (tx / width) * 2)
-        let swipingRight = tx > 0
-        tintOverlay.backgroundColor = (swipingRight ? UIColor.systemGreen : GlassStyle.readingAccent)
-            .withAlphaComponent(0.5)
-        tintOverlay.alpha = progress * 0.6
-        readLabel.alpha = swipingRight ? progress : 0
-        bumpLabel.alpha = swipingRight ? 0 : progress
+
+        archiveBadge.alpha = 0
+        keepBadge.alpha = 0
+        bumpBadge.alpha = 0
+        switch zone(translationX: tx, y: ty) {
+        case .none:
+            tintOverlay.alpha = 0
+        case .archive:
+            let progress = min(abs(tx) / width, 1)
+            tintOverlay.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.5)
+            tintOverlay.alpha = progress * 0.6
+            archiveBadge.alpha = progress
+        case .keep:
+            let progress = min(abs(tx) / width, 1)
+            tintOverlay.backgroundColor = UIColor.systemGray.withAlphaComponent(0.5)
+            tintOverlay.alpha = progress * 0.6
+            keepBadge.alpha = progress
+        case .bump:
+            let progress = min(max(abs(tx), abs(ty)) / width, 1)
+            tintOverlay.backgroundColor = GlassStyle.readingAccent.withAlphaComponent(0.5)
+            tintOverlay.alpha = progress * 0.6
+            bumpBadge.alpha = 1
+        }
     }
 
     private func springBack() {
         UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.7, initialSpringVelocity: 0.4) {
             self.transform = .identity
             self.tintOverlay.alpha = 0
-            self.readLabel.alpha = 0
-            self.bumpLabel.alpha = 0
+            self.archiveBadge.alpha = 0
+            self.keepBadge.alpha = 0
+            self.bumpBadge.alpha = 0
         } completion: { _ in
             // Back at rest (identity) — drop the raster cache so glass goes live again.
             self.setRasterizedDuringRotation(false)
@@ -197,15 +230,21 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
     }
 
     /// Flies the card off in the action's direction, then reports it. Used by both
-    /// the drag release and the bottom buttons.
+    /// the drag release and the bottom Keep/Archive buttons.
     func performAction(_ action: Action) {
         // Stays rasterized through the fly-off (rotated the whole way, then removed).
         setRasterizedDuringRotation(true)
         let width = superview?.bounds.width ?? UIScreen.main.bounds.width
-        let offX: CGFloat = action == .bump ? -width * 1.5 : width * 1.5
+        let height = superview?.bounds.height ?? UIScreen.main.bounds.height
+        let offset: CGPoint
+        let rotation: CGFloat
+        switch action {
+        case .archive: offset = CGPoint(x: width * 1.5, y: 0); rotation = Self.rotationPerWidth * 2
+        case .keep:    offset = CGPoint(x: -width * 1.5, y: 0); rotation = -Self.rotationPerWidth * 2
+        case .bump:    offset = CGPoint(x: -width * 0.3, y: -height * 1.2); rotation = -Self.rotationPerWidth
+        }
         UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseIn) {
-            self.transform = CGAffineTransform(translationX: offX, y: 0)
-                .rotated(by: Self.rotationPerWidth * (action == .bump ? -2 : 2))
+            self.transform = CGAffineTransform(translationX: offset.x, y: offset.y).rotated(by: rotation)
             self.alpha = 0
         } completion: { _ in
             self.onAction?(action)
@@ -214,8 +253,9 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
 
     // MARK: - UIGestureRecognizerDelegate
 
-    /// Only claim clearly-horizontal drags, so vertical scrolling inside the card's
-    /// content (the article reader) still works.
+    /// Only claim clearly-horizontal drags, so a vertical scroll inside the card's
+    /// content (the article reader) still works — and the Bump corner is reached by
+    /// starting horizontally (left) and THEN turning up, which keeps the pan ours.
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
         let velocity = pan.velocity(in: self)

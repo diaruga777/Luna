@@ -213,6 +213,27 @@ final class ReadingListStore {
         save(all)
     }
 
+    /// Removes a set of items (and their cached content) in one pass — used to clear
+    /// the whole Archive section at once.
+    func deleteItems(ids: Set<UUID>) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        let removed = all.filter { ids.contains($0.id) }
+        guard !removed.isEmpty else { return }
+        for item in removed {
+            if let fileName = item.contentFileName {
+                try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(fileName))
+            }
+            if let type = item.documentType {
+                try? fileManager.removeItem(at: articlesDirectory
+                    .appendingPathComponent("\(item.id.uuidString)-source.\(type)"))
+            }
+        }
+        all.removeAll { ids.contains($0.id) }
+        save(all)
+    }
+
     /// Remembers which reader the user last used for an article.
     func setReaderMode(_ mode: ReadingListItem.ReaderMode, for itemID: UUID) {
         mutationLock.lock()
@@ -369,7 +390,7 @@ final class ReadingListStore {
         save(all)
     }
 
-    /// Forces an item back to unread (the Read-section "Mark Unread" action) — a
+    /// Forces an item back to unread (the Archive-section "Unarchive" action) — a
     /// deliberate downgrade that `markReadState`'s forward-only guard disallows.
     func markUnread(_ itemID: UUID) {
         mutationLock.lock()

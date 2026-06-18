@@ -52,17 +52,23 @@ final class CatchUpCardHeader: UIView {
         return formatter
     }()
 
+    /// The date/sender line for a card ("Bumped <date> · from <friend>"). Shared with
+    /// the reader's inline glass header so an article card needs no separate strip.
+    static func text(for item: ReadingListItem) -> String {
+        let bumped = item.bumpDate != nil
+        let date = item.bumpDate ?? item.dateAdded
+        var text = (bumped ? "Bumped " : "") + formatter.string(from: date)
+        if let friend = item.sharedByUsername { text += " · from \(friend)" }
+        return text
+    }
+
     init(item: ReadingListItem) {
         super.init(frame: .zero)
         // Clear so the card's glass backdrop shows through the forehead.
         backgroundColor = .clear
 
         let dateLabel = UILabel()
-        let bumped = item.bumpDate != nil
-        let date = item.bumpDate ?? item.dateAdded
-        var text = (bumped ? "Bumped " : "") + Self.formatter.string(from: date)
-        if let friend = item.sharedByUsername { text += " · from \(friend)" }
-        dateLabel.text = text
+        dateLabel.text = Self.text(for: item)
         dateLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         dateLabel.textColor = .secondaryLabel
         // Centered, so the top corners stay empty for the Bump / Read glass pills.

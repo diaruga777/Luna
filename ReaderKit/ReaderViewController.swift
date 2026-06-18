@@ -54,6 +54,9 @@ final class ReaderViewController: UIViewController {
     /// (a catch-up card) rasterizes itself while rotating during a swipe, so the
     /// glass renders once at identity scale and never balloons under the transform.
     private let inlineControlsHeader: Bool
+    /// Optional line shown ABOVE the controls inside the single inline glass header
+    /// (the catch-up card's date/sender) so the card needs no separate header strip.
+    private let inlineHeaderSubtitle: String?
     private let inlineHeader = UIVisualEffectView(effect: GlassStyle.barEffect())
 
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
@@ -65,6 +68,7 @@ final class ReaderViewController: UIViewController {
          persistsModePreference: Bool = true,
          marksOpenedOnLoad: Bool = true,
          inlineControlsHeader: Bool = false,
+         inlineHeaderSubtitle: String? = nil,
          onModeChange: ((ReadingListItem.ReaderMode) -> Void)? = nil) {
         self.item = item
         self.content = content
@@ -73,6 +77,7 @@ final class ReaderViewController: UIViewController {
         self.persistsModePreference = persistsModePreference
         self.marksOpenedOnLoad = marksOpenedOnLoad
         self.inlineControlsHeader = inlineControlsHeader
+        self.inlineHeaderSubtitle = inlineHeaderSubtitle
         self.onModeChange = onModeChange
         // First time on this article, fall back to the global last-used mode.
         self.mode = forceMode ?? item.lastReaderMode ?? ReaderSettings.lastReaderMode
@@ -111,16 +116,39 @@ final class ReaderViewController: UIViewController {
             audioButton.translatesAutoresizingMaskIntoConstraints = false
             inlineHeader.contentView.addSubview(modeControl)
             inlineHeader.contentView.addSubview(audioButton)
-            NSLayoutConstraint.activate([
+            var headerConstraints = [
                 inlineHeader.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
                 inlineHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                 inlineHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                inlineHeader.heightAnchor.constraint(equalToConstant: 52),
                 modeControl.centerXAnchor.constraint(equalTo: inlineHeader.centerXAnchor),
-                modeControl.centerYAnchor.constraint(equalTo: inlineHeader.centerYAnchor),
                 audioButton.trailingAnchor.constraint(equalTo: inlineHeader.trailingAnchor, constant: -12),
-                audioButton.centerYAnchor.constraint(equalTo: inlineHeader.centerYAnchor),
-            ])
+                audioButton.centerYAnchor.constraint(equalTo: modeControl.centerYAnchor),
+            ]
+            if let subtitle = inlineHeaderSubtitle {
+                // One continuous glass header: the date/sender on top, controls below
+                // — no separate strip, no divider seam.
+                let subtitleLabel = UILabel()
+                subtitleLabel.text = subtitle
+                subtitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+                subtitleLabel.textColor = .secondaryLabel
+                subtitleLabel.textAlignment = .center
+                subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+                inlineHeader.contentView.addSubview(subtitleLabel)
+                headerConstraints += [
+                    inlineHeader.heightAnchor.constraint(equalToConstant: 80),
+                    // Inset from the corners so it clears the card's Bump/Read pills.
+                    subtitleLabel.leadingAnchor.constraint(equalTo: inlineHeader.leadingAnchor, constant: 96),
+                    subtitleLabel.trailingAnchor.constraint(equalTo: inlineHeader.trailingAnchor, constant: -96),
+                    subtitleLabel.topAnchor.constraint(equalTo: inlineHeader.topAnchor, constant: 14),
+                    modeControl.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 8),
+                ]
+            } else {
+                headerConstraints += [
+                    inlineHeader.heightAnchor.constraint(equalToConstant: 52),
+                    modeControl.centerYAnchor.constraint(equalTo: inlineHeader.centerYAnchor),
+                ]
+            }
+            NSLayoutConstraint.activate(headerConstraints)
             contentTop = inlineHeader.bottomAnchor
         } else {
             // Compact header: the mode switcher tucks into the nav bar between the

@@ -143,6 +143,9 @@ final class ReadingListViewController: UITableViewController {
     private let catchUpButton = UIButton(type: .system)
     private let catchUpBadge = UIView()
     private var catchUpPinnedToNavBar = false
+    /// The tallest the nav bar has been seen (large title expanded) — the baseline the
+    /// catch-up button's scroll fade measures collapse against.
+    private var expandedNavBarHeight: CGFloat = 0
 
     /// Non-empty groups in display order; rebuilt on every `reload`.
     private var groups: [(section: Section, items: [ReadingListItem])] = []
@@ -461,13 +464,18 @@ final class ReadingListViewController: UITableViewController {
         updateCatchUpButtonFade()
     }
 
-    /// Fades the catch-up button out as the list scrolls up, tied DIRECTLY to the
-    /// scroll offset (not an animation). It rises toward the +/friends buttons as the
-    /// large-title bar collapses, so it must be fully gone before they would collide.
+    /// Fades the catch-up button out as the large-title bar collapses on scroll-up,
+    /// tied DIRECTLY to how far the bar has shrunk (not an animation). The bar's own
+    /// height is the right signal: during the large-title collapse the scroll view's
+    /// `adjustedContentInset.top` shrinks in lock-step with `contentOffset`, so
+    /// `contentOffset + inset` stays ~0 and never reflects the collapse. Fade fully out
+    /// within the first ~11pt of collapse so the button is gone before it rises into
+    /// the +/friends buttons.
     private func updateCatchUpButtonFade() {
-        let scrolledPastTop = tableView.contentOffset.y + tableView.adjustedContentInset.top
-        let fadeDistance: CGFloat = 28
-        catchUpButton.alpha = max(0, min(1, 1 - scrolledPastTop / fadeDistance))
+        guard let navBar = navigationController?.navigationBar else { return }
+        expandedNavBarHeight = max(expandedNavBarHeight, navBar.frame.height)
+        let collapsed = expandedNavBarHeight - navBar.frame.height
+        catchUpButton.alpha = max(0, min(1, 1 - collapsed / 11))
     }
 
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {

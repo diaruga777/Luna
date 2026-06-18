@@ -144,8 +144,12 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         guard MediaDownloadablePlatform.supports(articleURLString) else { return [] }
 
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
-        previewImageView.contentMode = .scaleAspectFit
+        // Fill the fixed-height well (cropping) rather than aspect-fit — a tall
+        // poster aspect-fit into this wide box renders as a thin centered strip with
+        // big blank margins, which reads as "no preview".
+        previewImageView.contentMode = .scaleAspectFill
         previewImageView.clipsToBounds = true
+        previewImageView.backgroundColor = .secondarySystemBackground
         previewImageView.layer.cornerRadius = 12
         previewImageView.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(previewImageView)

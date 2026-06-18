@@ -192,39 +192,45 @@ final class CatchUpViewController: UIViewController {
     }
 
     private func populate(_ card: CatchUpCardView, with item: ReadingListItem) {
-        let header = CatchUpCardHeader(item: item)
-        header.translatesAutoresizingMaskIntoConstraints = false
-        card.contentContainer.addSubview(header)
-        NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: card.contentContainer.topAnchor),
-            header.leadingAnchor.constraint(equalTo: card.contentContainer.leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: card.contentContainer.trailingAnchor),
-        ])
-
         let body: UIView
+        // The body's top: an article reader folds the date INTO its single glass
+        // header (no separate strip → no divider seam); a media card gets the
+        // standalone date strip above it.
+        let bodyTop: NSLayoutYAxisAnchor
         if ReadingListViewController.rendersAsReader(item), item.state == .ready,
            let content = store.content(for: item) {
             // Embed the reader DIRECTLY (no UINavigationController) with an inline
-            // liquid-glass header. The card rasterizes itself while rotating, so the
-            // glass header + audio button render at identity scale and never balloon.
+            // liquid-glass header carrying the card's date. The card rasterizes itself
+            // while rotating, so the glass header renders at identity scale (no balloon).
             let reader = ReaderViewController(
                 item: item, content: content, forceMode: .scroll,
                 shareProvider: nil, gazeTrackerFactory: nil,
                 persistsModePreference: false, marksOpenedOnLoad: false,
-                inlineControlsHeader: true)
+                inlineControlsHeader: true,
+                inlineHeaderSubtitle: CatchUpCardHeader.text(for: item))
             addChild(reader)
             body = reader.view
             currentReaderChild = reader
+            bodyTop = card.contentContainer.topAnchor
             defer { reader.didMove(toParent: self) }
         } else {
+            let header = CatchUpCardHeader(item: item)
+            header.translatesAutoresizingMaskIntoConstraints = false
+            card.contentContainer.addSubview(header)
+            NSLayoutConstraint.activate([
+                header.topAnchor.constraint(equalTo: card.contentContainer.topAnchor),
+                header.leadingAnchor.constraint(equalTo: card.contentContainer.leadingAnchor),
+                header.trailingAnchor.constraint(equalTo: card.contentContainer.trailingAnchor),
+            ])
             body = CatchUpMediaCardBody(item: item, store: store) { [weak self] in
                 self?.openMediaItem(item)
             }
+            bodyTop = header.bottomAnchor
         }
         body.translatesAutoresizingMaskIntoConstraints = false
         card.contentContainer.addSubview(body)
         NSLayoutConstraint.activate([
-            body.topAnchor.constraint(equalTo: header.bottomAnchor),
+            body.topAnchor.constraint(equalTo: bodyTop),
             body.leadingAnchor.constraint(equalTo: card.contentContainer.leadingAnchor),
             body.trailingAnchor.constraint(equalTo: card.contentContainer.trailingAnchor),
             body.bottomAnchor.constraint(equalTo: card.contentContainer.bottomAnchor),

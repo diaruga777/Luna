@@ -491,6 +491,25 @@ final class ReadingListViewController: UITableViewController {
         updateCatchUpButtonFade()
     }
 
+    // When scrolling comes to REST, settle the fade: if we're back at the top the
+    // large-title bar has sprung fully open, so the button must read alpha 1 — the
+    // last in-flight `scrollViewDidScroll` can fire before that spring finishes and
+    // leave it < 1 with no further event to correct it.
+    override func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { settleCatchUpButtonFade() }
+    override func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) { settleCatchUpButtonFade() }
+    override func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate { settleCatchUpButtonFade() }
+    }
+
+    private func settleCatchUpButtonFade() {
+        // At rest at (or above) the top the bar is fully expanded → always alpha 1.
+        if tableView.contentOffset.y <= -tableView.adjustedContentInset.top + 1 {
+            catchUpButton.alpha = 1
+        } else {
+            updateCatchUpButtonFade()
+        }
+    }
+
     @objc private func catchUpTapped() {
         let catchUp = CatchUpViewController(unread: catchUpQueue(), router: self)
         present(catchUp, animated: true)
@@ -498,52 +517,24 @@ final class ReadingListViewController: UITableViewController {
 
     // MARK: - Edit mode
 
-    /// The normal (non-editing) nav bar: a settings+friends pill (left); add +
-    /// search (right, search where friends used to be).
+    /// The normal (non-editing) nav bar: settings + friends (left); add + search
+    /// (right). Plain bar items so the system styles both groups identically — a
+    /// glass capsule on iOS 26+, plain icons pre-26 — instead of a custom tinted pill.
     private func setDefaultNavItems() {
-        navigationItem.leftBarButtonItem = makeLeftPill()
+        navigationItem.leftBarButtonItems = [
+            UIBarButtonItem(
+                image: UIImage(systemName: "gearshape"), style: .plain,
+                target: self, action: #selector(settingsTapped)),
+            UIBarButtonItem(
+                image: UIImage(systemName: "person.2"), style: .plain,
+                target: self, action: #selector(friendsTapped)),
+        ]
         navigationItem.rightBarButtonItems = [
             UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
             UIBarButtonItem(
                 image: UIImage(systemName: "magnifyingglass"), style: .plain,
                 target: self, action: #selector(searchTapped)),
         ]
-    }
-
-    /// A capsule holding the settings and friends icons side by side, used as the
-    /// top-left bar item.
-    private func makeLeftPill() -> UIBarButtonItem {
-        let settings = UIButton(type: .system)
-        settings.setImage(UIImage(systemName: "gearshape"), for: .normal)
-        settings.accessibilityLabel = "Settings"
-        settings.addAction(UIAction { [weak self] _ in self?.settingsTapped() }, for: .touchUpInside)
-        let friends = UIButton(type: .system)
-        friends.setImage(UIImage(systemName: "person.2"), for: .normal)
-        friends.accessibilityLabel = "Friends"
-        friends.addAction(UIAction { [weak self] _ in self?.friendsTapped() }, for: .touchUpInside)
-        for button in [settings, friends] { button.tintColor = .label }
-
-        let stack = UIStackView(arrangedSubviews: [settings, friends])
-        stack.axis = .horizontal
-        stack.spacing = 18
-        stack.alignment = .center
-        stack.isLayoutMarginsRelativeArrangement = true
-        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        let pill = UIView()
-        pill.backgroundColor = .secondarySystemFill
-        pill.layer.cornerRadius = 17
-        pill.layer.cornerCurve = .continuous
-        pill.addSubview(stack)
-        NSLayoutConstraint.activate([
-            pill.heightAnchor.constraint(equalToConstant: 34),
-            stack.topAnchor.constraint(equalTo: pill.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: pill.bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: pill.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: pill.trailingAnchor),
-        ])
-        return UIBarButtonItem(customView: pill)
     }
 
     /// Opens search IN PLACE over the reading list: a child VC cross-faded in (no
@@ -574,9 +565,10 @@ final class ReadingListViewController: UITableViewController {
         ])
         search.didMove(toParent: nav)
         searchController = search
-        UIView.animate(withDuration: 0.28, animations: { search.view.alpha = 1 }) { _ in
-            search.focusSearchField()
-        }
+        // Focus immediately (not in the fade completion) so the keyboard rises in
+        // parallel with the cross-fade rather than after it.
+        search.focusSearchField()
+        UIView.animate(withDuration: 0.22) { search.view.alpha = 1 }
     }
 
     /// Fades the in-place search overlay out, then removes it.

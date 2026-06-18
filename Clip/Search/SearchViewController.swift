@@ -37,9 +37,11 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
     private let engine: ReadingListSearching
     private weak var presenter: ReadingListItemPresenting?
 
-    private let tableView = UITableView(frame: .zero, style: .plain)
+    /// Inset-grouped to match the reading list's cell insets and card styling.
+    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let searchField = UITextField()
     private let exitButton = UIButton(type: .system)
+    private static let fieldHeight: CGFloat = 44
 
     private var results: [ReadingListItem] = []
     /// Runs semantic embeds one at a time, off-main (the NL model isn't reentrant).
@@ -82,25 +84,35 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
     }
 
     private func setUpViews() {
+        // Match the inset-grouped reading list's background so cells look identical.
+        view.backgroundColor = .systemGroupedBackground
+
         tableView.dataSource = self
         tableView.delegate = self
         tableView.register(ReadingListItemCell.self, forCellReuseIdentifier: ReadingListItemCell.reuseID)
         tableView.keyboardDismissMode = .interactive
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 92
+        tableView.backgroundColor = .clear
+        // We pin the top explicitly to the safe area, so don't let the table add a
+        // second adjustment (which pushed the first row under the status bar).
+        tableView.contentInsetAdjustmentBehavior = .never
         tableView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(tableView)
 
-        // Bottom search bar: [X] [ search field (with inline clear) ].
-        exitButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+        // X exit button — a liquid-glass circle.
+        exitButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "xmark", padding: 11)
         exitButton.tintColor = .label
         exitButton.accessibilityLabel = "Exit search"
         exitButton.addAction(UIAction { [weak self] _ in self?.exitSearch() }, for: .touchUpInside)
         exitButton.setContentHuggingPriority(.required, for: .horizontal)
+        exitButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         exitButton.translatesAutoresizingMaskIntoConstraints = false
 
-        searchField.placeholder = "Search your reading list"
-        searchField.borderStyle = .roundedRect
+        // Search field inside a liquid-glass pill (fully rounded, not a squircle).
+        searchField.placeholder = "Search everything"
+        searchField.borderStyle = .none
+        searchField.backgroundColor = .clear
         searchField.clearButtonMode = .whileEditing   // the inline x to clear the text
         searchField.autocorrectionType = .no
         searchField.autocapitalizationType = .none
@@ -110,7 +122,24 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
         searchField.delegate = self
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
-        let bar = UIStackView(arrangedSubviews: [exitButton, searchField])
+        let fieldPill = UIVisualEffectView(effect: GlassStyle.barEffect())
+        fieldPill.translatesAutoresizingMaskIntoConstraints = false
+        if #available(iOS 26.0, *) {
+            fieldPill.cornerConfiguration = .capsule()
+        } else {
+            fieldPill.layer.cornerRadius = Self.fieldHeight / 2   // true pill on the fallback
+            fieldPill.layer.cornerCurve = .circular
+            fieldPill.clipsToBounds = true
+        }
+        fieldPill.contentView.addSubview(searchField)
+        NSLayoutConstraint.activate([
+            searchField.leadingAnchor.constraint(equalTo: fieldPill.contentView.leadingAnchor, constant: 16),
+            searchField.trailingAnchor.constraint(equalTo: fieldPill.contentView.trailingAnchor, constant: -12),
+            searchField.topAnchor.constraint(equalTo: fieldPill.contentView.topAnchor),
+            searchField.bottomAnchor.constraint(equalTo: fieldPill.contentView.bottomAnchor),
+        ])
+
+        let bar = UIStackView(arrangedSubviews: [exitButton, fieldPill])
         bar.axis = .horizontal
         bar.spacing = 12
         bar.alignment = .center
@@ -118,15 +147,21 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
         view.addSubview(bar)
 
         NSLayoutConstraint.activate([
-            bar.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            // Sits just above the keyboard (collapses to the safe area when hidden).
-            bar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8),
+            fieldPill.heightAnchor.constraint(equalToConstant: Self.fieldHeight),
+            exitButton.widthAnchor.constraint(equalToConstant: Self.fieldHeight),
+            exitButton.heightAnchor.constraint(equalToConstant: Self.fieldHeight),
 
+            // Offset the X a bit more from the left edge.
+            bar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 22),
+            bar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            // Sits just above the keyboard (collapses to the safe area when hidden).
+            bar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -10),
+
+            // Results start BELOW the safe area (clear of the status bar).
             tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -8),
+            tableView.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -10),
         ])
     }
 

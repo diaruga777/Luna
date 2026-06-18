@@ -49,11 +49,12 @@ final class ReaderViewController: UIViewController {
 
     private let modeControl = UISegmentedControl()
     private let audioButton = UIButton(type: .system)
-    /// When true, the mode switcher + audio toggle render in a PLAIN inline header
-    /// (no UINavigationController), so the iOS 26 glass nav bar doesn't balloon when
-    /// the catch-up card is rotated during a swipe.
+    /// When true, the mode switcher + audio toggle render in an inline liquid-glass
+    /// header embedded DIRECTLY in the view (no UINavigationController). The host
+    /// (a catch-up card) rasterizes itself while rotating during a swipe, so the
+    /// glass renders once at identity scale and never balloons under the transform.
     private let inlineControlsHeader: Bool
-    private let inlineHeader = UIView()
+    private let inlineHeader = UIVisualEffectView(effect: GlassStyle.barEffect())
 
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
 
@@ -99,21 +100,25 @@ final class ReaderViewController: UIViewController {
 
         let contentTop: NSLayoutYAxisAnchor
         if inlineControlsHeader {
-            // Plain header — NO nav bar, so no glass to balloon under the card rotation.
+            // Inline liquid-glass header. The card host rasterizes during its rotation
+            // so this glass never balloons under the transform.
             inlineHeader.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(inlineHeader)
+            audioButton.configuration = GlassStyle.circularButtonConfiguration(
+                symbol: audioOn ? "speaker.wave.2.fill" : "speaker.slash", padding: 8)
+            audioButton.tintColor = GlassStyle.readingAccent
             modeControl.translatesAutoresizingMaskIntoConstraints = false
             audioButton.translatesAutoresizingMaskIntoConstraints = false
-            inlineHeader.addSubview(modeControl)
-            inlineHeader.addSubview(audioButton)
+            inlineHeader.contentView.addSubview(modeControl)
+            inlineHeader.contentView.addSubview(audioButton)
             NSLayoutConstraint.activate([
                 inlineHeader.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
                 inlineHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                 inlineHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                inlineHeader.heightAnchor.constraint(equalToConstant: 48),
+                inlineHeader.heightAnchor.constraint(equalToConstant: 52),
                 modeControl.centerXAnchor.constraint(equalTo: inlineHeader.centerXAnchor),
                 modeControl.centerYAnchor.constraint(equalTo: inlineHeader.centerYAnchor),
-                audioButton.trailingAnchor.constraint(equalTo: inlineHeader.trailingAnchor, constant: -16),
+                audioButton.trailingAnchor.constraint(equalTo: inlineHeader.trailingAnchor, constant: -12),
                 audioButton.centerYAnchor.constraint(equalTo: inlineHeader.centerYAnchor),
             ])
             contentTop = inlineHeader.bottomAnchor
@@ -226,8 +231,14 @@ final class ReaderViewController: UIViewController {
     }
 
     private func updateAudioButton() {
-        audioButton.setImage(
-            UIImage(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash"), for: .normal)
+        let symbol = UIImage(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash")
+        // The inline header uses a glass `Configuration` button; the nav-bar header a
+        // plain system button. Update whichever this instance has.
+        if audioButton.configuration != nil {
+            audioButton.configuration?.image = symbol
+        } else {
+            audioButton.setImage(symbol, for: .normal)
+        }
         audioButton.accessibilityLabel = audioOn ? "Turn off read aloud" : "Read aloud"
     }
 

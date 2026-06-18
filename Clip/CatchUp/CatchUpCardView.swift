@@ -159,7 +159,19 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         }
     }
 
+    /// Liquid-glass effects (the card backdrop, the reader's glass header + audio
+    /// button) re-render at the wrong scale under a rotation transform — they
+    /// "balloon". Rasterizing the card's layer while it's rotated bakes the glass into
+    /// a bitmap at identity scale, so the rotation just transforms that bitmap. Cleared
+    /// the moment the card returns to rest, restoring live glass.
+    private func setRasterizedDuringRotation(_ on: Bool) {
+        guard layer.shouldRasterize != on else { return }
+        layer.rasterizationScale = window?.screen.scale ?? UIScreen.main.scale
+        layer.shouldRasterize = on
+    }
+
     private func apply(translationX tx: CGFloat) {
+        setRasterizedDuringRotation(tx != 0)
         let width = max(superview?.bounds.width ?? bounds.width, 1)
         let progress = min(abs(tx) / width, 1)
         transform = CGAffineTransform(translationX: tx, y: 0)
@@ -178,12 +190,17 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
             self.tintOverlay.alpha = 0
             self.readLabel.alpha = 0
             self.bumpLabel.alpha = 0
+        } completion: { _ in
+            // Back at rest (identity) — drop the raster cache so glass goes live again.
+            self.setRasterizedDuringRotation(false)
         }
     }
 
     /// Flies the card off in the action's direction, then reports it. Used by both
     /// the drag release and the bottom buttons.
     func performAction(_ action: Action) {
+        // Stays rasterized through the fly-off (rotated the whole way, then removed).
+        setRasterizedDuringRotation(true)
         let width = superview?.bounds.width ?? UIScreen.main.bounds.width
         let offX: CGFloat = action == .bump ? -width * 1.5 : width * 1.5
         UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseIn) {

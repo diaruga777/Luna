@@ -204,8 +204,9 @@ final class CatchUpViewController: UIViewController {
         let body: UIView
         if ReadingListViewController.rendersAsReader(item), item.state == .ready,
            let content = store.content(for: item) {
-            // Embed the reader DIRECTLY (no UINavigationController) with inline
-            // controls, so there's no glass nav bar to balloon when the card rotates.
+            // Embed the reader DIRECTLY (no UINavigationController) with an inline
+            // liquid-glass header. The card rasterizes itself while rotating, so the
+            // glass header + audio button render at identity scale and never balloon.
             let reader = ReaderViewController(
                 item: item, content: content, forceMode: .scroll,
                 shareProvider: nil, gazeTrackerFactory: nil,

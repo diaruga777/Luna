@@ -37,8 +37,10 @@ for the pills.
   - Each card: a `CatchUpCardHeader` (bump date or save date, + "from <friend>"),
     then either an embedded **`ReaderViewController(inlineControlsHeader: true)`** —
     added DIRECTLY (no `UINavigationController`) so the mode switcher + audio render in
-    a PLAIN header, not an iOS 26 glass nav bar that would balloon under the card's
-    rotation; `forceMode: .scroll`, `persistsModePreference: false`,
+    an inline **liquid-glass** header. iOS 26 glass balloons under a rotation transform,
+    so `CatchUpCardView` sets `layer.shouldRasterize` while rotating (`apply`/`performAction`,
+    cleared on `springBack` completion) — the glass bakes to a bitmap at identity scale
+    and the rotation just transforms that bitmap; `forceMode: .scroll`, `persistsModePreference: false`,
     `marksOpenedOnLoad: false`, no share/gaze — or a **`CatchUpMediaCardBody`**
     (thumbnail above text + "Tap to open") for media/link items. Media tap →
     `ReadingListViewController.openItem(_:presentingFrom:)` then mark read.

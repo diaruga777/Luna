@@ -26,6 +26,7 @@ final class ReaderShareSheet: UIViewController {
     /// suggestion name is present — pure, so the ordering/visibility is testable.
     static func rows(
         suggestedFriendName: String?,
+        includeEbook: Bool,
         onSendToSuggested: @escaping () -> Void,
         onPickFriend: @escaping () -> Void,
         onShareLink: @escaping () -> Void,
@@ -43,9 +44,12 @@ final class ReaderShareSheet: UIViewController {
         rows.append(Row(
             title: "Share Link…", systemImage: "link",
             isPrimary: false, action: onShareLink))
-        rows.append(Row(
-            title: "Share eBook…", systemImage: "book",
-            isPrimary: false, action: onShareEbook))
+        // eBook export only applies to readable articles, not media / platform posts.
+        if includeEbook {
+            rows.append(Row(
+                title: "Share eBook…", systemImage: "book",
+                isPrimary: false, action: onShareEbook))
+        }
         return rows
     }
 

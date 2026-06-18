@@ -19,8 +19,9 @@ The queue = `store.items()` filtered to unread (`readState != .read`) AND render
 
 **Style**: the app's liquid-glass aesthetic — `.systemGroupedBackground` screen;
 each card is a `GlassStyle.barEffect()` backdrop with rounded corners + hairline
-border; the Bump / Mark Read drag labels are liquid-glass capsule pills (icon +
-mixed-case text) hovering in the card's top corners. The card header (date/sender)
+border; the Keep / Bump / Archive drag labels are liquid-glass capsule pills (icon +
+mixed-case text) hovering in the card's top corners, with distinct tints (Keep gray,
+Bump indigo accent, Archive green). The card header (date/sender)
 is centered and media/link bodies are vertically centered, leaving the corners clear
 for the pills.
 
@@ -31,7 +32,11 @@ for the pills.
   - Top bar: left (chevron on cards / `xmark` on end screens → commit + close),
     center title ("N left"), right (share current card / **Undo** on done / none on
     delete prompt).
-  - Bottom buttons: Bump + Mark Read (cards) / Keep + Delete All|Selected (delete) /
+  - Card gestures (`CatchUpCardView`, action `.keep/.bump/.archive`): swipe RIGHT =
+    **Archive** (mark read); swipe LEFT = **Keep** (no-op, advance); swipe LEFT then UP
+    = **Bump**. Left-then-up is used for Bump so a plain vertical drag still scrolls the
+    embedded reader (`gestureRecognizerShouldBegin` only claims horizontal-start drags).
+  - Bottom buttons: Keep + Archive (cards) / Keep + Delete All|Selected (delete) /
     full-width Done (done). `styleButton` = filled accent for the primary action (red
     for delete), tinted-accent glass for the secondary.
   - Each card is either an embedded **`ReaderViewController(inlineControlsHeader: true,
@@ -47,8 +52,9 @@ for the pills.
     `persistsModePreference: false`, `marksOpenedOnLoad: false`, no share/gaze). The
     media card's body is tapped to open → `ReadingListViewController.openItem(_:presentingFrom:)`
     then mark read.
-  - Actions: Bump → `store.bump(id)` (stamps `bumpDate`, moves to list top); Mark Read
-    → `store.markReadState(.read, …)`; advance; at the end, the delete/done screens.
+  - Actions: Keep → no-op; Bump → `store.bump(id)` (stamps `bumpDate`, moves to list
+    top); Archive → `store.markReadState(.read, …)`; advance; at the end, the delete/done
+    screens (the delete screen offers to clear the items archived this session).
   - **Delete screen** = `CatchUpDeleteReadView`: a prompt label on top + a multi-select
     table of the read items (radios, all selected by default; tap toggles, no row
     actions). The prompt/button flip "Delete All"↔"Delete Selected" via

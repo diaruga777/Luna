@@ -19,7 +19,8 @@ snapinsta, …) with keyless, client-side extraction.
    `og:image` including the video thumbnail). The **"Download media to photo
    roll"** button stays invisible-but-space-holding (`alpha`, never `isHidden`) until that
    fetch confirms media exists; if there's no media the spinner just hides. The preview
-   image uses `.scaleAspectFit`. Critically the
+   image uses `.scaleAspectFit`; if media exists but its still can't be loaded, a grey
+   box labeled "Unable to load still image" fills the well instead of blank space. Critically the
    preview/button reserve constant space so neither the elements above nor the friend list
    below shift with the media state. Tapping the button swaps it for a `UIProgressView`
    + status label; on success it becomes a green checkmark + "Saved to Photos" (the user

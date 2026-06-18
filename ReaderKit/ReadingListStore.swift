@@ -369,6 +369,17 @@ final class ReadingListStore {
         save(all)
     }
 
+    /// Forces an item back to unread (the Read-section "Mark Unread" action) — a
+    /// deliberate downgrade that `markReadState`'s forward-only guard disallows.
+    func markUnread(_ itemID: UUID) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        guard let index = all.firstIndex(where: { $0.id == itemID }) else { return }
+        all[index].readState = .unopened
+        save(all)
+    }
+
     // MARK: - Catch-up
 
     /// Stamps a new bump date on an item and moves it to the top of the list (it

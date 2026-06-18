@@ -1104,6 +1104,15 @@ final class ReadingListViewController: UITableViewController {
                 children.append(shareEbook)
             }
         }
+        // Read items can be put back to unread.
+        if item.readState == .read {
+            let markUnread = UIAction(
+                title: "Mark Unread", image: UIImage(systemName: "circle")
+            ) { [weak self] _ in
+                self?.store.markUnread(item.id)
+            }
+            children.append(markUnread)
+        }
         children.append(delete)
         // "Edit List" enters multi-select / drag-reorder edit mode (bottom item).
         let editList = UIAction(

@@ -44,6 +44,9 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
     private static let fieldHeight: CGFloat = 44
 
     private var results: [ReadingListItem] = []
+    /// Caps the search bar above the bottom safe area; constant set from the window
+    /// safe area in `viewDidLayoutSubviews`.
+    private var barBottomCap: NSLayoutConstraint?
     /// Runs semantic embeds one at a time, off-main (the NL model isn't reentrant).
     private let semanticQueue = DispatchQueue(label: "com.hpiddy.clip.search.semantic", qos: .userInitiated)
     /// Bumps on every keystroke so a late semantic result for an old query is dropped.
@@ -146,23 +149,50 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
         bar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bar)
 
+        // Rise above the keyboard when it's up (the guide tracks the real keyboard
+        // frame), but never sit below the bottom safe area when it's down.
+        let aboveKeyboard = bar.bottomAnchor.constraint(
+            equalTo: view.keyboardLayoutGuide.topAnchor, constant: -10)
+        aboveKeyboard.priority = .defaultHigh
+        // Cap above the bottom safe area. The hosted view's own safe-area insets are
+        // unreliable (the nav controller doesn't propagate them to a manually-added
+        // subview once its bar is hidden), so the constant is set from the WINDOW's
+        // safe area in viewDidLayoutSubviews.
+        let bottomCap = bar.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -12)
+        barBottomCap = bottomCap
+
         NSLayoutConstraint.activate([
             fieldPill.heightAnchor.constraint(equalToConstant: Self.fieldHeight),
             exitButton.widthAnchor.constraint(equalToConstant: Self.fieldHeight),
             exitButton.heightAnchor.constraint(equalToConstant: Self.fieldHeight),
 
-            // Offset the X a bit more from the left edge.
-            bar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 22),
-            bar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            // Sits just above the keyboard (collapses to the safe area when hidden).
-            bar.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -10),
+            // Offset the X a bit more from the left edge (fixed, since the hosted
+            // view's margins/safe-area are unreliable).
+            bar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+            aboveKeyboard,
+            bottomCap,
 
-            // Results start BELOW the safe area (clear of the status bar).
-            tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            // Full-bleed table; its TOP CONTENT INSET (status bar + 8) is applied
+            // from the window safe area in viewDidLayoutSubviews so the first row
+            // clears the status bar regardless of the hosted view's broken insets.
+            tableView.topAnchor.constraint(equalTo: view.topAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -10),
         ])
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Use the WINDOW's safe area (authoritative) rather than this hosted view's.
+        let safe = view.window?.safeAreaInsets ?? view.safeAreaInsets
+        let topInset = safe.top + 8
+        if abs(tableView.contentInset.top - topInset) > 0.5 {
+            tableView.contentInset.top = topInset
+            tableView.verticalScrollIndicatorInsets.top = topInset
+        }
+        barBottomCap?.constant = -(safe.bottom + 12)
     }
 
     private func exitSearch() {

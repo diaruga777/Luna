@@ -565,23 +565,33 @@ final class ReadingListViewController: UITableViewController {
         ])
         search.didMove(toParent: nav)
         searchController = search
+        nav.view.bringSubviewToFront(search.view)
         // Focus immediately (not in the fade completion) so the keyboard rises in
         // parallel with the cross-fade rather than after it.
         search.focusSearchField()
-        UIView.animate(withDuration: 0.22) { search.view.alpha = 1 }
+        UIView.animate(withDuration: 0.22, animations: { search.view.alpha = 1 }) { _ in
+            // Now that the opaque overlay covers everything, hide the list's nav bar
+            // so its large-title header can't sit on top of the search results.
+            nav.setNavigationBarHidden(true, animated: false)
+        }
     }
 
-    /// Fades the in-place search overlay out, then removes it.
+    /// Fades the in-place search overlay out, then removes it. Restores the nav bar
+    /// first (kept under the still-opaque, fronted overlay) so the list reveals with
+    /// its header intact.
     private func dismissSearch() {
         guard let search = searchController else { return }
+        navigationController?.setNavigationBarHidden(false, animated: false)
+        navigationController?.view.bringSubviewToFront(search.view)
         UIView.animate(withDuration: 0.28, animations: { search.view.alpha = 0 }) { _ in
             self.removeSearch()
         }
     }
 
-    /// Tears the search child down immediately (no fade) — used when opening a
-    /// result so the pushed reader animates over the bare list.
+    /// Tears the search child down immediately (no fade) and restores the nav bar —
+    /// used when opening a result so the pushed reader animates over the bare list.
     private func removeSearch() {
+        navigationController?.setNavigationBarHidden(false, animated: false)
         guard let search = searchController else { return }
         search.willMove(toParent: nil)
         search.view.removeFromSuperview()

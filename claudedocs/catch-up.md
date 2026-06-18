@@ -31,20 +31,27 @@ for the pills.
   - Top bar: left (chevron on cards / `xmark` on end screens → commit + close),
     center title ("N left"), right (share current card / **Undo** on done / none on
     delete prompt).
-  - Bottom buttons: Bump + Mark Read (cards) / Keep + Delete All (delete) / full-width
-    Done (done). `styleButton` = filled accent for the primary action (red for Delete
-    All), tinted-accent glass for the secondary.
+  - Bottom buttons: Bump + Mark Read (cards) / Keep + Delete All|Selected (delete) /
+    full-width Done (done). `styleButton` = filled accent for the primary action (red
+    for delete), tinted-accent glass for the secondary.
   - Each card: a `CatchUpCardHeader` (bump date or save date, + "from <friend>"),
-    then either an embedded **`ReaderViewController`** (in a `UINavigationController` so
-    the mode switcher shows; `forceMode: .scroll`, `persistsModePreference: false`,
-    `marksOpenedOnLoad: false`, no share/gaze) for articles, or a **`CatchUpMediaCardBody`**
+    then either an embedded **`ReaderViewController(inlineControlsHeader: true)`** —
+    added DIRECTLY (no `UINavigationController`) so the mode switcher + audio render in
+    a PLAIN header, not an iOS 26 glass nav bar that would balloon under the card's
+    rotation; `forceMode: .scroll`, `persistsModePreference: false`,
+    `marksOpenedOnLoad: false`, no share/gaze — or a **`CatchUpMediaCardBody`**
     (thumbnail above text + "Tap to open") for media/link items. Media tap →
     `ReadingListViewController.openItem(_:presentingFrom:)` then mark read.
   - Actions: Bump → `store.bump(id)` (stamps `bumpDate`, moves to list top); Mark Read
     → `store.markReadState(.read, …)`; advance; at the end, the delete/done screens.
-  - **Undo** restores `snapshot` (the whole list captured at entry) via
-    `store.restore(_:)`. Delete-all-read is **deferred** to Done (`pendingDeleteRead`)
-    so Undo can revert it; `commitAndClose()` runs `deleteAllRead()` only if pending.
+  - **Delete screen** = `CatchUpDeleteReadView`: a prompt label on top + a multi-select
+    table of the read items (radios, all selected by default; tap toggles, no row
+    actions). The prompt/button flip "Delete All"↔"Delete Selected" via
+    `onSelectionChanged`; the SELECTED ids are deleted, **deferred** to Done
+    (`pendingDeleteIDs`) so **Undo** (which restores the entry `snapshot` via
+    `store.restore(_:)`) can revert it.
+  - Simulator-only `addSimulatorSwipeHookIfNeeded` + `CatchUpCardView.simulatorHoldSwipe`
+    hold a partial swipe so the rotated state is inspectable without a drag gesture.
 - **`CatchUpCardView.swift`** — swipeable card: a horizontal pan rotates + tints the
   card and fades the corner action label in (left = BUMP, right = READ); past 30% width
   or a fast flick it flies off and reports the action. `gestureRecognizerShouldBegin`

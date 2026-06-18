@@ -35,13 +35,19 @@ final class SemanticIndexer {
 
     // MARK: - Background indexing (main app)
 
+    /// Indexing runs regardless of the experimental sharing flag — it now also
+    /// powers semantic SEARCH over all saved content. (Only the share *suggestion*
+    /// is gated by `SemanticSharingSettings`.) A no-op when nothing needs embedding,
+    /// so it doesn't load the model unnecessarily.
     func scheduleRun() {
-        guard SemanticSharingSettings.isEnabled else { return }
         queue.async { [weak self] in self?.buildMissingVectors() }
     }
 
     private func buildMissingVectors() {
-        let needed = index.itemIDsNeedingVectors(limit: Self.embedLimit)
+        // Embed ALL saved items lacking vectors (for search), not just items shared
+        // to friends.
+        let allItemIDs = ReadingListStore.shared.items().map(\.id)
+        let needed = index.itemIDsNeedingVectors(amongAll: allItemIDs, limit: Self.embedLimit)
         let stats = index.stats()
         log("index pass: \(needed.count) item(s) to embed; \(stats.persons) friend(s), \(stats.sharedItems) shared, \(stats.indexedItems) indexed")
         guard !needed.isEmpty else { return }
@@ -117,14 +123,17 @@ final class SemanticIndexer {
 
     // MARK: - Chunking
 
-    /// Paragraph chunks for an item: title+channel, then lead content blocks.
+    /// Paragraph chunks for an item: a head built from the item's CONTENT metadata
+    /// (title, channel, media creator/title) — never the URL — then lead article
+    /// blocks. Media items (YouTube, posts, music/podcast) thus get embedded on
+    /// their real content (what they're about), so they surface in semantic search.
     private func embeddingChunks(for item: ReadingListItem) -> [String] {
         var chunks: [String] = []
-        var head = item.title ?? ""
-        if let channel = item.channelName, !channel.isEmpty {
-            head += head.isEmpty ? channel : ". \(channel)"
-        }
-        if !head.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { chunks.append(head) }
+        let headParts = [
+            item.title, item.channelName, item.mediaCreatorName, item.mediaItemTitle,
+        ].compactMap { $0 }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let head = headParts.joined(separator: ". ")
+        if !head.isEmpty { chunks.append(head) }
         if let content = ReadingListStore.shared.content(for: item) {
             for block in content.blocks where !block.text.trimmingCharacters(in: .whitespaces).isEmpty {
                 chunks.append(String(block.text.prefix(Self.maxChunkChars)))

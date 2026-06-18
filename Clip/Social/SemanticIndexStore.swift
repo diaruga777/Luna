@@ -18,7 +18,9 @@ final class SemanticIndexStore {
     static let shared = SemanticIndexStore()
 
     private static let maxItemsPerPerson = 60
-    private static let maxIndexedItems = 600
+    // Holds vectors for the whole saved library (semantic search indexes everything),
+    // so this is generous; eviction only kicks in for very large libraries.
+    private static let maxIndexedItems = 2000
 
     struct Person: Codable {
         var username: String
@@ -149,6 +151,36 @@ final class SemanticIndexStore {
             if seen.insert(key).inserted { needed.append(key) }
         }
         return needed.prefix(limit).compactMap { UUID(uuidString: $0) }
+    }
+
+    /// Of the given reading-list item ids (in order), those lacking vectors — so
+    /// the indexer can embed ALL saved content for search, not just shared items.
+    func itemIDsNeedingVectors(amongAll ids: [UUID], limit: Int) -> [UUID] {
+        let state = loadState()
+        var needed: [UUID] = []
+        for id in ids where state.itemVectors[id.uuidString] == nil {
+            needed.append(id)
+            if needed.count >= limit { break }
+        }
+        return needed
+    }
+
+    /// Items most similar to the query's chunk vectors — scored by best chunk-pair
+    /// cosine, kept at/above `threshold`, `excluded` ids removed, best first. Backs
+    /// semantic search; pure float work, no model load.
+    func nearestItems(
+        toVectors query: [[Float]], threshold: Float, excluding excluded: Set<UUID>, limit: Int
+    ) -> [(itemID: UUID, score: Float)] {
+        guard !query.isEmpty else { return [] }
+        let state = loadState()
+        var scored: [(UUID, Float)] = []
+        for (key, vectors) in state.itemVectors {
+            guard !vectors.isEmpty, let id = UUID(uuidString: key), !excluded.contains(id) else { continue }
+            let score = Self.maxChunkSimilarity(query, vectors)
+            if score >= threshold { scored.append((id, score)) }
+        }
+        scored.sort { $0.1 > $1.1 }
+        return scored.prefix(limit).map { (itemID: $0.0, score: $0.1) }
     }
 
     func setVectors(_ vectors: [[Float]], forItemID itemID: UUID) {

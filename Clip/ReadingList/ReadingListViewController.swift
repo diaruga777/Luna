@@ -496,17 +496,59 @@ final class ReadingListViewController: UITableViewController {
 
     // MARK: - Edit mode
 
-    /// The normal (non-editing) nav bar: settings (left); add + friends (right).
+    /// The normal (non-editing) nav bar: a settings+friends pill (left); add +
+    /// search (right, search where friends used to be).
     private func setDefaultNavItems() {
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "gearshape"), style: .plain,
-            target: self, action: #selector(settingsTapped))
+        navigationItem.leftBarButtonItem = makeLeftPill()
         navigationItem.rightBarButtonItems = [
             UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
             UIBarButtonItem(
-                image: UIImage(systemName: "person.2"), style: .plain,
-                target: self, action: #selector(friendsTapped)),
+                image: UIImage(systemName: "magnifyingglass"), style: .plain,
+                target: self, action: #selector(searchTapped)),
         ]
+    }
+
+    /// A capsule holding the settings and friends icons side by side, used as the
+    /// top-left bar item.
+    private func makeLeftPill() -> UIBarButtonItem {
+        let settings = UIButton(type: .system)
+        settings.setImage(UIImage(systemName: "gearshape"), for: .normal)
+        settings.accessibilityLabel = "Settings"
+        settings.addAction(UIAction { [weak self] _ in self?.settingsTapped() }, for: .touchUpInside)
+        let friends = UIButton(type: .system)
+        friends.setImage(UIImage(systemName: "person.2"), for: .normal)
+        friends.accessibilityLabel = "Friends"
+        friends.addAction(UIAction { [weak self] _ in self?.friendsTapped() }, for: .touchUpInside)
+        for button in [settings, friends] { button.tintColor = .label }
+
+        let stack = UIStackView(arrangedSubviews: [settings, friends])
+        stack.axis = .horizontal
+        stack.spacing = 18
+        stack.alignment = .center
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let pill = UIView()
+        pill.backgroundColor = .secondarySystemFill
+        pill.layer.cornerRadius = 17
+        pill.layer.cornerCurve = .continuous
+        pill.addSubview(stack)
+        NSLayoutConstraint.activate([
+            pill.heightAnchor.constraint(equalToConstant: 34),
+            stack.topAnchor.constraint(equalTo: pill.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: pill.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: pill.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: pill.trailingAnchor),
+        ])
+        return UIBarButtonItem(customView: pill)
+    }
+
+    @objc private func searchTapped() {
+        let search = SearchViewController(engine: ReadingListSearchEngine(), presenter: self)
+        let nav = UINavigationController(rootViewController: search)
+        nav.modalPresentationStyle = .fullScreen
+        present(nav, animated: true)
     }
 
     @objc private func doneEditing() { setEditing(false, animated: true) }
@@ -750,18 +792,27 @@ final class ReadingListViewController: UITableViewController {
             return cell
         }
 
-        cell.configure(
-            title: item.title ?? item.urlString,
-            titleColor: titleColor,
-            subtitle: secondaryText(for: item),
-            thumbnail: thumbnail(for: item, isPasteboard: isPasteboard),
-            showsDisclosure: item.state == .ready,
-            reuseKey: "\(item.id.uuidString)|\(item.thumbnailFileName ?? "")|\(item.state.rawValue)")
-        cell.showsReorderControl = false   // reorder is drag-anywhere in edit mode, no handle
+        configureItemCell(cell, for: item)
         if AppEnvironment.isSimulator {
             cell.setSimulatorMenu(rowMenu(for: item, at: indexPath))
         }
         return cell
+    }
+
+    /// Configures a row cell for `item` (shared with the search screen so its rows
+    /// look identical to the list's).
+    func configureItemCell(_ cell: ReadingListItemCell, for item: ReadingListItem) {
+        let titleColor: UIColor = item.state == .failed
+            ? .systemRed
+            : (item.readState == .unopened ? .label : .secondaryLabel)
+        cell.configure(
+            title: item.title ?? item.urlString,
+            titleColor: titleColor,
+            subtitle: secondaryText(for: item),
+            thumbnail: thumbnail(for: item, isPasteboard: false),
+            showsDisclosure: item.state == .ready,
+            reuseKey: "\(item.id.uuidString)|\(item.thumbnailFileName ?? "")|\(item.state.rawValue)")
+        cell.showsReorderControl = false   // reorder is drag-anywhere in edit mode, no handle
     }
 
     /// Builds the grey metadata line, with the "from <friend>" attribution in
@@ -834,17 +885,21 @@ final class ReadingListViewController: UITableViewController {
             previewPasteboardCandidate()
             return
         }
-        let item = item(at: indexPath)
-        if openItem(item, presentingFrom: self) { return }
+        open(item(at: indexPath), presenter: self)
+    }
+
+    /// Opens an item presenting from `presenter` (the reading list, or the search
+    /// screen): platform/video/media via `openItem`, a hard-paywalled article via
+    /// the archive web view, else the in-app reader pushed on `presenter`'s nav.
+    func open(_ item: ReadingListItem, presenter: UIViewController) {
+        if openItem(item, presentingFrom: presenter) { return }
         // A hard-paywalled article whose archive snapshot needs a CAPTCHA: open its
         // archive.today snapshot in a web view so the user can solve it. Once content
         // is extracted the item flips to `.ready` and the row updates itself.
         if item.state == .needsCaptcha, let url = item.url {
             let archive = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
-            archive.onOpenInBrowser = { archiveURL in
-                UIApplication.shared.open(archiveURL)
-            }
-            present(UINavigationController(rootViewController: archive), animated: true)
+            archive.onOpenInBrowser = { UIApplication.shared.open($0) }
+            presenter.present(UINavigationController(rootViewController: archive), animated: true)
             return
         }
         guard item.state == .ready, let content = store.content(for: item) else { return }
@@ -852,7 +907,7 @@ final class ReadingListViewController: UITableViewController {
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
             gazeTrackerFactory: AppGazeTracker.factory)
-        navigationController?.pushViewController(reader, animated: true)
+        presenter.navigationController?.pushViewController(reader, animated: true)
     }
 
     /// Opens a non-article item (video / platform post / music / podcast) the way
@@ -1165,6 +1220,62 @@ final class ReadingListViewController: UITableViewController {
         return UIMenu(children: children + [editList])
     }
 
+    /// The long-press menu for a SEARCH result: the same actions as the list but
+    /// always with "Bump to Top" (re-sorts the list for when the user returns) and
+    /// never "Edit List". Excludes actions that present from / draw on the reading
+    /// list itself (eBook share, media-to-Photos). `onChange` lets search refresh
+    /// after a mutation. Presents sheets from `presenter` (the search screen).
+    func searchResultMenu(
+        for item: ReadingListItem, sourceView: UIView, presenter: UIViewController,
+        onChange: @escaping () -> Void
+    ) -> UIMenu {
+        var children: [UIAction] = []
+        children.append(UIAction(
+            title: "Bump to Top", image: UIImage(systemName: "arrow.up.to.line")
+        ) { [weak self] _ in
+            self?.store.bump(item.id)
+            onChange()
+        })
+        if item.canShareToFriends {
+            children.append(UIAction(title: "Send to Friend…", image: UIImage(systemName: "person.2")) { _ in
+                SendToFriendSheet.present(
+                    from: presenter, sourceView: sourceView,
+                    urlString: item.urlString, title: item.title)
+            })
+        }
+        if item.isShareable {
+            children.append(UIAction(title: "Share Link…", image: UIImage(systemName: "link")) { _ in
+                SendToFriendSheet.shareLink(urlString: item.urlString, from: presenter, sourceView: sourceView)
+            })
+        }
+        if !item.isPlatformItem {
+            if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) {
+                children.append(UIAction(title: "Send to Kindle", image: UIImage(systemName: "paperplane")) {
+                    [weak self] _ in self?.sendToEreader(item, destinationID: ArticleDestinationID.kindle)
+                })
+            }
+            if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.boox) {
+                children.append(UIAction(title: "Send to Boox", image: UIImage(systemName: "books.vertical")) {
+                    [weak self] _ in self?.sendToEreader(item, destinationID: ArticleDestinationID.boox)
+                })
+            }
+        }
+        if item.readState == .read {
+            children.append(UIAction(title: "Unarchive", image: UIImage(systemName: "tray.and.arrow.up")) {
+                [weak self] _ in
+                self?.store.markUnread(item.id)
+                onChange()
+            })
+        }
+        children.append(UIAction(
+            title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
+        ) { [weak self] _ in
+            self?.store.delete(item)
+            onChange()
+        })
+        return UIMenu(children: children)
+    }
+
     /// Downloads the first media item of an X/Instagram/TikTok post to the photo
     /// library. Progress + result show in a non-blocking bottom status pill (the
     /// list stays interactive and the pill never appears over the reader), and the
@@ -1237,6 +1348,10 @@ final class ReadingListViewController: UITableViewController {
 
 /// In edit mode, a long-press on any Reading row starts a drag (no handle) and the
 /// drop reorders within the Reading section, persisting the new order.
+/// Reuse of the list's rendering, open behavior, and menu by the search screen.
+/// (`configureItemCell`, `open`, and `searchResultMenu` are defined on the class.)
+extension ReadingListViewController: ReadingListItemPresenting {}
+
 extension ReadingListViewController: UITableViewDragDelegate, UITableViewDropDelegate {
 
     func tableView(

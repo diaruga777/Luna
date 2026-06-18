@@ -15,7 +15,9 @@ snapinsta, …) with keyless, client-side extraction.
    `SocialMediaResolver` the download uses) and loads a downsampled image — the resolved
    asset for an image, the `og:image` poster for a video. The **"Download media to photo
    roll"** button stays invisible-but-space-holding (`alpha`, never `isHidden`) until that
-   fetch confirms media exists; if there's no media the spinner just hides. Critically the
+   fetch confirms media exists; if there's no media the spinner just hides. The preview
+   image uses `.scaleAspectFill` so a tall poster fills the well instead of rendering as
+   a thin centered strip. Critically the
    preview/button reserve constant space so neither the elements above nor the friend list
    below shift with the media state. Tapping the button swaps it for a `UIProgressView`
    + status label; on success it becomes a green checkmark + "Saved to Photos" (the user

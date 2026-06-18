@@ -34,16 +34,19 @@ for the pills.
   - Bottom buttons: Bump + Mark Read (cards) / Keep + Delete All|Selected (delete) /
     full-width Done (done). `styleButton` = filled accent for the primary action (red
     for delete), tinted-accent glass for the secondary.
-  - Each card: a `CatchUpCardHeader` (bump date or save date, + "from <friend>"),
-    then either an embedded **`ReaderViewController(inlineControlsHeader: true)`** —
-    added DIRECTLY (no `UINavigationController`) so the mode switcher + audio render in
-    an inline **liquid-glass** header. iOS 26 glass balloons under a rotation transform,
+  - Each card is either an embedded **`ReaderViewController(inlineControlsHeader: true,
+    inlineHeaderSubtitle:)`** — added DIRECTLY (no `UINavigationController`) where the
+    card's date/sender (`CatchUpCardHeader.text(for:)`) is folded into the reader's
+    SINGLE inline **liquid-glass** header above the mode switcher + audio (one
+    continuous header, no separate strip / divider seam) — OR a media card which keeps
+    a standalone `CatchUpCardHeader` (bump/save date + "from <friend>") strip above a
+    `CatchUpMediaCardBody`. iOS 26 glass balloons under a rotation transform,
     so `CatchUpCardView` sets `layer.shouldRasterize` while rotating (`apply`/`performAction`,
     cleared on `springBack` completion) — the glass bakes to a bitmap at identity scale
-    and the rotation just transforms that bitmap; `forceMode: .scroll`, `persistsModePreference: false`,
-    `marksOpenedOnLoad: false`, no share/gaze — or a **`CatchUpMediaCardBody`**
-    (thumbnail above text + "Tap to open") for media/link items. Media tap →
-    `ReadingListViewController.openItem(_:presentingFrom:)` then mark read.
+    and the rotation just transforms that bitmap (reader uses `forceMode: .scroll`,
+    `persistsModePreference: false`, `marksOpenedOnLoad: false`, no share/gaze). The
+    media card's body is tapped to open → `ReadingListViewController.openItem(_:presentingFrom:)`
+    then mark read.
   - Actions: Bump → `store.bump(id)` (stamps `bumpDate`, moves to list top); Mark Read
     → `store.markReadState(.read, …)`; advance; at the end, the delete/done screens.
   - **Delete screen** = `CatchUpDeleteReadView`: a prompt label on top + a multi-select

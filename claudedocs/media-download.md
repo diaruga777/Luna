@@ -12,12 +12,14 @@ snapinsta, …) with keyless, client-side extraction.
    media preview** (the poster for a video) for X/Instagram/TikTok posts (gated on
    `MediaDownloadablePlatform.supports`). The preview space is reserved from load with a
    spinner while `MediaPreviewFetcher.fetchPreview` resolves the post (the same
-   `SocialMediaResolver` the download uses) and loads a downsampled image — the resolved
-   asset for an image, the `og:image` poster for a video. The **"Download media to photo
+   `SocialMediaResolver` the download uses) and loads a downsampled image (`maxPixelSize`
+   1400 so stills aren't blurry; twimg stills request the `large` variant) — the resolved
+   asset for an image, a poster for a video. The video poster is the page's `og:image`,
+   routed through **fxtwitter** for X (x.com returns 404 to crawlers; fxtwitter mirrors
+   `og:image` including the video thumbnail). The **"Download media to photo
    roll"** button stays invisible-but-space-holding (`alpha`, never `isHidden`) until that
    fetch confirms media exists; if there's no media the spinner just hides. The preview
-   image uses `.scaleAspectFill` so a tall poster fills the well instead of rendering as
-   a thin centered strip. Critically the
+   image uses `.scaleAspectFit`. Critically the
    preview/button reserve constant space so neither the elements above nor the friend list
    below shift with the media state. Tapping the button swaps it for a `UIProgressView`
    + status label; on success it becomes a green checkmark + "Saved to Photos" (the user

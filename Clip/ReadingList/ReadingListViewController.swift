@@ -854,14 +854,11 @@ final class ReadingListViewController: UITableViewController {
     }
 
     /// Opens a music/podcast item in the user's preferred provider (exact link
-    /// when same-provider, else a search), prompting to pick a provider if unset.
+    /// when same-provider, else a search). The provider defaults to Apple.
     private func openMediaItem(
         _ item: ReadingListItem, platform: ContentPlatform, from presenter: UIViewController
     ) {
-        guard let provider = MediaProviderSettings.preferredProvider(for: platform) else {
-            promptChooseMediaProvider(from: presenter)
-            return
-        }
+        let provider = MediaProviderSettings.preferredProvider(for: platform)
         let query = [item.mediaCreatorName, item.mediaItemTitle ?? item.title]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         let markRead: (Bool) -> Void = { [weak self] success in
@@ -886,18 +883,6 @@ final class ReadingListViewController: UITableViewController {
         } else if !query.isEmpty, let webSearch = provider.webSearchURL(query: query, platform: platform) {
             InAppBrowser.present(urlString: webSearch.absoluteString, from: presenter)
         }
-    }
-
-    private func promptChooseMediaProvider(from presenter: UIViewController) {
-        let alert = UIAlertController(
-            title: "Choose a Music App",
-            message: "Pick which app opens songs and podcasts.",
-            preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { [weak self] _ in
-            self?.navigationController?.pushViewController(MediaProviderSettingsScreen(), animated: true)
-        })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        presenter.present(alert, animated: true)
     }
 
     /// Sends a URL-less music/podcast item to a friend (via the CloudKit media case).

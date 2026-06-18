@@ -24,6 +24,8 @@ final class SocialMessageCenter {
     /// Posts the "friend shared an article" local notification (username,
     /// title); injectable so tests don't touch UNUserNotificationCenter.
     private let notifyArticleShared: (String, String?) -> Void
+    /// Posts the first-ever-share notification (username); injectable for tests.
+    private let notifyFirstShare: (String) -> Void
 
     /// Prevents overlapping inbox drains (launch + push can race).
     private let drainLock = NSLock()
@@ -42,7 +44,8 @@ final class SocialMessageCenter {
          transport: MessageTransport = CloudKitMessageTransport(),
          readingListStore: ReadingListStore = .shared,
          startIngest: ((ReadingListItem) -> Void)? = nil,
-         notifyArticleShared: ((String, String?) -> Void)? = nil) {
+         notifyArticleShared: ((String, String?) -> Void)? = nil,
+         notifyFirstShare: ((String) -> Void)? = nil) {
         self.identityStore = identityStore
         self.friendsStore = friendsStore
         self.transport = transport
@@ -52,6 +55,24 @@ final class SocialMessageCenter {
         }
         self.notifyArticleShared = notifyArticleShared ?? { username, title in
             NotificationManager.postArticleShared(fromUsername: username, title: title)
+        }
+        self.notifyFirstShare = notifyFirstShare ?? { username in
+            NotificationManager.postFirstShare(fromUsername: username)
+        }
+    }
+
+    /// Decides whether/how to notify the user of a received share. The FIRST share
+    /// ever from a friend always notifies (with a hint to enable future ones);
+    /// after that, it honors the per-friend toggle.
+    private func notifyOfReceivedShare(from friend: Friend, title: String?) {
+        let friendUUID = friend.card.uuid
+        if FriendNotificationSettings.hasSharedBefore(friendUUID: friendUUID) {
+            if FriendNotificationSettings.isNotifyEnabled(friendUUID: friendUUID) {
+                notifyArticleShared(friend.card.username, title)
+            }
+        } else {
+            FriendNotificationSettings.markHasShared(friendUUID: friendUUID)
+            notifyFirstShare(friend.card.username)
         }
     }
 
@@ -307,9 +328,7 @@ final class SocialMessageCenter {
             logger.info("accepted shared article from \(friend.card.username, privacy: .public)")
             DiagnosticLog.shared.record(
                 "accepted shared article from \(friend.card.username)", category: "social")
-            if FriendNotificationSettings.isNotifyEnabled(friendUUID: friend.card.uuid) {
-                notifyArticleShared(friend.card.username, title)
-            }
+            notifyOfReceivedShare(from: friend, title: title)
 
         case .mediaItem(let kind, let creator, let title):
             guard let friend = friendsStore.friend(withUUID: record.senderUUID),
@@ -326,9 +345,7 @@ final class SocialMessageCenter {
             let saved = readingListStore.createURLlessMediaItem(
                 platform: kind, creator: creator, title: title)
             readingListStore.setSharedBy(friend.card.username, for: saved.id)
-            if FriendNotificationSettings.isNotifyEnabled(friendUUID: friend.card.uuid) {
-                notifyArticleShared(friend.card.username, title)
-            }
+            notifyOfReceivedShare(from: friend, title: title)
 
         case .unknown(let type):
             logger.info("ignoring unknown message type \(type, privacy: .public)")

@@ -16,6 +16,7 @@ final class SocialMessageCenterTests: XCTestCase {
     private var identityStore: InMemoryIdentityStore!
     private var ingestedItemURLs: [String] = []
     private var notifiedShares: [(username: String, title: String?)] = []
+    private var firstShareNotifications: [String] = []
     private var center: SocialMessageCenter!
     private var me: UserIdentity!
 
@@ -34,6 +35,7 @@ final class SocialMessageCenterTests: XCTestCase {
         me = identityStore.createIdentity(username: "me", email: nil, phone: nil)
         ingestedItemURLs = []
         notifiedShares = []
+        firstShareNotifications = []
         center = SocialMessageCenter(
             identityStore: identityStore,
             friendsStore: friendsStore,
@@ -42,6 +44,9 @@ final class SocialMessageCenterTests: XCTestCase {
             startIngest: { [weak self] item in self?.ingestedItemURLs.append(item.urlString) },
             notifyArticleShared: { [weak self] username, title in
                 self?.notifiedShares.append((username, title))
+            },
+            notifyFirstShare: { [weak self] username in
+                self?.firstShareNotifications.append(username)
             })
     }
 
@@ -106,6 +111,8 @@ final class SocialMessageCenterTests: XCTestCase {
     func testNotifiesWhenFriendNotificationsEnabled() async throws {
         let alice = makeSender()
         friendsStore.add(alice.card)
+        // Not their first share, and notifications are enabled → article notification.
+        FriendNotificationSettings.markHasShared(friendUUID: alice.uuid)
         FriendNotificationSettings.setNotify(true, friendUUID: alice.uuid)
         defer { FriendNotificationSettings.setNotify(false, friendUUID: alice.uuid) }
 
@@ -116,17 +123,55 @@ final class SocialMessageCenterTests: XCTestCase {
         XCTAssertEqual(notifiedShares.count, 1)
         XCTAssertEqual(notifiedShares.first?.username, "alice")
         XCTAssertEqual(notifiedShares.first?.title, "Hi")
+        XCTAssertTrue(firstShareNotifications.isEmpty)
     }
 
     func testDoesNotNotifyWhenDisabled() async throws {
         let alice = makeSender()
         friendsStore.add(alice.card)
+        // Not their first share, notifications disabled → no notification at all.
+        FriendNotificationSettings.markHasShared(friendUUID: alice.uuid)
         FriendNotificationSettings.setNotify(false, friendUUID: alice.uuid)
 
         try await inject(
             body: .readingListItem(urlString: "https://example.com/y", title: nil), from: alice)
         await center.processInbox()
 
+        XCTAssertTrue(notifiedShares.isEmpty)
+        XCTAssertTrue(firstShareNotifications.isEmpty)
+    }
+
+    func testFirstShareAlwaysNotifiesEvenWhenDisabled() async throws {
+        let alice = makeSender()
+        friendsStore.add(alice.card)
+        // First share ever from alice, notifications NOT enabled → still notifies,
+        // via the first-share path (not the article one).
+        FriendNotificationSettings.setNotify(false, friendUUID: alice.uuid)
+
+        try await inject(
+            body: .readingListItem(urlString: "https://example.com/first", title: "Hi"), from: alice)
+        await center.processInbox()
+
+        XCTAssertEqual(firstShareNotifications, ["alice"])
+        XCTAssertTrue(notifiedShares.isEmpty)
+        XCTAssertTrue(FriendNotificationSettings.hasSharedBefore(friendUUID: alice.uuid))
+    }
+
+    func testSecondShareHonorsToggleAfterFirst() async throws {
+        let alice = makeSender()
+        friendsStore.add(alice.card)
+        FriendNotificationSettings.setNotify(false, friendUUID: alice.uuid)
+
+        // First share → first-share notification only.
+        try await inject(
+            body: .readingListItem(urlString: "https://example.com/1", title: "One"), from: alice)
+        await center.processInbox()
+        // Second share, still disabled → no further notification.
+        try await inject(
+            body: .readingListItem(urlString: "https://example.com/2", title: "Two"), from: alice)
+        await center.processInbox()
+
+        XCTAssertEqual(firstShareNotifications, ["alice"])
         XCTAssertTrue(notifiedShares.isEmpty)
     }
 

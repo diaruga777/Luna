@@ -33,7 +33,20 @@ enum NotificationManager {
         content.title = "\(username) shared an article"
         content.body = title ?? "Open Queue to read it."
         content.sound = .default
+        post(content)
+    }
 
+    /// Posts the FIRST-ever share from a friend, which always notifies (regardless of
+    /// the per-friend toggle) and points the user at settings to enable future ones.
+    static func postFirstShare(fromUsername username: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "\(username) shared with you"
+        content.body = "To get notified of future shares from \(username), go to Queue settings"
+        content.sound = .default
+        post(content)
+    }
+
+    private static func post(_ content: UNMutableNotificationContent) {
         let request = UNNotificationRequest(
             identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)

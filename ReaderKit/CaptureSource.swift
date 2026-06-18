@@ -28,7 +28,7 @@ enum CaptureSource: String, Codable, CaseIterable {
         switch self {
         case .email: return "Email"
         case .appIntent: return "App Intents (Shortcuts)"
-        case .friendShare: return "Friend Shares"
+        case .friendShare: return "Saves From Friends"
         case .shareSheet: return "Share Sheet"
         case .paste: return "Paste"
         case .manual: return "In-App Saves"

@@ -6,8 +6,8 @@
 import UIKit
 
 /// The user's preferred app for opening music / podcast items (provider-portable
-/// links resolve to this). Both nil until chosen. App Group so the intent runner
-/// reads the same value.
+/// links resolve to this). Defaults to `.apple` until the user picks otherwise. App
+/// Group so the intent runner reads the same value.
 enum MediaProviderSettings {
     private static let musicKey = "preferredMusicProvider"
     private static let podcastKey = "preferredPodcastProvider"
@@ -16,18 +16,18 @@ enum MediaProviderSettings {
         UserDefaults(suiteName: ReadingListStore.appGroupID) ?? .standard
     }
 
-    static var preferredMusicProvider: MusicProvider? {
-        get { defaults.string(forKey: musicKey).flatMap(MusicProvider.init(rawValue:)) }
-        set { defaults.set(newValue?.rawValue, forKey: musicKey) }
+    static var preferredMusicProvider: MusicProvider {
+        get { defaults.string(forKey: musicKey).flatMap(MusicProvider.init(rawValue:)) ?? .apple }
+        set { defaults.set(newValue.rawValue, forKey: musicKey) }
     }
 
-    static var preferredPodcastProvider: MusicProvider? {
-        get { defaults.string(forKey: podcastKey).flatMap(MusicProvider.init(rawValue:)) }
-        set { defaults.set(newValue?.rawValue, forKey: podcastKey) }
+    static var preferredPodcastProvider: MusicProvider {
+        get { defaults.string(forKey: podcastKey).flatMap(MusicProvider.init(rawValue:)) ?? .apple }
+        set { defaults.set(newValue.rawValue, forKey: podcastKey) }
     }
 
     /// Preferred provider for a platform kind (.music / .podcast).
-    static func preferredProvider(for platform: ContentPlatform) -> MusicProvider? {
+    static func preferredProvider(for platform: ContentPlatform) -> MusicProvider {
         platform == .podcast ? preferredPodcastProvider : preferredMusicProvider
     }
 }
@@ -64,11 +64,11 @@ final class MediaProviderSettingsScreen: UITableViewController {
         content.text = row == .music ? "Music" : "Podcasts"
         cell.selectionStyle = .none
 
-        let control = UISegmentedControl(items: ["None"] + MusicProvider.allCases.map(\.displayName))
+        let control = UISegmentedControl(items: MusicProvider.allCases.map(\.displayName))
         let current = row == .music
             ? MediaProviderSettings.preferredMusicProvider
             : MediaProviderSettings.preferredPodcastProvider
-        control.selectedSegmentIndex = current.flatMap { MusicProvider.allCases.firstIndex(of: $0).map { $0 + 1 } } ?? 0
+        control.selectedSegmentIndex = MusicProvider.allCases.firstIndex(of: current) ?? 0
         control.tag = indexPath.row
         control.addTarget(self, action: #selector(providerChanged(_:)), for: .valueChanged)
         cell.accessoryView = control
@@ -77,9 +77,8 @@ final class MediaProviderSettingsScreen: UITableViewController {
     }
 
     @objc private func providerChanged(_ control: UISegmentedControl) {
-        let provider: MusicProvider? = control.selectedSegmentIndex == 0
-            ? nil
-            : MusicProvider.allCases[control.selectedSegmentIndex - 1]
+        let provider = MusicProvider.allCases[
+            max(0, min(control.selectedSegmentIndex, MusicProvider.allCases.count - 1))]
         switch Row(rawValue: control.tag) {
         case .music: MediaProviderSettings.preferredMusicProvider = provider
         case .podcast: MediaProviderSettings.preferredPodcastProvider = provider

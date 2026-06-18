@@ -33,7 +33,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .semantic: return "Suggest Shares Based on Content"
-        case .youtube: return "YouTube"
+        case .youtube: return "DEV ONLY: YouTube"
         }
     }
 
@@ -42,7 +42,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .semantic:
             return "When you save something that resembles things you've shared with a friend before, Queue can suggest sharing it with them. Slide all the way left to turn this off."
         case .youtube:
-            return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read."
+            return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read.\n\nYour email must be whitelisted for this to work while in development."
         }
     }
 

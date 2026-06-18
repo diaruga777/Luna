@@ -28,7 +28,7 @@ final class AutoSendBySourceScreen: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Auto-Send"
+        title = "Forwarding Settings"
         navigationItem.largeTitleDisplayMode = .never
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         friends = FriendsStore.shared.items()
@@ -47,20 +47,17 @@ final class AutoSendBySourceScreen: UITableViewController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .sources: return "Auto-Send to \(destinationName)"
-        case .friends: return "Per Friend"
+        case .sources: return "Forwarding settings: \(destinationName)"
+        case .friends: return "Always forward to..."
         }
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .sources:
-            return "Choose which captures \(destinationName) receives automatically. "
-                + "App Intents and in-app saves use the send mode (\"Double Save\" sends when "
-                + "you save the same page twice quickly)."
+            return "Choose which saves \(destinationName) receives automatically.\n\nWith \"Double Save\", saving twice in rapid successtion forwards. (e.g. 2 Action Button presses). "
         case .friends:
-            return "Override friend shares per friend. Friends not listed here use the "
-                + "Friend Shares setting above."
+            return "Override forwarding settings per friend. Friends not listed here use the default setting above."
         }
     }
 

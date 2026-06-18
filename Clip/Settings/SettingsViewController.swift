@@ -339,7 +339,7 @@ final class ShortcutSettingsScreen: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        let base = "Save the Safari page you're reading with one press of the Action Button: enable the Queue Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
+        let base = "Save the Safari webpage by pressing the Action Button: enable the Queue Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
         if #unavailable(iOS 27.0) {
             return "⚠️ One-press Safari saving requires iOS 27 or later.\n\n" + base
         }
@@ -360,7 +360,7 @@ final class ShortcutSettingsScreen: UITableViewController {
             content.text = "Open Shortcuts"
             content.image = UIImage(systemName: "arrow.up.forward.app")
         case .refreshStatus:
-            content.text = "Refresh Extension Status"
+            content.text = "Refresh Last Visited Website"
             content.image = UIImage(systemName: "arrow.clockwise")
         }
         cell.contentConfiguration = content
@@ -387,7 +387,7 @@ final class ShortcutSettingsScreen: UITableViewController {
             let when = SafariURLStore.lastDate.map {
                 RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date())
             } ?? "unknown time"
-            safariStatusText = "Last tracked Safari URL (\(when)): \(url)"
+            safariStatusText = "Last visited Safari URL (\(when)): \(url)"
         } else {
             safariStatusText = "No Safari URL tracked yet. Enable the Queue extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page."
         }

@@ -44,9 +44,9 @@ final class BooxSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .account:
-            return "Boox sending uses Onyx's unofficial Send2Boox service and may stop working if Onyx changes it. Log in with the email on your BOOX account; you'll get a code by email."
+            return "Boox sending uses Onyx's unofficial Send2Boox service. Log in with the email on your BOOX account; you'll get a code by email."
         case .send:
-            return "Articles are uploaded to your Onyx account; your Boox device downloads them over WiFi. Choose which capture sources auto-send under \"Auto-Send by Source\"."
+            return "Saves are uploaded to your Onyx account and your Boox device downloads them over WiFi."
         }
     }
 
@@ -86,7 +86,7 @@ final class BooxSettingsScreen: UITableViewController {
         case .send:
             switch indexPath.row {
             case 0:
-                content.text = "Auto-Send by Source"
+                content.text = "Boox Forwarding Settings"
                 cell.accessoryType = .disclosureIndicator
                 cell.selectionStyle = .default
             default:

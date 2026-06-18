@@ -55,11 +55,11 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .account:
-            return "Used for both sending to Kindle and importing email. For Gmail, use an app password (myaccount.google.com → Security → App passwords)."
+            return "Used for both sending to Kindle and importing email. For Gmail, use an app password (myaccount.google.com → Security → App passwords).\n\nAll your email data stays local on this device, unless forwarded to Kindle via your email server."
         case .kindle:
-            return "Amazon only accepts mail from approved senders — add this account at amazon.com → Preferences → Personal Document Settings. \"Double Save\" sends when you save the same page twice quickly."
+            return "Amazon only accepts mail from approved senders — add this account at amazon.com → Preferences → Personal Document Settings."
         case .importMail:
-            return "New email from an allowed sender becomes a reading-list item. A background job also checks roughly twice a day, so newsletters arrive (and forward to Kindle, if enabled) even when the app is closed."
+            return "New email from matching senders becomes a reading-list item, optionally forwarding to Kindle automatically overnight."
         case .subjectFilters:
             return "Also import any email whose subject contains one of these phrases, regardless of sender."
         }
@@ -105,7 +105,7 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         case .kindle:
             switch indexPath.row {
             case 0:
-                content.text = "Auto-Send by Source"
+                content.text = "Kindle forwarding settings"
                 cell.accessoryType = .disclosureIndicator
                 cell.selectionStyle = .default
             case 1:

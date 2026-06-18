@@ -29,9 +29,7 @@ final class AutoDownloadSettingsScreen: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "When on, media from a saved post on that platform is saved straight to your "
-            + "photo library — no matter how you save it (in-app, Shortcuts, or the share "
-            + "sheet). Turning a toggle on requires Photos access."
+        "Auto-download media from saved posts from that platform and save straight to your photo library. Requires Photos access. Queue never reads or edits your photos."
     }
 
     override func tableView(

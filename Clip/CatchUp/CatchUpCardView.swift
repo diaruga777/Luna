@@ -127,6 +127,12 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         return pill
     }
 
+    /// Simulator-only: hold the card at a fraction of a left/right swipe so the
+    /// rotated state (and its labels) can be inspected without a drag gesture.
+    func simulatorHoldSwipe(fraction: CGFloat) {
+        apply(translationX: fraction * (superview?.bounds.width ?? bounds.width))
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: 22).cgPath

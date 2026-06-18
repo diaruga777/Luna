@@ -48,10 +48,12 @@ final class ReaderViewController: UIViewController {
     private let marksOpenedOnLoad: Bool
 
     private let modeControl = UISegmentedControl()
-    /// A STANDARD bar item (not a customView UIButton) so it stays a fixed size when
-    /// the catch-up card it's inside is rotated during a swipe (a customView button
-    /// re-layouts and balloons under the parent transform).
-    private let audioButton = UIBarButtonItem()
+    private let audioButton = UIButton(type: .system)
+    /// When true, the mode switcher + audio toggle render in a PLAIN inline header
+    /// (no UINavigationController), so the iOS 26 glass nav bar doesn't balloon when
+    /// the catch-up card is rotated during a swipe.
+    private let inlineControlsHeader: Bool
+    private let inlineHeader = UIView()
 
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
 
@@ -61,6 +63,7 @@ final class ReaderViewController: UIViewController {
          gazeTrackerFactory: GazeTrackerFactory? = nil,
          persistsModePreference: Bool = true,
          marksOpenedOnLoad: Bool = true,
+         inlineControlsHeader: Bool = false,
          onModeChange: ((ReadingListItem.ReaderMode) -> Void)? = nil) {
         self.item = item
         self.content = content
@@ -68,6 +71,7 @@ final class ReaderViewController: UIViewController {
         self.gazeTrackerFactory = gazeTrackerFactory
         self.persistsModePreference = persistsModePreference
         self.marksOpenedOnLoad = marksOpenedOnLoad
+        self.inlineControlsHeader = inlineControlsHeader
         self.onModeChange = onModeChange
         // First time on this article, fall back to the global last-used mode.
         self.mode = forceMode ?? item.lastReaderMode ?? ReaderSettings.lastReaderMode
@@ -87,30 +91,51 @@ final class ReaderViewController: UIViewController {
         }
         modeControl.selectedSegmentIndex = Self.orderedModes.firstIndex(of: mode) ?? 0
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
-        // Compact header: the mode switcher tucks into the nav bar between the
-        // Back button and the audio toggle.
-        navigationItem.titleView = modeControl
-
-        // The nav bar keeps a blurred material background even at the scroll edge,
-        // so content reads under a frosted header as it scrolls.
-        let appearance = UINavigationBarAppearance()
-        appearance.configureWithDefaultBackground()
-        navigationItem.standardAppearance = appearance
-        navigationItem.scrollEdgeAppearance = appearance
+        audioButton.addTarget(self, action: #selector(audioToggled), for: .touchUpInside)
+        updateAudioButton()
 
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(contentContainer)
+
+        let contentTop: NSLayoutYAxisAnchor
+        if inlineControlsHeader {
+            // Plain header — NO nav bar, so no glass to balloon under the card rotation.
+            inlineHeader.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(inlineHeader)
+            modeControl.translatesAutoresizingMaskIntoConstraints = false
+            audioButton.translatesAutoresizingMaskIntoConstraints = false
+            inlineHeader.addSubview(modeControl)
+            inlineHeader.addSubview(audioButton)
+            NSLayoutConstraint.activate([
+                inlineHeader.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                inlineHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                inlineHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                inlineHeader.heightAnchor.constraint(equalToConstant: 48),
+                modeControl.centerXAnchor.constraint(equalTo: inlineHeader.centerXAnchor),
+                modeControl.centerYAnchor.constraint(equalTo: inlineHeader.centerYAnchor),
+                audioButton.trailingAnchor.constraint(equalTo: inlineHeader.trailingAnchor, constant: -16),
+                audioButton.centerYAnchor.constraint(equalTo: inlineHeader.centerYAnchor),
+            ])
+            contentTop = inlineHeader.bottomAnchor
+        } else {
+            // Compact header: the mode switcher tucks into the nav bar between the
+            // Back button and the audio toggle.
+            navigationItem.titleView = modeControl
+            // Blurred material background even at the scroll edge.
+            let appearance = UINavigationBarAppearance()
+            appearance.configureWithDefaultBackground()
+            navigationItem.standardAppearance = appearance
+            navigationItem.scrollEdgeAppearance = appearance
+            navigationItem.rightBarButtonItems = [UIBarButtonItem(customView: audioButton)]
+            contentTop = view.safeAreaLayoutGuide.topAnchor
+        }
+
         NSLayoutConstraint.activate([
-            contentContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            contentContainer.topAnchor.constraint(equalTo: contentTop),
             contentContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             contentContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-
-        audioButton.target = self
-        audioButton.action = #selector(audioToggled)
-        updateAudioButton()
-        navigationItem.rightBarButtonItems = [audioButton]
 
         // Share moved to a hovering glass circle, bottom-right (above the footer
         // controls). Shown whenever sharing is available (not in the share sheet).
@@ -201,7 +226,8 @@ final class ReaderViewController: UIViewController {
     }
 
     private func updateAudioButton() {
-        audioButton.image = UIImage(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash")
+        audioButton.setImage(
+            UIImage(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash"), for: .normal)
         audioButton.accessibilityLabel = audioOn ? "Turn off read aloud" : "Read aloud"
     }
 

@@ -22,7 +22,10 @@ final class CatchUpViewController: UIViewController {
     private let snapshot: [ReadingListItem]
     private var queue: [ReadingListItem]
     private var index = 0
-    private var pendingDeleteRead = false
+    /// Read-item ids the user chose to delete on the prompt screen; applied on Done
+    /// (deferred so Undo can revert it).
+    private var pendingDeleteIDs: [UUID] = []
+    private var deleteReadView: CatchUpDeleteReadView?
     private var phase: Phase = .cards
 
     private let titleLabel = UILabel()
@@ -34,7 +37,7 @@ final class CatchUpViewController: UIViewController {
     private let secondaryButton = UIButton(type: .system)  // Mark Read / Delete All / Done
 
     private var currentCard: CatchUpCardView?
-    private var currentReaderNav: UINavigationController?
+    private var currentReaderChild: UIViewController?
     private var currentItem: ReadingListItem? {
         index < queue.count ? queue[index] : nil
     }
@@ -56,12 +59,33 @@ final class CatchUpViewController: UIViewController {
         configureBars()
         configureCardArea()
         configureBottomButtons()
+        addSimulatorSwipeHookIfNeeded()
         if queue.isEmpty {
             advanceToEndScreens()
         } else {
             showCard()
             updateChrome()
         }
+    }
+
+    /// Simulator-only: a tiny "Sim Swipe" button that holds the current card at a
+    /// partial left swipe, so the rotated state can be inspected (the harness can't
+    /// drag). Never shown on device.
+    private func addSimulatorSwipeHookIfNeeded() {
+        guard AppEnvironment.isSimulator else { return }
+        let button = UIButton(type: .system)
+        button.setTitle("Sim Swipe", for: .normal)
+        button.accessibilityLabel = "Sim Swipe"
+        button.titleLabel?.font = .systemFont(ofSize: 11)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            button.topAnchor.constraint(equalTo: leftButton.bottomAnchor),
+        ])
+        button.addAction(UIAction { [weak self] _ in
+            self?.currentCard?.simulatorHoldSwipe(fraction: 0.45)
+        }, for: .touchUpInside)
     }
 
     // MARK: - Layout
@@ -180,16 +204,17 @@ final class CatchUpViewController: UIViewController {
         let body: UIView
         if ReadingListViewController.rendersAsReader(item), item.state == .ready,
            let content = store.content(for: item) {
+            // Embed the reader DIRECTLY (no UINavigationController) with inline
+            // controls, so there's no glass nav bar to balloon when the card rotates.
             let reader = ReaderViewController(
                 item: item, content: content, forceMode: .scroll,
                 shareProvider: nil, gazeTrackerFactory: nil,
-                persistsModePreference: false, marksOpenedOnLoad: false)
-            let nav = UINavigationController(rootViewController: reader)
-            nav.navigationBar.prefersLargeTitles = false
-            addChild(nav)
-            body = nav.view
-            currentReaderNav = nav
-            defer { nav.didMove(toParent: self) }
+                persistsModePreference: false, marksOpenedOnLoad: false,
+                inlineControlsHeader: true)
+            addChild(reader)
+            body = reader.view
+            currentReaderChild = reader
+            defer { reader.didMove(toParent: self) }
         } else {
             body = CatchUpMediaCardBody(item: item, store: store) { [weak self] in
                 self?.openMediaItem(item)
@@ -228,11 +253,11 @@ final class CatchUpViewController: UIViewController {
     }
 
     private func tearDownCurrentCard() {
-        if let nav = currentReaderNav {
-            nav.willMove(toParent: nil)
-            nav.view.removeFromSuperview()
-            nav.removeFromParent()
-            currentReaderNav = nil
+        if let reader = currentReaderChild {
+            reader.willMove(toParent: nil)
+            reader.view.removeFromSuperview()
+            reader.removeFromParent()
+            currentReaderChild = nil
         }
         currentCard?.removeFromSuperview()
         currentCard = nil
@@ -242,20 +267,45 @@ final class CatchUpViewController: UIViewController {
 
     private func advanceToEndScreens() {
         tearDownCurrentCard()
-        let hasReadItems = store.items().contains { $0.readState == .read }
-        phase = (hasReadItems && phase == .cards) ? .deletePrompt : .done
-        if phase == .deletePrompt {
-            messageView.show(symbol: "trash", tint: .systemRed, text: "Delete all read items?")
+        let readItems = store.items().filter { $0.readState == .read }
+        if phase == .cards, !readItems.isEmpty {
+            phase = .deletePrompt
+            let prompt = CatchUpDeleteReadView(items: readItems, store: store)
+            prompt.updateTitle(allSelected: true)
+            prompt.onSelectionChanged = { [weak self] selected, total in
+                self?.updateDeleteButton(selected: selected, total: total)
+            }
+            prompt.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(prompt)
+            NSLayoutConstraint.activate([
+                prompt.topAnchor.constraint(equalTo: leftButton.bottomAnchor, constant: 8),
+                prompt.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+                prompt.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+                prompt.bottomAnchor.constraint(equalTo: primaryButton.topAnchor, constant: -16),
+            ])
+            deleteReadView = prompt
         } else {
+            phase = .done
             messageView.show(symbol: "checkmark.circle.fill", tint: GlassStyle.readingAccent, text: "All done!")
+            messageView.isHidden = false
         }
-        messageView.isHidden = false
         updateChrome()
+    }
+
+    /// Flips the delete button (and the prompt title) between "Delete All" and
+    /// "Delete Selected", disabling it when nothing is selected.
+    private func updateDeleteButton(selected: Int, total: Int) {
+        let allSelected = selected == total
+        styleButton(
+            secondaryButton, title: allSelected ? "Delete All" : "Delete Selected",
+            filled: true, destructive: true)
+        secondaryButton.isEnabled = selected > 0
     }
 
     // MARK: - Chrome (per phase)
 
     private func updateChrome() {
+        secondaryButton.isEnabled = true   // reset (delete-prompt may disable it)
         switch phase {
         case .cards:
             titleLabel.text = "\(queue.count - index) left"
@@ -267,7 +317,7 @@ final class CatchUpViewController: UIViewController {
             styleButton(secondaryButton, title: "Mark Read", filled: true)
             setBottomButtons(hidden: false, singleFullWidth: false)
         case .deletePrompt:
-            titleLabel.text = nil
+            titleLabel.text = nil   // the prompt view carries its own title
             leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
             rightButton.isHidden = true
             styleButton(primaryButton, title: "Keep", filled: false)
@@ -313,7 +363,7 @@ final class CatchUpViewController: UIViewController {
     @objc private func primaryTapped() {
         switch phase {
         case .cards: currentCard?.performAction(.bump)
-        case .deletePrompt: pendingDeleteRead = false; phase = .done; transitionToDone()
+        case .deletePrompt: pendingDeleteIDs = []; transitionToDone()  // Keep
         case .done: break
         }
     }
@@ -321,13 +371,17 @@ final class CatchUpViewController: UIViewController {
     @objc private func secondaryTapped() {
         switch phase {
         case .cards: currentCard?.performAction(.markRead)
-        case .deletePrompt: pendingDeleteRead = true; phase = .done; transitionToDone()
+        case .deletePrompt: pendingDeleteIDs = deleteReadView?.selectedItemIDs ?? []; transitionToDone()
         case .done: commitAndClose()
         }
     }
 
     private func transitionToDone() {
+        phase = .done
+        deleteReadView?.removeFromSuperview()
+        deleteReadView = nil
         messageView.show(symbol: "checkmark.circle.fill", tint: GlassStyle.readingAccent, text: "All done!")
+        messageView.isHidden = false
         updateChrome()
     }
 
@@ -351,7 +405,9 @@ final class CatchUpViewController: UIViewController {
     }
 
     private func commitAndClose() {
-        if pendingDeleteRead { store.deleteAllRead() }
+        for id in pendingDeleteIDs {
+            if let item = store.item(withID: id) { store.delete(item) }
+        }
         dismiss(animated: true)
     }
 }

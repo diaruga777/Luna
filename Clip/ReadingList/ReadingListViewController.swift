@@ -473,6 +473,15 @@ final class ReadingListViewController: UITableViewController {
     /// the +/friends buttons.
     private func updateCatchUpButtonFade() {
         guard let navBar = navigationController?.navigationBar else { return }
+        // Pulling DOWN past the top (rubber-band / pull-to-refresh) STRETCHES the
+        // large-title bar taller than its resting height. Treat that as fully
+        // expanded (button shown) and DON'T let it inflate the peak — otherwise the
+        // bar never matches the inflated peak again and the button stays hidden
+        // forever after any overscroll.
+        if tableView.contentOffset.y < -tableView.adjustedContentInset.top - 1 {
+            catchUpButton.alpha = 1
+            return
+        }
         expandedNavBarHeight = max(expandedNavBarHeight, navBar.frame.height)
         let collapsed = expandedNavBarHeight - navBar.frame.height
         catchUpButton.alpha = max(0, min(1, 1 - collapsed / 11))

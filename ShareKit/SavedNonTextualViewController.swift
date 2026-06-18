@@ -4,7 +4,6 @@
 //
 
 import UIKit
-import WebKit
 
 /// Shown by the action extension for non-textual content (a video, post, etc.):
 /// the URL is already saved, so this confirms the save and — for shareable links,
@@ -17,7 +16,6 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
     private let articleURLString: String
     private let content: NonTextualContent
     private let onDone: () -> Void
-    private var webView: WKWebView?
 
     private let friends = ExtensionFriendsReader.friends()
     private let friendsTable = UITableView(frame: .zero, style: .plain)
@@ -47,8 +45,6 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    deinit { webView?.stopLoading() }
-
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -70,25 +66,11 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         savedLabel.textAlignment = .center
         savedLabel.numberOfLines = 0
 
-        // YouTube embeds play inline; other platforms show the confirmation badge.
+        // A video (YouTube) shows a STATIC poster + play button — never an autoplaying
+        // player; other platforms show the confirmation badge.
         let topView: UIView
-        if let embedURL = content.embedURL {
-            let configuration = WKWebViewConfiguration()
-            configuration.allowsInlineMediaPlayback = true
-            configuration.allowsPictureInPictureMediaPlayback = true
-            configuration.mediaTypesRequiringUserActionForPlayback = []
-            let webView = WKWebView(frame: .zero, configuration: configuration)
-            webView.isOpaque = false
-            webView.backgroundColor = .black
-            webView.scrollView.isScrollEnabled = false
-            webView.layer.cornerRadius = 12
-            webView.clipsToBounds = true
-            webView.heightAnchor.constraint(equalTo: webView.widthAnchor, multiplier: 9.0 / 16.0).isActive = true
-            self.webView = webView
-            topView = webView
-            var request = URLRequest(url: embedURL)
-            request.setValue(content.embedReferer, forHTTPHeaderField: "Referer")
-            webView.load(request)
+        if let posterURL = content.staticPreviewImageURL {
+            topView = makeVideoPoster(thumbnailURL: posterURL)
         } else {
             topView = badge
         }
@@ -144,12 +126,8 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         guard MediaDownloadablePlatform.supports(articleURLString) else { return [] }
 
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
-        // Fill the fixed-height well (cropping) rather than aspect-fit — a tall
-        // poster aspect-fit into this wide box renders as a thin centered strip with
-        // big blank margins, which reads as "no preview".
-        previewImageView.contentMode = .scaleAspectFill
+        previewImageView.contentMode = .scaleAspectFit
         previewImageView.clipsToBounds = true
-        previewImageView.backgroundColor = .secondarySystemBackground
         previewImageView.layer.cornerRadius = 12
         previewImageView.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(previewImageView)
@@ -195,11 +173,60 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
     private func loadMediaPreview() {
         guard MediaDownloadablePlatform.supports(articleURLString),
               let url = URL(string: articleURLString) else { return }
-        let maxPixelSize = max(Self.previewHeight * 3, 600)
+        // Generous so a wide still shown full-width isn't soft (the view is decoded
+        // downsampled, so this only caps the decode, not the download).
+        let maxPixelSize: CGFloat = 1400
         Task { [weak self] in
             let result = await MediaPreviewFetcher.fetchPreview(for: url, maxPixelSize: maxPixelSize)
             await MainActor.run { self?.applyMediaPreview(result) }
         }
+    }
+
+    /// A static 16:9 video poster (loaded from `thumbnailURL`) with a YouTube-style
+    /// red play button — shown instead of an autoplaying embed.
+    private func makeVideoPoster(thumbnailURL: URL) -> UIView {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.backgroundColor = .black
+        imageView.layer.cornerRadius = 12
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(imageView)
+
+        let playBadge = UIView()
+        playBadge.backgroundColor = UIColor(red: 0.79, green: 0, blue: 0, alpha: 0.95)
+        playBadge.layer.cornerRadius = 12
+        playBadge.isUserInteractionEnabled = false
+        playBadge.translatesAutoresizingMaskIntoConstraints = false
+        let triangle = UIImageView(image: UIImage(
+            systemName: "play.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .black)))
+        triangle.tintColor = .white
+        triangle.translatesAutoresizingMaskIntoConstraints = false
+        playBadge.addSubview(triangle)
+        container.addSubview(playBadge)
+
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: container.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            imageView.heightAnchor.constraint(equalTo: imageView.widthAnchor, multiplier: 9.0 / 16.0),
+            playBadge.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            playBadge.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            playBadge.widthAnchor.constraint(equalToConstant: 66),
+            playBadge.heightAnchor.constraint(equalToConstant: 46),
+            triangle.centerXAnchor.constraint(equalTo: playBadge.centerXAnchor),
+            triangle.centerYAnchor.constraint(equalTo: playBadge.centerYAnchor),
+        ])
+        Task { [weak imageView] in
+            let image = await MediaPreviewFetcher.image(from: thumbnailURL, maxPixelSize: 1280)
+            await MainActor.run { imageView?.image = image }
+        }
+        return container
     }
 
     @MainActor

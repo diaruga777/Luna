@@ -58,4 +58,15 @@ enum NonTextualContent: Equatable {
 
     /// Referer required by the embed (YouTube rejects embeds without one, error 153).
     var embedReferer: String { "https://clip-reader.app/" }
+
+    /// A static poster image for the content, when one is cheaply derivable from the
+    /// URL alone (YouTube's thumbnail). Used to preview without spinning up a player.
+    var staticPreviewImageURL: URL? {
+        switch self {
+        case .youTube(let videoID):
+            return URL(string: "https://img.youtube.com/vi/\(videoID)/hqdefault.jpg")
+        case .platform:
+            return nil
+        }
+    }
 }

@@ -415,7 +415,9 @@ final class ReadingListViewController: UITableViewController {
             UIImage(systemName: "rectangle.stack",
                     withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)),
             for: .normal)
-        catchUpButton.tintColor = GlassStyle.readingAccent
+        // Same color as the other nav-bar buttons (white in dark, black in light);
+        // only the unread dot is red.
+        catchUpButton.tintColor = .label
         catchUpButton.accessibilityLabel = "Catch up"
         catchUpButton.addTarget(self, action: #selector(catchUpTapped), for: .touchUpInside)
         catchUpButton.translatesAutoresizingMaskIntoConstraints = false
@@ -441,16 +443,7 @@ final class ReadingListViewController: UITableViewController {
     private func pinCatchUpButtonToNavBar() {
         guard !catchUpPinnedToNavBar, let navBar = navigationController?.navigationBar else { return }
         catchUpPinnedToNavBar = true
-        // Sit ABOVE the nav bar's blurred background but BEHIND its content (the title
-        // and the +/friends bar buttons). When the collapsing large-title bar brings
-        // this button up to the bar-button row on over-scroll, it slides UNDER those
-        // buttons — obscured by their glass — instead of drawing on top of them. The
-        // content view passes touches through its empty areas, so it stays tappable.
-        if let barBackground = navBar.subviews.first {
-            navBar.insertSubview(catchUpButton, aboveSubview: barBackground)
-        } else {
-            navBar.addSubview(catchUpButton)
-        }
+        navBar.addSubview(catchUpButton)
         NSLayoutConstraint.activate([
             catchUpButton.trailingAnchor.constraint(equalTo: navBar.trailingAnchor, constant: -16),
             catchUpButton.bottomAnchor.constraint(equalTo: navBar.bottomAnchor, constant: -8),
@@ -465,6 +458,20 @@ final class ReadingListViewController: UITableViewController {
         let unread = store.items().filter { $0.readState != .read }.count
         catchUpBadge.isHidden = unread < 10
         catchUpButton.isHidden = isEditing
+        updateCatchUpButtonFade()
+    }
+
+    /// Fades the catch-up button out as the list scrolls up, tied DIRECTLY to the
+    /// scroll offset (not an animation). It rises toward the +/friends buttons as the
+    /// large-title bar collapses, so it must be fully gone before they would collide.
+    private func updateCatchUpButtonFade() {
+        let scrolledPastTop = tableView.contentOffset.y + tableView.adjustedContentInset.top
+        let fadeDistance: CGFloat = 28
+        catchUpButton.alpha = max(0, min(1, 1 - scrolledPastTop / fadeDistance))
+    }
+
+    override func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        updateCatchUpButtonFade()
     }
 
     @objc private func catchUpTapped() {

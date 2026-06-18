@@ -65,9 +65,39 @@ struct ArticleContent: Codable {
     }
 
     /// Enough body text to be worth reading rather than a paywall stub. Shared by
-    /// the ingestor and both extensions so they agree on the threshold.
-    var hasReadableBody: Bool { bodyTextLength >= Self.readableBodyThreshold }
+    /// the ingestor and both extensions so they agree on the threshold. A body that
+    /// clears the length bar but `looksPaywalled` does NOT count — that's a
+    /// subscription wall or a crawler teaser, not the article.
+    var hasReadableBody: Bool {
+        bodyTextLength >= Self.readableBodyThreshold && !looksPaywalled
+    }
 
     /// Minimum block-text length for `hasReadableBody`.
     static let readableBodyThreshold = 600
+
+    /// High-precision phrases that only appear in subscription walls / metered
+    /// previews — FT's "Try unlimited access" marketing interstitial, or the WSJ
+    /// Wayback snapshot that carries just the lede plus the "personal,
+    /// non-commercial use" / "Subscriber Agreement" boilerplate. Deliberately
+    /// specific (not a bare "subscribe") so a real article that merely mentions
+    /// subscribing isn't misread as a wall.
+    private static let paywallMarkers = [
+        "subscribe to read", "subscribe to continue", "to continue reading",
+        "try unlimited access", "unlimited digital access", "complete digital access",
+        "digital access to quality", "cancel anytime", "this article is for subscribers",
+        "subscriber agreement", "personal, non-commercial use", "register to continue",
+        "sign in to read", "become a subscriber", "start your free trial",
+    ]
+
+    /// A SHORT body containing subscription-wall language is a stub/teaser, not the
+    /// article — so the resolver should fall back to a full archive. Real articles
+    /// run long, so they're never flagged even if a marker appears in a footer.
+    var looksPaywalled: Bool {
+        guard bodyTextLength < Self.paywallStubMaxLength else { return false }
+        let lowercased = wholeText.lowercased()
+        return Self.paywallMarkers.contains { lowercased.contains($0) }
+    }
+
+    /// Bodies shorter than this are eligible to be judged a paywall stub.
+    static let paywallStubMaxLength = 2500
 }

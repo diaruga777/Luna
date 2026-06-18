@@ -63,12 +63,15 @@ struct ArticleFetcher {
     }
 
     /// `archive.ph/newest/<url>` 302-redirects to the latest archive.today snapshot,
-    /// which URLSession follows. Works on real devices; datacenter IPs get a CAPTCHA.
+    /// which URLSession follows. Succeeds only for the minority of IPs archive.today
+    /// doesn't challenge; everyone else gets a Cloudflare CAPTCHA (which a `URLSession`
+    /// can't solve) and falls through to the interactive `ArchiveWebReaderViewController`.
+    /// Short timeout so that common failure doesn't stall the foreground share sheet.
     private func fetchArchiveTodayHTML(for url: URL) async throws -> String {
         guard let archiveURL = URL(string: "https://archive.ph/newest/\(url.absoluteString)") else {
             throw FetchError.badResponse
         }
-        return try await fetch(url: archiveURL, userAgent: Self.safariUserAgent, timeout: 30)
+        return try await fetch(url: archiveURL, userAgent: Self.safariUserAgent, timeout: 12)
     }
 
     private func fetch(url: URL, userAgent: String, timeout: TimeInterval = 20) async throws -> String {

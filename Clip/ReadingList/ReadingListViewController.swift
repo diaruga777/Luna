@@ -841,6 +841,9 @@ final class ReadingListViewController: UITableViewController {
         // is extracted the item flips to `.ready` and the row updates itself.
         if item.state == .needsCaptcha, let url = item.url {
             let archive = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
+            archive.onOpenInBrowser = { archiveURL in
+                UIApplication.shared.open(archiveURL)
+            }
             present(UINavigationController(rootViewController: archive), animated: true)
             return
         }

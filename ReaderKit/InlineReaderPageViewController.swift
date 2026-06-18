@@ -33,6 +33,11 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
     private let spinner = UIActivityIndicatorView(style: .medium)
     private var articleProbe: Task<Void, Never>?
     private var articleContent: ArticleContent?
+    /// What the probe decided (reader vs raw web). Stashed because the probe is
+    /// kicked off in `init` to overlap the host's open animation, so it can finish
+    /// before `viewDidLoad` has built the view to show it in.
+    private enum ProbeDecision { case reader(ArticleContent); case web }
+    private var pendingDecision: ProbeDecision?
     private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
     private weak var readerChild: UIViewController?
     /// Created LAZILY in `showWebView` (not init) — instantiating a WKWebView spins
@@ -50,6 +55,9 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
         self.shareProvider = shareProvider
         self.headerHeight = headerHeight
         super.init(nibName: nil, bundle: nil)
+        // Begin fetching immediately so the network round-trip overlaps the host's
+        // open animation rather than starting only once the view has loaded.
+        probeForArticle()
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -71,7 +79,8 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
             spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: headerHeight / 2),
         ])
 
-        probeForArticle()
+        // The probe (kicked off in init) may already have a decision waiting.
+        applyDecisionIfPossible()
     }
 
     /// Adds and loads the themed web view (only once the probe rules OUT a reader),
@@ -122,11 +131,22 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
             guard let self, !Task.isCancelled else { return }
             await MainActor.run {
                 if let content, Self.isArticleLike(content) {
-                    self.showReader(content)
+                    self.pendingDecision = .reader(content)
                 } else {
-                    self.showWebView()   // not article-like → show the page
+                    self.pendingDecision = .web   // not article-like → show the page
                 }
+                self.applyDecisionIfPossible()
             }
+        }
+    }
+
+    /// Applies the probe's decision once the view exists to host it. Safe to call
+    /// from either the probe completion or `viewDidLoad`, whichever happens last.
+    private func applyDecisionIfPossible() {
+        guard isViewLoaded, !didDecide, let decision = pendingDecision else { return }
+        switch decision {
+        case .reader(let content): showReader(content)
+        case .web: showWebView()
         }
     }
 

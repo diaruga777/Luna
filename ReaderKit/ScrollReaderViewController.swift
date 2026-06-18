@@ -186,6 +186,8 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             self.textView.layoutManager.ensureLayout(for: self.textView.textContainer)
         }
 
+        addSimulatorSplitHooksIfNeeded()
+
         // Where read-aloud left off, shown until the user scrolls.
         if let spokenIndex = item.lastSpokenWordIndex,
            let range = wordMap.attributedRange(forWord: spokenIndex) {
@@ -586,16 +588,25 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         lineRect.origin.y += textView.textContainerInset.top
 
         // The cut is at the TOP of the link's line, in WINDOW coordinates (the
-        // overlay is full-screen, so window y == overlay y). Snapshot the whole
-        // window and split it there — pixel-perfect, no text relayout, and
-        // unaffected by the reader's offset from the screen top (nav bar etc.).
-        let lineTopInTextView = lineRect.minY - textView.contentOffset.y
-        let rawCutY = textView.convert(CGPoint(x: 0, y: lineTopInTextView), to: nil).y
+        // overlay is full-screen, so window y == overlay y). `lineRect.minY` is a
+        // CONTENT-space y; `convert` already accounts for the scroll offset (the
+        // text view's bounds origin IS its contentOffset), so pass it straight
+        // through — pre-subtracting contentOffset would double-count it and push the
+        // cut up the screen the more the article is scrolled.
+        let rawCutY = textView.convert(CGPoint(x: 0, y: lineRect.minY), to: nil).y
         let readerOffset = textView.contentOffset.y
 
-        // Top of the reader's content in window coords (below the nav bar). The cut
-        // must stay at or below this so the bottom peek never slices the nav bar.
-        let contentTopY = textView.convert(CGPoint.zero, to: nil).y
+        // Bottom of the outer header in window coords. The cut must stay at or below
+        // this so neither peek snapshot ever captures a slice of the nav bar (which
+        // would show as a frozen, clipped copy of the mode header). The text view's
+        // top edge in the window is its frame origin mapped through its (non-scrolling)
+        // superview — `textView.convert(.zero)` would instead fold in the scroll
+        // offset. Combine with the nav bar's own frame: the content can sit under a
+        // translucent bar, so the frame top alone can underestimate the header.
+        let contentTopY = textView.superview?.convert(textView.frame.origin, to: nil).y ?? 0
+        let navBar = (parent as? ReaderViewController)?.navigationController?.navigationBar
+        let navBarMaxY = navBar.map { bar in bar.convert(bar.bounds, to: nil).maxY }
+        let headerBottomY = max(contentTopY, navBarMaxY ?? contentTopY)
 
         var topHalf: UIView?
         var bottomHalf: UIView?
@@ -604,17 +615,17 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             let bounds = window.bounds
             let safe = window.safeAreaInsets
             let lineHeight = lineRect.height
-            // Clamp the cut so a full one-line peek fits below the nav bar and above
+            // Clamp the cut so a full one-line peek fits below the header and above
             // the home indicator — and so the snapshots are captured AT the clamped
             // cut (no later resize/glitch when the tapped link is very high or low).
-            let cutCeiling = max(contentTopY + lineHeight, safe.top + lineHeight)
+            let cutCeiling = max(headerBottomY + lineHeight, safe.top + lineHeight)
             cutY = min(max(rawCutY, cutCeiling), bounds.height - safe.bottom - lineHeight)
-            // The top peek captures ONLY the reader content (from below the nav bar):
-            // the live nav bar is tucked away separately, so excluding it here avoids
+            // Both peeks capture ONLY the reader content (from below the header): the
+            // live header is tucked / covered separately, so excluding it here avoids
             // a frozen second copy that would diverge from the animating live one.
             topHalf = window.resizableSnapshotView(
-                from: CGRect(x: 0, y: contentTopY, width: bounds.width,
-                             height: max(cutY - contentTopY, 1)),
+                from: CGRect(x: 0, y: headerBottomY, width: bounds.width,
+                             height: max(cutY - headerBottomY, 1)),
                 afterScreenUpdates: false, withCapInsets: .zero)
             bottomHalf = window.resizableSnapshotView(
                 from: CGRect(x: 0, y: cutY, width: bounds.width,
@@ -633,6 +644,48 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         overlay.onDismiss = { [weak self] in self?.restoreScroll(to: readerOffset) }
         present(overlay, animated: false)
     }
+
+    // MARK: - Simulator-only split hooks
+
+    /// The blitz harness can't tap an exact inline link, so in the simulator two
+    /// buttons trigger `openSplit` with the cut placed high or low on screen — the
+    /// two cases that exercise the inline-reader open animation + header tucking.
+    private func addSimulatorSplitHooksIfNeeded() {
+        #if targetEnvironment(simulator)
+        func hookButton(_ title: String, fraction: CGFloat) -> UIButton {
+            var config = UIButton.Configuration.filled()
+            config.title = title
+            config.baseBackgroundColor = .systemPurple
+            let button = UIButton(configuration: config)
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.addAction(
+                UIAction { [weak self] _ in self?.simulatorOpenSplit(atScreenFraction: fraction) },
+                for: .touchUpInside)
+            view.addSubview(button)
+            return button
+        }
+        let top = hookButton("Split High", fraction: 0.12)
+        let bottom = hookButton("Split Low", fraction: 0.82)
+        NSLayoutConstraint.activate([
+            top.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            top.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -24),
+            bottom.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            bottom.topAnchor.constraint(equalTo: top.bottomAnchor, constant: 12),
+        ])
+        #endif
+    }
+
+    #if targetEnvironment(simulator)
+    private func simulatorOpenSplit(atScreenFraction fraction: CGFloat) {
+        let yInTextView = textView.contentOffset.y + fraction * textView.bounds.height
+        let glyph = textView.layoutManager.glyphIndex(
+            for: CGPoint(x: 40, y: max(0, yInTextView)), in: textView.textContainer)
+        let charIndex = textView.layoutManager.characterIndexForGlyph(at: glyph)
+        guard let url = URL(string: "https://en.wikipedia.org/wiki/Swift_(programming_language)")
+        else { return }
+        openSplit(for: url, tappedRange: NSRange(location: charIndex, length: 1))
+    }
+    #endif
 
     /// Restores the reader to a saved content offset. Forces full text layout
     /// first — the text view lays out lazily, and clamping against a not-yet-final

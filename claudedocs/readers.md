@@ -54,19 +54,31 @@ The scroll reader (`ScrollReaderViewController`) backs both Scroll and Highlight
   reader is routed up via `onLinkActivated` and **PUSHED as the next page** (not a
   nested overlay); the ✕ becomes a back chevron that pops, while the bottom chevron /
   peek-drag dismiss the WHOLE stack. Links in a raw web view navigate it in place. The
-  chevron is blue and straddles the card's bottom edge. The OUTER reader's header is
-  tucked out of sight while open: the overlay calls `onOpen`/`onClose` so the presenting
-  `ReaderViewController.setHeaderTucked` animates the nav bar (with the mode switcher)
-  up off-screen and back; the top peek snapshot is captured from BELOW the nav bar
-  (`contentTopY`) so there's no frozen second copy to diverge from the animating live
-  one, and a themed strip (`topCover`) covers the status-bar band. `openSplit` clamps
-  `cutY` below the reader content top so the bottom peek never slices the nav bar. The
-  seamless progress=1 layout is set in `viewIsAppearing` (before the first frame) so
-  opening never flashes a mis-positioned copy. Each page (`InlineReaderPageViewController`)
-  shows a themed background + spinner until the article probe decides reader-vs-web,
-  then applies exactly one — never a white web-view flash; the web view is themed and
-  follows the device appearance. Also backs the RSVP link pill (nil peeks → grows from
-  the screen center over an OPAQUE themed backdrop so the outer header is fully hidden).
+  chevron is blue and straddles the card's bottom edge. There's a configurable
+  `bottomReaderInset` gap below the card so more of the outer reader stays visible at
+  the bottom. The OUTER reader's header is tucked out of sight while open: the overlay
+  calls `onOpen`/`onClose` so `ReaderViewController.setHeaderTucked` slides the nav bar
+  up, AND `topCover` (an opaque themed strip) is sized each frame to cover EVERYTHING
+  above the top peek — so when the link is high up (tiny top peek that can't cover the
+  header band itself) the live header is still hidden the whole animation. Both peek
+  snapshots are captured from below `headerBottomY` (= max of the text view's window
+  frame-top and the nav bar's actual `maxY`) and `openSplit` clamps `cutY` to the same
+  floor, so neither peek ever slices a frozen copy of the mode header. The cut Y is
+  `textView.convert(CGPoint(0, lineRect.minY), to: nil)` — passed in CONTENT space
+  (convert already folds in the scroll offset; pre-subtracting `contentOffset` was a
+  double-count that walked the cut up the screen as the article scrolled). The seamless
+  progress=1 layout AND the open animation both run in `viewIsAppearing` (no runloop hop
+  to `viewDidAppear` that briefly stalled on the collapsed sliver), with a snappy spring
+  (initialVelocity 1.0) so motion starts on the first frame. Each page
+  (`InlineReaderPageViewController`) kicks its article probe off in `init` (so the fetch
+  overlaps the open animation) and shows a themed background + spinner until the probe
+  decides reader-vs-web (decision stashed in `pendingDecision`, applied once the view is
+  loaded), then applies exactly one — never a white web-view flash; the web view is
+  themed and follows the device appearance. Also backs the RSVP link pill (nil peeks →
+  grows from the screen center over an OPAQUE themed backdrop so the outer header is
+  fully hidden). Simulator-only "Split High"/"Split Low" buttons
+  (`ScrollReaderViewController.addSimulatorSplitHooksIfNeeded`) trigger `openSplit` at a
+  high/low screen fraction since the harness can't tap an exact inline link.
   <!-- older single-outer-scroll description follows; superseded -->
 - `ReaderKit/SplitWebOverlayViewController.swift` (legacy notes) — On a link tap the reader is snapshotted at the TOP of the link's line: the part above parks as a one-line peek at the top, the link's line as a one-line peek at the bottom (both are `resizableSnapshotView` halves), and an inset rounded liquid-glass card (`ReaderDepth.backgroundColor(0)`, 14pt inset, 26pt corners, hairline border + sibling drop-shadow) grows out from the cut to fill the space between them (`animateOpen`, spring). The card's `WKWebView` (WebJunkBlocker applied) scrolls AND navigates INDEPENDENTLY — its gestures never reach the reader. Three dismissals, all animating the card's height to zero from its center while the peeks rejoin (`applyCompression(progress)` → `animateDismiss`): (1) the ✕ at the card's top-left, (2) the `chevron.compact.down` on the card's bottom edge, (3) an interactive `UIPanGestureRecognizer` on either peek — the card loses height equal to TWICE the drag distance (`progress = 2·|dy| / openHeight`), dismissing at progress ≥ 0.5 or a fast flick. A `square.and.arrow.down` save button (→ checkmark) sits top-right when a `shareProvider` is present. Presented `.overFullScreen` (no transition; the grow animation is the entrance). The same VC also backs the RSVP link pill, presented with nil peeks + `lineTopScreen = midY` so the card grows from the screen center. `onDismiss` re-asserts the reader's offset (it never moved).
 

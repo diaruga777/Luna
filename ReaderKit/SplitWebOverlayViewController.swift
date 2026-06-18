@@ -58,6 +58,8 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     private let innerNav = UINavigationController()
 
     private static let cardInset: CGFloat = 12
+    /// Extra gap below the card so the outer reader shows through more at the bottom.
+    private static let bottomReaderInset: CGFloat = 36
     private static let cardCornerRadius: CGFloat = 26
     private static let buttonSize: CGFloat = 40
     private static let headerHeight: CGFloat = 68
@@ -139,6 +141,9 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     /// Establish the seamless progress = 1 layout BEFORE the first frame is shown,
     /// so opening never flashes a half-laid-out copy of the reader. The peeks keep
     /// their captured (natural) bounds; `apply` positions them by origin.
+    /// Lay out collapsed AND kick off the open animation in the same pass. Doing both
+    /// here (rather than waiting for `viewDidAppear`) removes the one-runloop gap that
+    /// otherwise showed the collapsed sliver as a brief stall before the card grew.
     override func viewIsAppearing(_ animated: Bool) {
         super.viewIsAppearing(animated)
         guard !didLayoutInitial else { return }
@@ -146,16 +151,18 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         cutY = min(max(cutY, openCardFrame.minY), openCardFrame.maxY)
         apply(progress: 1)
         dimView.alpha = 1
+        animateOpen()
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
+    private func animateOpen() {
         guard !didAnimateIn else { return }
         didAnimateIn = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         onOpen?()
-        UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.9,
-                       initialSpringVelocity: 0.2) {
+        // A higher initial velocity + lighter damping so the card starts moving on the
+        // first frame instead of easing in slowly (which read as a pre-open delay).
+        UIView.animate(withDuration: 0.34, delay: 0, usingSpringWithDamping: 0.82,
+                       initialSpringVelocity: 1.0, options: [.beginFromCurrentState]) {
             self.apply(progress: 0)
         }
     }
@@ -168,7 +175,9 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         let width = view.bounds.width
         let peek = hasPeeks ? lineHeight : 0
         let top = view.safeAreaInsets.top + peek
-        let bottom = view.bounds.height - view.safeAreaInsets.bottom - peek
+        // Leave extra room at the bottom so more of the outer reader stays visible
+        // there and the card's bottom edge sits a little higher up the screen.
+        let bottom = view.bounds.height - view.safeAreaInsets.bottom - peek - Self.bottomReaderInset
         return CGRect(x: Self.cardInset, y: top,
                       width: width - Self.cardInset * 2, height: max(bottom - top, 0))
     }
@@ -191,13 +200,17 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         innerNav.view.frame = card.bounds
         layoutHeader()
 
-        // Themed strip across the status-bar band (full width, behind everything
-        // but the dim) so the outer header doesn't show as the card opens.
-        topCover.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
-
         // Peeks flush to the card edges → no gap for the live reader to show through.
         if let topHalf { topHalf.frame.origin.y = cardTop - topHalf.bounds.height }
         if let bottomHalf { bottomHalf.frame.origin.y = cardBottom }
+
+        // Themed strip covering EVERYTHING above the top peek — not just the status
+        // bar. Whatever the cut position, the outer reader's header sits behind this
+        // opaque strip the whole time the card animates (when the link is high up the
+        // top peek is tiny and never covers the header band on its own).
+        let topPeekTop = topHalf.map { $0.frame.origin.y } ?? cardTop
+        let coverBottom = max(view.safeAreaInsets.top, topPeekTop)
+        topCover.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: max(coverBottom, 0))
 
         // Chevron straddles the card's bottom edge, kept clear of the home indicator.
         let chevronY = min(cardBottom, view.bounds.height - view.safeAreaInsets.bottom - 6)

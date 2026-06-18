@@ -244,9 +244,15 @@ final class ShareViewController: UIViewController {
     /// and an "Open in Queue" button. Safe to call from any thread.
     private func presentSavedOrReader(url: URL) {
         guard let mode = readerMode() else {
-            // Share extension (no reader mode): save and close. If auto-download is
-            // on for this platform, stay alive and download the media first.
-            autoDownloadThenComplete(urlString: url.absoluteString)
+            // Share extension (no reader mode). Media/platform links take the
+            // auto-download path. A plain article is ingested inline so that a hard
+            // paywall's archive CAPTCHA can be solved right here — keeping the sheet
+            // open — instead of silently landing as a locked item in the app.
+            if NonTextualContent.detect(urlString: url.absoluteString) != nil {
+                autoDownloadThenComplete(urlString: url.absoluteString)
+            } else {
+                ingestArticleThenComplete(url: url)
+            }
             return
         }
         DispatchQueue.main.async { [weak self] in
@@ -381,10 +387,67 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    /// A liquid-glass badge with a spinner + "Saving media…" (returned so it can be
-    /// swapped for the saved checkmark when the download finishes).
+    /// Share-extension path for a plain article: ingest inline (direct fetch, then
+    /// the public web archives) so a hard paywall's archive CAPTCHA can be solved
+    /// right here. The URL is already saved; on success this fills in its content,
+    /// on a paywall it presents the archive web reader (keeping the sheet open),
+    /// and either way it ends in the "Saved" checkmark and dismisses.
+    private func ingestArticleThenComplete(url: URL) {
+        cancelLoadWatchdog()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let badge = self.showDownloadingBadge(text: "Saving…")
+            Task {
+                let resolution = await ArticleResolver.resolve(url: url)
+                await MainActor.run {
+                    badge.removeFromSuperview()
+                    self.finishArticleIngest(url: url, resolution: resolution)
+                }
+            }
+        }
+    }
+
+    /// Routes the result of the share-extension inline ingest: real content is
+    /// saved and the checkmark shown; a paywalled-but-titled article opens the
+    /// archive web reader so the user can solve its CAPTCHA; anything else just
+    /// confirms the save (the app retries the fetch later).
+    private func finishArticleIngest(url: URL, resolution: ArticleResolution) {
+        guard let item = ReadingListStore.shared.item(forURLString: url.absoluteString) else {
+            confirmSavedThenComplete()
+            return
+        }
+        switch resolution {
+        case .readable(let content, _):
+            _ = ReadingListStore.shared.saveContent(content, for: item)
+            confirmSavedThenComplete()
+        case .paywalled(let title):
+            ReadingListStore.shared.markNeedsCaptcha(item.id, title: title)
+            presentArchiveReaderForCaptcha(url: url, itemID: item.id)
+        case .unreadable:
+            confirmSavedThenComplete()
+        }
+    }
+
+    /// Presents the archive web reader full-screen so the user can solve the
+    /// archive.today CAPTCHA. Solving it extracts the article and flips the item to
+    /// `.ready`, after which we show the checkmark and dismiss; exiting first leaves
+    /// the item `.needsCaptcha`, unlockable later from the app.
+    private func presentArchiveReaderForCaptcha(url: URL, itemID: UUID) {
+        let archive = ArchiveWebReaderViewController(articleURL: url, itemID: itemID)
+        archive.onClose = { [weak self] in self?.complete() }
+        archive.onExtracted = { [weak self] in
+            guard let self else { return }
+            self.dismiss(animated: true) { self.confirmSavedThenComplete() }
+        }
+        let nav = UINavigationController(rootViewController: archive)
+        nav.modalPresentationStyle = .fullScreen
+        present(nav, animated: true)
+    }
+
+    /// A liquid-glass badge with a spinner + label (returned so it can be swapped
+    /// for the saved checkmark once the in-flight work finishes).
     @discardableResult
-    private func showDownloadingBadge() -> UIVisualEffectView {
+    private func showDownloadingBadge(text: String = "Saving media…") -> UIVisualEffectView {
         let badge = UIVisualEffectView(effect: GlassStyle.barEffect())
         badge.translatesAutoresizingMaskIntoConstraints = false
         badge.layer.cornerRadius = 24
@@ -395,7 +458,7 @@ final class ShareViewController: UIViewController {
         spinner.color = GlassStyle.readingAccent
         spinner.startAnimating()
         let label = UILabel()
-        label.text = "Saving media…"
+        label.text = text
         label.font = .systemFont(ofSize: 16, weight: .semibold)
         label.textColor = .label
         let stack = UIStackView(arrangedSubviews: [spinner, label])

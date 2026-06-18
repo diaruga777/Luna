@@ -57,4 +57,17 @@ struct ArticleContent: Codable {
     var wholeText: String {
         blocks.map(\.text).joined(separator: "\n\n")
     }
+
+    /// Total length of all block text — the cheap heuristic for "is this a real
+    /// article vs. a paywall stub / near-empty extraction".
+    var bodyTextLength: Int {
+        blocks.reduce(0) { $0 + $1.text.count }
+    }
+
+    /// Enough body text to be worth reading rather than a paywall stub. Shared by
+    /// the ingestor and both extensions so they agree on the threshold.
+    var hasReadableBody: Bool { bodyTextLength >= Self.readableBodyThreshold }
+
+    /// Minimum block-text length for `hasReadableBody`.
+    static let readableBodyThreshold = 600
 }

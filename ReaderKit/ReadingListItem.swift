@@ -15,6 +15,14 @@ struct ReadingListItem: Codable, Identifiable {
         case ready
         /// Download or extraction failed; retried on next launch / pull-to-refresh.
         case failed
+        /// Hard-paywalled article (WSJ, FT, …) whose text couldn't be extracted
+        /// directly or from the Wayback Machine, and whose archive.today snapshot
+        /// requires solving a CAPTCHA an automated fetch can't pass. The item is
+        /// saved (with its title) and shown in the list with a "tap to unlock"
+        /// affordance; tapping opens the archive snapshot in a web view where the
+        /// user solves the CAPTCHA, after which the article is extracted and the
+        /// item transitions to `.ready`.
+        case needsCaptcha
     }
 
     /// How far the user has gotten with the article.

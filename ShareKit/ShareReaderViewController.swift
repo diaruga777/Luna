@@ -74,15 +74,34 @@ final class ShareReaderViewController: UIViewController {
         // Save immediately (shared storage) so the article is captured even if
         // the user exits mid-read; reuse the item the extension just appended.
         let item = ReadingListStore.shared.add(urlString: url.absoluteString)
-        do {
-            let html = try await ArticleFetcher().fetchHTML(from: url)
-            let content = try ArticleExtractor().extract(html: html, baseURL: url)
+
+        switch await ArticleResolver.resolve(url: url) {
+        case .readable(let content, _):
             // Persist the parsed content so the main app has it too.
             let saved = ReadingListStore.shared.saveContent(content, for: item)
             presentReader(item: saved, content: content)
-        } catch {
+        case .paywalled(let title):
+            // A hard paywall (WSJ/FT): resolve its archive.today CAPTCHA right here
+            // in the extension's own UI — the user never types the URL (it's
+            // pre-filled), at most they solve a CAPTCHA.
+            presentArchiveReader(for: item, fallbackTitle: title)
+        case .unreadable:
             presentFailure()
         }
+    }
+
+    /// Loads the article's archive.today snapshot in a web view so the user can
+    /// solve any CAPTCHA inline. Marks the item `.needsCaptcha` first, so that if
+    /// the user exits before solving it stays unlockable from the main app; once
+    /// the snapshot loads, the web reader extracts the article and flips it to
+    /// `.ready`.
+    private func presentArchiveReader(for item: ReadingListItem, fallbackTitle: String) {
+        spinner.stopAnimating()
+        ReadingListStore.shared.markNeedsCaptcha(item.id, title: fallbackTitle)
+        let archive = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
+        let onDone = self.onDone
+        archive.onClose = { onDone() }
+        navigationController?.setViewControllers([archive], animated: false)
     }
 
     private func presentReader(item: ReadingListItem, content: ArticleContent) {

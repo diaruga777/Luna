@@ -52,19 +52,25 @@ final class ReadingListIngestor {
             return
         }
 
-        do {
-            let html = try await fetcher.fetchHTML(from: url)
-            var content = try extractor.extract(html: html, baseURL: url)
-            content = await downloadImages(for: content, itemID: item.id)
+        // Direct fetch + extract, falling back to web archives for hard-paywalled
+        // sites (WSJ: 401; FT: subscription stub). A paywall whose body we can't
+        // read but whose title we can lands in `.needsCaptcha` — the archive.today
+        // snapshot it needs requires a user-solved CAPTCHA a background fetch can't
+        // pass, so the user unlocks it from the list. No title → genuinely broken.
+        switch await ArticleResolver.resolve(url: url, fetcher: fetcher, extractor: extractor) {
+        case .readable(let content, let html):
+            let resolvedContent = await downloadImages(for: content, itemID: item.id)
             // Best-effort cover/banner art for the list row (kept before the
             // ready flip so the row's spinner covers the whole fetch).
             let coverData = await fetchCoverImageData(html: html, baseURL: url)
-            let updated = store.saveContent(content, for: item)
+            let updated = store.saveContent(resolvedContent, for: item)
             if let coverData { store.setThumbnail(coverData, for: item.id) }
             if updated.state == .ready {
                 ArticleSendCoordinator.shared.articleBecameReady(updated)
             }
-        } catch {
+        case .paywalled(let title):
+            store.markNeedsCaptcha(item.id, title: title)
+        case .unreadable:
             store.markFailed(item.id)
         }
     }
@@ -220,7 +226,10 @@ final class ReadingListIngestor {
 
     /// Kicks off ingestion for everything not yet ready (app launch / foreground).
     func ingestAllPending() {
-        for item in store.items() where item.state != .ready {
+        // `.needsCaptcha` items can only advance when the user solves the archive
+        // CAPTCHA, so a background re-fetch can't help them — retry only the states
+        // that an automated pass can actually move forward.
+        for item in store.items() where item.state == .pending || item.state == .failed {
             Task { await self.ingest(item) }
         }
     }

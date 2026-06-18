@@ -806,6 +806,7 @@ final class ReadingListViewController: UITableViewController {
         switch item.state {
         case .pending: parts.append("downloading…")
         case .failed: parts.append("pull to retry")
+        case .needsCaptcha: parts.append("tap to unlock")
         case .ready: break
         }
 
@@ -835,6 +836,14 @@ final class ReadingListViewController: UITableViewController {
         }
         let item = item(at: indexPath)
         if openItem(item, presentingFrom: self) { return }
+        // A hard-paywalled article whose archive snapshot needs a CAPTCHA: open its
+        // archive.today snapshot in a web view so the user can solve it. Once content
+        // is extracted the item flips to `.ready` and the row updates itself.
+        if item.state == .needsCaptcha, let url = item.url {
+            let archive = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
+            present(UINavigationController(rootViewController: archive), animated: true)
+            return
+        }
         guard item.state == .ready, let content = store.content(for: item) else { return }
         let reader = ReaderViewController(
             item: item, content: content,
@@ -978,6 +987,11 @@ final class ReadingListViewController: UITableViewController {
     ) -> ReadingListItemCell.Thumbnail {
         if let fileName = item.thumbnailFileName {
             return .art(path: store.articlesDirectory.appendingPathComponent(fileName).path)
+        }
+        // A paywalled article awaiting a user-solved CAPTCHA isn't fetching — show a
+        // lock to signal it needs a tap to unlock, not a spinner.
+        if item.state == .needsCaptcha {
+            return .logo(assetName: nil, glyph: "lock.fill")
         }
         let fetchFinished = isPasteboard || item.state == .ready || item.state == .failed
 

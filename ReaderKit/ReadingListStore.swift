@@ -437,6 +437,8 @@ final class ReadingListStore {
             try? data.write(to: articlesDirectory.appendingPathComponent(fileName), options: .atomic)
             all[index].contentFileName = fileName
             all[index].title = content.title
+            // Real content now exists (possibly after the user solved an archive
+            // CAPTCHA), so this is the terminal ready state regardless of how it got here.
             all[index].state = .ready
             all[index].wordCount = content.blocks.reduce(0) {
                 $0 + $1.text.split(whereSeparator: { $0.isWhitespace }).count
@@ -446,6 +448,21 @@ final class ReadingListStore {
         }
         save(all)
         return all[index]
+    }
+
+    /// Marks a hard-paywalled article as needing a user-solved archive CAPTCHA: it
+    /// lands in the list (with its real title) in the `.needsCaptcha` state, shown
+    /// with a "tap to unlock" affordance. Tapping opens the archive.today snapshot in
+    /// a web view; once the user solves the CAPTCHA the article is extracted and
+    /// `saveContent` moves it to `.ready`.
+    func markNeedsCaptcha(_ itemID: UUID, title: String?) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var all = items()
+        guard let index = all.firstIndex(where: { $0.id == itemID }) else { return }
+        all[index].state = .needsCaptcha
+        if let title, !title.isEmpty { all[index].title = title }
+        save(all)
     }
 
     func content(for item: ReadingListItem) -> ArticleContent? {

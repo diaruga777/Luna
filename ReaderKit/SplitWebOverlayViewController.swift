@@ -315,7 +315,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
             modeControl.selectedSegmentIndex = index
         }
         // A fresh page can save again.
-        saveButton.configuration = Self.saveButtonConfiguration(symbol: "square.and.arrow.down")
+        saveButton.configuration = Self.saveButtonConfiguration(title: "Save")
         saveButton.tintColor = GlassStyle.readingAccent
         saveButton.isEnabled = true
         layoutHeader()
@@ -345,18 +345,24 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         header.contentView.addSubview(modeControl)
 
         if shareProvider != nil {
-            saveButton.configuration = Self.saveButtonConfiguration(symbol: "square.and.arrow.down")
+            saveButton.configuration = Self.saveButtonConfiguration(title: "Save")
             saveButton.tintColor = GlassStyle.readingAccent
             saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
             header.contentView.addSubview(saveButton)
         }
     }
 
-    /// The save button uses the share glyph, nudged up so its box+arrow sit
-    /// optically centered in the circle.
-    private static func saveButtonConfiguration(symbol: String) -> UIButton.Configuration {
-        var config = GlassStyle.circularButtonConfiguration(symbol: symbol)
-        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 10, bottom: 12, trailing: 10)
+    /// The save button shows the word "Save" (then "Saved") in a glass capsule
+    /// rather than an icon, tinted with the reading accent.
+    private static func saveButtonConfiguration(title: String) -> UIButton.Configuration {
+        var config: UIButton.Configuration = {
+            if #available(iOS 26.0, *) { return .glass() }
+            return .tinted()
+        }()
+        config.title = title
+        config.cornerStyle = .capsule
+        config.baseForegroundColor = GlassStyle.readingAccent
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
         return config
     }
 
@@ -365,9 +371,22 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         let s = Self.buttonSize
         let y = (Self.headerHeight - s) / 2
         closeButton.frame = CGRect(x: Self.buttonInset, y: y, width: s, height: s)
-        saveButton.frame = CGRect(x: card.bounds.width - s - Self.buttonInset, y: y, width: s, height: s)
+
+        // The save button is a text capsule — size it to its title, keeping a capsule
+        // height equal to the close button.
+        var trailingWidth = s
+        if saveButton.superview != nil {
+            let fit = saveButton.sizeThatFits(CGSize(width: card.bounds.width, height: s))
+            let saveWidth = max(fit.width, s)
+            saveButton.frame = CGRect(
+                x: card.bounds.width - saveWidth - Self.buttonInset, y: y, width: saveWidth, height: s)
+            trailingWidth = saveWidth
+        }
+
+        // Keep the centered mode switcher clear of whichever side button is wider.
+        let sideReserve = Self.buttonInset + max(s, trailingWidth) + 8
         let modeSize = modeControl.sizeThatFits(CGSize(width: card.bounds.width, height: 36))
-        let modeWidth = min(modeSize.width, card.bounds.width - (Self.buttonInset + s + 8) * 2)
+        let modeWidth = min(modeSize.width, card.bounds.width - sideReserve * 2)
         modeControl.frame = CGRect(
             x: (card.bounds.width - modeWidth) / 2, y: (Self.headerHeight - 34) / 2,
             width: modeWidth, height: 34)
@@ -403,11 +422,10 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     @objc private func saveTapped() {
         guard let target = topPage?.url else { return }
         shareProvider?.saveLink(urlString: target.absoluteString)
-        var config = GlassStyle.circularButtonConfiguration(symbol: "checkmark")
-        config.baseForegroundColor = GlassStyle.readingAccent
-        saveButton.configuration = config
+        saveButton.configuration = Self.saveButtonConfiguration(title: "Saved")
         saveButton.tintColor = GlassStyle.readingAccent
         saveButton.isEnabled = false
+        layoutHeader()
     }
 
     func gestureRecognizer(

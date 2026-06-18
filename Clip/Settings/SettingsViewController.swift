@@ -34,7 +34,7 @@ final class SettingsViewController: UITableViewController {
     private let categories: [Category] = [
         Category(title: "Reader", symbol: "textformat.size") { ReaderSettingsScreen() },
         Category(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
-        Category(title: "Eye Tracking", symbol: "eye") { EyeTrackingSettingsScreen() },
+        Category(title: "Visual Progress", symbol: "eye") { EyeTrackingSettingsScreen() },
         Category(title: "Email & Kindle", symbol: "envelope") { EmailAndKindleSettingsScreen() },
         Category(title: "Send to Boox", symbol: "books.vertical") { BooxSettingsScreen() },
         Category(title: "Music & Podcasts", symbol: "music.note") { MediaProviderSettingsScreen() },
@@ -285,7 +285,7 @@ final class EyeTrackingSettingsScreen: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Uses the front camera to start audio and speed reading where you left off. \"Highlight Looked-At Word\" highlights the word you're reading."
+        "Tracks your eyes while reading (only while the app is open) to pick up voiceover where you left off.\n\n\"Highlight\" adds a visual accent to the word you're reading."
     }
 
     override func tableView(
@@ -300,7 +300,7 @@ final class EyeTrackingSettingsScreen: UITableViewController {
             cell.accessoryView = makeToggle(
                 isOn: ReaderSettings.eyeTrackingEnabled, action: #selector(eyeTrackingToggled(_:)))
         case .highlight:
-            content.text = "Highlight Looked-At Word"
+            content.text = "Experimental: Highlight"
             cell.accessoryView = makeToggle(
                 isOn: ReaderSettings.highlightGazeWord, action: #selector(highlightToggled(_:)))
         }

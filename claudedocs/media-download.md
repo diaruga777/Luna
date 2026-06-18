@@ -34,12 +34,16 @@ snapinsta, …) with keyless, client-side extraction.
   - `TikTokMediaParser` — the page's `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">`
     JSON → `…webapp.video-detail.itemInfo.itemStruct`: `imagePost.images[].imageURL.urlList[0]`
     (photo carousel) else `video.playAddr` (no-watermark) / `video.downloadAddr`.
-  - `InstagramMediaParser` — post/embed HTML: `"video_url"` / `og:video` → video, else
-    `"display_url"` / `EmbeddedMediaImage` / `og:image` → image; `unescape` fixes
-    `&`,`\/`,`&amp;`. The resolver fetches the POST page FIRST with a link-unfurler UA
-    (`facebookexternalhit/1.1`, which exposes `og:video`) and prefers a video asset;
-    the `/embed/captioned/` page is only the image fallback (it lacks the video — the
-    earlier embed-first order saved a still from videos).
+  - `InstagramMediaParser` — the resolver fetches the **`/p/{code}/embed/captioned/`
+    page FIRST** and parses its `contextJSON` blob (`assetsFromEmbedContextJSON`): a
+    JSON-encoded string holding `gql_data.shortcode_media`, from which it reads
+    `video_url` (GraphVideo / `is_video`), `display_url` (image), or an
+    `edge_sidecar_to_children` carousel — clean URLs straight from parsed JSON. This is
+    the only reliable keyless source for a reel's real video; the crawler `og:` tags
+    now expose ONLY the poster still behind a login wall, so the OLD og-first order
+    saved a still from every video reel. Fallbacks (in order): legacy regex
+    `assets(fromHTML:)` (`"video_url"` / `"display_url"` / `og:` tags; `unescape` fixes
+    `&`,`\/`,`&amp;`), then the post page's `og:` tags via `facebookexternalhit/1.1`.
   - Requests use a desktop Safari UA (`MediaDownloadHTTP.browserUserAgent`).
 - **`MediaDownloadService.swift`** — `downloadFirstMediaToPhotos(from:onProgress:)`:
   guards `supports`, requests add-only auth FIRST, resolves, downloads the first asset,
@@ -74,7 +78,8 @@ the main app re-ingests it. Note: the share extension has its OWN Photos permiss
 ## Caveats (best-effort, like the web tools)
 
 Keyless extraction depends on third-party/undocumented endpoints that change and may be
-rate-limited or login-walled: Instagram is the most fragile (login wall → no media),
+rate-limited or login-walled: Instagram video relies on the embed `contextJSON` (verified
+working for reels); if Instagram drops it the fallbacks yield only the poster still.
 TikTok `playAddr` can 403 without page cookies. The parsers are tested; live extraction
 is not guaranteed end-to-end. Twitter "GIFs" are mp4 and save as videos.
 

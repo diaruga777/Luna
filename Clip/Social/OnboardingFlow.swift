@@ -49,8 +49,8 @@ enum OnboardingFlow {
         }
         return OnboardingStepViewController(
             symbol: "bell.badge",
-            title: "Stay in the Loop",
-            body: "Get a notification the moment a friend shares an article with you.",
+            title: "Get notified",
+            body: "Enable to get a notification when a friend shares an article with you.",
             primary: .init(title: "Enable Notifications") { _ in
                 NotificationManager.requestAuthorization()
                 UIApplication.shared.registerForRemoteNotifications()
@@ -66,8 +66,8 @@ enum OnboardingFlow {
     ) -> UIViewController {
         OnboardingStepViewController(
             symbol: "safari",
-            title: "Save from Safari",
-            body: "Everything stays on device. The app remembers your last visited site so it can be saved instantly.\n\nTurn on the Queue extension in Settings → Apps → Safari → Extensions.",
+            title: "Save any Safari page instantly",
+            body: "Queue remembers your last visited site. Visit data stays on device and is never shared.\n\nTurn on the Queue extension in Settings → Apps → Safari → Extensions.",
             primary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
             continueTitle: "Continue",
             animation: .settingsToggle,
@@ -79,8 +79,8 @@ enum OnboardingFlow {
     private static func shortcutStep(onFinished: @escaping () -> Void) -> UIViewController {
         OnboardingStepViewController(
             symbol: "bolt.badge.clock",
-            title: "One-Press Saving",
-            body: "Install the shortcut, then assign it to your Action Button to save the page you're reading instantly:\n\nSettings → Action Button → Shortcut → \"\(BundledShortcut.displayName)\".",
+            title: "Save anything, instantly",
+            body: "Press the action button to save, download, or share whatever is on your screen.\n\nInstall the shortcut and assign it to your Action Button:\n\nSettings → Action Button → Shortcut → \"\(BundledShortcut.displayName)\".\n\nEdit the shortcut to your liking to customize your Action Button!",
             primary: .init(title: "Install Shortcut") { step in
                 BundledShortcut.presentInstaller(from: step)
             },

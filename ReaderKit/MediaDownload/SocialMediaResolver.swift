@@ -52,26 +52,29 @@ struct SocialMediaResolver: SocialMediaResolving {
     }
 
     private func resolveInstagram(url: URL, shortcode: String?) async -> [MediaAsset] {
-        // Post page FIRST — it exposes `og:video` for video posts. The embed page
-        // only carries the poster image, so trying it first would save a still from
-        // a video (the bug this fixes). A crawler UA reliably gets the og preview.
-        var assets: [MediaAsset] = []
-        if let data = await fetch(metaScrapeRequest(url)),
-           let html = String(data: data, encoding: .utf8) {
-            assets = InstagramMediaParser.assets(fromHTML: html)
-        }
-        if assets.contains(where: { $0.kind == .video }) { return assets }
-
-        // Embed fallback (sometimes carries a `video_url`, otherwise the image).
+        // Embed page FIRST. Its `contextJSON` (gql_data.shortcode_media) carries the
+        // real `video_url` for reels/videos and `display_url` for stills — the only
+        // reliable keyless source. The crawler `og:` tags now expose ONLY the poster
+        // image behind a login wall, so a video reel would otherwise save a still
+        // (the bug this fixes). `/p/{code}/embed/` serves reels too.
         if let code = shortcode,
            let embed = URL(string: "https://www.instagram.com/p/\(code)/embed/captioned/"),
            let data = await fetch(htmlRequest(embed)),
            let html = String(data: data, encoding: .utf8) {
-            let embedAssets = InstagramMediaParser.assets(fromHTML: html)
-            if embedAssets.contains(where: { $0.kind == .video }) { return embedAssets }
-            if assets.isEmpty { return embedAssets }
+            let assets = InstagramMediaParser.assetsFromEmbedContextJSON(html)
+            if !assets.isEmpty { return assets }
+            // Older embed markup occasionally inlines an unescaped video_url/image.
+            let legacy = InstagramMediaParser.assets(fromHTML: html)
+            if !legacy.isEmpty { return legacy }
         }
-        return assets
+
+        // Fallback: the post page's `og:` tags (image-only for walled video posts,
+        // but better than nothing when the embed is unavailable).
+        if let data = await fetch(metaScrapeRequest(url)),
+           let html = String(data: data, encoding: .utf8) {
+            return InstagramMediaParser.assets(fromHTML: html)
+        }
+        return []
     }
 
     // MARK: - Requests
@@ -193,6 +196,69 @@ enum TikTokMediaParser {
 
 /// Parses Instagram post/embed HTML into a single media asset (video preferred).
 enum InstagramMediaParser {
+    /// Parses the embed page's `contextJSON` blob — a JSON-encoded string holding
+    /// `gql_data.shortcode_media` — into ordered assets. This is the reliable source
+    /// for a reel/video's real `video_url` (carousels and stills too). Empty if the
+    /// blob is absent or has no recognizable media.
+    static func assetsFromEmbedContextJSON(_ html: String) -> [MediaAsset] {
+        guard let media = shortcodeMedia(fromEmbedHTML: html) else { return [] }
+        // Carousel (mixed photos/videos) → one asset per child, in order.
+        if let sidecar = media["edge_sidecar_to_children"] as? [String: Any],
+           let edges = sidecar["edges"] as? [[String: Any]] {
+            let assets = edges.compactMap { ($0["node"] as? [String: Any]).flatMap(asset(fromNode:)) }
+            if !assets.isEmpty { return assets }
+        }
+        return asset(fromNode: media).map { [$0] } ?? []
+    }
+
+    /// One asset from a shortcode-media node: its video when it's a video, else the
+    /// still. URLs come straight from parsed JSON, so they need no unescaping.
+    private static func asset(fromNode node: [String: Any]) -> MediaAsset? {
+        let isVideo = (node["is_video"] as? Bool) ?? (node["__typename"] as? String == "GraphVideo")
+        if isVideo, let videoURL = node["video_url"] as? String, let url = URL(string: videoURL) {
+            return MediaAsset(url: url, kind: .video)
+        }
+        if let displayURL = node["display_url"] as? String, let url = URL(string: displayURL) {
+            return MediaAsset(url: url, kind: .image)
+        }
+        return nil
+    }
+
+    /// Extracts and decodes `contextJSON` (a JSON string literal embedded in the
+    /// page) and returns its `gql_data.shortcode_media` dictionary.
+    private static func shortcodeMedia(fromEmbedHTML html: String) -> [String: Any]? {
+        guard let marker = html.range(of: "contextJSON") else { return nil }
+        let afterMarker = html[marker.upperBound...]
+        // The value is `: "<json-string-literal>"` — find the colon then the literal.
+        guard let colon = afterMarker.firstIndex(of: ":") else { return nil }
+        let afterColon = afterMarker[afterMarker.index(after: colon)...]
+        guard let openQuote = afterColon.firstIndex(of: "\"") else { return nil }
+
+        // Walk the string literal, honoring backslash escapes, to its closing quote.
+        var literal = "\""
+        var index = afterColon.index(after: openQuote)
+        while index < afterColon.endIndex {
+            let character = afterColon[index]
+            literal.append(character)
+            if character == "\\" {
+                index = afterColon.index(after: index)
+                guard index < afterColon.endIndex else { break }
+                literal.append(afterColon[index])
+            } else if character == "\"" {
+                break
+            }
+            index = afterColon.index(after: index)
+        }
+
+        // `literal` is a JSON string literal; decoding it yields the inner JSON text.
+        guard let inner = try? JSONSerialization.jsonObject(
+                with: Data(literal.utf8), options: [.fragmentsAllowed]) as? String,
+              let context = try? JSONSerialization.jsonObject(with: Data(inner.utf8)) as? [String: Any],
+              let gqlData = context["gql_data"] as? [String: Any],
+              let media = gqlData["shortcode_media"] as? [String: Any] else { return nil }
+        return media
+    }
+
     static func assets(fromHTML html: String) -> [MediaAsset] {
         // Videos / reels first.
         for pattern in [#""video_url":"(.*?)""#,

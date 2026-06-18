@@ -106,6 +106,48 @@ final class MediaDownloadTests: XCTestCase {
             "https://x/a&b&c")
     }
 
+    /// Embeds `inner` (a JSON string) as the page's `contextJSON` value — a JSON
+    /// string LITERAL, exactly how Instagram's embed page double-encodes it.
+    private func embedHTML(contextJSON inner: String) -> String {
+        let literal = String(
+            data: try! JSONSerialization.data(withJSONObject: inner, options: [.fragmentsAllowed]),
+            encoding: .utf8)!
+        return "<script>window.__d({\"contextJSON\":\(literal)});</script>"
+    }
+
+    func testInstagramEmbedContextJSONVideo() {
+        let html = embedHTML(contextJSON: #"""
+        {"gql_data":{"shortcode_media":{"__typename":"GraphVideo","is_video":true,"video_url":"https://cdn.example/v.mp4?a=1&b=2","display_url":"https://cdn.example/poster.jpg"}}}
+        """#)
+        // The real video_url wins over the poster display_url for a video post.
+        XCTAssertEqual(
+            InstagramMediaParser.assetsFromEmbedContextJSON(html),
+            [MediaAsset(url: URL(string: "https://cdn.example/v.mp4?a=1&b=2")!, kind: .video)])
+    }
+
+    func testInstagramEmbedContextJSONImage() {
+        let html = embedHTML(contextJSON: #"""
+        {"gql_data":{"shortcode_media":{"__typename":"GraphImage","is_video":false,"display_url":"https://cdn.example/i.jpg"}}}
+        """#)
+        XCTAssertEqual(
+            InstagramMediaParser.assetsFromEmbedContextJSON(html),
+            [MediaAsset(url: URL(string: "https://cdn.example/i.jpg")!, kind: .image)])
+    }
+
+    func testInstagramEmbedContextJSONCarousel() {
+        let html = embedHTML(contextJSON: #"""
+        {"gql_data":{"shortcode_media":{"__typename":"GraphSidecar","edge_sidecar_to_children":{"edges":[{"node":{"is_video":false,"display_url":"https://cdn.example/1.jpg"}},{"node":{"is_video":true,"video_url":"https://cdn.example/2.mp4"}}]}}}}
+        """#)
+        XCTAssertEqual(
+            InstagramMediaParser.assetsFromEmbedContextJSON(html),
+            [MediaAsset(url: URL(string: "https://cdn.example/1.jpg")!, kind: .image),
+             MediaAsset(url: URL(string: "https://cdn.example/2.mp4")!, kind: .video)])
+    }
+
+    func testInstagramEmbedContextJSONAbsent() {
+        XCTAssertTrue(InstagramMediaParser.assetsFromEmbedContextJSON("<html>no json</html>").isEmpty)
+    }
+
     // MARK: - File extension selection
 
     func testFileExtensionByKindAndMime() {

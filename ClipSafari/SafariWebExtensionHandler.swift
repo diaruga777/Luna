@@ -14,7 +14,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let item = context.inputItems.first as? NSExtensionItem
         let message = item?.userInfo?[SFExtensionMessageKey] as? [String: Any]
 
-        if let urlString = message?["url"] as? String, urlString.hasPrefix("http") {
+        if (message?["type"] as? String) == "archiveContent" {
+            // The "Read in Queue" archive harvest — stash it for the app to ingest.
+            PendingSafariArchive.write(message: message ?? [:])
+        } else if let urlString = message?["url"] as? String, urlString.hasPrefix("http") {
             SharedSafariURL.record(urlString)
         }
 

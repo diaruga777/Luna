@@ -60,6 +60,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// Dispatches an incoming URL: a `clickreader://read` link opens the reader;
     /// anything else is treated as a `clipreader://friend` link.
     private func route(_ url: URL) {
+        // `clickreader://saved` is the Safari extension's "Open Queue" banner button
+        // — just bring the app forward; `sceneWillEnterForeground` imports the new
+        // archive capture and refreshes the list.
+        if url.scheme == "clickreader", url.host == "saved" { return }
         if let articleURL = ClickDeepLink.articleURL(from: url) {
             openReader(articleURL: articleURL)
         } else {
@@ -97,6 +101,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
         ReadingListIngestor.shared.ingestAllPending()
+        Task { await PendingSafariArchiveImporter.shared.importPending() }
         Task {
             await SocialMessageCenter.shared.drainPendingFriendShares()
             await SocialMessageCenter.shared.processInbox()

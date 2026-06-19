@@ -78,6 +78,15 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         // Persistent store so the Cloudflare `cf_clearance` cookie set on solving
         // survives the post-CAPTCHA reload AND later launches/articles.
         configuration.websiteDataStore = .default()
+        // Best-effort masking of the JS signals Cloudflare cross-references against
+        // the Safari UA we present (see init below). We can't BE the Safari process
+        // like SFSafariViewController, but defining `navigator.standalone` — present
+        // in real Safari, `undefined` in a bare WKWebView — removes the single most
+        // reliable "this is an embedded web view" tell. No `WKScriptMessageHandler`
+        // is registered, so `window.webkit.messageHandlers` also stays absent.
+        let contentController = WKUserContentController()
+        contentController.addUserScript(Self.safariImpersonationScript())
+        configuration.userContentController = contentController
         self.webView = WKWebView(frame: .zero, configuration: configuration)
         // Present as real mobile Safari MATCHING THIS DEVICE's iOS version. A
         // hardcoded/stale UA (e.g. claiming iOS 26 on an iOS 27 device) is a UA/OS
@@ -85,6 +94,27 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         // real Safari (consistent UA) passes.
         self.webView.customUserAgent = Self.deviceSafariUserAgent
         super.init(nibName: nil, bundle: nil)
+    }
+
+    /// Defines `navigator.standalone` (which a bare WKWebView lacks but real
+    /// mobile Safari exposes) at document start, in every frame, before the page's
+    /// own scripts run — so the Cloudflare challenge's fingerprint check sees a
+    /// signal consistent with the Safari User-Agent we send. Best-effort: it can't
+    /// satisfy every Safari-only behavioral check, but it removes the documented
+    /// give-away. Wrapped in try/catch so it can never break page scripts.
+    private static func safariImpersonationScript() -> WKUserScript {
+        let source = """
+        (function () {
+            try {
+                if (typeof navigator.standalone === 'undefined') {
+                    Object.defineProperty(navigator, 'standalone', {
+                        get: function () { return false; }, configurable: true
+                    });
+                }
+            } catch (e) {}
+        })();
+        """
+        return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false)
     }
 
     /// A mobile-Safari User-Agent built from the running iOS version so it never

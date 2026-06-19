@@ -424,7 +424,15 @@ final class ShareViewController: UIViewController {
             ReadingListStore.shared.markNeedsCaptcha(item.id, title: title)
             presentArchiveReaderForCaptcha(url: url, itemID: item.id)
         case .unreadable:
-            confirmSavedThenComplete()
+            // Hard-paywall host / archive URL: offer the archive CAPTCHA rather than
+            // silently saving an unreadable item (mirrors the main-app ingestor).
+            if ArticleFetcher.isHardPaywallHost(url) || ArticleFetcher.isArchiveTodayURL(url) {
+                ReadingListStore.shared.markNeedsCaptcha(
+                    item.id, title: ArticleFetcher.articleTitleGuess(from: url))
+                presentArchiveReaderForCaptcha(url: url, itemID: item.id)
+            } else {
+                confirmSavedThenComplete()
+            }
         }
     }
 

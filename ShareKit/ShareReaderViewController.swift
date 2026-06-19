@@ -86,7 +86,14 @@ final class ShareReaderViewController: UIViewController {
             // pre-filled), at most they solve a CAPTCHA.
             presentArchiveReader(for: item, fallbackTitle: title)
         case .unreadable:
-            presentFailure()
+            // A hard-paywall host (WSJ/FT/…) or an already-archived URL can still be
+            // read through its archive snapshot behind a CAPTCHA — offer that rather
+            // than a dead-end failure. Only a truly unreachable ordinary page fails.
+            if ArticleFetcher.isHardPaywallHost(url) || ArticleFetcher.isArchiveTodayURL(url) {
+                presentArchiveReader(for: item, fallbackTitle: ArticleFetcher.articleTitleGuess(from: url))
+            } else {
+                presentFailure()
+            }
         }
     }
 
@@ -101,6 +108,15 @@ final class ShareReaderViewController: UIViewController {
         let archive = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
         let onDone = self.onDone
         archive.onClose = { onDone() }
+        // Once the CAPTCHA is solved and the snapshot's article is extracted, swap
+        // the web view out for the native reader showing the captured content —
+        // the user reads in-app, not the raw archive page.
+        archive.onExtracted = { [weak self] in
+            guard let self,
+                  let fresh = ReadingListStore.shared.item(withID: item.id),
+                  let content = ReadingListStore.shared.content(for: fresh) else { return }
+            self.presentReader(item: fresh, content: content)
+        }
         navigationController?.setViewControllers([archive], animated: false)
     }
 

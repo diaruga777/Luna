@@ -67,6 +67,11 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// whose submit token never appears). Reset whenever the overlay is down.
     private var coveredPollCount = 0
     private static let stallPollLimit = 23   // ≈ 30s at the 1.3s poll interval
+    /// Consecutive poll ticks on archive.today's "enable JS / disable ad blocker"
+    /// gate. It doesn't clear in a WKWebView, so past `blockedPollLimit` we treat it
+    /// as terminal (the un-archivable message + Safari escape).
+    private var blockedPollCount = 0
+    private static let blockedPollLimit = 3   // ≈ 4s — tolerate a transient flash
     /// True once a CAPTCHA has been shown. An archive error AFTER a solved CAPTCHA
     /// means the page genuinely can't be captured — vs. a stale submit token before
     /// any CAPTCHA, which is worth one silent retry.
@@ -124,6 +129,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         self.store = store
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
+        // archive.today refuses clients it thinks have JS off; make it explicit (and
+        // we install no content blocker, so its "disable ad blocker" gate isn't us).
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         // Persistent store so the Cloudflare `cf_clearance` cookie set on solving
         // survives the post-CAPTCHA reload AND later launches/articles.
         configuration.websiteDataStore = .default()
@@ -392,6 +400,17 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         (function () {
             var t = document.body ? document.body.innerText : '';
             if (/invalid interception id/i.test(t)) { return 'error'; }
+            // archive.today's "Please enable JS and disable any ad blocker" gate — a
+            // short interstitial that does NOT auto-clear in a WKWebView. Matched on
+            // a SHORT body so a real article that merely mentions ad blockers / JS
+            // can't trip it. Checked before the homepage box so it wins if the gate
+            // also carries the site chrome.
+            var lc = t.toLowerCase();
+            if (lc.length < 800
+                && (lc.indexOf('enable js') >= 0 || lc.indexOf('enable javascript') >= 0)
+                && (lc.indexOf('ad blocker') >= 0 || lc.indexOf('adblocker') >= 0)) {
+                return 'blocked';
+            }
             if (document.querySelector('input[name="url"]')) { return 'homepage:' + t.length; }
             var challengeWidget = document.querySelector(
                 'iframe[src*="recaptcha"], iframe[src*="challenges.cloudflare.com"], '
@@ -424,12 +443,17 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
                 self.coveredPollCount += 1
                 if self.coveredPollCount > Self.stallPollLimit { self.showRateLimit(); return }
             }
+            // Track how long we've sat on the "enable JS / ad blocker" gate so
+            // `decideStage` can give up on it after a brief tolerance.
+            self.blockedPollCount = (stage == "blocked") ? self.blockedPollCount + 1 : 0
             switch Self.decideStage(
                 stage,
                 didLeaveHomepage: self.didLeaveHomepage,
                 hasResolvedSnapshot: self.resolvedSnapshotURL != nil,
                 didSeeChallenge: self.didSeeChallenge,
-                didRecoverFromError: self.didRecoverFromError
+                didRecoverFromError: self.didRecoverFromError,
+                blockedCount: self.blockedPollCount,
+                blockedLimit: Self.blockedPollLimit
             ) {
             case .wait:
                 break   // not ready (challenge held / short page) — keep polling
@@ -487,9 +511,17 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         hasResolvedSnapshot: Bool,
         didSeeChallenge: Bool,
         didRecoverFromError: Bool,
+        blockedCount: Int = 0,
+        blockedLimit: Int = 3,
         minExtractLength: Int = 1500
     ) -> StageDecision {
         if stage == "challenge" { return .challenge }
+        if stage == "blocked" {
+            // archive.today's "enable JS / disable ad blocker" gate doesn't clear in
+            // a WKWebView (JS is on; we add no blocker). Tolerate a transient flash,
+            // then treat as terminal so the user falls back to real Safari.
+            return blockedCount >= blockedLimit ? .cannotArchive : .wait
+        }
         if stage == "error" {
             // An error after a solved CAPTCHA (or after we already retried once)
             // means archive.today genuinely can't capture this page; otherwise it's

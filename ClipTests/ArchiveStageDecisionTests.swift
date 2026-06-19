@@ -18,14 +18,18 @@ final class ArchiveStageDecisionTests: XCTestCase {
         didLeaveHomepage: Bool = false,
         hasResolvedSnapshot: Bool = false,
         didSeeChallenge: Bool = false,
-        didRecoverFromError: Bool = false
+        didRecoverFromError: Bool = false,
+        blockedCount: Int = 0,
+        blockedLimit: Int = 3
     ) -> ArchiveWebReaderViewController.StageDecision {
         ArchiveWebReaderViewController.decideStage(
             stage,
             didLeaveHomepage: didLeaveHomepage,
             hasResolvedSnapshot: hasResolvedSnapshot,
             didSeeChallenge: didSeeChallenge,
-            didRecoverFromError: didRecoverFromError)
+            didRecoverFromError: didRecoverFromError,
+            blockedCount: blockedCount,
+            blockedLimit: blockedLimit)
     }
 
     // MARK: - The fixed regression
@@ -74,6 +78,18 @@ final class ArchiveStageDecisionTests: XCTestCase {
 
     func testChallengeWaitsForUser() {
         XCTAssertEqual(decide("challenge"), .challenge)
+    }
+
+    // MARK: - "Enable JS / disable ad blocker" gate
+
+    func testBlockedGateToleratesATransientFlash() {
+        XCTAssertEqual(decide("blocked", blockedCount: 1), .wait)
+        XCTAssertEqual(decide("blocked", blockedCount: 2), .wait)
+    }
+
+    func testBlockedGateBecomesTerminalWhenItPersists() {
+        XCTAssertEqual(decide("blocked", blockedCount: 3), .cannotArchive)
+        XCTAssertEqual(decide("blocked", blockedCount: 9), .cannotArchive)
     }
 
     // MARK: - Errors

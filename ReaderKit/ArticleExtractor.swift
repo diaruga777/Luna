@@ -34,8 +34,16 @@ struct ArticleExtractor {
 
         // Thresholds arbitrate BETWEEN layers; a short page keeps its
         // structured (basic) extraction rather than degrading to raw text.
+        //
+        // A SUBSTANTIAL refined result is trusted outright, even when `basic` is
+        // much larger: on comment-heavy pages (e.g. an archived WSJ article) the
+        // extra `basic` text is the comment thread + subscription promos that
+        // refined correctly strips — the old `refined*3 >= basic` guard wrongly
+        // fell back to that soup and dropped the article body. The guard still
+        // applies for a MEDIUM refined result (350–600), where a small refined
+        // more likely means refined's junk-class stripping ate the real content.
         var chosen: [ArticleContent.Block]
-        if refinedLength >= 350, refinedLength * 3 >= basicLength {
+        if refinedLength >= 600 || (refinedLength >= 350 && refinedLength * 3 >= basicLength) {
             chosen = refined
         } else if !basic.isEmpty {
             chosen = basic
@@ -107,9 +115,12 @@ struct ArticleExtractor {
         script, style, noscript, nav, header, footer, aside, form, iframe, svg, button, \
         [role=navigation], [role=banner], [role=contentinfo], [role=complementary], \
         [class*=footer], [id*=footer], [class*=sidebar], [class*=related], \
-        [class*=share], [class*=social], [class*=comment], [id*=comments], \
-        [class*=newsletter], [class*=subscribe], [class*=promo], [class*=breadcrumb], \
-        [class*=cookie], [class*=paywall], [class*=advert], [class*=popup], \
+        [class*=share], [class*=social], [class*=comment], [class*=Comment], \
+        [id*=comment], [class*=disqus], [class*=conversation], [class*=discussion], \
+        [data-module*=comment], [data-testid*=comment], \
+        [class*=newsletter], [class*=subscribe], [class*=Subscribe], [class*=promo], \
+        [class*=paywall], [class*=Paywall], [class*=breadcrumb], \
+        [class*=cookie], [class*=advert], [class*=popup], \
         [class*=recommend], [class*=trending], [class*=more-stories]
         """
         for element in try document.select(strippedSelectors) {
@@ -219,6 +230,22 @@ struct ArticleExtractor {
     /// decaying weight, so the common article container wins even when every
     /// paragraph is wrapped in its own div (common on React-rendered sites).
     private func bestContainer(in document: Document) throws -> Element {
+        // Prefer an explicit article-body container (schema.org `articleBody`,
+        // or a CMS body class) when it holds real text. These markers point at
+        // exactly the prose and exclude the comment threads / subscription
+        // promos that would otherwise outscore the body on comment-heavy pages
+        // (e.g. an archived WSJ article, where comments dwarf the article text).
+        let articleBodySelectors = [
+            "[itemprop=articleBody]", "[class*=article-body]", "[class*=articleBody]",
+            "[class*=article__body]", "[class*=ArticleBody]", "[class*=article-content]",
+        ]
+        for selector in articleBodySelectors {
+            if let candidate = try? document.select(selector).first(),
+               paragraphTextLength(in: candidate) >= 400 {
+                return candidate
+            }
+        }
+
         var scores: [ObjectIdentifier: Double] = [:]
         var elements: [ObjectIdentifier: Element] = [:]
         for paragraph in try document.select("p") {

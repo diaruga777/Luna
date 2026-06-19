@@ -143,6 +143,43 @@ final class ArticleExtractorTests: XCTestCase {
         }
     }
 
+    /// An archived WSJ snapshot ships the real article body alongside a
+    /// subscription gate and a long reader-comments thread. The comment thread
+    /// holds far more `<p>` text than the article, so the old layer choice fell
+    /// back to the unstripped `basic` pass and surfaced gate + comments instead
+    /// of the story. The body must win.
+    func testArchivedArticleBeatsSubscriptionGateAndComments() throws {
+        let articleParagraphs = (1...8).map { index in
+            "<p>Apple is preparing to raise prices on several products as memory "
+            + "supply tightens across the industry, paragraph number \(index), with "
+            + "enough sentence length to read like genuine reported article prose.</p>"
+        }.joined()
+
+        // A comment thread far larger than the article body — this is what used
+        // to win container scoring and the layer choice.
+        let commentParagraphs = (1...60).map { index in
+            "<p>Reader comment \(index): I totally disagree with this take and here "
+            + "is my long-winded opinion about pricing, supply chains, and the economy.</p>"
+        }.joined()
+
+        let html = """
+        <html><head><title>Apple Price Increases</title>
+        <meta property="og:title" content="Apple Plans Price Increases as Memory Supply Tightens" /></head>
+        <body>
+        <div class="paywall subscribe-cta"><p>Subscribe to read. Unlimited access for $4 a month. Already a subscriber? Sign In to continue reading this article now.</p></div>
+        <article><div itemprop="articleBody">\(articleParagraphs)</div></article>
+        <section class="comments-section"><h2>Conversation</h2>\(commentParagraphs)</section>
+        </body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertTrue(content.wholeText.contains("Apple is preparing to raise prices"),
+                      "article body was dropped")
+        XCTAssertFalse(content.wholeText.contains("Reader comment"),
+                       "comment thread leaked into extraction")
+        XCTAssertFalse(content.wholeText.contains("Subscribe to read"),
+                       "subscription gate leaked into extraction")
+    }
+
     func testThrowsOnEmptyDocument() {
         XCTAssertThrowsError(try extractor.extract(html: "<html><body></body></html>", baseURL: baseURL))
     }

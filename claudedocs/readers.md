@@ -128,9 +128,13 @@ All three reader modes, audio (foreground only), and the inline split-web link v
 
 Extractor emits `.image` blocks (`imageURLString`) for article `<img>`s — token-exact junk filter (ad/tracking/logo/etc; substring matching would reject WordPress `/uploads/` URLs) and skips declared-tiny (<140 px), svg/gif. Ingestor downloads up to 8 (≤5 MB each) into the Articles dir (`imageFileName`); failed downloads drop the block. `ArticleTextRenderer` inlines them as `NSTextAttachment`s via ImageIO downsampling (never decodes full-size). RSVP ignores image blocks (no tokens).
 
+## Article extraction (`ReaderKit/ArticleExtractor.swift`)
+
+Layered readability: **refined** (aggressive junk-by-class stripping — footers, share/social bars, related rails, **comments**, **subscribe/paywall promos**, newsletter prompts) → **basic** (structural tags only) → JSON-LD `articleBody` → raw body text. `extract()` **trusts a substantial refined result** (≥600 chars) even when `basic` is much larger; the `refined*3 ≥ basic` guard only arbitrates a *medium* refined (350–600). This is the fix for archived WSJ/FT snapshots, where a long reader-comments thread + subscription gate hold more `<p>` text than the article — the old guard fell back to the unstripped `basic` pass and surfaced gate + comments instead of the body. `bestContainer` also **prefers an explicit article-body container** (`[itemprop=articleBody]`, `[class*=article-body|articleBody|article-content]`, …) with ≥400 chars before paragraph-scoring, so both layers target the prose. Regression test: `ArticleExtractorTests.testArchivedArticleBeatsSubscriptionGateAndComments`.
+
 ## Tests
 
-`ClipTests/RSVPEngineTests.swift` (ORP, timing, flags).
+`ClipTests/RSVPEngineTests.swift` (ORP, timing, flags). `ClipTests/ArticleExtractorTests.swift` (layering, junk stripping, archived-page gate/comment rejection).
 
 ## Reader appearance (Settings)
 

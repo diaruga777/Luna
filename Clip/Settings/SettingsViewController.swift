@@ -321,6 +321,9 @@ final class EyeTrackingSettingsScreen: UITableViewController {
 // MARK: - Shortcut & Safari
 
 final class ShortcutSettingsScreen: UITableViewController {
+    /// Section 0: the Safari extension's "Read in Queue" button visibility.
+    /// Section 1: the Action-Button shortcut rows.
+    private enum Section: Int, CaseIterable { case suggestionButton, shortcut }
     private enum Row: Int, CaseIterable { case install, openShortcuts, refreshStatus }
     private var safariStatusText = ""
 
@@ -334,21 +337,51 @@ final class ShortcutSettingsScreen: UITableViewController {
         refreshSafariStatus()
     }
 
+    override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
+
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        Row.allCases.count
+        switch Section(rawValue: section)! {
+        case .suggestionButton: return 1
+        case .shortcut: return Row.allCases.count
+        }
+    }
+
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        Section(rawValue: section) == .suggestionButton ? "Read in Queue Button" : "Action Button Shortcut"
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        let base = "Save the Safari webpage by pressing the Action Button: enable the Queue Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
-        if #unavailable(iOS 27.0) {
-            return "⚠️ One-press Safari saving requires iOS 27 or later.\n\n" + base
+        switch Section(rawValue: section)! {
+        case .suggestionButton:
+            return "When browsing in Safari (with the Queue extension enabled), show a "
+                + "\"Read in Queue\" button to open the page in Queue — unlocking paywalled "
+                + "articles via the in-app reader. Choose when it appears."
+        case .shortcut:
+            let base = "Save the Safari webpage by pressing the Action Button: enable the Queue Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
+            if #unavailable(iOS 27.0) {
+                return "⚠️ One-press Safari saving requires iOS 27 or later.\n\n" + base
+            }
+            return base
         }
-        return base
     }
 
     override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
+        if Section(rawValue: indexPath.section) == .suggestionButton {
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            var content = cell.defaultContentConfiguration()
+            content.text = "Suggest Reading"
+            cell.selectionStyle = .none
+            let control = UISegmentedControl(items: SafariSuggestionMode.allCases.map(\.displayName))
+            control.selectedSegmentIndex =
+                SafariSuggestionMode.allCases.firstIndex(of: SafariSuggestionSettings.mode) ?? 1
+            control.addTarget(self, action: #selector(suggestionModeChanged(_:)), for: .valueChanged)
+            cell.accessoryView = control
+            cell.contentConfiguration = content
+            return cell
+        }
+
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
         content.textProperties.color = view.tintColor ?? .systemBlue
@@ -367,8 +400,14 @@ final class ShortcutSettingsScreen: UITableViewController {
         return cell
     }
 
+    @objc private func suggestionModeChanged(_ control: UISegmentedControl) {
+        let modes = SafariSuggestionMode.allCases
+        SafariSuggestionSettings.mode = modes[max(0, min(control.selectedSegmentIndex, modes.count - 1))]
+    }
+
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
+        guard Section(rawValue: indexPath.section) == .shortcut else { return }
         switch Row(rawValue: indexPath.row)! {
         case .install:
             BundledShortcut.presentInstaller(

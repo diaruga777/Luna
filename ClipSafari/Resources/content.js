@@ -1,51 +1,70 @@
-// Queue Safari content script. Two roles, chosen by host:
-//
-//  1. On a hard-paywall article (WSJ/FT/…): inject a Queue-styled "Read in Queue"
-//     button. Tapping it asks the background script to redirect THIS tab to the
-//     article's archive.today snapshot (background remembers it redirected the tab).
-//
-//  2. On an archive.today page reached BY THAT redirect (and ONLY then — we never
-//     auto-save an arbitrary archive.is visit): once the real article is loaded
-//     (past the Cloudflare CAPTCHA), strip the page down to compact HTML and hand
-//     it to the native app, then show a "Saved to Queue" banner.
-//
-// Content scripts can't message the native app directly, so everything is relayed
-// through background.js (browser.runtime.sendMessage → sendNativeMessage).
+// Queue Safari content script. Injects a "Read in Queue" button on article pages
+// (per the app's visibility setting); tapping it deep-links the page into the
+// Queue app, which opens the right viewer — including the in-app archive.today
+// flow for paywalled articles. The extension does NO archive.today handling.
 
 (function () {
     "use strict";
 
-    // The background script injects this with scripting.executeScript, which can
+    // The background script injects this via scripting.executeScript, which can
     // fire more than once per document — run our setup only the first time.
     if (window.__queueContentScriptRan) { return; }
     window.__queueContentScriptRan = true;
 
     var QUEUE_INDIGO = "#5856D6";
 
-    var PAYWALL_HOSTS = [
-        "wsj.com", "ft.com", "nytimes.com", "economist.com", "bloomberg.com",
-        "washingtonpost.com", "newyorker.com", "theatlantic.com", "wired.com",
-        "barrons.com", "businessinsider.com", "theinformation.com", "hbr.org",
-        "foreignpolicy.com", "foreignaffairs.com", "thetimes.co.uk", "telegraph.co.uk",
-        "nikkei.com", "seekingalpha.com", "latimes.com", "bostonglobe.com"
-    ];
-    var ARCHIVE_HOSTS = [
-        "archive.is", "archive.ph", "archive.md", "archive.today",
-        "archive.li", "archive.vn", "archive.fo"
+    // Mirrors PaywallDetector.gateMarkers (Swift) — keep in sync. Gate phrases only
+    // appear when an article body is cut off behind a subscription wall.
+    var GATE_MARKERS = [
+        "to continue reading", "continue reading this article", "continue reading with",
+        "login or signup to continue", "log in or sign up to continue",
+        "sign in to continue reading", "log in to continue reading",
+        "subscribe to continue", "subscribe to read", "register to continue",
+        "sign up to continue reading", "subscribe now for unlimited",
+        "subscribe for unlimited access", "this article is for subscribers",
+        "this story is for subscribers", "this content is for subscribers",
+        "available to subscribers", "subscribers only", "subscriber exclusive",
+        "to read the full article", "to read the full story", "for full access",
+        "unlock this article", "this article is reserved for subscribers"
     ];
 
-    function hostMatches(list) {
-        var h = location.hostname.replace(/^www\./, "").toLowerCase();
-        return list.some(function (d) { return h === d || h.endsWith("." + d); });
-    }
-
-    if (hostMatches(ARCHIVE_HOSTS)) {
-        initArchiveHarvest();
-    } else if (hostMatches(PAYWALL_HOSTS)) {
+    browser.runtime.sendMessage({ type: "buttonMode" }).then(function (resp) {
+        var mode = (resp && resp.mode) || "all";
+        if (mode === "never") { return; }
+        if (!looksLikeArticle()) { return; }
+        if (mode === "onlyLocked" && !looksPaywalled()) { return; }
         injectReadButton();
+    }).catch(function () {});
+
+    // A page worth a "Read in Queue" button: an article, not a homepage/search.
+    function looksLikeArticle() {
+        var ogType = document.querySelector('meta[property="og:type"]');
+        if (ogType && /article/i.test(ogType.getAttribute("content") || "")) { return true; }
+        if (document.querySelector("article")) { return true; }
+        var paragraphs = document.querySelectorAll("p");
+        var textLength = 0;
+        for (var i = 0; i < paragraphs.length; i++) {
+            textLength += (paragraphs[i].innerText || "").length;
+        }
+        return textLength > 1500 && !!document.querySelector("h1");
     }
 
-    // MARK: paywall host — the button
+    // Mirrors PaywallDetector: schema.org isAccessibleForFree / content_tier, plus
+    // the gate markers in the visible text.
+    function looksPaywalled() {
+        var compact = (document.documentElement.innerHTML || "").toLowerCase().replace(/\s+/g, "");
+        if (compact.indexOf('"isaccessibleforfree":false') >= 0) { return true; }
+        if ((compact.indexOf("content_tier") >= 0 || compact.indexOf("content-tier") >= 0)
+            && (compact.indexOf("locked") >= 0 || compact.indexOf("metered") >= 0
+                || compact.indexOf("premium") >= 0)) {
+            return true;
+        }
+        var text = (document.body ? document.body.innerText : "").toLowerCase();
+        for (var i = 0; i < GATE_MARKERS.length; i++) {
+            if (text.indexOf(GATE_MARKERS[i]) >= 0) { return true; }
+        }
+        return false;
+    }
 
     function injectReadButton() {
         if (document.getElementById("queue-read-button")) { return; }
@@ -62,159 +81,14 @@
             webkitTapHighlightColor: "transparent", touchAction: "manipulation"
         });
         btn.addEventListener("click", function () {
-            btn.textContent = "Opening archive…";
+            btn.textContent = "Opening Queue…";
             btn.disabled = true;
             btn.style.opacity = "0.7";
-            browser.runtime.sendMessage({ type: "queueRedirect", url: location.href });
+            // A tap is a user gesture, so Safari allows the custom-scheme launch.
+            window.location.href = "clickreader://read?url=" + encodeURIComponent(location.href);
         });
-        appendWhenReady(btn);
+        (document.body || document.documentElement).appendChild(btn);
     }
-
-    // MARK: archive host — harvest (only for our redirects)
-
-    function initArchiveHarvest() {
-        browser.runtime.sendMessage({ type: "isQueueRedirect" }).then(function (resp) {
-            if (!resp || !resp.redirect || !resp.originalURL) { return; } // not our redirect → never auto-save
-            pollArchiveStage(resp.originalURL);
-        }).catch(function () {});
-    }
-
-    // Polls the page until it can act: on the cleared homepage (the search form is
-    // present), type the URL into input[name=url] and submit the form — exactly the
-    // manual flow (POSTs to /submit/, which 302-redirects to the existing snapshot
-    // for an already-archived page); on a snapshot/article page, harvest it. Polling
-    // (not a one-shot) because clearing the CAPTCHA is an in-page transition.
-    function pollArchiveStage(originalURL) {
-        var tries = 0;
-        var maxTries = 150;   // ~2.5 min at 1s — generous, for slow CAPTCHA solving
-        var timer = setInterval(function () {
-            tries += 1;
-            if (tries > maxTries) { clearInterval(timer); return; }
-            if (isChallengePage()) { return; }   // user still solving
-            var onHomepage = (location.pathname === "/" || location.pathname === "");
-            var urlInput = document.querySelector('input[name="url"]');
-            if (onHomepage && urlInput) {
-                if (sessionStorage.getItem("queueSubmitted")) { return; } // already submitted; avoid a loop
-                sessionStorage.setItem("queueSubmitted", "1");
-                clearInterval(timer);
-                try {
-                    urlInput.value = originalURL;
-                    if (urlInput.form) { urlInput.form.submit(); }
-                } catch (e) {}
-                return;
-            }
-            var text = document.body ? document.body.innerText : "";
-            if (!onHomepage && !urlInput && text.length > 1500) {
-                clearInterval(timer);
-                fixViewport();
-                harvest(originalURL);
-            }
-        }, 1000);
-    }
-
-    // archive.today snapshots often ship without a mobile viewport, so the phone
-    // renders them desktop-width and tiny. Force device-width so the article (and
-    // our banner) are legible while the user briefly sees the page.
-    function fixViewport() {
-        try {
-            var vp = document.querySelector('meta[name="viewport"]');
-            if (!vp) {
-                vp = document.createElement("meta");
-                vp.setAttribute("name", "viewport");
-                (document.head || document.documentElement).appendChild(vp);
-            }
-            vp.setAttribute("content", "width=device-width, initial-scale=1");
-        } catch (e) {}
-    }
-
-    function isChallengePage() {
-        if (document.querySelector('form[action*="chk_captcha"], #challenge-running, #cf-challenge-running')) {
-            return true;
-        }
-        var title = (document.title || "").toLowerCase();
-        if (title.indexOf("just a moment") >= 0 || title.indexOf("attention required") >= 0) {
-            return true;
-        }
-        var body = document.body ? document.body.innerText : "";
-        return body.indexOf("Why do I have to complete a CAPTCHA") >= 0
-            || body.indexOf("Checking your browser") >= 0;
-    }
-
-    // Strips the page to compact HTML: drops scripts/styles/svg/iframes and the
-    // inline style/class attributes archive.today puts on every element (the bulk
-    // of its ~1MB weight), keeping the tags/text/links the native extractor needs.
-    function reducedHTML() {
-        var clone = document.documentElement.cloneNode(true);
-        var drop = clone.querySelectorAll("script,style,svg,noscript,iframe,link,template,form,canvas");
-        for (var i = 0; i < drop.length; i++) { drop[i].remove(); }
-        var all = clone.querySelectorAll("*");
-        for (var j = 0; j < all.length; j++) {
-            all[j].removeAttribute("style");
-            all[j].removeAttribute("class");
-            all[j].removeAttribute("onclick");
-            all[j].removeAttribute("srcset");
-        }
-        return clone.outerHTML;
-    }
-
-    function harvest(originalURL) {
-        var MAX = 950000;   // safely under the ~1MB native-message limit
-        var html = reducedHTML();
-        var text = null;
-        if (!html || html.length > MAX) {
-            html = null;
-            text = (document.body ? document.body.innerText : "").slice(0, MAX);
-        }
-        browser.runtime.sendMessage({
-            type: "archiveContent",
-            url: originalURL || location.href,
-            title: document.title || "",
-            html: html,
-            text: text
-        });
-        fixViewport();
-        showSavedBanner();
-    }
-
-    function showSavedBanner() {
-        if (document.getElementById("queue-saved-banner")) { return; }
-        var existing = document.getElementById("queue-read-button");
-        if (existing) { existing.remove(); }
-
-        var bar = document.createElement("div");
-        bar.id = "queue-saved-banner";
-        applyStyle(bar, {
-            position: "fixed", left: "0", right: "0", top: "0", zIndex: "2147483647",
-            background: QUEUE_INDIGO, color: "#ffffff",
-            font: "700 19px -apple-system, system-ui, sans-serif",
-            padding: "calc(14px + env(safe-area-inset-top)) 18px 16px",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            gap: "12px", boxShadow: "0 3px 18px rgba(0,0,0,0.30)",
-            transform: "translateY(-100%)", transition: "transform 0.32s ease"
-        });
-        var label = document.createElement("span");
-        label.appendChild(document.createTextNode("✓  Saved to Queue"));
-        applyStyle(label, { flex: "1 1 auto" });
-
-        var open = document.createElement("button");
-        open.appendChild(document.createTextNode("Open Queue"));
-        applyStyle(open, {
-            flex: "0 0 auto", background: "#ffffff", color: QUEUE_INDIGO, border: "none",
-            borderRadius: "22px", padding: "13px 22px", minHeight: "44px",
-            font: "700 18px -apple-system, system-ui, sans-serif",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
-            cursor: "pointer", webkitTapHighlightColor: "transparent", touchAction: "manipulation"
-        });
-        // A tap is a user gesture, so Safari allows the custom-scheme launch (an app
-        // can't be auto-launched without one).
-        open.addEventListener("click", function () { window.location.href = "clickreader://saved"; });
-        bar.appendChild(label);
-        bar.appendChild(open);
-        appendWhenReady(bar);
-        requestAnimationFrame(function () { bar.style.transform = "translateY(0)"; });
-    }
-
-    // MARK: helpers
 
     function applyStyle(el, style) {
         for (var key in style) {
@@ -222,13 +96,5 @@
                 el.style[key] = style[key];
             }
         }
-    }
-
-    function appendWhenReady(node) {
-        var parent = document.body || document.documentElement;
-        if (parent) { parent.appendChild(node); return; }
-        document.addEventListener("DOMContentLoaded", function () {
-            (document.body || document.documentElement).appendChild(node);
-        });
     }
 })();

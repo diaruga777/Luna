@@ -35,9 +35,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
         ReadingListIngestor.shared.ingestAllPending()
-        // Ingest any "Read in Queue" archive captures handed off by the Safari
-        // extension while the app was closed.
-        Task { await PendingSafariArchiveImporter.shared.importPending() }
 
         // Social inbox: CloudKit query-subscription pushes need registration
         // every launch; the subscription save is idempotent. Pushes are only a

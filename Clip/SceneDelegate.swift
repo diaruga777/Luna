@@ -60,10 +60,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// Dispatches an incoming URL: a `clickreader://read` link opens the reader;
     /// anything else is treated as a `clipreader://friend` link.
     private func route(_ url: URL) {
-        // `clickreader://saved` is the Safari extension's "Open Queue" banner button
-        // — just bring the app forward; `sceneWillEnterForeground` imports the new
-        // archive capture and refreshes the list.
-        if url.scheme == "clickreader", url.host == "saved" { return }
         if let articleURL = ClickDeepLink.articleURL(from: url) {
             openReader(articleURL: articleURL)
         } else {
@@ -71,8 +67,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// Saves the article (if new), then opens it in the reader once its content
-    /// is ready. Stashes the URL if the main UI isn't up yet (onboarding).
+    /// Saves the article (if new), then opens it the way tapping its list row does
+    /// — so a paywalled article opens straight into the in-app archive reader, a
+    /// ready article into the native reader, a video into its player. Stashes the
+    /// URL if the main UI isn't up yet (onboarding).
     private func openReader(articleURL: String) {
         guard let nav = window?.rootViewController as? UINavigationController else {
             pendingReadURL = articleURL
@@ -87,13 +85,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             }
             nav.popToRootViewController(animated: false)
             guard let itemID, let item = ReadingListStore.shared.item(withID: itemID),
-                  item.state == .ready, let content = ReadingListStore.shared.content(for: item)
-            else { return } // not readable yet — it's in the list to retry
-            let reader = ReaderViewController(
-                item: item, content: content,
-                shareProvider: AppReaderShareProvider.shared,
-                gazeTrackerFactory: AppGazeTracker.factory)
-            nav.pushViewController(reader, animated: true)
+                  let list = nav.viewControllers.first as? ReadingListViewController
+            else { return }
+            list.open(item, presenter: list)
         }
     }
 
@@ -101,7 +95,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
         ReadingListIngestor.shared.ingestAllPending()
-        Task { await PendingSafariArchiveImporter.shared.importPending() }
         Task {
             await SocialMessageCenter.shared.drainPendingFriendShares()
             await SocialMessageCenter.shared.processInbox()

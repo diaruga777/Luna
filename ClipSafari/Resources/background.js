@@ -25,9 +25,27 @@ const ARCHIVE_HOSTS = [
     "archive.li", "archive.vn", "archive.fo"
 ];
 
+const TRACKING_PARAMS = [
+    "mod", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "fbclid", "gclid", "igshid", "ref", "cmpid", "ocid", "spm", "smid"
+];
+
 function hostInList(hostname, list) {
     const h = (hostname || "").replace(/^www\./, "").toLowerCase();
     return list.some(function (d) { return h === d || h.endsWith("." + d); });
+}
+
+// Drops the fragment and known tracking params so archive.today resolves the
+// canonical snapshot (mirrors ArticleFetcher.canonicalForArchiving).
+function canonicalize(raw) {
+    try {
+        const u = new URL(raw);
+        u.hash = "";
+        TRACKING_PARAMS.forEach(function (p) { u.searchParams.delete(p); });
+        return u.toString();
+    } catch (e) {
+        return raw;
+    }
 }
 
 function report(url) {
@@ -81,10 +99,13 @@ browser.runtime.onMessage.addListener(function (message, sender) {
     if (!message || !message.type) { return; }
     const tabId = sender && sender.tab ? sender.tab.id : null;
 
-    // The button was tapped: remember this tab, then send it to the snapshot.
+    // The button was tapped: remember the (canonicalized) target, then send the tab
+    // to the archive.today HOMEPAGE first. Hitting `…/newest/<url>` cold triggers
+    // archive.today's self-reloading CAPTCHA loop; warming up the homepage clears
+    // the gate, and the content script then advances to the snapshot.
     if (message.type === "queueRedirect" && tabId != null && message.url) {
-        queueRedirects[tabId] = message.url;
-        browser.tabs.update(tabId, { url: "https://archive.is/newest/" + message.url });
+        queueRedirects[tabId] = canonicalize(message.url);
+        browser.tabs.update(tabId, { url: "https://archive.is/" });
         return;
     }
 

@@ -74,9 +74,36 @@
 
     function initArchiveHarvest() {
         browser.runtime.sendMessage({ type: "isQueueRedirect" }).then(function (resp) {
-            if (!resp || !resp.redirect) { return; }   // not one of our redirects → never auto-save
+            if (!resp || !resp.redirect || !resp.originalURL) { return; } // not our redirect → never auto-save
+            var path = location.pathname;
+            if (path === "" || path === "/") {
+                // Warm-up homepage stage: once the gate is cleared, advance to the
+                // snapshot. The sessionStorage guard (same-origin across the whole
+                // archive.is visit) prevents a redirect loop if no snapshot exists.
+                if (sessionStorage.getItem("queueWarmedUp")) { return; }
+                if (isChallengePage()) { return; }   // user still solving; the reload re-runs this
+                sessionStorage.setItem("queueWarmedUp", "1");
+                location.href = "https://archive.is/newest/" + resp.originalURL;
+                return;
+            }
+            // Snapshot stage (/newest/ or a resolved snapshot path).
             waitForArticleThenHarvest(resp.originalURL);
         }).catch(function () {});
+    }
+
+    // archive.today snapshots often ship without a mobile viewport, so the phone
+    // renders them desktop-width and tiny. Force device-width so the article (and
+    // our banner) are legible while the user briefly sees the page.
+    function fixViewport() {
+        try {
+            var vp = document.querySelector('meta[name="viewport"]');
+            if (!vp) {
+                vp = document.createElement("meta");
+                vp.setAttribute("name", "viewport");
+                (document.head || document.documentElement).appendChild(vp);
+            }
+            vp.setAttribute("content", "width=device-width, initial-scale=1");
+        } catch (e) {}
     }
 
     function isChallengePage() {
@@ -138,6 +165,7 @@
             html: html,
             text: text
         });
+        fixViewport();
         showSavedBanner();
     }
 
@@ -151,21 +179,24 @@
         applyStyle(bar, {
             position: "fixed", left: "0", right: "0", top: "0", zIndex: "2147483647",
             background: QUEUE_INDIGO, color: "#ffffff",
-            font: "600 15px -apple-system, system-ui, sans-serif",
-            padding: "calc(10px + env(safe-area-inset-top)) 16px 11px",
+            font: "700 19px -apple-system, system-ui, sans-serif",
+            padding: "calc(14px + env(safe-area-inset-top)) 18px 16px",
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            boxShadow: "0 2px 14px rgba(0,0,0,0.28)",
+            gap: "12px", boxShadow: "0 3px 18px rgba(0,0,0,0.30)",
             transform: "translateY(-100%)", transition: "transform 0.32s ease"
         });
         var label = document.createElement("span");
         label.appendChild(document.createTextNode("✓  Saved to Queue"));
+        applyStyle(label, { flex: "1 1 auto" });
+
         var open = document.createElement("button");
         open.appendChild(document.createTextNode("Open Queue"));
         applyStyle(open, {
-            background: "rgba(255,255,255,0.22)", color: "#ffffff", border: "none",
-            borderRadius: "16px", padding: "8px 15px",
-            font: "600 15px -apple-system, system-ui, sans-serif",
-            cursor: "pointer", webkitTapHighlightColor: "transparent"
+            flex: "0 0 auto", background: "#ffffff", color: QUEUE_INDIGO, border: "none",
+            borderRadius: "22px", padding: "13px 22px", minHeight: "44px",
+            font: "700 18px -apple-system, system-ui, sans-serif",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+            cursor: "pointer", webkitTapHighlightColor: "transparent", touchAction: "manipulation"
         });
         // A tap is a user gesture, so Safari allows the custom-scheme launch (an app
         // can't be auto-launched without one).

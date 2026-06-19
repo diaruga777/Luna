@@ -42,6 +42,12 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// we stop letting the user re-solve a CAPTCHA that can't pass and show guidance.
     private var challengeCount = 0
     private static let loopThreshold = 3
+    /// We load the archive.today HOMEPAGE first to obtain Cloudflare clearance,
+    /// THEN the snapshot — hitting `…/newest/<url>` cold triggers archive.today's
+    /// self-reloading challenge loop, whereas warming up the homepage first (the
+    /// flow that works manually) clears the gate so the snapshot loads cleanly.
+    /// True once we've left the warm-up homepage for the snapshot.
+    private var didRequestSnapshot = false
 
     /// Called when the user dismisses (Done). The main app dismisses the modal;
     /// extensions use this to complete their extension request. Defaults to
@@ -203,19 +209,21 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         loadArchive()
     }
 
+    private static let archiveHomepage = URL(string: "https://archive.is/")! // valid constant
+
     private func loadArchive() {
-        guard let archiveURL = Self.archiveURL(for: articleURL) else { return }
+        // Warm up the homepage first (see `didRequestSnapshot`) — `didFinish` then
+        // advances to the snapshot once the homepage is cleared.
         SharedDiagnosticLog.record(
-            "archive: loading \(archiveURL.absoluteString) ua=\(webView.customUserAgent ?? "default")",
+            "archive: warming up \(Self.archiveHomepage.absoluteString) ua=\(webView.customUserAgent ?? "default")",
             category: "archive")
-        webView.load(URLRequest(url: archiveURL))
+        webView.load(URLRequest(url: Self.archiveHomepage))
     }
 
-    /// The archive.today URL to open. When the saved URL is ALREADY an archive
-    /// snapshot, load that exact snapshot (the user got it from a working Safari
-    /// session). Otherwise open `archive.is/newest/<canonical>` — archive.is is the
-    /// domain that reliably clears its Cloudflare gate in Safari, and the target
-    /// lives in the PATH so the user never types it into a form.
+    /// The snapshot URL to open AFTER the homepage warm-up. When the saved URL is
+    /// already an archive snapshot, load that exact snapshot; otherwise
+    /// `archive.is/newest/<canonical>` (target in the PATH so the user never types
+    /// it into a form).
     static func archiveURL(for articleURL: URL) -> URL? {
         if ArticleFetcher.isArchiveTodayURL(articleURL) { return articleURL }
         let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
@@ -223,6 +231,14 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
               ArticleFetcher.isArchiveTodayURL(url)   // reject a smuggled non-archive host
         else { return nil }
         return url
+    }
+
+    /// True when `url` is the archive.today homepage (the warm-up page) rather than
+    /// a snapshot/newest path.
+    private static func isArchiveHomepage(_ url: URL?) -> Bool {
+        guard let url, ArticleFetcher.isArchiveTodayURL(url) else { return false }
+        let path = url.path
+        return path.isEmpty || path == "/"
     }
 
     /// Opens the archive in real Safari (the proven-working path when the embedded
@@ -268,15 +284,37 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         progress.stopAnimating()
-        // Only try to extract once a real snapshot (not the landing/CAPTCHA page) has
-        // loaded — gauged by how much article text the page now holds.
-        webView.evaluateJavaScript("document.body ? document.body.innerText.length : 0") {
-            [weak self] result, _ in
+        let currentURL = webView.url
+        // Page text length, or -1 if this is still the Cloudflare challenge — so we
+        // neither advance off the warm-up homepage nor extract while challenged.
+        let probe = """
+        (function () {
+            var t = document.body ? document.body.innerText : '';
+            if (/Why do I have to complete a CAPTCHA|Checking your browser|Just a moment/i.test(t)) {
+                return -1;
+            }
+            return t.length;
+        })()
+        """
+        webView.evaluateJavaScript(probe) { [weak self] result, _ in
             guard let self else { return }
             let length = (result as? Int) ?? 0
             SharedDiagnosticLog.record(
-                "archive: didFinish \(self.webView.url?.absoluteString ?? "") innerTextLen=\(length)",
+                "archive: didFinish \(currentURL?.absoluteString ?? "") innerTextLen=\(length)",
                 category: "archive")
+
+            // Warm-up stage: the homepage has loaded and cleared the gate (not the
+            // CAPTCHA challenge) → now request the actual snapshot. Done once.
+            if Self.isArchiveHomepage(currentURL), !self.didRequestSnapshot, length > 200,
+               let snapshot = Self.archiveURL(for: self.articleURL) {
+                self.didRequestSnapshot = true
+                SharedDiagnosticLog.record(
+                    "archive: homepage cleared → loading snapshot \(snapshot.absoluteString)",
+                    category: "archive")
+                self.webView.load(URLRequest(url: snapshot))
+                return
+            }
+
             // `evaluateJavaScript` callbacks run serially on the main queue, so this
             // check-and-set is atomic against other `didFinish` events.
             guard !self.didExtract, !self.isExtracting, length > 1500 else { return }

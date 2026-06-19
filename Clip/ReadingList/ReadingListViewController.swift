@@ -572,6 +572,13 @@ final class ReadingListViewController: UITableViewController {
         // own `view` is the scrolling table — not a valid host. Parenting to the same
         // VC that owns the host view avoids UIKit's appearance-forwarding assertion.
         guard searchController == nil, let nav = navigationController else { return }
+        // Hide the list's nav bar UP FRONT (not in the fade completion). The moment
+        // the search field becomes first responder the keyboard rises, which triggers
+        // a navigation-controller relayout that re-fronts the bar OVER our overlay —
+        // a dark band across the top of the results that only clears once layout
+        // settles (e.g. on the scroll that dismisses the keyboard). Hiding it before
+        // the keyboard appears keeps it down for the whole search session.
+        nav.setNavigationBarHidden(true, animated: false)
         let search = SearchViewController(engine: ReadingListSearchEngine(), presenter: self)
         search.topSafeAreaInset = nav.view.safeAreaInsets.top   // status bar — correct from first layout
         search.onExit = { [weak self] in self?.dismissSearch() }
@@ -596,11 +603,7 @@ final class ReadingListViewController: UITableViewController {
         // Focus immediately (not in the fade completion) so the keyboard rises in
         // parallel with the cross-fade rather than after it.
         search.focusSearchField()
-        UIView.animate(withDuration: 0.22, animations: { overlay.alpha = 1 }) { _ in
-            // Now that the opaque overlay covers everything, hide the list's nav bar
-            // so its large-title header can't sit on top of the search results.
-            nav.setNavigationBarHidden(true, animated: false)
-        }
+        UIView.animate(withDuration: 0.22) { overlay.alpha = 1 }
     }
 
     /// Fades the in-place search overlay out, then removes it. Restores the nav bar

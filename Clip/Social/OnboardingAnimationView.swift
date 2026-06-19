@@ -472,8 +472,8 @@ final class OnboardingAnimationView: UIView {
         axRowList.translatesAutoresizingMaskIntoConstraints = false
         axRowScroll.addSubview(axReadHighlight)
         axRowScroll.addSubview(axRowList)
-        // The "Read in Queue" row sits low in the list, so the list must scroll up.
-        let readRow = axActionRow(symbol: "book.fill", placeholderWidth: 64, highlighted: true)
+        // The Queue row sits low in the list, so the list must scroll up.
+        let readRow = axQueueActionRow()
         for row in [axActionRow(symbol: "doc.on.doc", placeholderWidth: 34),
                     axActionRow(symbol: "eyeglasses", placeholderWidth: 82),
                     axActionRow(symbol: "plus.square.on.square", placeholderWidth: 94),
@@ -606,31 +606,55 @@ final class OnboardingAnimationView: UIView {
         return icon
     }
 
-    /// A share-sheet action row: a grey text-placeholder bar on the left and a
-    /// trailing SF icon, ~28pt tall (no literal text). `placeholderWidth` varies
-    /// per row so the list reads like distinct actions; Queue's row is tinted.
-    private func axActionRow(symbol: String, placeholderWidth: CGFloat, highlighted: Bool = false) -> UIView {
-        let row = UIView()
-        row.translatesAutoresizingMaskIntoConstraints = false
-        row.heightAnchor.constraint(equalToConstant: 28).isActive = true
-        let color: UIColor = highlighted ? accent : .label
+    /// A generic share-sheet action row: a leading SF icon and a trailing grey
+    /// text-placeholder bar, ~28pt tall (no literal text). `placeholderWidth`
+    /// varies per row so the list reads like distinct actions.
+    private func axActionRow(symbol: String, placeholderWidth: CGFloat) -> UIView {
         let icon = UIImageView(image: UIImage(
             systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12)))
-        icon.tintColor = color
+        icon.tintColor = .label
         icon.contentMode = .center
         icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 18).isActive = true
         let labelPlaceholder = UIView()
-        labelPlaceholder.backgroundColor = color.withAlphaComponent(highlighted ? 0.7 : 0.35)
+        labelPlaceholder.backgroundColor = UIColor.label.withAlphaComponent(0.35)
         labelPlaceholder.layer.cornerRadius = 3
         labelPlaceholder.translatesAutoresizingMaskIntoConstraints = false
         labelPlaceholder.widthAnchor.constraint(equalToConstant: placeholderWidth).isActive = true
         labelPlaceholder.heightAnchor.constraint(equalToConstant: 6).isActive = true
-        let stack = UIStackView(arrangedSubviews: [labelPlaceholder, UIView(), icon])
+        return axActionRow(icon: icon, trailing: labelPlaceholder)
+    }
+
+    /// The Queue action-extension row: the app's Q mark (leading) and real
+    /// "Queue it" text (trailing), tinted in the app accent. This is the row the
+    /// animation scrolls to and taps — so it gets the one bit of literal text.
+    private func axQueueActionRow() -> UIView {
+        let icon = UIImageView(image: UIImage(named: "queue-app-mark"))
+        icon.contentMode = .scaleAspectFit
+        icon.layer.cornerRadius = 5
+        icon.layer.cornerCurve = .continuous
+        icon.clipsToBounds = true
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        let label = UILabel()
+        label.text = "Queue it"
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textColor = accent
+        return axActionRow(icon: icon, trailing: label)
+    }
+
+    /// Lays out one share-sheet action row: leading icon, flexible gap, trailing
+    /// text element (grey bar or real label), 28pt tall.
+    private func axActionRow(icon: UIView, trailing: UIView) -> UIView {
+        let row = UIView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        let stack = UIStackView(arrangedSubviews: [icon, UIView(), trailing])
         stack.alignment = .center
         stack.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(stack)
         NSLayoutConstraint.activate([
-            icon.widthAnchor.constraint(equalToConstant: 18),
             stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 8),
             stack.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -8),
             stack.centerYAnchor.constraint(equalTo: row.centerYAnchor),

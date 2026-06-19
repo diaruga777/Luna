@@ -30,11 +30,12 @@ Cloudflare gate reliably — see `readers.md`).
 
 `ClipSafari/Resources/content.js` is injected **programmatically** by `background.js`
 (`scripting.executeScript` on `tabs.onUpdated`/`status:complete` when the host is in the
-paywall/archive lists) — NOT via a declarative `content_scripts` manifest block, which fails
-App Store validation with **ITMS-90849** (the build-73 manifest + a `content_scripts` array
-was rejected; reverting to the minimal manifest + the `scripting` permission + programmatic
-injection passes). The script self-guards with `window.__queueContentScriptRan` against
-repeat injection. Roles by host:
+paywall/archive lists), self-guarded with `window.__queueContentScriptRan` against repeat
+injection. (A declarative `content_scripts` block also validates fine — the programmatic
+route is just a smaller manifest footprint.) **ITMS-90849 gotcha**: the manifest
+`description` must stay **≤ ~112 chars** — a 127-char description failed App Store validation
+with the opaque code 90849 (NOT content_scripts/scripting, which were red herrings). Roles by
+host:
 - **On a paywall host**: injects a Queue-indigo (`#5856D6`) "Read in Queue" capsule button.
   Tap → `runtime.sendMessage({type:"queueRedirect", url})` → background redirects the tab to
   `https://archive.is/newest/<url>`.

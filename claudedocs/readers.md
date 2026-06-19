@@ -138,6 +138,15 @@ Layered readability: **refined** (aggressive junk-by-class stripping — footers
 
 Regression tests: `ArticleExtractorTests.testArchivedArticleBeatsSubscriptionGateAndComments`, `…testDivBasedArticleBodyExtractedWithoutPlayerChrome`.
 
+## Hard-paywall resolution & archive reader
+
+`ArticleResolver.resolve` tries direct → AMP → web archive (Wayback, then archive.today). Outcome → ingestor state:
+- `.readable` → `.ready`.
+- `.paywalled(title)` → `.needsCaptcha`.
+- `.unreadable` → `.failed` **only for ordinary sites**. For a **hard-paywall host** (`ArticleFetcher.isHardPaywallHost` — WSJ/FT/NYT/Economist/Bloomberg/…) **or an archive.today URL** (`isArchiveTodayURL`), it parks as `.needsCaptcha` with a humanized placeholder title (`articleTitleGuess`, slug-derived, archive URLs unwrapped to the original via `originalURL(fromArchiveURL:)`). So a blocked WSJ/FT save offers the archive path instead of dropping into failed imports.
+
+Opening a `.needsCaptcha` item (`ReadingListViewController.presentArchiveReader`) presents the WKWebView **`ArchiveWebReaderViewController`** (NOT SFSafariViewController — the host app can't read SFSafari's DOM, so it could never extract). It loads the exact snapshot when the saved URL is already archive.today, else `archive.is/newest/<canonical>`; persistent cookie store + device-matched Safari UA so a solved Cloudflare `cf_clearance` sticks. On `didFinish` with innerText > 1500 (and not the challenge page) it reads its own `outerHTML`, extracts, `saveContent`, and fires `onExtracted` → the host dismisses and reopens the now-`.ready` item in the native reader. An **"Open in Safari"** button (`onOpenInBrowser` → `SFSafariViewController`) is the escape hatch when the embedded view can't clear the gate. Tests: `ArticleFetcherTests` (host detection, archive-URL unwrap, title guess).
+
 ## Tests
 
 `ClipTests/RSVPEngineTests.swift` (ORP, timing, flags). `ClipTests/ArticleExtractorTests.swift` (layering, junk stripping, archived-page gate/comment rejection).

@@ -9,7 +9,9 @@ on-device semantic nearest-neighbour.
 - **Top-left**: a capsule **pill** (`makeLeftPill`) holding the **settings** (gearshape) and **friends** (person.2) icons.
 - **Top-right**: **add** (`+`) and **search** (magnifyingglass, `searchTapped`) — search sits where friends used to be.
 
-`searchTapped` hosts `SearchViewController` **in place** (no modal page transition): it's added as a child of the **navigation controller** (which owns the view that covers the nav bar — RLVC is a `UITableViewController` whose own view is the scrolling table, so it can't host it; parenting to the nav controller also avoids UIKit's appearance-forwarding assertion), its view pinned over `nav.view` and **cross-faded** (`alpha` 0→1). `onExit` fades it out (`dismissSearch`); `onOpen` removes it immediately then opens the result on the list's nav. Background is `systemBackground` (black in dark mode → the "fade to black" effect).
+`searchTapped` hosts `SearchViewController` **in place** (no modal page transition): its view is added over `nav.view` (NOT via VC containment — a strong `searchController` ref keeps it alive; `addChild` on a UINavigationController corrupts its stack → a stray back button) and **cross-faded** (`alpha` 0→1). `onExit` fades it out (`dismissSearch`); `onOpen` removes it immediately then opens the result on the list's nav. Background is `systemBackground` (black in dark mode → the "fade to black" effect).
+
+The list's nav bar is hidden **synchronously up front** (`setNavigationBarHidden(true)` before the keyboard rises) — NOT in the fade completion. The search field becoming first responder raises the keyboard, which triggers a nav-controller relayout that would re-front the still-visible bar OVER the overlay (a dark band across the top of the results, only clearing once layout settles). Hiding it first keeps it down for the whole session; `dismissSearch`/`removeSearch` restore it.
 
 ## Key files
 

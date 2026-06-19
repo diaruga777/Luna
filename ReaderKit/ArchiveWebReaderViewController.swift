@@ -33,6 +33,15 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// Non-blocking banner host for `rateLimitView` — shown OVER the web view (not
     /// instead of it) so the user can still attempt the CAPTCHA.
     private let rateLimitBanner = UIView()
+    /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
+    /// archive.today navigation (home page, form fill/submit, snapshot load). It's
+    /// removed only while a CAPTCHA is up — the one moment the user must see and
+    /// touch the page. The web view stays un-hidden and full-size beneath it
+    /// (covered, not hidden — so iOS never throttles its JS/navigation), which is
+    /// what keeps the automated flow running while it's visually concealed.
+    private let loadingOverlay = UIView()
+    private let overlaySpinner = UIActivityIndicatorView(style: .large)
+    private let overlayLabel = UILabel()
     private var didExtract = false
     /// Set synchronously the moment we decide to extract, so the several
     /// `didFinish` events archive.today fires (sub-frames, JS reloads) can't each
@@ -215,6 +224,8 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             bannerStack.trailingAnchor.constraint(equalTo: rateLimitBanner.trailingAnchor, constant: -14),
         ])
 
+        setUpLoadingOverlay()
+
         progress.startAnimating()
         loadArchive()
         startPolling()
@@ -243,6 +254,39 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     }
 
     deinit { pollTimer?.invalidate() }
+
+    /// Builds the opaque cover (themed background + spinner + label) over the web
+    /// view; visible from the start so the user never sees the raw archive page
+    /// except when a CAPTCHA is up (`checkStage` reveals it then).
+    private func setUpLoadingOverlay() {
+        loadingOverlay.backgroundColor = .systemBackground
+        loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
+
+        overlaySpinner.color = GlassStyle.readingAccent
+        overlaySpinner.startAnimating()
+        overlaySpinner.translatesAutoresizingMaskIntoConstraints = false
+
+        overlayLabel.text = "Unlocking article…"
+        overlayLabel.textColor = .secondaryLabel
+        overlayLabel.font = .preferredFont(forTextStyle: .callout)
+        overlayLabel.textAlignment = .center
+        overlayLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        loadingOverlay.addSubview(overlaySpinner)
+        loadingOverlay.addSubview(overlayLabel)
+        view.addSubview(loadingOverlay)
+        NSLayoutConstraint.activate([
+            loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlaySpinner.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
+            overlaySpinner.centerYAnchor.constraint(equalTo: loadingOverlay.centerYAnchor),
+            overlayLabel.topAnchor.constraint(equalTo: overlaySpinner.bottomAnchor, constant: 14),
+            overlayLabel.leadingAnchor.constraint(equalTo: loadingOverlay.leadingAnchor, constant: 32),
+            overlayLabel.trailingAnchor.constraint(equalTo: loadingOverlay.trailingAnchor, constant: -32),
+        ])
+    }
 
     private static let archiveHomepage = URL(string: "https://archive.is/")! // valid constant
 
@@ -337,6 +381,8 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             guard let self, let stage = result as? String else { return }
             SharedDiagnosticLog.record(
                 "archive: stage \(stage) @ \(self.webView.url?.absoluteString ?? "")", category: "archive")
+            // Reveal the web view ONLY for the CAPTCHA; cover every automated step.
+            self.loadingOverlay.isHidden = (stage == "challenge")
             if stage == "challenge" { return }
 
             if stage.hasPrefix("homepage") {
@@ -449,8 +495,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
     private func showRateLimit() {
         progress.stopAnimating()
-        // Show the guidance as a non-blocking banner — DON'T hide the web view, so
-        // the user can keep trying to solve the CAPTCHA (hiding it stranded them).
+        // Reveal the web view + show the guidance banner on top — the user needs to
+        // see the page to act on the rate-limit advice.
+        loadingOverlay.isHidden = true
         rateLimitBanner.isHidden = false
         view.bringSubviewToFront(rateLimitBanner)
     }

@@ -389,14 +389,21 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// - **article** (substantial text, no search box) → extract.
     private func checkStage() {
         guard !didExtract, !isExtracting, viewIfLoaded?.window != nil else { return }
-        // Returns "challenge", "error" (Invalid interception ID), "homepage:<len>"
-        // (only once the submit token is ready), or "page:<len>". A CAPTCHA must be
-        // detected RELIABLY — by the reCAPTCHA/Cloudflare WIDGET, not just text — or
-        // the overlay would never lift and the user could never solve it.
+        // Returns "error" (Invalid interception ID), "homepage:<len>" (the search
+        // form is present → type the URL + submit), "challenge:<len>" (a Cloudflare/
+        // reCAPTCHA gate, detected by WIDGET not just text so the overlay reliably
+        // lifts), or "page:<len>".
+        //
+        // The homepage check comes FIRST: archive.today's own save form can carry a
+        // spam-protection reCAPTCHA, which must NOT be mistaken for a blocking
+        // challenge (the manual flow submits without solving it). No submitid gate —
+        // submitting on `input[name=url]` is the proven flow; a stale token surfaces
+        // "Invalid interception ID" which we recover from.
         let probe = """
         (function () {
             var t = document.body ? document.body.innerText : '';
             if (/invalid interception id/i.test(t)) { return 'error'; }
+            if (document.querySelector('input[name="url"]')) { return 'homepage:' + t.length; }
             var challengeWidget = document.querySelector(
                 'iframe[src*="recaptcha"], iframe[src*="challenges.cloudflare.com"], '
                 + 'iframe[title*="recaptcha" i], iframe[title*="challenge" i], '
@@ -406,10 +413,6 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             if (challengeWidget) { return 'challenge'; }
             if (/Why do I have to complete a CAPTCHA|Checking your browser|Just a moment|Verifying you are human|needs to review the security/i.test(t)) {
                 return 'challenge';
-            }
-            var sid = document.querySelector('input[name="submitid"]');
-            if (document.querySelector('input[name="url"]') && sid && sid.value) {
-                return 'homepage:' + t.length;
             }
             return 'page:' + t.length;
         })()
@@ -446,15 +449,17 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             }
 
             if stage.hasPrefix("homepage") {
+                // Set synchronously so a poll tick during the async submit can't
+                // double-fire. Error-recovery resets it to retry once.
                 guard !self.didLeaveHomepage else { return }
+                self.didLeaveHomepage = true
                 if let snapshot = self.resolvedSnapshotURL {
-                    self.didLeaveHomepage = true
                     SharedDiagnosticLog.record(
                         "archive: homepage cleared → loading resolved snapshot \(snapshot.absoluteString)",
                         category: "archive")
                     self.webView.load(URLRequest(url: snapshot))
                 } else {
-                    self.submitURLOnHomepage()   // sets didLeaveHomepage only if it actually submits
+                    self.submitURLOnHomepage()
                 }
                 return
             }
@@ -468,26 +473,24 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     }
 
     /// Replicates the manual flow: type the article URL into the homepage's
-    /// `input[name=url]` box and submit the form (POSTs to `/submit/`, which for an
-    /// already-archived page 302-redirects straight to the existing snapshot). Only
-    /// submits once the hidden `submitid` token is present (submitting with a stale/
-    /// missing token is what yields "Invalid interception ID").
+    /// `input[name=url]` box and submit its form (POSTs to `/submit/` with the form's
+    /// hidden `submitid`, which for an already-archived page 302-redirects straight
+    /// to the existing snapshot). Submits as soon as the box exists — the proven
+    /// flow; a stale token surfaces "Invalid interception ID", which we recover from.
     private func submitURLOnHomepage() {
         let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
         let literal = Self.jsStringLiteral(target)
         let fill = """
         (function () {
             var i = document.querySelector('input[name="url"]');
-            var sid = document.querySelector('input[name="submitid"]');
-            if (!i || !sid || !sid.value) { return 'wait'; }
+            if (!i) { return 'no-input'; }
             i.value = \(literal);
             if (i.form) { i.form.submit(); return 'submitted'; }
             return 'no-form';
         })()
         """
-        SharedDiagnosticLog.record("archive: homepage cleared → submitting URL in form", category: "archive")
-        webView.evaluateJavaScript(fill) { [weak self] result, _ in
-            if (result as? String) == "submitted" { self?.didLeaveHomepage = true }
+        SharedDiagnosticLog.record("archive: homepage → typing URL + submitting form", category: "archive")
+        webView.evaluateJavaScript(fill) { result, _ in
             SharedDiagnosticLog.record(
                 "archive: form submit result=\(result as? String ?? "nil")", category: "archive")
         }

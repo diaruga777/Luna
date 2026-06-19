@@ -966,16 +966,14 @@ final class ReadingListViewController: UITableViewController {
     func open(_ item: ReadingListItem, presenter: UIViewController) {
         if openItem(item, presentingFrom: presenter) { return }
         // A hard-paywalled article whose archive snapshot needs a CAPTCHA: open the
-        // archive.today snapshot in SFSafariViewController — a REAL Safari instance
-        // (genuine Safari process/fingerprint), so it passes archive.today's
-        // Cloudflare check the way Safari does, instead of looping like our own
-        // WKWebView (which Cloudflare fingerprints as a webview and never clears).
+        // archive.today snapshot in our WKWebView archive reader. It shows the
+        // Cloudflare CAPTCHA for the user to solve, then — crucially — reads its OWN
+        // DOM to extract the article and reopen it in the native reader (something
+        // SFSafariViewController can't do: the host app can't read its content).
+        // Real Safari is kept as an escape-hatch button for the rare case the
+        // embedded web view can't clear the gate.
         if item.state == .needsCaptcha, let url = item.url {
-            let target = ArticleFetcher.canonicalForArchiving(url).absoluteString
-            if let archiveURL = URL(string: "https://archive.is/newest/\(target)"),
-               archiveURL.host == "archive.is" {
-                presenter.present(SFSafariViewController(url: archiveURL), animated: true)
-            }
+            presentArchiveReader(for: item, articleURL: url, presenter: presenter)
             store.markReadState(.opened, for: item.id)
             return
         }
@@ -985,6 +983,29 @@ final class ReadingListViewController: UITableViewController {
             shareProvider: AppReaderShareProvider.shared,
             gazeTrackerFactory: AppGazeTracker.factory)
         presenter.navigationController?.pushViewController(reader, animated: true)
+    }
+
+    /// Presents the interactive WKWebView archive reader for a `.needsCaptcha` item.
+    /// On a successful extraction it dismisses and reopens the now-`.ready` item in
+    /// the native reader; an "Open in Safari" button hands off to real Safari when
+    /// the embedded web view can't clear archive.today's Cloudflare gate.
+    private func presentArchiveReader(
+        for item: ReadingListItem, articleURL: URL, presenter: UIViewController
+    ) {
+        let reader = ArchiveWebReaderViewController(articleURL: articleURL, itemID: item.id, store: store)
+        let nav = UINavigationController(rootViewController: reader)
+        reader.onClose = { [weak nav] in nav?.dismiss(animated: true) }
+        reader.onOpenInBrowser = { [weak nav] archiveURL in
+            nav?.present(SFSafariViewController(url: archiveURL), animated: true)
+        }
+        reader.onExtracted = { [weak self, weak nav, weak presenter] in
+            nav?.dismiss(animated: true) {
+                guard let self, let presenter,
+                      let fresh = self.store.item(withID: item.id) else { return }
+                self.open(fresh, presenter: presenter)   // now .ready → native reader
+            }
+        }
+        presenter.present(nav, animated: true)
     }
 
     /// Opens a non-article item (video / platform post / music / podcast) the way

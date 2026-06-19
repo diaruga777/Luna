@@ -71,7 +71,15 @@ final class ReadingListIngestor {
         case .paywalled(let title):
             store.markNeedsCaptcha(item.id, title: title)
         case .unreadable:
-            store.markFailed(item.id)
+            // A hard-paywall host (WSJ/FT/…) or an already-archived URL can still be
+            // read via its archive.today snapshot behind a user-solved CAPTCHA — park
+            // it for the interactive archive reader instead of failing. Only a truly
+            // unreachable URL on an ordinary site is a genuine failure.
+            if ArticleFetcher.isHardPaywallHost(url) || ArticleFetcher.isArchiveTodayURL(url) {
+                store.markNeedsCaptcha(item.id, title: ArticleFetcher.articleTitleGuess(from: url))
+            } else {
+                store.markFailed(item.id)
+            }
         }
     }
 

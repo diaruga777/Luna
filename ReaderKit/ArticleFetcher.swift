@@ -47,15 +47,82 @@ struct ArticleFetcher {
     ]
 
     /// Canonical form for archive lookups: drops the fragment and known tracking
-    /// params. Keeps real query params so distinct articles still resolve.
+    /// params. Keeps real query params so distinct articles still resolve. An
+    /// already-archived URL is first unwrapped to the original article, so we
+    /// archive the real page rather than double-wrapping an archive snapshot.
     static func canonicalForArchiving(_ url: URL) -> URL {
-        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        let article = originalURL(fromArchiveURL: url) ?? url
+        guard var comps = URLComponents(url: article, resolvingAgainstBaseURL: false) else { return article }
         comps.fragment = nil
         if let queryItems = comps.queryItems {
             let kept = queryItems.filter { !trackingParams.contains($0.name.lowercased()) }
             comps.queryItems = kept.isEmpty ? nil : kept
         }
-        return comps.url ?? url
+        return comps.url ?? article
+    }
+
+    /// archive.today's family of interchangeable domains (DNS round-robin; the same
+    /// service). A URL on any of these is already an archive snapshot.
+    private static let archiveTodayHosts: Set<String> = [
+        "archive.today", "archive.is", "archive.ph", "archive.md",
+        "archive.li", "archive.vn", "archive.fo",
+    ]
+
+    /// Whether `url` is an archive.today snapshot (any of its rotating domains).
+    static func isArchiveTodayURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return archiveTodayHosts.contains(host)
+    }
+
+    /// The original article URL embedded in an archive.today snapshot URL
+    /// (`archive.is/<id|timestamp|newest>/<original>`), or nil when the snapshot
+    /// carries no embedded URL (e.g. a bare `archive.is/<id>`).
+    static func originalURL(fromArchiveURL url: URL) -> URL? {
+        guard isArchiveTodayURL(url) else { return nil }
+        let full = url.absoluteString
+        // The embedded original begins at the inner http(s):// after the host/path.
+        guard let slashScheme = full.range(of: "/https://") ?? full.range(of: "/http://")
+        else { return nil }
+        let inner = String(full[full.index(after: slashScheme.lowerBound)...])
+        return URL(string: inner)
+    }
+
+    /// Hosts that hard-paywall or aggressively bot-block, so a direct/background
+    /// fetch yields no readable body. For these an unreadable result is parked for a
+    /// user-solved archive CAPTCHA (`.needsCaptcha`) rather than failed outright —
+    /// the archive snapshot is the only way in, and only an interactive web view
+    /// can clear archive.today's Cloudflare gate.
+    private static let hardPaywallHosts: Set<String> = [
+        "wsj.com", "ft.com", "nytimes.com", "economist.com", "bloomberg.com",
+        "washingtonpost.com", "newyorker.com", "theatlantic.com", "wired.com",
+        "barrons.com", "businessinsider.com", "theinformation.com", "hbr.org",
+        "foreignpolicy.com", "foreignaffairs.com", "thetimes.co.uk", "telegraph.co.uk",
+        "nikkei.com", "seekingalpha.com", "latimes.com", "bostonglobe.com",
+    ]
+
+    /// Whether `url`'s host (or a subdomain of it) is a known hard-paywall site.
+    static func isHardPaywallHost(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return hardPaywallHosts.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    /// A human-readable placeholder title for an article we couldn't read yet
+    /// (parked for a CAPTCHA), so the list row isn't a bare URL. Derived from the
+    /// article slug (the archive URL is unwrapped to the original first); falls back
+    /// to the publication/host name. Replaced by the real title once extracted.
+    static func articleTitleGuess(from url: URL) -> String {
+        let article = originalURL(fromArchiveURL: url) ?? url
+        let slug = article.pathComponents.last { !$0.isEmpty && $0 != "/" } ?? ""
+        let words = slug
+            .replacingOccurrences(of: "_", with: "-")
+            .split(separator: "-").map(String.init)
+            // Drop id-ish tokens — all hex/digits (e.g. WSJ's "199845b1", an FT
+            // UUID's "c213"); real words contain a non-hex letter (g–z).
+            .filter { token in !token.allSatisfy(\.isHexDigit) }
+        if words.count >= 2 {
+            return words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        }
+        return (article.host ?? "Article").replacingOccurrences(of: "www.", with: "")
     }
 
     /// Fetches a public web-archive copy of a URL — a fallback for hard-paywalled /

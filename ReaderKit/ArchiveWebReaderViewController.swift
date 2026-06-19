@@ -174,23 +174,31 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     }
 
     private func loadArchive() {
-        // The target URL lives in the PATH, so archive.today opens straight to this
-        // article — the user never types it into a form.
-        let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
-        guard let archiveURL = URL(string: "https://archive.ph/newest/\(target)"),
-              archiveURL.host == "archive.ph"
-        else { return }
+        guard let archiveURL = Self.archiveURL(for: articleURL) else { return }
         SharedDiagnosticLog.record(
             "archive: loading \(archiveURL.absoluteString) ua=\(webView.customUserAgent ?? "default")",
             category: "archive")
         webView.load(URLRequest(url: archiveURL))
     }
 
+    /// The archive.today URL to open. When the saved URL is ALREADY an archive
+    /// snapshot, load that exact snapshot (the user got it from a working Safari
+    /// session). Otherwise open `archive.is/newest/<canonical>` — archive.is is the
+    /// domain that reliably clears its Cloudflare gate in Safari, and the target
+    /// lives in the PATH so the user never types it into a form.
+    static func archiveURL(for articleURL: URL) -> URL? {
+        if ArticleFetcher.isArchiveTodayURL(articleURL) { return articleURL }
+        let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
+        guard let url = URL(string: "https://archive.is/newest/\(target)"),
+              ArticleFetcher.isArchiveTodayURL(url)   // reject a smuggled non-archive host
+        else { return nil }
+        return url
+    }
+
     /// Opens the archive in real Safari (the proven-working path when the embedded
     /// web view can't pass the CAPTCHA). Uses the currently-loaded URL when present.
     private func openInBrowser() {
-        let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
-        guard let url = webView.url ?? URL(string: "https://archive.ph/newest/\(target)") else { return }
+        guard let url = webView.url ?? Self.archiveURL(for: articleURL) else { return }
         onOpenInBrowser?(url)
     }
 

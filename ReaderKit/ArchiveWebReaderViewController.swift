@@ -102,19 +102,16 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// honor CAPTCHA solves until the throttle clears — so surface actionable
     /// remedies rather than letting the user re-solve a CAPTCHA that can't pass.
     private static let rateLimitMessage =
-        "archive.today is rate-limiting your network right now, so solving the CAPTCHA "
-        + "won't get through.\n\nTry one of these, then reopen:\n"
+        "Your network is being rate-limited right now.\n\nTry one of these, then reopen:\n"
         + "•  Wait ~30 minutes\n"
         + "•  Switch networks or turn on a VPN\n"
-        + "•  Tap Open in Safari below, then disable Safari's content/ad "
-        + "blockers for archive.today"
+        + "•  Tap Open in Safari below and view there"
 
     /// Shown when archive.today returns an error AFTER the user solved the CAPTCHA
     /// (a stale/invalid capture session, an un-archivable page) — solving again
     /// won't help, so we stop and tell the user plainly rather than spin forever.
     private static let cannotArchiveMessage =
-        "This site can't be archived right now.\n\narchive.today couldn't capture the "
-        + "page. Try again in a little while, or open it in Safari."
+        "This site can't be archived right now. Try again in a little while, or open it in Safari."
 
     init(articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared) {
         self.articleURL = articleURL

@@ -44,7 +44,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .semantic:
             return "When you save something that resembles things you've shared with a friend before, Queue can suggest sharing it with them. Slide all the way left to turn this off."
         case .archiveOverlay:
-            return "Opacity of the cover hiding the archive.today flow while a paywalled article unlocks. Lower it to see what the web view is doing (for debugging). 99% = effectively hidden."
+            return "Opacity of overlay while we work to unlock web articles"
         case .youtube:
             return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read.\n\nYour email must be whitelisted for this to work while in development."
         }

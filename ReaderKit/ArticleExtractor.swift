@@ -121,11 +121,14 @@ struct ArticleExtractor {
         [class*=newsletter], [class*=subscribe], [class*=Subscribe], [class*=promo], \
         [class*=paywall], [class*=Paywall], [class*=breadcrumb], \
         [class*=cookie], [class*=advert], [class*=popup], \
-        [class*=recommend], [class*=trending], [class*=more-stories]
+        [class*=recommend], [class*=trending], [class*=more-stories], \
+        [class*=video], [id*=video], [class*=player], [id*=player], \
+        [aria-live], [role=slider], [role=menu], [role=menubar]
         """
         for element in try document.select(strippedSelectors) {
             try element.remove()
         }
+        try removeVisuallyHiddenElements(in: document)
 
         let container = try bestContainer(in: document)
         var blocks = try extractBlocks(from: container)
@@ -133,6 +136,28 @@ struct ArticleExtractor {
             blocks = try extractBlocks(from: body)
         }
         return trimTrailingJunk(blocks)
+    }
+
+    /// Removes screen-reader-only / off-screen elements. Archived pages (and
+    /// many sites) ship visually-hidden labels — player state ("Playing"),
+    /// timecodes, sr-only captions — via the classic clip/1px-box idiom; those
+    /// are UI accessibility text, never article prose, so they must not surface
+    /// once paragraph-like `<div>`s are captured.
+    private func removeVisuallyHiddenElements(in document: Document) throws {
+        // Signatures are pre-normalized (lowercase, no spaces) to match the
+        // normalized style string regardless of the author's whitespace.
+        let hiddenStyleSignatures = [
+            "clip:rect(1px", "clip:rect(0px", "clip:rect(0,", "clip:rect(0)",
+            "clip-path:inset(50%)", "clip-path:inset(100%)",
+            "width:1px;height:1px", "height:1px;width:1px",
+        ]
+        for element in try document.select("[style]") {
+            let style = ((try? element.attr("style")) ?? "")
+                .lowercased().replacingOccurrences(of: " ", with: "")
+            if hiddenStyleSignatures.contains(where: style.contains) {
+                try element.remove()
+            }
+        }
     }
 
     /// Layer 2: the original conservative extraction — structural tags only.
@@ -248,7 +273,7 @@ struct ArticleExtractor {
 
         var scores: [ObjectIdentifier: Double] = [:]
         var elements: [ObjectIdentifier: Element] = [:]
-        for paragraph in try document.select("p") {
+        for paragraph in paragraphLikeElements(in: document) {
             let textCount = (try? paragraph.text().count) ?? 0
             guard textCount > 20 else { continue }
             var ancestor = paragraph.parent()
@@ -283,22 +308,53 @@ struct ArticleExtractor {
     }
 
     private func paragraphTextLength(in element: Element) -> Int {
-        guard let paragraphs = try? element.select("p") else { return 0 }
         var total = 0
-        for paragraph in paragraphs {
+        for paragraph in paragraphLikeElements(in: element) {
             let length = (try? paragraph.text().count) ?? 0
             if length > 20 { total += length }
         }
         return total
     }
 
+    /// `<p>` plus "paragraph-like" `<div>`/`<section>` leaves — containers whose
+    /// content is entirely inline/text (no block-level child element). Many news
+    /// sites — and archive.today's rewritten DOM — render every body paragraph as
+    /// a styled `<div>` with no `<p>` at all; treating those as paragraphs is what
+    /// lets the scorer and block extractor see the real article body instead of
+    /// only the stray `<p>`s (a summary box, a caption) elsewhere on the page.
+    private func paragraphLikeElements(in root: Element) -> [Element] {
+        guard let candidates = try? root.select("p, div, section") else { return [] }
+        return candidates.array().filter { element in
+            element.tagName() == "p" || isParagraphLikeContainer(element)
+        }
+    }
+
+    /// True for a `<div>`/`<section>` with no block-level child element, i.e. all
+    /// of its content is inline/text — so it reads as a single paragraph.
+    private func isParagraphLikeContainer(_ element: Element) -> Bool {
+        let tag = element.tagName()
+        guard tag == "div" || tag == "section" else { return false }
+        for child in element.children() where blockLevelChildTags.contains(child.tagName()) {
+            return false
+        }
+        return true
+    }
+
     // MARK: - Block extraction
 
     private let blockTags: Set<String> = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "li", "pre"]
 
+    /// Child tags that disqualify a `<div>`/`<section>` from being a single
+    /// paragraph (their presence means the element is a structural container).
+    private let blockLevelChildTags: Set<String> = [
+        "div", "p", "section", "article", "aside", "header", "footer", "nav", "main",
+        "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "blockquote",
+        "figure", "figcaption", "form", "pre", "h1", "h2", "h3", "h4", "h5", "h6",
+    ]
+
     private func extractBlocks(from container: Element) throws -> [ArticleContent.Block] {
         var blocks: [ArticleContent.Block] = []
-        for element in try container.select(blockTags.joined(separator: ", ") + ", img") {
+        for element in try container.select(blockTags.joined(separator: ", ") + ", div, section, img") {
             if element.tagName() == "img" {
                 // Standalone images (inside divs/figures); images nested in a
                 // paragraph are collected by that paragraph's walk below.
@@ -307,6 +363,17 @@ struct ArticleExtractor {
                     blocks.append(imageBlock)
                 }
                 continue
+            }
+            // Structural <div>/<section> wrappers are skipped; only paragraph-like
+            // ones (pure inline/text) are emitted, as a paragraph. A paragraph-like
+            // container has no block-level children, so it can't nest another, and
+            // its text isn't double-counted by a descendant block. The >20-char
+            // gate matches the scoring threshold: a bare text <div> that short is
+            // UI chrome (a timecode, "Up Next", a label), not article prose —
+            // explicit <p>/heading/list/quote tags keep their any-length behavior.
+            if element.tagName() == "div" || element.tagName() == "section" {
+                guard isParagraphLikeContainer(element),
+                      ((try? element.text().count) ?? 0) > 20 else { continue }
             }
             // Skip elements nested inside another matched block (e.g. p inside
             // blockquote) so the same text isn't emitted twice.

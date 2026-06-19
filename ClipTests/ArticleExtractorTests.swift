@@ -180,6 +180,39 @@ final class ArticleExtractorTests: XCTestCase {
                        "subscription gate leaked into extraction")
     }
 
+    /// archive.today rewrites the captured page so every body paragraph is a
+    /// styled `<div>` (no `<p>` at all), and an embedded video player ships its
+    /// chrome — timecodes, "Up Next", an aria-live "Playing" label, sr-only
+    /// captions — as short text divs. The extractor must read the div-based body
+    /// and reject the player chrome / hidden labels.
+    func testDivBasedArticleBodyExtractedWithoutPlayerChrome() throws {
+        let bodyDivs = (1...6).map { index in
+            "<div style=\"display:block\">Apple plans to raise product prices to offset "
+            + "surging memory and storage costs, body paragraph number \(index), written "
+            + "as a full sentence of genuine reported article prose worth reading.</div>"
+        }.joined()
+
+        let html = """
+        <html><head><title>Apple Price Increases</title>
+        <meta property="og:title" content="Apple Price Increases Unavoidable, Tim Cook Says" /></head>
+        <body>
+        <div id="video-player-wrapper">
+          <div aria-live="polite" style="clip:rect(1px, 1px, 1px, 1px);height:1px;width:1px;position:absolute;">Playing</div>
+          <div>0:00</div><div>0:00 / 2:33</div><div>Up Next</div><div>You may also like</div>
+        </div>
+        <div style="display:block">\(bodyDivs)</div>
+        <div aria-live="polite" style="position:absolute;clip:rect(1px, 1px, 1px, 1px);">Embed code copied to clipboard</div>
+        </body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertTrue(content.wholeText.contains("Apple plans to raise product prices"),
+                      "div-based article body was dropped")
+        XCTAssertGreaterThan(content.wholeText.count, 600, "body under-extracted")
+        for chrome in ["0:00", "Playing", "Up Next", "You may also like", "Embed code"] {
+            XCTAssertFalse(content.wholeText.contains(chrome), "player/hidden chrome leaked: \(chrome)")
+        }
+    }
+
     func testThrowsOnEmptyDocument() {
         XCTAssertThrowsError(try extractor.extract(html: "<html><body></body></html>", baseURL: baseURL))
     }

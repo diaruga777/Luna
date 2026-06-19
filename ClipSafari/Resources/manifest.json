@@ -15,24 +15,6 @@
         "page": "background.html",
         "persistent": false
     },
-    "content_scripts": [
-        {
-            "matches": [
-                "*://*.wsj.com/*", "*://*.ft.com/*", "*://*.nytimes.com/*",
-                "*://*.economist.com/*", "*://*.bloomberg.com/*", "*://*.washingtonpost.com/*",
-                "*://*.newyorker.com/*", "*://*.theatlantic.com/*", "*://*.wired.com/*",
-                "*://*.barrons.com/*", "*://*.businessinsider.com/*", "*://*.theinformation.com/*",
-                "*://*.hbr.org/*", "*://*.foreignpolicy.com/*", "*://*.foreignaffairs.com/*",
-                "*://*.thetimes.co.uk/*", "*://*.telegraph.co.uk/*", "*://*.nikkei.com/*",
-                "*://*.seekingalpha.com/*", "*://*.latimes.com/*", "*://*.bostonglobe.com/*",
-                "*://archive.is/*", "*://archive.ph/*", "*://archive.md/*",
-                "*://archive.today/*", "*://archive.li/*", "*://archive.vn/*", "*://archive.fo/*"
-            ],
-            "js": ["content.js"],
-            "run_at": "document_idle",
-            "all_frames": false
-        }
-    ],
-    "permissions": ["nativeMessaging", "tabs"],
+    "permissions": ["nativeMessaging", "tabs", "scripting"],
     "host_permissions": ["<all_urls>"]
 }

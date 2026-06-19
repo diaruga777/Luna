@@ -15,6 +15,11 @@
 (function () {
     "use strict";
 
+    // The background script injects this with scripting.executeScript, which can
+    // fire more than once per document — run our setup only the first time.
+    if (window.__queueContentScriptRan) { return; }
+    window.__queueContentScriptRan = true;
+
     var QUEUE_INDIGO = "#5856D6";
 
     var PAYWALL_HOSTS = [

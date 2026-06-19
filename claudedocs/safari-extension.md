@@ -28,7 +28,13 @@ existing Safari-onboarding gating): get hard-paywalled articles (WSJ/FT/…) int
 their archive.today snapshot, harvested from **real Safari** (which clears archive.today's
 Cloudflare gate reliably — see `readers.md`).
 
-`ClipSafari/Resources/content.js` (matched on hard-paywall hosts + `archive.*` hosts):
+`ClipSafari/Resources/content.js` is injected **programmatically** by `background.js`
+(`scripting.executeScript` on `tabs.onUpdated`/`status:complete` when the host is in the
+paywall/archive lists) — NOT via a declarative `content_scripts` manifest block, which fails
+App Store validation with **ITMS-90849** (the build-73 manifest + a `content_scripts` array
+was rejected; reverting to the minimal manifest + the `scripting` permission + programmatic
+injection passes). The script self-guards with `window.__queueContentScriptRan` against
+repeat injection. Roles by host:
 - **On a paywall host**: injects a Queue-indigo (`#5856D6`) "Read in Queue" capsule button.
   Tap → `runtime.sendMessage({type:"queueRedirect", url})` → background redirects the tab to
   `https://archive.is/newest/<url>`.

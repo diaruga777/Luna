@@ -1,13 +1,34 @@
 // Tracks the active tab's URL and forwards it to the native handler (for the
-// SaveLink intent), and brokers the "Read in Queue" archive flow for the content
-// script (which can't talk to the native app directly).
+// SaveLink intent), brokers the "Read in Queue" archive flow, and injects the
+// content script on paywall/archive hosts.
+//
+// We inject programmatically with the scripting API (rather than a declarative
+// `content_scripts` manifest block) — the minimal manifest keeps App Store
+// validation happy, and the background page is already woken by tabs.onUpdated.
 
 let lastSent = null;
 
 // tabId -> original article URL, for tabs we redirected to archive.today via the
-// "Read in Queue" button. Only these tabs are allowed to auto-save their archive
-// page; an arbitrary archive.is visit is never harvested.
+// "Read in Queue" button. Only these tabs auto-save their archive page; an
+// arbitrary archive.is visit is never harvested.
 const queueRedirects = {};
+
+const PAYWALL_HOSTS = [
+    "wsj.com", "ft.com", "nytimes.com", "economist.com", "bloomberg.com",
+    "washingtonpost.com", "newyorker.com", "theatlantic.com", "wired.com",
+    "barrons.com", "businessinsider.com", "theinformation.com", "hbr.org",
+    "foreignpolicy.com", "foreignaffairs.com", "thetimes.co.uk", "telegraph.co.uk",
+    "nikkei.com", "seekingalpha.com", "latimes.com", "bostonglobe.com"
+];
+const ARCHIVE_HOSTS = [
+    "archive.is", "archive.ph", "archive.md", "archive.today",
+    "archive.li", "archive.vn", "archive.fo"
+];
+
+function hostInList(hostname, list) {
+    const h = (hostname || "").replace(/^www\./, "").toLowerCase();
+    return list.some(function (d) { return h === d || h.endsWith("." + d); });
+}
 
 function report(url) {
     if (!url || !url.startsWith("http")) { return; }
@@ -16,6 +37,18 @@ function report(url) {
     browser.runtime.sendNativeMessage("application.id", { url: url }, function (response) {
         void response;
     });
+}
+
+// Injects the Queue content script into a paywall/archive page once it loads.
+function maybeInjectContentScript(tabId, url) {
+    let host;
+    try { host = new URL(url).hostname; } catch (e) { return; }
+    if (!hostInList(host, PAYWALL_HOSTS) && !hostInList(host, ARCHIVE_HOSTS)) { return; }
+    if (!browser.scripting || !browser.scripting.executeScript) { return; }
+    browser.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ["content.js"]
+    }).catch(function () { /* page may block injection; ignore */ });
 }
 
 async function reportActiveTab() {
@@ -32,8 +65,12 @@ async function reportActiveTab() {
 browser.tabs.onActivated.addListener(reportActiveTab);
 
 browser.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
-    if (tab && tab.active && (changeInfo.url || changeInfo.status === "complete")) {
+    if (!tab || !tab.active) { return; }
+    if (changeInfo.url || changeInfo.status === "complete") {
         report(tab.url);
+    }
+    if (changeInfo.status === "complete" && tab.url) {
+        maybeInjectContentScript(tabId, tab.url);
     }
 });
 

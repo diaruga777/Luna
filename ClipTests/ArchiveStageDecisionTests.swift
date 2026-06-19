@@ -17,8 +17,6 @@ final class ArchiveStageDecisionTests: XCTestCase {
         _ stage: String,
         didLeaveHomepage: Bool = false,
         hasResolvedSnapshot: Bool = false,
-        didSeeChallenge: Bool = false,
-        didRecoverFromError: Bool = false,
         blockedCount: Int = 0,
         blockedLimit: Int = 3
     ) -> ArchiveWebReaderViewController.StageDecision {
@@ -26,8 +24,6 @@ final class ArchiveStageDecisionTests: XCTestCase {
             stage,
             didLeaveHomepage: didLeaveHomepage,
             hasResolvedSnapshot: hasResolvedSnapshot,
-            didSeeChallenge: didSeeChallenge,
-            didRecoverFromError: didRecoverFromError,
             blockedCount: blockedCount,
             blockedLimit: blockedLimit)
     }
@@ -94,20 +90,14 @@ final class ArchiveStageDecisionTests: XCTestCase {
 
     // MARK: - Errors
 
-    func testErrorBeforeChallengeRecoversOnce() {
-        XCTAssertEqual(decide("error"), .recoverError)
+    func testErrorIsTerminal() {
+        // archive.today's "Error -32602: Invalid InterceptionId" (probe → "error")
+        // is terminal — retrying/solving won't help, so show the error.
+        XCTAssertEqual(decide("error"), .cannotArchive)
     }
 
-    func testErrorAfterChallengeIsTerminal() {
-        XCTAssertEqual(
-            decide("error", didSeeChallenge: true),
-            .cannotArchive)
-    }
-
-    func testErrorAfterRetrySpentIsTerminal() {
-        XCTAssertEqual(
-            decide("error", didRecoverFromError: true),
-            .cannotArchive)
+    func testErrorIsTerminalRegardlessOfHomepageState() {
+        XCTAssertEqual(decide("error", didLeaveHomepage: true), .cannotArchive)
     }
 
     // MARK: - Plain page length gate

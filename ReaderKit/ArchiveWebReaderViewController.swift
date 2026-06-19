@@ -58,9 +58,6 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// `…/newest/<url>` deep link, which triggers archive.today's self-reloading
     /// challenge loop. True once we've acted on the cleared homepage (once).
     private var didLeaveHomepage = false
-    /// Guards a one-shot recovery from archive.today's "Invalid interception ID"
-    /// error (a submit whose capture session went stale) — we re-submit once.
-    private var didRecoverFromError = false
     /// Consecutive poll ticks where the opaque overlay is covering the page without
     /// progress; past `stallPollLimit` we surface the rate-limit guidance so the
     /// user is never stranded on a permanent "Unlocking…" screen (e.g. a homepage
@@ -72,10 +69,6 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// as terminal (the un-archivable message + Safari escape).
     private var blockedPollCount = 0
     private static let blockedPollLimit = 3   // ≈ 4s — tolerate a transient flash
-    /// True once a CAPTCHA has been shown. An archive error AFTER a solved CAPTCHA
-    /// means the page genuinely can't be captured — vs. a stale submit token before
-    /// any CAPTCHA, which is worth one silent retry.
-    private var didSeeChallenge = false
     /// Set once we surface a terminal message in the overlay (rate-limit or
     /// un-archivable). Stops polling/extraction and any further overlay toggling.
     private var didShowTerminalMessage = false
@@ -394,12 +387,16 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         // The homepage check comes FIRST: archive.today's own save form can carry a
         // spam-protection reCAPTCHA, which must NOT be mistaken for a blocking
         // challenge (the manual flow submits without solving it). No submitid gate —
-        // submitting on `input[name=url]` is the proven flow; a stale token surfaces
-        // "Invalid interception ID" which we recover from.
+        // submitting on `input[name=url]` is the proven flow; if the capture session
+        // goes stale it surfaces "Error -32602: Invalid InterceptionId", which we
+        // catch and show as a terminal error.
         let probe = """
         (function () {
             var t = document.body ? document.body.innerText : '';
-            if (/invalid interception id/i.test(t)) { return 'error'; }
+            // archive.today's capture-session error, e.g. "Error: Error -32602:
+            // Invalid InterceptionId." — match the code and the phrase (note: the
+            // real string is one word "InterceptionId", with optional space).
+            if (/-32602|invalid interception ?id/i.test(t)) { return 'error'; }
             // archive.today's "Please enable JS and disable any ad blocker" gate — a
             // short interstitial that does NOT auto-clear in a WKWebView. Matched on
             // a SHORT body so a real article that merely mentions ad blockers / JS
@@ -450,15 +447,11 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
                 stage,
                 didLeaveHomepage: self.didLeaveHomepage,
                 hasResolvedSnapshot: self.resolvedSnapshotURL != nil,
-                didSeeChallenge: self.didSeeChallenge,
-                didRecoverFromError: self.didRecoverFromError,
                 blockedCount: self.blockedPollCount,
                 blockedLimit: Self.blockedPollLimit
             ) {
-            case .wait:
-                break   // not ready (challenge held / short page) — keep polling
-            case .challenge:
-                self.didSeeChallenge = true   // the user is solving the CAPTCHA
+            case .wait, .challenge:
+                break   // not ready / user solving the CAPTCHA — keep polling
             case .submitHomepage:
                 self.didLeaveHomepage = true   // set synchronously so a poll tick mid-submit can't re-fire
                 self.submitURLOnHomepage()
@@ -470,14 +463,8 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
                         category: "archive")
                     self.webView.load(URLRequest(url: snapshot))
                 }
-            case .recoverError:
-                // A stale submit token before any CAPTCHA — re-run the submit once.
-                self.didRecoverFromError = true
-                self.didLeaveHomepage = false
-                SharedDiagnosticLog.record("archive: Invalid interception ID → retrying", category: "archive")
-                self.webView.load(URLRequest(url: Self.archiveHomepage))
             case .cannotArchive:
-                SharedDiagnosticLog.record("archive: error persists → cannot archive", category: "archive")
+                SharedDiagnosticLog.record("archive: error → cannot archive", category: "archive")
                 self.showCannotArchive()
             case .attemptExtract:
                 self.isExtracting = true
@@ -500,8 +487,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         case challenge             // a CAPTCHA gate is up — reveal the page for the user
         case submitHomepage        // on the homepage form, not yet submitted — submit the URL
         case loadResolvedSnapshot  // homepage cleared and a TimeMap snapshot is resolved — load it
-        case recoverError          // stale submit token before any CAPTCHA — retry once
-        case cannotArchive         // error after a CAPTCHA, or the retry is spent — terminal
+        case cannotArchive         // archive.today error / un-clearable gate — terminal
         case attemptExtract        // page has real text — try extracting the article
     }
 
@@ -509,8 +495,6 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         _ stage: String,
         didLeaveHomepage: Bool,
         hasResolvedSnapshot: Bool,
-        didSeeChallenge: Bool,
-        didRecoverFromError: Bool,
         blockedCount: Int = 0,
         blockedLimit: Int = 3,
         minExtractLength: Int = 1500
@@ -522,12 +506,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             // then treat as terminal so the user falls back to real Safari.
             return blockedCount >= blockedLimit ? .cannotArchive : .wait
         }
-        if stage == "error" {
-            // An error after a solved CAPTCHA (or after we already retried once)
-            // means archive.today genuinely can't capture this page; otherwise it's
-            // a stale submit token worth one silent retry.
-            return (didSeeChallenge || didRecoverFromError) ? .cannotArchive : .recoverError
-        }
+        // archive.today's "Error -32602: Invalid InterceptionId" (the capture session
+        // went stale) — terminal; retrying/solving won't help, so show the error.
+        if stage == "error" { return .cannotArchive }
         if stage.hasPrefix("homepage"), !didLeaveHomepage {
             return hasResolvedSnapshot ? .loadResolvedSnapshot : .submitHomepage
         }
@@ -539,7 +520,8 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// `input[name=url]` box and submit its form (POSTs to `/submit/` with the form's
     /// hidden `submitid`, which for an already-archived page 302-redirects straight
     /// to the existing snapshot). Submits as soon as the box exists — the proven
-    /// flow; a stale token surfaces "Invalid interception ID", which we recover from.
+    /// flow; a stale capture session surfaces "Invalid InterceptionId", caught as a
+    /// terminal error.
     private func submitURLOnHomepage() {
         let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
         let literal = Self.jsStringLiteral(target)

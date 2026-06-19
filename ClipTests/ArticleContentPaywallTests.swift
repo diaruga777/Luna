@@ -48,7 +48,7 @@ final class ArticleContentPaywallTests: XCTestCase {
     func testLongArticleMentioningSubscribeIsNotPaywalled() {
         let body = String(repeating: "The newsroom debated whether to subscribe to the wire service. ", count: 60)
         let article = content([body])
-        XCTAssertGreaterThanOrEqual(article.bodyTextLength, ArticleContent.paywallStubMaxLength)
+        XCTAssertGreaterThanOrEqual(article.bodyTextLength, PaywallDetector.shortBodyThreshold)
         XCTAssertFalse(article.looksPaywalled)
         XCTAssertTrue(article.hasReadableBody)
     }

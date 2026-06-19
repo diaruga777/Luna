@@ -50,14 +50,14 @@ enum ArticleResolver {
         let direct = await extractedContent(from: { try await fetcher.fetchHTML(from: url) },
                                             baseURL: url, extractor: extractor)
         // Skip everything else when the direct read already succeeded.
-        if let direct, direct.0.hasReadableBody {
-            return .readable(direct.0, html: direct.1)
+        if Self.isReadable(direct) {
+            return .readable(direct!.0, html: direct!.1)
         }
         // The page's AMP version is frequently served without the paywall overlay.
         if let direct, let ampURL = Self.ampURL(in: direct.1, base: url) {
             let amp = await extractedContent(from: { try await fetcher.fetchHTML(from: ampURL) },
                                              baseURL: ampURL, extractor: extractor)
-            if let amp, amp.0.hasReadableBody { return .readable(amp.0, html: amp.1) }
+            if Self.isReadable(amp) { return .readable(amp!.0, html: amp!.1) }
         }
         let archived = await extractedContent(from: { try await fetcher.fetchArchivedHTML(for: url) },
                                               baseURL: url, extractor: extractor)
@@ -83,12 +83,20 @@ enum ArticleResolver {
     static func resolution(
         direct: (ArticleContent, String)?, archived: (ArticleContent, String)?
     ) -> ArticleResolution {
-        if let direct, direct.0.hasReadableBody { return .readable(direct.0, html: direct.1) }
-        if let archived, archived.0.hasReadableBody { return .readable(archived.0, html: archived.1) }
+        if Self.isReadable(direct) { return .readable(direct!.0, html: direct!.1) }
+        if Self.isReadable(archived) { return .readable(archived!.0, html: archived!.1) }
         let title = [direct?.0.title, archived?.0.title]
             .compactMap { $0 }
             .first { !$0.isEmpty && $0 != "Untitled" }
         return title.map { .paywalled(title: $0) } ?? .unreadable
+    }
+
+    /// A fetched+extracted pair is "readable" only if it has a real body AND its
+    /// source HTML doesn't declare a paywall (schema.org `isAccessibleForFree:false`
+    /// etc.) — the latter catches walls whose CTA text the extractor stripped.
+    private static func isReadable(_ pair: (ArticleContent, String)?) -> Bool {
+        guard let pair else { return false }
+        return pair.0.hasReadableBody && !PaywallDetector.htmlDeclaresLocked(pair.1)
     }
 
     /// Runs an HTML fetch and extracts it, pairing the parsed content with its

@@ -75,29 +75,11 @@ struct ArticleContent: Codable {
     /// Minimum block-text length for `hasReadableBody`.
     static let readableBodyThreshold = 600
 
-    /// High-precision phrases that only appear in subscription walls / metered
-    /// previews — FT's "Try unlimited access" marketing interstitial, or the WSJ
-    /// Wayback snapshot that carries just the lede plus the "personal,
-    /// non-commercial use" / "Subscriber Agreement" boilerplate. Deliberately
-    /// specific (not a bare "subscribe") so a real article that merely mentions
-    /// subscribing isn't misread as a wall.
-    private static let paywallMarkers = [
-        "subscribe to read", "subscribe to continue", "to continue reading",
-        "try unlimited access", "unlimited digital access", "complete digital access",
-        "digital access to quality", "cancel anytime", "this article is for subscribers",
-        "subscriber agreement", "personal, non-commercial use", "register to continue",
-        "sign in to read", "become a subscriber", "start your free trial",
-    ]
-
-    /// A SHORT body containing subscription-wall language is a stub/teaser, not the
-    /// article — so the resolver should fall back to a full archive. Real articles
-    /// run long, so they're never flagged even if a marker appears in a footer.
+    /// Whether this extracted text reads as a subscription wall / metered teaser
+    /// rather than the real article. Delegates to the shared `PaywallDetector`
+    /// (text-only here — callers with the source HTML should use
+    /// `PaywallDetector.looksPaywalled(content:html:)` for the stronger signal).
     var looksPaywalled: Bool {
-        guard bodyTextLength < Self.paywallStubMaxLength else { return false }
-        let lowercased = wholeText.lowercased()
-        return Self.paywallMarkers.contains { lowercased.contains($0) }
+        PaywallDetector.textLooksPaywalled(wholeText, bodyLength: bodyTextLength)
     }
-
-    /// Bodies shorter than this are eligible to be judged a paywall stub.
-    static let paywallStubMaxLength = 2500
 }

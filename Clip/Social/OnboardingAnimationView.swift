@@ -12,9 +12,10 @@ import UIKit
 final class OnboardingAnimationView: UIView {
 
     enum Kind {
-        case notification   // a banner sliding in
-        case settingsToggle // a Settings row whose switch flips on
-        case actionButton   // the Action Button pressed → "Saved" card
+        case notification     // a banner sliding in
+        case settingsToggle   // a Settings row whose switch flips on
+        case actionButton     // the Action Button pressed → "Saved" card
+        case actionExtension  // Safari → Share → "Read in Queue" action → reader
     }
 
     private let kind: Kind
@@ -24,14 +25,22 @@ final class OnboardingAnimationView: UIView {
         self.kind = kind
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        // The phone facsimile is portrait, so its step gets a taller canvas.
-        heightAnchor.constraint(equalToConstant: kind == .actionButton ? 230 : 150).isActive = true
-        widthAnchor.constraint(equalToConstant: 260).isActive = true
+        // The phone facsimiles are portrait, so they get taller canvases; the
+        // action-extension demo is the largest (≈ half the screen).
+        let height: CGFloat
+        switch kind {
+        case .actionExtension: height = 360
+        case .actionButton: height = 230
+        default: height = 150
+        }
+        heightAnchor.constraint(equalToConstant: height).isActive = true
+        widthAnchor.constraint(equalToConstant: kind == .actionExtension ? 220 : 260).isActive = true
         clipsToBounds = true
         switch kind {
         case .notification: buildNotification()
         case .settingsToggle: buildToggle()
         case .actionButton: buildActionButton()
+        case .actionExtension: buildActionExtension()
         }
     }
 
@@ -43,6 +52,7 @@ final class OnboardingAnimationView: UIView {
         case .notification: animateNotification()
         case .settingsToggle: animateToggle()
         case .actionButton: animateActionButton()
+        case .actionExtension: animateActionExtension()
         }
     }
 
@@ -346,6 +356,288 @@ final class OnboardingAnimationView: UIView {
             }
             UIView.addKeyframe(withRelativeStartTime: 0.85, relativeDuration: 0.12) {
                 self.savedToast.alpha = 0
+            }
+        }
+    }
+
+    // MARK: - Action extension (Safari → Share → "Read in Queue" → reader)
+
+    private let axShareRipple = UIView()
+    private let axShareSheet = UIView()
+    private let axRowScroll = UIView()   // clips the scrolling action list
+    private let axRowList = UIStackView()
+    private let axReadHighlight = UIView()
+    private let axActionCard = UIView()
+
+    private func buildActionExtension() {
+        let phone = UIView()
+        phone.backgroundColor = .systemBackground
+        phone.layer.borderColor = UIColor.systemGray3.cgColor
+        phone.layer.borderWidth = 3
+        phone.layer.cornerRadius = 30
+        phone.layer.cornerCurve = .continuous
+        phone.clipsToBounds = true
+        phone.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(phone)
+
+        // Safari page: text lines + a bottom toolbar with the Share button.
+        let page = UIView()
+        page.backgroundColor = .secondarySystemBackground
+        page.translatesAutoresizingMaskIntoConstraints = false
+        phone.addSubview(page)
+        let headline = bar(width: 0.7, height: 9, color: .label.withAlphaComponent(0.7))
+        let lines = UIStackView(arrangedSubviews: [
+            headline, bar(width: 0.95, height: 5), bar(width: 0.9, height: 5),
+            bar(width: 0.93, height: 5), bar(width: 0.6, height: 5)])
+        lines.axis = .vertical
+        lines.spacing = 7
+        lines.alignment = .leading
+        lines.setCustomSpacing(12, after: headline)
+        lines.translatesAutoresizingMaskIntoConstraints = false
+        page.addSubview(lines)
+
+        let toolbar = UIView()
+        toolbar.backgroundColor = .systemBackground
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+        phone.addSubview(toolbar)
+        let shareIcon = UIImageView(image: UIImage(
+            systemName: "square.and.arrow.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16)))
+        shareIcon.tintColor = accent
+        shareIcon.contentMode = .center
+        shareIcon.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.addSubview(shareIcon)
+
+        axShareRipple.backgroundColor = accent.withAlphaComponent(0.3)
+        axShareRipple.layer.cornerRadius = 16
+        axShareRipple.alpha = 0
+        axShareRipple.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.addSubview(axShareRipple)
+
+        // Share sheet (slides up): grabber, app-icon row, then the scrolling actions.
+        axShareSheet.backgroundColor = .systemBackground
+        axShareSheet.layer.cornerRadius = 18
+        axShareSheet.layer.cornerCurve = .continuous
+        axShareSheet.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        axShareSheet.layer.borderColor = UIColor.separator.cgColor
+        axShareSheet.layer.borderWidth = 0.5
+        axShareSheet.clipsToBounds = true
+        axShareSheet.translatesAutoresizingMaskIntoConstraints = false
+        phone.addSubview(axShareSheet)
+
+        let grabber = UIView()
+        grabber.backgroundColor = .systemGray3
+        grabber.layer.cornerRadius = 2.5
+        grabber.translatesAutoresizingMaskIntoConstraints = false
+        axShareSheet.addSubview(grabber)
+        let appsRow = UIStackView(arrangedSubviews: (0..<4).map { _ in axAppIcon() })
+        appsRow.axis = .horizontal
+        appsRow.distribution = .equalSpacing
+        appsRow.translatesAutoresizingMaskIntoConstraints = false
+        axShareSheet.addSubview(appsRow)
+
+        axRowScroll.clipsToBounds = true
+        axRowScroll.translatesAutoresizingMaskIntoConstraints = false
+        axShareSheet.addSubview(axRowScroll)
+
+        axReadHighlight.backgroundColor = accent.withAlphaComponent(0.16)
+        axReadHighlight.layer.cornerRadius = 8
+        axReadHighlight.alpha = 0
+        axReadHighlight.translatesAutoresizingMaskIntoConstraints = false
+
+        axRowList.axis = .vertical
+        axRowList.spacing = 4
+        axRowList.translatesAutoresizingMaskIntoConstraints = false
+        axRowScroll.addSubview(axReadHighlight)
+        axRowScroll.addSubview(axRowList)
+        // The "Read in Queue" row sits low in the list, so the list must scroll up.
+        let readRow = axActionRow(symbol: "book.fill", title: "Read in Queue", highlighted: true)
+        for row in [axActionRow(symbol: "doc.on.doc", title: "Copy"),
+                    axActionRow(symbol: "eyeglasses", title: "Add to Reading List"),
+                    axActionRow(symbol: "plus.square.on.square", title: "Add to Home Screen"),
+                    axActionRow(symbol: "pencil.tip.crop.circle", title: "Markup"),
+                    readRow,
+                    axActionRow(symbol: "printer", title: "Print")] {
+            axRowList.addArrangedSubview(row)
+        }
+
+        // The action-extension UI (the Queue reader) — slides up over everything.
+        axActionCard.backgroundColor = .systemBackground
+        axActionCard.layer.cornerRadius = 18
+        axActionCard.layer.cornerCurve = .continuous
+        axActionCard.clipsToBounds = true
+        axActionCard.translatesAutoresizingMaskIntoConstraints = false
+        phone.addSubview(axActionCard)
+        let cardBar = UIView()
+        cardBar.backgroundColor = .secondarySystemBackground
+        cardBar.translatesAutoresizingMaskIntoConstraints = false
+        axActionCard.addSubview(cardBar)
+        let doneLabel = UILabel()
+        doneLabel.text = "Done"
+        doneLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        doneLabel.textColor = accent
+        doneLabel.translatesAutoresizingMaskIntoConstraints = false
+        cardBar.addSubview(doneLabel)
+        let cardHeadline = bar(width: 0.8, height: 10, color: .label.withAlphaComponent(0.8))
+        let cardLines = UIStackView(arrangedSubviews: [
+            cardHeadline, bar(width: 0.96, height: 5), bar(width: 0.92, height: 5),
+            bar(width: 0.95, height: 5), bar(width: 0.7, height: 5)])
+        cardLines.axis = .vertical
+        cardLines.spacing = 8
+        cardLines.alignment = .leading
+        cardLines.setCustomSpacing(13, after: cardHeadline)
+        cardLines.translatesAutoresizingMaskIntoConstraints = false
+        axActionCard.addSubview(cardLines)
+
+        NSLayoutConstraint.activate([
+            phone.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            phone.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            phone.centerXAnchor.constraint(equalTo: centerXAnchor),
+            phone.widthAnchor.constraint(equalTo: phone.heightAnchor, multiplier: 0.49),
+
+            page.topAnchor.constraint(equalTo: phone.topAnchor),
+            page.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
+            page.bottomAnchor.constraint(equalTo: toolbar.topAnchor),
+            lines.topAnchor.constraint(equalTo: page.topAnchor, constant: 18),
+            lines.leadingAnchor.constraint(equalTo: page.leadingAnchor, constant: 14),
+            lines.trailingAnchor.constraint(equalTo: page.trailingAnchor, constant: -14),
+            toolbar.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
+            toolbar.bottomAnchor.constraint(equalTo: phone.bottomAnchor),
+            toolbar.heightAnchor.constraint(equalToConstant: 34),
+            shareIcon.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+            shareIcon.centerXAnchor.constraint(equalTo: toolbar.centerXAnchor),
+            axShareRipple.centerXAnchor.constraint(equalTo: shareIcon.centerXAnchor),
+            axShareRipple.centerYAnchor.constraint(equalTo: shareIcon.centerYAnchor),
+            axShareRipple.widthAnchor.constraint(equalToConstant: 32),
+            axShareRipple.heightAnchor.constraint(equalToConstant: 32),
+
+            axShareSheet.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
+            axShareSheet.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
+            axShareSheet.bottomAnchor.constraint(equalTo: phone.bottomAnchor),
+            axShareSheet.heightAnchor.constraint(equalTo: phone.heightAnchor, multiplier: 0.66),
+            grabber.topAnchor.constraint(equalTo: axShareSheet.topAnchor, constant: 7),
+            grabber.centerXAnchor.constraint(equalTo: axShareSheet.centerXAnchor),
+            grabber.widthAnchor.constraint(equalToConstant: 34),
+            grabber.heightAnchor.constraint(equalToConstant: 5),
+            appsRow.topAnchor.constraint(equalTo: grabber.bottomAnchor, constant: 12),
+            appsRow.leadingAnchor.constraint(equalTo: axShareSheet.leadingAnchor, constant: 16),
+            appsRow.trailingAnchor.constraint(equalTo: axShareSheet.trailingAnchor, constant: -16),
+            axRowScroll.topAnchor.constraint(equalTo: appsRow.bottomAnchor, constant: 12),
+            axRowScroll.leadingAnchor.constraint(equalTo: axShareSheet.leadingAnchor, constant: 10),
+            axRowScroll.trailingAnchor.constraint(equalTo: axShareSheet.trailingAnchor, constant: -10),
+            axRowScroll.bottomAnchor.constraint(equalTo: axShareSheet.bottomAnchor, constant: -8),
+            axRowList.topAnchor.constraint(equalTo: axRowScroll.topAnchor),
+            axRowList.leadingAnchor.constraint(equalTo: axRowScroll.leadingAnchor),
+            axRowList.trailingAnchor.constraint(equalTo: axRowScroll.trailingAnchor),
+            axReadHighlight.leadingAnchor.constraint(equalTo: readRow.leadingAnchor, constant: -4),
+            axReadHighlight.trailingAnchor.constraint(equalTo: readRow.trailingAnchor, constant: 4),
+            axReadHighlight.topAnchor.constraint(equalTo: readRow.topAnchor, constant: -2),
+            axReadHighlight.bottomAnchor.constraint(equalTo: readRow.bottomAnchor, constant: 2),
+
+            axActionCard.topAnchor.constraint(equalTo: phone.topAnchor),
+            axActionCard.bottomAnchor.constraint(equalTo: phone.bottomAnchor),
+            axActionCard.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
+            axActionCard.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
+            cardBar.topAnchor.constraint(equalTo: axActionCard.topAnchor),
+            cardBar.leadingAnchor.constraint(equalTo: axActionCard.leadingAnchor),
+            cardBar.trailingAnchor.constraint(equalTo: axActionCard.trailingAnchor),
+            cardBar.heightAnchor.constraint(equalToConstant: 30),
+            doneLabel.leadingAnchor.constraint(equalTo: cardBar.leadingAnchor, constant: 12),
+            doneLabel.centerYAnchor.constraint(equalTo: cardBar.centerYAnchor),
+            cardLines.topAnchor.constraint(equalTo: cardBar.bottomAnchor, constant: 16),
+            cardLines.leadingAnchor.constraint(equalTo: axActionCard.leadingAnchor, constant: 16),
+            cardLines.trailingAnchor.constraint(equalTo: axActionCard.trailingAnchor, constant: -16),
+        ])
+    }
+
+    /// A small grey app-icon circle for the share sheet's top row.
+    private func axAppIcon() -> UIView {
+        let icon = UIView()
+        icon.backgroundColor = .systemGray4
+        icon.layer.cornerRadius = 11
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        return icon
+    }
+
+    /// A share-sheet action row: icon + label, ~28pt tall (Queue's row is tinted).
+    private func axActionRow(symbol: String, title: String, highlighted: Bool = false) -> UIView {
+        let row = UIView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        let color: UIColor = highlighted ? accent : .label
+        let icon = UIImageView(image: UIImage(
+            systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 12)))
+        icon.tintColor = color
+        icon.contentMode = .center
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        let label = UILabel()
+        label.text = title
+        label.font = .systemFont(ofSize: 12, weight: highlighted ? .semibold : .regular)
+        label.textColor = color
+        let stack = UIStackView(arrangedSubviews: [label, UIView(), icon])
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(stack)
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 18),
+            stack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 8),
+            stack.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -8),
+            stack.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+        ])
+        return row
+    }
+
+    private func animateActionExtension() {
+        layoutIfNeeded()
+        let sheetDrop = CGAffineTransform(translationX: 0, y: axShareSheet.bounds.height + 8)
+        let cardDrop = CGAffineTransform(translationX: 0, y: axActionCard.bounds.height + 8)
+        // Scroll the list up so "Read in Queue" (the 5th of 6 rows) comes into view.
+        let listScroll = CGAffineTransform(translationX: 0, y: -64)
+
+        func reset() {
+            axShareSheet.transform = sheetDrop
+            axActionCard.transform = cardDrop
+            axRowList.transform = .identity
+            axReadHighlight.alpha = 0
+            axShareRipple.alpha = 0
+            axShareRipple.transform = CGAffineTransform(scaleX: 0.3, y: 0.3)
+        }
+        reset()
+
+        UIView.animateKeyframes(withDuration: 6.5, delay: 0.4, options: [.repeat]) {
+            // Tap Share.
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.05) {
+                self.axShareRipple.alpha = 1
+                self.axShareRipple.transform = .identity
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.05, relativeDuration: 0.05) {
+                self.axShareRipple.alpha = 0
+            }
+            // Share sheet slides up.
+            UIView.addKeyframe(withRelativeStartTime: 0.08, relativeDuration: 0.14) {
+                self.axShareSheet.transform = .identity
+            }
+            // Scroll to the "Read in Queue" action.
+            UIView.addKeyframe(withRelativeStartTime: 0.34, relativeDuration: 0.14) {
+                self.axRowList.transform = listScroll
+            }
+            // Tap it (highlight).
+            UIView.addKeyframe(withRelativeStartTime: 0.50, relativeDuration: 0.06) {
+                self.axReadHighlight.alpha = 1
+            }
+            // The Queue reader (action extension) slides up.
+            UIView.addKeyframe(withRelativeStartTime: 0.58, relativeDuration: 0.14) {
+                self.axActionCard.transform = .identity
+            }
+            // Hold, then reset for a seamless loop.
+            UIView.addKeyframe(withRelativeStartTime: 0.90, relativeDuration: 0.1) {
+                self.axActionCard.transform = cardDrop
+                self.axShareSheet.transform = sheetDrop
+                self.axRowList.transform = .identity
+                self.axReadHighlight.alpha = 0
             }
         }
     }

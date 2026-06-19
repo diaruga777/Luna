@@ -72,11 +72,11 @@ enum OnboardingFlow {
             continueTitle: "Continue",
             animation: .settingsToggle,
             onContinue: { [weak nav] in
-                nav?.pushViewController(shortcutStep(onFinished: onFinished), animated: true)
+                nav?.pushViewController(shortcutStep(nav: nav, onFinished: onFinished), animated: true)
             })
     }
 
-    private static func shortcutStep(onFinished: @escaping () -> Void) -> UIViewController {
+    private static func shortcutStep(nav: UINavigationController?, onFinished: @escaping () -> Void) -> UIViewController {
         OnboardingStepViewController(
             symbol: "bolt.badge.clock",
             title: "Save anything, instantly",
@@ -85,8 +85,22 @@ enum OnboardingFlow {
                 BundledShortcut.presentInstaller(from: step)
             },
             secondary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
-            continueTitle: "Done",
+            continueTitle: "Continue",
             animation: .actionButton,
+            onContinue: { [weak nav] in
+                nav?.pushViewController(actionExtensionStep(onFinished: onFinished), animated: true)
+            })
+    }
+
+    /// Final step: how the Share-sheet "Read in Queue" action extension works.
+    private static func actionExtensionStep(onFinished: @escaping () -> Void) -> UIViewController {
+        OnboardingStepViewController(
+            symbol: "square.and.arrow.up",
+            title: "Read anything in Queue",
+            body: "Share articles and more into Queue to unlock and read them instantly!\n\nTap \"Edit Actions\" and add Queue to your favorites to get to reading even faster.",
+            primary: nil,
+            continueTitle: "Done",
+            animation: .actionExtension,
             onContinue: onFinished)
     }
 

@@ -370,15 +370,20 @@ final class ShortcutSettingsScreen: UITableViewController {
     ) -> UITableViewCell {
         if Section(rawValue: indexPath.section) == .suggestionButton {
             let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-            var content = cell.defaultContentConfiguration()
-            content.text = "Suggest Reading"
             cell.selectionStyle = .none
+            // A full-width segmented control (3 options don't fit beside a label).
             let control = UISegmentedControl(items: SafariSuggestionMode.allCases.map(\.displayName))
             control.selectedSegmentIndex =
                 SafariSuggestionMode.allCases.firstIndex(of: SafariSuggestionSettings.mode) ?? 1
             control.addTarget(self, action: #selector(suggestionModeChanged(_:)), for: .valueChanged)
-            cell.accessoryView = control
-            cell.contentConfiguration = content
+            control.translatesAutoresizingMaskIntoConstraints = false
+            cell.contentView.addSubview(control)
+            NSLayoutConstraint.activate([
+                control.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+                control.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+                control.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
+                control.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8),
+            ])
             return cell
         }
 

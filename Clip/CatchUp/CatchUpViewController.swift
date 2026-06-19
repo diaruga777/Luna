@@ -71,6 +71,8 @@ final class CatchUpViewController: UIViewController {
     /// Simulator-only: a tiny "Sim Bump" button that performs the Bump action — the
     /// only card action without a bottom button (Keep/Archive have buttons), and the
     /// left-then-up drag the harness can't synthesize. Never shown on device.
+    private weak var simBumpButton: UIButton?
+
     private func addSimulatorSwipeHookIfNeeded() {
         guard AppEnvironment.isSimulator else { return }
         let button = UIButton(type: .system)
@@ -86,6 +88,7 @@ final class CatchUpViewController: UIViewController {
         button.addAction(UIAction { [weak self] _ in
             self?.currentCard?.performAction(.bump)
         }, for: .touchUpInside)
+        simBumpButton = button
     }
 
     // MARK: - Layout
@@ -179,6 +182,7 @@ final class CatchUpViewController: UIViewController {
         guard let item = currentItem else { advanceToEndScreens(); return }
         let card = CatchUpCardView()
         card.translatesAutoresizingMaskIntoConstraints = false
+        card.isLocked = (item.state == .needsCaptcha)
         card.onAction = { [weak self] action in self?.commitAction(action) }
         cardArea.addSubview(card)
         NSLayoutConstraint.activate([
@@ -222,8 +226,14 @@ final class CatchUpViewController: UIViewController {
                 header.leadingAnchor.constraint(equalTo: card.contentContainer.leadingAnchor),
                 header.trailingAnchor.constraint(equalTo: card.contentContainer.trailingAnchor),
             ])
-            body = CatchUpMediaCardBody(item: item, store: store) { [weak self] in
-                self?.openMediaItem(item)
+            // A paywalled item awaiting its archive unlock shows a locked placeholder
+            // (there's no content yet); everything else shows its media/link preview.
+            if item.state == .needsCaptcha {
+                body = Self.makeLockedBody(for: item)
+            } else {
+                body = CatchUpMediaCardBody(item: item, store: store) { [weak self] in
+                    self?.openMediaItem(item)
+                }
             }
             bodyTop = header.bottomAnchor
         }
@@ -243,9 +253,74 @@ final class CatchUpViewController: UIViewController {
         store.markReadState(.read, for: item.id)
     }
 
+    /// The locked-card placeholder: a lock glyph + title + hint (no content exists
+    /// until the user unlocks it via the archive flow).
+    private static func makeLockedBody(for item: ReadingListItem) -> UIView {
+        let container = UIView()
+        let icon = UIImageView(image: UIImage(
+            systemName: "lock.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 46, weight: .semibold)))
+        icon.tintColor = GlassStyle.readingAccent
+        icon.contentMode = .center
+
+        let titleLabel = UILabel()
+        titleLabel.text = item.title ?? item.url?.host ?? "Locked article"
+        titleLabel.font = .systemFont(ofSize: 20, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.textAlignment = .center
+        titleLabel.numberOfLines = 4
+
+        let hint = UILabel()
+        hint.text = "Locked · swipe left or tap Unlock to read it in Queue"
+        hint.font = .preferredFont(forTextStyle: .subheadline)
+        hint.textColor = .secondaryLabel
+        hint.textAlignment = .center
+        hint.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [icon, titleLabel, hint])
+        stack.axis = .vertical
+        stack.spacing = 14
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -28),
+        ])
+        return container
+    }
+
+    /// Presents the in-app archive reader to unlock a locked item. On success the
+    /// item flips to `.ready` and we rebuild THIS card in place (no advance); on
+    /// cancel the locked card stays.
+    private func presentUnlock(_ item: ReadingListItem) {
+        guard item.state == .needsCaptcha, let url = item.url else { return }
+        let reader = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
+        let nav = UINavigationController(rootViewController: reader)
+        nav.modalPresentationStyle = .fullScreen
+        reader.onClose = { [weak nav] in nav?.dismiss(animated: true) }
+        reader.onExtracted = { [weak self, weak nav] in
+            nav?.dismiss(animated: true) { self?.reloadCurrentCard() }
+        }
+        present(nav, animated: true)
+    }
+
+    /// Rebuilds the current card from the freshly-stored item (after an unlock).
+    private func reloadCurrentCard() {
+        guard index < queue.count, let fresh = store.item(withID: queue[index].id) else { return }
+        queue[index] = fresh
+        tearDownCurrentCard()
+        showCard()
+        updateChrome()
+    }
+
     private func commitAction(_ action: CatchUpCardView.Action) {
         guard let item = currentItem else { return }
         switch action {
+        case .unlock:
+            presentUnlock(item)
+            return   // the unlock flow replaces this card in place — don't advance
         case .keep: break   // leave the saved item untouched, just advance
         case .bump: store.bump(item.id)
         case .archive: store.markReadState(.read, for: item.id)
@@ -316,13 +391,16 @@ final class CatchUpViewController: UIViewController {
         secondaryButton.isEnabled = true   // reset (delete-prompt may disable it)
         switch phase {
         case .cards:
+            let locked = currentItem?.state == .needsCaptcha
             titleLabel.text = "\(queue.count - index) left"
             leftButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
             rightButton.setTitle(nil, for: .normal)
             rightButton.setImage(UIImage(systemName: "square.and.arrow.up"), for: .normal)
             rightButton.isHidden = false
-            styleButton(primaryButton, title: "Keep", filled: false)
+            // Locked cards: left action is Unlock (not Keep); Bump is disabled.
+            styleButton(primaryButton, title: locked ? "Unlock" : "Keep", filled: false)
             styleButton(secondaryButton, title: "Archive", filled: true)
+            simBumpButton?.isEnabled = !locked
             setBottomButtons(hidden: false, singleFullWidth: false)
         case .deletePrompt:
             titleLabel.text = nil   // the prompt view carries its own title
@@ -370,7 +448,8 @@ final class CatchUpViewController: UIViewController {
 
     @objc private func primaryTapped() {
         switch phase {
-        case .cards: currentCard?.performAction(.keep)
+        case .cards:
+            currentCard?.performAction(currentItem?.state == .needsCaptcha ? .unlock : .keep)
         case .deletePrompt: pendingDeleteIDs = []; transitionToDone()  // Keep
         case .done: break
         }

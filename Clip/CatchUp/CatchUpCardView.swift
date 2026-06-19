@@ -16,13 +16,18 @@ import UIKit
 /// buttons drive the same fly-off via `performAction`.
 final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
 
-    enum Action { case keep, bump, archive }
+    enum Action { case keep, bump, archive, unlock }
 
     /// Which action the CURRENT drag position maps to (drives the live tint + badge).
-    private enum Zone { case none, keep, bump, archive }
+    private enum Zone { case none, keep, bump, archive, unlock }
 
     /// Fired once the card commits to an action (after the fly-off animation starts).
     var onAction: ((Action) -> Void)?
+
+    /// A LOCKED card (a paywalled item awaiting its archive unlock): the left
+    /// action becomes **Unlock** (not Keep), and Bump (left-then-up) is disabled.
+    /// Right is still Archive. Set before the card is shown.
+    var isLocked = false
 
     /// Where the hosted content goes (the article reader, or a media view).
     let contentContainer = UIView()
@@ -31,6 +36,7 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
     private let archiveBadge = CatchUpCardView.cornerBadge(symbol: "checkmark", text: "Archive", color: .systemGreen)
     private let keepBadge = CatchUpCardView.cornerBadge(symbol: "tray.full.fill", text: "Keep", color: .systemGray)
     private let bumpBadge = CatchUpCardView.cornerBadge(symbol: "arrow.up", text: "Bump", color: GlassStyle.readingAccent)
+    private let unlockBadge = CatchUpCardView.cornerBadge(symbol: "lock.open.fill", text: "Unlock", color: GlassStyle.readingAccent)
 
     private static let rotationPerWidth: CGFloat = 0.18   // radians at full-width drag
     /// How far UP (points) the drag must go (while left) to mean Bump.
@@ -71,7 +77,7 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         tintOverlay.translatesAutoresizingMaskIntoConstraints = false
         addSubview(tintOverlay)
 
-        for badge in [archiveBadge, keepBadge, bumpBadge] {
+        for badge in [archiveBadge, keepBadge, bumpBadge, unlockBadge] {
             badge.alpha = 0
             badge.translatesAutoresizingMaskIntoConstraints = false
             addSubview(badge)
@@ -98,6 +104,9 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
             keepBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -24),
             bumpBadge.topAnchor.constraint(equalTo: topAnchor, constant: 24),
             bumpBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -24),
+            // Unlock shares Keep's top-right slot (it replaces Keep on a locked card).
+            unlockBadge.topAnchor.constraint(equalTo: topAnchor, constant: 24),
+            unlockBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -24),
         ])
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
@@ -158,10 +167,10 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
             let horizontalCommit = abs(translation.x) > width * 0.3 || abs(velocity.x) > 900
             if translation.x > 0 && horizontalCommit {
                 performAction(.archive)
-            } else if translation.x < 0 && translation.y < -Self.upCommit {
-                performAction(.bump)          // left, then up
+            } else if translation.x < 0 && !isLocked && translation.y < -Self.upCommit {
+                performAction(.bump)          // left, then up (disabled when locked)
             } else if translation.x < 0 && horizontalCommit {
-                performAction(.keep)
+                performAction(isLocked ? .unlock : .keep)
             } else {
                 springBack()
             }
@@ -182,7 +191,10 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
 
     private func zone(translationX tx: CGFloat, y ty: CGFloat) -> Zone {
         if tx > 0 { return .archive }
-        if tx < 0 { return ty < -Self.upTrigger ? .bump : .keep }
+        if tx < 0 {
+            if isLocked { return .unlock }
+            return ty < -Self.upTrigger ? .bump : .keep
+        }
         return .none
     }
 
@@ -195,6 +207,7 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         archiveBadge.alpha = 0
         keepBadge.alpha = 0
         bumpBadge.alpha = 0
+        unlockBadge.alpha = 0
         switch zone(translationX: tx, y: ty) {
         case .none:
             tintOverlay.alpha = 0
@@ -208,6 +221,11 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
             tintOverlay.backgroundColor = UIColor.systemGray.withAlphaComponent(0.5)
             tintOverlay.alpha = progress * 0.6
             keepBadge.alpha = progress
+        case .unlock:
+            let progress = min(abs(tx) / width, 1)
+            tintOverlay.backgroundColor = GlassStyle.readingAccent.withAlphaComponent(0.5)
+            tintOverlay.alpha = progress * 0.6
+            unlockBadge.alpha = progress
         case .bump:
             let progress = min(max(abs(tx), abs(ty)) / width, 1)
             tintOverlay.backgroundColor = GlassStyle.readingAccent.withAlphaComponent(0.5)
@@ -223,6 +241,7 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
             self.archiveBadge.alpha = 0
             self.keepBadge.alpha = 0
             self.bumpBadge.alpha = 0
+            self.unlockBadge.alpha = 0
         } completion: { _ in
             // Back at rest (identity) — drop the raster cache so glass goes live again.
             self.setRasterizedDuringRotation(false)
@@ -232,6 +251,13 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
     /// Flies the card off in the action's direction, then reports it. Used by both
     /// the drag release and the bottom Keep/Archive buttons.
     func performAction(_ action: Action) {
+        // Unlock doesn't fly off — it presents the archive flow and the card stays
+        // (replaced in place once unlocked), so just spring back and report.
+        if action == .unlock {
+            springBack()
+            onAction?(.unlock)
+            return
+        }
         // Stays rasterized through the fly-off (rotated the whole way, then removed).
         setRasterizedDuringRotation(true)
         let width = superview?.bounds.width ?? UIScreen.main.bounds.width
@@ -242,6 +268,7 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         case .archive: offset = CGPoint(x: width * 1.5, y: 0); rotation = Self.rotationPerWidth * 2
         case .keep:    offset = CGPoint(x: -width * 1.5, y: 0); rotation = -Self.rotationPerWidth * 2
         case .bump:    offset = CGPoint(x: -width * 0.3, y: -height * 1.2); rotation = -Self.rotationPerWidth
+        case .unlock:  return   // handled above (no fly-off)
         }
         UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseIn) {
             self.transform = CGAffineTransform(translationX: offset.x, y: offset.y).rotated(by: rotation)

@@ -414,7 +414,10 @@ final class ReadingListViewController: UITableViewController {
     private func catchUpQueue() -> [ReadingListItem] {
         store.items().filter { item in
             guard item.readState != .read else { return false }
-            return Self.rendersAsReader(item) ? item.state == .ready : true
+            // Locked (needsCaptcha) articles show as locked cards; other readers
+            // need their content ready; non-readers (video/links) always qualify.
+            return Self.rendersAsReader(item)
+                ? (item.state == .ready || item.state == .needsCaptcha) : true
         }.sorted { ($0.bumpDate ?? $0.dateAdded) < ($1.bumpDate ?? $1.dateAdded) }
     }
 
@@ -460,11 +463,13 @@ final class ReadingListViewController: UITableViewController {
         ])
     }
 
-    /// Shows the red "action needed" dot only once there are 10+ unread items, and
-    /// hides the whole button in edit mode (the nav bar is taken over by edit controls).
+    /// Shows the red "action needed" dot once there are 10+ unread items, OR whenever
+    /// there's an unarchived LOCKED (paywalled, awaiting unlock) save — regardless of
+    /// count. Hides the whole button in edit mode.
     private func updateCatchUpButton() {
-        let unread = store.items().filter { $0.readState != .read }.count
-        catchUpBadge.isHidden = unread < 10
+        let unread = store.items().filter { $0.readState != .read }
+        let hasLockedSave = unread.contains { $0.state == .needsCaptcha }
+        catchUpBadge.isHidden = unread.count < 10 && !hasLockedSave
         catchUpButton.isHidden = isEditing
         updateCatchUpButtonFade()
     }

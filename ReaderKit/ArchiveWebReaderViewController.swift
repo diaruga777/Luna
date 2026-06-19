@@ -60,6 +60,15 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// Guards a one-shot recovery from archive.today's "Invalid interception ID"
     /// error (a submit whose capture session went stale) — we re-submit once.
     private var didRecoverFromError = false
+    /// Consecutive poll ticks where the opaque overlay is covering the page without
+    /// progress; past `stallPollLimit` we reveal the page so the user is never
+    /// stranded on a permanent "Unlocking…" screen (e.g. a homepage whose submit
+    /// token never appears). Reset whenever the overlay is down (challenge/revealed).
+    private var coveredPollCount = 0
+    private static let stallPollLimit = 45   // ≈ 58s at the 1.3s poll interval
+    /// Once we surface the rate-limit / stall guidance we stop re-covering the page,
+    /// so the overlay can't slam back over a CAPTCHA or the guidance banner.
+    private var didRevealForManualMode = false
     /// Polls the loaded page's stage every ~1.3s. A timer (not just `didFinish`)
     /// because clearing the CAPTCHA is often an in-page transition that fires no
     /// navigation-finished callback — so we'd otherwise never notice the homepage
@@ -258,6 +267,14 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
     deinit { pollTimer?.invalidate() }
 
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Stop polling the web view once we're off-screen — otherwise the timer
+        // keeps firing checkStage() (and could load/submit) on a dismissed flow.
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+
     /// Builds the opaque cover (themed background + spinner + label) over the web
     /// view; visible from the start so the user never sees the raw archive page
     /// except when a CAPTCHA is up (`checkStage` reveals it then).
@@ -368,7 +385,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     ///   have one, else type the URL into the box and submit the form (once).
     /// - **article** (substantial text, no search box) → extract.
     private func checkStage() {
-        guard !didExtract, !isExtracting else { return }
+        guard !didExtract, !isExtracting, viewIfLoaded?.window != nil else { return }
         // Returns "challenge", "error" (Invalid interception ID), "homepage:<len>"
         // (only once the submit token is ready), or "page:<len>".
         let probe = """
@@ -390,7 +407,20 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             SharedDiagnosticLog.record(
                 "archive: stage \(stage) @ \(self.webView.url?.absoluteString ?? "")", category: "archive")
             // Reveal the web view ONLY for the CAPTCHA; cover every automated step.
-            self.loadingOverlay.isHidden = (stage == "challenge")
+            // Once we've handed over to manual mode (rate-limit/stall) we stop
+            // re-covering so the overlay can't slam back over the page.
+            if !self.didRevealForManualMode {
+                self.loadingOverlay.isHidden = (stage == "challenge")
+            }
+            // Stall guard: if the overlay has covered the page for too long without
+            // progress (e.g. a homepage whose submit token never appears), reveal
+            // the page + guidance so the user isn't stranded on "Unlocking…".
+            if self.loadingOverlay.isHidden {
+                self.coveredPollCount = 0
+            } else {
+                self.coveredPollCount += 1
+                if self.coveredPollCount > Self.stallPollLimit { self.showRateLimit() }
+            }
             if stage == "challenge" { return }
 
             // archive.today lost the submit session — re-run the homepage submit once.
@@ -518,7 +548,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private func showRateLimit() {
         progress.stopAnimating()
         // Reveal the web view + show the guidance banner on top — the user needs to
-        // see the page to act on the rate-limit advice.
+        // see the page to act on the advice. Latch manual mode so the poll no longer
+        // re-covers the page.
+        didRevealForManualMode = true
         loadingOverlay.isHidden = true
         rateLimitBanner.isHidden = false
         view.bringSubviewToFront(rateLimitBanner)

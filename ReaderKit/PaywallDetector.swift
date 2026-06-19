@@ -65,18 +65,22 @@ enum PaywallDetector {
     }
 
     /// The publisher-declared paywall signal: schema.org `isAccessibleForFree:false`
-    /// in JSON-LD, or an `article:content_tier` / `content-tier` meta of
-    /// locked/metered/premium. Whitespace is collapsed so attribute spacing/quoting
-    /// doesn't matter.
+    /// in JSON-LD (a precise key+value, so unaffected by stray words elsewhere on the
+    /// page), or an `article:content_tier` meta whose value is locked/metered/premium
+    /// — matched only when the value sits IN the meta (not a whole-document scan,
+    /// which false-flags free pages that merely contain "premium"). Whitespace is
+    /// collapsed so attribute spacing/quoting doesn't matter.
     static func htmlDeclaresLocked(_ html: String) -> Bool {
         let compact = html.lowercased().filter { !$0.isWhitespace }
         if compact.contains("\"isaccessibleforfree\":false")
             || compact.contains("\"isaccessibleforfree\":\"false\"") {
             return true
         }
-        if compact.contains("content_tier") || compact.contains("content-tier") {
-            if compact.contains("locked") || compact.contains("metered")
-                || compact.contains("premium") || compact.contains("subscriber") {
+        for value in ["locked", "metered", "premium"] {
+            if compact.contains("content_tier\"content=\"\(value)")
+                || compact.contains("content-tier\"content=\"\(value)")
+                || compact.contains("content=\"\(value)\"property=\"article:content_tier")
+                || compact.contains("content=\"\(value)\"name=\"article:content_tier") {
                 return true
             }
         }

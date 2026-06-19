@@ -25,6 +25,7 @@
         "this story is for subscribers", "this content is for subscribers",
         "available to subscribers", "subscribers only", "subscriber exclusive",
         "to read the full article", "to read the full story", "for full access",
+        "already a subscriber? log in", "already a subscriber? sign in",
         "unlock this article", "this article is reserved for subscribers"
     ];
 
@@ -54,10 +55,14 @@
     function looksPaywalled() {
         var compact = (document.documentElement.innerHTML || "").toLowerCase().replace(/\s+/g, "");
         if (compact.indexOf('"isaccessibleforfree":false') >= 0) { return true; }
-        if ((compact.indexOf("content_tier") >= 0 || compact.indexOf("content-tier") >= 0)
-            && (compact.indexOf("locked") >= 0 || compact.indexOf("metered") >= 0
-                || compact.indexOf("premium") >= 0)) {
-            return true;
+        // content_tier value matched IN the meta tag (not a whole-doc scan).
+        var tiers = ["locked", "metered", "premium"];
+        for (var t = 0; t < tiers.length; t++) {
+            if (compact.indexOf('content_tier"content="' + tiers[t]) >= 0
+                || compact.indexOf('content-tier"content="' + tiers[t]) >= 0
+                || compact.indexOf('content="' + tiers[t] + '"property="article:content_tier') >= 0) {
+                return true;
+            }
         }
         var text = (document.body ? document.body.innerText : "").toLowerCase();
         for (var i = 0; i < GATE_MARKERS.length; i++) {

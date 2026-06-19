@@ -29,19 +29,20 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private let store: ReadingListStore
     private let webView: WKWebView
     private let progress = UIActivityIndicatorView(style: .medium)
-    private let rateLimitView = UILabel()
-    /// Non-blocking banner host for `rateLimitView` — shown OVER the web view (not
-    /// instead of it) so the user can still attempt the CAPTCHA.
-    private let rateLimitBanner = UIView()
     /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
     /// archive.today navigation (home page, form fill/submit, snapshot load). It's
     /// removed only while a CAPTCHA is up — the one moment the user must see and
     /// touch the page. The web view stays un-hidden and full-size beneath it
     /// (covered, not hidden — so iOS never throttles its JS/navigation), which is
-    /// what keeps the automated flow running while it's visually concealed.
+    /// what keeps the automated flow running while it's visually concealed. When the
+    /// flow can't proceed (rate-limited, or the page can't be archived) the cover
+    /// stays up and shows the message + an Open-in-Safari escape — not a popup.
     private let loadingOverlay = UIView()
     private let overlaySpinner = UIActivityIndicatorView(style: .large)
     private let overlayLabel = UILabel()
+    /// An "Open in Safari" escape shown INSIDE the overlay alongside an error /
+    /// guidance message. Hidden in extensions (no `UIApplication`).
+    private let overlaySafariButton = UIButton(type: .system)
     private var didExtract = false
     /// Set synchronously the moment we decide to extract, so the several
     /// `didFinish` events archive.today fires (sub-frames, JS reloads) can't each
@@ -61,14 +62,18 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// error (a submit whose capture session went stale) — we re-submit once.
     private var didRecoverFromError = false
     /// Consecutive poll ticks where the opaque overlay is covering the page without
-    /// progress; past `stallPollLimit` we reveal the page so the user is never
-    /// stranded on a permanent "Unlocking…" screen (e.g. a homepage whose submit
-    /// token never appears). Reset whenever the overlay is down (challenge/revealed).
+    /// progress; past `stallPollLimit` we surface the rate-limit guidance so the
+    /// user is never stranded on a permanent "Unlocking…" screen (e.g. a homepage
+    /// whose submit token never appears). Reset whenever the overlay is down.
     private var coveredPollCount = 0
     private static let stallPollLimit = 23   // ≈ 30s at the 1.3s poll interval
-    /// Once we surface the rate-limit / stall guidance we stop re-covering the page,
-    /// so the overlay can't slam back over a CAPTCHA or the guidance banner.
-    private var didRevealForManualMode = false
+    /// True once a CAPTCHA has been shown. An archive error AFTER a solved CAPTCHA
+    /// means the page genuinely can't be captured — vs. a stale submit token before
+    /// any CAPTCHA, which is worth one silent retry.
+    private var didSeeChallenge = false
+    /// Set once we surface a terminal message in the overlay (rate-limit or
+    /// un-archivable). Stops polling/extraction and any further overlay toggling.
+    private var didShowTerminalMessage = false
     /// Polls the loaded page's stage every ~1.3s. A timer (not just `didFinish`)
     /// because clearing the CAPTCHA is often an in-page transition that fires no
     /// navigation-finished callback — so we'd otherwise never notice the homepage
@@ -103,8 +108,15 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         + "won't get through.\n\nTry one of these, then reopen:\n"
         + "•  Wait ~30 minutes\n"
         + "•  Switch networks or turn on a VPN\n"
-        + "•  Tap the Safari button (top right), then disable Safari's content/ad "
+        + "•  Tap Open in Safari below, then disable Safari's content/ad "
         + "blockers for archive.today"
+
+    /// Shown when archive.today returns an error AFTER the user solved the CAPTCHA
+    /// (a stale/invalid capture session, an un-archivable page) — solving again
+    /// won't help, so we stop and tell the user plainly rather than spin forever.
+    private static let cannotArchiveMessage =
+        "This site can't be archived right now.\n\narchive.today couldn't capture the "
+        + "page. Try again in a little while, or open it in Safari."
 
     init(articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared) {
         self.articleURL = articleURL
@@ -188,35 +200,6 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         progress.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(progress)
 
-        rateLimitView.text = Self.rateLimitMessage
-        rateLimitView.numberOfLines = 0
-        rateLimitView.textAlignment = .natural
-        rateLimitView.textColor = .label
-        rateLimitView.font = .preferredFont(forTextStyle: .callout)
-
-        var safariConfig = UIButton.Configuration.borderedProminent()
-        safariConfig.title = "Open in Safari"
-        safariConfig.image = UIImage(systemName: "safari")
-        safariConfig.imagePadding = 6
-        safariConfig.cornerStyle = .large
-        let safariButton = UIButton(configuration: safariConfig)
-        safariButton.addAction(UIAction { [weak self] _ in self?.openInBrowser() }, for: .touchUpInside)
-        // No Safari handoff in the extensions (no UIApplication there).
-        safariButton.isHidden = (onOpenInBrowser == nil)
-
-        let bannerStack = UIStackView(arrangedSubviews: [rateLimitView, safariButton])
-        bannerStack.axis = .vertical
-        bannerStack.spacing = 12
-        bannerStack.translatesAutoresizingMaskIntoConstraints = false
-
-        rateLimitBanner.backgroundColor = .secondarySystemBackground
-        rateLimitBanner.layer.cornerRadius = 12
-        rateLimitBanner.layer.cornerCurve = .continuous
-        rateLimitBanner.isHidden = true
-        rateLimitBanner.translatesAutoresizingMaskIntoConstraints = false
-        rateLimitBanner.addSubview(bannerStack)
-        view.addSubview(rateLimitBanner)
-
         NSLayoutConstraint.activate([
             webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -224,15 +207,6 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             progress.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             progress.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            // A non-blocking banner pinned to the top — the web view (and CAPTCHA)
-            // stays visible and interactive beneath it.
-            rateLimitBanner.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
-            rateLimitBanner.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            rateLimitBanner.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            bannerStack.topAnchor.constraint(equalTo: rateLimitBanner.topAnchor, constant: 12),
-            bannerStack.bottomAnchor.constraint(equalTo: rateLimitBanner.bottomAnchor, constant: -12),
-            bannerStack.leadingAnchor.constraint(equalTo: rateLimitBanner.leadingAnchor, constant: 14),
-            bannerStack.trailingAnchor.constraint(equalTo: rateLimitBanner.trailingAnchor, constant: -14),
         ])
 
         setUpLoadingOverlay()
@@ -287,27 +261,42 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
         overlaySpinner.color = GlassStyle.readingAccent
         overlaySpinner.startAnimating()
-        overlaySpinner.translatesAutoresizingMaskIntoConstraints = false
 
         overlayLabel.text = "Unlocking article…"
         overlayLabel.textColor = .secondaryLabel
         overlayLabel.font = .preferredFont(forTextStyle: .callout)
         overlayLabel.textAlignment = .center
-        overlayLabel.translatesAutoresizingMaskIntoConstraints = false
+        overlayLabel.numberOfLines = 0
 
-        loadingOverlay.addSubview(overlaySpinner)
-        loadingOverlay.addSubview(overlayLabel)
+        var safariConfig = UIButton.Configuration.borderedProminent()
+        safariConfig.title = "Open in Safari"
+        safariConfig.image = UIImage(systemName: "safari")
+        safariConfig.imagePadding = 6
+        safariConfig.cornerStyle = .large
+        overlaySafariButton.configuration = safariConfig
+        overlaySafariButton.isHidden = true   // only shown with a terminal message
+        overlaySafariButton.addAction(UIAction { [weak self] _ in self?.openInBrowser() }, for: .touchUpInside)
+
+        // A centered stack: hiding the spinner (and showing the button) recenters
+        // the message cleanly, since stacks ignore hidden arranged subviews.
+        let stack = UIStackView(arrangedSubviews: [overlaySpinner, overlayLabel, overlaySafariButton])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        loadingOverlay.addSubview(stack)
         view.addSubview(loadingOverlay)
         NSLayoutConstraint.activate([
             loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
             loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            overlaySpinner.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
-            overlaySpinner.centerYAnchor.constraint(equalTo: loadingOverlay.centerYAnchor),
-            overlayLabel.topAnchor.constraint(equalTo: overlaySpinner.bottomAnchor, constant: 14),
-            overlayLabel.leadingAnchor.constraint(equalTo: loadingOverlay.leadingAnchor, constant: 32),
-            overlayLabel.trailingAnchor.constraint(equalTo: loadingOverlay.trailingAnchor, constant: -32),
+            stack.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: loadingOverlay.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: loadingOverlay.leadingAnchor, constant: 32),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: loadingOverlay.trailingAnchor, constant: -32),
+            overlayLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
         ])
     }
 
@@ -419,28 +408,34 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         """
         webView.evaluateJavaScript(probe) { [weak self] result, _ in
             guard let self, let stage = result as? String else { return }
+            // A terminal message is up (rate-limit / un-archivable) — the flow has
+            // stopped; ignore any in-flight probe so it can't re-cover/re-drive.
+            if self.didShowTerminalMessage { return }
             SharedDiagnosticLog.record(
                 "archive: stage \(stage) @ \(self.webView.url?.absoluteString ?? "")", category: "archive")
             // Reveal the web view ONLY for the CAPTCHA; cover every automated step.
-            // Once we've handed over to manual mode (rate-limit/stall) we stop
-            // re-covering so the overlay can't slam back over the page.
-            if !self.didRevealForManualMode {
-                self.loadingOverlay.isHidden = (stage == "challenge")
-            }
+            self.loadingOverlay.isHidden = (stage == "challenge")
             // Stall guard: if the overlay has covered the page for too long without
-            // progress (e.g. a homepage whose submit token never appears), reveal
-            // the page + guidance so the user isn't stranded on "Unlocking…".
+            // progress (e.g. a homepage whose submit token never appears), surface
+            // the rate-limit guidance so the user isn't stranded on "Unlocking…".
             if self.loadingOverlay.isHidden {
                 self.coveredPollCount = 0
             } else {
                 self.coveredPollCount += 1
-                if self.coveredPollCount > Self.stallPollLimit { self.showRateLimit() }
+                if self.coveredPollCount > Self.stallPollLimit { self.showRateLimit(); return }
             }
-            if stage == "challenge" { return }
+            if stage == "challenge" { self.didSeeChallenge = true; return }
 
-            // archive.today lost the submit session — re-run the homepage submit once.
             if stage == "error" {
-                guard !self.didRecoverFromError else { return }
+                // An error after a solved CAPTCHA (or after we already retried once)
+                // means archive.today genuinely can't capture this page — stop and
+                // tell the user, rather than loop them through another CAPTCHA.
+                if self.didSeeChallenge || self.didRecoverFromError {
+                    SharedDiagnosticLog.record("archive: error persists → cannot archive", category: "archive")
+                    self.showCannotArchive()
+                    return
+                }
+                // A stale submit token before any CAPTCHA — re-run the submit once.
                 self.didRecoverFromError = true
                 self.didLeaveHomepage = false
                 SharedDiagnosticLog.record("archive: Invalid interception ID → retrying", category: "archive")
@@ -560,14 +555,30 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             || html.contains("Why do I have to complete a CAPTCHA")
     }
 
-    private func showRateLimit() {
+    /// archive.today is rate-limiting the network — solving the CAPTCHA won't pass.
+    private func showRateLimit() { showTerminalMessage(Self.rateLimitMessage) }
+
+    /// archive.today returned an error after the CAPTCHA (un-archivable page / stale
+    /// session) — solving again won't help.
+    private func showCannotArchive() { showTerminalMessage(Self.cannotArchiveMessage) }
+
+    /// Surfaces a terminal message IN the overlay (not a popup): stops the spinner,
+    /// shows the message text, and — in the main app — an Open-in-Safari escape.
+    /// Stops polling so the flow can't re-cover or re-drive the page afterward.
+    private func showTerminalMessage(_ message: String) {
+        guard !didShowTerminalMessage else { return }
+        didShowTerminalMessage = true
+        pollTimer?.invalidate()
+        pollTimer = nil
         progress.stopAnimating()
-        // Reveal the web view + show the guidance banner on top — the user needs to
-        // see the page to act on the advice. Latch manual mode so the poll no longer
-        // re-covers the page.
-        didRevealForManualMode = true
-        loadingOverlay.isHidden = true
-        rateLimitBanner.isHidden = false
-        view.bringSubviewToFront(rateLimitBanner)
+        overlaySpinner.stopAnimating()
+        overlayLabel.text = message
+        overlayLabel.textColor = .label
+        overlaySafariButton.isHidden = (onOpenInBrowser == nil)
+        // Fully opaque so the message reads clearly regardless of the experimental
+        // overlay-alpha setting, and kept above the (now idle) web view.
+        loadingOverlay.backgroundColor = .systemBackground
+        loadingOverlay.isHidden = false
+        view.bringSubviewToFront(loadingOverlay)
     }
 }

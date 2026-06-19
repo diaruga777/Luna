@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Clip",
-    "description": "Tracks the page you're reading so Clip can save it to your reading list, and adds a Read-in-Queue button on paywalled articles.",
+    "description": "Tracks the page you're reading so Clip can save it to your reading list.",
     "version": "1.0",
     "icons": {
         "48": "icon-48.png",

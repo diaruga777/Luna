@@ -57,6 +57,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// `…/newest/<url>` deep link, which triggers archive.today's self-reloading
     /// challenge loop. True once we've acted on the cleared homepage (once).
     private var didLeaveHomepage = false
+    /// Guards a one-shot recovery from archive.today's "Invalid interception ID"
+    /// error (a submit whose capture session went stale) — we re-submit once.
+    private var didRecoverFromError = false
     /// Polls the loaded page's stage every ~1.3s. A timer (not just `didFinish`)
     /// because clearing the CAPTCHA is often an in-page transition that fires no
     /// navigation-finished callback — so we'd otherwise never notice the homepage
@@ -366,14 +369,19 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// - **article** (substantial text, no search box) → extract.
     private func checkStage() {
         guard !didExtract, !isExtracting else { return }
-        // Returns "challenge", "homepage:<len>", or "page:<len>".
+        // Returns "challenge", "error" (Invalid interception ID), "homepage:<len>"
+        // (only once the submit token is ready), or "page:<len>".
         let probe = """
         (function () {
             var t = document.body ? document.body.innerText : '';
             if (/Why do I have to complete a CAPTCHA|Checking your browser|Just a moment|Verifying you are human/i.test(t)) {
                 return 'challenge';
             }
-            if (document.querySelector('input[name="url"]')) { return 'homepage:' + t.length; }
+            if (/invalid interception id/i.test(t)) { return 'error'; }
+            var sid = document.querySelector('input[name="submitid"]');
+            if (document.querySelector('input[name="url"]') && sid && sid.value) {
+                return 'homepage:' + t.length;
+            }
             return 'page:' + t.length;
         })()
         """
@@ -385,16 +393,26 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             self.loadingOverlay.isHidden = (stage == "challenge")
             if stage == "challenge" { return }
 
+            // archive.today lost the submit session — re-run the homepage submit once.
+            if stage == "error" {
+                guard !self.didRecoverFromError else { return }
+                self.didRecoverFromError = true
+                self.didLeaveHomepage = false
+                SharedDiagnosticLog.record("archive: Invalid interception ID → retrying", category: "archive")
+                self.webView.load(URLRequest(url: Self.archiveHomepage))
+                return
+            }
+
             if stage.hasPrefix("homepage") {
                 guard !self.didLeaveHomepage else { return }
-                self.didLeaveHomepage = true
                 if let snapshot = self.resolvedSnapshotURL {
+                    self.didLeaveHomepage = true
                     SharedDiagnosticLog.record(
                         "archive: homepage cleared → loading resolved snapshot \(snapshot.absoluteString)",
                         category: "archive")
                     self.webView.load(URLRequest(url: snapshot))
                 } else {
-                    self.submitURLOnHomepage()
+                    self.submitURLOnHomepage()   // sets didLeaveHomepage only if it actually submits
                 }
                 return
             }
@@ -409,21 +427,25 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
     /// Replicates the manual flow: type the article URL into the homepage's
     /// `input[name=url]` box and submit the form (POSTs to `/submit/`, which for an
-    /// already-archived page 302-redirects straight to the existing snapshot).
+    /// already-archived page 302-redirects straight to the existing snapshot). Only
+    /// submits once the hidden `submitid` token is present (submitting with a stale/
+    /// missing token is what yields "Invalid interception ID").
     private func submitURLOnHomepage() {
         let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
         let literal = Self.jsStringLiteral(target)
         let fill = """
         (function () {
             var i = document.querySelector('input[name="url"]');
-            if (!i) { return 'no-input'; }
+            var sid = document.querySelector('input[name="submitid"]');
+            if (!i || !sid || !sid.value) { return 'wait'; }
             i.value = \(literal);
             if (i.form) { i.form.submit(); return 'submitted'; }
             return 'no-form';
         })()
         """
         SharedDiagnosticLog.record("archive: homepage cleared → submitting URL in form", category: "archive")
-        webView.evaluateJavaScript(fill) { result, _ in
+        webView.evaluateJavaScript(fill) { [weak self] result, _ in
+            if (result as? String) == "submitted" { self?.didLeaveHomepage = true }
             SharedDiagnosticLog.record(
                 "archive: form submit result=\(result as? String ?? "nil")", category: "archive")
         }

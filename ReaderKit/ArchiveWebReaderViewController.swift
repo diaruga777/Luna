@@ -42,12 +42,17 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// we stop letting the user re-solve a CAPTCHA that can't pass and show guidance.
     private var challengeCount = 0
     private static let loopThreshold = 3
-    /// We load the archive.today HOMEPAGE first to obtain Cloudflare clearance,
-    /// THEN the snapshot — hitting `…/newest/<url>` cold triggers archive.today's
-    /// self-reloading challenge loop, whereas warming up the homepage first (the
-    /// flow that works manually) clears the gate so the snapshot loads cleanly.
-    /// True once we've left the warm-up homepage for the snapshot.
-    private var didRequestSnapshot = false
+    /// We load the archive.today HOMEPAGE first (clearance + the search form), then
+    /// reach the snapshot the way the site itself does — typing the URL into the
+    /// homepage's `input[name=url]` box and submitting the form — rather than the
+    /// `…/newest/<url>` deep link, which triggers archive.today's self-reloading
+    /// challenge loop. True once we've acted on the cleared homepage (once).
+    private var didLeaveHomepage = false
+    /// Polls the loaded page's stage every ~1.3s. A timer (not just `didFinish`)
+    /// because clearing the CAPTCHA is often an in-page transition that fires no
+    /// navigation-finished callback — so we'd otherwise never notice the homepage
+    /// became ready.
+    private var pollTimer: Timer?
     /// The specific newest-snapshot URL resolved via the Memento TimeMap (a clean
     /// read endpoint), used in preference to the loop-prone `…/newest/<url>`
     /// redirect once the homepage warm-up clears the gate. Nil → fall back to
@@ -211,28 +216,39 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         ])
 
         progress.startAnimating()
-        // Resolve the specific newest snapshot via the TimeMap first (clean read
-        // endpoint), then start the homepage warm-up. The web view loads the
-        // resolved snapshot once the homepage clears the gate.
+        loadArchive()
+        startPolling()
+        // Resolve the specific newest snapshot via the TimeMap in PARALLEL (clean
+        // read endpoint, no startup delay). If it lands before the homepage clears,
+        // checkStage loads it; otherwise we submit the homepage form.
         Task { [weak self] in
             guard let self else { return }
             let snapshot = await ArticleFetcher().resolveNewestArchiveSnapshot(for: self.articleURL)
             await MainActor.run {
+                guard let snapshot, !self.didLeaveHomepage else { return }
                 self.resolvedSnapshotURL = snapshot
-                if let snapshot {
-                    SharedDiagnosticLog.record(
-                        "archive: TimeMap resolved snapshot \(snapshot.absoluteString)", category: "archive")
-                }
-                self.loadArchive()
+                SharedDiagnosticLog.record(
+                    "archive: TimeMap resolved snapshot \(snapshot.absoluteString)", category: "archive")
             }
         }
     }
 
+    /// Stage-checks the page on a timer (in addition to `didFinish`) so we still
+    /// react when the CAPTCHA clears via an in-page transition.
+    private func startPolling() {
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.3, repeats: true) { [weak self] _ in
+            self?.checkStage()
+        }
+    }
+
+    deinit { pollTimer?.invalidate() }
+
     private static let archiveHomepage = URL(string: "https://archive.is/")! // valid constant
 
     private func loadArchive() {
-        // Warm up the homepage first (see `didRequestSnapshot`) — `didFinish` then
-        // advances to the snapshot once the homepage is cleared.
+        // Load the homepage first (clearance + the search form); `checkStage` then
+        // submits the URL into the form / loads the resolved snapshot once cleared.
         SharedDiagnosticLog.record(
             "archive: warming up \(Self.archiveHomepage.absoluteString) ua=\(webView.customUserAgent ?? "default")",
             category: "archive")
@@ -250,14 +266,6 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
               ArticleFetcher.isArchiveTodayURL(url)   // reject a smuggled non-archive host
         else { return nil }
         return url
-    }
-
-    /// True when `url` is the archive.today homepage (the warm-up page) rather than
-    /// a snapshot/newest path.
-    private static func isArchiveHomepage(_ url: URL?) -> Bool {
-        guard let url, ArticleFetcher.isArchiveTodayURL(url) else { return false }
-        let path = url.path
-        return path.isEmpty || path == "/"
     }
 
     /// Opens the archive in real Safari (the proven-working path when the embedded
@@ -303,43 +311,83 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         progress.stopAnimating()
-        let currentURL = webView.url
-        // Page text length, or -1 if this is still the Cloudflare challenge — so we
-        // neither advance off the warm-up homepage nor extract while challenged.
+        checkStage()
+    }
+
+    /// Probes the loaded page and acts on its stage:
+    /// - **challenge** → wait (the user is solving the CAPTCHA).
+    /// - **homepage** (the search form `input[name=url]` is present) → reach the
+    ///   snapshot the way the site does: load the TimeMap-resolved snapshot if we
+    ///   have one, else type the URL into the box and submit the form (once).
+    /// - **article** (substantial text, no search box) → extract.
+    private func checkStage() {
+        guard !didExtract, !isExtracting else { return }
+        // Returns "challenge", "homepage:<len>", or "page:<len>".
         let probe = """
         (function () {
             var t = document.body ? document.body.innerText : '';
-            if (/Why do I have to complete a CAPTCHA|Checking your browser|Just a moment/i.test(t)) {
-                return -1;
+            if (/Why do I have to complete a CAPTCHA|Checking your browser|Just a moment|Verifying you are human/i.test(t)) {
+                return 'challenge';
             }
-            return t.length;
+            if (document.querySelector('input[name="url"]')) { return 'homepage:' + t.length; }
+            return 'page:' + t.length;
         })()
         """
         webView.evaluateJavaScript(probe) { [weak self] result, _ in
-            guard let self else { return }
-            let length = (result as? Int) ?? 0
+            guard let self, let stage = result as? String else { return }
             SharedDiagnosticLog.record(
-                "archive: didFinish \(currentURL?.absoluteString ?? "") innerTextLen=\(length)",
-                category: "archive")
+                "archive: stage \(stage) @ \(self.webView.url?.absoluteString ?? "")", category: "archive")
+            if stage == "challenge" { return }
 
-            // Warm-up stage: the homepage has loaded and cleared the gate (not the
-            // CAPTCHA challenge) → now request the actual snapshot. Done once.
-            if Self.isArchiveHomepage(currentURL), !self.didRequestSnapshot, length > 200,
-               let snapshot = self.resolvedSnapshotURL ?? Self.archiveURL(for: self.articleURL) {
-                self.didRequestSnapshot = true
-                SharedDiagnosticLog.record(
-                    "archive: homepage cleared → loading snapshot \(snapshot.absoluteString)",
-                    category: "archive")
-                self.webView.load(URLRequest(url: snapshot))
+            if stage.hasPrefix("homepage") {
+                guard !self.didLeaveHomepage else { return }
+                self.didLeaveHomepage = true
+                if let snapshot = self.resolvedSnapshotURL {
+                    SharedDiagnosticLog.record(
+                        "archive: homepage cleared → loading resolved snapshot \(snapshot.absoluteString)",
+                        category: "archive")
+                    self.webView.load(URLRequest(url: snapshot))
+                } else {
+                    self.submitURLOnHomepage()
+                }
                 return
             }
 
-            // `evaluateJavaScript` callbacks run serially on the main queue, so this
-            // check-and-set is atomic against other `didFinish` events.
-            guard !self.didExtract, !self.isExtracting, length > 1500 else { return }
+            // page:<len> — a snapshot/article once it has real text.
+            let length = Int(stage.split(separator: ":").last ?? "") ?? 0
+            guard length > 1500 else { return }
             self.isExtracting = true
             self.extractAndSave()
         }
+    }
+
+    /// Replicates the manual flow: type the article URL into the homepage's
+    /// `input[name=url]` box and submit the form (POSTs to `/submit/`, which for an
+    /// already-archived page 302-redirects straight to the existing snapshot).
+    private func submitURLOnHomepage() {
+        let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
+        let literal = Self.jsStringLiteral(target)
+        let fill = """
+        (function () {
+            var i = document.querySelector('input[name="url"]');
+            if (!i) { return 'no-input'; }
+            i.value = \(literal);
+            if (i.form) { i.form.submit(); return 'submitted'; }
+            return 'no-form';
+        })()
+        """
+        SharedDiagnosticLog.record("archive: homepage cleared → submitting URL in form", category: "archive")
+        webView.evaluateJavaScript(fill) { result, _ in
+            SharedDiagnosticLog.record(
+                "archive: form submit result=\(result as? String ?? "nil")", category: "archive")
+        }
+    }
+
+    /// A JS string literal with proper escaping (via JSON), e.g. `"https://…"`.
+    private static func jsStringLiteral(_ string: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [string]),
+              let array = String(data: data, encoding: .utf8) else { return "\"\"" }
+        return String(array.dropFirst().dropLast())   // strip the surrounding [ ]
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -382,6 +430,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
                         return
                     }
                     self.didExtract = true
+                    self.pollTimer?.invalidate()
                     _ = self.store.saveContent(content, for: item)
                     SharedDiagnosticLog.record(
                         "archive: extracted + saved (bodyLen=\(content.bodyTextLength))", category: "archive")

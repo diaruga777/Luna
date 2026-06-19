@@ -75,20 +75,41 @@
     function initArchiveHarvest() {
         browser.runtime.sendMessage({ type: "isQueueRedirect" }).then(function (resp) {
             if (!resp || !resp.redirect || !resp.originalURL) { return; } // not our redirect → never auto-save
-            var path = location.pathname;
-            if (path === "" || path === "/") {
-                // Warm-up homepage stage: once the gate is cleared, advance to the
-                // snapshot. The sessionStorage guard (same-origin across the whole
-                // archive.is visit) prevents a redirect loop if no snapshot exists.
-                if (sessionStorage.getItem("queueWarmedUp")) { return; }
-                if (isChallengePage()) { return; }   // user still solving; the reload re-runs this
-                sessionStorage.setItem("queueWarmedUp", "1");
-                location.href = "https://archive.is/newest/" + resp.originalURL;
+            pollArchiveStage(resp.originalURL);
+        }).catch(function () {});
+    }
+
+    // Polls the page until it can act: on the cleared homepage (the search form is
+    // present), type the URL into input[name=url] and submit the form — exactly the
+    // manual flow (POSTs to /submit/, which 302-redirects to the existing snapshot
+    // for an already-archived page); on a snapshot/article page, harvest it. Polling
+    // (not a one-shot) because clearing the CAPTCHA is an in-page transition.
+    function pollArchiveStage(originalURL) {
+        var tries = 0;
+        var maxTries = 150;   // ~2.5 min at 1s — generous, for slow CAPTCHA solving
+        var timer = setInterval(function () {
+            tries += 1;
+            if (tries > maxTries) { clearInterval(timer); return; }
+            if (isChallengePage()) { return; }   // user still solving
+            var onHomepage = (location.pathname === "/" || location.pathname === "");
+            var urlInput = document.querySelector('input[name="url"]');
+            if (onHomepage && urlInput) {
+                if (sessionStorage.getItem("queueSubmitted")) { return; } // already submitted; avoid a loop
+                sessionStorage.setItem("queueSubmitted", "1");
+                clearInterval(timer);
+                try {
+                    urlInput.value = originalURL;
+                    if (urlInput.form) { urlInput.form.submit(); }
+                } catch (e) {}
                 return;
             }
-            // Snapshot stage (/newest/ or a resolved snapshot path).
-            waitForArticleThenHarvest(resp.originalURL);
-        }).catch(function () {});
+            var text = document.body ? document.body.innerText : "";
+            if (!onHomepage && !urlInput && text.length > 1500) {
+                clearInterval(timer);
+                fixViewport();
+                harvest(originalURL);
+            }
+        }, 1000);
     }
 
     // archive.today snapshots often ship without a mobile viewport, so the phone
@@ -117,20 +138,6 @@
         var body = document.body ? document.body.innerText : "";
         return body.indexOf("Why do I have to complete a CAPTCHA") >= 0
             || body.indexOf("Checking your browser") >= 0;
-    }
-
-    function waitForArticleThenHarvest(originalURL) {
-        var tries = 0;
-        var maxTries = 150;   // ~2.5 min at 1s — generous, for slow CAPTCHA solving
-        var timer = setInterval(function () {
-            tries += 1;
-            if (tries > maxTries) { clearInterval(timer); return; }
-            if (isChallengePage()) { return; }                       // user still solving
-            var text = document.body ? document.body.innerText : "";
-            if (text.length < 1500) { return; }                      // article not loaded yet
-            clearInterval(timer);
-            harvest(originalURL);
-        }, 1000);
     }
 
     // Strips the page to compact HTML: drops scripts/styles/svg/iframes and the

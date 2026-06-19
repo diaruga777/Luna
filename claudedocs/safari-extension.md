@@ -45,9 +45,11 @@ host:
   (sessionStorage-guarded against a redirect loop). URLs are canonicalized (tracking params /
   fragment stripped). See `archive-today-research.md`.
 - **On an archive host**: asks background `{type:"isQueueRedirect"}`. **Only if this tab was
-  redirected by our button** (never an arbitrary archive.is visit) does it proceed. On the
-  warm-up homepage (`path == "/"`) it advances to `/newest/`; on a snapshot path it polls
-  until the real article is loaded (past the CAPTCHA — `isChallengePage()` guards, innerText
+  redirected by our button** (never an arbitrary archive.is visit) does it proceed, via
+  `pollArchiveStage`: on the cleared homepage (the `input[name=url]` search box is present) it
+  **types the URL into the box and submits the form** (POSTs to `/submit/` → 302 to the
+  existing snapshot — the manual flow; `sessionStorage` guards against a resubmit loop), NOT a
+  `/newest/` redirect; on a snapshot path it polls until the real article is loaded (past the CAPTCHA — `isChallengePage()` guards, innerText
   ≥ 1500), forces `width=device-width` (`fixViewport()` — archive pages ship no mobile
   viewport, so the phone renders them desktop-width and tiny), strips the page to compact HTML
   (`reducedHTML()` drops `script/style/svg/iframe/link/form` + every inline `style`/`class`

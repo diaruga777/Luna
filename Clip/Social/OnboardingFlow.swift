@@ -44,7 +44,7 @@ enum OnboardingFlow {
             if #available(iOS 27.0, *) {
                 nav?.pushViewController(safariStep(nav: nav, onFinished: onFinished), animated: true)
             } else {
-                onFinished()
+                nav?.pushViewController(actionExtensionStep(onFinished: onFinished), animated: true)
             }
         }
         return OnboardingStepViewController(

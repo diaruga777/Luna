@@ -9,9 +9,18 @@ functionality, not Slack's visuals — it uses the app's liquid-glass aesthetic:
 `ReadingListViewController` pins a **catch-up button** (`rectangle.stack`,
 accent-tinted, `accessibilityLabel "Catch up"`) to the **"Reading List" large-title
 row** (a nav-bar subview, trailing/bottom; re-pinned each `viewWillAppear`, removed
-on disappear). A red "action needed" **dot** shows when there are unread items
-(`updateCatchUpButton()` on every `reload()`); the button is hidden in edit mode.
+on disappear). A red "action needed" **dot** shows when there are 10+ unread items OR
+whenever there's an unarchived **locked** save (regardless of count;
+`updateCatchUpButton()` on every `reload()`); the button is hidden in edit mode.
 Tapping presents `CatchUpViewController(unread:router:)` full-screen.
+
+**Locked cards.** A `.needsCaptcha` (paywalled, awaiting archive unlock) reader is now
+included in the queue and shown as a **locked card** (lock glyph + title + hint). Its
+left action is **Unlock** (not Keep) — `CatchUpCardView.isLocked` swaps the left
+zone/badge to `.unlock` and disables Bump; right is still Archive. Unlock presents the
+in-app `ArchiveWebReaderViewController` (with an "Open in Safari" escape hatch); on
+success the item flips to `.ready` and the SAME card is rebuilt in place
+(`reloadCurrentCard`), no advance; on cancel the locked card stays.
 
 The queue = `store.items()` filtered to unread (`readState != .read`) AND renderable
 (ready articles, or any platform/media item), sorted **oldest-first** by

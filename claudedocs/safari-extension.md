@@ -21,57 +21,39 @@ background.js (tabs.onActivated / tabs.onUpdated)
 
 Target: `ClipSafari`, bundle `com.hpiddy.clip.safari`, app-extension product embedded in Clip.app/PlugIns. Resources flatten into the appex root (Safari requires manifest.json at bundle root on iOS).
 
-## "Read in Queue" archive harvest (paywalled articles)
+## "Read in Queue" button (deep-link into the app)
 
-A second role of the same extension (presented as an **iOS 27+** feature, matching the
-existing Safari-onboarding gating): get hard-paywalled articles (WSJ/FT/…) into Queue via
-their archive.today snapshot, harvested from **real Safari** (which clears archive.today's
-Cloudflare gate reliably — see `readers.md`).
+A second role of the same extension (presented as an **iOS 27+** feature): a "Read in Queue"
+button on article pages that opens the page in
 
 `ClipSafari/Resources/content.js` is injected **programmatically** by `background.js`
-(`scripting.executeScript` on `tabs.onUpdated`/`status:complete` when the host is in the
-paywall/archive lists), self-guarded with `window.__queueContentScriptRan` against repeat
-injection. (A declarative `content_scripts` block also validates fine — the programmatic
-route is just a smaller manifest footprint.) **ITMS-90849 gotcha**: the manifest
-`description` must stay **≤ ~112 chars** — a 127-char description failed App Store validation
-with the opaque code 90849 (NOT content_scripts/scripting, which were red herrings). Roles by
-host:
-- **On a paywall host**: injects a Queue-indigo (`#5856D6`) "Read in Queue" capsule button.
-  Tap → `runtime.sendMessage({type:"queueRedirect", url})` → `background.handleQueueRedirect`
-  resolves the **specific** newest snapshot via the Memento TimeMap (`resolveSnapshot` /
-  `newestMemento` — a clean read endpoint that avoids the loop-prone `/newest/` redirect) and
-  navigates the tab straight there; if the TimeMap doesn't resolve, it falls back to warming
-  up `https://archive.is/` (homepage) and `content.js` advances `/` → `/newest/<canonical>`
-  (sessionStorage-guarded against a redirect loop). URLs are canonicalized (tracking params /
-  fragment stripped). See `archive-today-research.md`.
-- **On an archive host**: asks background `{type:"isQueueRedirect"}`. **Only if this tab was
-  redirected by our button** (never an arbitrary archive.is visit) does it proceed, via
-  `pollArchiveStage`: on the cleared homepage (the `input[name=url]` search box is present) it
-  **types the URL into the box and submits the form** (POSTs to `/submit/` → 302 to the
-  existing snapshot — the manual flow; `sessionStorage` guards against a resubmit loop), NOT a
-  `/newest/` redirect; on a snapshot path it polls until the real article is loaded (past the CAPTCHA — `isChallengePage()` guards, innerText
-  ≥ 1500), forces `width=device-width` (`fixViewport()` — archive pages ship no mobile
-  viewport, so the phone renders them desktop-width and tiny), strips the page to compact HTML
-  (`reducedHTML()` drops `script/style/svg/iframe/link/form` + every inline `style`/`class`
-  attr — the bulk of archive.today's ~1 MB), relays `{type:"archiveContent", url, title,
-  html|text}`, and shows a large "Saved to Queue" banner with a prominent white "Open Queue"
-  button (`clickreader://saved`). Falls back to `innerText` if stripped HTML still exceeds
-  ~950 KB (native-message limit).
+(`scripting.executeScript` on every `tabs.onUpdated`/`status:complete` http(s) page),
+self-guarded with `window.__queueContentScriptRan`. (A declarative `content_scripts` block
+also validates fine — programmatic is just a smaller manifest footprint.) **ITMS-90849
+gotcha**: the manifest `description` must stay **≤ ~112 chars** — a 127-char description
+failed App Store validation with the opaque code 90849 (NOT content_scripts/scripting, which
+were red herrings).
 
-`background.js`: keeps a `queueRedirects` map (tabId → original URL) so only our redirects
-harvest; relays content→native via `sendNativeMessage`. `SafariWebExtensionHandler` routes a
-`type:"archiveContent"` message to **`PendingSafariArchive.write`** (ClipSafari), which writes
-one JSON hand-off file per capture into the App Group `PendingSafariArchives/`.
+Flow:
+1. content.js asks background `{type:"buttonMode"}`; background relays to the native handler,
+   which returns the app's `SafariSuggestionMode` (`never` / `all` / `onlyLocked`, default
+   `all`) from the App Group (`SafariSuggestionSettings`, key `safariSuggestionMode`).
+2. If `never`, or the page isn't an article (`looksLikeArticle`: og:type=article / `<article>`
+   / a substantial `<p>` body + `<h1>`), or (`onlyLocked`) the page isn't paywalled
+   (`looksPaywalled` — a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree`
+   + `content_tier`), it does nothing.
+3. Otherwise it injects a Queue-indigo (`#5856D6`) "Read in Queue" capsule button. Tapping it
+   navigates to `clickreader://read?url=<encoded>` — the app's `ClickDeepLink`.
 
-App side: **`Clip/ReadingList/PendingSafariArchiveImporter`** (called from
-`AppDelegate`/`SceneDelegate` on launch+foreground) reads each hand-off, extracts via the
-shared `ArticleExtractor` (HTML; or a plain-text fallback → paragraph blocks), saves a ready
-reading-list item, and deletes the file. `clickreader://saved` (handled in `SceneDelegate.route`)
-just brings the app forward — the foreground import surfaces the new item. Tests:
-`ClipTests/PendingSafariArchiveImporterTests`.
+App side: `SceneDelegate.openReader` ingests the URL (`handleSavePress`) then opens it via
+`ReadingListViewController.open(_:presenter:)` — so a paywalled article opens straight into
+the in-app archive reader, a ready article into the native reader. The "Locked Only" mode and
+the in-app paywall handling share one detector (`PaywallDetector`), so a reader logged in via
+their browser sees a full article and isn't flagged.
 
-Content scripts can't call `sendNativeMessage` directly — everything routes through
-`background.js` (`runtime.sendMessage` → `sendNativeMessage`).
+The setting lives in Settings → Shortcut & Safari ("Read in Queue Button" — a 3-segment
+control). `background.js` relays `buttonMode` (the only message besides URL tracking);
+content scripts can't call `sendNativeMessage` directly.
 
 ## Enabling (simulator/device)
 

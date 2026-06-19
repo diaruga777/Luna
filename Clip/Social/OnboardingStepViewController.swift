@@ -119,15 +119,48 @@ final class OnboardingStepViewController: UIViewController {
         continueButton.addTarget(self, action: #selector(continueTapped), for: .touchUpInside)
         buttonStack.addArrangedSubview(continueButton)
 
-        let layout = UIStackView(arrangedSubviews: [topStack, UIView(), buttonStack])
-        layout.axis = .vertical
-        layout.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(layout)
+        // The buttons are pinned at the bottom (always full size — never compressed
+        // into overlap); the icon/title/body scroll above them when they're too tall
+        // for the screen (e.g. the large action-extension animation + long body), and
+        // center when they fit.
+        buttonStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(buttonStack)
+
+        let scroll = UIScrollView()
+        scroll.showsVerticalScrollIndicator = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scroll)
+        let content = UIView()
+        content.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(content)
+        topStack.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(topStack)
+
+        let contentFillsScroll = content.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor)
+        contentFillsScroll.priority = .defaultLow   // only as tall as the scroll area when content is short → centers
+
         NSLayoutConstraint.activate([
-            layout.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            layout.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            layout.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 60),
-            layout.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -32),
+            buttonStack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            buttonStack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            buttonStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
+
+            scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: buttonStack.topAnchor, constant: -16),
+
+            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            content.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
+            contentFillsScroll,
+
+            topStack.topAnchor.constraint(greaterThanOrEqualTo: content.topAnchor, constant: 16),
+            topStack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -16),
+            topStack.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            topStack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            topStack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
         ])
     }
 

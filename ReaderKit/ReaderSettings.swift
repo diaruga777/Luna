@@ -20,7 +20,24 @@ enum ReaderSettings {
     private static let progressKey = "showReadingProgress"
     private static let lastReaderModeKey = "lastReaderMode"
     private static let accentKey = "readerAccentColor"
+    private static let archiveOverlayAlphaKey = "archiveOverlayAlpha"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
+
+    /// Opacity of the cover over the archive web view (experimental/diagnostic):
+    /// 0.99 = effectively hidden (default); lower it to see the archive flow
+    /// through the overlay. Clamped to 0.2…0.99.
+    static let archiveOverlayAlphaRange: ClosedRange<Double> = 0.2...0.99
+    static var archiveOverlayAlpha: Double {
+        get {
+            guard let stored = defaults.object(forKey: archiveOverlayAlphaKey) as? Double else { return 0.99 }
+            return min(max(stored, archiveOverlayAlphaRange.lowerBound), archiveOverlayAlphaRange.upperBound)
+        }
+        set {
+            defaults.set(
+                min(max(newValue, archiveOverlayAlphaRange.lowerBound), archiveOverlayAlphaRange.upperBound),
+                forKey: archiveOverlayAlphaKey)
+        }
+    }
 
     /// One-time copy of settings previously kept in standard defaults into the
     /// App Group (so the extension sees them). Call once at app launch.

@@ -9,7 +9,7 @@ import UIKit
 /// suggestions, and YouTube integration (sign-in, playlist, auto-add).
 final class ExperimentalSettingsScreen: UITableViewController {
 
-    private enum Section: Int, CaseIterable { case semantic, youtube }
+    private enum Section: Int, CaseIterable { case semantic, archiveOverlay, youtube }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
 
     init() { super.init(style: .insetGrouped) }
@@ -26,6 +26,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
         case .semantic: return 1
+        case .archiveOverlay: return 1
         case .youtube: return YouTubeRow.allCases.count
         }
     }
@@ -33,6 +34,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .semantic: return "Suggest Shares Based on Content"
+        case .archiveOverlay: return "Archive Reader Cover"
         case .youtube: return "DEV ONLY: YouTube"
         }
     }
@@ -41,6 +43,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
         switch Section(rawValue: section)! {
         case .semantic:
             return "When you save something that resembles things you've shared with a friend before, Queue can suggest sharing it with them. Slide all the way left to turn this off."
+        case .archiveOverlay:
+            return "Opacity of the cover hiding the archive.today flow while a paywalled article unlocks. Lower it to see what the web view is doing (for debugging). 99% = effectively hidden."
         case .youtube:
             return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read.\n\nYour email must be whitelisted for this to work while in development."
         }
@@ -52,9 +56,44 @@ final class ExperimentalSettingsScreen: UITableViewController {
         switch Section(rawValue: indexPath.section)! {
         case .semantic:
             return semanticSensitivityCell()
+        case .archiveOverlay:
+            return overlayAlphaCell()
         case .youtube:
             return youTubeCell(for: YouTubeRow(rawValue: indexPath.row)!)
         }
+    }
+
+    /// A slider for the archive-reader cover opacity (20%–99%, default 99%).
+    private func overlayAlphaCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+
+        let slider = UISlider()
+        slider.minimumValue = Float(ReaderSettings.archiveOverlayAlphaRange.lowerBound)
+        slider.maximumValue = Float(ReaderSettings.archiveOverlayAlphaRange.upperBound)
+        slider.value = Float(ReaderSettings.archiveOverlayAlpha)
+        slider.addTarget(self, action: #selector(overlayAlphaChanged(_:)), for: .valueChanged)
+
+        let endLabels = UIStackView(arrangedSubviews: [endCaption("20%"), UIView(), endCaption("99%")])
+        endLabels.axis = .horizontal
+        endLabels.distribution = .fill
+
+        let stack = UIStackView(arrangedSubviews: [slider, endLabels])
+        stack.axis = .vertical
+        stack.spacing = 2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        cell.contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 10),
+            stack.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -10),
+        ])
+        return cell
+    }
+
+    @objc private func overlayAlphaChanged(_ sender: UISlider) {
+        ReaderSettings.archiveOverlayAlpha = Double(sender.value)
     }
 
     /// A slider from "Never" (off) to "Often", with no exposed numbers.

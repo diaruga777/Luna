@@ -65,7 +65,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// stranded on a permanent "Unlocking…" screen (e.g. a homepage whose submit
     /// token never appears). Reset whenever the overlay is down (challenge/revealed).
     private var coveredPollCount = 0
-    private static let stallPollLimit = 45   // ≈ 58s at the 1.3s poll interval
+    private static let stallPollLimit = 23   // ≈ 30s at the 1.3s poll interval
     /// Once we surface the rate-limit / stall guidance we stop re-covering the page,
     /// so the overlay can't slam back over a CAPTCHA or the guidance banner.
     private var didRevealForManualMode = false
@@ -169,7 +169,6 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        title = "Archive"
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             systemItem: .done, primaryAction: UIAction { [weak self] _ in
                 guard let self else { return }
@@ -279,7 +278,11 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// view; visible from the start so the user never sees the raw archive page
     /// except when a CAPTCHA is up (`checkStage` reveals it then).
     private func setUpLoadingOverlay() {
-        loadingOverlay.backgroundColor = .systemBackground
+        // Alpha on the BACKGROUND only (not the whole view) so the spinner/label
+        // stay crisp while the experimental setting can make the cover see-through
+        // for debugging. 0.99 = effectively opaque.
+        loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(
+            CGFloat(ReaderSettings.archiveOverlayAlpha))
         loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
 
         overlaySpinner.color = GlassStyle.readingAccent
@@ -387,14 +390,23 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private func checkStage() {
         guard !didExtract, !isExtracting, viewIfLoaded?.window != nil else { return }
         // Returns "challenge", "error" (Invalid interception ID), "homepage:<len>"
-        // (only once the submit token is ready), or "page:<len>".
+        // (only once the submit token is ready), or "page:<len>". A CAPTCHA must be
+        // detected RELIABLY — by the reCAPTCHA/Cloudflare WIDGET, not just text — or
+        // the overlay would never lift and the user could never solve it.
         let probe = """
         (function () {
             var t = document.body ? document.body.innerText : '';
-            if (/Why do I have to complete a CAPTCHA|Checking your browser|Just a moment|Verifying you are human/i.test(t)) {
+            if (/invalid interception id/i.test(t)) { return 'error'; }
+            var challengeWidget = document.querySelector(
+                'iframe[src*="recaptcha"], iframe[src*="challenges.cloudflare.com"], '
+                + 'iframe[title*="recaptcha" i], iframe[title*="challenge" i], '
+                + '.g-recaptcha, [data-sitekey], .cf-turnstile, #cf-please-wait, '
+                + '#challenge-form, #challenge-running, #cf-challenge-running, '
+                + 'form[action*="chk_captcha"], form[action*="cdn-cgi"]');
+            if (challengeWidget) { return 'challenge'; }
+            if (/Why do I have to complete a CAPTCHA|Checking your browser|Just a moment|Verifying you are human|needs to review the security/i.test(t)) {
                 return 'challenge';
             }
-            if (/invalid interception id/i.test(t)) { return 'error'; }
             var sid = document.querySelector('input[name="submitid"]');
             if (document.querySelector('input[name="url"]') && sid && sid.value) {
                 return 'homepage:' + t.length;

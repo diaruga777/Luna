@@ -139,8 +139,11 @@ final class ReadingListViewController: UITableViewController {
     /// The "catch up" button, pinned to the large-title row; its red dot badge
     /// shows when there are unread items to catch up on.
     private let catchUpButton = UIButton(type: .system)
-    /// The in-place search overlay (a child VC cross-faded over the list), if active.
-    private weak var searchController: SearchViewController?
+    /// The in-place search overlay cross-faded over the list, if active. Held
+    /// strongly: its view is hosted directly in the nav controller's view WITHOUT
+    /// VC containment — calling `addChild` on a UINavigationController corrupts its
+    /// `children`/stack and makes the list show a back button on return.
+    private var searchController: SearchViewController?
     private let catchUpBadge = UIView()
     private var catchUpPinnedToNavBar = false
     /// The tallest the nav bar has been seen (large title expanded) — the baseline the
@@ -575,23 +578,23 @@ final class ReadingListViewController: UITableViewController {
             self.removeSearch()                 // drop the overlay; the open animates normally
             self.open(item, presenter: self)
         }
-        nav.addChild(search)
-        search.view.alpha = 0
-        search.view.translatesAutoresizingMaskIntoConstraints = false
-        nav.view.addSubview(search.view)
+        searchController = search                // strong ref keeps it alive (no containment)
+        let overlay = search.view!              // loads the view
+        overlay.alpha = 0
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        nav.view.addSubview(overlay)
         NSLayoutConstraint.activate([
-            search.view.topAnchor.constraint(equalTo: nav.view.topAnchor),
-            search.view.bottomAnchor.constraint(equalTo: nav.view.bottomAnchor),
-            search.view.leadingAnchor.constraint(equalTo: nav.view.leadingAnchor),
-            search.view.trailingAnchor.constraint(equalTo: nav.view.trailingAnchor),
+            overlay.topAnchor.constraint(equalTo: nav.view.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: nav.view.bottomAnchor),
+            overlay.leadingAnchor.constraint(equalTo: nav.view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: nav.view.trailingAnchor),
         ])
-        search.didMove(toParent: nav)
-        searchController = search
-        nav.view.bringSubviewToFront(search.view)
+        nav.view.layoutIfNeeded()               // force a layout so its content insets resolve now
+        nav.view.bringSubviewToFront(overlay)
         // Focus immediately (not in the fade completion) so the keyboard rises in
         // parallel with the cross-fade rather than after it.
         search.focusSearchField()
-        UIView.animate(withDuration: 0.22, animations: { search.view.alpha = 1 }) { _ in
+        UIView.animate(withDuration: 0.22, animations: { overlay.alpha = 1 }) { _ in
             // Now that the opaque overlay covers everything, hide the list's nav bar
             // so its large-title header can't sit on top of the search results.
             nav.setNavigationBarHidden(true, animated: false)
@@ -610,14 +613,11 @@ final class ReadingListViewController: UITableViewController {
         }
     }
 
-    /// Tears the search child down immediately (no fade) and restores the nav bar —
-    /// used when opening a result so the pushed reader animates over the bare list.
+    /// Tears the search overlay down immediately (no fade) and restores the nav bar
+    /// — used when opening a result so the pushed reader animates over the bare list.
     private func removeSearch() {
         navigationController?.setNavigationBarHidden(false, animated: false)
-        guard let search = searchController else { return }
-        search.willMove(toParent: nil)
-        search.view.removeFromSuperview()
-        search.removeFromParent()
+        searchController?.view.removeFromSuperview()
         searchController = nil
     }
 

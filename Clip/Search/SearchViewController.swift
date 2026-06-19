@@ -187,7 +187,7 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
         super.viewDidLayoutSubviews()
         // Use the WINDOW's safe area (authoritative) rather than this hosted view's.
         let safe = view.window?.safeAreaInsets ?? view.safeAreaInsets
-        let topInset = safe.top + 8
+        let topInset = safe.top + 28
         if abs(tableView.contentInset.top - topInset) > 0.5 {
             tableView.contentInset.top = topInset
             tableView.verticalScrollIndicatorInsets.top = topInset

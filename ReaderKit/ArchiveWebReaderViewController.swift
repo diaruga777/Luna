@@ -30,6 +30,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private let webView: WKWebView
     private let progress = UIActivityIndicatorView(style: .medium)
     private let rateLimitView = UILabel()
+    /// Non-blocking banner host for `rateLimitView` — shown OVER the web view (not
+    /// instead of it) so the user can still attempt the CAPTCHA.
+    private let rateLimitBanner = UIView()
     private var didExtract = false
     /// Set synchronously the moment we decide to extract, so the several
     /// `didFinish` events archive.today fires (sub-frames, JS reloads) can't each
@@ -117,11 +120,16 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         rateLimitView.text = Self.rateLimitMessage
         rateLimitView.numberOfLines = 0
         rateLimitView.textAlignment = .natural
-        rateLimitView.textColor = .secondaryLabel
+        rateLimitView.textColor = .label
         rateLimitView.font = .preferredFont(forTextStyle: .callout)
-        rateLimitView.isHidden = true
         rateLimitView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(rateLimitView)
+        rateLimitBanner.backgroundColor = .secondarySystemBackground
+        rateLimitBanner.layer.cornerRadius = 12
+        rateLimitBanner.layer.cornerCurve = .continuous
+        rateLimitBanner.isHidden = true
+        rateLimitBanner.translatesAutoresizingMaskIntoConstraints = false
+        rateLimitBanner.addSubview(rateLimitView)
+        view.addSubview(rateLimitBanner)
 
         NSLayoutConstraint.activate([
             webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -130,9 +138,15 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             progress.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             progress.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            rateLimitView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            rateLimitView.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            rateLimitView.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            // A non-blocking banner pinned to the top — the web view (and CAPTCHA)
+            // stays visible and interactive beneath it.
+            rateLimitBanner.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            rateLimitBanner.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            rateLimitBanner.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            rateLimitView.topAnchor.constraint(equalTo: rateLimitBanner.topAnchor, constant: 12),
+            rateLimitView.bottomAnchor.constraint(equalTo: rateLimitBanner.bottomAnchor, constant: -12),
+            rateLimitView.leadingAnchor.constraint(equalTo: rateLimitBanner.leadingAnchor, constant: 14),
+            rateLimitView.trailingAnchor.constraint(equalTo: rateLimitBanner.trailingAnchor, constant: -14),
         ])
 
         progress.startAnimating()
@@ -263,9 +277,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
     private func showRateLimit() {
         progress.stopAnimating()
-        // Hide the looping challenge page so the (readable) guidance shows alone.
-        webView.isHidden = true
-        rateLimitView.isHidden = false
-        view.bringSubviewToFront(rateLimitView)
+        // Show the guidance as a non-blocking banner — DON'T hide the web view, so
+        // the user can keep trying to solve the CAPTCHA (hiding it stranded them).
+        rateLimitBanner.isHidden = false
+        view.bringSubviewToFront(rateLimitBanner)
     }
 }

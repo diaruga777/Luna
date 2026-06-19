@@ -73,22 +73,30 @@
 
     function injectReadButton() {
         if (document.getElementById("queue-read-button")) { return; }
-        var btn = document.createElement("button");
+        // A <div role="button"> (not a <button>) so the host page's `button {…}`
+        // CSS can't clamp its height and cut off the pill. Explicit resets +
+        // inline-flex centering + a fully-rounded radius guarantee the pill shape.
+        var btn = document.createElement("div");
         btn.id = "queue-read-button";
+        btn.setAttribute("role", "button");
         btn.appendChild(document.createTextNode("📖  Read in Queue"));
         applyStyle(btn, {
             position: "fixed", right: "16px",
             bottom: "calc(20px + env(safe-area-inset-bottom))",
             zIndex: "2147483647", background: QUEUE_INDIGO, color: "#ffffff",
-            font: "600 16px -apple-system, system-ui, sans-serif",
-            border: "none", borderRadius: "23px", padding: "13px 20px",
+            font: "600 16px/1 -apple-system, system-ui, sans-serif",
+            boxSizing: "border-box", display: "inline-flex",
+            alignItems: "center", justifyContent: "center", whiteSpace: "nowrap",
+            border: "none", borderRadius: "999px", padding: "14px 22px",
+            height: "auto", minHeight: "0", width: "auto", margin: "0",
             boxShadow: "0 6px 20px rgba(0,0,0,0.30)", cursor: "pointer",
-            webkitTapHighlightColor: "transparent", touchAction: "manipulation"
+            webkitTapHighlightColor: "transparent", touchAction: "manipulation",
+            webkitAppearance: "none", appearance: "none"
         });
         btn.addEventListener("click", function () {
             btn.textContent = "Opening Queue…";
-            btn.disabled = true;
             btn.style.opacity = "0.7";
+            btn.style.pointerEvents = "none";
             // A tap is a user gesture, so Safari allows the custom-scheme launch.
             window.location.href = "clickreader://read?url=" + encodeURIComponent(location.href);
         });

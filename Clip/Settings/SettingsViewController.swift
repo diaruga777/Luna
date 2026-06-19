@@ -378,11 +378,14 @@ final class ShortcutSettingsScreen: UITableViewController {
             control.addTarget(self, action: #selector(suggestionModeChanged(_:)), for: .valueChanged)
             control.translatesAutoresizingMaskIntoConstraints = false
             cell.contentView.addSubview(control)
+            // Center at the control's NATURAL height (pinning top+bottom would
+            // stretch it taller than a normal segmented control and look off).
             NSLayoutConstraint.activate([
                 control.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
                 control.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
-                control.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
-                control.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8),
+                control.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+                control.topAnchor.constraint(greaterThanOrEqualTo: cell.contentView.topAnchor, constant: 8),
+                control.bottomAnchor.constraint(lessThanOrEqualTo: cell.contentView.bottomAnchor, constant: -8),
             ])
             return cell
         }

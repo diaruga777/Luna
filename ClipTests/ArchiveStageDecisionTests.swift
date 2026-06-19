@@ -1,0 +1,116 @@
+//
+//  ArchiveStageDecisionTests.swift
+//  ClipTests
+//
+
+import XCTest
+@testable import Clip
+
+/// Exercises `ArchiveWebReaderViewController.decideStage` — the pure stage→action
+/// logic of the in-app archive.today reader. The regression of record: after the
+/// homepage was submitted, a rendered snapshot whose chrome still carries the
+/// `input[name=url]` box (reported as `homepage:<len>`) was mis-classified as the
+/// homepage and never extracted, leaving the spinner up forever.
+final class ArchiveStageDecisionTests: XCTestCase {
+
+    private func decide(
+        _ stage: String,
+        didLeaveHomepage: Bool = false,
+        hasResolvedSnapshot: Bool = false,
+        didSeeChallenge: Bool = false,
+        didRecoverFromError: Bool = false
+    ) -> ArchiveWebReaderViewController.StageDecision {
+        ArchiveWebReaderViewController.decideStage(
+            stage,
+            didLeaveHomepage: didLeaveHomepage,
+            hasResolvedSnapshot: hasResolvedSnapshot,
+            didSeeChallenge: didSeeChallenge,
+            didRecoverFromError: didRecoverFromError)
+    }
+
+    // MARK: - The fixed regression
+
+    func testHomepageBoxAfterSubmitWithRealTextExtracts() {
+        // The /wip/ shell has rendered the article, but archive.today's chrome still
+        // includes the submit box → "homepage:<big>". Since we already submitted,
+        // this must NOT loop back to the homepage; it must attempt extraction.
+        XCTAssertEqual(
+            decide("homepage:42000", didLeaveHomepage: true),
+            .attemptExtract)
+    }
+
+    func testHomepageBoxAfterSubmitWhileShortKeepsPolling() {
+        // The /wip/ progress shell (short request log) before the article renders:
+        // not yet long enough to extract — keep polling (don't re-submit).
+        XCTAssertEqual(
+            decide("homepage:300", didLeaveHomepage: true),
+            .wait)
+    }
+
+    func testPageAfterSubmitWithRealTextExtracts() {
+        XCTAssertEqual(
+            decide("page:42000", didLeaveHomepage: true),
+            .attemptExtract)
+    }
+
+    // MARK: - Homepage submit (before leaving)
+
+    func testHomepageBeforeSubmitSubmits() {
+        XCTAssertEqual(decide("homepage:1200"), .submitHomepage)
+    }
+
+    func testHomepageBeforeSubmitWithResolvedSnapshotLoadsIt() {
+        XCTAssertEqual(
+            decide("homepage:1200", hasResolvedSnapshot: true),
+            .loadResolvedSnapshot)
+    }
+
+    func testHomepageWithLongTextBeforeSubmitStillSubmits() {
+        // A long homepage must not be mistaken for an article before we've submitted.
+        XCTAssertEqual(decide("homepage:90000"), .submitHomepage)
+    }
+
+    // MARK: - Challenge
+
+    func testChallengeWaitsForUser() {
+        XCTAssertEqual(decide("challenge"), .challenge)
+    }
+
+    // MARK: - Errors
+
+    func testErrorBeforeChallengeRecoversOnce() {
+        XCTAssertEqual(decide("error"), .recoverError)
+    }
+
+    func testErrorAfterChallengeIsTerminal() {
+        XCTAssertEqual(
+            decide("error", didSeeChallenge: true),
+            .cannotArchive)
+    }
+
+    func testErrorAfterRetrySpentIsTerminal() {
+        XCTAssertEqual(
+            decide("error", didRecoverFromError: true),
+            .cannotArchive)
+    }
+
+    // MARK: - Plain page length gate
+
+    func testShortPageWaits() {
+        XCTAssertEqual(decide("page:100"), .wait)
+    }
+
+    func testPageAtThresholdWaits() {
+        // Strictly greater-than: exactly 1500 is not enough.
+        XCTAssertEqual(decide("page:1500"), .wait)
+    }
+
+    func testPageJustOverThresholdExtracts() {
+        XCTAssertEqual(decide("page:1501"), .attemptExtract)
+    }
+
+    func testMalformedStageWaits() {
+        XCTAssertEqual(decide("page:"), .wait)
+        XCTAssertEqual(decide("page"), .wait)
+    }
+}

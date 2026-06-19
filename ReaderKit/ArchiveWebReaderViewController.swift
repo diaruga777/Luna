@@ -424,47 +424,83 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
                 self.coveredPollCount += 1
                 if self.coveredPollCount > Self.stallPollLimit { self.showRateLimit(); return }
             }
-            if stage == "challenge" { self.didSeeChallenge = true; return }
-
-            if stage == "error" {
-                // An error after a solved CAPTCHA (or after we already retried once)
-                // means archive.today genuinely can't capture this page — stop and
-                // tell the user, rather than loop them through another CAPTCHA.
-                if self.didSeeChallenge || self.didRecoverFromError {
-                    SharedDiagnosticLog.record("archive: error persists → cannot archive", category: "archive")
-                    self.showCannotArchive()
-                    return
-                }
-                // A stale submit token before any CAPTCHA — re-run the submit once.
-                self.didRecoverFromError = true
-                self.didLeaveHomepage = false
-                SharedDiagnosticLog.record("archive: Invalid interception ID → retrying", category: "archive")
-                self.webView.load(URLRequest(url: Self.archiveHomepage))
-                return
-            }
-
-            if stage.hasPrefix("homepage") {
-                // Set synchronously so a poll tick during the async submit can't
-                // double-fire. Error-recovery resets it to retry once.
-                guard !self.didLeaveHomepage else { return }
+            switch Self.decideStage(
+                stage,
+                didLeaveHomepage: self.didLeaveHomepage,
+                hasResolvedSnapshot: self.resolvedSnapshotURL != nil,
+                didSeeChallenge: self.didSeeChallenge,
+                didRecoverFromError: self.didRecoverFromError
+            ) {
+            case .wait:
+                break   // not ready (challenge held / short page) — keep polling
+            case .challenge:
+                self.didSeeChallenge = true   // the user is solving the CAPTCHA
+            case .submitHomepage:
+                self.didLeaveHomepage = true   // set synchronously so a poll tick mid-submit can't re-fire
+                self.submitURLOnHomepage()
+            case .loadResolvedSnapshot:
                 self.didLeaveHomepage = true
                 if let snapshot = self.resolvedSnapshotURL {
                     SharedDiagnosticLog.record(
                         "archive: homepage cleared → loading resolved snapshot \(snapshot.absoluteString)",
                         category: "archive")
                     self.webView.load(URLRequest(url: snapshot))
-                } else {
-                    self.submitURLOnHomepage()
                 }
-                return
+            case .recoverError:
+                // A stale submit token before any CAPTCHA — re-run the submit once.
+                self.didRecoverFromError = true
+                self.didLeaveHomepage = false
+                SharedDiagnosticLog.record("archive: Invalid interception ID → retrying", category: "archive")
+                self.webView.load(URLRequest(url: Self.archiveHomepage))
+            case .cannotArchive:
+                SharedDiagnosticLog.record("archive: error persists → cannot archive", category: "archive")
+                self.showCannotArchive()
+            case .attemptExtract:
+                self.isExtracting = true
+                self.extractAndSave()
             }
-
-            // page:<len> — a snapshot/article once it has real text.
-            let length = Int(stage.split(separator: ":").last ?? "") ?? 0
-            guard length > 1500 else { return }
-            self.isExtracting = true
-            self.extractAndSave()
         }
+    }
+
+    /// What `checkStage` should do for a probed page `stage`, given flow state.
+    /// Pure + `Equatable` so the decision is unit-testable without a live web view.
+    ///
+    /// Crucially, after the homepage has been submitted (`didLeaveHomepage`), a
+    /// page that still shows the `input[name=url]` box (reported as `homepage:<len>`)
+    /// is NOT treated as the homepage again — every archive.today page carries that
+    /// box in its chrome, so it would otherwise pin us on a spinner forever once the
+    /// `/wip/` progress shell renders the real article. We fall through to the
+    /// length gate and let `extractAndSave`'s readability check be the final arbiter.
+    enum StageDecision: Equatable {
+        case wait                  // challenge held, or page too short — keep polling
+        case challenge             // a CAPTCHA gate is up — reveal the page for the user
+        case submitHomepage        // on the homepage form, not yet submitted — submit the URL
+        case loadResolvedSnapshot  // homepage cleared and a TimeMap snapshot is resolved — load it
+        case recoverError          // stale submit token before any CAPTCHA — retry once
+        case cannotArchive         // error after a CAPTCHA, or the retry is spent — terminal
+        case attemptExtract        // page has real text — try extracting the article
+    }
+
+    static func decideStage(
+        _ stage: String,
+        didLeaveHomepage: Bool,
+        hasResolvedSnapshot: Bool,
+        didSeeChallenge: Bool,
+        didRecoverFromError: Bool,
+        minExtractLength: Int = 1500
+    ) -> StageDecision {
+        if stage == "challenge" { return .challenge }
+        if stage == "error" {
+            // An error after a solved CAPTCHA (or after we already retried once)
+            // means archive.today genuinely can't capture this page; otherwise it's
+            // a stale submit token worth one silent retry.
+            return (didSeeChallenge || didRecoverFromError) ? .cannotArchive : .recoverError
+        }
+        if stage.hasPrefix("homepage"), !didLeaveHomepage {
+            return hasResolvedSnapshot ? .loadResolvedSnapshot : .submitHomepage
+        }
+        let length = Int(stage.split(separator: ":").last ?? "") ?? 0
+        return length > minExtractLength ? .attemptExtract : .wait
     }
 
     /// Replicates the manual flow: type the article URL into the homepage's

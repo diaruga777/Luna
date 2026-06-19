@@ -87,6 +87,46 @@ struct ArticleFetcher {
         return URL(string: inner)
     }
 
+    /// Resolves the URL of the NEWEST archive.today snapshot via the Memento
+    /// TimeMap (`/timemap/<url>`) — a plain link-format text endpoint that lives on
+    /// archive.today's READ path, so it's far less likely to be CAPTCHA-gated than
+    /// the `/newest/<url>` redirect (which triggers archive.today's self-reloading
+    /// challenge). Loading the resolved *specific* snapshot is the reliable way in;
+    /// returns nil when the TimeMap is unreachable/gated/empty (caller falls back).
+    func resolveNewestArchiveSnapshot(for url: URL) async -> URL? {
+        let target = Self.canonicalForArchiving(url).absoluteString
+        guard let timeMapURL = URL(string: "https://archive.today/timemap/\(target)") else { return nil }
+        var request = URLRequest(url: timeMapURL, timeoutInterval: 10)
+        request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              data.count <= Self.maxBytes,
+              let text = String(data: data, encoding: .utf8)
+        else { return nil }
+        return Self.newestMemento(fromTimeMap: text)
+    }
+
+    /// Parses an RFC 7089 Memento TimeMap (link-format) and returns the newest
+    /// snapshot — the `rel="last memento"` entry, else the last memento listed.
+    /// Pure (no I/O) so the parsing is unit-testable. Handles the commas inside
+    /// `datetime="…, …"` by capturing each `<url>` and the params up to the next `<`.
+    static func newestMemento(fromTimeMap text: String) -> URL? {
+        guard let regex = try? NSRegularExpression(pattern: "<([^>]+)>([^<]*)") else { return nil }
+        let ns = text as NSString
+        var lastMemento: URL?
+        var explicitLast: URL?
+        regex.enumerateMatches(in: text, range: NSRange(location: 0, length: ns.length)) { match, _, _ in
+            guard let match, match.numberOfRanges >= 3 else { return }
+            let urlString = ns.substring(with: match.range(at: 1))
+            let params = ns.substring(with: match.range(at: 2)).lowercased()
+            guard params.contains("rel="), params.contains("memento"),
+                  let memento = URL(string: urlString), isArchiveTodayURL(memento) else { return }
+            lastMemento = memento
+            if params.contains("last memento") { explicitLast = memento }
+        }
+        return explicitLast ?? lastMemento
+    }
+
     /// Hosts that hard-paywall or aggressively bot-block, so a direct/background
     /// fetch yields no readable body. For these an unreadable result is parked for a
     /// user-solved archive CAPTCHA (`.needsCaptcha`) rather than failed outright —

@@ -37,16 +37,24 @@ route is just a smaller manifest footprint.) **ITMS-90849 gotcha**: the manifest
 with the opaque code 90849 (NOT content_scripts/scripting, which were red herrings). Roles by
 host:
 - **On a paywall host**: injects a Queue-indigo (`#5856D6`) "Read in Queue" capsule button.
-  Tap → `runtime.sendMessage({type:"queueRedirect", url})` → background redirects the tab to
-  `https://archive.is/newest/<url>`.
+  Tap → `runtime.sendMessage({type:"queueRedirect", url})` → `background.handleQueueRedirect`
+  resolves the **specific** newest snapshot via the Memento TimeMap (`resolveSnapshot` /
+  `newestMemento` — a clean read endpoint that avoids the loop-prone `/newest/` redirect) and
+  navigates the tab straight there; if the TimeMap doesn't resolve, it falls back to warming
+  up `https://archive.is/` (homepage) and `content.js` advances `/` → `/newest/<canonical>`
+  (sessionStorage-guarded against a redirect loop). URLs are canonicalized (tracking params /
+  fragment stripped). See `archive-today-research.md`.
 - **On an archive host**: asks background `{type:"isQueueRedirect"}`. **Only if this tab was
-  redirected by our button** (never an arbitrary archive.is visit) does it proceed: polls
+  redirected by our button** (never an arbitrary archive.is visit) does it proceed. On the
+  warm-up homepage (`path == "/"`) it advances to `/newest/`; on a snapshot path it polls
   until the real article is loaded (past the CAPTCHA — `isChallengePage()` guards, innerText
-  ≥ 1500), then strips the page to compact HTML (`reducedHTML()` drops
-  `script/style/svg/iframe/link/form` + every inline `style`/`class` attr — the bulk of
-  archive.today's ~1 MB), relays `{type:"archiveContent", url, title, html|text}`, and shows
-  a "Saved to Queue" banner with an "Open Queue" button (`clickreader://saved`). Falls back
-  to `innerText` if stripped HTML still exceeds ~950 KB (native-message limit).
+  ≥ 1500), forces `width=device-width` (`fixViewport()` — archive pages ship no mobile
+  viewport, so the phone renders them desktop-width and tiny), strips the page to compact HTML
+  (`reducedHTML()` drops `script/style/svg/iframe/link/form` + every inline `style`/`class`
+  attr — the bulk of archive.today's ~1 MB), relays `{type:"archiveContent", url, title,
+  html|text}`, and shows a large "Saved to Queue" banner with a prominent white "Open Queue"
+  button (`clickreader://saved`). Falls back to `innerText` if stripped HTML still exceeds
+  ~950 KB (native-message limit).
 
 `background.js`: keeps a `queueRedirects` map (tabId → original URL) so only our redirects
 harvest; relays content→native via `sendNativeMessage`. `SafariWebExtensionHandler` routes a

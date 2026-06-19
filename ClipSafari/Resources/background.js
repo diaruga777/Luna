@@ -35,6 +35,39 @@ function hostInList(hostname, list) {
     return list.some(function (d) { return h === d || h.endsWith("." + d); });
 }
 
+// Resolves the newest archive.today snapshot via the Memento TimeMap — a clean
+// read endpoint, far less likely to be CAPTCHA-gated than the loop-prone
+// /newest/ redirect. Returns null when unreachable/gated/empty.
+async function resolveSnapshot(url) {
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(function () { controller.abort(); }, 7000);
+        const resp = await fetch("https://archive.today/timemap/" + url, { signal: controller.signal });
+        clearTimeout(timer);
+        if (!resp.ok) { return null; }
+        return newestMemento(await resp.text());
+    } catch (e) {
+        return null;
+    }
+}
+
+// Parses an RFC 7089 TimeMap (link-format): the rel="last memento" entry, else
+// the last memento listed. Captures params up to the next "<" to survive the
+// commas inside datetime="…, …".
+function newestMemento(text) {
+    const re = /<([^>]+)>([^<]*)/g;
+    let match, last = null, explicitLast = null;
+    while ((match = re.exec(text)) !== null) {
+        const url = match[1];
+        const params = (match[2] || "").toLowerCase();
+        if (params.indexOf("rel=") < 0 || params.indexOf("memento") < 0) { continue; }
+        if (!/^https?:\/\/archive\.(is|ph|md|today|li|vn|fo)\//i.test(url)) { continue; }
+        last = url;
+        if (params.indexOf("last memento") >= 0) { explicitLast = url; }
+    }
+    return explicitLast || last;
+}
+
 // Drops the fragment and known tracking params so archive.today resolves the
 // canonical snapshot (mirrors ArticleFetcher.canonicalForArchiving).
 function canonicalize(raw) {
@@ -46,6 +79,15 @@ function canonicalize(raw) {
     } catch (e) {
         return raw;
     }
+}
+
+// Sends a tab to the article's archive snapshot: the specific TimeMap-resolved
+// snapshot when available, else the homepage (content.js then warms up → /newest/).
+async function handleQueueRedirect(tabId, rawURL) {
+    const canonical = canonicalize(rawURL);
+    queueRedirects[tabId] = canonical;
+    const snapshot = await resolveSnapshot(canonical);
+    browser.tabs.update(tabId, { url: snapshot || "https://archive.is/" });
 }
 
 function report(url) {
@@ -99,13 +141,12 @@ browser.runtime.onMessage.addListener(function (message, sender) {
     if (!message || !message.type) { return; }
     const tabId = sender && sender.tab ? sender.tab.id : null;
 
-    // The button was tapped: remember the (canonicalized) target, then send the tab
-    // to the archive.today HOMEPAGE first. Hitting `…/newest/<url>` cold triggers
-    // archive.today's self-reloading CAPTCHA loop; warming up the homepage clears
-    // the gate, and the content script then advances to the snapshot.
+    // The button was tapped: resolve the specific newest snapshot via the TimeMap
+    // and go straight there (specific snapshots don't trigger the /newest/ reload
+    // loop). If resolution fails, fall back to warming up the homepage, from which
+    // content.js advances to /newest/. Fire-and-forget (no response needed).
     if (message.type === "queueRedirect" && tabId != null && message.url) {
-        queueRedirects[tabId] = canonicalize(message.url);
-        browser.tabs.update(tabId, { url: "https://archive.is/" });
+        handleQueueRedirect(tabId, message.url);
         return;
     }
 

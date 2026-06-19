@@ -75,6 +75,32 @@ final class ArticleFetcherTests: XCTestCase {
         XCTAssertEqual(guess, "Big Chip Shortage Deepens")
     }
 
+    // MARK: - Memento TimeMap parsing
+
+    func testNewestMementoPrefersLastMementoEntry() {
+        let timeMap = """
+        <http://archive.today/timemap/https://www.wsj.com/x>;rel="self";type="application/link-format",
+        <https://www.wsj.com/x>;rel="original",
+        <https://archive.ph/abc11>;rel="first memento";datetime="Mon, 01 Jan 2024 00:00:00 GMT",
+        <https://archive.ph/def22>;rel="memento";datetime="Wed, 05 Mar 2025 12:00:00 GMT",
+        <https://archive.ph/xyz99>;rel="last memento";datetime="Tue, 18 Jun 2026 23:28:44 GMT"
+        """
+        XCTAssertEqual(ArticleFetcher.newestMemento(fromTimeMap: timeMap), url("https://archive.ph/xyz99"))
+    }
+
+    func testNewestMementoFallsBackToLastListedWhenNoExplicitLast() {
+        let timeMap = """
+        <https://archive.ph/abc11>;rel="first memento";datetime="Mon, 01 Jan 2024 00:00:00 GMT",
+        <https://archive.ph/def22>;rel="memento";datetime="Wed, 05 Mar 2025 12:00:00 GMT"
+        """
+        XCTAssertEqual(ArticleFetcher.newestMemento(fromTimeMap: timeMap), url("https://archive.ph/def22"))
+    }
+
+    func testNewestMementoNilForNonTimeMapOrChallengeHTML() {
+        XCTAssertNil(ArticleFetcher.newestMemento(fromTimeMap: "<html><body>Why do I have to complete a CAPTCHA</body></html>"))
+        XCTAssertNil(ArticleFetcher.newestMemento(fromTimeMap: ""))
+    }
+
     func testTitleGuessFallsBackToHostWhenSlugIsOpaque() {
         // FT content URLs are bare UUIDs — no humanizable slug, so fall back to host.
         let guess = ArticleFetcher.articleTitleGuess(

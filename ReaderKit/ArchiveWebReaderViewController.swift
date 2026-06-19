@@ -48,6 +48,11 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// flow that works manually) clears the gate so the snapshot loads cleanly.
     /// True once we've left the warm-up homepage for the snapshot.
     private var didRequestSnapshot = false
+    /// The specific newest-snapshot URL resolved via the Memento TimeMap (a clean
+    /// read endpoint), used in preference to the loop-prone `…/newest/<url>`
+    /// redirect once the homepage warm-up clears the gate. Nil → fall back to
+    /// `/newest/`.
+    private var resolvedSnapshotURL: URL?
 
     /// Called when the user dismisses (Done). The main app dismisses the modal;
     /// extensions use this to complete their extension request. Defaults to
@@ -206,7 +211,21 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         ])
 
         progress.startAnimating()
-        loadArchive()
+        // Resolve the specific newest snapshot via the TimeMap first (clean read
+        // endpoint), then start the homepage warm-up. The web view loads the
+        // resolved snapshot once the homepage clears the gate.
+        Task { [weak self] in
+            guard let self else { return }
+            let snapshot = await ArticleFetcher().resolveNewestArchiveSnapshot(for: self.articleURL)
+            await MainActor.run {
+                self.resolvedSnapshotURL = snapshot
+                if let snapshot {
+                    SharedDiagnosticLog.record(
+                        "archive: TimeMap resolved snapshot \(snapshot.absoluteString)", category: "archive")
+                }
+                self.loadArchive()
+            }
+        }
     }
 
     private static let archiveHomepage = URL(string: "https://archive.is/")! // valid constant
@@ -306,7 +325,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             // Warm-up stage: the homepage has loaded and cleared the gate (not the
             // CAPTCHA challenge) → now request the actual snapshot. Done once.
             if Self.isArchiveHomepage(currentURL), !self.didRequestSnapshot, length > 200,
-               let snapshot = Self.archiveURL(for: self.articleURL) {
+               let snapshot = self.resolvedSnapshotURL ?? Self.archiveURL(for: self.articleURL) {
                 self.didRequestSnapshot = true
                 SharedDiagnosticLog.record(
                     "archive: homepage cleared → loading snapshot \(snapshot.absoluteString)",

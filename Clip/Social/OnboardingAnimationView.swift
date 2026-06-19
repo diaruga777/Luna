@@ -391,24 +391,47 @@ final class OnboardingAnimationView: UIView {
             bar(width: 0.93, height: 5), bar(width: 0.6, height: 5)])
         lines.axis = .vertical
         lines.spacing = 7
-        lines.alignment = .leading
+        lines.alignment = .fill   // .fill so the bar wrappers get a width (else 0-wide/invisible)
         lines.setCustomSpacing(12, after: headline)
         lines.translatesAutoresizingMaskIntoConstraints = false
         page.addSubview(lines)
 
+        // Safari bottom chrome: a URL pill above a row of toolbar icons
+        // (back, forward, Share, book, tabs) — matching real Safari.
         let toolbar = UIView()
         toolbar.backgroundColor = .systemBackground
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(toolbar)
+
+        let urlPill = UIView()
+        urlPill.backgroundColor = .secondarySystemBackground
+        urlPill.layer.cornerRadius = 9
+        urlPill.layer.cornerCurve = .continuous
+        urlPill.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.addSubview(urlPill)
+        // A grey placeholder bar stands in for the URL text — the animation uses
+        // no literal text anywhere, just grey boxes where text would be.
+        let urlPlaceholder = UIView()
+        urlPlaceholder.backgroundColor = UIColor.label.withAlphaComponent(0.3)
+        urlPlaceholder.layer.cornerRadius = 3
+        urlPlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        urlPill.addSubview(urlPlaceholder)
+
         let shareIcon = UIImageView(image: UIImage(
-            systemName: "square.and.arrow.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16)))
-        shareIcon.tintColor = accent
+            systemName: "square.and.arrow.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 15)))
+        shareIcon.tintColor = accent   // the icon we tap
         shareIcon.contentMode = .center
-        shareIcon.translatesAutoresizingMaskIntoConstraints = false
-        toolbar.addSubview(shareIcon)
+        let icons = UIStackView(arrangedSubviews: [
+            toolbarIcon("chevron.left"), toolbarIcon("chevron.right"),
+            shareIcon, toolbarIcon("book"), toolbarIcon("square.on.square")])
+        icons.axis = .horizontal
+        icons.distribution = .equalSpacing
+        icons.alignment = .center
+        icons.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.addSubview(icons)
 
         axShareRipple.backgroundColor = accent.withAlphaComponent(0.3)
-        axShareRipple.layer.cornerRadius = 16
+        axShareRipple.layer.cornerRadius = 15
         axShareRipple.alpha = 0
         axShareRipple.translatesAutoresizingMaskIntoConstraints = false
         toolbar.addSubview(axShareRipple)
@@ -450,13 +473,13 @@ final class OnboardingAnimationView: UIView {
         axRowScroll.addSubview(axReadHighlight)
         axRowScroll.addSubview(axRowList)
         // The "Read in Queue" row sits low in the list, so the list must scroll up.
-        let readRow = axActionRow(symbol: "book.fill", title: "Read in Queue", highlighted: true)
-        for row in [axActionRow(symbol: "doc.on.doc", title: "Copy"),
-                    axActionRow(symbol: "eyeglasses", title: "Add to Reading List"),
-                    axActionRow(symbol: "plus.square.on.square", title: "Add to Home Screen"),
-                    axActionRow(symbol: "pencil.tip.crop.circle", title: "Markup"),
+        let readRow = axActionRow(symbol: "book.fill", placeholderWidth: 64, highlighted: true)
+        for row in [axActionRow(symbol: "doc.on.doc", placeholderWidth: 34),
+                    axActionRow(symbol: "eyeglasses", placeholderWidth: 82),
+                    axActionRow(symbol: "plus.square.on.square", placeholderWidth: 94),
+                    axActionRow(symbol: "pencil.tip.crop.circle", placeholderWidth: 50),
                     readRow,
-                    axActionRow(symbol: "printer", title: "Print")] {
+                    axActionRow(symbol: "printer", placeholderWidth: 38)] {
             axRowList.addArrangedSubview(row)
         }
 
@@ -471,19 +494,19 @@ final class OnboardingAnimationView: UIView {
         cardBar.backgroundColor = .secondarySystemBackground
         cardBar.translatesAutoresizingMaskIntoConstraints = false
         axActionCard.addSubview(cardBar)
-        let doneLabel = UILabel()
-        doneLabel.text = "Done"
-        doneLabel.font = .systemFont(ofSize: 11, weight: .semibold)
-        doneLabel.textColor = accent
-        doneLabel.translatesAutoresizingMaskIntoConstraints = false
-        cardBar.addSubview(doneLabel)
+        // A grey placeholder bar stands in for the "Done" button text.
+        let donePlaceholder = UIView()
+        donePlaceholder.backgroundColor = UIColor.label.withAlphaComponent(0.3)
+        donePlaceholder.layer.cornerRadius = 3
+        donePlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        cardBar.addSubview(donePlaceholder)
         let cardHeadline = bar(width: 0.8, height: 10, color: .label.withAlphaComponent(0.8))
         let cardLines = UIStackView(arrangedSubviews: [
             cardHeadline, bar(width: 0.96, height: 5), bar(width: 0.92, height: 5),
             bar(width: 0.95, height: 5), bar(width: 0.7, height: 5)])
         cardLines.axis = .vertical
         cardLines.spacing = 8
-        cardLines.alignment = .leading
+        cardLines.alignment = .fill   // .fill so the bar wrappers get a width (else invisible)
         cardLines.setCustomSpacing(13, after: cardHeadline)
         cardLines.translatesAutoresizingMaskIntoConstraints = false
         axActionCard.addSubview(cardLines)
@@ -504,13 +527,23 @@ final class OnboardingAnimationView: UIView {
             toolbar.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
             toolbar.bottomAnchor.constraint(equalTo: phone.bottomAnchor),
-            toolbar.heightAnchor.constraint(equalToConstant: 34),
-            shareIcon.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
-            shareIcon.centerXAnchor.constraint(equalTo: toolbar.centerXAnchor),
+            toolbar.heightAnchor.constraint(equalToConstant: 54),
+            urlPill.topAnchor.constraint(equalTo: toolbar.topAnchor, constant: 6),
+            urlPill.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 12),
+            urlPill.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -12),
+            urlPill.heightAnchor.constraint(equalToConstant: 19),
+            urlPlaceholder.centerXAnchor.constraint(equalTo: urlPill.centerXAnchor),
+            urlPlaceholder.centerYAnchor.constraint(equalTo: urlPill.centerYAnchor),
+            urlPlaceholder.widthAnchor.constraint(equalToConstant: 46),
+            urlPlaceholder.heightAnchor.constraint(equalToConstant: 6),
+            icons.topAnchor.constraint(equalTo: urlPill.bottomAnchor, constant: 6),
+            icons.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 16),
+            icons.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -16),
+            icons.bottomAnchor.constraint(lessThanOrEqualTo: toolbar.bottomAnchor, constant: -4),
             axShareRipple.centerXAnchor.constraint(equalTo: shareIcon.centerXAnchor),
             axShareRipple.centerYAnchor.constraint(equalTo: shareIcon.centerYAnchor),
-            axShareRipple.widthAnchor.constraint(equalToConstant: 32),
-            axShareRipple.heightAnchor.constraint(equalToConstant: 32),
+            axShareRipple.widthAnchor.constraint(equalToConstant: 30),
+            axShareRipple.heightAnchor.constraint(equalToConstant: 30),
 
             axShareSheet.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
             axShareSheet.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
@@ -543,12 +576,23 @@ final class OnboardingAnimationView: UIView {
             cardBar.leadingAnchor.constraint(equalTo: axActionCard.leadingAnchor),
             cardBar.trailingAnchor.constraint(equalTo: axActionCard.trailingAnchor),
             cardBar.heightAnchor.constraint(equalToConstant: 30),
-            doneLabel.leadingAnchor.constraint(equalTo: cardBar.leadingAnchor, constant: 12),
-            doneLabel.centerYAnchor.constraint(equalTo: cardBar.centerYAnchor),
+            donePlaceholder.leadingAnchor.constraint(equalTo: cardBar.leadingAnchor, constant: 12),
+            donePlaceholder.centerYAnchor.constraint(equalTo: cardBar.centerYAnchor),
+            donePlaceholder.widthAnchor.constraint(equalToConstant: 26),
+            donePlaceholder.heightAnchor.constraint(equalToConstant: 6),
             cardLines.topAnchor.constraint(equalTo: cardBar.bottomAnchor, constant: 16),
             cardLines.leadingAnchor.constraint(equalTo: axActionCard.leadingAnchor, constant: 16),
             cardLines.trailingAnchor.constraint(equalTo: axActionCard.trailingAnchor, constant: -16),
         ])
+    }
+
+    /// A grey Safari-toolbar icon (back/forward/book/tabs).
+    private func toolbarIcon(_ symbol: String) -> UIImageView {
+        let icon = UIImageView(image: UIImage(
+            systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 14)))
+        icon.tintColor = .secondaryLabel
+        icon.contentMode = .center
+        return icon
     }
 
     /// A small grey app-icon circle for the share sheet's top row.
@@ -562,8 +606,10 @@ final class OnboardingAnimationView: UIView {
         return icon
     }
 
-    /// A share-sheet action row: icon + label, ~28pt tall (Queue's row is tinted).
-    private func axActionRow(symbol: String, title: String, highlighted: Bool = false) -> UIView {
+    /// A share-sheet action row: a grey text-placeholder bar on the left and a
+    /// trailing SF icon, ~28pt tall (no literal text). `placeholderWidth` varies
+    /// per row so the list reads like distinct actions; Queue's row is tinted.
+    private func axActionRow(symbol: String, placeholderWidth: CGFloat, highlighted: Bool = false) -> UIView {
         let row = UIView()
         row.translatesAutoresizingMaskIntoConstraints = false
         row.heightAnchor.constraint(equalToConstant: 28).isActive = true
@@ -573,11 +619,13 @@ final class OnboardingAnimationView: UIView {
         icon.tintColor = color
         icon.contentMode = .center
         icon.translatesAutoresizingMaskIntoConstraints = false
-        let label = UILabel()
-        label.text = title
-        label.font = .systemFont(ofSize: 12, weight: highlighted ? .semibold : .regular)
-        label.textColor = color
-        let stack = UIStackView(arrangedSubviews: [label, UIView(), icon])
+        let labelPlaceholder = UIView()
+        labelPlaceholder.backgroundColor = color.withAlphaComponent(highlighted ? 0.7 : 0.35)
+        labelPlaceholder.layer.cornerRadius = 3
+        labelPlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        labelPlaceholder.widthAnchor.constraint(equalToConstant: placeholderWidth).isActive = true
+        labelPlaceholder.heightAnchor.constraint(equalToConstant: 6).isActive = true
+        let stack = UIStackView(arrangedSubviews: [labelPlaceholder, UIView(), icon])
         stack.alignment = .center
         stack.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(stack)
@@ -601,6 +649,7 @@ final class OnboardingAnimationView: UIView {
             axShareSheet.transform = sheetDrop
             axActionCard.transform = cardDrop
             axRowList.transform = .identity
+            axReadHighlight.transform = .identity
             axReadHighlight.alpha = 0
             axShareRipple.alpha = 0
             axShareRipple.transform = CGAffineTransform(scaleX: 0.3, y: 0.3)
@@ -620,11 +669,14 @@ final class OnboardingAnimationView: UIView {
             UIView.addKeyframe(withRelativeStartTime: 0.08, relativeDuration: 0.14) {
                 self.axShareSheet.transform = .identity
             }
-            // Scroll to the "Read in Queue" action.
+            // Scroll to the "Read in Queue" action. The highlight is anchored to the
+            // row's pre-scroll layout frame, so it must take the SAME transform to
+            // stay aligned with the (transformed) row.
             UIView.addKeyframe(withRelativeStartTime: 0.34, relativeDuration: 0.14) {
                 self.axRowList.transform = listScroll
+                self.axReadHighlight.transform = listScroll
             }
-            // Tap it (highlight).
+            // Tap it (highlight on the "Read in Queue" row).
             UIView.addKeyframe(withRelativeStartTime: 0.50, relativeDuration: 0.06) {
                 self.axReadHighlight.alpha = 1
             }
@@ -637,6 +689,7 @@ final class OnboardingAnimationView: UIView {
                 self.axActionCard.transform = cardDrop
                 self.axShareSheet.transform = sheetDrop
                 self.axRowList.transform = .identity
+                self.axReadHighlight.transform = .identity
                 self.axReadHighlight.alpha = 0
             }
         }

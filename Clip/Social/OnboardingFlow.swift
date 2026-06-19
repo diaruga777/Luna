@@ -80,7 +80,7 @@ enum OnboardingFlow {
         OnboardingStepViewController(
             symbol: "bolt.badge.clock",
             title: "Save anything, instantly",
-            body: "Press the action button to save, download, or share whatever is on your screen.\n\nInstall the shortcut and assign it to your Action Button:\n\nSettings → Action Button → Shortcut → \"\(BundledShortcut.displayName)\".\n\nEdit the shortcut to your liking to customize your Action Button!",
+            body: "Press the Action Button to save what's on your screen.\n\nAssign our customizable shortcut to your Action Button:Settings → Action Button → Shortcut → \"\(BundledShortcut.displayName)\".",
             primary: .init(title: "Install Shortcut") { step in
                 BundledShortcut.presentInstaller(from: step)
             },
@@ -96,8 +96,8 @@ enum OnboardingFlow {
     private static func actionExtensionStep(onFinished: @escaping () -> Void) -> UIViewController {
         OnboardingStepViewController(
             symbol: "square.and.arrow.up",
-            title: "Read anything in Queue",
-            body: "Share articles and more into Queue to unlock and read them instantly!\n\nTap \"Edit Actions\" and add Queue to your favorites to get to reading even faster.",
+            title: "Share to your Queue",
+            body: "Send in anything to read instantly!\n\nTap \"Edit Actions\" and add Queue to favorites to make it even easier.",
             primary: nil,
             continueTitle: "Done",
             animation: .actionExtension,

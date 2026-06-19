@@ -47,6 +47,9 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
     /// Caps the search bar above the bottom safe area; constant set from the window
     /// safe area in `viewDidLayoutSubviews`.
     private var barBottomCap: NSLayoutConstraint?
+    /// The host's known top safe-area inset (status bar), passed in so the first
+    /// layout is correct even before this hosted view's own window insets resolve.
+    var topSafeAreaInset: CGFloat = 0
     /// Runs semantic embeds one at a time, off-main (the NL model isn't reentrant).
     private let semanticQueue = DispatchQueue(label: "com.hpiddy.clip.search.semantic", qos: .userInitiated)
     /// Bumps on every keystroke so a late semantic result for an old query is dropped.
@@ -187,7 +190,7 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
         super.viewDidLayoutSubviews()
         // Use the WINDOW's safe area (authoritative) rather than this hosted view's.
         let safe = view.window?.safeAreaInsets ?? view.safeAreaInsets
-        let topInset = safe.top + 28
+        let topInset = max(safe.top, topSafeAreaInset) + 28
         if abs(tableView.contentInset.top - topInset) > 0.5 {
             tableView.contentInset.top = topInset
             tableView.verticalScrollIndicatorInsets.top = topInset

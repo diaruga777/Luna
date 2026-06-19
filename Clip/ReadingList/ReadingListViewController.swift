@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import SafariServices
 import UIKit
 
 /// The home screen. Items are grouped into sections in FIFO (oldest-saved
@@ -572,6 +573,7 @@ final class ReadingListViewController: UITableViewController {
         // VC that owns the host view avoids UIKit's appearance-forwarding assertion.
         guard searchController == nil, let nav = navigationController else { return }
         let search = SearchViewController(engine: ReadingListSearchEngine(), presenter: self)
+        search.topSafeAreaInset = nav.view.safeAreaInsets.top   // status bar — correct from first layout
         search.onExit = { [weak self] in self?.dismissSearch() }
         search.onOpen = { [weak self] item in
             guard let self else { return }
@@ -963,13 +965,18 @@ final class ReadingListViewController: UITableViewController {
     /// the archive web view, else the in-app reader pushed on `presenter`'s nav.
     func open(_ item: ReadingListItem, presenter: UIViewController) {
         if openItem(item, presentingFrom: presenter) { return }
-        // A hard-paywalled article whose archive snapshot needs a CAPTCHA: open its
-        // archive.today snapshot in a web view so the user can solve it. Once content
-        // is extracted the item flips to `.ready` and the row updates itself.
+        // A hard-paywalled article whose archive snapshot needs a CAPTCHA: open the
+        // archive.today snapshot in SFSafariViewController — a REAL Safari instance
+        // (genuine Safari process/fingerprint), so it passes archive.today's
+        // Cloudflare check the way Safari does, instead of looping like our own
+        // WKWebView (which Cloudflare fingerprints as a webview and never clears).
         if item.state == .needsCaptcha, let url = item.url {
-            let archive = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
-            archive.onOpenInBrowser = { UIApplication.shared.open($0) }
-            presenter.present(UINavigationController(rootViewController: archive), animated: true)
+            let target = ArticleFetcher.canonicalForArchiving(url).absoluteString
+            if let archiveURL = URL(string: "https://archive.is/newest/\(target)"),
+               archiveURL.host == "archive.is" {
+                presenter.present(SFSafariViewController(url: archiveURL), animated: true)
+            }
+            store.markReadState(.opened, for: item.id)
             return
         }
         guard item.state == .ready, let content = store.content(for: item) else { return }

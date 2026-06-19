@@ -79,11 +79,22 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         // survives the post-CAPTCHA reload AND later launches/articles.
         configuration.websiteDataStore = .default()
         self.webView = WKWebView(frame: .zero, configuration: configuration)
-        // Present as a real mobile Safari (UA with the `Safari/` token); the default
-        // WKWebView UA omits it, which makes Cloudflare re-challenge after every
-        // solve. Must match across all requests, so set it once here.
-        self.webView.customUserAgent = ArticleFetcher.safariUserAgent
+        // Present as real mobile Safari MATCHING THIS DEVICE's iOS version. A
+        // hardcoded/stale UA (e.g. claiming iOS 26 on an iOS 27 device) is a UA/OS
+        // mismatch that Cloudflare's bot check flags → endless re-challenge, where
+        // real Safari (consistent UA) passes.
+        self.webView.customUserAgent = Self.deviceSafariUserAgent
         super.init(nibName: nil, bundle: nil)
+    }
+
+    /// A mobile-Safari User-Agent built from the running iOS version so it never
+    /// mismatches the device (which would trip archive.today's Cloudflare check).
+    private static var deviceSafariUserAgent: String {
+        let version = UIDevice.current.systemVersion                       // e.g. "27.0"
+        let osToken = version.replacingOccurrences(of: ".", with: "_")     // "27_0"
+        let major = version.split(separator: ".").first.map(String.init) ?? version
+        return "Mozilla/5.0 (iPhone; CPU iPhone OS \(osToken) like Mac OS X) "
+            + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(major).0 Mobile/15E148 Safari/604.1"
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -100,13 +111,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         if onOpenInBrowser != nil {
             navigationItem.rightBarButtonItem = UIBarButtonItem(
                 image: UIImage(systemName: "safari"),
-                primaryAction: UIAction { [weak self] _ in
-                    guard let self else { return }
-                    let target = ArticleFetcher.canonicalForArchiving(self.articleURL).absoluteString
-                    guard let url = self.webView.url ?? URL(string: "https://archive.ph/newest/\(target)")
-                    else { return }
-                    self.onOpenInBrowser?(url)
-                })
+                primaryAction: UIAction { [weak self] _ in self?.openInBrowser() })
         }
 
         webView.navigationDelegate = self
@@ -122,13 +127,28 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         rateLimitView.textAlignment = .natural
         rateLimitView.textColor = .label
         rateLimitView.font = .preferredFont(forTextStyle: .callout)
-        rateLimitView.translatesAutoresizingMaskIntoConstraints = false
+
+        var safariConfig = UIButton.Configuration.borderedProminent()
+        safariConfig.title = "Open in Safari"
+        safariConfig.image = UIImage(systemName: "safari")
+        safariConfig.imagePadding = 6
+        safariConfig.cornerStyle = .large
+        let safariButton = UIButton(configuration: safariConfig)
+        safariButton.addAction(UIAction { [weak self] _ in self?.openInBrowser() }, for: .touchUpInside)
+        // No Safari handoff in the extensions (no UIApplication there).
+        safariButton.isHidden = (onOpenInBrowser == nil)
+
+        let bannerStack = UIStackView(arrangedSubviews: [rateLimitView, safariButton])
+        bannerStack.axis = .vertical
+        bannerStack.spacing = 12
+        bannerStack.translatesAutoresizingMaskIntoConstraints = false
+
         rateLimitBanner.backgroundColor = .secondarySystemBackground
         rateLimitBanner.layer.cornerRadius = 12
         rateLimitBanner.layer.cornerCurve = .continuous
         rateLimitBanner.isHidden = true
         rateLimitBanner.translatesAutoresizingMaskIntoConstraints = false
-        rateLimitBanner.addSubview(rateLimitView)
+        rateLimitBanner.addSubview(bannerStack)
         view.addSubview(rateLimitBanner)
 
         NSLayoutConstraint.activate([
@@ -143,10 +163,10 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             rateLimitBanner.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
             rateLimitBanner.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
             rateLimitBanner.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            rateLimitView.topAnchor.constraint(equalTo: rateLimitBanner.topAnchor, constant: 12),
-            rateLimitView.bottomAnchor.constraint(equalTo: rateLimitBanner.bottomAnchor, constant: -12),
-            rateLimitView.leadingAnchor.constraint(equalTo: rateLimitBanner.leadingAnchor, constant: 14),
-            rateLimitView.trailingAnchor.constraint(equalTo: rateLimitBanner.trailingAnchor, constant: -14),
+            bannerStack.topAnchor.constraint(equalTo: rateLimitBanner.topAnchor, constant: 12),
+            bannerStack.bottomAnchor.constraint(equalTo: rateLimitBanner.bottomAnchor, constant: -12),
+            bannerStack.leadingAnchor.constraint(equalTo: rateLimitBanner.leadingAnchor, constant: 14),
+            bannerStack.trailingAnchor.constraint(equalTo: rateLimitBanner.trailingAnchor, constant: -14),
         ])
 
         progress.startAnimating()
@@ -164,6 +184,14 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             "archive: loading \(archiveURL.absoluteString) ua=\(webView.customUserAgent ?? "default")",
             category: "archive")
         webView.load(URLRequest(url: archiveURL))
+    }
+
+    /// Opens the archive in real Safari (the proven-working path when the embedded
+    /// web view can't pass the CAPTCHA). Uses the currently-loaded URL when present.
+    private func openInBrowser() {
+        let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
+        guard let url = webView.url ?? URL(string: "https://archive.ph/newest/\(target)") else { return }
+        onOpenInBrowser?(url)
     }
 
     // MARK: - WKNavigationDelegate

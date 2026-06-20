@@ -62,16 +62,32 @@ enum UITestSeeder {
     }
 
     #if DEBUG
+    /// When seeded, the reading list uses this as "now" for date-relative sectioning
+    /// (Reading vs Archive) instead of the wall clock — so fixed-date fixtures land in
+    /// the Reading section and renders are reproducible. nil = use the real clock.
+    static var sectioningNow: Date?
+
     /// Seeds the process-wide shared store with the given state's fixture. Exposed so
     /// unit tests can reuse the exact same seeding the app performs.
     static func seedSharedStore(_ state: UITestState) {
         seed(state, into: .shared)
     }
 
-    /// Seeds an arbitrary store (e.g. a test scratch store) with the state's fixture.
+    /// Seeds an arbitrary store (e.g. a test scratch store) with the state's fixture
+    /// and pins the sectioning clock to the fixture base date.
     static func seed(_ state: UITestState, into store: ReadingListStore) {
+        sectioningNow = UITestFixtures.baseDate
+        resetReadingListDefaults()
         let fixture = state.fixture
         store.seedForTesting(items: fixture.items, contents: fixture.contents)
+    }
+
+    /// Resets the persisted reading-list UI prefs (filter segment, collapsed
+    /// sections) so a seeded launch always starts on the All filter with the default
+    /// collapsed set — neither a prior run nor a prior test can carry state in.
+    static func resetReadingListDefaults() {
+        UserDefaults.standard.removeObject(forKey: "readingListFilter")
+        UserDefaults.standard.removeObject(forKey: "readingListCollapsedSections")
     }
 
     /// The value following `key` in the launch arguments (`-key value`), or nil.

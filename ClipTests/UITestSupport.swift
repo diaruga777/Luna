@@ -23,9 +23,10 @@ enum UITestSupport {
         return state.fixture.items
     }
 
-    /// Empties the shared store after a test.
+    /// Empties the shared store after a test and clears the pinned sectioning clock.
     static func wipeSharedStore() {
         ReadingListStore.shared.wipeForTesting()
+        UITestSeeder.sectioningNow = nil
     }
 
     /// Hosts `viewController` in a window at `size`, forces a layout pass, and runs

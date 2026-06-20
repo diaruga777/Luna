@@ -27,6 +27,16 @@ final class ReadingListViewController: UITableViewController {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// The "now" used for date-relative sectioning (Reading vs Archive). Production
+    /// uses the wall clock; a DEBUG UI-test seed pins it to the fixture's base date so
+    /// fixed-date fixtures land in the Reading section (and renders are reproducible).
+    private static func sectioningNow() -> Date {
+        #if DEBUG
+        if let pinned = UITestSeeder.sectioningNow { return pinned }
+        #endif
+        return Date()
+    }
+
     /// Items older than this (by save date) move to the Archive section.
     private static let archiveAge: TimeInterval = ReadingListSectioning.archiveAge
 
@@ -270,7 +280,7 @@ final class ReadingListViewController: UITableViewController {
         updateCatchUpButton()
         let unfiltered = store.items()
         let all = unfiltered.filter { filter.includes($0) }
-        let buckets = ReadingListSectioning.assignSections(items: all, now: Date())
+        let buckets = ReadingListSectioning.assignSections(items: all, now: Self.sectioningNow())
         var bySection: [Section: [ReadingListItem]] =
             [.reading: buckets.reading, .archive: buckets.archive, .error: buckets.failed]
 

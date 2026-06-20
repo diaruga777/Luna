@@ -21,7 +21,7 @@ final class ReadingListIngestor {
 
     /// Fetches and extracts content for one item. Safe to call repeatedly.
     func ingest(_ item: ReadingListItem) async {
-        guard item.state != .ready, let url = item.url else { return }
+        guard item.state != .ready, let initialURL = item.url else { return }
 
         lock.lock()
         let alreadyRunning = inFlight.contains(item.id)
@@ -32,6 +32,25 @@ final class ReadingListIngestor {
             lock.lock()
             inFlight.remove(item.id)
             lock.unlock()
+        }
+
+        // Unwrap news-aggregator wrappers (Apple News, Google News, link
+        // shorteners) to the real publisher article BEFORE anything else, then
+        // continue as if that had been saved — both extraction and the
+        // archive.today reader need the real URL, not the wrapper. Non-wrapper
+        // URLs return immediately (no network).
+        var item = item
+        var url = initialURL
+        if let unwrapped = await NewsAggregatorUnwrapper.unwrap(initialURL),
+           unwrapped.absoluteString != initialURL.absoluteString {
+            SharedDiagnosticLog.record(
+                "ingest: unwrapped \(initialURL.absoluteString) → \(unwrapped.absoluteString)",
+                category: "ingest")
+            guard let updated = store.updateURL(unwrapped.absoluteString, for: item.id) else {
+                return   // the unwrapped article already exists in the list; wrapper dropped
+            }
+            item = updated
+            url = updated.url ?? unwrapped
         }
 
         if item.isDocument {

@@ -238,11 +238,34 @@ final class ShareViewController: UIViewController {
         isActionExtension ? ActionReaderMode.last : nil
     }
 
-    /// Routes a saved web URL: the share extension always just saves and closes;
-    /// the action extension opens the in-sheet reader for articles, or — for
-    /// non-textual content (a video, …) — the saved-content screen with playback
-    /// and an "Open in Queue" button. Safe to call from any thread.
-    private func presentSavedOrReader(url: URL) {
+    /// Unwraps a news-aggregator wrapper (Apple News, Google News, shorteners) to
+    /// the real publisher article and repoints the just-saved item at it, then
+    /// routes. Both the in-sheet reader and the inline ingest need the real URL,
+    /// not the wrapper (which breaks extraction AND the archive flow). Non-wrapper
+    /// URLs return immediately (no network). Safe to call from any thread.
+    private func presentSavedOrReader(url originalURL: URL) {
+        Task { [weak self] in
+            guard let self else { return }
+            var url = originalURL
+            if let unwrapped = await NewsAggregatorUnwrapper.unwrap(originalURL),
+               unwrapped.absoluteString != originalURL.absoluteString {
+                if let item = ReadingListStore.shared.item(forURLString: originalURL.absoluteString) {
+                    _ = ReadingListStore.shared.updateURL(unwrapped.absoluteString, for: item.id)
+                }
+                SharedDiagnosticLog.record(
+                    "share: unwrapped \(originalURL.absoluteString) → \(unwrapped.absoluteString)",
+                    category: "share")
+                url = unwrapped
+            }
+            await MainActor.run { self.routeSavedOrReader(url: url) }
+        }
+    }
+
+    /// Routes a (already-unwrapped) saved web URL: the share extension always just
+    /// saves and closes; the action extension opens the in-sheet reader for
+    /// articles, or — for non-textual content (a video, …) — the saved-content
+    /// screen with playback and an "Open in Queue" button.
+    private func routeSavedOrReader(url: URL) {
         guard let mode = readerMode() else {
             // Share extension (no reader mode). Media/platform links take the
             // auto-download path. A plain article is ingested inline so that a hard

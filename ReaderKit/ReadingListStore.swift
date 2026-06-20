@@ -92,6 +92,24 @@ final class ReadingListStore {
         items().first { $0.id == itemID }
     }
 
+    /// Repoints an item at an unwrapped URL (e.g. an `apple.news` / Google News
+    /// wrapper resolved to the real publisher article). Returns the refreshed item.
+    /// If another item already holds that URL, the wrapper is a duplicate — it's
+    /// removed (with its files) and nil is returned so the caller stops ingesting it.
+    @discardableResult
+    func updateURL(_ urlString: String, for itemID: UUID) -> ReadingListItem? {
+        coordinatedMutate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
+            if all.contains(where: { $0.id != itemID && $0.urlString == urlString }) {
+                let removed = all.remove(at: index)
+                self.removeFiles(for: removed)
+                return nil
+            }
+            all[index].urlString = urlString
+            return all[index]
+        }
+    }
+
     @discardableResult
     func add(urlString: String, source: CaptureSource = .manual) -> ReadingListItem {
         coordinatedMutate { all in

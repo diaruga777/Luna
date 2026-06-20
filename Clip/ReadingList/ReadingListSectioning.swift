@@ -28,6 +28,7 @@ enum ReadingListSectioning {
         case error = 3
         case pasteboard = 4
         case priceTracking = 5
+        case priceAlert = 6
 
         var title: String {
             switch self {
@@ -36,21 +37,24 @@ enum ReadingListSectioning {
             case .error: return "Couldn't Load"
             case .pasteboard: return "From Pasteboard"
             case .priceTracking: return "Price tracking"
+            case .priceAlert: return "Price drop"
             }
         }
 
         /// Reading and the pasteboard suggestion are always open; the rest collapse.
         var isCollapsible: Bool {
             switch self {
-            case .reading, .pasteboard, .priceTracking: return false
+            case .reading, .pasteboard, .priceTracking, .priceAlert: return false
             case .archive, .error: return true
             }
         }
     }
 
-    /// Top-to-bottom display order of the sections. Price tracking sits between
-    /// the pasteboard suggestion and the active Reading list.
-    static let displayOrder: [Section] = [.pasteboard, .priceTracking, .reading, .archive, .error]
+    /// Top-to-bottom display order of the sections. Price tracking sits BELOW the
+    /// active Reading list (a triggered-but-unviewed tracker still floats to the very
+    /// top of the whole list, ahead of the pasteboard suggestion — see `assignSections`
+    /// / `topUnviewedAlertingPriceTracker`).
+    static let displayOrder: [Section] = [.priceAlert, .pasteboard, .reading, .priceTracking, .archive, .error]
 
     /// What the list shows: everything, only articles (anything that opens in
     /// the text reader), or only media & links (everything else).
@@ -104,14 +108,14 @@ enum ReadingListSectioning {
         var archive: [ReadingListItem] = []
         var failed: [ReadingListItem] = []
         var priceTracking: [ReadingListItem] = []
-        // The single alerting tracker that floats to the very top (if any).
-        let alerting = topAlertingPriceTracker(items: items)
+        // The single triggered-but-unviewed tracker that floats to the very top (if any).
+        let pinned = topUnviewedAlertingPriceTracker(items: items)
         for item in items {
             if let tracker = item.priceTracker {
                 // Archived trackers drop out of the list entirely (still
-                // background-refresh-excluded). The one alerting tracker floats
-                // to the top of the WHOLE list, not the price-tracking section.
-                if tracker.isArchived || item.id == alerting?.id { continue }
+                // background-refresh-excluded). The one unviewed-alerting tracker
+                // floats to the top of the WHOLE list, not the price-tracking section.
+                if tracker.isArchived || item.id == pinned?.id { continue }
                 priceTracking.append(item)
             } else if item.state == .failed {
                 failed.append(item)
@@ -125,13 +129,15 @@ enum ReadingListSectioning {
         return (reading, archive, failed, priceTracking)
     }
 
-    /// The single price tracker that should surface at the very TOP of the list,
-    /// badged red: the alerting (dropped-past-threshold), non-archived tracker
-    /// with the greatest discount. Ties broken by greatest discount then by id
-    /// for determinism. Nil when none is alerting.
-    static func topAlertingPriceTracker(items: [ReadingListItem]) -> ReadingListItem? {
+    /// The single price tracker that should surface at the very TOP of the whole
+    /// list, badged red: the triggered (dropped-past-threshold) AND still-UNVIEWED,
+    /// non-archived tracker with the greatest discount. Ties broken by greatest
+    /// discount then by id for determinism. At most one. Nil when none qualifies —
+    /// including when the user has already viewed every alert, in which case the
+    /// alerting trackers stay in the price-tracking section below Reading.
+    static func topUnviewedAlertingPriceTracker(items: [ReadingListItem]) -> ReadingListItem? {
         items
-            .filter { $0.priceTracker?.isAlerting == true }
+            .filter { $0.priceTracker?.hasUnviewedAlert == true }
             .max { lhs, rhs in
                 let lhsDiscount = lhs.priceTracker?.discountFraction ?? 0
                 let rhsDiscount = rhs.priceTracker?.discountFraction ?? 0
@@ -150,6 +156,13 @@ enum ReadingListSectioning {
         let hasPriceTracker = !nonArchivedTrackers.isEmpty
         let kinds = [hasReaderItem, hasMediaOrLink, hasPriceTracker].filter { $0 }.count
         return kinds >= 2
+    }
+
+    static func hasMediaAndLinks(items: [ReadingListItem]) -> Bool {
+        items.contains {
+            !ReadingListSectioning.rendersAsReader($0)
+            && !$0.isPriceTracker
+        }
     }
 
     /// Whether the price-tracking section/filter segment should appear — i.e. at

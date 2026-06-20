@@ -106,6 +106,15 @@ struct RSVPEngine {
         }
     }
 
+    /// Index a skip button lands on: `currentIndex + delta`, clamped to a valid
+    /// word index. An empty stream (`wordCount == 0`) clamps to 0. Pure so the
+    /// skip math is unit-tested independent of the timer/TTS playback paths.
+    static func skipTarget(currentIndex: Int, by delta: Int, wordCount: Int) -> Int {
+        let lastWord = max(wordCount - 1, 0)
+        let target = currentIndex + delta
+        return min(max(target, 0), lastWord)
+    }
+
     /// Display duration for the word at `index` at the given base speed.
     /// Longer words show longer; sentence and paragraph ends pause.
     func duration(at index: Int, wpm: Double) -> TimeInterval {

@@ -102,4 +102,41 @@ final class RSVPEngineTests: XCTestCase {
         XCTAssertNil(engine.words.first { $0.text == "Visit" }?.url)
         XCTAssertNil(engine.words.first { $0.text == "today" }?.url)
     }
+
+    // MARK: - Skip target math
+
+    func testSkipForwardMovesExactly25Words() {
+        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 10, by: 25, wordCount: 100), 35)
+    }
+
+    func testSkipBackwardMovesExactly25Words() {
+        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 40, by: -25, wordCount: 100), 15)
+    }
+
+    func testSkipForwardClampsToLastWord() {
+        // 90 + 25 = 115, but the last valid index is 99.
+        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 90, by: 25, wordCount: 100), 99)
+    }
+
+    func testSkipBackwardClampsToZero() {
+        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 10, by: -25, wordCount: 100), 0)
+    }
+
+    func testSkipAtLastWordForwardStaysPut() {
+        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 99, by: 25, wordCount: 100), 99)
+    }
+
+    func testSkipAtFirstWordBackwardStaysPut() {
+        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 0, by: -25, wordCount: 100), 0)
+    }
+
+    func testSkipInShortDocumentClampsToLastWord() {
+        // Fewer than 25 words: a forward skip lands on the final word.
+        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 0, by: 25, wordCount: 5), 4)
+    }
+
+    func testSkipInEmptyDocumentClampsToZero() {
+        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 0, by: 25, wordCount: 0), 0)
+        XCTAssertEqual(RSVPEngine.skipTarget(currentIndex: 0, by: -25, wordCount: 0), 0)
+    }
 }

@@ -65,6 +65,11 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     private let statusLabel = UILabel()
     private let wpmDownButton = UIButton(type: .system)
     private let wpmUpButton = UIButton(type: .system)
+    private let skipBackButton = UIButton(type: .system)
+    private let skipForwardButton = UIButton(type: .system)
+
+    /// Words a skip button jumps from the current position.
+    private static let skipWordCount = 25
 
     private let sentenceHaptic = UIImpactFeedbackGenerator(style: .light)
 
@@ -311,10 +316,30 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         wpmDownButton.addTarget(self, action: #selector(wpmDown), for: .touchUpInside)
         wpmUpButton.addTarget(self, action: #selector(wpmUp), for: .touchUpInside)
 
+        let skipSymbols = UIImage.SymbolConfiguration(pointSize: 20)
+        skipBackButton.configuration = {
+            var config = UIButton.Configuration.plain()
+            config.image = UIImage(systemName: "gobackward.minus")
+            config.baseForegroundColor = .label
+            config.preferredSymbolConfigurationForImage = skipSymbols
+            return config
+        }()
+        skipForwardButton.configuration = {
+            var config = UIButton.Configuration.plain()
+            config.image = UIImage(systemName: "goforward.plus")
+            config.baseForegroundColor = .label
+            config.preferredSymbolConfigurationForImage = skipSymbols
+            return config
+        }()
+        skipBackButton.addTarget(self, action: #selector(skipBack), for: .touchUpInside)
+        skipForwardButton.addTarget(self, action: #selector(skipForward), for: .touchUpInside)
+
         // Plain container with explicit constraints so the play button sits
-        // exactly on the screen's center line, with symmetric speed buttons.
+        // exactly on the screen's center line, with symmetric skip / speed
+        // buttons flanking it (skip outermost, ±25 wpm inner).
         let speedRow = UIView()
-        for button in [playPauseButton, wpmDownButton, wpmUpButton] {
+        for button in [playPauseButton, wpmDownButton, wpmUpButton,
+                       skipBackButton, skipForwardButton] {
             button.translatesAutoresizingMaskIntoConstraints = false
             speedRow.addSubview(button)
         }
@@ -348,6 +373,10 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
             wpmDownButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
             wpmUpButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 110),
             wpmUpButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
+            skipBackButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: -170),
+            skipBackButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
+            skipForwardButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 170),
+            skipForwardButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
         ])
     }
 
@@ -517,6 +546,49 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         updateStatus()
     }
 
+    @objc private func skipBack() { skip(by: -Self.skipWordCount) }
+    @objc private func skipForward() { skip(by: Self.skipWordCount) }
+
+    /// Jumps the reading position by `delta` words (clamped to the document) and
+    /// PRESERVES the playback state: if RSVP was playing it resumes from the new
+    /// word, if it was paused it stays paused there. Works in both audio modes —
+    /// the WPM timer and the sentence-TTS path are torn down and (only if we were
+    /// playing) restarted from the new index, so skipping never toggles
+    /// play/pause, never restarts from the beginning, and never desyncs the
+    /// displayed word from the engine position.
+    private func skip(by delta: Int) {
+        let target = RSVPEngine.skipTarget(
+            currentIndex: currentIndex, by: delta, wordCount: engine.words.count)
+        guard target != currentIndex else { return }
+
+        let wasPlaying = isPlaying
+        // Tear down whichever engine is running (timer in silent mode, synthesizer
+        // in read-aloud mode) without flipping the play/pause glyph or saving — we
+        // restore the exact state below.
+        if isSpeechMode {
+            synthesizer.stopSpeaking(at: .immediate)
+        } else {
+            timer?.invalidate()
+            timer = nil
+        }
+
+        currentIndex = target
+        showWord(at: currentIndex)
+        scrubber.value = Float(currentIndex)
+        updateStatus()
+
+        guard wasPlaying else {
+            saveProgress()
+            return
+        }
+        // Resume from the new position in the same mode we were playing in.
+        if isSpeechMode {
+            speakCurrentSentence()
+        } else {
+            scheduleNext()
+        }
+    }
+
     @objc private func wpmDown() { adjustWPM(by: -25) }
     @objc private func wpmUp() { adjustWPM(by: 25) }
 
@@ -584,9 +656,10 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
 
 extension RSVPViewController: UIGestureRecognizerDelegate {
     /// The full-screen play/pause tap must ignore touches that land on any
-    /// interactive control — the ±25 speed buttons, the play/pause button, the
-    /// scrubber, and the link pill — so those taps reach the control instead of
-    /// being cancelled by the full-screen tap (which `cancelsTouchesInView`).
+    /// interactive control — the skip ±25-word buttons, the ±25 speed buttons,
+    /// the play/pause button, the scrubber, and the link pill — so those taps
+    /// reach the control instead of being cancelled by the full-screen tap
+    /// (which `cancelsTouchesInView`).
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
     ) -> Bool {

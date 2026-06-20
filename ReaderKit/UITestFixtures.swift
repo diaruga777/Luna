@@ -31,6 +31,22 @@ enum UITestState: String, CaseIterable {
     var fixture: UITestFixtures.Fixture { UITestFixtures.fixture(for: self) }
 }
 
+/// Whether this process was launched by the UI-test / screenshot harness (any of
+/// the `-uiTestState` / `-uiTestScreen` / `-uiTestOnboardingStep` launch args is
+/// present). Lives in ReaderKit so both the app (`UITestSeeder`) and ReaderKit's
+/// readers can suppress simulator-only debug tap targets ("Split High/Low") during
+/// deterministic captures without ReaderKit importing the app target. Reads the
+/// launch arguments directly; no UIKit. DEBUG-only.
+enum UITestLaunch {
+    private static let argKeys = ["-uiTestState", "-uiTestScreen", "-uiTestOnboardingStep"]
+
+    /// True when any UI-test harness launch argument is present.
+    static var isActive: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        return argKeys.contains { args.contains($0) }
+    }
+}
+
 /// Builders for the deterministic fixtures. Pure — no UIKit, no disk, no network —
 /// so it lives in ReaderKit and is reusable from the app and any test target.
 enum UITestFixtures {

@@ -854,7 +854,11 @@ final class ReadingListViewController: UITableViewController {
         }
 
         configureItemCell(cell, for: item)
-        if AppEnvironment.isSimulator {
+        // The simulator-only row-actions tap target overlays the leading edge of
+        // thumbnail-less rows; suppress it during deterministic screenshot captures
+        // so it never obscures real content. Interactive automation runs (no harness
+        // launch arg) still get it.
+        if AppEnvironment.isSimulator && !UITestSeeder.isUITestLaunch {
             cell.setSimulatorMenu(rowMenu(for: item, at: indexPath))
         }
         return cell

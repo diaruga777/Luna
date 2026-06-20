@@ -75,7 +75,7 @@ final class CatchUpViewController: UIViewController {
     private weak var simBumpButton: UIButton?
 
     private func addSimulatorSwipeHookIfNeeded() {
-        guard AppEnvironment.isSimulator else { return }
+        guard AppEnvironment.isSimulator, !UITestSeeder.isUITestLaunch else { return }
         let button = UIButton(type: .system)
         button.setTitle("Sim Bump", for: .normal)
         button.accessibilityLabel = "Sim Bump"

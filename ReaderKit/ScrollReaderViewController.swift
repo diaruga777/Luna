@@ -657,6 +657,9 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     /// two cases that exercise the inline-reader open animation + header tucking.
     private func addSimulatorSplitHooksIfNeeded() {
         #if targetEnvironment(simulator)
+        // Suppress these debug buttons during deterministic screenshot captures so
+        // they don't overlay the article text; interactive automation still gets them.
+        if UITestLaunch.isActive { return }
         func hookButton(_ title: String, fraction: CGFloat) -> UIButton {
             var config = UIButton.Configuration.filled()
             config.title = title

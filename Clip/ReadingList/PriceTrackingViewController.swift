@@ -72,8 +72,7 @@ final class PriceTrackingViewController: UIViewController {
     private let manager: PriceTrackingManaging
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
-    private let thresholdSlider = UISlider()
-    private let thresholdLabel = UILabel()
+    private let thresholdSlider = AlertThresholdSlider()
 
     private var itemID: UUID { mode.itemID }
     private var exitContext: PriceTrackingExitContext { mode.exitContext }
@@ -183,57 +182,30 @@ final class PriceTrackingViewController: UIViewController {
 
     private func makeThresholdFooter() -> UIView {
         let container = UIView()
-        container.backgroundColor = .secondarySystemGroupedBackground
+        container.backgroundColor = .systemGroupedBackground
 
-        thresholdLabel.font = .preferredFont(forTextStyle: .subheadline)
-        thresholdLabel.textColor = .secondaryLabel
-        thresholdLabel.numberOfLines = 0
-
-        thresholdSlider.minimumValue = 0.01
-        thresholdSlider.maximumValue = 0.90
-        thresholdSlider.addTarget(self, action: #selector(thresholdChanged), for: .valueChanged)
-        thresholdSlider.addTarget(self, action: #selector(thresholdCommitted),
-                                  for: [.touchUpInside, .touchUpOutside])
-
-        let title = UILabel()
-        title.text = "Alert me when the price drops"
-        title.font = .preferredFont(forTextStyle: .headline)
-
-        let stack = UIStackView(arrangedSubviews: [title, thresholdSlider, thresholdLabel])
-        stack.axis = .vertical
-        stack.spacing = 8
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
+        thresholdSlider.onCommitted = { [weak self] fraction in
+            guard let self, var tracker = self.tracker else { return }
+            tracker.alertThresholdFraction = fraction
+            self.store.updatePriceTracker(tracker, for: self.itemID)
+        }
+        thresholdSlider.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(thresholdSlider)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -16),
+            thresholdSlider.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            thresholdSlider.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            thresholdSlider.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            thresholdSlider.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
         ])
         return container
     }
 
     private func syncThresholdControl() {
         guard let tracker else { return }
-        thresholdSlider.value = Float(tracker.alertThresholdFraction)
-        updateThresholdLabel(fraction: tracker.alertThresholdFraction, tracker: tracker)
+        thresholdSlider.configure(
+            fraction: tracker.alertThresholdFraction,
+            initialPrice: tracker.initialPrice, currency: tracker.initialCurrency)
         title = tracker.productName
-    }
-
-    private func updateThresholdLabel(fraction: Double, tracker: PriceTracker) {
-        thresholdLabel.text = PriceFormatting.thresholdDescription(
-            fraction: fraction, initialPrice: tracker.initialPrice, currency: tracker.initialCurrency)
-    }
-
-    @objc private func thresholdChanged() {
-        guard let tracker else { return }
-        updateThresholdLabel(fraction: Double(thresholdSlider.value), tracker: tracker)
-    }
-
-    @objc private func thresholdCommitted() {
-        guard var tracker else { return }
-        tracker.alertThresholdFraction = Double(thresholdSlider.value)
-        store.updatePriceTracker(tracker, for: itemID)
     }
 
     // MARK: - Add seller

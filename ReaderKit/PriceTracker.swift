@@ -112,6 +112,20 @@ struct PriceTracker: Codable, Equatable {
         return prices.min() ?? initialPrice
     }
 
+    /// The id (`urlString`) of the store holding the current best (lowest) fetched
+    /// price — the row a multi-seller display should highlight. Nil when no store has
+    /// a fetched price yet (nothing to highlight). Ties are broken by the first such
+    /// store in `stores` order, so the highlight is deterministic.
+    var bestPriceStoreID: PriceTrackerStore.ID? {
+        var best: PriceTrackerStore?
+        for store in stores {
+            guard let price = store.lastPrice else { continue }
+            if let current = best?.lastPrice, current <= price { continue }
+            best = store
+        }
+        return best?.id
+    }
+
     /// The currency to display the best price in — the currency of whichever store
     /// holds the current best price, else the initial currency.
     var displayCurrency: String {

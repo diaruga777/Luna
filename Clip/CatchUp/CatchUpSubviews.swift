@@ -175,3 +175,147 @@ final class CatchUpMediaCardBody: UIView {
         return item.url?.host?.replacingOccurrences(of: "www.", with: "")
     }
 }
+
+/// A small, NON-tappable table of a price tracker's tracked sites: one row per
+/// store, the site host on the left and its price right-aligned, no chevron and no
+/// selection. The row holding the current best (lowest fetched) price is highlighted
+/// — accent-tinted, bold price — so the cheapest seller stands out.
+final class PriceTrackerStoreRowsView: UIView {
+
+    init(tracker: PriceTracker) {
+        super.init(frame: .zero)
+        backgroundColor = .clear
+
+        let bestStoreID = tracker.bestPriceStoreID
+        let rows = tracker.stores.map { store -> UIView in
+            Self.makeRow(store: store, isBest: store.id == bestStoreID)
+        }
+        let stack = UIStackView(arrangedSubviews: rows)
+        stack.axis = .vertical
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// One seller row: host on the left, price right-aligned. The best-price row is
+    /// accent-tinted and bold to mark the cheapest seller.
+    private static func makeRow(store: PriceTrackerStore, isBest: Bool) -> UIView {
+        let hostLabel = UILabel()
+        hostLabel.text = store.url?.host?.replacingOccurrences(of: "www.", with: "")
+            ?? store.urlString
+        hostLabel.font = .systemFont(ofSize: 15, weight: isBest ? .semibold : .regular)
+        hostLabel.textColor = isBest ? GlassStyle.readingAccent : .label
+        hostLabel.lineBreakMode = .byTruncatingTail
+        hostLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let priceLabel = UILabel()
+        if let price = store.lastPrice {
+            priceLabel.text = PriceFormatting.string(amount: price, currency: store.currency)
+        } else {
+            priceLabel.text = "—"
+        }
+        priceLabel.font = .systemFont(ofSize: 15, weight: isBest ? .bold : .regular)
+        priceLabel.textColor = isBest ? GlassStyle.readingAccent : .secondaryLabel
+        priceLabel.textAlignment = .right
+        priceLabel.setContentHuggingPriority(.required, for: .horizontal)
+        priceLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let row = UIStackView(arrangedSubviews: [hostLabel, priceLabel])
+        row.axis = .horizontal
+        row.spacing = 12
+        row.alignment = .center
+        row.isLayoutMarginsRelativeArrangement = true
+        row.layoutMargins = UIEdgeInsets(top: 9, left: 0, bottom: 9, right: 0)
+        return row
+    }
+}
+
+/// A catch-up card body for a PRICE TRACKER (top→bottom): a small product thumbnail,
+/// the product name, a non-tappable mini-table of the tracked sites (host + price,
+/// best price highlighted), and the shared alert-threshold slider at the bottom. The
+/// slider drives the SAME `alertThresholdFraction` and persists via `onThresholdCommitted`.
+final class CatchUpPriceTrackerCardBody: UIView {
+
+    private let thresholdSlider = AlertThresholdSlider()
+
+    /// Fired when the user releases the threshold slider, with the new fraction; the
+    /// host persists it via the store's tracker-update path.
+    var onThresholdCommitted: ((Double) -> Void)? {
+        get { thresholdSlider.onCommitted }
+        set { thresholdSlider.onCommitted = newValue }
+    }
+
+    init(item: ReadingListItem, tracker: PriceTracker, store: ReadingListStore) {
+        super.init(frame: .zero)
+        backgroundColor = .clear
+
+        let thumb = UIImageView()
+        thumb.contentMode = .scaleAspectFill
+        thumb.clipsToBounds = true
+        thumb.layer.cornerRadius = 12
+        thumb.layer.cornerCurve = .continuous
+        thumb.backgroundColor = .secondarySystemFill
+        thumb.translatesAutoresizingMaskIntoConstraints = false
+        Self.configureThumbnail(thumb, tracker: tracker, store: store)
+
+        let title = UILabel()
+        title.text = tracker.productName
+        title.font = .systemFont(ofSize: 22, weight: .bold)
+        title.textAlignment = .center
+        title.numberOfLines = 3
+
+        let rows = PriceTrackerStoreRowsView(tracker: tracker)
+
+        thresholdSlider.configure(
+            fraction: tracker.alertThresholdFraction,
+            initialPrice: tracker.initialPrice, currency: tracker.initialCurrency)
+
+        let stack = UIStackView(arrangedSubviews: [thumb, title, rows, thresholdSlider])
+        stack.axis = .vertical
+        stack.spacing = 16
+        stack.alignment = .fill
+        stack.setCustomSpacing(14, after: thumb)
+        stack.setCustomSpacing(10, after: title)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        // Centered vertically so the top of the card stays clear for the corner pills.
+        NSLayoutConstraint.activate([
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 56),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -24),
+            // A small thumbnail at the top (a fraction of the body width).
+            thumb.widthAnchor.constraint(equalToConstant: 120),
+            thumb.heightAnchor.constraint(equalTo: thumb.widthAnchor),
+            thumb.centerXAnchor.constraint(equalTo: stack.centerXAnchor),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Resolves the tracker's product image the SAME way the reading-list cell does
+    /// (`PriceTracker.imageFileName` inside the Articles directory), falling back to a
+    /// `tag` glyph when there's no image — so the card shows the identical thumbnail.
+    private static func configureThumbnail(
+        _ imageView: UIImageView, tracker: PriceTracker, store: ReadingListStore
+    ) {
+        if let fileName = tracker.imageFileName,
+           let data = try? Data(contentsOf: store.articlesDirectory.appendingPathComponent(fileName)),
+           let image = UIImage(data: data) {
+            imageView.image = image
+            return
+        }
+        imageView.image = UIImage(
+            systemName: tracker.isAlerting ? "tag.fill" : "tag",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 34, weight: .semibold))
+        imageView.contentMode = .center
+        imageView.tintColor = .secondaryLabel
+    }
+}

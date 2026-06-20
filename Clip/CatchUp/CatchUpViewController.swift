@@ -202,7 +202,21 @@ final class CatchUpViewController: UIViewController {
         // header (no separate strip → no divider seam); a media card gets the
         // standalone date strip above it.
         let bodyTop: NSLayoutYAxisAnchor
-        if ReadingListViewController.rendersAsReader(item), item.state == .ready,
+        if let tracker = item.priceTracker {
+            // A price tracker fills the whole content area (no date strip): a small
+            // thumbnail, the product name, a non-tappable per-store mini-table, and
+            // the shared alert-threshold slider at the bottom. The slider persists the
+            // edited threshold back through the store so it sticks.
+            let trackerBody = CatchUpPriceTrackerCardBody(item: item, tracker: tracker, store: store)
+            trackerBody.onThresholdCommitted = { [weak self] fraction in
+                guard let self, var updated = self.store.item(withID: item.id)?.priceTracker
+                else { return }
+                updated.alertThresholdFraction = fraction
+                self.store.updatePriceTracker(updated, for: item.id)
+            }
+            body = trackerBody
+            bodyTop = card.contentContainer.topAnchor
+        } else if ReadingListViewController.rendersAsReader(item), item.state == .ready,
            let content = store.content(for: item) {
             // Embed the reader DIRECTLY (no UINavigationController) with an inline
             // liquid-glass header carrying the card's date. The card rasterizes itself

@@ -69,6 +69,18 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// as terminal (the un-archivable message + Safari escape).
     private var blockedPollCount = 0
     private static let blockedPollLimit = 3   // ≈ 4s — tolerate a transient flash
+    /// For NYT articles, the "trailing dot" host variant (`nytimes.com` →
+    /// `nytimes.com.`) we try in the web view BEFORE the archive.today flow — the
+    /// paywall's host-keyed JS/cookies don't apply to it, but the article still
+    /// loads. Nil for non-NYT articles.
+    private let directBypassURL: URL?
+    /// True while loading/extracting the trailing-dot bypass page (the pre-stage,
+    /// before any archive.today navigation).
+    private var isAttemptingDirectBypass = false
+    /// Poll ticks spent on the bypass page; past `bypassPollLimit` without a
+    /// readable extraction we give up and fall back to the archive.today flow.
+    private var bypassPollCount = 0
+    private static let bypassPollLimit = 7   // ≈ 9s at the 1.3s poll interval
     /// Set once we surface a terminal message in the overlay (rate-limit or
     /// un-archivable). Stops polling/extraction and any further overlay toggling.
     private var didShowTerminalMessage = false
@@ -117,6 +129,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         self.articleURL = articleURL
         self.itemID = itemID
         self.store = store
+        self.directBypassURL = NYTPaywallBypass.trailingDotURL(for: articleURL)
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
         // archive.today refuses clients it thinks have JS off; make it explicit (and
@@ -210,11 +223,26 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         setUpLoadingOverlay()
 
         progress.startAnimating()
-        loadArchive()
         startPolling()
-        // Resolve the specific newest snapshot via the TimeMap in PARALLEL (clean
-        // read endpoint, no startup delay). If it lands before the homepage clears,
-        // checkStage loads it; otherwise we submit the homepage form.
+        if let directBypassURL {
+            // NYT: try the trailing-dot host in the web view first; only fall back to
+            // archive.today if it doesn't yield a readable article.
+            isAttemptingDirectBypass = true
+            SharedDiagnosticLog.record(
+                "archive: trying direct paywall bypass \(directBypassURL.absoluteString)", category: "archive")
+            webView.load(URLRequest(url: directBypassURL))
+        } else {
+            loadArchive()
+            resolveSnapshotInParallel()
+        }
+    }
+
+    /// Resolves the specific newest archive.today snapshot via the TimeMap in
+    /// PARALLEL (clean read endpoint, no startup delay). If it lands before the
+    /// homepage clears, `checkStage` loads it; otherwise we submit the homepage
+    /// form. Skipped during the direct-bypass pre-stage (only needed once we're on
+    /// the archive.today path).
+    private func resolveSnapshotInParallel() {
         Task { [weak self] in
             guard let self else { return }
             let snapshot = await ArticleFetcher().resolveNewestArchiveSnapshot(for: self.articleURL)
@@ -376,6 +404,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// - **article** (substantial text, no search box) → extract.
     private func checkStage() {
         guard !didExtract, !isExtracting, viewIfLoaded?.window != nil else { return }
+        if isAttemptingDirectBypass { checkDirectBypassStage(); return }
         // Returns "error" (Invalid interception ID), "homepage:<len>" (the search
         // form is present → type the URL + submit), "challenge:<len>" (a Cloudflare/
         // reCAPTCHA gate, detected by WIDGET not just text so the overlay reliably
@@ -511,6 +540,37 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         }
         let length = Int(stage.split(separator: ":").last ?? "") ?? 0
         return length > minExtractLength ? .attemptExtract : .wait
+    }
+
+    /// The NYT trailing-dot pre-stage: the page is the real article (no archive,
+    /// no CAPTCHA), so just poll its text length and try extracting. If it doesn't
+    /// yield a readable article within `bypassPollLimit` ticks (the trick stopped
+    /// working / a paywall is still up), fall back to the archive.today flow.
+    private func checkDirectBypassStage() {
+        bypassPollCount += 1
+        if bypassPollCount > Self.bypassPollLimit {
+            fallBackToArchiveFromBypass()
+            return
+        }
+        let probe = "(function(){return document.body ? document.body.innerText.length : 0;})()"
+        webView.evaluateJavaScript(probe) { [weak self] result, _ in
+            guard let self, self.isAttemptingDirectBypass, !self.didExtract, !self.isExtracting else { return }
+            let length = (result as? NSNumber)?.intValue ?? 0
+            guard length > 1500 else { return }   // still rendering — try again next tick
+            self.isExtracting = true
+            self.extractAndSave()   // readable → save + onExtracted; not readable → resets, retries
+        }
+    }
+
+    /// Gives up on the direct bypass and runs the normal archive.today flow.
+    private func fallBackToArchiveFromBypass() {
+        guard isAttemptingDirectBypass else { return }
+        isAttemptingDirectBypass = false
+        SharedDiagnosticLog.record(
+            "archive: direct bypass didn't yield a readable article → archive.today flow", category: "archive")
+        didLeaveHomepage = false
+        loadArchive()
+        resolveSnapshotInParallel()
     }
 
     /// Replicates the manual flow: type the article URL into the homepage's

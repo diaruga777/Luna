@@ -159,6 +159,23 @@ final class SocialMessageCenter {
             "sent media item to \(friend.card.username)", category: "social")
     }
 
+    /// Sends a price tracker to a friend (the `priceTracker` case): all watched
+    /// store URLs plus the current best price and alert threshold, so the
+    /// recipient recreates the same tracker.
+    func sendPriceTracker(_ tracker: PriceTracker, to friend: Friend) async throws {
+        guard let identity = identityStore.loadIdentity() else {
+            throw MessageCrypto.CryptoError(reason: "no identity")
+        }
+        let payload = try MessageCrypto.seal(
+            body: .priceTracker(PriceTrackerShare(tracker: tracker)),
+            senderSigningKey: identity.signingKey,
+            recipientEncryptionPublicKey: friend.card.encryptionPublicKey)
+        try await transport.send(payload: payload, to: friend.card.uuid, from: identity.uuid)
+        ShareIntentDonor.donateShare(to: friend.card)
+        DiagnosticLog.shared.record(
+            "sent price tracker to \(friend.card.username)", category: "social")
+    }
+
     /// Always-share automation for a newly saved URL: fire-and-forget send
     /// that never feeds the suggestion streak.
     func autoShare(urlString: String, toFriendUUID uuid: UUID) async {
@@ -346,6 +363,26 @@ final class SocialMessageCenter {
                 platform: kind, creator: creator, title: title)
             readingListStore.setSharedBy(friend.card.username, for: saved.id)
             notifyOfReceivedShare(from: friend, title: title)
+
+        case .priceTracker(let share):
+            guard let friend = friendsStore.friend(withUUID: record.senderUUID),
+                  friend.card.signingPublicKey == senderSigningKey
+            else {
+                logger.info("dropping price tracker from non-friend \(record.senderUUID, privacy: .public)")
+                return
+            }
+            guard let firstURL = share.storeURLStrings.first else { return }
+            // Dedupe on the first store URL like other shared items.
+            guard readingListStore.item(forURLString: firstURL) == nil else {
+                logger.info("dropping duplicate shared price tracker")
+                return
+            }
+            guard let tracker = share.makeTracker() else { return }
+            let saved = readingListStore.add(urlString: firstURL, source: .friendShare)
+            readingListStore.savePriceTracker(tracker, for: saved.id)
+            readingListStore.setSharedBy(friend.card.username, for: saved.id)
+            notifyOfReceivedShare(from: friend, title: share.productName)
+            logger.info("accepted shared price tracker from \(friend.card.username, privacy: .public)")
 
         case .unknown(let type):
             logger.info("ignoring unknown message type \(type, privacy: .public)")

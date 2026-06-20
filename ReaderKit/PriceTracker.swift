@@ -28,6 +28,50 @@ struct PriceTrackerStore: Codable, Equatable, Identifiable {
     }
 }
 
+/// The portable representation of a price tracker for friend sharing — carries
+/// everything needed to recreate the tracker on the recipient's device. Prices
+/// are encoded as strings so the Decimal value round-trips exactly across the
+/// JSON wire.
+struct PriceTrackerShare: Codable, Equatable {
+    var productName: String
+    var storeURLStrings: [String]
+    /// The best fetched price at share time (the recipient's baseline).
+    var initialPriceString: String
+    var initialCurrency: String
+    var alertThresholdFraction: Double
+    var brand: String?
+    var productID: String?
+
+    /// Builds a share payload from a live tracker.
+    init(tracker: PriceTracker) {
+        productName = tracker.productName
+        storeURLStrings = tracker.stores.map(\.urlString).filter { !$0.isEmpty }
+        initialPriceString = NSDecimalNumber(decimal: tracker.currentBestPrice).stringValue
+        initialCurrency = tracker.displayCurrency
+        alertThresholdFraction = tracker.alertThresholdFraction
+        brand = tracker.brand
+        productID = tracker.productID
+    }
+
+    /// Reconstructs a tracker on the recipient side, seeding each shared URL with
+    /// the shared baseline price (a real refresh updates them after). Returns nil
+    /// when the payload carries no usable store URL (the ≥1 invariant).
+    func makeTracker(now: Date = Date()) -> PriceTracker? {
+        guard let firstURL = storeURLStrings.first,
+              let price = ProductPageDetector.parsePrice(initialPriceString) else { return nil }
+        let currency = ProductPageDetector.normalizeCurrency(initialCurrency) ?? "USD"
+        var tracker = PriceTracker(
+            productName: productName, firstStoreURL: firstURL, price: price, currency: currency,
+            brand: brand, productID: productID,
+            alertThresholdFraction: alertThresholdFraction, now: now)
+        for url in storeURLStrings.dropFirst() {
+            tracker.upsertStore(PriceTrackerStore(
+                urlString: url, lastPrice: price, currency: currency, lastRefreshed: now))
+        }
+        return tracker
+    }
+}
+
 /// A price-tracking payload attached to a `ReadingListItem`. Represents a product
 /// the user wants to watch across one or more store URLs.
 ///

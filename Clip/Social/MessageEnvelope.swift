@@ -15,6 +15,10 @@ enum MessageBody: Equatable {
     case readingListItem(urlString: String, title: String?)
     /// A shared URL-less music/podcast item (artist+track or show+episode).
     case mediaItem(kind: ContentPlatform, creator: String, title: String)
+    /// A shared price tracker: the product name, every watched store URL, the
+    /// best fetched price at share time (so the recipient sees the same baseline),
+    /// and the alert threshold. Recreated as a tracker on receipt.
+    case priceTracker(PriceTrackerShare)
     /// A type this client doesn't know — ignore, never an error.
     case unknown(type: String)
 
@@ -22,6 +26,7 @@ enum MessageBody: Equatable {
         static let friendAdd = "friendAdd"
         static let readingListItem = "readingListItem"
         static let mediaItem = "mediaItem"
+        static let priceTracker = "priceTracker"
     }
 
     /// Wire shape: {"type": "...", plus type-specific fields}.
@@ -33,6 +38,7 @@ enum MessageBody: Equatable {
         var kind: String?
         var creator: String?
         var mediaTitle: String?
+        var priceTracker: PriceTrackerShare?
     }
 
     func encoded() throws -> Data {
@@ -45,6 +51,8 @@ enum MessageBody: Equatable {
         case .mediaItem(let kind, let creator, let title):
             wire = Wire(type: TypeName.mediaItem,
                         kind: kind.rawValue, creator: creator, mediaTitle: title)
+        case .priceTracker(let share):
+            wire = Wire(type: TypeName.priceTracker, priceTracker: share)
         case .unknown(let type):
             wire = Wire(type: type)
         }
@@ -65,6 +73,11 @@ enum MessageBody: Equatable {
                   let creator = wire.creator, let title = wire.mediaTitle
             else { return .unknown(type: wire.type) }
             return .mediaItem(kind: kind, creator: creator, title: title)
+        case TypeName.priceTracker:
+            guard let share = wire.priceTracker, !share.storeURLStrings.isEmpty else {
+                return .unknown(type: wire.type)
+            }
+            return .priceTracker(share)
         default:
             return .unknown(type: wire.type)
         }

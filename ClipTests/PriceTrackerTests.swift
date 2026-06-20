@@ -77,6 +77,65 @@ final class PriceTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.thresholdAbsoluteDrop, Decimal(string: "30"))
     }
 
+    // MARK: - Alert viewed transition
+
+    func testFreshTrackerHasNoUnviewedAlert() {
+        let tracker = makeTracker(price: "100")
+        XCTAssertFalse(tracker.isAlerting)
+        XCTAssertFalse(tracker.hasUnviewedAlert)
+    }
+
+    func testAlertingTrackerHasUnviewedAlertUntilViewed() {
+        var tracker = makeTracker(price: "100", threshold: 0.10)
+        tracker.setPrice(Decimal(string: "70"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+        XCTAssertTrue(tracker.isAlerting)
+        XCTAssertTrue(tracker.hasUnviewedAlert, "a fresh drop is unviewed")
+
+        tracker.markAlertViewed(at: Date(timeIntervalSince1970: 2000))
+        XCTAssertTrue(tracker.isAlerting, "still alerting — only the view state changed")
+        XCTAssertFalse(tracker.hasUnviewedAlert, "viewing acknowledges the alert")
+    }
+
+    func testMarkAlertViewedNoOpsWhenNotAlerting() {
+        var tracker = makeTracker(price: "100")
+        tracker.markAlertViewed()
+        XCTAssertNil(tracker.alertAcknowledgedAt, "nothing to acknowledge when not alerting")
+    }
+
+    func testFurtherDropClearsAcknowledgementSoAlertReFloats() {
+        var tracker = makeTracker(price: "100", threshold: 0.10)
+        tracker.setPrice(Decimal(string: "70"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+        tracker.markAlertViewed()
+        XCTAssertFalse(tracker.hasUnviewedAlert)
+
+        // A genuinely deeper drop re-opens the alert as unviewed.
+        tracker.setPrice(Decimal(string: "50"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+        XCTAssertTrue(tracker.hasUnviewedAlert, "a fresh lower price re-floats the alert")
+    }
+
+    func testAcknowledgedAlertSurvivesCodableRoundTrip() throws {
+        var tracker = makeTracker(price: "100", threshold: 0.10)
+        tracker.setPrice(Decimal(string: "60"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+        tracker.markAlertViewed(at: Date(timeIntervalSince1970: 3000))
+        let decoded = try JSONDecoder().decode(
+            PriceTracker.self, from: JSONEncoder().encode(tracker))
+        XCTAssertEqual(decoded.alertAcknowledgedAt, tracker.alertAcknowledgedAt)
+        XCTAssertFalse(decoded.hasUnviewedAlert)
+    }
+
+    func testOldPayloadDecodesAsUnviewedAlert() throws {
+        // A payload from before the alertAcknowledgedAt key → nil → unviewed.
+        let json = #"{"productName":"X","initialPrice":100,"initialCurrency":"USD","stores":[{"urlString":"https://a.example/p","lastPrice":50,"currency":"USD"}]}"#
+        let tracker = try JSONDecoder().decode(PriceTracker.self, from: Data(json.utf8))
+        XCTAssertNil(tracker.alertAcknowledgedAt)
+        XCTAssertTrue(tracker.isAlerting)
+        XCTAssertTrue(tracker.hasUnviewedAlert)
+    }
+
     // MARK: - Store invariants
 
     func testRemoveStoreKeepsAtLeastOne() {

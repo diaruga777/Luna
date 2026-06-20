@@ -98,6 +98,12 @@ struct PriceTracker: Codable, Equatable {
     var alertThresholdFraction: Double
     /// Whether the user archived this tracker (excluded from background refresh).
     var isArchived: Bool
+    /// When the user last viewed this tracker's alert (opened the tracker while it
+    /// was alerting). Nil means the current alert, if any, is still UNVIEWED — which
+    /// is what floats the row to the very top of the reading list. Set the moment
+    /// the user opens an alerting tracker; cleared on a fresh drop (see
+    /// `markAlertViewed`).
+    var alertAcknowledgedAt: Date?
 
     /// The current best (lowest) price across all stores that have a fetched price,
     /// falling back to `initialPrice` when none has refreshed yet.
@@ -131,6 +137,15 @@ struct PriceTracker: Codable, Equatable {
         !isArchived && discountFraction >= alertThresholdFraction
     }
 
+    /// Whether this tracker has an alert the user hasn't seen yet: it's alerting AND
+    /// the user hasn't acknowledged the current alert. This is the condition that
+    /// floats the row to the very TOP of the whole reading list (badged red). Once
+    /// the user opens the alerting tracker (`markAlertViewed`), this becomes false and
+    /// the row rejoins the price-tracking section below Reading.
+    var hasUnviewedAlert: Bool {
+        isAlerting && alertAcknowledgedAt == nil
+    }
+
     /// The absolute price drop (in `initialCurrency`) the threshold corresponds to.
     var thresholdAbsoluteDrop: Decimal {
         let fraction = Decimal(alertThresholdFraction)
@@ -162,6 +177,15 @@ struct PriceTracker: Codable, Equatable {
         self.initialCurrency = currency
         self.alertThresholdFraction = alertThresholdFraction
         self.isArchived = false
+        self.alertAcknowledgedAt = nil
+    }
+
+    /// Marks the current alert as viewed (the user opened the alerting tracker), so
+    /// the row stops floating to the top of the list and rejoins the price-tracking
+    /// section. No-op when not alerting (nothing to acknowledge).
+    mutating func markAlertViewed(at date: Date = Date()) {
+        guard isAlerting else { return }
+        alertAcknowledgedAt = date
     }
 
     /// Whether a URL is already one of this tracker's stores.
@@ -190,9 +214,15 @@ struct PriceTracker: Codable, Equatable {
         return true
     }
 
-    /// Updates the fetched price for an existing store (background refresh).
+    /// Updates the fetched price for an existing store (background refresh). A price
+    /// that drops the store strictly lower than its previously seen value clears any
+    /// prior alert acknowledgement, so a genuinely fresh drop re-floats to the top of
+    /// the list as an unviewed alert.
     mutating func setPrice(_ price: Decimal?, currency: String?, urlString: String, at date: Date) {
         guard let index = stores.firstIndex(where: { $0.urlString == urlString }) else { return }
+        if let newPrice = price, let oldPrice = stores[index].lastPrice, newPrice < oldPrice {
+            alertAcknowledgedAt = nil
+        }
         stores[index].lastPrice = price
         if let currency { stores[index].currency = currency }
         stores[index].lastRefreshed = date
@@ -203,6 +233,7 @@ struct PriceTracker: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case productName, stores, brand, productID, imageFileName
         case initialPrice, initialCurrency, alertThresholdFraction, isArchived
+        case alertAcknowledgedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -217,6 +248,8 @@ struct PriceTracker: Codable, Equatable {
         let fraction = try container.decodeIfPresent(Double.self, forKey: .alertThresholdFraction) ?? 0.10
         alertThresholdFraction = min(max(fraction, 0.01), 0.95)
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+        // Defaulted to nil so old payloads (no key) read as "alert not yet viewed".
+        alertAcknowledgedAt = try container.decodeIfPresent(Date.self, forKey: .alertAcknowledgedAt)
         let decodedInitial = try container.decodeIfPresent(Decimal.self, forKey: .initialPrice)
         // Repair the ≥1-store invariant for any malformed persisted payload.
         if decodedStores.isEmpty {

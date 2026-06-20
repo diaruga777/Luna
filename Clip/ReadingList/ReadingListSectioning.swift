@@ -27,6 +27,7 @@ enum ReadingListSectioning {
         case archive = 2
         case error = 3
         case pasteboard = 4
+        case priceTracking = 5
 
         var title: String {
             switch self {
@@ -34,20 +35,22 @@ enum ReadingListSectioning {
             case .archive: return "Archive"
             case .error: return "Couldn't Load"
             case .pasteboard: return "From Pasteboard"
+            case .priceTracking: return "Price tracking"
             }
         }
 
         /// Reading and the pasteboard suggestion are always open; the rest collapse.
         var isCollapsible: Bool {
             switch self {
-            case .reading, .pasteboard: return false
+            case .reading, .pasteboard, .priceTracking: return false
             case .archive, .error: return true
             }
         }
     }
 
-    /// Top-to-bottom display order of the sections.
-    static let displayOrder: [Section] = [.pasteboard, .reading, .archive, .error]
+    /// Top-to-bottom display order of the sections. Price tracking sits between
+    /// the pasteboard suggestion and the active Reading list.
+    static let displayOrder: [Section] = [.pasteboard, .priceTracking, .reading, .archive, .error]
 
     /// What the list shows: everything, only articles (anything that opens in
     /// the text reader), or only media & links (everything else).
@@ -55,12 +58,14 @@ enum ReadingListSectioning {
         case all = 0
         case articles = 1
         case mediaAndLinks = 2
+        case priceTrackers = 3
 
         var displayName: String {
             switch self {
             case .all: return "All"
             case .articles: return "Articles"
             case .mediaAndLinks: return "Media & Links"
+            case .priceTrackers: return "Price"
             }
         }
 
@@ -68,16 +73,19 @@ enum ReadingListSectioning {
             switch self {
             case .all: return true
             case .articles: return ReadingListSectioning.rendersAsReader(item)
-            case .mediaAndLinks: return !ReadingListSectioning.rendersAsReader(item)
+            case .mediaAndLinks:
+                return !ReadingListSectioning.rendersAsReader(item) && !item.isPriceTracker
+            case .priceTrackers: return item.isPriceTracker
             }
         }
     }
 
     /// Whether the item opens in the text reader (articles, documents, emails),
     /// as opposed to media & links (YouTube, platform posts, music/podcasts)
-    /// which open in a player, embed, or browser. Mirrors the tap routing.
+    /// which open in a player, embed, or browser. Mirrors the tap routing. Price
+    /// trackers are neither — they open the price-tracking screen.
     static func rendersAsReader(_ item: ReadingListItem) -> Bool {
-        item.contentPlatform == nil && !item.isYouTubeVideo
+        !item.isPriceTracker && item.contentPlatform == nil && !item.isYouTubeVideo
     }
 
     /// Splits the (already filter-applied) items into the Reading / Archive /
@@ -90,12 +98,22 @@ enum ReadingListSectioning {
     static func assignSections(
         items: [ReadingListItem],
         now: Date
-    ) -> (reading: [ReadingListItem], archive: [ReadingListItem], failed: [ReadingListItem]) {
+    ) -> (reading: [ReadingListItem], archive: [ReadingListItem], failed: [ReadingListItem],
+          priceTracking: [ReadingListItem]) {
         var reading: [ReadingListItem] = []
         var archive: [ReadingListItem] = []
         var failed: [ReadingListItem] = []
+        var priceTracking: [ReadingListItem] = []
+        // The single alerting tracker that floats to the very top (if any).
+        let alerting = topAlertingPriceTracker(items: items)
         for item in items {
-            if item.state == .failed {
+            if let tracker = item.priceTracker {
+                // Archived trackers drop out of the list entirely (still
+                // background-refresh-excluded). The one alerting tracker floats
+                // to the top of the WHOLE list, not the price-tracking section.
+                if tracker.isArchived || item.id == alerting?.id { continue }
+                priceTracking.append(item)
+            } else if item.state == .failed {
                 failed.append(item)
             } else if item.readState == .read
                         || now.timeIntervalSince(item.dateAdded) > archiveAge {
@@ -104,15 +122,40 @@ enum ReadingListSectioning {
                 reading.append(item)
             }
         }
-        return (reading, archive, failed)
+        return (reading, archive, failed, priceTracking)
     }
 
-    /// The Articles / Media filter is only meaningful when the list has BOTH a
-    /// reader item and a media/link item; otherwise it's pointless and hidden.
+    /// The single price tracker that should surface at the very TOP of the list,
+    /// badged red: the alerting (dropped-past-threshold), non-archived tracker
+    /// with the greatest discount. Ties broken by greatest discount then by id
+    /// for determinism. Nil when none is alerting.
+    static func topAlertingPriceTracker(items: [ReadingListItem]) -> ReadingListItem? {
+        items
+            .filter { $0.priceTracker?.isAlerting == true }
+            .max { lhs, rhs in
+                let lhsDiscount = lhs.priceTracker?.discountFraction ?? 0
+                let rhsDiscount = rhs.priceTracker?.discountFraction ?? 0
+                if lhsDiscount != rhsDiscount { return lhsDiscount < rhsDiscount }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+    }
+
+    /// The filter segment is meaningful when the list has at least two of the
+    /// three kinds (reader, media/link, price tracker); otherwise it's pointless
+    /// and hidden.
     static func shouldShowFilter(items: [ReadingListItem]) -> Bool {
+        let nonArchivedTrackers = items.filter { $0.priceTracker?.isArchived == false }
         let hasReaderItem = items.contains(where: rendersAsReader)
-        let hasMediaOrLink = items.contains { !rendersAsReader($0) }
-        return hasReaderItem && hasMediaOrLink
+        let hasMediaOrLink = items.contains { !rendersAsReader($0) && !$0.isPriceTracker }
+        let hasPriceTracker = !nonArchivedTrackers.isEmpty
+        let kinds = [hasReaderItem, hasMediaOrLink, hasPriceTracker].filter { $0 }.count
+        return kinds >= 2
+    }
+
+    /// Whether the price-tracking section/filter segment should appear — i.e. at
+    /// least one non-archived tracker exists.
+    static func hasPriceTrackers(items: [ReadingListItem]) -> Bool {
+        items.contains { $0.priceTracker?.isArchived == false }
     }
 
     /// Items worth catching up on: unread (incl. partially read), and

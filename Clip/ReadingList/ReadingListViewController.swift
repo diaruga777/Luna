@@ -137,11 +137,6 @@ final class ReadingListViewController: UITableViewController {
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(pulledToRefresh), for: .valueChanged)
 
-        filterControl.removeAllSegments()
-        for (index, option) in ListFilter.allCases.enumerated() {
-            filterControl.insertSegment(withTitle: option.displayName, at: index, animated: false)
-        }
-        filterControl.selectedSegmentIndex = filter.rawValue
         filterControl.addTarget(self, action: #selector(filterChanged(_:)), for: .valueChanged)
         let header = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
         filterControl.translatesAutoresizingMaskIntoConstraints = false
@@ -270,10 +265,20 @@ final class ReadingListViewController: UITableViewController {
 
         updateFilterVisibility()
         updateCatchUpButton()
-        let all = store.items().filter { filter.includes($0) }
+        let unfiltered = store.items()
+        let all = unfiltered.filter { filter.includes($0) }
         let buckets = ReadingListSectioning.assignSections(items: all, now: Date())
         var bySection: [Section: [ReadingListItem]] =
             [.reading: buckets.reading, .archive: buckets.archive, .error: buckets.failed]
+
+        // The single alerting price tracker floats to the TOP of the whole list
+        // (rendered as the first row of the price-tracking section), badged red.
+        // It's excluded from the section's own list by `assignSections`.
+        var priceTracking = buckets.priceTracking
+        if let alerting = ReadingListSectioning.topAlertingPriceTracker(items: all) {
+            priceTracking.insert(alerting, at: 0)
+        }
+        bySection[.priceTracking] = priceTracking
 
         // The pasteboard suggestion: a spinner row while evaluating, then the
         // resolved candidate (unless it's since been saved by some path).
@@ -307,26 +312,48 @@ final class ReadingListViewController: UITableViewController {
         return item
     }
 
+    /// The filter segments currently shown, in segment order. `.all` plus
+    /// whichever of Articles / Media / Price apply to the present list. The Price
+    /// segment is only included when a non-archived tracker exists.
+    private func visibleFilters() -> [ListFilter] {
+        let items = store.items()
+        var filters: [ListFilter] = [.all, .articles, .mediaAndLinks]
+        if ReadingListSectioning.hasPriceTrackers(items: items) {
+            filters.append(.priceTrackers)
+        }
+        return filters
+    }
+
     @objc private func filterChanged(_ control: UISegmentedControl) {
-        filter = ListFilter(rawValue: control.selectedSegmentIndex) ?? .all
+        let filters = visibleFilters()
+        let index = control.selectedSegmentIndex
+        filter = (index >= 0 && index < filters.count) ? filters[index] : .all
         reload()
     }
 
-    /// Shows the Articles / Media & Links filter only when the list has BOTH a
-    /// reader item and a media/link item; otherwise it's meaningless. Resets to
-    /// "All" when hidden so a stale selection can't leave the list empty.
+    /// Shows the filter control only when the list has at least two of the three
+    /// kinds (reader / media / price tracker); otherwise it's meaningless. Rebuilds
+    /// the segments to match the kinds present and resets a now-invalid selection.
     private func updateFilterVisibility() {
         let shouldShow = ReadingListSectioning.shouldShowFilter(items: store.items())
-        if shouldShow {
-            if tableView.tableHeaderView !== filterHeaderView {
-                tableView.tableHeaderView = filterHeaderView
-            }
-        } else {
-            if filter != .all {
-                filter = .all
-                filterControl.selectedSegmentIndex = ListFilter.all.rawValue
-            }
+        guard shouldShow else {
+            if filter != .all { filter = .all }
             if tableView.tableHeaderView != nil { tableView.tableHeaderView = nil }
+            return
+        }
+
+        let filters = visibleFilters()
+        // A selected filter no longer offered (its kind vanished) resets to All.
+        if !filters.contains(filter) { filter = .all }
+
+        filterControl.removeAllSegments()
+        for (index, option) in filters.enumerated() {
+            filterControl.insertSegment(withTitle: option.displayName, at: index, animated: false)
+        }
+        filterControl.selectedSegmentIndex = filters.firstIndex(of: filter) ?? 0
+
+        if tableView.tableHeaderView !== filterHeaderView {
+            tableView.tableHeaderView = filterHeaderView
         }
     }
 
@@ -809,6 +836,10 @@ final class ReadingListViewController: UITableViewController {
     /// Configures a row cell for `item` (shared with the search screen so its rows
     /// look identical to the list's).
     func configureItemCell(_ cell: ReadingListItemCell, for item: ReadingListItem) {
+        if let tracker = item.priceTracker {
+            configurePriceTrackerCell(cell, item: item, tracker: tracker)
+            return
+        }
         let titleColor: UIColor = item.state == .failed
             ? .systemRed
             : (item.readState == .unopened ? .label : .secondaryLabel)
@@ -820,6 +851,45 @@ final class ReadingListViewController: UITableViewController {
             showsDisclosure: item.state == .ready,
             reuseKey: "\(item.id.uuidString)|\(item.thumbnailFileName ?? "")|\(item.state.rawValue)")
         cell.showsReorderControl = false   // reorder is drag-anywhere in edit mode, no handle
+    }
+
+    /// Price-tracker rows get their own rendering: product thumbnail, product
+    /// name title, and a current-best-price subtitle. An alerting tracker (price
+    /// dropped past threshold) is badged red with the discount.
+    private func configurePriceTrackerCell(
+        _ cell: ReadingListItemCell, item: ReadingListItem, tracker: PriceTracker
+    ) {
+        let alerting = tracker.isAlerting
+        let priceText = PriceFormatting.string(
+            amount: tracker.currentBestPrice, currency: tracker.displayCurrency)
+
+        let baseColor: UIColor = alerting ? .systemRed : .secondaryLabel
+        let subtitle = NSMutableAttributedString(
+            string: priceText, attributes: [.foregroundColor: baseColor])
+        if alerting {
+            let percent = Int((tracker.discountFraction * 100).rounded())
+            subtitle.append(NSAttributedString(
+                string: "  ↓\(percent)%",
+                attributes: [.foregroundColor: UIColor.systemRed]))
+        }
+
+        let thumbnail: ReadingListItemCell.Thumbnail
+        if let fileName = tracker.imageFileName,
+           let data = try? Data(contentsOf: store.articlesDirectory.appendingPathComponent(fileName)),
+           let image = UIImage(data: data) {
+            thumbnail = .image(image)
+        } else {
+            thumbnail = .logo(assetName: nil, glyph: alerting ? "tag.fill" : "tag")
+        }
+
+        cell.configure(
+            title: tracker.productName,
+            titleColor: alerting ? .systemRed : .label,
+            subtitle: subtitle,
+            thumbnail: thumbnail,
+            showsDisclosure: true,
+            reuseKey: "pt|\(item.id.uuidString)|\(priceText)|\(alerting)")
+        cell.showsReorderControl = false
     }
 
     /// Builds the grey metadata line, with the "from <friend>" attribution in
@@ -876,6 +946,11 @@ final class ReadingListViewController: UITableViewController {
     /// screen): platform/video/media via `openItem`, a hard-paywalled article via
     /// the archive web view, else the in-app reader pushed on `presenter`'s nav.
     func open(_ item: ReadingListItem, presenter: UIViewController) {
+        if item.isPriceTracker {
+            let viewController = PriceTrackingViewController(itemID: item.id)
+            presenter.navigationController?.pushViewController(viewController, animated: true)
+            return
+        }
         if openItem(item, presentingFrom: presenter) { return }
         // A hard-paywalled article whose archive snapshot needs a CAPTCHA: open the
         // archive.today snapshot in our WKWebView archive reader. It shows the

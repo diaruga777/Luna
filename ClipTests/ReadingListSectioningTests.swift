@@ -41,6 +41,25 @@ final class ReadingListSectioningTests: XCTestCase {
         return item
     }
 
+    /// Builds a price-tracker item with a controllable discount + archived flag.
+    private func priceTracker(
+        initial: String = "100", best: String? = nil,
+        threshold: Double = 0.10, archived: Bool = false
+    ) -> ReadingListItem {
+        var item = ReadingListItem(urlString: "https://shop.example/\(UUID().uuidString)")
+        var tracker = PriceTracker(
+            productName: "Widget", firstStoreURL: item.urlString,
+            price: Decimal(string: initial)!, currency: "USD", alertThresholdFraction: threshold)
+        if let best {
+            tracker.setPrice(Decimal(string: best)!, currency: "USD",
+                             urlString: item.urlString, at: now)
+        }
+        tracker.isArchived = archived
+        item.priceTracker = tracker
+        item.state = .ready
+        return item
+    }
+
     // MARK: - rendersAsReader
 
     func testArticleRendersAsReader() {
@@ -111,6 +130,64 @@ final class ReadingListSectioningTests: XCTestCase {
         XCTAssertEqual(buckets.reading.map(\.id), [reading.id])
         XCTAssertEqual(Set(buckets.archive.map(\.id)), [archivedByAge.id, archivedByRead.id])
         XCTAssertEqual(buckets.failed.map(\.id), [failed.id])
+    }
+
+    // MARK: - price-tracking section
+
+    func testPriceTrackerGoesToPriceTrackingBucketNotReading() {
+        let buckets = ReadingListSectioning.assignSections(items: [priceTracker()], now: now)
+        XCTAssertEqual(buckets.priceTracking.count, 1)
+        XCTAssertTrue(buckets.reading.isEmpty)
+    }
+
+    func testArchivedTrackerExcludedFromAllBuckets() {
+        let buckets = ReadingListSectioning.assignSections(
+            items: [priceTracker(archived: true)], now: now)
+        XCTAssertTrue(buckets.priceTracking.isEmpty)
+        XCTAssertTrue(buckets.reading.isEmpty)
+    }
+
+    func testAlertingTrackerFloatsOutOfSection() {
+        // A tracker dropped 30% (> 10% threshold) is alerting → pulled to the top
+        // and excluded from the price-tracking section body.
+        let alerting = priceTracker(initial: "100", best: "70")
+        let calm = priceTracker(initial: "100", best: "98")
+        let buckets = ReadingListSectioning.assignSections(items: [alerting, calm], now: now)
+        XCTAssertEqual(buckets.priceTracking.map(\.id), [calm.id])
+        XCTAssertEqual(ReadingListSectioning.topAlertingPriceTracker(items: [alerting, calm])?.id,
+                       alerting.id)
+    }
+
+    func testTopAlertingPicksGreatestDiscount() {
+        let small = priceTracker(initial: "100", best: "85")  // 15% off
+        let big = priceTracker(initial: "100", best: "50")    // 50% off
+        XCTAssertEqual(
+            ReadingListSectioning.topAlertingPriceTracker(items: [small, big])?.id, big.id)
+    }
+
+    func testNoAlertingTrackerWhenNoneCrossThreshold() {
+        let calm = priceTracker(initial: "100", best: "95")
+        XCTAssertNil(ReadingListSectioning.topAlertingPriceTracker(items: [calm]))
+    }
+
+    func testHasPriceTrackersIgnoresArchived() {
+        XCTAssertFalse(ReadingListSectioning.hasPriceTrackers(items: [priceTracker(archived: true)]))
+        XCTAssertTrue(ReadingListSectioning.hasPriceTrackers(items: [priceTracker()]))
+    }
+
+    func testPriceFilterSegmentIncludesOnlyTrackers() {
+        XCTAssertTrue(ReadingListSectioning.ListFilter.priceTrackers.includes(priceTracker()))
+        XCTAssertFalse(ReadingListSectioning.ListFilter.priceTrackers.includes(article()))
+        XCTAssertFalse(ReadingListSectioning.ListFilter.mediaAndLinks.includes(priceTracker()))
+    }
+
+    func testFilterShownWithReaderAndPriceTracker() {
+        XCTAssertTrue(ReadingListSectioning.shouldShowFilter(items: [article(), priceTracker()]))
+    }
+
+    func testFilterHiddenWithOnlyPriceTrackers() {
+        XCTAssertFalse(ReadingListSectioning.shouldShowFilter(
+            items: [priceTracker(), priceTracker()]))
     }
 
     // MARK: - shouldShowFilter
@@ -240,7 +317,7 @@ final class ReadingListSectioningTests: XCTestCase {
     func testDisplayOrderPutsPasteboardFirstAndErrorLast() {
         XCTAssertEqual(
             ReadingListSectioning.displayOrder,
-            [.pasteboard, .reading, .archive, .error])
+            [.pasteboard, .priceTracking, .reading, .archive, .error])
     }
 
     func testOnlyArchiveAndErrorAreCollapsible() {

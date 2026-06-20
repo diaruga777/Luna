@@ -136,15 +136,20 @@ enum PlatformRecognizer {
             return id.allSatisfy(\.isNumber) ? id : nil
         })
 
-    /// Bluesky — `bsky.app/profile/<author>/post/<rkey>`.
+    /// Bluesky — `bsky.app/profile/<author>/post/<rkey>`. Unlike the other social
+    /// platforms, a bare Bluesky profile (no `/post/`) does NOT classify (matching
+    /// the live `PlatformClassifier`): only a post is a recognized item.
     static let bluesky = PlatformRule(
         platform: .bluesky, service: nil, hosts: ["bsky.app"],
-        itemID: { parts in
-            guard let authorIndex = parts.segments.firstIndex(of: "profile"),
-                  parts.segments.count > authorIndex + 3, parts.segments[authorIndex + 2] == "post"
-            else { return nil }
-            return parts.segments[authorIndex + 3]
-        })
+        recognizes: { blueskyPostID($0.segments) != nil },
+        itemID: { blueskyPostID($0.segments) })
+
+    /// The Bluesky post rkey from `/profile/<author>/post/<rkey>`, or nil.
+    private static func blueskyPostID(_ segments: [String]) -> String? {
+        guard let authorIndex = segments.firstIndex(of: "profile"),
+              segments.count > authorIndex + 3, segments[authorIndex + 2] == "post" else { return nil }
+        return segments[authorIndex + 3]
+    }
 
     /// Reddit — `reddit.com/r/<sub>/comments/<id>/…`, or `redd.it/<id>`.
     static let reddit = PlatformRule(

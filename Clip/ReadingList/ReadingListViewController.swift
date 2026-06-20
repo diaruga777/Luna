@@ -838,35 +838,12 @@ final class ReadingListViewController: UITableViewController {
         } else {
             leadingLabel = item.channelName ?? host
         }
-        var parts = [leadingLabel, dateFormatter.string(from: item.dateAdded)]
-        if !item.isYouTubeVideo {
-            if ReaderSettings.showReadingTime, let words = item.wordCount, words > 0 {
-                parts.append("\(max(1, Int((Double(words) / 220.0).rounded(.up)))) min")
-            }
-            if ReaderSettings.showReadingProgress, item.readState != .read,
-               let progress = item.readingProgress, progress > 0.01 {
-                parts.append("\(Int(progress * 100))%")
-            }
-        }
-        // Per-destination send status (e.g. "sent to Kindle", "Boox send failed").
-        let destinationNames = [
-            ArticleDestinationID.kindle: "Kindle",
-            ArticleDestinationID.boox: "Boox",
-        ]
-        for (destinationID, state) in item.sendStates.sorted(by: { $0.key < $1.key }) {
-            let name = destinationNames[destinationID] ?? destinationID
-            switch state {
-            case .sent: parts.append("sent to \(name)")
-            case .failed: parts.append("\(name) send failed")
-            case .queued: parts.append("sending to \(name)…")
-            }
-        }
-        switch item.state {
-        case .pending: parts.append("downloading…")
-        case .failed: parts.append("pull to retry")
-        case .needsCaptcha: parts.append("tap to unlock")
-        case .ready: break
-        }
+        let parts = ReadingListSubtitle.parts(
+            for: item,
+            leadingLabel: leadingLabel,
+            formattedDate: dateFormatter.string(from: item.dateAdded),
+            showReadingTime: ReaderSettings.showReadingTime,
+            showReadingProgress: ReaderSettings.showReadingProgress)
 
         let result = NSMutableAttributedString(
             string: parts.joined(separator: " · "),

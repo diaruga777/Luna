@@ -27,7 +27,13 @@ enum UITestSeeder {
     private static let screenArg = "-uiTestScreen"
 
     /// Whether the app was launched into a UI-test seeded state.
-    static var isActive: Bool { requestedState != nil }
+    static var isActive: Bool {
+        #if DEBUG
+        return requestedState != nil
+        #else
+        return false
+        #endif
+    }
 
     /// Whether this process was launched by the UI-test / screenshot harness at all
     /// (a seeded state, a deep-linked screen, or an onboarding step). The screenshot
@@ -44,15 +50,15 @@ enum UITestSeeder {
         #endif
     }
 
-    /// The state requested on the command line, if any (and recognized).
+    /// The state requested on the command line, if any (and recognized). DEBUG-only —
+    /// the type itself (`UITestState`) doesn't exist in release, so the whole property
+    /// is compiled out (callers reference it only from `#if DEBUG`).
+    #if DEBUG
     static var requestedState: UITestState? {
-        #if DEBUG
         guard let raw = argumentValue(for: stateArg) else { return nil }
         return UITestState(rawValue: raw)
-        #else
-        return nil
-        #endif
     }
+    #endif
 
     /// The onboarding step the harness wants to land on, if requested. When present,
     /// the app should show onboarding (regardless of stored identity) starting at
@@ -70,14 +76,12 @@ enum UITestSeeder {
     /// requested (and recognized). When present, `SceneDelegate` builds that screen
     /// directly instead of the reading list, so the screenshot agent can capture any
     /// screen on any device without coordinate-tapping. DEBUG-only.
+    #if DEBUG
     static var requestedScreen: UITestScreen? {
-        #if DEBUG
         guard let raw = argumentValue(for: screenArg) else { return nil }
         return UITestScreen(rawValue: raw)
-        #else
-        return nil
-        #endif
     }
+    #endif
 
     /// Applies the seed if a state was requested: wipes + seeds the shared store and
     /// disables animations. Call once, early in scene setup. No-ops in release or

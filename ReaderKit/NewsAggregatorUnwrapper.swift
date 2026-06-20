@@ -21,6 +21,10 @@ enum NewsAggregatorUnwrapper {
     /// Resolves `url` to its underlying publisher URL, or nil. Network-backed only
     /// for recognized wrapper hosts; every other host returns nil immediately.
     static func unwrap(_ url: URL, session: URLSession = .shared) async -> URL? {
+        // Facebook redirect/share links carry the target inline (offline, no
+        // network) and an `fbrpc://` deep link has no http host, so this runs
+        // BEFORE the host gate below.
+        if let target = facebookRedirectTarget(url) { return target }
         guard let host = url.host?.lowercased() else { return nil }
         if isAppleNews(host) { return await unwrapAppleNews(url, session: session) }
         if isGoogleNews(host) { return await unwrapGoogleNews(url, session: session) }
@@ -161,6 +165,53 @@ enum NewsAggregatorUnwrapper {
               finalHost != url.host?.lowercased()
         else { return nil }
         return final
+    }
+
+    // MARK: - Facebook redirect / share links
+
+    /// Extracts the underlying article URL from a Facebook redirect wrapper,
+    /// fully offline (the target travels inline in a query param). Handles two
+    /// shapes:
+    ///   - `fbrpc://…/f?…&target_url=<percent-encoded-url>&…` deep links (shared
+    ///     out of the Facebook app), reading `target_url`.
+    ///   - link-shim URLs `https://l.facebook.com/l.php?u=<percent-encoded-url>&…`
+    ///     (and `lm.`/`m.`/bare `facebook.com` + `/l.php`), reading `u`.
+    /// The embedded value is percent-decoded once (URLComponents already decodes
+    /// query values), and the result is returned only if it is an http(s) URL on
+    /// a non-Facebook host. Returns nil for anything else. Pure.
+    static func facebookRedirectTarget(_ url: URL) -> URL? {
+        let scheme = url.scheme?.lowercased()
+        let host = url.host?.lowercased()
+
+        let paramName: String
+        if scheme == "fbrpc" {
+            paramName = "target_url"
+        } else if scheme == "https" || scheme == "http",
+                  let host, isFacebookLinkShimHost(host),
+                  url.path.lowercased() == "/l.php" {
+            paramName = "u"
+        } else {
+            return nil
+        }
+
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let raw = components.queryItems?.first(where: { $0.name == paramName })?.value,
+              let target = URL(string: raw),
+              target.scheme?.lowercased().hasPrefix("http") == true,
+              let targetHost = target.host?.lowercased(), !isFacebookHost(targetHost)
+        else { return nil }
+        return target
+    }
+
+    /// Hosts that serve Facebook's `/l.php` link shim.
+    private static func isFacebookLinkShimHost(_ host: String) -> Bool {
+        host == "l.facebook.com" || host == "lm.facebook.com"
+            || host == "m.facebook.com" || host == "facebook.com" || host == "www.facebook.com"
+    }
+
+    /// Any Facebook-owned host (so we never "unwrap" to another Facebook URL).
+    private static func isFacebookHost(_ host: String) -> Bool {
+        host == "facebook.com" || host.hasSuffix(".facebook.com") || host == "fb.com"
     }
 
     // MARK: - Helpers

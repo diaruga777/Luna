@@ -129,6 +129,54 @@ final class NewsAggregatorUnwrapperTests: XCTestCase {
         XCTAssertFalse(NewsAggregatorUnwrapper.isGoogleNews("google.com"))
     }
 
+    // MARK: - Facebook redirect / share links
+
+    func testFacebookRPCExtractsTargetURL() {
+        let input = "fbrpc://nativethirdparty/f?app_id=123456789"
+            + "&target_url=https%3A%2F%2Ftechcrunch.com%2F2026%2F06%2F09%2Fits-not-faang-anymore-its-mangos%2F%3Ffbclid%3DAbCdEf123"
+            + "&app_sites=https%3A%2F%2Fexample.com"
+        XCTAssertEqual(
+            NewsAggregatorUnwrapper.facebookRedirectTarget(url(input))?.absoluteString,
+            "https://techcrunch.com/2026/06/09/its-not-faang-anymore-its-mangos/?fbclid=AbCdEf123")
+    }
+
+    func testFacebookLinkShimExtractsTargetURL() {
+        let input = "https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.theverge.com%2F2026%2F06%2F01%2Fstory&h=AT123"
+        XCTAssertEqual(
+            NewsAggregatorUnwrapper.facebookRedirectTarget(url(input))?.absoluteString,
+            "https://www.theverge.com/2026/06/01/story")
+    }
+
+    func testFacebookLinkShimMobileHost() {
+        let input = "https://m.facebook.com/l.php?u=https%3A%2F%2Fexample.org%2Farticle"
+        XCTAssertEqual(
+            NewsAggregatorUnwrapper.facebookRedirectTarget(url(input))?.absoluteString,
+            "https://example.org/article")
+    }
+
+    func testFacebookRedirectNilForNonFacebookURL() {
+        XCTAssertNil(NewsAggregatorUnwrapper.facebookRedirectTarget(
+            url("https://www.nytimes.com/2026/06/20/world/story.html")))
+    }
+
+    func testFacebookRPCNilForNonHTTPTarget() {
+        let input = "fbrpc://nativethirdparty/f?app_id=123&target_url=fb%3A%2F%2Fprofile%2F42"
+        XCTAssertNil(NewsAggregatorUnwrapper.facebookRedirectTarget(url(input)))
+    }
+
+    func testFacebookLinkShimNilWhenTargetIsFacebook() {
+        let input = "https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.facebook.com%2Fgroups%2F42"
+        XCTAssertNil(NewsAggregatorUnwrapper.facebookRedirectTarget(url(input)))
+    }
+
+    func testFacebookRPCUnwrapStripsTrackingViaCanonicalization() {
+        // The fbrpc target carries an fbclid; canonicalForArchiving must drop it.
+        let target = url("https://techcrunch.com/2026/06/09/its-not-faang-anymore-its-mangos/?fbclid=AbCdEf123")
+        XCTAssertEqual(
+            ArticleFetcher.canonicalForArchiving(target).absoluteString,
+            "https://techcrunch.com/2026/06/09/its-not-faang-anymore-its-mangos/")
+    }
+
     // MARK: - Non-wrapper URLs are left alone (no network)
 
     func testUnwrapReturnsNilForOrdinaryURL() async {

@@ -138,7 +138,9 @@ struct PriceTracker: Codable, Equatable {
     }
 
     /// Creates a tracker from a freshly detected product, seeding its first store
-    /// with the detected price.
+    /// with the detected price. A tracker cannot exist without a real numeric price:
+    /// `price` is required, fetched up front by the `PriceFetcher` before the tracker
+    /// is created (see `claudedocs/price-tracking.md`).
     init(
         productName: String,
         firstStoreURL: String,

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!--
+  Trimmed from the real Bunnings product page that triggered the price-tracking
+  bug report (https://www.bunnings.com.au/ryobi-18v-one-25-30cm-cordless-line-
+  trimmer-tool-only_p0208315). The full page is ~900KB; this keeps every signal
+  ProductPageDetector relies on: <title> + og:title (product name), an
+  "Add to cart" button + addToCart handler, a star rating, and the real
+  __NEXT_DATA__ price object carrying "priceAvailable":true,"priceType":"FROM",
+  "value":99 plus the "AUD" currency ("currencyIso":"AUD","formattedValue":"$99.00").
+  There is intentionally NO JSON-LD, NO og:price/product:price, NO itemprop=price,
+  and NO visible "$" price text — exactly like the live page, which renders price
+  client-side. og:type is "website" (NOT "product"), as on the real page.
+-->
+<html lang="en-AU">
+<head>
+  <title>Ryobi 18V ONE+ 25/30cm Cordless Line Trimmer - Tool Only - Bunnings Australia</title>
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Ryobi 18V ONE+ 25/30cm Cordless Line Trimmer - Tool Only">
+  <meta property="og:image" content="https://media.bunnings.com.au/api/public/content/3982166a37204b0b887bbeb6e6c54547?v=f2c8dc14&amp;t=w1200">
+</head>
+<body>
+  <main>
+    <h1>Ryobi 18V ONE+ 25/30cm Cordless Line Trimmer - Tool Only</h1>
+    <div class="rating" aria-label="4.5 out of 5 Star Rating">★★★★½ <span>4.5 out of 5</span> (128 reviews)</div>
+    <div class="buy-box">
+      <button type="button" data-testid="addToCart" onclick="addToCart()">Add to cart</button>
+    </div>
+    <section class="description">
+      <p>The Ryobi 18V ONE+ Line Trimmer is part of the ONE+ system, where one battery
+      powers a growing range of tools. Cuts a 25cm path that expands to 30cm, with a
+      bump-feed head for fast line advance. Tool only — battery and charger sold
+      separately. Lightweight design for comfortable trimming around the yard.</p>
+    </section>
+  </main>
+  <script>function addToCart(){window.__cart=window.__cart||[];}</script>
+  <script id="__NEXT_DATA__" type="application/json" nonce="9d4198c1bec2dcbd948b414854c05ea4">{"props":{"pageProps":{"dehydratedState":{"mutations":[],"queries":[{"state":{"data":{"currencyIso":"AUD","formattedValue":"$99.00","hasMultipleOffers":false,"paymentOption":{"afterpay":{"instalmentAmount":24.75,"instalmentCount":4},"zip":{"minimumInstalmentAmount":10}},"priceAvailable":true,"priceType":"FROM","value":99},"dataUpdateCount":1,"status":"success"},"queryKey":["price","0208315"]}]}}},"page":"/[...slug]","buildId":"abc123"}</script>
+</body>
+</html>

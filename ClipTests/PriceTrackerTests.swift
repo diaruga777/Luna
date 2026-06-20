@@ -158,6 +158,41 @@ final class PriceTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.currentBestPrice, Decimal(string: "70"))
     }
 
+    /// Merge-revert: removing exactly the just-added seller from a multi-seller
+    /// tracker leaves the pre-existing sellers intact (the "Read instead" merge case).
+    func testRevertingAddedSellerLeavesTheRestIntact() {
+        var tracker = makeTracker()
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: Decimal(string: "90"), currency: "USD"))
+        let addedURL = "https://c.example/p"
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: addedURL, lastPrice: Decimal(string: "80"), currency: "USD"))
+        XCTAssertEqual(tracker.stores.count, 3)
+
+        XCTAssertTrue(tracker.removeStore(urlString: addedURL),
+                      "the just-added seller should be removable")
+        XCTAssertFalse(tracker.hasStore(urlString: addedURL),
+                       "the reverted seller is gone")
+        XCTAssertEqual(tracker.stores.map(\.urlString),
+                       ["https://a.example/p", "https://b.example/p"],
+                       "the pre-existing sellers remain, in order")
+    }
+
+    /// Add-seller dedupe: `hasStore` is the guard the editor uses to reject a URL
+    /// that is already a seller (no duplicate row, no redundant price fetch).
+    func testHasStoreDetectsDuplicateSeller() {
+        var tracker = makeTracker()
+        XCTAssertTrue(tracker.hasStore(urlString: "https://a.example/p"))
+        XCTAssertFalse(tracker.hasStore(urlString: "https://new.example/p"))
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://new.example/p", lastPrice: Decimal(string: "50"), currency: "USD"))
+        XCTAssertTrue(tracker.hasStore(urlString: "https://new.example/p"))
+        // Upserting the same URL again does not create a second row.
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://new.example/p", lastPrice: Decimal(string: "40"), currency: "USD"))
+        XCTAssertEqual(tracker.stores.filter { $0.urlString == "https://new.example/p" }.count, 1)
+    }
+
     func testMergingCheaperStoreDoesNotLowerBaseline() {
         var tracker = makeTracker(price: "100")
         tracker.upsertStore(PriceTrackerStore(

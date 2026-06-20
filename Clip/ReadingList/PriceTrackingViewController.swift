@@ -8,33 +8,63 @@ import UIKit
 extension Notification.Name {
     /// Posted when an interactive save (paste/manual/app intent) created or merged
     /// a price tracker, so the foreground reading list can present its editor with
-    /// a Cancel → save-as-article fallback. `userInfo`: `itemID: UUID`,
+    /// a "Read instead" → save-as-article fallback. `userInfo`: `itemID: UUID`,
     /// `isMerge: Bool`, `highlightedURL: String?`.
     static let priceTrackerSavedInteractively =
         Notification.Name("priceTrackerSavedInteractively")
 }
 
-/// Shows and edits one price tracker: a table of its store URLs (each row shows
-/// the extracted price; tapping opens the URL in the in-app browser), a **+**
-/// button to add another store URL for the same product, and a bottom alert-config
-/// control (a threshold slider shown both as a percent and as an absolute price).
+/// Shows and edits one price tracker: a table of its seller URLs (each row shows
+/// the extracted price; tapping opens the URL in the in-app browser), an **Add
+/// seller** footer (paste a URL, or web-search/browse to one), and a bottom
+/// alert-config control (a threshold slider shown both as a percent and as an
+/// absolute price).
 ///
-/// Two entry points:
-/// - **existing**: open an already-saved tracker (`init(itemID:)`).
-/// - **creation/merge** (save-time UX): present at save time so the user can add
-///   more URLs before committing, with a Cancel button that instead saves the URL
-///   as a normal text article (`init(creation:)`).
+/// Navigation chrome is decided by an explicit `PriceTrackingExitContext` (host +
+/// entry), so the right control lands in the right context regardless of the view
+/// hierarchy (see `ReaderKit/PriceTrackingExitContext.swift`):
+/// - **Top-left** — Back chevron in-app (pops), Done in an extension (dismisses).
+/// - **Top-right "Read instead"** — only at save time. **Creation** discards the
+///   whole new tracker and saves the URL as a normal article; **merge** reverts
+///   ONLY the just-added seller and saves that one URL as an article. **Existing**
+///   (returning to a saved tracker) shows no "Read instead" button.
 final class PriceTrackingViewController: UIViewController {
 
-    /// How the screen was opened.
+    /// How the screen was opened, mapped to a `PriceTrackingExitContext`.
     enum Mode {
-        /// Viewing/editing an existing saved tracker.
+        /// Viewing/editing an already-saved tracker (in-app). No "Read instead".
         case existing(itemID: UUID)
-        /// Presented at save time for a freshly detected product (creation flow):
-        /// the item is already saved as a tracker, but a Cancel converts it to a
-        /// normal article instead. `highlightedURL` is the just-added store URL to
-        /// flash at the top (used when merging into an existing tracker).
-        case creation(itemID: UUID, isMerge: Bool, highlightedURL: String?)
+        /// Save-time, a brand-new product saved as its OWN new tracker. "Read instead"
+        /// discards the whole tracker and saves the URL as an article.
+        case creation(itemID: UUID, host: PriceTrackingHost)
+        /// Save-time, the just-saved URL was merged as a seller into an EXISTING
+        /// tracker. "Read instead" reverts ONLY `addedStoreURLString` and saves that
+        /// one URL as an article. `addedStoreURLString` is flashed at the top.
+        case merge(itemID: UUID, addedStoreURLString: String, host: PriceTrackingHost)
+
+        var itemID: UUID {
+            switch self {
+            case .existing(let id), .creation(let id, _), .merge(let id, _, _): return id
+            }
+        }
+
+        /// The pure host + entry decision model for this mode.
+        var exitContext: PriceTrackingExitContext {
+            switch self {
+            case .existing:
+                return PriceTrackingExitContext(host: .inApp, entry: .existing)
+            case .creation(_, let host):
+                return PriceTrackingExitContext(host: host, entry: .creation)
+            case .merge(_, let url, let host):
+                return PriceTrackingExitContext(host: host, entry: .merge(addedStoreURLString: url))
+            }
+        }
+
+        /// The just-added seller URL to flash at the top (merge only).
+        var highlightedURLString: String? {
+            if case .merge(_, let url, _) = self { return url }
+            return nil
+        }
     }
 
     private let mode: Mode
@@ -45,12 +75,8 @@ final class PriceTrackingViewController: UIViewController {
     private let thresholdSlider = UISlider()
     private let thresholdLabel = UILabel()
 
-    private var itemID: UUID {
-        switch mode {
-        case .existing(let id): return id
-        case .creation(let id, _, _): return id
-        }
-    }
+    private var itemID: UUID { mode.itemID }
+    private var exitContext: PriceTrackingExitContext { mode.exitContext }
 
     private var tracker: PriceTracker? { store.item(withID: itemID)?.priceTracker }
 
@@ -78,6 +104,7 @@ final class PriceTrackingViewController: UIViewController {
         tableView.delegate = self
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "store")
+        tableView.tableFooterView = makeAddSellerFooter()
         view.addSubview(tableView)
 
         let footer = makeThresholdFooter()
@@ -94,33 +121,62 @@ final class PriceTrackingViewController: UIViewController {
             footer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
 
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .add, target: self, action: #selector(addStoreTapped))
-
-        switch mode {
-        case .existing:
-            // Viewing an existing tracker: a clear Done that always leaves the screen
-            // (pops back to the reading list, or dismisses if presented modally).
-            navigationItem.leftBarButtonItem = UIBarButtonItem(
-                barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
-        case .creation(_, let isMerge, _):
-            // Save-time: Cancel backs out of the tracker save (re-saves as a normal
-            // article) and always leaves the screen.
-            navigationItem.leftBarButtonItem = UIBarButtonItem(
-                barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
-            if isMerge {
-                navigationItem.prompt = "Added to an existing tracker"
-            }
-        }
-
+        configureNavigationChrome()
         syncThresholdControl()
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
     }
 
+    /// Installs the top-left (back/done) and top-right ("Read instead") buttons from
+    /// the pure `PriceTrackingExitContext` decision.
+    private func configureNavigationChrome() {
+        switch exitContext.leftButton {
+        case .back:
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "chevron.backward"),
+                style: .plain, target: self, action: #selector(leftButtonTapped))
+        case .done:
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                barButtonSystemItem: .done, target: self, action: #selector(leftButtonTapped))
+        }
+
+        switch exitContext.readInsteadAction {
+        case .hidden:
+            navigationItem.rightBarButtonItem = nil
+        case .discardTracker, .revertAddedStore:
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                title: "Read instead", style: .plain,
+                target: self, action: #selector(readInsteadTapped))
+        }
+    }
+
     @objc private func reload() {
         tableView.reloadData()
         syncThresholdControl()
+    }
+
+    // MARK: - Add-seller footer
+
+    private func makeAddSellerFooter() -> UIView {
+        var config = UIButton.Configuration.plain()
+        config.title = "Add seller"
+        config.image = UIImage(systemName: "plus")
+        config.imagePadding = 8
+        config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 20)
+        let button = UIButton(configuration: config)
+        button.contentHorizontalAlignment = .leading
+        button.addTarget(self, action: #selector(addSellerTapped), for: .touchUpInside)
+
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 52))
+        button.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            button.topAnchor.constraint(equalTo: container.topAnchor),
+            button.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        return container
     }
 
     // MARK: - Threshold footer
@@ -180,59 +236,112 @@ final class PriceTrackingViewController: UIViewController {
         store.updatePriceTracker(tracker, for: itemID)
     }
 
-    // MARK: - Add store
+    // MARK: - Add seller
 
-    @objc private func addStoreTapped() {
+    /// The "Add seller" footer alert: a URL text field plus three vertically-stacked
+    /// actions — Add (paste a URL), Search (browse to one), Cancel.
+    @objc private func addSellerTapped() {
         let alert = UIAlertController(
-            title: "Add Store URL",
+            title: "Add a seller",
             message: "Track this product's price at another store.",
             preferredStyle: .alert)
         alert.addTextField { $0.placeholder = "https://…"; $0.keyboardType = .URL }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Add", style: .default) { [weak self] _ in
-            guard let urlString = alert.textFields?.first?.text, !urlString.isEmpty else { return }
-            self?.addStore(urlString: urlString)
+        alert.addAction(UIAlertAction(title: "Add", style: .default) { [weak self, weak alert] _ in
+            guard let urlString = alert?.textFields?.first?.text, !urlString.isEmpty else { return }
+            self?.addSeller(urlString: urlString)
         })
+        alert.addAction(UIAlertAction(title: "Search", style: .default) { [weak self] _ in
+            self?.presentSearchOverlay()
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         present(alert, animated: true)
     }
 
-    private func addStore(urlString: String) {
-        guard let tracker, !tracker.hasStore(urlString: urlString) else { return }
+    /// Adds `urlString` as a seller: fetches its price (mandatory) and only adds the
+    /// store when a price is readable; surfaces a message otherwise. Dedupes a URL
+    /// already tracked. `prefetchedHTML` (from the search overlay) lets the fetcher
+    /// skip a redundant network round-trip.
+    private func addSeller(urlString: String, prefetchedHTML: String? = nil) {
+        guard let tracker else { return }
+        if tracker.hasStore(urlString: urlString) {
+            presentMessage(title: "Already tracked", message: "This page is already a seller.")
+            return
+        }
         Task { [weak self] in
             guard let self else { return }
-            let price = await self.manager.fetchPrice(urlString: urlString)
+            let price = await self.manager.fetchPrice(
+                urlString: urlString, prefetchedHTML: prefetchedHTML)
             await MainActor.run {
                 guard var current = self.tracker else { return }
-                let storeListing = PriceTrackerStore(
-                    urlString: urlString,
-                    lastPrice: price?.amount,
-                    currency: price?.currency ?? current.initialCurrency,
-                    lastRefreshed: price != nil ? Date() : nil)
-                current.upsertStore(storeListing)
+                if current.hasStore(urlString: urlString) { return }
+                guard let price else {
+                    self.presentMessage(
+                        title: "No price found",
+                        message: "We couldn't read a price on that page, so it wasn't added.")
+                    return
+                }
+                current.upsertStore(PriceTrackerStore(
+                    urlString: urlString, lastPrice: price.amount,
+                    currency: price.currency, lastRefreshed: Date()))
                 self.store.updatePriceTracker(current, for: self.itemID)
             }
         }
     }
 
+    private func presentMessage(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+
+    // MARK: - Search overlay
+
+    /// Presents the web search/browse overlay preloaded with a Google Shopping search
+    /// for this product. Confirming a page (via "+" or auto-detect) adds it as a
+    /// seller through the same mandatory-price add path.
+    private func presentSearchOverlay() {
+        let productName = tracker?.productName ?? ""
+        let searchURL = ProductSearchURL.googleShoppingURL(forProductName: productName)
+            ?? URL(string: "https://www.google.com")
+        guard let searchURL else { return }
+        let overlay = ProductSearchOverlayViewController(initialURL: searchURL)
+        overlay.onUseThisPage = { [weak self] urlString, html in
+            self?.addSeller(urlString: urlString, prefetchedHTML: html.isEmpty ? nil : html)
+        }
+        present(overlay, animated: true)
+    }
+
     // MARK: - Exit
 
-    /// Done (existing mode): just leave the screen — the tracker is already saved and
-    /// every edit persists as it's made.
-    @objc private func doneTapped() {
+    /// Top-left button: pops back to the reading list (in-app) or dismisses/completes
+    /// the hosting extension (extension). The tracker is already saved and every edit
+    /// persists as it's made, so this just leaves the screen.
+    @objc private func leftButtonTapped() {
         dismissOrPop()
     }
 
-    /// Cancel (creation mode): back out of the tracker save and re-save the URL as a
-    /// normal article instead, then leave the screen. Falls back to a plain dismiss
-    /// if the item has gone (e.g. deleted elsewhere) so the button is never a no-op.
-    @objc private func cancelTapped() {
-        guard let item = store.item(withID: itemID) else {
-            dismissOrPop()
+    /// Top-right "Read instead": overrides the save-time tracker classification.
+    /// - **Creation**: discard the whole new tracker (delete its item) and re-save its
+    ///   URL as a normal article.
+    /// - **Merge**: revert ONLY the just-added seller (remove that URL from the
+    ///   existing tracker, leaving it otherwise intact) and save that one URL as an
+    ///   article.
+    /// Then leave the screen. Never shown for the existing entry.
+    @objc private func readInsteadTapped() {
+        switch exitContext.readInsteadAction {
+        case .hidden:
             return
+        case .discardTracker:
+            guard let item = store.item(withID: itemID) else { dismissOrPop(); return }
+            let urlString = item.urlString
+            store.delete(item)
+            Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
+        case .revertAddedStore(let urlString):
+            if var current = tracker, current.removeStore(urlString: urlString) {
+                store.updatePriceTracker(current, for: itemID)
+            }
+            Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
         }
-        let urlString = item.urlString
-        store.delete(item)
-        Task { await ReadingListIngestor.shared.handleSavePress(urlString: urlString, source: .manual) }
         dismissOrPop()
     }
 
@@ -268,15 +377,14 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
         cell.accessoryType = .disclosureIndicator
 
         // Flash the just-added/merged URL at the top.
-        if case .creation(_, _, let highlightedURL) = mode,
-           highlightedURL == storeListing.urlString {
+        if mode.highlightedURLString == storeListing.urlString {
             cell.backgroundColor = UIColor.systemYellow.withAlphaComponent(0.18)
         }
         return cell
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        "Stores"
+        "Sellers"
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

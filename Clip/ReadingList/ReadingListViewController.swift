@@ -350,8 +350,13 @@ final class ReadingListViewController: UITableViewController {
               navigationController?.topViewController === self else { return }
         let isMerge = (note.userInfo?["isMerge"] as? Bool) ?? false
         let highlightedURL = note.userInfo?["highlightedURL"] as? String
-        let viewController = PriceTrackingViewController(
-            mode: .creation(itemID: itemID, isMerge: isMerge, highlightedURL: highlightedURL))
+        let mode: PriceTrackingViewController.Mode
+        if isMerge, let highlightedURL {
+            mode = .merge(itemID: itemID, addedStoreURLString: highlightedURL, host: .inApp)
+        } else {
+            mode = .creation(itemID: itemID, host: .inApp)
+        }
+        let viewController = PriceTrackingViewController(mode: mode)
         navigationController?.pushViewController(viewController, animated: true)
     }
 

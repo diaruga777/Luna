@@ -11,7 +11,17 @@ import Foundation
 /// embedded JSON → WKWebView render) as save-time and the background refresher.
 protocol PriceTrackingManaging {
     /// Fetches the current price at `urlString`, or nil if no price can be found.
-    func fetchPrice(urlString: String) async -> ProductPrice?
+    /// `prefetchedHTML` (e.g. the rendered HTML the search overlay already captured)
+    /// lets the fetcher take its fast static/embedded path without a redundant
+    /// network round-trip; pass nil to have it fetch.
+    func fetchPrice(urlString: String, prefetchedHTML: String?) async -> ProductPrice?
+}
+
+extension PriceTrackingManaging {
+    /// Convenience for the paste-a-URL add path, which has no prefetched HTML.
+    func fetchPrice(urlString: String) async -> ProductPrice? {
+        await fetchPrice(urlString: urlString, prefetchedHTML: nil)
+    }
 }
 
 /// Live implementation backed by the shared `PriceFetcher`.
@@ -22,7 +32,7 @@ struct PriceTrackingManager: PriceTrackingManaging {
         self.priceFetcher = priceFetcher
     }
 
-    func fetchPrice(urlString: String) async -> ProductPrice? {
-        await priceFetcher.fetchPrice(forURLString: urlString, prefetchedHTML: nil)
+    func fetchPrice(urlString: String, prefetchedHTML: String?) async -> ProductPrice? {
+        await priceFetcher.fetchPrice(forURLString: urlString, prefetchedHTML: prefetchedHTML)
     }
 }

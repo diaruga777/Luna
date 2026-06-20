@@ -97,10 +97,11 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         _ = window
     }
 
-    // MARK: - Exit (Done / Cancel)
+    // MARK: - Exit (Back / Read instead)
 
-    /// Existing mode shows a working Done that pops back to the reading list.
-    func testExistingModeDonePopsBack() {
+    /// Existing mode shows a Back chevron that pops back to the reading list, and NO
+    /// "Read instead" button (just viewing a saved tracker).
+    func testExistingModeBackPopsAndNoReadInstead() {
         UITestSupport.seedSharedStore(.priceTracking)
         guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
@@ -112,19 +113,24 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         nav.pushViewController(editor, animated: false)
         editor.loadViewIfNeeded()
         XCTAssertTrue(nav.topViewController is PriceTrackingViewController)
+        XCTAssertNil(editor.navigationItem.rightBarButtonItem,
+                     "existing mode must NOT show a Read instead button")
 
-        guard let done = editor.navigationItem.leftBarButtonItem, let action = done.action,
-              let target = done.target else {
-            XCTFail("existing mode should have a Done button"); return
+        guard let back = editor.navigationItem.leftBarButtonItem, let action = back.action,
+              let target = back.target else {
+            XCTFail("existing mode should have a Back button"); return
         }
         _ = target.perform(action)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        XCTAssertTrue(nav.topViewController === list, "Done should pop back to the reading list")
+        XCTAssertTrue(nav.topViewController === list, "Back should pop back to the reading list")
+        XCTAssertNotNil(ReadingListStore.shared.item(withID: tracker.id),
+                        "Back must not delete the tracker")
         _ = window
     }
 
-    /// Creation-mode Cancel backs out: the tracker item is removed and the screen pops.
-    func testCreationModeCancelRemovesTrackerAndPops() {
+    /// Creation-mode "Read instead" discards the whole new tracker: the item is
+    /// removed (re-saved as an article) and the screen pops.
+    func testCreationModeReadInsteadDiscardsTrackerAndPops() {
         UITestSupport.seedSharedStore(.priceTracking)
         guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
@@ -132,21 +138,75 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         let list = ReadingListViewController()
         let nav = UINavigationController(rootViewController: list)
         let window = UITestSupport.host(nav)
-        let editor = PriceTrackingViewController(
-            mode: .creation(itemID: tracker.id, isMerge: false, highlightedURL: nil))
+        let editor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .inApp))
         nav.pushViewController(editor, animated: false)
         editor.loadViewIfNeeded()
 
-        guard let cancel = editor.navigationItem.leftBarButtonItem, let action = cancel.action,
-              let target = cancel.target else {
-            XCTFail("creation mode should have a Cancel button"); return
+        guard let readInstead = editor.navigationItem.rightBarButtonItem,
+              let action = readInstead.action, let target = readInstead.target else {
+            XCTFail("creation mode should have a Read instead button"); return
         }
         _ = target.perform(action)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        XCTAssertTrue(nav.topViewController === list, "Cancel should pop back to the reading list")
+        XCTAssertTrue(nav.topViewController === list, "Read instead should pop back to the reading list")
         XCTAssertNil(ReadingListStore.shared.item(withID: tracker.id),
-                     "Cancel should drop the tracker save (re-saved as an article instead)")
+                     "Read instead (creation) should drop the whole tracker save")
         _ = window
+    }
+
+    /// Merge-mode "Read instead" reverts ONLY the just-added seller, leaving the rest
+    /// of the existing tracker intact, and pops.
+    func testMergeModeReadInsteadRevertsOnlyAddedSeller() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        guard let item = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }),
+              var tracker = item.priceTracker else {
+            XCTFail("no price tracker seeded"); return
+        }
+        let originalURL = tracker.stores[0].urlString
+        let addedURL = "https://merge-revert.example.com/product/abc"
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: addedURL, lastPrice: 10, currency: tracker.initialCurrency, lastRefreshed: Date()))
+        ReadingListStore.shared.updatePriceTracker(tracker, for: item.id)
+
+        let list = ReadingListViewController()
+        let nav = UINavigationController(rootViewController: list)
+        let window = UITestSupport.host(nav)
+        let editor = PriceTrackingViewController(
+            mode: .merge(itemID: item.id, addedStoreURLString: addedURL, host: .inApp))
+        nav.pushViewController(editor, animated: false)
+        editor.loadViewIfNeeded()
+
+        guard let readInstead = editor.navigationItem.rightBarButtonItem,
+              let action = readInstead.action, let target = readInstead.target else {
+            XCTFail("merge mode should have a Read instead button"); return
+        }
+        _ = target.perform(action)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        let after = ReadingListStore.shared.item(withID: item.id)?.priceTracker
+        XCTAssertNotNil(after, "merge revert must keep the existing tracker")
+        XCTAssertEqual(after?.hasStore(urlString: addedURL), false,
+                       "the just-added seller should be reverted")
+        XCTAssertEqual(after?.hasStore(urlString: originalURL), true,
+                       "the existing seller must remain intact")
+        _ = window
+    }
+
+    /// The action/share extension host shows a Done button (not a Back chevron) as
+    /// the way out, while in-app shows Back.
+    func testExtensionHostShowsDoneInAppShowsBack() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+            XCTFail("no price tracker seeded"); return
+        }
+        let inAppEditor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .inApp))
+        inAppEditor.loadViewIfNeeded()
+        XCTAssertNotNil(inAppEditor.navigationItem.leftBarButtonItem?.image,
+                        "in-app left button is a back chevron image")
+
+        let extEditor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .extension))
+        extEditor.loadViewIfNeeded()
+        XCTAssertNil(extEditor.navigationItem.leftBarButtonItem?.image,
+                     "extension host left button is a system Done (no custom image)")
     }
 
     /// Opening an alerting tracker marks its alert viewed, so it stops floating.

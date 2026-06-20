@@ -30,6 +30,15 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     /// the top on first appearance instead of restoring the saved offset.
     private let explicitResumeWordIndex: Int?
 
+    /// The content offset captured the moment the reader's initial position is
+    /// applied — the baseline for deciding whether the user has since scrolled
+    /// far enough to count as a deliberate reposition (vs. just opening/closing).
+    private var openContentOffsetY: CGFloat?
+
+    /// Gates the gaze estimate so only a stable, multi-word lock — not a single
+    /// noisy sample — is allowed to move the carried reading position.
+    private var gazeLockGate = GazeLockGate()
+
     private let item: ReadingListItem
     private let content: ArticleContent
     private let rendered: RenderedArticle
@@ -88,14 +97,40 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         super.init(nibName: nil, bundle: nil)
     }
 
-    /// The word currently being read — read-aloud / chunk position when playing,
-    /// else the eye-tracked word, else the first word fully visible on screen.
-    /// Carried to other modes on a switch.
+    /// The word currently being read, carried to other modes on a switch.
+    ///
+    /// During active playback this is the read-aloud / chunk position. In plain
+    /// scroll, when a position was carried IN from another mode
+    /// (`explicitResumeWordIndex`), it must NOT drift just from opening/closing:
+    /// it only moves off that carried index when the user scrolled past a
+    /// threshold (→ first fully-visible word) or eye tracking confirmed a
+    /// multi-word lock (→ gaze word). With neither, it returns the carried index
+    /// unchanged — a no-op. See `ReaderResumePositionResolver`.
+    ///
+    /// On a FRESH open (no carried index — e.g. straight from the reading list)
+    /// there's no position to protect, so the first switch resumes from where
+    /// the reader actually is: the gaze lock if confirmed, else the first
+    /// fully-visible word.
     var currentReadingWordIndex: Int? {
         if let speech, let word = speech.currentWordIndex { return word }
         if let chunk, let word = chunk.currentWordIndex { return word }
-        if let gaze = gazeTracker?.estimatedWordIndex { return gaze }
-        return firstFullyVisibleWordIndex()
+
+        guard let resumeIndex = explicitResumeWordIndex else {
+            return gazeLockGate.confirmedIndex ?? firstFullyVisibleWordIndex()
+        }
+
+        let scrolled: Bool
+        if let openContentOffsetY {
+            scrolled = ReaderResumePositionResolver.scrolledPastThreshold(
+                openOffsetY: openContentOffsetY, currentOffsetY: textView.contentOffset.y)
+        } else {
+            scrolled = false
+        }
+        return ReaderResumePositionResolver.reportedWordIndex(
+            resumeIndex: resumeIndex,
+            scrolledPastThreshold: scrolled,
+            confirmedGazeIndex: gazeLockGate.confirmedIndex,
+            firstFullyVisibleIndex: firstFullyVisibleWordIndex())
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -243,6 +278,9 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         } else if let saved = item.lastScrollOffset {
             restoreScroll(to: CGFloat(saved))
         }
+        // Baseline for "has the user scrolled since opening?" (the carried
+        // position must survive a plain open/close untouched).
+        openContentOffsetY = textView.contentOffset.y
     }
 
     private func revealContent() {
@@ -276,8 +314,8 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
                 SharedDiagnosticLog.record(
                     "reader opened (scroll): gazeTracker=\(gazeTracker != nil) highlightSetting=\(ReaderSettings.highlightGazeWord)",
                     category: "gaze")
-                if gazeTracker != nil, ReaderSettings.highlightGazeWord {
-                    enableGazeHighlight()
+                if gazeTracker != nil {
+                    observeGazeForCarryOver(alsoHighlight: ReaderSettings.highlightGazeWord)
                 }
             }
         }
@@ -437,20 +475,26 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         chunk?.play(fromWordIndex: resumeWordIndex)
     }
 
-    /// Live-highlights the word the gaze tracker estimates you're reading,
-    /// driven by the tracker's update callback (no auto-scroll — the page
+    /// Observes the gaze tracker while in plain scroll mode: every estimate
+    /// feeds the lock gate (so a stable multi-word lock — and only that — may
+    /// move the carried reading position), and, when the live-highlight setting
+    /// is on, also highlights the looked-at word (no auto-scroll — the page
     /// shouldn't jump as your eyes move).
     private var gazeHighlightLogCount = 0
-    private func enableGazeHighlight() {
-        SharedDiagnosticLog.record("gaze highlight enabled", category: "gaze")
+    private func observeGazeForCarryOver(alsoHighlight: Bool) {
+        if alsoHighlight {
+            SharedDiagnosticLog.record("gaze highlight enabled", category: "gaze")
+        }
         gazeTracker?.onWordIndexChange = { [weak self] index in
             guard let self else { return }
+            self.gazeLockGate.record(index)
             // Throttled visibility into whether estimates are flowing.
             self.gazeHighlightLogCount += 1
             if self.gazeHighlightLogCount % 20 == 1 {
                 SharedDiagnosticLog.record("gaze word index = \(index)", category: "gaze")
             }
-            guard let range = self.wordMap.attributedRange(forWord: index) else { return }
+            guard alsoHighlight,
+                  let range = self.wordMap.attributedRange(forWord: index) else { return }
             self.applyHighlight(range)
         }
     }

@@ -1,0 +1,118 @@
+{
+  "events" : [
+    {
+      "index" : 0,
+      "kind" : {
+        "request" : {
+          "headers" : {
+
+          },
+          "method" : "GET",
+          "urlString" : "https:\/\/example.com\/small-habits"
+        },
+        "type" : "networkRequest"
+      },
+      "timestamp" : "2026-06-20T08:27:38Z"
+    },
+    {
+      "index" : 1,
+      "kind" : {
+        "response" : {
+          "body" : {
+            "kind" : "text",
+            "text" : "<html><head>\n<title>Fallback Title<\/title>\n<meta property=\"og:title\" content=\"The Quiet Power of Small Habits\" \/>\n<meta name=\"author\" content=\"Jordan Avery\" \/>\n<\/head><body>\n<nav><p>Site navigation that the extractor should strip from the output entirely.<\/p><\/nav>\n<article>\n<h1>The Quiet Power of Small Habits<\/h1>\n<p>Most lasting change does not arrive in a single dramatic moment. It accumulates quietly, one small and almost unnoticeable decision at a time, until the sum of those decisions becomes who you are.<\/p>\n<p>Researchers who study behavior have found that the size of a habit matters far less than its consistency. A two-minute version of a routine, repeated daily, reshapes identity more reliably than an ambitious plan abandoned after a week of enthusiasm.<\/p>\n<p>The practical lesson is to make the desired behavior so small that refusing it feels absurd. Read one page. Write one sentence. Stretch for sixty seconds. The point is not the page or the sentence; it is the vote you cast for the kind of person you are becoming.<\/p>\n<p>Over months these votes compound. The reader becomes a person who reads, the writer a person who writes, and the change feels, in retrospect, both inevitable and effortless even though each individual step was almost nothing at all.<\/p>\n<\/article>\n<footer><p>Copyright footer boilerplate the extractor should discard.<\/p><\/footer>\n<\/body><\/html>"
+          },
+          "headers" : {
+
+          },
+          "statusCode" : 200,
+          "urlString" : "https:\/\/example.com\/small-habits"
+        },
+        "type" : "networkResponse"
+      },
+      "timestamp" : "2026-06-20T08:27:38Z"
+    },
+    {
+      "index" : 2,
+      "kind" : {
+        "outcome" : "readable",
+        "type" : "resolveDecision"
+      },
+      "timestamp" : "2026-06-20T08:27:38Z"
+    },
+    {
+      "index" : 3,
+      "kind" : {
+        "blockCount" : 5,
+        "bodyTextLength" : 970,
+        "hasReadableBody" : true,
+        "title" : "The Quiet Power of Small Habits",
+        "type" : "extraction"
+      },
+      "timestamp" : "2026-06-20T08:27:38Z"
+    },
+    {
+      "index" : 4,
+      "kind" : {
+        "state" : "success",
+        "type" : "stateChange"
+      },
+      "timestamp" : "2026-06-20T08:27:38Z"
+    }
+  ],
+  "finalContent" : {
+    "author" : "Jordan Avery",
+    "blocks" : [
+      {
+        "kind" : "heading",
+        "links" : [
+
+        ],
+        "text" : "The Quiet Power of Small Habits"
+      },
+      {
+        "kind" : "paragraph",
+        "links" : [
+
+        ],
+        "text" : "Most lasting change does not arrive in a single dramatic moment. It accumulates quietly, one small and almost unnoticeable decision at a time, until the sum of those decisions becomes who you are."
+      },
+      {
+        "kind" : "paragraph",
+        "links" : [
+
+        ],
+        "text" : "Researchers who study behavior have found that the size of a habit matters far less than its consistency. A two-minute version of a routine, repeated daily, reshapes identity more reliably than an ambitious plan abandoned after a week of enthusiasm."
+      },
+      {
+        "kind" : "paragraph",
+        "links" : [
+
+        ],
+        "text" : "The practical lesson is to make the desired behavior so small that refusing it feels absurd. Read one page. Write one sentence. Stretch for sixty seconds. The point is not the page or the sentence; it is the vote you cast for the kind of person you are becoming."
+      },
+      {
+        "kind" : "paragraph",
+        "links" : [
+
+        ],
+        "text" : "Over months these votes compound. The reader becomes a person who reads, the writer a person who writes, and the change feels, in retrospect, both inevitable and effortless even though each individual step was almost nothing at all."
+      }
+    ],
+    "title" : "The Quiet Power of Small Habits"
+  },
+  "input" : {
+    "initialURLString" : "https:\/\/example.com\/small-habits",
+    "source" : {
+      "capture" : "shareSheet"
+    }
+  },
+  "metadata" : {
+    "createdAt" : "2026-06-20T08:27:38Z",
+    "id" : "C526B263-D403-467B-8260-395B95640252",
+    "itemURLString" : "https:\/\/example.com\/small-habits",
+    "state" : "success",
+    "terminatedAt" : "2026-06-20T08:27:38Z"
+  },
+  "schemaVersion" : 1
+}

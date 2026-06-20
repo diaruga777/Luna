@@ -21,6 +21,14 @@ Replay-compatible).
   pretty-JSON in the sandbox **Documents/Replays/**, NOT the App Group).
 - `RecordingHTMLFetcher.swift` — a `HTMLFetching` decorator capturing every
   URLSession request/response in `ArticleResolver`/`BypassRunner`.
+- `ReplayHTMLFetcher.swift` — the inverse of `RecordingHTMLFetcher`: a deterministic
+  `HTMLFetching` actor that ANSWERS each fetch from a replay's recorded
+  `networkResponse` events (matched by URL, consumed in recorded order), reproducing
+  recorded transport/HTTP failures too. No live network.
+- `ReplayPlayer.swift` — the integration harness core: decode a `Replay`, honor its
+  recorded `unwrap` target, drive the real `ArticleResolver` pipeline through a
+  `ReplayHTMLFetcher`, and diff the produced `ArticleContent` against the recorded
+  `finalContent` (returns a structured `Outcome`, no XCTest dependency).
 - `ReplayBugReporter.swift` — marks a save's replay `.userReported` + shares its zip.
 - `ZipArchiveWriter.swift` — stored-entry ZIP writer (moved here from `Clip/Send/`;
   shared so extensions can zip exports).
@@ -55,7 +63,9 @@ Event { index: Int; timestamp: ISO8601; kind: EventKind }
 
 ### `ReplaySource` (a superset of `CaptureSource`)
 
-Internally tagged. Either a standard capture source or a reader-internal one:
+Internally tagged with a hand-written `Codable` (NOT Swift's synthesized
+associated-value wrapping) so the on-disk shape is exactly the flat contract below.
+Either a standard capture source or a reader-internal one:
 
 ```
 {"capture": "manual"}     // capture(CaptureSource): paste|shareSheet|appIntent|friendShare|email|manual
@@ -210,6 +220,56 @@ The recorder is injected as a protocol (`ReplayRecording`), so a save with the
 terminated replay for that URL `.userReported`, rewrites the export, and shares
 its zip; shows an alert if no replay exists.
 
+## Replay as integration test
+
+A replay is also a regression test. The harness (`ReplayPlayer`) runs a recorded
+save back through the REAL article pipeline (`unwrap → resolve → extract`) with NO
+live network — every fetch is answered from the replay's recorded `networkResponse`
+events — and checks the app reproduces the recorded terminal outcome.
+
+**How it plays a replay** (`ReplayPlayer.play`):
+1. Decode the `Replay` (must be `schemaVersion == 1`).
+2. Reject non-article saves (a `note` starting `youtube`/`platform`/`document`) —
+   only the article path is driven today.
+3. Pick the URL: the recorded `unwrap` target if present (the live news-aggregator
+   unwrap issues raw `URLSession` requests OUTSIDE the `HTMLFetching` seam, so it
+   isn't captured for replay — the harness honors the recorded decision instead),
+   else `input.initialURLString`.
+4. Build a `ReplayHTMLFetcher(replay:)` and run `ArticleResolver.resolve(url:fetcher:)`.
+5. Map the resolution to a terminal state (`readable → .success` w/ content;
+   `paywalled`/`unreadable → .failed`) and diff the produced content against the
+   recorded `finalContent`. Returns an `Outcome { passed, reproducedState,
+   expectedState, contentDiffs, … }` — a mismatch is a non-passing `Outcome`, not a
+   throw. (Image local-file names are excluded from the diff — they're assigned by
+   the ingestor's image download, not the article path.)
+
+**State matching:** a `success` replay must reproduce `.success` exactly; any other
+recorded state (`failed`/`userReported`) is satisfied by any non-`success` outcome.
+
+**Exporting a replay → dropping it in as a test:**
+- Export: Diagnostics → Replays (tap a row) or the reader footer ladybug → "Report a
+  bug". Both share a `<uuid>.zip` containing one stored `<uuid>.txt` of pretty JSON.
+- Unzip the `.zip` and drop its `<uuid>.txt` (or any `*.json`) into
+  `ClipTests/Fixtures/Replays/`. That's it — `ReplayPlayerTests`
+  `testAllReplayFixturesReproduce` auto-discovers every `*.json`/`*.txt` there and
+  asserts each one reproduces (the project uses synchronized folders, so no
+  `.pbxproj` edit is needed).
+- A SUCCESS replay asserts its `finalContent` is reproduced; a FAILED replay asserts
+  a failure is reproduced. **A failing-save replay is a regression target**: add it,
+  watch the test fail, fix the pipeline until it passes.
+
+**Caveats / not-yet-replayable:**
+- Non-article saves (YouTube/platform/document) carry a `note`, not resolvable
+  article HTML, so the harness rejects them (`PlaybackError.unsupportedSource`).
+- The interactive WKWebView archive reader path (`archiveStage` events) isn't
+  replayed — those saves live in a separate replay and need a rendered DOM, not a
+  recorded `HTMLFetching` body.
+- The live news-aggregator unwrap network isn't captured (raw `URLSession`, outside
+  `HTMLFetching`); the harness replays the recorded `unwrap` decision instead.
+- Cover/inline-image downloads use `URLSession.shared` in the ingestor (not the
+  resolver seam) and aren't part of the replayed article path, so image local-file
+  names aren't reproduced and are excluded from the content diff.
+
 ## Tests
 
 `ClipTests/ReplayTests.swift` — encode/decode round-trip (one of every event
@@ -217,3 +277,13 @@ kind), discriminator shapes, source round-trip, recorder event ordering + termin
 state + body capping + `markUserReported`, disk store zip round-trip +
 `firstStoredEntryData`, the recording fetcher decorator (success + error) via the
 mock fetcher, resolver `bypassStrategy` logging, and media redaction. 13 tests.
+
+`ClipTests/ReplayPlayerTests.swift` — the integration harness: auto-discovered
+fixture replays (`testAllReplayFixturesReproduce` over `Fixtures/Replays/*.json|txt`),
+a success round-trip, a tampered-content reproduction failure, a recorded-transport-
+error failure, recorded-unwrap honoring, and unsupported-source rejection. Fixtures:
+`Fixtures/Replays/success-article.txt` (a normal readable save) and
+`failed-network.json` (a DNS-failure save). `ReplayFixtures` loads them relative to
+the test source (not bundled resources), mirroring `BypassFixtures`. The
+underscore-prefixed `_generateSuccessFixture` regenerates the success fixture if the
+extractor's output changes (run it by name; XCTest skips it otherwise).

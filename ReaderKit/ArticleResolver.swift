@@ -44,13 +44,18 @@ enum ArticleResolver {
     /// FT's from the direct stub), else `.unreadable`.
     static func resolve(
         url: URL,
+        prefetchedHTML: String? = nil,
         fetcher: HTMLFetching = ArticleFetcher(),
         extractor: ArticleExtractor = ArticleExtractor(),
         runner: BypassRunning? = nil,
         replayLog: ((EventKind) async -> Void)? = nil
     ) async -> ArticleResolution {
-        let direct = await extractedContent(from: { try await fetcher.fetchHTML(from: url) },
-                                            baseURL: url, extractor: extractor)
+        // Reuse the caller's already-fetched direct HTML when supplied (the shared
+        // decider fetches it once for product detection), else fetch it now.
+        let direct = await extractedContent(
+            from: { if let prefetchedHTML { return prefetchedHTML }
+                    return try await fetcher.fetchHTML(from: url) },
+            baseURL: url, extractor: extractor)
         // Skip everything else when the direct read already succeeded.
         if Self.isReadable(direct) {
             return .readable(direct!.0, html: direct!.1)

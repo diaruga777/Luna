@@ -14,7 +14,6 @@ final class ReadingListIngestor {
     private let fetcher = ArticleFetcher()
     private let extractor = ArticleExtractor()
     private let youTubeMetadataFetcher: YouTubeMetadataFetching = YouTubeOEmbedFetcher()
-    private let productDetector = ProductPageDetector()
     /// Resolves the mandatory price for a detected product (static → embedded JSON
     /// → WKWebView render). A product never becomes a tracker without a real price.
     private let priceFetcher: PriceFetching = PriceFetcher()
@@ -143,39 +142,20 @@ final class ReadingListIngestor {
             .map { RecordingHTMLFetcher(wrapping: fetcher, recorder: recorder, replayID: $0) }
             ?? fetcher
 
-        // Product-page detection runs BEFORE any paywall/archive treatment: a
-        // product page becomes a PRICE TRACKER, never an article and never the
-        // bypass/archive flow. Detection identifies a product CANDIDATE; the price
-        // is then fetched up front (static → embedded JSON → WKWebView render). Only
-        // a candidate with a real fetched price becomes a tracker — if no price can
-        // be obtained by any method, the candidate falls through to the normal
-        // article pipeline (saved as a plain article, never a broken tracker).
-        let productHTML = forceArticle ? nil : try? await resolveFetcher.fetchHTML(from: url)
-        if let html = productHTML,
-           let candidate = productDetector.detect(urlString: url.absoluteString, html: html) {
-            if let price = await priceFetcher.fetchPrice(
-                forURLString: url.absoluteString, prefetchedHTML: html) {
-                let product = ProductInfo(candidate: candidate, price: price)
-                await ingestProductTracker(item, url: url, product: product, replayID: replayID)
-                return
-            }
-            if let replayID {
-                await recorder.record(
-                    .note("product candidate \(candidate.name) had no fetchable price → article"),
-                    for: replayID)
-            }
-        }
-
-        // Direct fetch + extract, falling back to web archives for hard-paywalled
-        // sites (WSJ: 401; FT: subscription stub). A paywall whose body we can't
-        // read but whose title we can lands in `.needsCaptcha` — the archive.today
-        // snapshot it needs requires a user-solved CAPTCHA a background fetch can't
-        // pass, so the user unlocks it from the list. No title → genuinely broken.
-        let resolution = await ArticleResolver.resolve(
-            url: url, fetcher: resolveFetcher, extractor: extractor,
+        // The SHARED decision routine runs the WHOLE pipeline identically to the
+        // share-sheet extensions: product detection (→ price tracker, never
+        // paywall-bypassed) → article resolution through the gated silent bypass
+        // strategies → classification. This is the single point of truth so the app
+        // and the extensions can never diverge in WHAT they decide; they differ only
+        // in how they present the result.
+        let decision = await ArticleIngestDecider.decide(
+            url: url, skipProductDetection: forceArticle,
+            fetcher: resolveFetcher, extractor: extractor, priceFetcher: priceFetcher,
             replayLog: replayID.map { id in { [recorder] event in await recorder.record(event, for: id) } })
-        switch resolution {
-        case .readable(let content, let html):
+        switch decision {
+        case let .priceTracker(product, _):
+            await ingestProductTracker(item, url: url, product: product, replayID: replayID)
+        case .article(let content, let html):
             if let replayID {
                 await recorder.record(.resolveDecision(.readable), for: replayID)
                 await recorder.record(.extraction(
@@ -195,25 +175,17 @@ final class ReadingListIngestor {
             if let replayID {
                 await recorder.terminate(replayID, state: .success, finalContent: resolvedContent)
             }
-        case .paywalled(let title):
+        case .needsArchive(let title):
+            // A genuine paywall: park it for the interactive archive reader (the
+            // archive.today snapshot needs a user-solved CAPTCHA a background fetch
+            // can't pass). NOT terminal for the replay: the web reader owns its own.
             store.markNeedsCaptcha(item.id, title: title)
-            // NOT terminal: the user still solves the archive CAPTCHA in the web
-            // reader, which owns its own (separate) replay. Mark this background
-            // attempt failed so the diagnostic records that the silent path lost.
             if let replayID {
                 await recorder.record(.resolveDecision(.paywalled), for: replayID)
                 await recorder.terminate(replayID, state: .failed, finalContent: nil)
             }
-        case .unreadable:
-            // A hard-paywall host (WSJ/FT/…) or an already-archived URL can still be
-            // read via its archive.today snapshot behind a user-solved CAPTCHA — park
-            // it for the interactive archive reader instead of failing. Only a truly
-            // unreachable URL on an ordinary site is a genuine failure.
-            if ArticleFetcher.isHardPaywallHost(url) || ArticleFetcher.isArchiveTodayURL(url) {
-                store.markNeedsCaptcha(item.id, title: ArticleFetcher.articleTitleGuess(from: url))
-            } else {
-                store.markFailed(item.id)
-            }
+        case .failed:
+            store.markFailed(item.id)
             if let replayID {
                 await recorder.record(.resolveDecision(.unreadable), for: replayID)
                 await recorder.terminate(replayID, state: .failed, finalContent: nil)

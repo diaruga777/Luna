@@ -75,25 +75,32 @@ final class ShareReaderViewController: UIViewController {
         // the user exits mid-read; reuse the item the extension just appended.
         let item = ReadingListStore.shared.add(urlString: url.absoluteString)
 
-        switch await ArticleResolver.resolve(url: url) {
-        case .readable(let content, _):
+        // The SAME shared decision routine the main app + share extension use: it
+        // runs product detection AND the bypass gate, which the action-extension
+        // reader previously SKIPPED entirely (calling ArticleResolver.resolve
+        // directly) — the divergence this unification removes.
+        switch await ArticleIngestDecider.decide(url: url) {
+        case .article(let content, _):
             // Persist the parsed content so the main app has it too.
             let saved = ReadingListStore.shared.saveContent(content, for: item)
             presentReader(item: saved, content: content)
-        case .paywalled(let title):
-            // A hard paywall (WSJ/FT): resolve its archive.today CAPTCHA right here
-            // in the extension's own UI — the user never types the URL (it's
+        case let .priceTracker(product, _):
+            // A product page: save it as a price tracker silently (the reader can't
+            // present the main-app price UI) and confirm, exactly as the share
+            // extension does — never paywall-treated, never a failure screen.
+            let tracker = PriceTracker(
+                productName: product.name, firstStoreURL: url.absoluteString,
+                price: product.priceAmount, currency: product.priceCurrency,
+                brand: product.brand, productID: product.productID)
+            ReadingListStore.shared.savePriceTracker(tracker, for: item.id)
+            presentSavedConfirmation(productName: product.name)
+        case .needsArchive(let title):
+            // A genuine paywall (WSJ/FT/…): resolve its archive.today CAPTCHA right
+            // here in the extension's own UI — the user never types the URL (it's
             // pre-filled), at most they solve a CAPTCHA.
             presentArchiveReader(for: item, fallbackTitle: title)
-        case .unreadable:
-            // A hard-paywall host (WSJ/FT/…) or an already-archived URL can still be
-            // read through its archive snapshot behind a CAPTCHA — offer that rather
-            // than a dead-end failure. Only a truly unreachable ordinary page fails.
-            if ArticleFetcher.isHardPaywallHost(url) || ArticleFetcher.isArchiveTodayURL(url) {
-                presentArchiveReader(for: item, fallbackTitle: ArticleFetcher.articleTitleGuess(from: url))
-            } else {
-                presentFailure()
-            }
+        case .failed:
+            presentFailure()
         }
     }
 
@@ -137,6 +144,38 @@ final class ShareReaderViewController: UIViewController {
         reader.navigationItem.leftBarButtonItem = doneButton()
         // Replace this loading screen with the reader as the sole VC (no back).
         navigationController?.setViewControllers([reader], animated: false)
+    }
+
+    /// A saved-confirmation state for a product page captured as a price tracker:
+    /// a checkmark + the product name. The user edits the tracker in the main app.
+    private func presentSavedConfirmation(productName: String) {
+        spinner.stopAnimating()
+
+        let icon = UIImageView(image: UIImage(
+            systemName: "checkmark.circle.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 44, weight: .semibold)))
+        icon.tintColor = GlassStyle.readingAccent
+        icon.contentMode = .center
+
+        let label = UILabel()
+        label.text = "Tracking price for \(productName)"
+        label.textColor = .label
+        label.font = .preferredFont(forTextStyle: .headline)
+        label.textAlignment = .center
+        label.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [icon, label])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+        ])
     }
 
     private func presentFailure() {

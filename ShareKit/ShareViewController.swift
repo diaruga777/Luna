@@ -433,100 +433,79 @@ final class ShareViewController: UIViewController {
                     .map { RecordingHTMLFetcher(wrapping: ArticleFetcher(), recorder: recorder, replayID: $0) }
                     ?? ArticleFetcher()
 
-                // Product detection runs BEFORE any paywall/archive treatment, so a
-                // product page is routed to price tracking and NEVER paywall-bypassed.
-                // Detection identifies a candidate; the mandatory price is then fetched
-                // up front (static → embedded JSON → WKWebView render). Only a candidate
-                // with a real price becomes a tracker — the extension can't present the
-                // main-app price UI, so it saves silently; the user edits it in the app.
-                // A candidate with no fetchable price falls through to the article path.
-                let productHTML = try? await fetcher.fetchHTML(from: url)
-                if let html = productHTML,
-                   let candidate = ProductPageDetector().detect(urlString: url.absoluteString, html: html),
-                   let price = await PriceFetcher().fetchPrice(
-                       forURLString: url.absoluteString, prefetchedHTML: html),
-                   let item = ReadingListStore.shared.item(forURLString: url.absoluteString) {
-                    let product = ProductInfo(candidate: candidate, price: price)
-                    let tracker = PriceTracker(
-                        productName: product.name, firstStoreURL: url.absoluteString,
-                        price: product.priceAmount, currency: product.priceCurrency,
-                        brand: product.brand, productID: product.productID)
-                    ReadingListStore.shared.savePriceTracker(tracker, for: item.id)
-                    if let replayID {
-                        await recorder.record(.note("created price tracker"), for: replayID)
-                        await recorder.terminate(replayID, state: .success, finalContent: nil)
-                    }
-                    await MainActor.run {
-                        badge.removeFromSuperview()
-                        self.confirmSavedThenComplete()
-                    }
-                    return
-                }
-
-                let resolution = await ArticleResolver.resolve(
+                // The SAME shared decision routine the main app uses: product
+                // detection (→ price tracker, never paywall-bypassed) → gated article
+                // resolution → unified classification. The extension and the app can
+                // never decide differently; they differ only in presentation below.
+                let decision = await ArticleIngestDecider.decide(
                     url: url, fetcher: fetcher,
                     replayLog: replayID.map { id in { event in await recorder.record(event, for: id) } })
                 if let replayID {
-                    await self.recordExtensionResolution(resolution, replayID: replayID, recorder: recorder)
+                    await self.recordExtensionDecision(decision, replayID: replayID, recorder: recorder)
                 }
                 await MainActor.run {
                     badge.removeFromSuperview()
-                    self.finishArticleIngest(url: url, resolution: resolution)
+                    self.finishArticleIngest(url: url, decision: decision)
                 }
             }
         }
     }
 
-    /// Records the resolve outcome (and on success the final content + terminal
-    /// `success` state) for the extension's inline ingest. A paywalled/unreadable
-    /// result is NOT terminal here — the archive web reader continues — so it
-    /// terminates `.failed`, recording that the silent path lost (the interactive
-    /// archive solve, if any, isn't part of this background replay).
-    private func recordExtensionResolution(
-        _ resolution: ArticleResolution, replayID: UUID, recorder: ReplayRecording
+    /// Records the decision (and on success the final content + terminal `success`
+    /// state) for the extension's inline ingest. A needs-archive/failed result is NOT
+    /// terminal here — the archive web reader may continue — so it terminates
+    /// `.failed`, recording that the silent path lost (the interactive archive solve,
+    /// if any, isn't part of this background replay).
+    private func recordExtensionDecision(
+        _ decision: ArticleIngestDecision, replayID: UUID, recorder: ReplayRecording
     ) async {
-        switch resolution {
-        case let .readable(content, _):
+        switch decision {
+        case let .article(content, _):
             await recorder.record(.resolveDecision(.readable), for: replayID)
             await recorder.record(.extraction(
                 blockCount: content.blocks.count, bodyTextLength: content.bodyTextLength,
                 title: content.title, hasReadableBody: content.hasReadableBody), for: replayID)
             await recorder.terminate(replayID, state: .success, finalContent: content)
-        case .paywalled:
+        case .priceTracker:
+            await recorder.record(.note("created price tracker"), for: replayID)
+            await recorder.terminate(replayID, state: .success, finalContent: nil)
+        case .needsArchive:
             await recorder.record(.resolveDecision(.paywalled), for: replayID)
             await recorder.terminate(replayID, state: .failed, finalContent: nil)
-        case .unreadable:
+        case .failed:
             await recorder.record(.resolveDecision(.unreadable), for: replayID)
             await recorder.terminate(replayID, state: .failed, finalContent: nil)
         }
     }
 
-    /// Routes the result of the share-extension inline ingest: real content is
-    /// saved and the checkmark shown; a paywalled-but-titled article opens the
-    /// archive web reader so the user can solve its CAPTCHA; anything else just
-    /// confirms the save (the app retries the fetch later).
-    private func finishArticleIngest(url: URL, resolution: ArticleResolution) {
+    /// Routes the result of the share-extension inline ingest: a product page is
+    /// saved as a price tracker (the user edits it in the app); real content is saved
+    /// and the checkmark shown; a paywalled-but-titled article opens the archive web
+    /// reader so the user can solve its CAPTCHA; a genuine failure just confirms the
+    /// save (the app retries the fetch later).
+    private func finishArticleIngest(url: URL, decision: ArticleIngestDecision) {
         guard let item = ReadingListStore.shared.item(forURLString: url.absoluteString) else {
             confirmSavedThenComplete()
             return
         }
-        switch resolution {
-        case .readable(let content, _):
+        switch decision {
+        case let .priceTracker(product, _):
+            // The extension can't present the main-app price UI, so it saves the
+            // tracker silently; the user edits it in the app.
+            let tracker = PriceTracker(
+                productName: product.name, firstStoreURL: url.absoluteString,
+                price: product.priceAmount, currency: product.priceCurrency,
+                brand: product.brand, productID: product.productID)
+            ReadingListStore.shared.savePriceTracker(tracker, for: item.id)
+            confirmSavedThenComplete()
+        case .article(let content, _):
             _ = ReadingListStore.shared.saveContent(content, for: item)
             confirmSavedThenComplete()
-        case .paywalled(let title):
+        case .needsArchive(let title):
             ReadingListStore.shared.markNeedsCaptcha(item.id, title: title)
             presentArchiveReaderForCaptcha(url: url, itemID: item.id)
-        case .unreadable:
-            // Hard-paywall host / archive URL: offer the archive CAPTCHA rather than
-            // silently saving an unreadable item (mirrors the main-app ingestor).
-            if ArticleFetcher.isHardPaywallHost(url) || ArticleFetcher.isArchiveTodayURL(url) {
-                ReadingListStore.shared.markNeedsCaptcha(
-                    item.id, title: ArticleFetcher.articleTitleGuess(from: url))
-                presentArchiveReaderForCaptcha(url: url, itemID: item.id)
-            } else {
-                confirmSavedThenComplete()
-            }
+        case .failed:
+            confirmSavedThenComplete()
         }
     }
 

@@ -15,7 +15,7 @@ enum BypassStrategySelector {
     /// direct fetch failed). Pure — no I/O.
     ///
     /// Reasoning order:
-    /// 1. The direct HTML is present and NOT paywalled → `[]` (caller already has it).
+    /// 1. The hard `BypassGate` blocks a bypass (product/platform/free page) → `[]`.
     /// 2. A per-host rule exists → its strategy list (BPC parity), then normalized.
     /// 3. Otherwise build a generic list from the paywall signals, then normalize.
     ///
@@ -23,7 +23,11 @@ enum BypassStrategySelector {
     /// carries no `articleBody`, and enforces the invariants: silent strategies
     /// precede WKWebView-only ones, and `.archiveToday` is always last.
     static func strategies(for url: URL, directHTML: String?) -> [BypassStrategy] {
-        if let directHTML, !pageLooksPaywalled(directHTML) {
+        // The single gate decides whether ANY bypass may run. It blocks
+        // product/platform pages and pages with no paywall evidence; `extracted` is
+        // nil here because the resolver already returned early when the direct read
+        // was readable, so the selector only sees non-readable pages.
+        guard BypassGate.decision(for: url, html: directHTML, extracted: nil).allowsBypass else {
             return []
         }
 
@@ -73,14 +77,6 @@ enum BypassStrategySelector {
         let webOnly = deduped.filter { !$0.runsSilently && $0 != .archiveToday }
         let archive = deduped.contains(.archiveToday) ? [BypassStrategy.archiveToday] : []
         return silent + webOnly + archive
-    }
-
-    /// Whether the page reads as paywalled for selection purposes: the publisher's
-    /// schema.org `locked` declaration, or a gate-marker in the visible text.
-    private static func pageLooksPaywalled(_ html: String) -> Bool {
-        if PaywallDetector.htmlDeclaresLocked(html) { return true }
-        let lowered = html.lowercased()
-        return PaywallDetector.gateMarkers.contains { lowered.contains($0) }
     }
 
     /// Cheap, dependency-free check for a JSON-LD `articleBody` somewhere in the page

@@ -31,7 +31,11 @@ final class ReadingListIngestor {
     private let lock = NSLock()
 
     /// Fetches and extracts content for one item. Safe to call repeatedly.
-    func ingest(_ item: ReadingListItem) async {
+    ///
+    /// `forceArticle` skips product-page detection entirely, so the URL is ingested
+    /// as a normal article even if its page would otherwise be classified as a price
+    /// tracker. Used by the "Read instead" override on the price-tracking editor.
+    func ingest(_ item: ReadingListItem, forceArticle: Bool = false) async {
         guard item.state != .ready, let initialURL = item.url else { return }
 
         lock.lock()
@@ -119,7 +123,8 @@ final class ReadingListIngestor {
         // first merge, so `item(forURLString:)` misses and a fresh placeholder arrives
         // here). A NEW (un-merged) tracker keeps its item `.ready`, so `ingest`'s
         // top guard already prevents re-detection for that case.
-        if let (existingTrackerItemID, _) = store.priceTracker(containingStoreURL: url.absoluteString),
+        if !forceArticle,
+           let (existingTrackerItemID, _) = store.priceTracker(containingStoreURL: url.absoluteString),
            existingTrackerItemID != item.id {
             store.delete(item)
             if let replayID {
@@ -145,7 +150,7 @@ final class ReadingListIngestor {
         // a candidate with a real fetched price becomes a tracker — if no price can
         // be obtained by any method, the candidate falls through to the normal
         // article pipeline (saved as a plain article, never a broken tracker).
-        let productHTML = try? await resolveFetcher.fetchHTML(from: url)
+        let productHTML = forceArticle ? nil : try? await resolveFetcher.fetchHTML(from: url)
         if let html = productHTML,
            let candidate = productDetector.detect(urlString: url.absoluteString, html: html) {
             if let price = await priceFetcher.fetchPrice(
@@ -537,6 +542,16 @@ final class ReadingListIngestor {
         case .ignore:
             return .ignored
         }
+    }
+
+    /// Saves `urlString` as a normal article, bypassing product-page detection. Used
+    /// by the price-tracking editor's "Read instead" override: a URL that WAS
+    /// classified as a tracker is re-saved here as a plain article (it must not be
+    /// re-detected back into a tracker). Adds a fresh item when none exists, then
+    /// ingests it with detection forced off.
+    func saveAsArticle(urlString: String, source: CaptureSource = .manual) async {
+        let item = store.item(forURLString: urlString) ?? store.add(urlString: urlString, source: source)
+        await ingest(item, forceArticle: true)
     }
 
     /// Saves a NEW URL whose article content was already fetched (the pasteboard

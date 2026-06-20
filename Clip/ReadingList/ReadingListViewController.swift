@@ -284,14 +284,15 @@ final class ReadingListViewController: UITableViewController {
         var bySection: [Section: [ReadingListItem]] =
             [.reading: buckets.reading, .archive: buckets.archive, .error: buckets.failed]
 
-        // The single alerting price tracker floats to the TOP of the whole list
-        // (rendered as the first row of the price-tracking section), badged red.
-        // It's excluded from the section's own list by `assignSections`.
-        var priceTracking = buckets.priceTracking
-        if let alerting = ReadingListSectioning.topAlertingPriceTracker(items: all) {
-            priceTracking.insert(alerting, at: 0)
+        // The price-tracking section sits BELOW Reading. The single triggered-but-
+        // UNVIEWED tracker floats to the very TOP of the whole list as its own
+        // one-row `.priceAlert` section, badged red; it's excluded from the
+        // price-tracking section body by `assignSections`. Once viewed, it rejoins
+        // the price-tracking section below Reading.
+        bySection[.priceTracking] = buckets.priceTracking
+        if let pinned = ReadingListSectioning.topUnviewedAlertingPriceTracker(items: all) {
+            bySection[.priceAlert] = [pinned]
         }
-        bySection[.priceTracking] = priceTracking
 
         // The pasteboard suggestion: a spinner row while evaluating, then the
         // resolved candidate (unless it's since been saved by some path).
@@ -330,7 +331,10 @@ final class ReadingListViewController: UITableViewController {
     /// segment is only included when a non-archived tracker exists.
     private func visibleFilters() -> [ListFilter] {
         let items = store.items()
-        var filters: [ListFilter] = [.all, .articles, .mediaAndLinks]
+        var filters: [ListFilter] = [.all, .articles]
+        if ReadingListSectioning.hasMediaAndLinks(items: items) {
+            filters.append(.mediaAndLinks)
+        }
         if ReadingListSectioning.hasPriceTrackers(items: items) {
             filters.append(.priceTrackers)
         }
@@ -978,6 +982,12 @@ final class ReadingListViewController: UITableViewController {
     /// the archive web view, else the in-app reader pushed on `presenter`'s nav.
     func open(_ item: ReadingListItem, presenter: UIViewController) {
         if item.isPriceTracker {
+            // Opening an alerting tracker acknowledges its alert, so the row stops
+            // floating to the top of the list and rejoins the price-tracking section.
+            if var tracker = item.priceTracker, tracker.hasUnviewedAlert {
+                tracker.markAlertViewed()
+                store.updatePriceTracker(tracker, for: item.id)
+            }
             let viewController = PriceTrackingViewController(itemID: item.id)
             presenter.navigationController?.pushViewController(viewController, animated: true)
             return

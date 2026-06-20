@@ -99,10 +99,15 @@ final class PriceTrackingViewController: UIViewController {
 
         switch mode {
         case .existing:
-            break
-        case .creation(_, let isMerge, _):
+            // Viewing an existing tracker: a clear Done that always leaves the screen
+            // (pops back to the reading list, or dismisses if presented modally).
             navigationItem.leftBarButtonItem = UIBarButtonItem(
-                title: "Cancel", style: .plain, target: self, action: #selector(cancelTapped))
+                barButtonSystemItem: .done, target: self, action: #selector(doneTapped))
+        case .creation(_, let isMerge, _):
+            // Save-time: Cancel backs out of the tracker save (re-saves as a normal
+            // article) and always leaves the screen.
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
             if isMerge {
                 navigationItem.prompt = "Added to an existing tracker"
             }
@@ -209,23 +214,32 @@ final class PriceTrackingViewController: UIViewController {
         }
     }
 
-    // MARK: - Cancel → save as article (creation flow)
+    // MARK: - Exit
 
+    /// Done (existing mode): just leave the screen — the tracker is already saved and
+    /// every edit persists as it's made.
+    @objc private func doneTapped() {
+        dismissOrPop()
+    }
+
+    /// Cancel (creation mode): back out of the tracker save and re-save the URL as a
+    /// normal article instead, then leave the screen. Falls back to a plain dismiss
+    /// if the item has gone (e.g. deleted elsewhere) so the button is never a no-op.
     @objc private func cancelTapped() {
-        guard case .creation = mode, let item = store.item(withID: itemID) else {
-            dismiss(animated: true)
+        guard let item = store.item(withID: itemID) else {
+            dismissOrPop()
             return
         }
         let urlString = item.urlString
-        // Drop the tracker save and re-save the URL as a normal article instead.
         store.delete(item)
         Task { await ReadingListIngestor.shared.handleSavePress(urlString: urlString, source: .manual) }
         dismissOrPop()
     }
 
+    /// Leaves the screen whichever way it was shown: pop when pushed onto a nav
+    /// stack, otherwise dismiss the modal presentation. Always exits.
     private func dismissOrPop() {
-        if let navigationController, navigationController.viewControllers.first !== self,
-           presentingViewController == nil {
+        if let navigationController, navigationController.viewControllers.first !== self {
             navigationController.popViewController(animated: true)
         } else {
             dismiss(animated: true)

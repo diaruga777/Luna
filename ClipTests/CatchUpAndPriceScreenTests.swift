@@ -68,8 +68,7 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
             XCTFail("no price tracker seeded"); return
         }
         let editor = PriceTrackingViewController(itemID: tracker.id)
-        SnapshotTesting.assertSnapshot(of: UINavigationController(rootViewController: editor),
-                                       named: "price-tracking-editor")
+        SnapshotTesting.assertSnapshot(of: editor, named: "price-tracking-editor")
     }
 
     /// The alerting tracker (from the mixed fixture) renders its discount.
@@ -80,8 +79,7 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         }
         guard let alerting else { XCTFail("no alerting tracker seeded"); return }
         let editor = PriceTrackingViewController(itemID: alerting.id)
-        SnapshotTesting.assertSnapshot(of: UINavigationController(rootViewController: editor),
-                                       named: "price-tracking-alerting")
+        SnapshotTesting.assertSnapshot(of: editor, named: "price-tracking-alerting")
     }
 
     func testPriceTrackingEditorLayoutHasStoreList() {
@@ -96,6 +94,77 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         }
         LayoutAssertions.assertVisibleAndInBounds(table, in: editor.view)
         XCTAssertGreaterThan(table.numberOfSections, 0)
+        _ = window
+    }
+
+    // MARK: - Exit (Done / Cancel)
+
+    /// Existing mode shows a working Done that pops back to the reading list.
+    func testExistingModeDonePopsBack() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+            XCTFail("no price tracker seeded"); return
+        }
+        let list = ReadingListViewController()
+        let nav = UINavigationController(rootViewController: list)
+        let window = UITestSupport.host(nav)
+        let editor = PriceTrackingViewController(itemID: tracker.id)
+        nav.pushViewController(editor, animated: false)
+        editor.loadViewIfNeeded()
+        XCTAssertTrue(nav.topViewController is PriceTrackingViewController)
+
+        guard let done = editor.navigationItem.leftBarButtonItem, let action = done.action,
+              let target = done.target else {
+            XCTFail("existing mode should have a Done button"); return
+        }
+        _ = target.perform(action)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(nav.topViewController === list, "Done should pop back to the reading list")
+        _ = window
+    }
+
+    /// Creation-mode Cancel backs out: the tracker item is removed and the screen pops.
+    func testCreationModeCancelRemovesTrackerAndPops() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+            XCTFail("no price tracker seeded"); return
+        }
+        let list = ReadingListViewController()
+        let nav = UINavigationController(rootViewController: list)
+        let window = UITestSupport.host(nav)
+        let editor = PriceTrackingViewController(
+            mode: .creation(itemID: tracker.id, isMerge: false, highlightedURL: nil))
+        nav.pushViewController(editor, animated: false)
+        editor.loadViewIfNeeded()
+
+        guard let cancel = editor.navigationItem.leftBarButtonItem, let action = cancel.action,
+              let target = cancel.target else {
+            XCTFail("creation mode should have a Cancel button"); return
+        }
+        _ = target.perform(action)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(nav.topViewController === list, "Cancel should pop back to the reading list")
+        XCTAssertNil(ReadingListStore.shared.item(withID: tracker.id),
+                     "Cancel should drop the tracker save (re-saved as an article instead)")
+        _ = window
+    }
+
+    /// Opening an alerting tracker marks its alert viewed, so it stops floating.
+    func testOpeningAlertingTrackerMarksAlertViewed() {
+        UITestSupport.seedSharedStore(.mixed)
+        guard let alerting = ReadingListStore.shared.items().first(where: {
+            $0.priceTracker?.hasUnviewedAlert == true
+        }) else {
+            XCTFail("no unviewed-alerting tracker seeded"); return
+        }
+        let list = ReadingListViewController()
+        let nav = UINavigationController(rootViewController: list)
+        let window = UITestSupport.host(nav)
+        list.open(alerting, presenter: list)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        let refreshed = ReadingListStore.shared.item(withID: alerting.id)?.priceTracker
+        XCTAssertEqual(refreshed?.isAlerting, true, "still alerting after viewing")
+        XCTAssertEqual(refreshed?.hasUnviewedAlert, false, "alert acknowledged on open")
         _ = window
     }
 

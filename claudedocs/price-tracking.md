@@ -79,15 +79,21 @@ fetched price becomes a tracker — otherwise the page is saved as a plain artic
   - `PriceTracker` — `productName`, `stores` (private(set), **always ≥1**), `brand?`,
     `productID?`, `imageFileName?`, `initialPrice` (best at creation = alert
     baseline), `initialCurrency`, `alertThresholdFraction` (default 0.10),
-    `isArchived`. **`init(price:)` takes a required `Decimal`** — a tracker cannot
+    `isArchived`, `alertAcknowledgedAt: Date?` (nil = the current alert, if any, is
+    still UNVIEWED). **`init(price:)` takes a required `Decimal`** — a tracker cannot
     exist without a real numeric price (the `PriceFetcher` resolves it before the
     tracker is created). Computed: `currentBestPrice` (min across fetched store
     prices, else `initialPrice`), `displayCurrency`, `discountFraction`, `isAlerting`
-    (`!isArchived && discount ≥ threshold`), `thresholdAbsoluteDrop`. Mutators:
-    `upsertStore`, `removeStore` (no-ops on the last store → ≥1 invariant),
-    `setPrice`. **Migration-safe** `Codable` (all fields defaulted; empty `stores`
-    repaired; threshold clamped 0.01…0.95). Merging a cheaper store does NOT lower
-    `initialPrice` (the baseline is fixed at creation).
+    (`!isArchived && discount ≥ threshold`), **`hasUnviewedAlert`**
+    (`isAlerting && alertAcknowledgedAt == nil` — the condition that floats the row to
+    the very top of the whole list), `thresholdAbsoluteDrop`. Mutators: `upsertStore`,
+    `removeStore` (no-ops on the last store → ≥1 invariant), `setPrice` (a strictly
+    lower price for a store clears `alertAcknowledgedAt` so a fresh drop re-floats),
+    **`markAlertViewed(at:)`** (sets `alertAcknowledgedAt`; no-ops when not alerting —
+    called when the user opens an alerting tracker). **Migration-safe** `Codable` (all
+    fields defaulted; `alertAcknowledgedAt` absent in old payloads → nil → unviewed;
+    empty `stores` repaired; threshold clamped 0.01…0.95). Merging a cheaper store
+    does NOT lower `initialPrice` (the baseline is fixed at creation).
   - `PriceTrackerShare` — portable friend-share form (URLs + best price at share
     time + threshold + brand/productID); `makeTracker()` rebuilds on receipt.
 - `ReaderKit/ProductMatcher.swift` — **pure, order-stable** same-product matching:
@@ -108,33 +114,51 @@ fetched price becomes a tracker — otherwise the page is saved as a plain artic
   (`fetchPrice(urlString:) -> ProductPrice?`); live impl wraps `PriceFetcher` so the
   add-a-store UI resolves a new URL's price with the same strategy.
 - `Clip/ReadingList/PriceTrackingViewController.swift` — the tracker editor (main
-  app). `Mode.existing(itemID:)` (tap a row) or `.creation(itemID:isMerge:highlightedURL:)`
-  (save-time). Insets table of store rows (each shows extracted price; tap → in-app
-  Safari; swipe → remove, guarded by ≥1), a **+** add-store button (fetch+extract a
-  new URL's price), and a bottom alert-config (threshold slider shown as percent AND
-  absolute price). `.creation` adds a **Cancel** that deletes the tracker and
-  re-saves the URL as a normal article (`handleSavePress`). Declares
-  `Notification.Name.priceTrackerSavedInteractively`.
+  app), always PUSHED onto the reading-list nav stack. `Mode.existing(itemID:)` (tap a
+  row) or `.creation(itemID:isMerge:highlightedURL:)` (save-time). Insets table of
+  store rows (each shows extracted price; tap → in-app Safari; swipe → remove, guarded
+  by ≥1), a **+** add-store button (fetch+extract a new URL's price), and a bottom
+  alert-config (threshold slider shown as percent AND absolute price).
+  - **Exit (always available):** `.existing` shows a left **Done**; `.creation` shows
+    a left **Cancel** that deletes the tracker and re-saves the URL as a normal article
+    (`handleSavePress`). Both route through `dismissOrPop()` — pop when pushed (the
+    real case), else dismiss. **Cancel-was-a-no-op root cause:** the old
+    `dismissOrPop` only popped when `presentingViewController == nil`; if the
+    reading-list nav was itself presented modally that was non-nil, so it fell to
+    `dismiss(animated:)` (dismissing the whole stack / doing nothing) instead of
+    popping the single VC. It now keys purely on "am I the nav root?", so pop vs
+    dismiss is correct regardless of whether the nav is presented.
+  - Declares `Notification.Name.priceTrackerSavedInteractively`.
 - `Clip/ReadingList/PriceRefreshCoordinator.swift` — main-app side effects: runs
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
   per `newlyAlerting` outcome.
 
 ## Reading-list integration (`ReadingListSectioning` / `ReadingListViewController`)
 
-- New `Section.priceTracking` (raw 5, non-collapsible) sits between `.pasteboard`
-  and `.reading` in `displayOrder`. New `ListFilter.priceTrackers` (raw 3).
+- `Section.priceTracking` (raw 5, non-collapsible) sits **below** `.reading` in
+  `displayOrder`; `Section.priceAlert` (raw 6, non-collapsible) is the very FIRST
+  section (ahead of `.pasteboard`) and holds the single floated alert row.
+  `displayOrder = [.priceAlert, .pasteboard, .reading, .priceTracking, .archive,
+  .error]`. `ListFilter.priceTrackers` (raw 3).
 - `rendersAsReader` is false for trackers; `ListFilter.mediaAndLinks` excludes them.
 - `assignSections` returns a 4th `priceTracking` bucket (non-archived trackers;
-  archived ones drop out of ALL buckets and the background refresh).
-- `topAlertingPriceTracker(items:)` — the single alerting tracker (greatest
-  discount, ties by id) floats to the **top** of the whole list (inserted at row 0
-  of the price-tracking section by the VC), badged **red**.
+  archived ones drop out of ALL buckets and the background refresh). The single
+  floated tracker is excluded from this bucket.
+- **`topUnviewedAlertingPriceTracker(items:)`** — the single tracker that is alerting
+  AND **not yet viewed** (`hasUnviewedAlert`), greatest discount (ties by id),
+  **at most one**. It floats to the very **top** of the whole list (rendered by the VC
+  as the one row of the `.priceAlert` section), badged **red**. Once the user opens it,
+  `markAlertViewed` is called (in `ReadingListViewController.open`), `hasUnviewedAlert`
+  becomes false, and the row rejoins the `priceTracking` section below Reading. A later
+  strictly-lower price clears the ack so a genuinely fresh drop re-floats.
 - `shouldShowFilter` = ≥2 of {reader, media/link, price-tracker} kinds present.
   `hasPriceTrackers` gates the Price segment. The VC rebuilds the segmented control
   dynamically from `visibleFilters()` (index ↔ filter map, not raw-value coupling).
-- Tracker rows render via `configurePriceTrackerCell`: product image thumbnail (or a
-  `tag`/`tag.fill` glyph), title = product name, subtitle = current best price
-  (currency-formatted), `↓N%` in red when alerting. Tapping a row → `open` →
+- Tracker rows render via `configurePriceTrackerCell` (keyed on `item.priceTracker`,
+  so they render identically in the `.priceTracking` and floated `.priceAlert`
+  sections): product image thumbnail (or a `tag`/`tag.fill` glyph), title = product
+  name, subtitle = current best price (currency-formatted), `↓N%` in red when alerting.
+  Tapping a row → `open` → marks the alert viewed if it was floating, then pushes
   `PriceTrackingViewController(itemID:)`.
 - `ReadingListStore`: `savePriceTracker`, `updatePriceTracker`,
   `priceTrackersStalestFirst()` + `stalestRefresh(_:)`.
@@ -240,8 +264,12 @@ notes), like youtube/platform/document saves.
   render fallback recovers a JS-loaded price** (the static markup has none, the
   injected render returns the hydrated HTML); no price by any method → nil (article
   fallback). Uses `MockArticleFetcher` + an injected `renderHTML` closure (headless).
-- `PriceTrackerTests` (14) — best price, discount/alert, threshold, ≥1-store
-  invariant, baseline immutability, Codable migration + clamp, stalest-first.
+- `PriceTrackerTests` (20) — best price, discount/alert, threshold, ≥1-store
+  invariant, baseline immutability, Codable migration + clamp, stalest-first, plus the
+  **alert-viewed transition**: a fresh drop is `hasUnviewedAlert`; `markAlertViewed`
+  clears it while still alerting; a deeper drop re-opens it; `markAlertViewed` no-ops
+  when not alerting; ack survives Codable round-trip; old payloads (no key) decode as
+  unviewed.
 - `ProductMatcherTests` (8) — productID, fuzzy name+brand, brand block, unbranded,
   no-match, highest-score, + **order-independent tie-breaks** (equal name score and
   multiple id matches both resolve to the lowest id regardless of input order).
@@ -249,6 +277,10 @@ notes), like youtube/platform/document saves.
   stalest-first order, failing fetch (`MockPriceFetcher` yields nil → unchanged),
   archived skip. Driven by `MockPriceFetcher` (prices keyed by URL).
 - `PriceFormattingTests` (3) — currency string, threshold description percent+abs.
-- `ReadingListSectioningTests` — price-tracking bucket, archived exclusion, alerting
-  float-out + greatest-discount, filter visibility, displayOrder.
+- `ReadingListSectioningTests` — price-tracking bucket, archived exclusion,
+  unviewed-alert float-out + greatest-discount, **at-most-one float**, **viewed alert
+  does NOT float** (and yields the top to a smaller-but-unviewed one), filter
+  visibility, displayOrder (price-tracking below Reading; `.priceAlert` first). Plus
+  `CatchUpAndPriceScreenTests`: existing-mode **Done** pops, creation-mode **Cancel**
+  removes the tracker + pops, opening an alerting tracker **marks the alert viewed**.
 - `MessageEnvelopeTests` — priceTracker round-trip + recreate, no-URL → unknown.

@@ -407,6 +407,22 @@ final class ReadingListStore {
         }
     }
 
+    /// The existing price tracker (and its item id) whose stores already include
+    /// `urlString`, if any. Lets a re-save of an already-tracked URL short-circuit
+    /// to the existing tracker instead of re-detecting (and re-merging into a
+    /// duplicate). Items are scanned in stable id order so the result is
+    /// deterministic when (defensively) more than one tracker holds the URL.
+    func priceTracker(containingStoreURL urlString: String) -> (itemID: UUID, tracker: PriceTracker)? {
+        let candidates = items()
+            .compactMap { item -> (itemID: UUID, tracker: PriceTracker)? in
+                guard let tracker = item.priceTracker,
+                      tracker.hasStore(urlString: urlString) else { return nil }
+                return (item.id, tracker)
+            }
+            .sorted { $0.itemID.uuidString < $1.itemID.uuidString }
+        return candidates.first
+    }
+
     /// All non-archived price trackers, ordered stalest-first (oldest minimum
     /// `lastRefreshed` across their stores) so a killed background refresh makes
     /// progress on the longest-unrefreshed trackers each run.

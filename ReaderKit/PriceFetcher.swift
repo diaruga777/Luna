@@ -82,13 +82,24 @@ final class PriceFetcher: PriceFetching {
 /// whose price only exists after rendering. Runs on the main actor (WebKit
 /// requirement); the WebView is created and torn down per call so nothing is held
 /// in memory between fetches.
+///
+/// The wait for the price to hydrate is a **deterministic poll**, not a fixed sleep:
+/// a blind settle window races the page's JS, so the same page can return its price
+/// on one render and time out (→ no price → article) on the next, depending on how
+/// fast the network/JS happened to be. Instead, after the initial navigation we poll
+/// the rendered DOM at a fixed cadence and return as soon as a price is extractable
+/// (or when the hard timeout is hit), so a given page yields the same result every run.
 enum WebViewPriceRenderer {
-    /// How long to let the page render before scraping its DOM. Retail SPAs hydrate
-    /// their price shortly after load; this is a best-effort settle window.
-    private static let renderSettleSeconds: UInt64 = 4
+    /// How often the rendered DOM is re-scraped while waiting for the price to hydrate.
+    private static let pollIntervalSeconds: Double = 0.5
 
-    /// Hard ceiling so a never-finishing page can't hang a background refresh.
+    /// Hard ceiling so a never-finishing page can't hang a background refresh, and so
+    /// a page that genuinely never shows a price fails consistently (→ article).
     private static let renderTimeoutSeconds: UInt64 = 20
+
+    /// Detector used to decide when the rendered DOM has a usable price yet, so the
+    /// poll returns deterministically the moment the price is present.
+    private static let detector = ProductPageDetector()
 
     /// Mobile-Safari UA so retailers serve their normal (priced) page, matching the
     /// device's iOS version (a stale UA reads as an automated client to some bot
@@ -106,9 +117,10 @@ enum WebViewPriceRenderer {
     @MainActor
     static func renderedHTML(for url: URL) async -> String? {
         let renderer = Renderer()
-        return await renderer.render(url: url, userAgent: deviceSafariUserAgent,
-                                     settleSeconds: renderSettleSeconds,
-                                     timeoutSeconds: renderTimeoutSeconds)
+        return await renderer.render(
+            url: url, userAgent: deviceSafariUserAgent,
+            pollIntervalSeconds: pollIntervalSeconds, timeoutSeconds: renderTimeoutSeconds,
+            hasPrice: { html in detector.staticPrice(urlString: url.absoluteString, html: html) != nil })
     }
 
     /// One-shot off-screen WebView render. Owns its WebView for the duration of a
@@ -119,7 +131,13 @@ enum WebViewPriceRenderer {
         private var continuation: CheckedContinuation<Void, Never>?
         private var didResume = false
 
-        func render(url: URL, userAgent: String, settleSeconds: UInt64, timeoutSeconds: UInt64) async -> String? {
+        /// Renders `url` and polls the DOM until `hasPrice` is satisfied or the hard
+        /// timeout elapses. Returns the rendered HTML from the first poll where the
+        /// price is present (deterministic), else the final DOM at timeout.
+        func render(
+            url: URL, userAgent: String, pollIntervalSeconds: Double, timeoutSeconds: UInt64,
+            hasPrice: @escaping (String) -> Bool
+        ) async -> String? {
             let configuration = WKWebViewConfiguration()
             configuration.defaultWebpagePreferences.allowsContentJavaScript = true
             configuration.websiteDataStore = .nonPersistent()
@@ -142,14 +160,22 @@ enum WebViewPriceRenderer {
                 group.cancelAll()
             }
 
-            // Let client-side JS hydrate the price after the initial load.
-            try? await Task.sleep(nanoseconds: settleSeconds * 1_000_000_000)
+            // Poll the rendered DOM until the price hydrates (deterministic exit), or
+            // give up at the hard timeout. Re-scraping at a fixed cadence — rather than
+            // sleeping a fixed window then scraping once — removes the JS-vs-sleep race
+            // that made the same page sometimes yield a price and sometimes not.
+            let deadline = Date().addingTimeInterval(TimeInterval(timeoutSeconds))
+            var latestHTML = await outerHTML(of: webView)
+            while Date() < deadline {
+                if let html = latestHTML, hasPrice(html) { break }
+                try? await Task.sleep(nanoseconds: UInt64(pollIntervalSeconds * 1_000_000_000))
+                latestHTML = await outerHTML(of: webView)
+            }
 
-            let html = await outerHTML(of: webView)
             webView.navigationDelegate = nil
             webView.stopLoading()
             self.webView = nil
-            return html
+            return latestHTML
         }
 
         private func awaitNavigation() async {

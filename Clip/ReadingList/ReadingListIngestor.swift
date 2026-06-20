@@ -110,6 +110,29 @@ final class ReadingListIngestor {
             return
         }
 
+        // Re-save dedup BEFORE any (re)detection: if this exact URL is already a
+        // store inside an existing price tracker, it was already classified as
+        // price-tracking on a previous save. Re-running detection could reach a
+        // different outcome (UA/render variance) and a re-merge would no-op into a
+        // duplicate tracker — so short-circuit to the existing tracker deterministically.
+        // This is the merge path's re-save (the placeholder item was deleted on the
+        // first merge, so `item(forURLString:)` misses and a fresh placeholder arrives
+        // here). A NEW (un-merged) tracker keeps its item `.ready`, so `ingest`'s
+        // top guard already prevents re-detection for that case.
+        if let (existingTrackerItemID, _) = store.priceTracker(containingStoreURL: url.absoluteString),
+           existingTrackerItemID != item.id {
+            store.delete(item)
+            if let replayID {
+                await recorder.record(
+                    .note("url already tracked by \(existingTrackerItemID); dropped duplicate"),
+                    for: replayID)
+                await recorder.terminate(replayID, state: .success, finalContent: nil)
+            }
+            postPriceTrackerSaved(itemID: existingTrackerItemID, source: item.effectiveCaptureSource,
+                                  isMerge: true, highlightedURL: url.absoluteString)
+            return
+        }
+
         // The fetcher is wrapped so every request/response is captured into the replay.
         let resolveFetcher: HTMLFetching = replayID
             .map { RecordingHTMLFetcher(wrapping: fetcher, recorder: recorder, replayID: $0) }

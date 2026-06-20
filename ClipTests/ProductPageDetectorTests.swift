@@ -123,6 +123,69 @@ final class ProductPageDetectorTests: XCTestCase {
         XCTAssertEqual(price?.currency, "GBP")
     }
 
+    // MARK: - Determinism (the bug: same URL → different result each paste)
+
+    /// Detection + static-price extraction over the Bunnings fixture must yield the
+    /// IDENTICAL product candidate (name, price, currency) on every run. The original
+    /// bug was a non-deterministic outcome — the same page produced price tracking
+    /// only sometimes — rooted in hash-seed-randomized dictionary traversal. Running
+    /// the pure detector many times must never flip the result.
+    func testBunningsDetectionIsDeterministicAcrossManyRuns() {
+        let url = "https://www.bunnings.com.au/ryobi-18v-one-25-30cm-cordless-line-trimmer-tool-only_p0208315"
+        let html = BypassFixtures.html("Products/bunnings-nextdata.html")
+        var results = Set<String>()
+        for _ in 0..<200 {
+            let candidate = detector.detect(urlString: url, html: html)
+            let staticPrice = detector.staticPrice(urlString: url, html: html)
+            let signature = "\(candidate?.name ?? "nil")|"
+                + "\(candidate?.staticPrice?.amount.description ?? "nil")|"
+                + "\(candidate?.staticPrice?.currency ?? "nil")|"
+                + "\(staticPrice?.amount.description ?? "nil")|\(staticPrice?.currency ?? "nil")"
+            results.insert(signature)
+        }
+        XCTAssertEqual(results.count, 1, "Detection must be a pure deterministic function of the page.")
+        XCTAssertEqual(results.first,
+                       "Ryobi 18V ONE+ 25/30cm Cordless Line Trimmer - Tool Only|99|AUD|99|AUD")
+    }
+
+    /// When a JSON tree carries MORE THAN ONE price-bearing object, `firstPrice` must
+    /// always pick the same one — chosen by sorted-key traversal, not the process's
+    /// randomized dictionary order. Two distinct prices under sibling keys ("a" < "z")
+    /// must resolve to "a"'s price every run.
+    func testFirstPriceIsOrderStableWithMultiplePriceObjects() {
+        let node: [String: Any] = [
+            "zStore": ["priceCurrency": "USD", "price": 200],
+            "aStore": ["priceCurrency": "USD", "price": 100],
+        ]
+        var amounts = Set<String>()
+        for _ in 0..<200 {
+            if let price = ProductPageDetector.firstPrice(in: node) {
+                amounts.insert(price.amount.description)
+            }
+        }
+        XCTAssertEqual(amounts, ["100"],
+                       "The sorted-first key ('aStore') must win deterministically every run.")
+    }
+
+    /// `firstProductNode` (JSON-LD walk) must likewise pick the same Product node when
+    /// a `@graph` carries several, regardless of dictionary hash order.
+    func testJSONLDProductSelectionIsOrderStable() {
+        // Two Product nodes reachable under sibling keys; sorted traversal of the
+        // wrapper's keys ("graphA" < "graphB") must always reach graphA's product.
+        let html = """
+        <html><head><script type="application/ld+json">
+        {"graphB":{"@type":"Product","name":"B","offers":{"price":"2.00","priceCurrency":"USD"}},
+         "graphA":{"@type":"Product","name":"A","offers":{"price":"1.00","priceCurrency":"USD"}}}
+        </script></head><body></body></html>
+        """
+        var signatures = Set<String>()
+        for _ in 0..<200 {
+            let candidate = detector.detect(urlString: "https://x.example/dp/B000000", html: html)
+            signatures.insert("\(candidate?.name ?? "nil")|\(candidate?.staticPrice?.amount.description ?? "nil")")
+        }
+        XCTAssertEqual(signatures.count, 1, "JSON-LD product selection must be order-stable.")
+    }
+
     func testProductURLPatterns() {
         XCTAssertTrue(ProductPageDetector.urlLooksLikeProduct(URL(string: "https://x.com/foo_p0208315")))
         XCTAssertTrue(ProductPageDetector.urlLooksLikeProduct(URL(string: "https://amazon.com/dp/B09ABCDE")))

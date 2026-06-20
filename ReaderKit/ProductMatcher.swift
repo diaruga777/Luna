@@ -18,23 +18,37 @@ enum ProductMatcher {
 
     /// Finds the best existing tracker that matches `candidate`, if any.
     /// `existing` pairs each tracker's stable id with its product info.
+    ///
+    /// The result is a pure, order-stable function of the inputs: for an exact
+    /// product-id match the lowest id wins; for a fuzzy match the highest score wins,
+    /// ties broken by the lowest id. Resolving ties by id (rather than by the order
+    /// `existing` happens to be in) keeps a re-save from matching a different tracker
+    /// run to run.
     static func bestMatch(
         for candidate: ProductInfo,
         among existing: [(id: UUID, tracker: PriceTracker)]
     ) -> UUID? {
-        // 1) Exact product-id match wins outright.
+        // 1) Exact product-id match wins outright (lowest id when several match).
         if let candidateID = normalizedID(candidate.productID) {
-            for entry in existing where normalizedID(entry.tracker.productID) == candidateID {
-                return entry.id
-            }
+            let idMatches = existing
+                .filter { normalizedID($0.tracker.productID) == candidateID }
+                .map(\.id)
+            if let lowest = idMatches.min(by: { $0.uuidString < $1.uuidString }) { return lowest }
         }
-        // 2) Fuzzy name+brand match — keep the highest-scoring compatible one.
+        // 2) Fuzzy name+brand match — highest score, ties broken by lowest id.
         var best: (id: UUID, score: Double)?
         for entry in existing {
             guard brandsCompatible(candidate.brand, entry.tracker.brand) else { continue }
             let score = nameSimilarity(candidate.name, entry.tracker.productName)
             guard score >= nameThreshold else { continue }
-            if best == nil || score > best!.score { best = (entry.id, score) }
+            if let current = best {
+                let beatsScore = score > current.score
+                let tiesAndLowerID = score == current.score
+                    && entry.id.uuidString < current.id.uuidString
+                if beatsScore || tiesAndLowerID { best = (entry.id, score) }
+            } else {
+                best = (entry.id, score)
+            }
         }
         return best?.id
     }

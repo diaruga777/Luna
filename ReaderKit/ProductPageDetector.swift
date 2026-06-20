@@ -332,11 +332,18 @@ struct ProductPageDetector {
     /// Recursively searches parsed JSON for the first object that carries both a
     /// price-context key and a usable numeric value + currency. Pure + static so it's
     /// directly unit-testable on a dictionary.
+    ///
+    /// Child objects are visited in **sorted-key order**, never raw dictionary order:
+    /// Swift `Dictionary` iteration is hash-seed randomized per process, so two
+    /// price-bearing nodes in the same tree would otherwise resolve to different
+    /// prices on different app launches — the exact non-determinism the price-tracking
+    /// feature must not have. Sorted traversal makes the recovered price a pure
+    /// function of the JSON content.
     static func firstPrice(in object: Any) -> ProductPrice? {
         if let dictionary = object as? [String: Any] {
             if let price = price(inDictionary: dictionary) { return price }
-            for value in dictionary.values {
-                if let found = firstPrice(in: value) { return found }
+            for key in dictionary.keys.sorted() {
+                if let value = dictionary[key], let found = firstPrice(in: value) { return found }
             }
         } else if let array = object as? [Any] {
             for value in array {
@@ -352,8 +359,15 @@ struct ProductPageDetector {
     /// currency (a sibling currency key, or one inferred from a `formattedValue`
     /// symbol). Returns nil otherwise.
     private static func price(inDictionary dictionary: [String: Any]) -> ProductPrice? {
-        let lowercasedKeys = Dictionary(
-            dictionary.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { first, _ in first })
+        // Lowercase the keys for case-insensitive lookup. Two original keys can
+        // collide on lowercasing (e.g. "Price" and "price"); resolve the collision by
+        // keeping the original key that sorts first, so the winner is deterministic
+        // rather than dependent on hash-seed-randomized dictionary order.
+        var lowercasedKeys: [String: Any] = [:]
+        for key in dictionary.keys.sorted() {
+            let lowered = key.lowercased()
+            if lowercasedKeys[lowered] == nil { lowercasedKeys[lowered] = dictionary[key] }
+        }
 
         let hasPriceContext = priceContextKeys.contains { lowercasedKeys[$0] != nil }
         guard hasPriceContext else { return nil }
@@ -410,12 +424,15 @@ struct ProductPageDetector {
     }
 
     /// Finds the first JSON-LD node whose `@type` is (or includes) `Product`,
-    /// recursing through `@graph` arrays and nested objects.
+    /// recursing through `@graph` arrays and nested objects. Child objects are visited
+    /// in **sorted-key order** (not raw dictionary order, which is hash-seed
+    /// randomized per process) so a graph with more than one Product node always
+    /// resolves to the same node — keeping detection deterministic across launches.
     private func firstProductNode(in object: Any) -> [String: Any]? {
         if let dictionary = object as? [String: Any] {
             if Self.typeContains(dictionary["@type"], "Product") { return dictionary }
-            for value in dictionary.values {
-                if let found = firstProductNode(in: value) { return found }
+            for key in dictionary.keys.sorted() {
+                if let value = dictionary[key], let found = firstProductNode(in: value) { return found }
             }
         } else if let array = object as? [Any] {
             for value in array {

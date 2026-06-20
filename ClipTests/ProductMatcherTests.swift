@@ -80,4 +80,34 @@ final class ProductMatcherTests: XCTestCase {
             for: candidate(name: "Anker 715 USB-C Charger Nano II 65W"), among: existing)
         XCTAssertEqual(match, near)
     }
+
+    /// Two equally-scoring trackers (identical names) must resolve to the SAME tracker
+    /// regardless of the order `existing` is presented in — the lowest id. A re-save
+    /// must never pick a different match run to run.
+    func testEqualScoreTieBreaksDeterministicallyByLowestID() {
+        let lower = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let higher = UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")!
+        let name = "Ryobi 18V ONE+ Cordless Line Trimmer"
+        let forward = [
+            (id: higher, tracker: tracker(name: name)),
+            (id: lower, tracker: tracker(name: name)),
+        ]
+        XCTAssertEqual(ProductMatcher.bestMatch(for: candidate(name: name), among: forward), lower)
+        XCTAssertEqual(ProductMatcher.bestMatch(for: candidate(name: name), among: forward.reversed()), lower,
+                       "Tie-break must not depend on input order.")
+    }
+
+    /// Several trackers sharing the candidate's product id resolve to the lowest id,
+    /// independent of input order.
+    func testProductIDTieBreaksDeterministicallyByLowestID() {
+        let lower = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let higher = UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFE")!
+        let existing = [
+            (id: higher, tracker: tracker(name: "A", id: "GTIN-5")),
+            (id: lower, tracker: tracker(name: "B", id: "gtin5")),
+        ]
+        XCTAssertEqual(ProductMatcher.bestMatch(for: candidate(name: "X", id: "GTIN5"), among: existing), lower)
+        XCTAssertEqual(
+            ProductMatcher.bestMatch(for: candidate(name: "X", id: "GTIN5"), among: existing.reversed()), lower)
+    }
 }

@@ -487,6 +487,52 @@ final class ReadingListStore {
         }
     }
 
+    #if DEBUG
+    /// Deterministic test/UI-test seeding: replaces the entire reading list with
+    /// `items` and writes each provided `ArticleContent` to its item's content file
+    /// (keyed by item id). Wipes any existing Articles content files first so the
+    /// container is a clean, reproducible fixture. DEBUG-only — never compiled into
+    /// a release build, so production code paths can't reach it.
+    ///
+    /// Used by both the in-app `UITestSeeder` (launch-argument seeding for the
+    /// screenshot harness) and unit tests that render real view controllers against
+    /// a fixed fixture set.
+    func seedForTesting(items: [ReadingListItem], contents: [UUID: ArticleContent]) {
+        let articlesDir = articlesDirectory
+        coordinatedMutate { all in
+            // Remove every prior article content/source file so leftover state from
+            // an earlier seed can't leak into this one.
+            if let existing = try? self.fileManager.contentsOfDirectory(
+                at: articlesDir, includingPropertiesForKeys: nil) {
+                for file in existing { try? self.fileManager.removeItem(at: file) }
+            }
+            var seeded = items
+            for index in seeded.indices {
+                guard let content = contents[seeded[index].id] else { continue }
+                let fileName = "\(seeded[index].id.uuidString).json"
+                if let data = try? JSONEncoder().encode(content) {
+                    try? data.write(
+                        to: articlesDir.appendingPathComponent(fileName), options: .atomic)
+                    seeded[index].contentFileName = fileName
+                }
+            }
+            all = seeded
+        }
+    }
+
+    /// Empties the reading list and removes all article files. DEBUG-only.
+    func wipeForTesting() {
+        let articlesDir = articlesDirectory
+        coordinatedMutate { all in
+            if let existing = try? self.fileManager.contentsOfDirectory(
+                at: articlesDir, includingPropertiesForKeys: nil) {
+                for file in existing { try? self.fileManager.removeItem(at: file) }
+            }
+            all = []
+        }
+    }
+    #endif
+
     func content(for item: ReadingListItem) -> ArticleContent? {
         guard let fileName = item.contentFileName else { return nil }
         guard let data = try? Data(contentsOf: articlesDirectory.appendingPathComponent(fileName))

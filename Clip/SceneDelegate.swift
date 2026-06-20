@@ -28,6 +28,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: windowScene)
 
+        // DEBUG-only UI-test seeding (no-op unless launched with `-uiTestState`).
+        UITestSeeder.applyIfNeeded()
+        if let rootForUITest = uiTestRootViewController() {
+            window.rootViewController = rootForUITest
+            self.window = window
+            window.makeKeyAndVisible()
+            return
+        }
+
         if KeychainIdentityStore.shared.loadIdentity() == nil {
             window.rootViewController = OnboardingFlow.make { [weak self] in
                 self?.showMainUI()
@@ -101,6 +110,22 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         Task { await IncomingMailImporter.shared.importNewMail() }
         SemanticIndexer.shared.scheduleRun()
+    }
+
+    /// The forced root view controller for a UI-test launch, or nil when not in a
+    /// UI-test seeded launch. When an onboarding step is requested, shows the full
+    /// onboarding flow (the harness walks it); otherwise, when a state is seeded,
+    /// shows the main reading list regardless of stored identity. DEBUG-only.
+    private func uiTestRootViewController() -> UIViewController? {
+        #if DEBUG
+        if UITestSeeder.requestedOnboardingStep != nil {
+            return OnboardingFlow.make { [weak self] in self?.showMainUI() }
+        }
+        if UITestSeeder.isActive {
+            return UINavigationController(rootViewController: ReadingListViewController())
+        }
+        #endif
+        return nil
     }
 
     private func showMainUI() {

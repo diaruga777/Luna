@@ -35,6 +35,24 @@ enum OnboardingFlow {
         return nav
     }
 
+    #if DEBUG
+    /// Standalone, ordered onboarding step view controllers for snapshot/navigation
+    /// tests. These are the same screens the flow pushes, built without the
+    /// inter-step navigation wiring so each can be rendered in isolation. Index 0 is
+    /// the username step; the rest are the device-setup steps in flow order.
+    static func stepViewControllersForTesting() -> [UIViewController] {
+        let nav = UINavigationController()
+        var steps: [UIViewController] = [OnboardingViewController(onComplete: {})]
+        steps.append(notificationsStep(nav: nav, onFinished: {}))
+        if #available(iOS 27.0, *) {
+            steps.append(safariStep(nav: nav, onFinished: {}))
+            steps.append(shortcutStep(nav: nav, onFinished: {}))
+        }
+        steps.append(actionExtensionStep(onFinished: {}))
+        return steps
+    }
+    #endif
+
     private static func notificationsStep(
         nav: UINavigationController, onFinished: @escaping () -> Void
     ) -> UIViewController {

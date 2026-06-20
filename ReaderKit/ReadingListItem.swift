@@ -206,6 +206,86 @@ struct ReadingListItem: Codable, Identifiable {
         self.priceTracker = nil
     }
 
+    #if DEBUG
+    /// Deterministic fixture initializer for tests and the UI-test seeding harness.
+    /// `seed` derives a stable UUID (so the same fixture round-trips to the same id
+    /// across runs), and every field is set explicitly so a fixture is fully
+    /// reproducible. DEBUG-only — never reachable in a release build.
+    init(
+        seed: String,
+        urlString: String,
+        title: String?,
+        dateAdded: Date,
+        state: State = .ready,
+        readState: ReadState = .unopened,
+        bumpDate: Date? = nil,
+        wordCount: Int? = nil,
+        readingProgress: Double? = nil,
+        lastReaderMode: ReaderMode? = nil,
+        sharedByUsername: String? = nil,
+        documentType: String? = nil,
+        platform: ContentPlatform? = nil,
+        platformItemID: String? = nil,
+        mediaCreatorName: String? = nil,
+        mediaItemTitle: String? = nil,
+        mediaSourceService: MusicProvider? = nil,
+        youtubeVideoID: String? = nil,
+        channelName: String? = nil,
+        captureSource: CaptureSource? = nil,
+        priceTracker: PriceTracker? = nil
+    ) {
+        self.id = ReadingListItem.deterministicUUID(from: seed)
+        self.urlString = urlString
+        self.title = title
+        self.dateAdded = dateAdded
+        self.bumpDate = bumpDate
+        self.state = state
+        self.contentFileName = nil
+        self.lastWordIndex = nil
+        self.readState = readState
+        self.lastReaderMode = lastReaderMode
+        self.lastScrollOffset = nil
+        self.lastSpokenWordIndex = nil
+        self.eyeTrackedWordIndex = nil
+        self.wordCount = wordCount
+        self.readingProgress = readingProgress
+        self.youtubeVideoID = youtubeVideoID
+        self.channelName = channelName
+        self.thumbnailFileName = nil
+        self.sharedByUsername = sharedByUsername
+        self.documentType = documentType
+        self.sendStates = [:]
+        self.datesSent = [:]
+        self.lastSaveAttemptDate = nil
+        self.platform = platform
+        self.platformItemID = platformItemID
+        self.mediaCreatorName = mediaCreatorName
+        self.mediaItemTitle = mediaItemTitle
+        self.mediaSourceService = mediaSourceService
+        self.captureSource = captureSource
+        self.priceTracker = priceTracker
+    }
+
+    /// A stable UUID derived from a seed string (so fixtures get reproducible ids).
+    static func deterministicUUID(from seed: String) -> UUID {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in seed.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100000001b3
+        }
+        // Spread the 64-bit FNV hash across the 16 UUID bytes deterministically.
+        var bytes = [UInt8](repeating: 0, count: 16)
+        var mix = hash
+        for index in 0..<16 {
+            bytes[index] = UInt8(truncatingIfNeeded: mix)
+            mix = mix &* 0x100000001b3 &+ UInt64(index)
+        }
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+    }
+    #endif
+
     /// Legacy single-destination send keys, read only to migrate old reading-list
     /// JSON into the per-destination `sendStates`/`datesSent` (folded under the
     /// "kindle" id, which is all that existed before).

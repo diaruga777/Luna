@@ -195,7 +195,9 @@ final class ShareViewController: UIViewController {
             self.cancelLoadWatchdog()
             let dict = item as? NSDictionary
             let results = dict?[NSExtensionJavaScriptPreprocessingResultsKey] as? NSDictionary
-            let urlString = results?["URL"] as? String
+            let rawURLString = results?["URL"] as? String
+            // Normalize a Facebook deep link to its real http article before the gate.
+            let urlString = rawURLString.map(NewsAggregatorUnwrapper.normalizedIncomingURLString)
             SharedDiagnosticLog.record(
                 "action: JS callback url=\(urlString ?? "nil") err=\(error.map { String(describing: $0) } ?? "nil")",
                 category: "share")
@@ -215,7 +217,10 @@ final class ShareViewController: UIViewController {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
             guard let self else { return }
             self.cancelLoadWatchdog()
-            if let url = value as? URL, url.absoluteString.hasPrefix("http") {
+            // Normalize a Facebook deep link (`fbrpc://…&target_url=…`) to its real
+            // http article BEFORE the http gate below — otherwise it fails the gate.
+            let normalized = (value as? URL).map(NewsAggregatorUnwrapper.normalizedIncomingURL)
+            if let url = normalized, url.absoluteString.hasPrefix("http") {
                 SharedReadingListAppender.append(urlString: url.absoluteString)
                 SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
                 self.presentSavedOrReader(url: url)
@@ -314,7 +319,11 @@ final class ShareViewController: UIViewController {
             guard let self else { return }
             self.cancelLoadWatchdog()
             let text = (value as? String) ?? (value as? NSAttributedString)?.string
-            guard let text, let url = ShareTextURL.extract(from: text) else {
+            // A Facebook deep link (`fbrpc://…&target_url=…`) shared as text isn't a
+            // link `ShareTextURL.extract` can detect, so unwrap it to its real http
+            // article first; otherwise fall back to the normal link extraction.
+            guard let text, let url = Self.facebookTargetIfPresent(in: text)
+                ?? ShareTextURL.extract(from: text) else {
                 self.failOrComplete("No link found to save.")
                 return
             }
@@ -322,6 +331,15 @@ final class ShareViewController: UIViewController {
             SharedDiagnosticLog.record("saved url (text) \(url.absoluteString)", category: "share")
             self.presentSavedOrReader(url: url)
         }
+    }
+
+    /// The http article inside a Facebook deep link when the shared text IS such a
+    /// link (`fbrpc://…&target_url=…`), else nil. `NSDataDetector` can't see the
+    /// non-http `fbrpc` scheme, so the normal link extraction misses it.
+    private static func facebookTargetIfPresent(in text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed) else { return nil }
+        return NewsAggregatorUnwrapper.facebookRedirectTarget(url)
     }
 
     private func handleDocument(_ provider: NSItemProvider, type: UTType) {
@@ -354,7 +372,8 @@ final class ShareViewController: UIViewController {
     private func handleFriendShare(_ provider: NSItemProvider, friendUUID: UUID) {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
             self?.cancelLoadWatchdog()
-            if let url = value as? URL, url.absoluteString.hasPrefix("http") {
+            let normalized = (value as? URL).map(NewsAggregatorUnwrapper.normalizedIncomingURL)
+            if let url = normalized, url.absoluteString.hasPrefix("http") {
                 PendingFriendShareWriter.enqueue(
                     friendUUID: friendUUID, urlString: url.absoluteString)
             }

@@ -34,6 +34,30 @@ enum NewsAggregatorUnwrapper {
         return nil
     }
 
+    /// Normalizes a raw incoming URL/string at a SAVE ENTRY POINT, before any
+    /// `hasPrefix("http")` gate. A Facebook deep link (`fbrpc://…&target_url=…`)
+    /// carries its real http(s) article inline but has no http scheme, so the
+    /// plain http gates at the share/action extensions, the in-app "Save a Link"
+    /// alert, and the app intents would otherwise drop it (or, in the alert,
+    /// mangle it into `https://fbrpc://…`). This applies the offline Facebook
+    /// unwrap up front and returns the http target when present, else the original
+    /// URL unchanged. Pure (no network) — the async `unwrap` in `ingest` still
+    /// handles apple.news / google / shortener cases later.
+    static func normalizedIncomingURL(_ url: URL) -> URL {
+        facebookRedirectTarget(url) ?? url
+    }
+
+    /// String overload of `normalizedIncomingURL(_:)` for entry points that hold a
+    /// raw string (the in-app "Save a Link" alert, app intents). Returns the http
+    /// target's string when the input is a Facebook deep link, else the original
+    /// string unchanged (so a non-URL string is left for the caller's own gate).
+    static func normalizedIncomingURLString(_ string: String) -> String {
+        guard let url = URL(string: string), let target = facebookRedirectTarget(url) else {
+            return string
+        }
+        return target.absoluteString
+    }
+
     // MARK: - Host classification
 
     static func isAppleNews(_ host: String) -> Bool {

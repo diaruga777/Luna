@@ -169,6 +169,38 @@ final class NewsAggregatorUnwrapperTests: XCTestCase {
         XCTAssertNil(NewsAggregatorUnwrapper.facebookRedirectTarget(url(input)))
     }
 
+    func testFacebookRPCExtractsTargetFromRealMessengerLink() {
+        // The EXACT URL a user reported — an Android Messenger `fbrpc://` deep link.
+        // `URL(string:)` must accept it, and the http TechCrunch target (with its
+        // fbclid) must be extracted.
+        let verbatim = "fbrpc://nativethirdparty/f?app_id=256002347743983&app_name=Facebook+Messenger+for+Android&tap_behavior=web_always&target_url=https%3A%2F%2Ftechcrunch.com%2F2026%2F06%2F09%2Fits-not-faang-anymore-its-mangos%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTEAc3J0YwZhcHBfaWQPNDM3NjI2MzE2OTczNzg4AAEesLLIh-33d22w_j_vcraYxjkGxo8pg5wAib6dE_XSvMmTiqzq8vCYqn_5E9I_aem_-AaPmuGo5Y_7mWnRzLDotQ&app_sites=%5B%22fb256002347743983%3A%5C%2F%5C%2Fauthorize%23target_url%3Dhttps%5Cu00253A%5Cu00252F%5Cu00252Ftechcrunch.com%5Cu00252F2026%5Cu00252F06%5Cu00252F09%5Cu00252Fits-not-faang-anymore-its-mangos%5Cu00252F%5Cu00253Ffbclid%5Cu00253DIwZXh0bgNhZW0CMTEAc3J0YwZhcHBfaWQPNDM3NjI2MzE2OTczNzg4AAEesLLIh-33d22w_j_vcraYxjkGxo8pg5wAib6dE_XSvMmTiqzq8vCYqn_5E9I_aem_-AaPmuGo5Y_7mWnRzLDotQ%22%5D&has_app_link=0"
+        let expected = "https://techcrunch.com/2026/06/09/its-not-faang-anymore-its-mangos/?fbclid=IwZXh0bgNhZW0CMTEAc3J0YwZhcHBfaWQPNDM3NjI2MzE2OTczNzg4AAEesLLIh-33d22w_j_vcraYxjkGxo8pg5wAib6dE_XSvMmTiqzq8vCYqn_5E9I_aem_-AaPmuGo5Y_7mWnRzLDotQ"
+        guard let parsed = URL(string: verbatim) else {
+            return XCTFail("URL(string:) must accept the verbatim fbrpc link")
+        }
+        XCTAssertEqual(
+            NewsAggregatorUnwrapper.facebookRedirectTarget(parsed)?.absoluteString, expected)
+        // The save-entry normalize helper must surface that http target too.
+        XCTAssertEqual(
+            NewsAggregatorUnwrapper.normalizedIncomingURL(parsed).absoluteString, expected)
+        XCTAssertEqual(
+            NewsAggregatorUnwrapper.normalizedIncomingURLString(verbatim), expected)
+    }
+
+    func testNormalizedIncomingURLLeavesOrdinaryURLUnchanged() {
+        let ordinary = url("https://www.nytimes.com/2026/06/20/world/story.html")
+        XCTAssertEqual(
+            NewsAggregatorUnwrapper.normalizedIncomingURL(ordinary).absoluteString,
+            ordinary.absoluteString)
+        XCTAssertEqual(
+            NewsAggregatorUnwrapper.normalizedIncomingURLString(ordinary.absoluteString),
+            ordinary.absoluteString)
+        // A non-URL string is returned unchanged for the caller's own gate.
+        XCTAssertEqual(
+            NewsAggregatorUnwrapper.normalizedIncomingURLString("example.com/foo"),
+            "example.com/foo")
+    }
+
     func testFacebookRPCUnwrapStripsTrackingViaCanonicalization() {
         // The fbrpc target carries an fbclid; canonicalForArchiving must drop it.
         let target = url("https://techcrunch.com/2026/06/09/its-not-faang-anymore-its-mangos/?fbclid=AbCdEf123")

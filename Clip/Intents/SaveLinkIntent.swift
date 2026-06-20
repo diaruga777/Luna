@@ -18,6 +18,8 @@ struct SaveLinkIntent: AppIntent {
     var url: URL
 
     func perform() async throws -> some IntentResult & ReturnsValue<String?> {
+        // `handleSavePressWithTimeout` normalizes Facebook deep links to their real
+        // http article, so an `fbrpc://…` URL passed here saves the article.
         let savedURL = await IntentIngestHelper.handleSavePressWithTimeout(
             urlString: url.absoluteString)
         return .result(value: savedURL)

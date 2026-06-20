@@ -674,9 +674,13 @@ final class ReadingListViewController: UITableViewController {
         }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak alert] _ in
-            guard var text = alert?.textFields?.first?.text?
-                .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty
+            guard let entered = alert?.textFields?.first?.text?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !entered.isEmpty
             else { return }
+            // A pasted Facebook deep link (`fbrpc://…&target_url=…`) carries its real
+            // http article inline; unwrap it BEFORE the http-prefix prepend, which
+            // would otherwise mangle it into `https://fbrpc://…`.
+            var text = NewsAggregatorUnwrapper.normalizedIncomingURLString(entered)
             if !text.hasPrefix("http") { text = "https://" + text }
             Task { await ReadingListIngestor.shared.handleSavePress(urlString: text) }
         })

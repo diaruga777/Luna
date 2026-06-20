@@ -67,22 +67,48 @@ struct ArticleExtractor {
 
     /// Pulls `articleBody` out of any JSON-LD script blocks.
     private func ldJSONBlocks(from document: Document) -> [ArticleContent.Block] {
+        guard let body = firstArticleBody(in: document), body.count > 200 else { return [] }
+        return Self.blocks(fromArticleBody: body)
+    }
+
+    /// Forces the JSON-LD `articleBody` layer on `html`, even when the rendered DOM
+    /// looked paywalled — many publishers ship `isAccessibleForFree:false` alongside
+    /// a fully-populated `articleBody` (Bloomberg, Telegraaf, Les Échos, NZ Herald).
+    /// Pure (parse only, no network). Returns nil when no `articleBody` is present.
+    /// Truncated bodies are still returned — the caller's `hasReadableBody` length
+    /// gate is the final arbiter, so a teaser-only body is rejected downstream.
+    func extractFromJSONLD(html: String, baseURL: URL) -> ArticleContent? {
+        guard let document = try? SwiftSoup.parse(html, baseURL.absoluteString),
+              let body = firstArticleBody(in: document)
+        else { return nil }
+        let blocks = Self.blocks(fromArticleBody: body)
+        guard !blocks.isEmpty else { return nil }
+        let title = extractTitle(from: document)
+        let author = extractAuthor(from: document)
+        return ArticleContent(title: title, author: author, blocks: blocks)
+    }
+
+    /// The first `articleBody` string found across the document's JSON-LD scripts
+    /// (recursing through `@graph` arrays and `hasPart`/nested nodes), or nil.
+    private func firstArticleBody(in document: Document) -> String? {
         guard let scripts = try? document.select("script[type=application/ld+json]") else {
-            return []
+            return nil
         }
         for script in scripts {
-            let json = script.data()
-            guard let data = json.data(using: .utf8),
+            guard let data = script.data().data(using: .utf8),
                   let parsed = try? JSONSerialization.jsonObject(with: data) else { continue }
-            if let body = findArticleBody(in: parsed), body.count > 200 {
-                return body
-                    .components(separatedBy: "\n")
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                    .filter { !$0.isEmpty }
-                    .map { ArticleContent.Block(kind: .paragraph, text: $0, links: []) }
-            }
+            if let body = findArticleBody(in: parsed) { return body }
         }
-        return []
+        return nil
+    }
+
+    /// Splits a JSON-LD `articleBody` string into paragraph blocks on newlines.
+    private static func blocks(fromArticleBody body: String) -> [ArticleContent.Block] {
+        body
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { ArticleContent.Block(kind: .paragraph, text: $0, links: []) }
     }
 
     private func findArticleBody(in object: Any) -> String? {

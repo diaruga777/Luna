@@ -56,17 +56,46 @@ BlueConic), **hard server-side** (body never sent unauthenticated: WSJ/FT/Econom
 | 7 | **Wayback raw replay** `…/web/<ts>id_/<url>` after CDX/Availability lookup | Reliable WHEN a 200 snapshot exists; coverage poor for hard paywalls | 1–2 GET (JSON + HTML) | Low | anything Internet Archive crawled |
 | 8 | **archive.today** (TimeMap read → snapshot, then WKWebView submit) | Best raw coverage, hostile to automation (CAPTCHA/DNS/IP) | WKWebView + CAPTCHA | Med | hard server-side (the only thing that works) |
 | 9 | **r.jina.ai** (`https://r.jina.ai/<url>` → Markdown/HTML) | Reliable extractor, NOT a paywall breaker (fetches public page) | 1 GET | Low (3rd-party server) | generic fallback extraction; rate-limited 20 RPM no-key |
-| 10 | **smry.ai** (`https://smry.ai/<url>`) | Alive, soft paywalls (~1k pubs) | WKWebView (Next.js app) | Med (3rd-party) | last-ditch soft fallback |
+| 10 | **1ft.io** (`https://1ft.io/<url>`) | Live community 12ft successor; everywall/ladder-style server proxy that strips CORS + rewrites HTML → server-rendered, URLSession-extractable | 1 GET | Med (3rd-party) | soft/metered (proxy strips the gate) |
+| 11 | **removepaywalls.com** (`https://removepaywalls.com/<url>`) | Live; proxies archive.is/Wayback/Google + JS-disable tricks. Renders client-side → WKWebView | WKWebView | Med (3rd-party) | broad publisher list (NYT/WaPo/WSJ/FT/Bloomberg/…); hit-or-miss |
+| 12 | **removepaywall.com** (`https://www.removepaywall.com/search?url=<url>`) | Live; same archive-first family, distinct site. SPA → WKWebView | WKWebView | Med (3rd-party) | ~1-in-3 success in testing; broad list |
+| 13 | **smry.ai** (`https://smry.ai/<url>`) | Alive, soft paywalls (~1k pubs); AI classifier over direct/proxy/Wayback. Next.js client app → WKWebView | WKWebView | Med (3rd-party) | last-ditch soft fallback |
+| 14 | **archive.org / Wayback raw replay** (`…/web/<ts>id_/<url>` after CDX newest-200) | Same as #7; called out as an owner-required first-class fallback | 1–2 GET | Low | anything IA crawled (silent) |
 | — | `X-Forwarded-For` spoof | ~Zero vs correct servers | 0 | Low | only misconfigured IP allowlists — **skip** |
-| — | Google cache / Bing cache / 12ft.io / 1ft.io | **DEAD** (2024–25) | — | — | **do not implement** |
+| — | Google cache / Bing cache / 12ft.io | **DEAD** (2024–25) | — | — | **do not implement** |
 | — | RSS full-text | High where it exists, rare for hard paywalls | 1 GET | Low | indie outlets (404 Media, some Ghost) — optional later |
+
+> **Owner correction (overrides the original "drop dead services" stance):** the goal
+> is *more* fallbacks than archive.is and smart selection among them. smry.ai, 1ft.io,
+> removepaywall.com, removepaywalls.com, archive.org/Wayback, AND archive.today are all
+> implemented as first-class `BypassStrategy` fallbacks with graceful failure (a dead
+> one just falls through to the next via the readability gate). Verified request formats
+> + silent-vs-webview classification are encoded in `ThirdPartyBypassService` (see §5a)
+> and the seed rule table.
+
+**Silent vs WKWebView classification of the third-party services**
+(silent = its response is server-rendered HTML a `URLSession` GET can extract;
+WKWebView = a JS/SPA app whose article only materializes after client-side render):
+
+| Service | Request format | Class |
+|---|---|---|
+| Wayback raw | `https://web.archive.org/web/<ts>id_/<url>` (CDX newest-200 first) | **silent** (`.waybackRaw`) |
+| 1ft.io | `https://1ft.io/<url>` (raw URL appended) | **silent** (`.ladderProxy(.oneFt)`) |
+| r.jina.ai | `https://r.jina.ai/<url>` | **silent** (`.jinaReader`) |
+| removepaywalls.com | `https://removepaywalls.com/<url>` (raw URL appended) | **WKWebView** (`.thirdPartyWeb(.removePaywalls)`) |
+| removepaywall.com | `https://www.removepaywall.com/search?url=<url-encoded>` | **WKWebView** (`.thirdPartyWeb(.removePaywall)`) |
+| smry.ai | `https://smry.ai/<url>` (raw URL appended) | **WKWebView** (`.thirdPartyWeb(.smry)`) |
+| archive.today | homepage→submit / TimeMap snapshot | **WKWebView** (`.archiveToday`, terminal) |
 
 **Design consequence:** the durable techniques exploit the publisher's own SEO/social
 obligations (JSON-LD body #1, social referer #4, crawler UA #3) and client-side state
 weaknesses (no-cookie #2, trailing-dot #6). Identity forgery alone (UA, XFF) is dead
 wherever the server verifies crawler identity by reverse-DNS (most majors / anything
 behind Cloudflare bot management). So **#1 and #2 are the highest-yield, lowest-effort
-wins** and should run on every paywalled page before anything network-heavy.
+wins** and should run on every paywalled page before anything network-heavy. The
+third-party services (#10–13, #8) are last in the order — they shift legal liability off
+us but die periodically, so they sit behind the on-device techniques and degrade to "try
+the next one."
 
 ---
 
@@ -104,16 +133,21 @@ enum BypassStrategy: Equatable {
     case waybackRaw
     /// r.jina.ai reader proxy (`https://r.jina.ai/<url>`) → Markdown/HTML. Silent.
     case jinaReader
-    /// archive.today snapshot via the interactive WKWebView reader. WKWebView-only.
+    /// A server-rendering proxy (1ft.io) whose response is plain HTML a URLSession
+    /// can extract. Silent.
+    case ladderProxy(LadderProxy)
+    /// A third-party reader page that only renders client-side (smry.ai,
+    /// removepaywall(s).com). WKWebView-only.
+    case thirdPartyWeb(ThirdPartyWebService)
+    /// archive.today snapshot via the interactive WKWebView reader. WKWebView-only,
+    /// always terminal.
     case archiveToday
-    /// smry.ai reader page. WKWebView-only (Next.js client app).
-    case smry
 
-    /// Whether this strategy can run in the background URLSession path. WKWebView-
-    /// only strategies (`archiveToday`, `smry`) are false.
+    /// Whether this strategy can run in the background URLSession path. The
+    /// client-rendered third-party pages and archive.today are not silent.
     var runsSilently: Bool {
         switch self {
-        case .archiveToday, .smry: return false
+        case .archiveToday, .thirdPartyWeb: return false
         default: return true
         }
     }
@@ -324,6 +358,47 @@ BPC `ld_json` field + `getArticleJsonScript()`.)
 Note: many majors now **IP-verify** crawlers (reverse-DNS), so UA+XFF spoofing fails
 for them — that's why per-host rules pick UA only for sites known to honor it, and
 the universal fallback never relies on UA alone.
+
+---
+
+## 5a. Third-party bypass-service URL builders (`ThirdPartyBypassService`)
+
+A pure namespace of verified URL builders for the owner-required third-party
+services. Each builder takes the canonical article URL and returns the service URL.
+All are unit-tested against the verified formats below; the runner/web-reader just
+load what they return. A nil return (e.g. an un-encodable URL) makes the strategy
+fall through.
+
+```swift
+/// Silent (URLSession-extractable) ladder-style proxies. 1ft.io is the live
+/// everywall/ladder-family successor to 12ft.io; it server-renders the article.
+enum LadderProxy: Equatable {
+    case oneFt   // https://1ft.io/<raw article URL>
+    func url(for article: URL) -> URL?
+}
+
+/// Client-rendered third-party reader pages (need a real WKWebView to render).
+enum ThirdPartyWebService: Equatable {
+    case smry            // https://smry.ai/<raw article URL>
+    case removePaywalls  // https://removepaywalls.com/<raw article URL>
+    case removePaywall   // https://www.removepaywall.com/search?url=<percent-encoded>
+    func url(for article: URL) -> URL?
+}
+```
+
+**Verified request formats (WebSearch/WebFetch, June 2026):**
+
+| Service | Builder output | Source class |
+|---|---|---|
+| 1ft.io | `https://1ft.io/` + `article.absoluteString` (raw, no extra encoding — 12ft-style prefix) | silent |
+| smry.ai | `https://smry.ai/` + `article.absoluteString` (raw path prefix; confirmed on smry.ai/guide) | webview |
+| removepaywalls.com | `https://removepaywalls.com/` + `article.absoluteString` (raw path prefix) | webview |
+| removepaywall.com | `https://www.removepaywall.com/search?url=` + percent-encoded `article.absoluteString` (query param) | webview |
+| Wayback raw | `https://web.archive.org/web/<ts>id_/<original>` after CDX newest-200 (`ArticleFetcher.fetchWaybackRawHTML`) | silent |
+
+Note the encoding split: the three path-prefix services append the article URL **raw**
+(keeping its own `https://` and slashes, like archive.today's path style); only
+removepaywall.com percent-encodes it because it's a real query-parameter value.
 
 ---
 

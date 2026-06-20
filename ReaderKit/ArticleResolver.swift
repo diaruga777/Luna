@@ -44,8 +44,9 @@ enum ArticleResolver {
     /// FT's from the direct stub), else `.unreadable`.
     static func resolve(
         url: URL,
-        fetcher: ArticleFetcher = ArticleFetcher(),
-        extractor: ArticleExtractor = ArticleExtractor()
+        fetcher: HTMLFetching = ArticleFetcher(),
+        extractor: ArticleExtractor = ArticleExtractor(),
+        runner: BypassRunning? = nil
     ) async -> ArticleResolution {
         let direct = await extractedContent(from: { try await fetcher.fetchHTML(from: url) },
                                             baseURL: url, extractor: extractor)
@@ -53,12 +54,23 @@ enum ArticleResolver {
         if Self.isReadable(direct) {
             return .readable(direct!.0, html: direct!.1)
         }
-        // The page's AMP version is frequently served without the paywall overlay.
-        if let direct, let ampURL = Self.ampURL(in: direct.1, base: url) {
-            let amp = await extractedContent(from: { try await fetcher.fetchHTML(from: ampURL) },
-                                             baseURL: ampURL, extractor: extractor)
-            if Self.isReadable(amp) { return .readable(amp!.0, html: amp!.1) }
+
+        // Walk the data-driven SILENT strategy list (per-host rule, else the generic
+        // signal-based fallback). The first readable, non-locked extraction wins. The
+        // WKWebView-only strategies (third-party reader pages, archive.today) are
+        // skipped here and run later in the archive reader.
+        let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
+        let strategies = BypassStrategySelector.strategies(for: url, directHTML: direct?.1)
+        for strategy in strategies where strategy.runsSilently {
+            if let pair = await bypassRunner.run(strategy, url: url, directHTML: direct?.1),
+               Self.isReadable(pair) {
+                return .readable(pair.0, html: pair.1)
+            }
         }
+
+        // No silent strategy worked. Try the legacy archive fetch as a last silent
+        // attempt, then map to the resolution — preserving the title so the item
+        // parks for the WKWebView archive path (unchanged downstream behavior).
         let archived = await extractedContent(from: { try await fetcher.fetchArchivedHTML(for: url) },
                                               baseURL: url, extractor: extractor)
         return resolution(direct: direct, archived: archived)

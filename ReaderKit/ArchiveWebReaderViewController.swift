@@ -129,7 +129,8 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         self.articleURL = articleURL
         self.itemID = itemID
         self.store = store
-        self.directBypassURL = NYTPaywallBypass.trailingDotURL(for: articleURL)
+        self.directBypassURL = (articleURL.host.map(TrailingDotBypass.isNYTHost) == true)
+            ? TrailingDotBypass.trailingDotURL(for: articleURL) : nil
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
         // archive.today refuses clients it thinks have JS off; make it explicit (and

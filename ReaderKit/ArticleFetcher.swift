@@ -5,10 +5,35 @@
 
 import Foundation
 
+/// The HTML-fetching surface the resolver and `BypassRunner` depend on, so both are
+/// unit-testable against a mock without touching the network. `ArticleFetcher` is the
+/// live implementation; `MockArticleFetcher` (tests) records calls and returns canned
+/// HTML.
+protocol HTMLFetching {
+    /// Fetches HTML for `url` with the default UA chain (Googlebot then Safari).
+    func fetchHTML(from url: URL) async throws -> String
+    /// Fetches `url` with an explicit crawler User-Agent and optional
+    /// `X-Forwarded-For` (for crawler-whitelist paywalls).
+    func fetchHTML(from url: URL, userAgent: String, xForwardedFor: String?) async throws -> String
+    /// Fetches `url` sending a spoofed `Referer` (e.g. arriving "from Google").
+    func fetchHTML(from url: URL, referer: String) async throws -> String
+    /// Fetches `url` through an ephemeral session that sends no stored cookies (a
+    /// fresh-session / "incognito" fetch that resets a client-side meter).
+    func fetchHTMLWithoutCookies(from url: URL) async throws -> String
+    /// Resolves the newest Wayback 200 snapshot (CDX, then Availability) and fetches
+    /// its raw `id_` replay — un-mangled source HTML the extractor likes.
+    func fetchWaybackRawHTML(for url: URL) async throws -> String
+    /// Fetches the r.jina.ai reader rendering of `url` (`https://r.jina.ai/<url>`).
+    func fetchJinaReader(for url: URL) async throws -> String
+    /// Fetches a public web-archive copy (Wayback, then archive.today's URLSession
+    /// path) — the legacy last-silent attempt before the WKWebView archive reader.
+    func fetchArchivedHTML(for url: URL) async throws -> String
+}
+
 /// Downloads raw HTML for a weblink. Requests with a Googlebot user agent first —
 /// many soft paywalls serve full content to crawlers and never trigger without
 /// JavaScript — and falls back to a regular Safari user agent.
-struct ArticleFetcher {
+struct ArticleFetcher: HTMLFetching {
     static let googlebotUserAgent =
         "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
     static let safariUserAgent =
@@ -211,13 +236,114 @@ struct ArticleFetcher {
         return try await fetch(url: archiveURL, userAgent: Self.safariUserAgent, timeout: 12)
     }
 
-    private func fetch(url: URL, userAgent: String, timeout: TimeInterval = 20) async throws -> String {
+    // MARK: - Bypass-strategy fetches (HTMLFetching)
+
+    func fetchHTML(from url: URL, userAgent: String, xForwardedFor: String?) async throws -> String {
+        try await fetch(url: url, userAgent: userAgent, xForwardedFor: xForwardedFor, timeout: 12)
+    }
+
+    func fetchHTML(from url: URL, referer: String) async throws -> String {
+        try await fetch(url: url, userAgent: Self.safariUserAgent, referer: referer, timeout: 12)
+    }
+
+    func fetchHTMLWithoutCookies(from url: URL) async throws -> String {
+        // An ephemeral session has no cookie store, so a client-side cookie meter sees
+        // a brand-new visitor. The session is local to this call and discarded after.
+        let configuration = URLSessionConfiguration.ephemeral
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        return try await fetch(url: url, userAgent: Self.safariUserAgent, timeout: 12, session: session)
+    }
+
+    func fetchJinaReader(for url: URL) async throws -> String {
+        let target = Self.canonicalForArchiving(url).absoluteString
+        guard let jinaURL = URL(string: "https://r.jina.ai/" + target) else { throw FetchError.badResponse }
+        return try await fetch(url: jinaURL, userAgent: Self.safariUserAgent, timeout: 20)
+    }
+
+    /// Resolves the newest Wayback 200 snapshot via the CDX API (newest rows, drop
+    /// tiny/non-200), then fetches the raw `…/web/<ts>id_/<url>` replay (the `id_`
+    /// suffix strips IA's banner/asset rewriting). Falls back to the rewritten
+    /// Availability-API replay when CDX returns nothing.
+    func fetchWaybackRawHTML(for url: URL) async throws -> String {
+        let canonical = Self.canonicalForArchiving(url).absoluteString
+        if let timestamp = try? await waybackNewestTimestamp(forCanonical: canonical),
+           let rawURL = URL(string: "https://web.archive.org/web/\(timestamp)id_/\(canonical)") {
+            return try await fetch(url: rawURL, userAgent: Self.safariUserAgent, timeout: 30)
+        }
+        return try await fetchWaybackHTML(for: url)
+    }
+
+    /// CDX newest-200 lookup → the snapshot timestamp, or nil when none is available.
+    private func waybackNewestTimestamp(forCanonical canonical: String) async throws -> String? {
+        var components = URLComponents(string: "https://web.archive.org/cdx/search/cdx")
+        components?.queryItems = [
+            URLQueryItem(name: "url", value: canonical),
+            URLQueryItem(name: "output", value: "json"),
+            URLQueryItem(name: "filter", value: "statuscode:200"),
+            URLQueryItem(name: "collapse", value: "digest"),
+            URLQueryItem(name: "limit", value: "-5"),
+            URLQueryItem(name: "fastLatest", value: "true"),
+        ]
+        guard let cdxURL = components?.url else { return nil }
+        var request = URLRequest(url: cdxURL, timeoutInterval: 15)
+        request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              data.count <= Self.maxBytes
+        else { return nil }
+        return Self.newestSnapshotTimestamp(fromCDXJSON: data)
+    }
+
+    /// Parses a Wayback CDX JSON response (an array of rows, the first being the
+    /// header `[urlkey,timestamp,original,mimetype,statuscode,digest,length]`) and
+    /// returns the newest non-trivial snapshot's 14-digit timestamp. Pure (no I/O) so
+    /// the parsing is unit-testable. Rows are returned oldest→newest; with
+    /// `filter=statuscode:200` they're all 200s, so we take the last row whose body
+    /// `length` isn't trivially small (a tiny capture is a stub, not the article).
+    static func newestSnapshotTimestamp(fromCDXJSON data: Data) -> String? {
+        guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[Any]],
+              rows.count > 1 else { return nil }
+
+        func stringValue(_ value: Any?) -> String? {
+            if let string = value as? String { return string }
+            if let number = value as? NSNumber { return number.stringValue }
+            return nil
+        }
+        // Locate the columns from the header so we don't hardcode indices.
+        let header = rows[0].compactMap { stringValue($0) }
+        let timestampIndex = header.firstIndex(of: "timestamp") ?? 1
+        let statusIndex = header.firstIndex(of: "statuscode") ?? 4
+        let lengthIndex = header.firstIndex(of: "length") ?? 6
+        let minLength = 1024   // a 200 capture this small is a stub/redirect shell
+
+        var newest: String?
+        for row in rows.dropFirst() {
+            guard row.count > timestampIndex,
+                  let timestamp = stringValue(row[timestampIndex]),
+                  timestamp.count == 14, timestamp.allSatisfy(\.isNumber)
+            else { continue }
+            if row.count > statusIndex, let status = stringValue(row[statusIndex]), status != "200" { continue }
+            if row.count > lengthIndex, let length = stringValue(row[lengthIndex]),
+               let bytes = Int(length), bytes < minLength { continue }
+            newest = timestamp   // rows are oldest→newest, so the last qualifying wins
+        }
+        return newest
+    }
+
+    private func fetch(
+        url: URL, userAgent: String, referer: String = "https://www.google.com/",
+        xForwardedFor: String? = nil, timeout: TimeInterval = 20, session: URLSession = .shared
+    ) async throws -> String {
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         // Some sites still serve fuller content to visitors arriving from Google.
-        request.setValue("https://www.google.com/", forHTTPHeaderField: "Referer")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        request.setValue(referer, forHTTPHeaderField: "Referer")
+        if let xForwardedFor {
+            request.setValue(xForwardedFor, forHTTPHeaderField: "X-Forwarded-For")
+        }
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw FetchError.badResponse
         }

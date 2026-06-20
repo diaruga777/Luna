@@ -28,69 +28,22 @@ final class ReadingListViewController: UITableViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     /// Items older than this (by save date) move to the Archive section.
-    private static let archiveAge: TimeInterval = 7 * 24 * 60 * 60
+    private static let archiveAge: TimeInterval = ReadingListSectioning.archiveAge
 
-    /// The list groups. Raw values are STABLE (persisted in `collapsedSections`),
-    /// so new cases append at the end; display order is `displayOrder`, not the
-    /// declaration order.
-    private enum Section: Int, CaseIterable {
-        case reading = 0
-        case archive = 2
-        case error = 3
-        case pasteboard = 4
-
-        var title: String {
-            switch self {
-            case .reading: return "Reading"
-            case .archive: return "Archive"
-            case .error: return "Couldn't Load"
-            case .pasteboard: return "From Pasteboard"
-            }
-        }
-
-        /// Reading and the pasteboard suggestion are always open; the rest collapse.
-        var isCollapsible: Bool {
-            switch self {
-            case .reading, .pasteboard: return false
-            case .archive, .error: return true
-            }
-        }
-    }
+    /// The list groups and the Articles / Media filter — pure section/filter
+    /// logic lives in `ReadingListSectioning`.
+    private typealias Section = ReadingListSectioning.Section
+    private typealias ListFilter = ReadingListSectioning.ListFilter
 
     /// Top-to-bottom display order: a pasteboard suggestion sits above the list,
     /// failed items in a collapsible section at the very bottom.
-    private static let displayOrder: [Section] = [.pasteboard, .reading, .archive, .error]
-
-    /// What the list shows: everything, only articles (anything that opens in the
-    /// text reader — articles, documents, emails), or only media & links (everything
-    /// else — YouTube, platform posts, music/podcasts).
-    private enum ListFilter: Int, CaseIterable {
-        case all
-        case articles
-        case mediaAndLinks
-
-        var displayName: String {
-            switch self {
-            case .all: return "All"
-            case .articles: return "Articles"
-            case .mediaAndLinks: return "Media & Links"
-            }
-        }
-
-        func includes(_ item: ReadingListItem) -> Bool {
-            switch self {
-            case .all: return true
-            case .articles: return ReadingListViewController.rendersAsReader(item)
-            case .mediaAndLinks: return !ReadingListViewController.rendersAsReader(item)
-            }
-        }
-    }
+    private static let displayOrder: [Section] = ReadingListSectioning.displayOrder
 
     /// Whether the item opens in the text reader (articles, documents, emails), as
     /// opposed to media & links (YouTube, platform posts, music/podcasts) which open
     /// in a player, embed, or browser. Mirrors the tap routing in `didSelectRowAt`.
     static func rendersAsReader(_ item: ReadingListItem) -> Bool {
-        item.contentPlatform == nil && !item.isYouTubeVideo
+        ReadingListSectioning.rendersAsReader(item)
     }
 
     private static let filterDefaultsKey = "readingListFilter"
@@ -318,24 +271,9 @@ final class ReadingListViewController: UITableViewController {
         updateFilterVisibility()
         updateCatchUpButton()
         let all = store.items().filter { filter.includes($0) }
-        let now = Date()
-        var reading: [ReadingListItem] = []
-        var archive: [ReadingListItem] = []
-        var failed: [ReadingListItem] = []
-        for item in all {
-            if item.state == .failed {
-                failed.append(item)
-            } else if item.readState == .read
-                        || now.timeIntervalSince(item.dateAdded) > Self.archiveAge {
-                // Archive holds both: items the user archived (read) and unread items
-                // that have aged out of the active Reading window.
-                archive.append(item)
-            } else {
-                reading.append(item)
-            }
-        }
+        let buckets = ReadingListSectioning.assignSections(items: all, now: Date())
         var bySection: [Section: [ReadingListItem]] =
-            [.reading: reading, .archive: archive, .error: failed]
+            [.reading: buckets.reading, .archive: buckets.archive, .error: buckets.failed]
 
         // The pasteboard suggestion: a spinner row while evaluating, then the
         // resolved candidate (unless it's since been saved by some path).
@@ -378,10 +316,7 @@ final class ReadingListViewController: UITableViewController {
     /// reader item and a media/link item; otherwise it's meaningless. Resets to
     /// "All" when hidden so a stale selection can't leave the list empty.
     private func updateFilterVisibility() {
-        let items = store.items()
-        let hasReaderItem = items.contains { Self.rendersAsReader($0) }
-        let hasMediaOrLink = items.contains { !Self.rendersAsReader($0) }
-        let shouldShow = hasReaderItem && hasMediaOrLink
+        let shouldShow = ReadingListSectioning.shouldShowFilter(items: store.items())
         if shouldShow {
             if tableView.tableHeaderView !== filterHeaderView {
                 tableView.tableHeaderView = filterHeaderView
@@ -412,13 +347,7 @@ final class ReadingListViewController: UITableViewController {
     /// Items worth catching up on: unread (incl. partially read), and renderable
     /// (ready articles, or any platform/media item), oldest first by bump/save date.
     private func catchUpQueue() -> [ReadingListItem] {
-        store.items().filter { item in
-            guard item.readState != .read else { return false }
-            // Locked (needsCaptcha) articles show as locked cards; other readers
-            // need their content ready; non-readers (video/links) always qualify.
-            return Self.rendersAsReader(item)
-                ? (item.state == .ready || item.state == .needsCaptcha) : true
-        }.sorted { ($0.bumpDate ?? $0.dateAdded) < ($1.bumpDate ?? $1.dateAdded) }
+        ReadingListSectioning.catchUpQueue(items: store.items())
     }
 
     private func configureCatchUpButton() {
@@ -467,9 +396,7 @@ final class ReadingListViewController: UITableViewController {
     /// there's an unarchived LOCKED (paywalled, awaiting unlock) save — regardless of
     /// count. Hides the whole button in edit mode.
     private func updateCatchUpButton() {
-        let unread = store.items().filter { $0.readState != .read }
-        let hasLockedSave = unread.contains { $0.state == .needsCaptcha }
-        catchUpBadge.isHidden = unread.count < 10 && !hasLockedSave
+        catchUpBadge.isHidden = !ReadingListSectioning.shouldShowCatchUpDot(items: store.items())
         catchUpButton.isHidden = isEditing
         updateCatchUpButtonFade()
     }

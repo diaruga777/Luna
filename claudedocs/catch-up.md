@@ -88,15 +88,21 @@ vertically centered): top→bottom = a **small product thumbnail** (120pt), the
 **product name** (centered), a **non-tappable mini-table** of the tracked sites
 (`PriceTrackerStoreRowsView`: one row per `store`, host left + price right, no chevron
 / no selection; the **current best-price** row is accent-tinted + bold via
-`PriceTracker.bestPriceStoreID`), and the shared **`AlertThresholdSlider`** at the
+`PriceTracker.bestPriceStoreID`), and a **read-only alert-threshold readout** at the
 bottom. The thumbnail is resolved the SAME way as `ReadingListItemCell` —
 `PriceTracker.imageFileName` inside `store.articlesDirectory` (NOT
 `item.thumbnailFileName`, which is nil for trackers — that was the missing-thumbnail
-bug), falling back to a `tag`/`tag.fill` glyph. The card's slider drives the same
-`alertThresholdFraction` and persists via `store.updatePriceTracker` on commit, so
-editing the threshold from catch-up sticks. `CatchUpCardView.gestureRecognizer(_:shouldReceive:)`
-rejects touches landing on a `UISlider` so the card swipe doesn't steal the slider drag.
-The slider component is shared with the editor — see `price-tracking.md`.
+bug), falling back to a `tag`/`tag.fill` glyph. **The card has NO slider** — catch-up
+is a glance surface, so the threshold pill (`makeThresholdReadout`) shows the SAME
+percent + absolute readout text (`PriceFormatting.thresholdDescription`) as the editor
+but with a **"Change" button** instead of the interactive `AlertThresholdSlider`.
+Tapping "Change" fires `onChangeThreshold` → `CatchUpViewController.openPriceTracker`,
+which presents the FULL `PriceTrackingViewController` (where the shared slider lives)
+in its own nav controller — the same editor the reading-list tracker row opens. The
+editor dismisses programmatically via its built-in back/Done (`dismissOrPop` detects a
+modal nav root), so catch-up rebuilds the card on its next `viewDidAppear`
+(`needsCardReloadOnReappear`) to reflect any change. The slider now lives ONLY in the
+editor — see `price-tracking.md`.
 
 ## Model / store
 
@@ -116,5 +122,5 @@ The pulse triggers at >12 unread.
 
 Snapshot coverage (`CatchUpAndPriceScreenTests`): `catchup-cards`, `catchup-mixed`,
 and `catchup-price-tracker` (the tracker card — thumbnail, name, per-store mini-table,
-threshold slider). `PriceTracker.bestPriceStoreID` (best-price-row selection +
+read-only threshold readout + "Change" button). `PriceTracker.bestPriceStoreID` (best-price-row selection +
 deterministic tie-break) is unit-tested in `PriceTrackerTests`.

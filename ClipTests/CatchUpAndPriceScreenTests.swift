@@ -46,7 +46,8 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
     }
 
     /// A price tracker surfaces as a catch-up card with the dedicated tracker layout:
-    /// thumbnail, product name, per-store mini-table, and the alert-threshold slider.
+    /// thumbnail, product name, per-store mini-table, and a READ-ONLY alert-threshold
+    /// readout with a "Change" button (the slider lives on the full editor screen).
     func testCatchUpPriceTrackerCardSnapshot() {
         UITestSupport.seedSharedStore(.mixed)
         let trackers = ReadingListStore.shared.items().filter { $0.isPriceTracker }

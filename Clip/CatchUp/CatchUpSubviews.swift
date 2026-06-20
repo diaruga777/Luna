@@ -239,18 +239,14 @@ final class PriceTrackerStoreRowsView: UIView {
 
 /// A catch-up card body for a PRICE TRACKER (top→bottom): a small product thumbnail,
 /// the product name, a non-tappable mini-table of the tracked sites (host + price,
-/// best price highlighted), and the shared alert-threshold slider at the bottom. The
-/// slider drives the SAME `alertThresholdFraction` and persists via `onThresholdCommitted`.
+/// best price highlighted), and a READ-ONLY alert-threshold readout with a "Change"
+/// button. Catch-up is a glance surface, so editing happens on the full price-tracking
+/// screen (`PriceTrackingViewController`) — the button navigates there via `onChangeThreshold`.
 final class CatchUpPriceTrackerCardBody: UIView {
 
-    private let thresholdSlider = AlertThresholdSlider()
-
-    /// Fired when the user releases the threshold slider, with the new fraction; the
-    /// host persists it via the store's tracker-update path.
-    var onThresholdCommitted: ((Double) -> Void)? {
-        get { thresholdSlider.onCommitted }
-        set { thresholdSlider.onCommitted = newValue }
-    }
+    /// Fired when the user taps "Change" — the host opens the full price-tracking
+    /// screen (where the shared `AlertThresholdSlider` lives) for this tracker.
+    var onChangeThreshold: (() -> Void)?
 
     init(item: ReadingListItem, tracker: PriceTracker, store: ReadingListStore) {
         super.init(frame: .zero)
@@ -273,11 +269,11 @@ final class CatchUpPriceTrackerCardBody: UIView {
 
         let rows = PriceTrackerStoreRowsView(tracker: tracker)
 
-        thresholdSlider.configure(
-            fraction: tracker.alertThresholdFraction,
-            initialPrice: tracker.initialPrice, currency: tracker.initialCurrency)
+        let thresholdReadout = Self.makeThresholdReadout(tracker: tracker) { [weak self] in
+            self?.onChangeThreshold?()
+        }
 
-        let stack = UIStackView(arrangedSubviews: [thumb, title, rows, thresholdSlider])
+        let stack = UIStackView(arrangedSubviews: [thumb, title, rows, thresholdReadout])
         stack.axis = .vertical
         stack.spacing = 16
         stack.alignment = .fill
@@ -299,6 +295,60 @@ final class CatchUpPriceTrackerCardBody: UIView {
         ])
     }
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// A read-only liquid-glass pill mirroring `AlertThresholdSlider`'s chrome — the
+    /// "Alert threshold" title and the SAME percent + absolute readout
+    /// (`PriceFormatting.thresholdDescription`) — but with a "Change" button instead
+    /// of the interactive slider, since catch-up is a glance surface (editing happens
+    /// on the full price-tracking screen).
+    private static func makeThresholdReadout(
+        tracker: PriceTracker, onChange: @escaping () -> Void
+    ) -> UIView {
+        let glassPill = UIVisualEffectView(effect: GlassStyle.barEffect())
+        glassPill.translatesAutoresizingMaskIntoConstraints = false
+        if #available(iOS 26.0, *) {
+            glassPill.cornerConfiguration = .corners(radius: 22)
+        } else {
+            glassPill.layer.cornerRadius = 22
+            glassPill.layer.cornerCurve = .continuous
+            glassPill.clipsToBounds = true
+        }
+
+        let title = UILabel()
+        title.text = "Alert threshold"
+        title.font = .preferredFont(forTextStyle: .headline)
+        title.textColor = .label
+
+        let readout = UILabel()
+        readout.text = PriceFormatting.thresholdDescription(
+            fraction: tracker.alertThresholdFraction,
+            initialPrice: tracker.initialPrice, currency: tracker.initialCurrency)
+        readout.font = .preferredFont(forTextStyle: .subheadline)
+        readout.textColor = .secondaryLabel
+        readout.numberOfLines = 0
+
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = "Change"
+        configuration.baseForegroundColor = GlassStyle.readingAccent
+        configuration.contentInsets = .zero
+        let changeButton = UIButton(configuration: configuration)
+        changeButton.contentHorizontalAlignment = .leading
+        changeButton.addAction(UIAction { _ in onChange() }, for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [title, readout, changeButton])
+        stack.axis = .vertical
+        stack.spacing = 8
+        stack.alignment = .leading
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        glassPill.contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: glassPill.contentView.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: glassPill.contentView.bottomAnchor, constant: -16),
+            stack.leadingAnchor.constraint(equalTo: glassPill.contentView.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: glassPill.contentView.trailingAnchor, constant: -20),
+        ])
+        return glassPill
+    }
 
     /// Resolves the tracker's product image the SAME way the reading-list cell does
     /// (`PriceTracker.imageFileName` inside the Articles directory), falling back to a

@@ -288,18 +288,4 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
         let velocity = pan.velocity(in: self)
         return abs(velocity.x) > abs(velocity.y)
     }
-
-    /// Don't start a card swipe from a touch that lands on a slider (the price
-    /// tracker card's alert-threshold slider also needs horizontal drags) — let the
-    /// slider have it.
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
-    ) -> Bool {
-        var view = touch.view
-        while let current = view {
-            if current is UISlider { return false }
-            view = current.superview
-        }
-        return true
-    }
 }

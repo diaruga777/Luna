@@ -35,8 +35,20 @@ fetched price becomes a tracker — otherwise the page is saved as a plain artic
     candidate's `staticPrice` is the embedded-JSON price if found, else **nil** (the
     price is only in the rendered DOM → the `PriceFetcher`'s WebView fallback).
   - **`staticPrice(urlString:html:)`** — resolves the price visible in the STATIC
-    markup (Tier 1 structured data → Tier 2 embedded JSON), independent of product
-    detection; the `PriceFetcher` calls it for its fast, no-WebView paths.
+    markup (Tier 1 structured data → Tier 2 embedded JSON → **Amazon retailer-specific**),
+    independent of product detection; the `PriceFetcher` calls it for its fast,
+    no-WebView paths.
+  - **Amazon static price** (`amazonStaticPrice(html:baseURL:)`, pure): Amazon `/dp/`
+    pages embed the price in the static markup but with NO JSON-LD/OG/microdata price
+    node, so Tier 1 + embedded-JSON both miss. This reads Amazon's price shapes
+    directly: `"priceAmount":<n>`, `"displayPrice":"$…"`, and the visible
+    `.a-price .a-offscreen` span. Currency: a declared `currencyCode`/`priceCurrency`
+    if present, else the **Amazon TLD → currency** map (`amazonCurrency(forHost:)`:
+    `.com.au`→AUD, `.com`→USD, `.co.uk`→GBP, `.ca`→CAD, `.de`/`.fr`/`.it`/`.es`→EUR,
+    `.co.jp`→JPY, `.in`→INR), so a bare `$` resolves correctly per storefront. Detection
+    of the page itself already works via `urlLooksLikeProduct` (`/dp/<ASIN>`,
+    `/gp/product/`) + add-to-cart. Fixture `Products/amazon-dp.html` (trimmed
+    amazon.com.au) → **39.99 AUD** via the fast static path, no WebView, no spin.
   - **`priceFromEmbeddedJSON`** scans `__NEXT_DATA__`, every
     `<script type=application/json>`, and inline `window.__…={…}` blobs
     (`firstJSONObjectLiteral` balanced-brace extractor). `firstPrice(in:)` recurses
@@ -68,7 +80,12 @@ fetched price becomes a tracker — otherwise the page is saved as a plain artic
   to a hard timeout — NOT a fixed settle sleep, which would race JS hydration and make
   the same page sometimes yield a price and sometimes time out (→ article). Lives in
   ReaderKit (UIKit/WebKit, like `ArchiveWebReaderViewController`), so it works in the
-  main app and the UI-hosting action/share extension.
+  main app and the UI-hosting action/share extension. **No infinite spin**: `fetchPrice`
+  wraps the whole resolution in a hard overall timeout (`overallTimeoutSeconds`, default
+  30s) and `WebViewPriceRenderer.render` bounds navigation + price-poll under ONE shared
+  deadline (was two sequential 20s waits → ~40s worst case). On timeout it returns nil →
+  the caller falls back to a normal article (mandatory-price rule), so a save can NEVER
+  hang in the loading state. Test: `testOverallTimeoutTerminatesAHangingRender`.
 - `ProductInfo { name, priceAmount: Decimal, priceCurrency, imageURL?, brand?,
   productID? }` (in `ProductPageDetector.swift`) — a candidate paired with a fetched
   price, built via `ProductInfo(candidate:price:)`. The price is **required**; a

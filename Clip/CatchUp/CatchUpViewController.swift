@@ -37,6 +37,12 @@ final class CatchUpViewController: UIViewController {
     private let primaryButton = UIButton(type: .system)    // Bump / Keep
     private let secondaryButton = UIButton(type: .system)  // Mark Read / Delete All / Done
 
+    /// Set when the full price-tracking editor is presented over this screen; on the
+    /// next `viewDidAppear` the current card is rebuilt so its threshold readout
+    /// reflects any edit (the editor dismisses programmatically, so there's no
+    /// dismissal-delegate callback to hook).
+    private var needsCardReloadOnReappear = false
+
     private var currentCard: CatchUpCardView?
     private var currentReaderChild: UIViewController?
     private var currentItem: ReadingListItem? {
@@ -66,6 +72,14 @@ final class CatchUpViewController: UIViewController {
         } else {
             showCard()
             updateChrome()
+        }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if needsCardReloadOnReappear {
+            needsCardReloadOnReappear = false
+            reloadCurrentCard()
         }
     }
 
@@ -204,15 +218,13 @@ final class CatchUpViewController: UIViewController {
         let bodyTop: NSLayoutYAxisAnchor
         if let tracker = item.priceTracker {
             // A price tracker fills the whole content area (no date strip): a small
-            // thumbnail, the product name, a non-tappable per-store mini-table, and
-            // the shared alert-threshold slider at the bottom. The slider persists the
-            // edited threshold back through the store so it sticks.
+            // thumbnail, the product name, a non-tappable per-store mini-table, and a
+            // read-only alert-threshold readout with a "Change" button. Editing the
+            // threshold happens on the full price-tracking screen (where the slider
+            // lives), opened via the button.
             let trackerBody = CatchUpPriceTrackerCardBody(item: item, tracker: tracker, store: store)
-            trackerBody.onThresholdCommitted = { [weak self] fraction in
-                guard let self, var updated = self.store.item(withID: item.id)?.priceTracker
-                else { return }
-                updated.alertThresholdFraction = fraction
-                self.store.updatePriceTracker(updated, for: item.id)
+            trackerBody.onChangeThreshold = { [weak self] in
+                self?.openPriceTracker(item)
             }
             body = trackerBody
             bodyTop = card.contentContainer.topAnchor
@@ -266,6 +278,22 @@ final class CatchUpViewController: UIViewController {
     private func openMediaItem(_ item: ReadingListItem) {
         router?.openItem(item, presentingFrom: self)
         store.markReadState(.read, for: item.id)
+    }
+
+    /// Opens the FULL price-tracking screen for a tracker — the same destination the
+    /// reading-list tracker row opens — so the user can edit the alert threshold on
+    /// the shared slider. Catch-up is presented modally (no nav of its own), so the
+    /// editor is presented in its own navigation controller. On dismiss the card is
+    /// rebuilt in place so the readout reflects any change.
+    private func openPriceTracker(_ item: ReadingListItem) {
+        let editor = PriceTrackingViewController(itemID: item.id)
+        let nav = UINavigationController(rootViewController: editor)
+        // The editor's built-in back/Done button dismisses correctly when it's a
+        // modal nav root (`dismissOrPop`). It dismisses programmatically (not via the
+        // adaptive-presentation delegate), so we rebuild THIS card on our next
+        // `viewDidAppear` to reflect any threshold change.
+        needsCardReloadOnReappear = true
+        present(nav, animated: true)
     }
 
     /// The locked-card placeholder: a lock glyph + title + hint (no content exists

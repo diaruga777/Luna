@@ -421,12 +421,52 @@ final class ShareViewController: UIViewController {
             guard let self else { return }
             let badge = self.showDownloadingBadge(text: "Saving…")
             Task {
-                let resolution = await ArticleResolver.resolve(url: url)
+                // Record a diagnostic replay for the extension's inline ingest.
+                let recorder = ReplayRecorder.shared
+                let source: ReplaySource = .capture(self.isActionExtension ? .appIntent : .shareSheet)
+                let replayID = await recorder.begin(urlString: url.absoluteString, source: source)
+                if let item = ReadingListStore.shared.item(forURLString: url.absoluteString),
+                   let replayID {
+                    await recorder.attachItemID(item.id, to: replayID)
+                }
+                let fetcher: HTMLFetching = replayID
+                    .map { RecordingHTMLFetcher(wrapping: ArticleFetcher(), recorder: recorder, replayID: $0) }
+                    ?? ArticleFetcher()
+                let resolution = await ArticleResolver.resolve(
+                    url: url, fetcher: fetcher,
+                    replayLog: replayID.map { id in { event in await recorder.record(event, for: id) } })
+                if let replayID {
+                    await self.recordExtensionResolution(resolution, replayID: replayID, recorder: recorder)
+                }
                 await MainActor.run {
                     badge.removeFromSuperview()
                     self.finishArticleIngest(url: url, resolution: resolution)
                 }
             }
+        }
+    }
+
+    /// Records the resolve outcome (and on success the final content + terminal
+    /// `success` state) for the extension's inline ingest. A paywalled/unreadable
+    /// result is NOT terminal here — the archive web reader continues — so it
+    /// terminates `.failed`, recording that the silent path lost (the interactive
+    /// archive solve, if any, isn't part of this background replay).
+    private func recordExtensionResolution(
+        _ resolution: ArticleResolution, replayID: UUID, recorder: ReplayRecording
+    ) async {
+        switch resolution {
+        case let .readable(content, _):
+            await recorder.record(.resolveDecision(.readable), for: replayID)
+            await recorder.record(.extraction(
+                blockCount: content.blocks.count, bodyTextLength: content.bodyTextLength,
+                title: content.title, hasReadableBody: content.hasReadableBody), for: replayID)
+            await recorder.terminate(replayID, state: .success, finalContent: content)
+        case .paywalled:
+            await recorder.record(.resolveDecision(.paywalled), for: replayID)
+            await recorder.terminate(replayID, state: .failed, finalContent: nil)
+        case .unreadable:
+            await recorder.record(.resolveDecision(.unreadable), for: replayID)
+            await recorder.terminate(replayID, state: .failed, finalContent: nil)
         }
     }
 

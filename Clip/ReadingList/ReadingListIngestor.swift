@@ -14,6 +14,13 @@ final class ReadingListIngestor {
     private let fetcher = ArticleFetcher()
     private let extractor = ArticleExtractor()
     private let youTubeMetadataFetcher: YouTubeMetadataFetching = YouTubeOEmbedFetcher()
+    /// Records a `Replay` for each save (diagnostics). `NoopReplayRecorder` keeps
+    /// recording off the hot path optional — a save runs identically without it.
+    private let recorder: ReplayRecording
+
+    init(recorder: ReplayRecording = ReplayRecorder.shared) {
+        self.recorder = recorder
+    }
 
     /// IDs currently being ingested, to avoid duplicate concurrent work.
     private var inFlight = Set<UUID>()
@@ -34,6 +41,14 @@ final class ReadingListIngestor {
             lock.unlock()
         }
 
+        // Start a diagnostic replay for this save (no-op if recording is disabled).
+        // Every save entry point that reaches `ingest` (intents, paste, manual,
+        // in-app add) is covered by this single seam.
+        let replayID = await recorder.begin(
+            urlString: initialURL.absoluteString,
+            source: .capture(item.effectiveCaptureSource))
+        if let replayID { await recorder.attachItemID(item.id, to: replayID) }
+
         // Unwrap news-aggregator wrappers (Apple News, Google News, link
         // shorteners) to the real publisher article BEFORE anything else, then
         // continue as if that had been saved — both extraction and the
@@ -46,20 +61,39 @@ final class ReadingListIngestor {
             SharedDiagnosticLog.record(
                 "ingest: unwrapped \(initialURL.absoluteString) → \(unwrapped.absoluteString)",
                 category: "ingest")
+            if let replayID {
+                await recorder.record(
+                    .unwrap(fromURLString: initialURL.absoluteString,
+                            toURLString: unwrapped.absoluteString), for: replayID)
+            }
             guard let updated = store.updateURL(unwrapped.absoluteString, for: item.id) else {
-                return   // the unwrapped article already exists in the list; wrapper dropped
+                // The unwrapped article already exists in the list; wrapper dropped.
+                if let replayID {
+                    await recorder.record(.note("unwrapped URL already saved; dropped"), for: replayID)
+                    await recorder.terminate(replayID, state: .failed, finalContent: nil)
+                }
+                return
             }
             item = updated
             url = updated.url ?? unwrapped
+            if let replayID { await recorder.updateItemURL(url.absoluteString, for: replayID) }
         }
 
         if item.isDocument {
             await ingestDocument(item)
+            if let replayID {
+                await recorder.record(.note("document ingest (\(item.sanitizedDocumentType ?? "?"))"),
+                                      for: replayID)
+                await recorder.terminate(
+                    replayID, state: store.item(withID: item.id)?.state == .ready ? .success : .failed,
+                    finalContent: nil)
+            }
             return
         }
 
         if let videoID = YouTubeURL.videoID(from: item.urlString) {
             await ingestYouTubeVideo(item, videoID: videoID)
+            await terminateNonArticle(replayID, itemID: item.id, note: "youtube video \(videoID)")
             return
         }
 
@@ -68,6 +102,7 @@ final class ReadingListIngestor {
         // mark it "Couldn't Load").
         if let match = PlatformRegistry.shared.detect(item.urlString) {
             await ingestPlatformItem(item, match: match)
+            await terminateNonArticle(replayID, itemID: item.id, note: "platform \(match.platform)")
             return
         }
 
@@ -76,8 +111,21 @@ final class ReadingListIngestor {
         // read but whose title we can lands in `.needsCaptcha` — the archive.today
         // snapshot it needs requires a user-solved CAPTCHA a background fetch can't
         // pass, so the user unlocks it from the list. No title → genuinely broken.
-        switch await ArticleResolver.resolve(url: url, fetcher: fetcher, extractor: extractor) {
+        // The fetcher is wrapped so every request/response is captured into the replay.
+        let resolveFetcher: HTMLFetching = replayID
+            .map { RecordingHTMLFetcher(wrapping: fetcher, recorder: recorder, replayID: $0) }
+            ?? fetcher
+        let resolution = await ArticleResolver.resolve(
+            url: url, fetcher: resolveFetcher, extractor: extractor,
+            replayLog: replayID.map { id in { [recorder] event in await recorder.record(event, for: id) } })
+        switch resolution {
         case .readable(let content, let html):
+            if let replayID {
+                await recorder.record(.resolveDecision(.readable), for: replayID)
+                await recorder.record(.extraction(
+                    blockCount: content.blocks.count, bodyTextLength: content.bodyTextLength,
+                    title: content.title, hasReadableBody: content.hasReadableBody), for: replayID)
+            }
             let resolvedContent = await downloadImages(for: content, itemID: item.id)
             // Best-effort cover/banner art for the list row (kept before the
             // ready flip so the row's spinner covers the whole fetch).
@@ -87,8 +135,19 @@ final class ReadingListIngestor {
             if updated.state == .ready {
                 ArticleSendCoordinator.shared.articleBecameReady(updated)
             }
+            // The save reached its terminal readable UI state — no further network.
+            if let replayID {
+                await recorder.terminate(replayID, state: .success, finalContent: resolvedContent)
+            }
         case .paywalled(let title):
             store.markNeedsCaptcha(item.id, title: title)
+            // NOT terminal: the user still solves the archive CAPTCHA in the web
+            // reader, which owns its own (separate) replay. Mark this background
+            // attempt failed so the diagnostic records that the silent path lost.
+            if let replayID {
+                await recorder.record(.resolveDecision(.paywalled), for: replayID)
+                await recorder.terminate(replayID, state: .failed, finalContent: nil)
+            }
         case .unreadable:
             // A hard-paywall host (WSJ/FT/…) or an already-archived URL can still be
             // read via its archive.today snapshot behind a user-solved CAPTCHA — park
@@ -99,7 +158,24 @@ final class ReadingListIngestor {
             } else {
                 store.markFailed(item.id)
             }
+            if let replayID {
+                await recorder.record(.resolveDecision(.unreadable), for: replayID)
+                await recorder.terminate(replayID, state: .failed, finalContent: nil)
+            }
         }
+    }
+
+    /// Terminates the replay for a non-article item (video/platform): these never
+    /// `.fail`, so success reflects whether the item ended `.ready`. Media art is
+    /// recorded by reference only (never bytes) before terminating.
+    private func terminateNonArticle(_ replayID: UUID?, itemID: UUID, note: String) async {
+        guard let replayID else { return }
+        await recorder.record(.note(note), for: replayID)
+        if let item = store.item(withID: itemID), let thumbnail = item.thumbnailFileName {
+            await recorder.record(.mediaReference(role: "thumbnail", urlString: thumbnail), for: replayID)
+        }
+        let ready = store.item(withID: itemID)?.state == .ready
+        await recorder.terminate(replayID, state: ready ? .success : .failed, finalContent: nil)
     }
 
     /// Downloads an article's cover image (og:image / twitter:image) with a short

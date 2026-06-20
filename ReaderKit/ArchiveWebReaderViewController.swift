@@ -27,6 +27,11 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private let articleURL: URL
     private let itemID: UUID?
     private let store: ReadingListStore
+    /// Records the interactive archive/bypass session as its own diagnostic replay
+    /// (loaded URLs, stages, extracted HTML, terminal state). No-op via the shared
+    /// recorder when disabled.
+    private let recorder: ReplayRecording
+    private var replayID: UUID?
     private let webView: WKWebView
     private let progress = UIActivityIndicatorView(style: .medium)
     /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
@@ -130,10 +135,12 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private static let cannotArchiveMessage =
         "This site can't be archived right now. Try again in a little while, or open it in Safari."
 
-    init(articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared) {
+    init(articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared,
+         recorder: ReplayRecording = ReplayRecorder.shared) {
         self.articleURL = articleURL
         self.itemID = itemID
         self.store = store
+        self.recorder = recorder
         self.webPreStageURLs = Self.webPreStageURLs(for: articleURL)
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
@@ -228,6 +235,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         setUpLoadingOverlay()
 
         progress.startAnimating()
+        beginReplay()
         startPolling()
         if !webPreStageURLs.isEmpty {
             // Walk the WKWebView pre-stage list (trailing-dot, then any third-party
@@ -252,6 +260,8 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         SharedDiagnosticLog.record(
             "archive: pre-stage \(currentPreStageIndex + 1)/\(webPreStageURLs.count) \(url.absoluteString)",
             category: "archive")
+        recordStage("preStage", urlString: url.absoluteString,
+                    note: "\(currentPreStageIndex + 1)/\(webPreStageURLs.count)")
         webView.load(URLRequest(url: url))
     }
 
@@ -290,6 +300,67 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         // keeps firing checkStage() (and could load/submit) on a dismissed flow.
         pollTimer?.invalidate()
         pollTimer = nil
+        // If the user left before extraction/terminal, close the replay as failed so
+        // it doesn't linger in-progress (terminate no-ops if already terminated).
+        if let replayID, !didExtract {
+            Task { await recorder.terminate(replayID, state: .failed, finalContent: nil) }
+        }
+    }
+
+    // MARK: - Replay diagnostics
+
+    /// Opens this archive session's diagnostic replay. The save's original capture
+    /// source isn't known here, so it's recorded as an in-viewer continuation of the
+    /// item's own URL.
+    private func beginReplay() {
+        Task { [weak self] in
+            guard let self else { return }
+            let id = await self.recorder.begin(
+                urlString: self.articleURL.absoluteString,
+                source: .capture(.manual))
+            await MainActor.run {
+                self.replayID = id
+                if let id, let itemID = self.itemID {
+                    Task { await self.recorder.attachItemID(itemID, to: id) }
+                }
+            }
+        }
+    }
+
+    /// Records one archive/bypass stage (a loaded URL, a homepage warm-up, etc.).
+    private func recordStage(_ stage: String, urlString: String?, note: String?) {
+        guard let replayID else { return }
+        Task { await recorder.record(.archiveStage(stage: stage, urlString: urlString, note: note),
+                                     for: replayID) }
+    }
+
+    /// Records the WKWebView's extracted HTML body + the resulting content, then
+    /// terminates the replay as `.success`.
+    private func recordExtractionSuccess(html: String, content: ArticleContent) {
+        guard let replayID else { return }
+        let url = (webView.url ?? articleURL).absoluteString
+        Task {
+            await recorder.record(.archiveStage(stage: "extracted", urlString: url, note: nil),
+                                  for: replayID)
+            await recorder.record(.networkResponse(NetworkResponse(
+                urlString: url, statusCode: 200, headers: [:],
+                body: .text(html, truncatedBytes: 0), error: nil)), for: replayID)
+            await recorder.record(.extraction(
+                blockCount: content.blocks.count, bodyTextLength: content.bodyTextLength,
+                title: content.title, hasReadableBody: content.hasReadableBody), for: replayID)
+            await recorder.terminate(replayID, state: .success, finalContent: content)
+        }
+        self.replayID = nil
+    }
+
+    /// Records the terminal failure message, then terminates the replay as `.failed`.
+    private func recordTerminalFailure(_ message: String) {
+        guard let replayID else { return }
+        Task {
+            await recorder.record(.note("terminal: \(message)"), for: replayID)
+            await recorder.terminate(replayID, state: .failed, finalContent: nil)
+        }
+        self.replayID = nil
     }
 
     /// Builds the opaque cover (themed background + spinner + label) over the web
@@ -352,6 +423,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         SharedDiagnosticLog.record(
             "archive: warming up \(Self.archiveHomepage.absoluteString) ua=\(webView.customUserAgent ?? "default")",
             category: "archive")
+        recordStage("archiveHomepage", urlString: Self.archiveHomepage.absoluteString, note: nil)
         webView.load(URLRequest(url: Self.archiveHomepage))
     }
 
@@ -704,6 +776,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
                     _ = self.store.saveContent(content, for: item)
                     SharedDiagnosticLog.record(
                         "archive: extracted + saved (bodyLen=\(content.bodyTextLength))", category: "archive")
+                    self.recordExtractionSuccess(html: html, content: content)
                     self.onExtracted?()
                 }
             }
@@ -730,6 +803,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private func showTerminalMessage(_ message: String) {
         guard !didShowTerminalMessage else { return }
         didShowTerminalMessage = true
+        recordTerminalFailure(message)
         pollTimer?.invalidate()
         pollTimer = nil
         progress.stopAnimating()

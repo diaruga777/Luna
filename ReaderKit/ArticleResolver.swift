@@ -46,7 +46,8 @@ enum ArticleResolver {
         url: URL,
         fetcher: HTMLFetching = ArticleFetcher(),
         extractor: ArticleExtractor = ArticleExtractor(),
-        runner: BypassRunning? = nil
+        runner: BypassRunning? = nil,
+        replayLog: ((EventKind) async -> Void)? = nil
     ) async -> ArticleResolution {
         let direct = await extractedContent(from: { try await fetcher.fetchHTML(from: url) },
                                             baseURL: url, extractor: extractor)
@@ -62,8 +63,11 @@ enum ArticleResolver {
         let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
         let strategies = BypassStrategySelector.strategies(for: url, directHTML: direct?.1)
         for strategy in strategies where strategy.runsSilently {
-            if let pair = await bypassRunner.run(strategy, url: url, directHTML: direct?.1),
-               Self.isReadable(pair) {
+            let pair = await bypassRunner.run(strategy, url: url, directHTML: direct?.1)
+            let succeeded = pair.map(Self.isReadable) ?? false
+            await replayLog?(.bypassStrategy(
+                name: strategy.replayName, runsSilently: true, succeeded: succeeded))
+            if let pair, Self.isReadable(pair) {
                 return .readable(pair.0, html: pair.1)
             }
         }

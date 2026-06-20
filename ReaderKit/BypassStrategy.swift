@@ -54,6 +54,24 @@ enum BypassStrategy: Equatable {
             return true
         }
     }
+
+    /// A stable, human-readable name for diagnostics (Replay `bypassStrategy`
+    /// events). Includes the associated value so consumers can tell variants apart.
+    var replayName: String {
+        switch self {
+        case .jsonLDBody: return "jsonLDBody"
+        case let .userAgent(agent): return "userAgent(\(agent))"
+        case let .referer(origin): return "referer(\(origin.rawValue))"
+        case .trailingDotHost: return "trailingDotHost"
+        case .freshSession: return "freshSession"
+        case .amp: return "amp"
+        case .waybackRaw: return "waybackRaw"
+        case .jinaReader: return "jinaReader"
+        case let .ladderProxy(proxy): return "ladderProxy(\(proxy))"
+        case let .thirdPartyWeb(service): return "thirdPartyWeb(\(service))"
+        case .archiveToday: return "archiveToday"
+        }
+    }
 }
 
 /// Crawler identities a paywall may whitelist for SEO/social. `xForwardedFor`

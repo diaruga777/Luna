@@ -67,6 +67,61 @@ final class OnboardingScreenTests: XCTestCase {
         _ = window
     }
 
+    /// iPhone-mini point size. The identity screen and the setup steps must keep all
+    /// of their content (icon/title/body/fields) and buttons reachable here — the
+    /// fields live in a scroll view and the buttons stay pinned and in-bounds.
+    private static let miniSize = CGSize(width: 375, height: 812)
+
+    /// On a small screen the identity step keeps its Continue button on-screen, its
+    /// content inside a scroll view, and its fields laid out within view bounds.
+    func testIdentityStepFitsSmallScreen() {
+        let username = OnboardingViewController(onComplete: {})
+        let window = UITestSupport.host(username, size: Self.miniSize)
+
+        let scrollViews = allScrollViews(in: username.view)
+        XCTAssertGreaterThan(scrollViews.count, 0, "identity content should be scrollable on small screens")
+
+        let buttons = allButtons(in: username.view)
+        XCTAssertGreaterThan(buttons.count, 0)
+        for button in buttons {
+            LayoutAssertions.assertVisibleAndInBounds(button, in: username.view)
+        }
+
+        let fields = allTextFields(in: username.view)
+        XCTAssertEqual(fields.count, 3, "username + email + phone fields")
+        for field in fields {
+            LayoutAssertions.assertVisibleAndInBounds(field, in: username.view)
+        }
+        _ = window
+    }
+
+    /// Every setup step keeps its primary/continue buttons on-screen on a small device.
+    func testSetupStepsFitSmallScreen() {
+        let steps = OnboardingFlow.stepViewControllersForTesting()
+        for step in steps.dropFirst() {
+            let window = UITestSupport.host(step, size: Self.miniSize)
+            let buttons = allButtons(in: step.view)
+            for button in buttons where !button.isHidden {
+                LayoutAssertions.assertVisibleAndInBounds(button, in: step.view)
+            }
+            _ = window
+        }
+    }
+
+    private func allScrollViews(in view: UIView) -> [UIScrollView] {
+        var found: [UIScrollView] = []
+        if let scroll = view as? UIScrollView { found.append(scroll) }
+        for subview in view.subviews { found.append(contentsOf: allScrollViews(in: subview)) }
+        return found
+    }
+
+    private func allTextFields(in view: UIView) -> [UITextField] {
+        var found: [UITextField] = []
+        if let field = view as? UITextField { found.append(field) }
+        for subview in view.subviews { found.append(contentsOf: allTextFields(in: subview)) }
+        return found
+    }
+
     private func allButtons(in view: UIView) -> [UIButton] {
         var found: [UIButton] = []
         if let button = view as? UIButton { found.append(button) }

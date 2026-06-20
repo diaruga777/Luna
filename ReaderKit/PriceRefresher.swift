@@ -39,23 +39,24 @@ struct PriceRefreshOutcome: Equatable {
 /// processes trackers stalest-first so a killed run still advances the oldest
 /// trackers, and persists each tracker as soon as it finishes (not in one batch).
 ///
-/// Pure-ish: the fetcher, detector, and clock are injected, so the whole loop runs
+/// Uses the same `PriceFetching` as save-time (static → embedded JSON → WKWebView
+/// render), so every refresh re-fetches the real current price even for sites whose
+/// price only exists after client-side rendering.
+///
+/// Pure-ish: the price fetcher and clock are injected, so the whole loop runs
 /// deterministically in tests with no network and a fixed time.
 struct PriceRefresher {
     private let store: PriceTrackerPersisting
-    private let fetcher: HTMLFetching
-    private let detector: ProductPageDetector
+    private let priceFetcher: PriceFetching
     private let now: () -> Date
 
     init(
         store: PriceTrackerPersisting,
-        fetcher: HTMLFetching,
-        detector: ProductPageDetector = ProductPageDetector(),
+        priceFetcher: PriceFetching,
         now: @escaping () -> Date = Date.init
     ) {
         self.store = store
-        self.fetcher = fetcher
-        self.detector = detector
+        self.priceFetcher = priceFetcher
         self.now = now
     }
 
@@ -82,16 +83,15 @@ struct PriceRefresher {
         let timestamp = now()
 
         for storeListing in tracker.stores {
-            guard let url = storeListing.url,
-                  let html = try? await fetcher.fetchHTML(from: url),
-                  let info = detector.detect(urlString: storeListing.urlString, html: html) else {
+            guard let price = await priceFetcher.fetchPrice(
+                forURLString: storeListing.urlString, prefetchedHTML: nil) else {
                 // Stamp the attempt time even on failure so it doesn't monopolize
                 // the stalest-first queue every run.
                 updated.setPrice(storeListing.lastPrice, currency: nil,
                                  urlString: storeListing.urlString, at: timestamp)
                 continue
             }
-            updated.setPrice(info.priceAmount, currency: info.priceCurrency,
+            updated.setPrice(price.amount, currency: price.currency,
                              urlString: storeListing.urlString, at: timestamp)
         }
 

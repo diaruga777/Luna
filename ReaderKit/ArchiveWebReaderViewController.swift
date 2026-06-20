@@ -656,25 +656,57 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     }
 
     /// A WKWebView pre-stage page: the page is the (hopefully un-paywalled) article
-    /// itself (no archive, no CAPTCHA), so just poll its text length and try
-    /// extracting. If the current pre-stage doesn't yield a readable article within
-    /// `bypassPollLimit` ticks (the trick stopped working / a paywall is still up /
-    /// the service didn't render), advance to the next pre-stage — or fall back to
-    /// the archive.today flow once the list is exhausted.
+    /// itself (no archive, no CAPTCHA), so just poll its text + try extracting. Two
+    /// ways to leave the current pre-stage early instead of stalling:
+    /// - a "please enable JavaScript" gate (some pre-stages — e.g.
+    ///   removepaywall.com — serve a tiny JS-required interstitial that never
+    ///   renders the article in a WKWebView): detected on a SHORT body so a real
+    ///   article that merely mentions JavaScript can't trip it → advance immediately.
+    /// - otherwise, `bypassPollLimit` ticks without a readable extraction (the trick
+    ///   stopped working / a paywall is still up / the service didn't render) →
+    ///   advance to the next pre-stage, or fall back to archive.today when exhausted.
     private func checkDirectBypassStage() {
         bypassPollCount += 1
         if bypassPollCount > Self.bypassPollLimit {
             advanceToNextPreStage()
             return
         }
-        let probe = "(function(){return document.body ? document.body.innerText.length : 0;})()"
+        // Probe both the body text (length for the extract gate) and whether it's a
+        // JS-required interstitial.
+        let probe = "(function(){return document.body ? document.body.innerText : '';})()"
         webView.evaluateJavaScript(probe) { [weak self] result, _ in
             guard let self, self.isAttemptingDirectBypass, !self.didExtract, !self.isExtracting else { return }
-            let length = (result as? NSNumber)?.intValue ?? 0
-            guard length > 1500 else { return }   // still rendering — try again next tick
+            let text = (result as? String) ?? ""
+            if Self.isJavaScriptRequiredGate(text: text) {
+                SharedDiagnosticLog.record(
+                    "archive: pre-stage is a JS-required gate → advancing", category: "archive")
+                self.advanceToNextPreStage()
+                return
+            }
+            guard text.count > 1500 else { return }   // still rendering — try again next tick
             self.isExtracting = true
             self.extractAndSave()   // readable → save + onExtracted; not readable → resets, retries
         }
+    }
+
+    /// Whether `text` is a "please enable JavaScript" interstitial (the kind a
+    /// removepaywall.com / smry.ai pre-stage can serve, which never renders the
+    /// article in our WKWebView). Pure + static so it's unit-testable.
+    ///
+    /// Gated on a SHORT body — a real, rendered article that happens to mention
+    /// "JavaScript" (e.g. a tech post) is long, so it can't trip this. This is the
+    /// generalized form of the archive.today "enable JS / disable ad blocker" gate:
+    /// the ad-blocker phrase is NOT required, since most JS-required interstitials
+    /// only mention JavaScript.
+    static func isJavaScriptRequiredGate(text: String) -> Bool {
+        let lowercased = text.lowercased()
+        guard lowercased.count < 800 else { return false }
+        let mentionsJavaScript = lowercased.contains("enable javascript")
+            || lowercased.contains("enable js")
+            || lowercased.contains("javascript is required")
+            || lowercased.contains("requires javascript")
+            || lowercased.contains("please enable javascript")
+        return mentionsJavaScript
     }
 
     /// Advances to the next WKWebView pre-stage, or runs the archive.today flow when

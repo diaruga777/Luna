@@ -433,12 +433,20 @@ final class ShareViewController: UIViewController {
                     .map { RecordingHTMLFetcher(wrapping: ArticleFetcher(), recorder: recorder, replayID: $0) }
                     ?? ArticleFetcher()
 
-                // A product page with a price becomes a price tracker rather than
-                // an article. The extension can't present the main-app price UI,
-                // so it saves the tracker silently; the user edits it in the app.
-                if let html = try? await fetcher.fetchHTML(from: url),
-                   let product = ProductPageDetector().detect(urlString: url.absoluteString, html: html),
+                // Product detection runs BEFORE any paywall/archive treatment, so a
+                // product page is routed to price tracking and NEVER paywall-bypassed.
+                // Detection identifies a candidate; the mandatory price is then fetched
+                // up front (static → embedded JSON → WKWebView render). Only a candidate
+                // with a real price becomes a tracker — the extension can't present the
+                // main-app price UI, so it saves silently; the user edits it in the app.
+                // A candidate with no fetchable price falls through to the article path.
+                let productHTML = try? await fetcher.fetchHTML(from: url)
+                if let html = productHTML,
+                   let candidate = ProductPageDetector().detect(urlString: url.absoluteString, html: html),
+                   let price = await PriceFetcher().fetchPrice(
+                       forURLString: url.absoluteString, prefetchedHTML: html),
                    let item = ReadingListStore.shared.item(forURLString: url.absoluteString) {
+                    let product = ProductInfo(candidate: candidate, price: price)
                     let tracker = PriceTracker(
                         productName: product.name, firstStoreURL: url.absoluteString,
                         price: product.priceAmount, currency: product.priceCurrency,

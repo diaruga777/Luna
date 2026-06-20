@@ -17,7 +17,7 @@ final class PriceRefreshCoordinator {
     private let refresher: PriceRefresher
 
     init(refresher: PriceRefresher = PriceRefresher(
-        store: ReadingListStore.shared, fetcher: ArticleFetcher())) {
+        store: ReadingListStore.shared, priceFetcher: PriceFetcher())) {
         self.refresher = refresher
     }
 

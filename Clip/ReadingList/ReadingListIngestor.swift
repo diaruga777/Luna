@@ -15,6 +15,9 @@ final class ReadingListIngestor {
     private let extractor = ArticleExtractor()
     private let youTubeMetadataFetcher: YouTubeMetadataFetching = YouTubeOEmbedFetcher()
     private let productDetector = ProductPageDetector()
+    /// Resolves the mandatory price for a detected product (static → embedded JSON
+    /// → WKWebView render). A product never becomes a tracker without a real price.
+    private let priceFetcher: PriceFetching = PriceFetcher()
     /// Records a `Replay` for each save (diagnostics). `NoopReplayRecorder` keeps
     /// recording off the hot path optional — a save runs identically without it.
     private let recorder: ReplayRecording
@@ -112,14 +115,27 @@ final class ReadingListIngestor {
             .map { RecordingHTMLFetcher(wrapping: fetcher, recorder: recorder, replayID: $0) }
             ?? fetcher
 
-        // Product-page detection: a page that advertises a price becomes a PRICE
-        // TRACKER rather than an article. Fetch once and try detection; on a hit,
-        // create/merge a tracker and terminate. On no price (or a failed fetch),
-        // fall through to the normal article pipeline (which re-fetches as needed).
-        if let html = try? await resolveFetcher.fetchHTML(from: url),
-           let product = productDetector.detect(urlString: url.absoluteString, html: html) {
-            await ingestProductTracker(item, url: url, product: product, replayID: replayID)
-            return
+        // Product-page detection runs BEFORE any paywall/archive treatment: a
+        // product page becomes a PRICE TRACKER, never an article and never the
+        // bypass/archive flow. Detection identifies a product CANDIDATE; the price
+        // is then fetched up front (static → embedded JSON → WKWebView render). Only
+        // a candidate with a real fetched price becomes a tracker — if no price can
+        // be obtained by any method, the candidate falls through to the normal
+        // article pipeline (saved as a plain article, never a broken tracker).
+        let productHTML = try? await resolveFetcher.fetchHTML(from: url)
+        if let html = productHTML,
+           let candidate = productDetector.detect(urlString: url.absoluteString, html: html) {
+            if let price = await priceFetcher.fetchPrice(
+                forURLString: url.absoluteString, prefetchedHTML: html) {
+                let product = ProductInfo(candidate: candidate, price: price)
+                await ingestProductTracker(item, url: url, product: product, replayID: replayID)
+                return
+            }
+            if let replayID {
+                await recorder.record(
+                    .note("product candidate \(candidate.name) had no fetchable price → article"),
+                    for: replayID)
+            }
         }
 
         // Direct fetch + extract, falling back to web archives for hard-paywalled

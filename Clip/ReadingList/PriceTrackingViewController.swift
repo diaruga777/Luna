@@ -195,14 +195,14 @@ final class PriceTrackingViewController: UIViewController {
         guard let tracker, !tracker.hasStore(urlString: urlString) else { return }
         Task { [weak self] in
             guard let self else { return }
-            let info = await self.manager.detectProduct(urlString: urlString)
+            let price = await self.manager.fetchPrice(urlString: urlString)
             await MainActor.run {
                 guard var current = self.tracker else { return }
                 let storeListing = PriceTrackerStore(
                     urlString: urlString,
-                    lastPrice: info?.priceAmount,
-                    currency: info?.priceCurrency ?? current.initialCurrency,
-                    lastRefreshed: info != nil ? Date() : nil)
+                    lastPrice: price?.amount,
+                    currency: price?.currency ?? current.initialCurrency,
+                    lastRefreshed: price != nil ? Date() : nil)
                 current.upsertStore(storeListing)
                 self.store.updatePriceTracker(current, for: self.itemID)
             }

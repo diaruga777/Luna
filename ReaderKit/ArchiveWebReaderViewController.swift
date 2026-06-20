@@ -69,16 +69,21 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// as terminal (the un-archivable message + Safari escape).
     private var blockedPollCount = 0
     private static let blockedPollLimit = 3   // ≈ 4s — tolerate a transient flash
-    /// For NYT articles, the "trailing dot" host variant (`nytimes.com` →
-    /// `nytimes.com.`) we try in the web view BEFORE the archive.today flow — the
-    /// paywall's host-keyed JS/cookies don't apply to it, but the article still
-    /// loads. Nil for non-NYT articles.
-    private let directBypassURL: URL?
-    /// True while loading/extracting the trailing-dot bypass page (the pre-stage,
-    /// before any archive.today navigation).
+    /// The ordered WKWebView pre-stage URLs to try BEFORE the archive.today flow —
+    /// derived from `BypassStrategySelector` filtered to the strategies worth a real
+    /// browser (the trailing-dot host variant, smry.ai, removepaywall(s).com). Each
+    /// is loaded in turn; a readable extraction from any of them finishes via the
+    /// normal `onExtracted` path with no archive.today at all. Empty → straight to
+    /// archive.today. The silent strategies already ran (and failed) in the
+    /// background path, so only the JS-rendered ones are repeated here.
+    private let webPreStageURLs: [URL]
+    /// Index of the pre-stage currently loaded; advances as each one times out.
+    private var currentPreStageIndex = 0
+    /// True while loading/extracting a pre-stage page (before any archive.today
+    /// navigation).
     private var isAttemptingDirectBypass = false
-    /// Poll ticks spent on the bypass page; past `bypassPollLimit` without a
-    /// readable extraction we give up and fall back to the archive.today flow.
+    /// Poll ticks spent on the current pre-stage page; past `bypassPollLimit` without
+    /// a readable extraction we advance to the next pre-stage (or the archive flow).
     private var bypassPollCount = 0
     private static let bypassPollLimit = 7   // ≈ 9s at the 1.3s poll interval
     /// Set once we surface a terminal message in the overlay (rate-limit or
@@ -129,8 +134,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         self.articleURL = articleURL
         self.itemID = itemID
         self.store = store
-        self.directBypassURL = (articleURL.host.map(TrailingDotBypass.isNYTHost) == true)
-            ? TrailingDotBypass.trailingDotURL(for: articleURL) : nil
+        self.webPreStageURLs = Self.webPreStageURLs(for: articleURL)
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
         // archive.today refuses clients it thinks have JS off; make it explicit (and
@@ -225,17 +229,30 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
         progress.startAnimating()
         startPolling()
-        if let directBypassURL {
-            // NYT: try the trailing-dot host in the web view first; only fall back to
-            // archive.today if it doesn't yield a readable article.
+        if !webPreStageURLs.isEmpty {
+            // Walk the WKWebView pre-stage list (trailing-dot, then any third-party
+            // reader pages) before the archive.today flow; a readable extraction from
+            // any of them finishes via the normal `onExtracted` path.
             isAttemptingDirectBypass = true
-            SharedDiagnosticLog.record(
-                "archive: trying direct paywall bypass \(directBypassURL.absoluteString)", category: "archive")
-            webView.load(URLRequest(url: directBypassURL))
+            loadCurrentPreStage()
         } else {
             loadArchive()
             resolveSnapshotInParallel()
         }
+    }
+
+    /// Loads the pre-stage URL at `currentPreStageIndex` and resets its poll counter.
+    private func loadCurrentPreStage() {
+        guard currentPreStageIndex < webPreStageURLs.count else {
+            fallBackToArchiveFromBypass()
+            return
+        }
+        bypassPollCount = 0
+        let url = webPreStageURLs[currentPreStageIndex]
+        SharedDiagnosticLog.record(
+            "archive: pre-stage \(currentPreStageIndex + 1)/\(webPreStageURLs.count) \(url.absoluteString)",
+            category: "archive")
+        webView.load(URLRequest(url: url))
     }
 
     /// Resolves the specific newest archive.today snapshot via the TimeMap in
@@ -349,6 +366,29 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
               ArticleFetcher.isArchiveTodayURL(url)   // reject a smuggled non-archive host
         else { return nil }
         return url
+    }
+
+    /// The ordered WKWebView pre-stage URLs for `articleURL`: the strategy list from
+    /// `BypassStrategySelector`, filtered to the JS-rendered strategies worth a real
+    /// browser (`.trailingDotHost`, `.thirdPartyWeb`) and mapped to a loadable URL.
+    /// archive.today is excluded — it's the terminal flow, not a pre-stage. Silent
+    /// strategies are excluded (they already ran in the background path). Pure +
+    /// static so the ordering is unit-testable without a web view.
+    static func webPreStageURLs(for articleURL: URL) -> [URL] {
+        // A URL already on archive.today goes straight to the snapshot flow.
+        guard !ArticleFetcher.isArchiveTodayURL(articleURL) else { return [] }
+        let strategies = BypassStrategySelector.strategies(for: articleURL, directHTML: nil)
+        return strategies.compactMap { strategy -> URL? in
+            switch strategy {
+            case .trailingDotHost:
+                return TrailingDotBypass.trailingDotURL(for: articleURL)
+            case let .thirdPartyWeb(service):
+                return service.url(for: articleURL)
+            default:
+                // Silent strategies + archive.today are not WKWebView pre-stages.
+                return nil
+            }
+        }
     }
 
     /// Opens the archive in real Safari (the proven-working path when the embedded
@@ -543,14 +583,16 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         return length > minExtractLength ? .attemptExtract : .wait
     }
 
-    /// The NYT trailing-dot pre-stage: the page is the real article (no archive,
-    /// no CAPTCHA), so just poll its text length and try extracting. If it doesn't
-    /// yield a readable article within `bypassPollLimit` ticks (the trick stopped
-    /// working / a paywall is still up), fall back to the archive.today flow.
+    /// A WKWebView pre-stage page: the page is the (hopefully un-paywalled) article
+    /// itself (no archive, no CAPTCHA), so just poll its text length and try
+    /// extracting. If the current pre-stage doesn't yield a readable article within
+    /// `bypassPollLimit` ticks (the trick stopped working / a paywall is still up /
+    /// the service didn't render), advance to the next pre-stage — or fall back to
+    /// the archive.today flow once the list is exhausted.
     private func checkDirectBypassStage() {
         bypassPollCount += 1
         if bypassPollCount > Self.bypassPollLimit {
-            fallBackToArchiveFromBypass()
+            advanceToNextPreStage()
             return
         }
         let probe = "(function(){return document.body ? document.body.innerText.length : 0;})()"
@@ -563,12 +605,24 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         }
     }
 
-    /// Gives up on the direct bypass and runs the normal archive.today flow.
+    /// Advances to the next WKWebView pre-stage, or runs the archive.today flow when
+    /// the pre-stage list is exhausted.
+    private func advanceToNextPreStage() {
+        guard isAttemptingDirectBypass else { return }
+        currentPreStageIndex += 1
+        if currentPreStageIndex < webPreStageURLs.count {
+            loadCurrentPreStage()
+        } else {
+            fallBackToArchiveFromBypass()
+        }
+    }
+
+    /// Gives up on the pre-stages and runs the normal archive.today flow.
     private func fallBackToArchiveFromBypass() {
         guard isAttemptingDirectBypass else { return }
         isAttemptingDirectBypass = false
         SharedDiagnosticLog.record(
-            "archive: direct bypass didn't yield a readable article → archive.today flow", category: "archive")
+            "archive: pre-stages didn't yield a readable article → archive.today flow", category: "archive")
         didLeaveHomepage = false
         loadArchive()
         resolveSnapshotInParallel()

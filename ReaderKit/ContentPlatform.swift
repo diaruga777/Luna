@@ -39,6 +39,17 @@ enum ContentPlatform: String, Codable, CaseIterable {
     /// agnostic media items keyed by a synthetic scheme).
     var isURLless: Bool { self == .music || self == .podcast }
 
+    /// The broad content category this platform belongs to, so a classifier can
+    /// route a recognized URL (video / social post / audio) without caring which
+    /// specific platform produced it.
+    var kind: PlatformKind {
+        switch self {
+        case .youtube, .tiktok, .facebook: return .video
+        case .x, .bluesky, .reddit, .instagram: return .social
+        case .music, .podcast: return .audio
+        }
+    }
+
     /// Asset name for a bundled brand logo, when one ships (else nil → SF Symbol).
     /// These are full-color favicon-derived PNGs, drawn untinted as the fallback.
     var logoAssetName: String? {
@@ -68,6 +79,15 @@ enum ContentPlatform: String, Codable, CaseIterable {
         case .podcast: return "mic.fill"
         }
     }
+}
+
+/// The broad content category a recognized platform URL belongs to. Lets the
+/// classifier map a `ContentPlatform` to a `ContentKind` branch (video / social /
+/// audio) without enumerating every platform at the call site.
+enum PlatformKind {
+    case video
+    case social
+    case audio
 }
 
 /// Which streaming service a music/podcast item came from, or the user's

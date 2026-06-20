@@ -20,18 +20,14 @@ enum NewsAggregatorUnwrapper {
 
     /// Resolves `url` to its underlying publisher URL, or nil. Network-backed only
     /// for recognized wrapper hosts; every other host returns nil immediately.
+    ///
+    /// Thin shim over `URLUnwrapper.unwrap` (the extensible registry replacing this
+    /// `enum`'s old hand-written ladder). Preserves the historical contract — nil for
+    /// a non-wrapper URL — by mapping the registry's `UnwrapResult.didUnwrap`. Stages
+    /// 3–4 repoint callers to `URLUnwrapper` directly and delete this shim.
     static func unwrap(_ url: URL, session: URLSession = .shared) async -> URL? {
-        // Facebook redirect/share links carry the target inline (offline, no
-        // network) and an `fbrpc://` deep link has no http host, so this runs
-        // BEFORE the host gate below.
-        if let target = facebookRedirectTarget(url) { return target }
-        guard let host = url.host?.lowercased() else { return nil }
-        if isAppleNews(host) { return await unwrapAppleNews(url, session: session) }
-        if isGoogleNews(host) { return await unwrapGoogleNews(url, session: session) }
-        if redirectShorteners.contains(where: { host == $0 || host.hasSuffix("." + $0) }) {
-            return await resolveFinalRedirect(url, session: session)
-        }
-        return nil
+        let result = await URLUnwrapper.unwrap(url, session: session)
+        return result.didUnwrap ? result.url : nil
     }
 
     /// Normalizes a raw incoming URL/string at a SAVE ENTRY POINT, before any
@@ -43,6 +39,11 @@ enum NewsAggregatorUnwrapper {
     /// unwrap up front and returns the http target when present, else the original
     /// URL unchanged. Pure (no network) — the async `unwrap` in `ingest` still
     /// handles apple.news / google / shortener cases later.
+    ///
+    /// NOTE: this legacy entry returns the target VERBATIM (tracking params
+    /// preserved). The new `URLUnwrapper.unwrapOffline` returns a tracking-stripped
+    /// result; Stages 3–4 migrate callers to it. Until then this shim keeps the
+    /// historical (un-stripped) shape its callers and tests expect.
     static func normalizedIncomingURL(_ url: URL) -> URL {
         facebookRedirectTarget(url) ?? url
     }
@@ -68,23 +69,7 @@ enum NewsAggregatorUnwrapper {
         host == "news.google.com" || host == "news.url.google.com"
     }
 
-    /// Link shorteners / aggregators that wrap an article behind a plain HTTP
-    /// redirect (so following it yields the publisher URL). News-relevant set —
-    /// deliberately NOT a generic "follow every link" so ordinary URLs are
-    /// untouched. Several (`nyti.ms`, `wapo.st`, `on.ft.com`, `econ.st`) resolve to
-    /// hard-paywall hosts, which then correctly route to the archive reader.
-    private static let redirectShorteners: Set<String> = [
-        "flip.it", "trib.al", "t.co", "bit.ly", "buff.ly", "apple.co",
-        "nyti.ms", "wapo.st", "on.ft.com", "econ.st", "reut.rs",
-        "cnn.it", "bbc.in", "nbcnews.to", "abcn.ws", "cbsn.ws",
-    ]
-
     // MARK: - Apple News
-
-    private static func unwrapAppleNews(_ url: URL, session: URLSession) async -> URL? {
-        guard let html = await fetchText(url, session: session) else { return nil }
-        return appleNewsPublisherURL(inHTML: html)
-    }
 
     /// Pure (no I/O) so it's unit-testable. The Apple News web page redirects to the
     /// publisher via a `redirectToUrlAfterTimeout("<publisher url>")` JS call — the
@@ -99,14 +84,6 @@ enum NewsAggregatorUnwrapper {
     }
 
     // MARK: - Google News
-
-    private static func unwrapGoogleNews(_ url: URL, session: URLSession) async -> URL? {
-        guard let articleID = googleNewsArticleID(from: url) else { return nil }
-        // Classic `CBMi…` ids embed the publisher URL directly (offline-decodable).
-        if let offline = googleNewsURL(fromArticleID: articleID) { return offline }
-        // New-style ids (mid-2024+) need Google's batchexecute round-trip.
-        return await googleNewsBatchExecute(articleID: articleID, session: session)
-    }
 
     /// The opaque article id from a Google News URL: the path segment after
     /// `articles`/`read` (handles `/rss/articles/<id>`, `/articles/<id>`,
@@ -131,8 +108,9 @@ enum NewsAggregatorUnwrapper {
     /// Best-effort decode of a new-style Google News id via Google's internal
     /// `batchexecute` RPC: fetch the article page for its signature + timestamp,
     /// then POST them back to get the real URL. Fragile by nature (undocumented
-    /// internal API) — any deviation returns nil and the caller falls back.
-    private static func googleNewsBatchExecute(articleID: String, session: URLSession) async -> URL? {
+    /// internal API) — any deviation returns nil and the caller falls back. Internal
+    /// (not private) so `URLUnwrapper`'s Google News handler reuses it.
+    static func googleNewsBatchExecute(articleID: String, session: URLSession) async -> URL? {
         guard let pageURL = URL(string: "https://news.google.com/rss/articles/\(articleID)"),
               let html = await fetchText(pageURL, session: session),
               let signature = firstMatch(in: html, pattern: #"data-n-a-sg="([^"]+)""#),
@@ -179,8 +157,9 @@ enum NewsAggregatorUnwrapper {
     // MARK: - Redirect shorteners
 
     /// Follows `url`'s HTTP redirects (HEAD, so no body is downloaded) and returns
-    /// the final URL — but only if it actually left the shortener's host.
-    private static func resolveFinalRedirect(_ url: URL, session: URLSession) async -> URL? {
+    /// the final URL — but only if it actually left the shortener's host. Internal
+    /// (not private) so `URLUnwrapper`'s shortener handler reuses it.
+    static func resolveFinalRedirect(_ url: URL, session: URLSession) async -> URL? {
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.httpMethod = "HEAD"
         request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
@@ -278,7 +257,10 @@ enum NewsAggregatorUnwrapper {
         return URL(string: String(urlText))
     }
 
-    private static func fetchText(_ url: URL, session: URLSession) async -> String? {
+    /// GETs `url` and returns its decoded HTML text (capped at `maxBytes`), or nil
+    /// on a non-2xx / oversized / undecodable response. Internal (not private) so
+    /// `URLUnwrapper`'s Apple News handler reuses it.
+    static func fetchText(_ url: URL, session: URLSession) async -> String? {
         var request = URLRequest(url: url, timeoutInterval: 12)
         request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")

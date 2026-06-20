@@ -115,6 +115,16 @@ struct ProductPageDetector {
         return detect(document: document, baseURL: baseURL)
     }
 
+    /// Whether the page carries TIER-1 structured price markup (JSON-LD `Product`
+    /// / OpenGraph product meta / schema.org microdata) — the unambiguous "this is a
+    /// product" signal. Used by `Classifier` to tell a trusted structured hit apart
+    /// from a fuzzy Tier-2 heuristic hit (so a news page with a stray affordance is
+    /// never misclassified). Pure.
+    func hasStructuredProductData(document: Document, baseURL: URL?) -> Bool {
+        if candidateFromJSONLD(document: document, baseURL: baseURL) != nil { return true }
+        return priceFromMetaOrMicrodata(document: document) != nil
+    }
+
     /// Detection over an already-parsed document (lets the article pipeline reuse
     /// a parse it already has).
     func detect(document: Document, baseURL: URL?) -> ProductCandidate? {

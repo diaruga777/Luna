@@ -1,0 +1,221 @@
+//
+//  URLUnwrapper.swift
+//  ReaderKit
+//
+
+import Foundation
+
+/// Which wrapper handler fired when unwrapping a URL, for telemetry / replay /
+/// tests. `nil` on an `UnwrapResult` means no handler matched (the URL was
+/// already a real article URL).
+enum WrapperKind: String, Equatable {
+    case facebook
+    case appleNews
+    case googleNews
+    case shortener
+}
+
+/// The canonical result of unwrapping one incoming URL. `url` is always the best
+/// URL to use downstream (the original if nothing matched), already
+/// tracking-stripped. `didUnwrap` lets callers log / repoint a store only on a
+/// real change.
+struct UnwrapResult: Equatable {
+    /// The best URL to use downstream — the unwrapped target when a handler fired,
+    /// else the original input. Always tracking-param-stripped.
+    let url: URL
+    /// Whether a handler actually changed the URL (the unwrapped target differs
+    /// from the input, ignoring tracking-param stripping).
+    let didUnwrap: Bool
+    /// Which handler produced the change, or nil when nothing matched.
+    let wrapper: WrapperKind?
+}
+
+/// How a matched handler resolves the underlying URL.
+enum UnwrapResolution {
+    /// Pure, offline resolution (Facebook deep link / shim, Google News classic).
+    /// `nil` ⇒ matched the host but found no recoverable target (caller keeps the
+    /// original URL).
+    case immediate(URL?)
+    /// Network-backed resolution (Apple News page fetch, Google News new-style
+    /// batchexecute, link shortener HEAD-redirect). `nil` ⇒ no recoverable target.
+    case fetch((URLSession) async -> URL?)
+}
+
+/// One wrapper definition. New wrappers are added by appending a value to
+/// `URLUnwrapper.handlers`; the dispatch needs no edits.
+struct WrapperHandler {
+    /// The handler's identity, surfaced on the `UnwrapResult` for telemetry.
+    let kind: WrapperKind
+    /// Whether this handler applies to a URL with the given scheme/host. Host-suffix
+    /// awareness is the handler's own responsibility.
+    let matches: (_ scheme: String?, _ host: String?) -> Bool
+    /// Given a matching URL, how to resolve it (offline vs network).
+    let resolve: (URL) -> UnwrapResolution
+}
+
+/// THE app-wide URL unwrapper: turns a wrapper/redirect URL (Apple News, Google
+/// News, link shorteners, Facebook deep links/shims) into the real underlying
+/// publisher URL, offline-first and deterministically, as the first thing that
+/// runs on any incoming URL. Built as an extensible `[WrapperHandler]` registry
+/// over the well-tested pure parsers in `NewsAggregatorUnwrapper` — only the
+/// dispatch is new. Pure / dependency-free (lives in ReaderKit), so the main app
+/// and every extension unwrap identically.
+enum URLUnwrapper {
+
+    /// EXTEND HERE: add a wrapper by appending a handler. Matchers are otherwise
+    /// disjoint; order matters only on overlap (Facebook runs first because an
+    /// `fbrpc://` deep link has no http host and must be tried before the host gate).
+    static let handlers: [WrapperHandler] = [
+        .facebook,
+        .googleNews,
+        .appleNews,
+        .shorteners(redirectShortenerHosts),
+    ]
+
+    /// THE app-wide entry. Run once per incoming URL on EVERY surface. Resolves the
+    /// offline fast path inline and performs network only when a matched handler
+    /// requires it. Always returns a usable, tracking-stripped URL.
+    static func unwrap(_ url: URL, session: URLSession = .shared) async -> UnwrapResult {
+        let scheme = url.scheme?.lowercased()
+        let host = url.host?.lowercased()
+        for handler in handlers where handler.matches(scheme, host) {
+            switch handler.resolve(url) {
+            case .immediate(let target):
+                if let target { return result(unwrapped: target, wrapper: handler.kind) }
+            case .fetch(let perform):
+                if let target = await perform(session) { return result(unwrapped: target, wrapper: handler.kind) }
+            }
+            // Matched the host but found no recoverable target: stop scanning (a
+            // News+ exclusive, a shortener that stays on-host) and keep the original.
+            break
+        }
+        return result(unchanged: url)
+    }
+
+    /// Offline-only fast path for INPUT GATES that can't await / must not block, and
+    /// that need a real http(s) URL before a `hasPrefix("http")` check. Resolves
+    /// every `.immediate` handler (Facebook deep link/shim, Google News classic);
+    /// leaves `.fetch` wrappers untouched for the async `unwrap` to finish at the
+    /// choke point. Pure.
+    static func unwrapOffline(_ url: URL) -> UnwrapResult {
+        let scheme = url.scheme?.lowercased()
+        let host = url.host?.lowercased()
+        for handler in handlers where handler.matches(scheme, host) {
+            if case .immediate(let target) = handler.resolve(url), let target {
+                return result(unwrapped: target, wrapper: handler.kind)
+            }
+            break
+        }
+        return result(unchanged: url)
+    }
+
+    /// String convenience for input gates that hold a raw string. Returns the
+    /// unwrapped target's string when an offline handler fires, else the original
+    /// string unchanged (so a non-URL string is left for the caller's own gate).
+    static func unwrapOffline(_ string: String) -> String {
+        guard let url = URL(string: string) else { return string }
+        let result = unwrapOffline(url)
+        return result.didUnwrap ? result.url.absoluteString : string
+    }
+
+    // MARK: - Result assembly
+
+    /// Builds a result for a handler hit, stripping tracking params from the target
+    /// so dedupe / display / share all see one canonical URL.
+    private static func result(unwrapped target: URL, wrapper: WrapperKind) -> UnwrapResult {
+        UnwrapResult(url: ArticleFetcher.canonicalForArchiving(target), didUnwrap: true, wrapper: wrapper)
+    }
+
+    /// Builds a result for a non-wrapper URL: the original URL, also
+    /// tracking-stripped so every surface agrees on the canonical form.
+    private static func result(unchanged url: URL) -> UnwrapResult {
+        UnwrapResult(url: ArticleFetcher.canonicalForArchiving(url), didUnwrap: false, wrapper: nil)
+    }
+
+    // MARK: - Shortener host set
+
+    /// Link shorteners / aggregators that wrap an article behind a plain HTTP
+    /// redirect. News-relevant set — deliberately NOT a generic "follow every link".
+    /// Several (`nyti.ms`, `wapo.st`, `on.ft.com`, `econ.st`) resolve to hard-paywall
+    /// hosts, which then route to the archive reader.
+    static let redirectShortenerHosts: Set<String> = [
+        "flip.it", "trib.al", "t.co", "bit.ly", "buff.ly", "apple.co",
+        "nyti.ms", "wapo.st", "on.ft.com", "econ.st", "reut.rs",
+        "cnn.it", "bbc.in", "nbcnews.to", "abcn.ws", "cbsn.ws",
+    ]
+}
+
+// MARK: - Handler factories
+//
+// Each factory wraps the existing pure parsers on `NewsAggregatorUnwrapper`
+// (`facebookRedirectTarget`, `googleNewsArticleID`, `googleNewsURL`,
+// `appleNewsPublisherURL`, `googleBatchExecuteURL`). The parsers are unchanged and
+// stay fully unit-tested; only the registry dispatch is new.
+
+extension WrapperHandler {
+
+    /// Facebook deep links (`fbrpc://…&target_url=…`) and `/l.php` link shims —
+    /// both carry the target inline (offline). An `fbrpc://` link has no http host,
+    /// so the matcher keys on scheme too.
+    static let facebook = WrapperHandler(
+        kind: .facebook,
+        matches: { scheme, host in
+            if scheme == "fbrpc" { return true }
+            guard scheme == "https" || scheme == "http", let host else { return false }
+            return host == "l.facebook.com" || host == "lm.facebook.com"
+                || host == "m.facebook.com" || host == "facebook.com" || host == "www.facebook.com"
+        },
+        resolve: { url in .immediate(NewsAggregatorUnwrapper.facebookRedirectTarget(url)) })
+
+    /// Google News (`news.google.com` / `news.url.google.com`). Classic `CBMi…` ids
+    /// decode to the publisher URL offline (`.immediate`); new-style ids need the
+    /// batchexecute round-trip — so the resolution is `.immediate` when the offline
+    /// decode succeeds and `.fetch` otherwise. Expressed as `.fetch` whose closure
+    /// first tries the offline decode, with a synchronous `.immediate` shortcut so
+    /// `unwrapOffline` resolves classic links without going async.
+    static let googleNews = WrapperHandler(
+        kind: .googleNews,
+        matches: { _, host in host == "news.google.com" || host == "news.url.google.com" },
+        resolve: { url in
+            guard let articleID = NewsAggregatorUnwrapper.googleNewsArticleID(from: url) else {
+                return .immediate(nil)
+            }
+            // Classic ids embed the publisher URL — resolvable offline.
+            if let offline = NewsAggregatorUnwrapper.googleNewsURL(fromArticleID: articleID) {
+                return .immediate(offline)
+            }
+            // New-style ids need the network round-trip.
+            return .fetch { session in
+                await NewsAggregatorUnwrapper.googleNewsBatchExecute(articleID: articleID, session: session)
+            }
+        })
+
+    /// Apple News (`apple.news`, `*.apple.news`) — fetch the page and read the
+    /// `redirectToUrlAfterTimeout(...)` publisher URL out of it.
+    static let appleNews = WrapperHandler(
+        kind: .appleNews,
+        matches: { _, host in
+            guard let host else { return false }
+            return host == "apple.news" || host.hasSuffix(".apple.news")
+        },
+        resolve: { url in
+            .fetch { session in
+                guard let html = await NewsAggregatorUnwrapper.fetchText(url, session: session) else { return nil }
+                return NewsAggregatorUnwrapper.appleNewsPublisherURL(inHTML: html)
+            }
+        })
+
+    /// Link shorteners — follow HTTP redirects (HEAD) and return the final URL only
+    /// if it left the shortener's host.
+    static func shorteners(_ hosts: Set<String>) -> WrapperHandler {
+        WrapperHandler(
+            kind: .shortener,
+            matches: { _, host in
+                guard let host else { return false }
+                return hosts.contains(where: { host == $0 || host.hasSuffix("." + $0) })
+            },
+            resolve: { url in
+                .fetch { session in await NewsAggregatorUnwrapper.resolveFinalRedirect(url, session: session) }
+            })
+    }
+}

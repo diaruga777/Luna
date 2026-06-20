@@ -35,6 +35,9 @@ final class OnboardingViewController: UIViewController, UITextFieldDelegate {
         let titleLabel = UILabel()
         titleLabel.text = "Welcome to Queue Reader"
         titleLabel.font = .systemFont(ofSize: 32, weight: .bold)
+        // Wrap rather than truncate: the 32pt title overflows one line on narrow
+        // devices (iPhone mini / regular iPhone), where it showed "Welcome to Queue R…".
+        titleLabel.numberOfLines = 0
 
         let subtitleLabel = UILabel()
         subtitleLabel.text = "Pick a username so friends can recognize you. You can share articles with friends over iCloud."

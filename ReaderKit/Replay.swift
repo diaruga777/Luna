@@ -118,6 +118,51 @@ enum ReplaySource: Codable, Equatable {
         case .linkInViewer: return "linkInViewer"
         }
     }
+
+    // The encoding matches the documented `replays.md` contract exactly:
+    //   {"capture": "manual"}                                  // a standard source
+    //   {"linkInViewer": {"parentURLString": "https://…"}}      // a reader-internal link
+    // A hand-authored replay (and the price-tracking consumer) relies on this flat
+    // shape, so we spell out `Codable` rather than accept Swift's synthesized
+    // associated-value wrapping (`{"capture":{"_0":"manual"}}`).
+
+    private enum CodingKeys: String, CodingKey {
+        case capture, linkInViewer
+    }
+
+    private struct LinkInViewerPayload: Codable {
+        var parentURLString: String
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let raw = try container.decodeIfPresent(String.self, forKey: .capture) {
+            guard let source = CaptureSource(rawValue: raw) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .capture, in: container,
+                    debugDescription: "Unknown CaptureSource \(raw)")
+            }
+            self = .capture(source)
+        } else if let payload = try container.decodeIfPresent(
+            LinkInViewerPayload.self, forKey: .linkInViewer) {
+            self = .linkInViewer(parentURLString: payload.parentURLString)
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .capture, in: container,
+                debugDescription: "ReplaySource has neither a capture nor a linkInViewer key")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .capture(source):
+            try container.encode(source.rawValue, forKey: .capture)
+        case let .linkInViewer(parentURLString):
+            try container.encode(
+                LinkInViewerPayload(parentURLString: parentURLString), forKey: .linkInViewer)
+        }
+    }
 }
 
 /// The typed payload of a `Replay.Event`. Encoded with an internal `type`

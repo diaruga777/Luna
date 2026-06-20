@@ -49,8 +49,12 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 
 Launch the app with `-uiTestState mixed` (optionally `-uiTestOnboardingStep 0` to
 show onboarding instead of the list). The seeder wipes + seeds
-`ReadingListStore.shared`, disables animations, and `SceneDelegate` forces the right
-root VC. No-op (production paths unchanged) when the arg is absent or in release.
+`ReadingListStore.shared`, disables animations, **pins the reading-list sectioning
+clock** to `UITestFixtures.baseDate` (`UITestSeeder.sectioningNow`) so fixed-date
+fixtures land in the **Reading** section instead of Archive, **resets persisted list
+prefs** (selected filter → All, default collapsed set), and `SceneDelegate` forces
+the right root VC. No-op (production paths unchanged) when the arg is absent or in
+release. Verified live: `simctl launch com.hpiddy.clip -uiTestState mixed`.
 
 ### Test seeding
 
@@ -107,6 +111,9 @@ the reference for inspection.
   position + rendered top/bottom halves from the host scroll reader + a WKWebView
   (no network in tests). Covered by the scroll reader's simulator "Split High/Low"
   hooks (see `simulator-testing.md`).
+- **Replays screen** (`ReplaysViewController`) — lists the device's real accumulated
+  diagnostic replays (live save URLs + wall-clock timestamps), not pixel-stable.
+  Covered by a layout-sanity assertion + the Settings → Diagnostics nav test.
 - **WKWebView content** (archive reader, platform embeds, share-reader after fetch)
   — no network in tests; only the deterministic loading/chrome state is snapshotted.
 

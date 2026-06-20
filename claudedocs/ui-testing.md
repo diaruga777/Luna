@@ -32,8 +32,10 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 | `ReaderKit/UITestFixtures.swift` | `UITestState` enum + `UITestFixtures` builders (pure, shared by app + tests). |
 | `ReaderKit/ReadingListItem.swift` | DEBUG `init(seed:…)` fixture initializer + `deterministicUUID(from:)`. |
 | `ReaderKit/ReadingListStore.swift` | DEBUG `seedForTesting(items:contents:)` / `wipeForTesting()`. |
-| `Clip/UITestSeeder.swift` | Launch-arg driver: `-uiTestState <name>` / `-uiTestOnboardingStep <n>`. |
-| `Clip/SceneDelegate.swift` | Calls `UITestSeeder.applyIfNeeded()` + forces a UI-test root. |
+| `Clip/UITestSeeder.swift` | Launch-arg driver: `-uiTestState <name>` / `-uiTestOnboardingStep <n>` / `-uiTestScreen <name>`. Exposes `isUITestLaunch`. |
+| `Clip/UITestScreen.swift` | `UITestScreen` enum + `UITestScreenBuilder`: deep-links the window root to any named screen for the screenshot agent. DEBUG-only. |
+| `ReaderKit/UITestFixtures.swift` | Also defines `UITestLaunch.isActive` (reads the harness launch args; usable from ReaderKit, which can't import the app target). |
+| `Clip/SceneDelegate.swift` | Calls `UITestSeeder.applyIfNeeded()` + forces a UI-test root (deep-linked screen, onboarding, or reading list). |
 
 ### Named states (`UITestState`)
 
@@ -55,6 +57,27 @@ fixtures land in the **Reading** section instead of Archive, **resets persisted 
 prefs** (selected filter → All, default collapsed set), and `SceneDelegate` forces
 the right root VC. No-op (production paths unchanged) when the arg is absent or in
 release. Verified live: `simctl launch com.hpiddy.clip -uiTestState mixed`.
+
+### Screen deep-linking (`-uiTestScreen <name>`)
+
+For capturing a specific screen across many device sizes without fragile
+coordinate-tapping, launch with `-uiTestScreen <rawValue>` (seeds `.mixed`
+automatically if no `-uiTestState` given). `UITestScreenBuilder` builds that screen
+(or presents it over a host) as the window root using the **same construction seams
+the snapshot tests use**. Cases: `catchUp`, `friends`, `friendDetail`, `settings`,
+`priceTrackingEditor`, `search`, `readerScroll`/`readerHighlight`/`readerRSVP`/
+`readerInlineHeader`, `shareReaderArticle`, `actionReaderArticle`, `shareMediaYouTube`,
+`shareMediaPlatform`, `replays`. Share/action-extension screens are hosted in-app (the
+real share sheet can't be driven on a simulator).
+
+### Suppressing simulator debug hooks in captures
+
+The simulator-only debug tap targets (reading-list row ellipsis, reader "Split
+High/Low", catch-up "Sim Bump") overlay real content. They are gated on
+`!UITestLaunch.isActive`, so they vanish for any `-uiTestState`/`-uiTestScreen`/
+`-uiTestOnboardingStep` launch (the screenshot agent) but remain for interactive
+simulator automation (no launch arg) and for unit/snapshot tests (which build VCs
+directly, so reference images are unaffected).
 
 ### Test seeding
 

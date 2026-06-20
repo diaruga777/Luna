@@ -113,21 +113,54 @@ fetched price becomes a tracker — otherwise the page is saved as a plain artic
 - `Clip/ReadingList/PriceTrackingManager.swift` — `PriceTrackingManaging`
   (`fetchPrice(urlString:) -> ProductPrice?`); live impl wraps `PriceFetcher` so the
   add-a-store UI resolves a new URL's price with the same strategy.
+- `ReaderKit/PriceTrackingExitContext.swift` — **pure** navigation decision model.
+  `PriceTrackingHost` (`.inApp`/`.extension`) + `PriceTrackingEntry`
+  (`.creation` / `.merge(addedStoreURLString:)` / `.existing`) → a
+  `PriceTrackingExitContext` exposing `leftButton` (`.back` in-app / `.done` in an
+  extension) and `readInsteadAction` (`.discardTracker` for creation /
+  `.revertAddedStore(urlString:)` for merge / `.hidden` for existing). Unit-tested,
+  no UIKit — the editor's chrome is a function of host + entry, decided independent
+  of the view hierarchy.
+- `ReaderKit/ProductSearchURL.swift` — **pure** URL builders. `googleShoppingURL(forProductName:)`
+  (`…/search?tbm=shop&q=<+-encoded name>`, escaping `&=+?#/`); `navigationURL(fromBarText:)`
+  (scheme → load; bare `host.tld[/…]` → https; else a Google web search). Unit-tested.
+- `ReaderKit/ProductSearchOverlayViewController.swift` — the **search overlay**, a
+  near-fullscreen WKWebView styled like the inline reader (`SplitWebOverlayViewController`):
+  inset rounded glass card (`ReaderDepth` background), a glass header (✕ close +
+  back/forward `GlassStyle.circularButtonConfiguration`), and a bottom glass bar with
+  an editable URL field + a circular **+**. Preloads the Google Shopping search for
+  the product. Free browse/type-and-go. **+** → a **"Use this page?"** alert
+  ("Add to tracker" / "No thanks"). **Auto-detect:** on `didFinish` it reads
+  `document.documentElement.outerHTML` and, if `ProductPageDetector.detect` classifies
+  it a product, AUTO-presents the same alert (debounced per-URL via `autoOfferedURLStrings`).
+  On confirm it hands the current URL + rendered HTML up via `onUseThisPage`; it never
+  touches the store (the host does the mandatory price fetch + dedupe + add). Lives in
+  ReaderKit (WebKit, reusable), free of ReadingList deps.
 - `Clip/ReadingList/PriceTrackingViewController.swift` — the tracker editor (main
-  app), always PUSHED onto the reading-list nav stack. `Mode.existing(itemID:)` (tap a
-  row) or `.creation(itemID:isMerge:highlightedURL:)` (save-time). Insets table of
-  store rows (each shows extracted price; tap → in-app Safari; swipe → remove, guarded
-  by ≥1), a **+** add-store button (fetch+extract a new URL's price), and a bottom
-  alert-config (threshold slider shown as percent AND absolute price).
-  - **Exit (always available):** `.existing` shows a left **Done**; `.creation` shows
-    a left **Cancel** that deletes the tracker and re-saves the URL as a normal article
-    (`handleSavePress`). Both route through `dismissOrPop()` — pop when pushed (the
-    real case), else dismiss. **Cancel-was-a-no-op root cause:** the old
-    `dismissOrPop` only popped when `presentingViewController == nil`; if the
-    reading-list nav was itself presented modally that was non-nil, so it fell to
-    `dismiss(animated:)` (dismissing the whole stack / doing nothing) instead of
-    popping the single VC. It now keys purely on "am I the nav root?", so pop vs
-    dismiss is correct regardless of whether the nav is presented.
+  app), PUSHED onto the reading-list nav stack (or presentable in an extension).
+  `Mode.existing(itemID:)` (tap a row) / `.creation(itemID:host:)` /
+  `.merge(itemID:addedStoreURLString:host:)` (save-time). Each `Mode` maps to a
+  `PriceTrackingExitContext`. Insets table of seller rows (header **"Sellers"**; each
+  shows extracted price; tap → in-app Safari; swipe → remove, guarded by ≥1), an
+  **"Add seller"** table FOOTER (+ icon) — replaces the old nav-bar +, available in
+  all contexts, and a bottom alert-config (threshold slider as percent AND absolute).
+  - **Navigation chrome** (from `exitContext`, set in `configureNavigationChrome`):
+    - **Top-left** (always): `.back` chevron in-app (pops) / system **Done** in an
+      extension (dismisses). Routes through `dismissOrPop()` — pop when not the nav
+      root, else dismiss — so it's correct even if the nav is itself presented modally.
+    - **Top-right "Read instead"** (save-time only): **creation** → discard the whole
+      new tracker (delete its item) + `ReadingListIngestor.saveAsArticle` (forced
+      article, no re-detection); **merge** → `removeStore` exactly the just-added
+      seller URL (existing tracker otherwise intact) + `saveAsArticle` that URL;
+      **existing** → no button (`rightBarButtonItem = nil`). Then `dismissOrPop`.
+  - **Add seller** footer → an alert with a URL text field and three stacked actions:
+    **Add** (paste a URL → fetch price via `PriceTrackingManaging` — mandatory; no
+    price ⇒ "No price found", not added; dedupe via `hasStore`), **Search** (presents
+    the overlay above), **Cancel**. The overlay's confirmed page is added through the
+    same add path (prefetched-HTML fast path).
+  - `PriceTrackingManaging.fetchPrice(urlString:prefetchedHTML:)` (default-arg
+    convenience for the paste path) wraps `PriceFetcher` (static → embedded JSON →
+    WebView). The search overlay's captured HTML feeds the fast static path.
   - Declares `Notification.Name.priceTrackerSavedInteractively`.
 - `Clip/ReadingList/PriceRefreshCoordinator.swift` — main-app side effects: runs
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
@@ -180,8 +213,9 @@ plain article — never a broken tracker, never paywall-bypassed).
   article resolve), then `PriceFetcher.fetchPrice` on a candidate. On a real price →
   `ProductInfo(candidate:price:)` → `ingestProductTracker` (intelligent merge via
   `ProductMatcher`, else new tracker; downloads the product image), then posts
-  `.priceTrackerSavedInteractively`; the reading list presents the `.creation` editor
-  (top-of-stack only; merge highlights the new row). No fetchable price → records a
+  `.priceTrackerSavedInteractively`; the reading list presents the editor in
+  `.creation` mode (new tracker) or `.merge` mode (matched into an existing tracker;
+  the new seller row is flashed), top-of-stack only. No fetchable price → records a
   note and falls through to `ArticleResolver`.
 - **Share / action extension** (`ShareKit/ShareViewController.ingestArticleThenComplete`):
   runs `ProductPageDetector` then `PriceFetcher` on the fetched HTML **before**
@@ -281,6 +315,17 @@ notes), like youtube/platform/document saves.
   unviewed-alert float-out + greatest-discount, **at-most-one float**, **viewed alert
   does NOT float** (and yields the top to a smaller-but-unviewed one), filter
   visibility, displayOrder (price-tracking below Reading; `.priceAlert` first). Plus
-  `CatchUpAndPriceScreenTests`: existing-mode **Done** pops, creation-mode **Cancel**
-  removes the tracker + pops, opening an alerting tracker **marks the alert viewed**.
+  `CatchUpAndPriceScreenTests` (editor nav): existing-mode **Back** pops + **no
+  "Read instead"**; creation-mode **"Read instead"** discards the whole tracker +
+  pops; merge-mode **"Read instead"** reverts ONLY the just-added seller (rest
+  intact) + pops; **extension host shows Done, in-app shows Back**; opening an
+  alerting tracker **marks the alert viewed**.
+- `ProductSearchURLTests` (7) — Google Shopping URL encoding (`+` spaces, escaped
+  `&`/`#`, empty → nil) + URL-bar navigation target (scheme → load, bare domain →
+  https, free text → Google search, empty → nil).
+- `PriceTrackingExitContextTests` (6) — left button per host (in-app Back / extension
+  Done) + "Read instead" per entry (creation→discard, merge→revert-exact-URL,
+  existing→hidden regardless of host).
+- `PriceTrackerTests` add-seller: reverting exactly the added seller leaves the rest
+  intact (merge-revert), `hasStore` dedupe (no duplicate row / refetch).
 - `MessageEnvelopeTests` — priceTracker round-trip + recreate, no-URL → unknown.

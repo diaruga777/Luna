@@ -86,4 +86,46 @@ final class PriceFetcherTests: XCTestCase {
         let price = await fetcher.fetchPrice(forURLString: url, prefetchedHTML: jsRenderedHTML)
         XCTAssertNil(price, "No price by any method → nil, so the caller saves a plain article.")
     }
+
+    // MARK: - Hard overall timeout (no infinite spin)
+
+    /// A render that never returns must NOT hang the fetch: the overall timeout
+    /// fires, `fetchPrice` returns nil, and the caller falls back to a plain article.
+    func testOverallTimeoutTerminatesAHangingRender() async {
+        let url = "https://shop.example/p/12345"
+        let mock = MockArticleFetcher()
+        mock.htmlByURL[url] = jsRenderedHTML   // static path finds no price
+        let fetcher = PriceFetcher(
+            fetcher: mock,
+            renderHTML: { _ in
+                // Never completes on its own — only the overall timeout can end this.
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                return self.renderedWithPriceHTML
+            },
+            overallTimeoutSeconds: 1)
+
+        let start = Date()
+        let price = await fetcher.fetchPrice(forURLString: url, prefetchedHTML: jsRenderedHTML)
+        XCTAssertNil(price, "A hanging render must time out to nil, never spin forever.")
+        XCTAssertLessThan(Date().timeIntervalSince(start), 5,
+                          "The fetch must end at the hard timeout, not wait for the render.")
+    }
+
+    // MARK: - Amazon static path (no WebView)
+
+    /// The Amazon /dp/ page resolves its price via the FAST static path — the
+    /// WebView render is never reached (the spin-forever bug was the render path).
+    func testAmazonStaticPriceUsesNoRender() async {
+        var rendered = false
+        let fetcher = PriceFetcher(
+            fetcher: MockArticleFetcher(),
+            renderHTML: { _ in rendered = true; return nil })
+        let url = "https://www.amazon.com.au/Mrisata-Rotating-Electric-Machine-Conveyor/dp/B0CWRSYTTK"
+        let html = BypassFixtures.html("Products/amazon-dp.html")
+
+        let price = await fetcher.fetchPrice(forURLString: url, prefetchedHTML: html)
+        XCTAssertEqual(price?.amount, Decimal(string: "39.99"))
+        XCTAssertEqual(price?.currency, "AUD")
+        XCTAssertFalse(rendered, "Amazon's static price must resolve without the WebView fallback.")
+    }
 }

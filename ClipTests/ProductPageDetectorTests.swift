@@ -116,6 +116,51 @@ final class ProductPageDetectorTests: XCTestCase {
         XCTAssertNil(ProductPageDetector.firstPrice(in: node))
     }
 
+    /// The real amazon.com.au /dp/ page that "spun forever": NO structured price
+    /// node, so Tier 1 finds nothing — but the price IS in the static markup
+    /// (`"priceAmount":39.99` / `"displayPrice":"$39.99"` / `.a-offscreen`). The
+    /// page must be detected as a product (add to cart + /dp/ URL) AND its price
+    /// recovered as 39.99 AUD via the FAST static path (no WebView). No currency is
+    /// declared in the markup, so AUD comes from the amazon.com.au TLD.
+    func testAmazonDPStaticPriceIsAUDViaTLD() throws {
+        let url = "https://www.amazon.com.au/Mrisata-Rotating-Electric-Machine-Conveyor/dp/B0CWRSYTTK"
+        let html = BypassFixtures.html("Products/amazon-dp.html")
+        let candidate = try XCTUnwrap(
+            detector.detect(urlString: url, html: html),
+            "An Amazon /dp/ page with add-to-cart must win the product path.")
+        XCTAssertTrue(candidate.name.contains("Sushi"))
+
+        let price = try XCTUnwrap(
+            detector.staticPrice(urlString: url, html: html),
+            "The Amazon price lives statically in the markup — recovered with no WebView.")
+        XCTAssertEqual(price.amount, Decimal(string: "39.99"))
+        XCTAssertEqual(price.currency, "AUD")
+    }
+
+    func testAmazonStaticPriceUSDForDotComBareDollar() {
+        let html = #"<html><body><span class="a-offscreen">$12.50</span></body></html>"#
+        let price = ProductPageDetector.amazonStaticPrice(
+            html: html, baseURL: URL(string: "https://www.amazon.com/dp/B000000"))
+        XCTAssertEqual(price?.amount, Decimal(string: "12.50"))
+        XCTAssertEqual(price?.currency, "USD")
+    }
+
+    func testAmazonStaticPriceNilForNonAmazonHost() {
+        let html = #"<html><body><span class="a-offscreen">$12.50</span></body></html>"#
+        XCTAssertNil(ProductPageDetector.amazonStaticPrice(
+            html: html, baseURL: URL(string: "https://www.notamazon.com/dp/B000000")))
+    }
+
+    func testAmazonTLDCurrencyMap() {
+        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "www.amazon.com.au"), "AUD")
+        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "amazon.com"), "USD")
+        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "www.amazon.co.uk"), "GBP")
+        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "amazon.ca"), "CAD")
+        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "amazon.de"), "EUR")
+        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "amazon.co.jp"), "JPY")
+        XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: "amazon.in"), "INR")
+    }
+
     func testEmbeddedPriceFromSellPriceShape() {
         let node: [String: Any] = ["product": ["sellPrice": "19.99", "priceCurrency": "GBP"]]
         let price = ProductPageDetector.firstPrice(in: node)

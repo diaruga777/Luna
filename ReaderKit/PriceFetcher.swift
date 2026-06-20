@@ -38,18 +38,40 @@ final class PriceFetcher: PriceFetching {
     /// Renders a URL in a WKWebView and returns the rendered `outerHTML`. Injected
     /// so save-time / refresh can run the real WebView while tests stay headless.
     private let renderHTML: (URL) async -> String?
+    /// Hard ceiling on the WHOLE price fetch (static fetch + WebView render). Even
+    /// with each stage individually bounded, this is the absolute backstop so a save
+    /// can NEVER hang waiting on a price — on timeout it returns nil and the caller
+    /// falls back to a normal article.
+    private let overallTimeoutSeconds: UInt64
 
     init(
         fetcher: HTMLFetching = ArticleFetcher(),
         detector: ProductPageDetector = ProductPageDetector(),
-        renderHTML: ((URL) async -> String?)? = nil
+        renderHTML: ((URL) async -> String?)? = nil,
+        overallTimeoutSeconds: UInt64 = 30
     ) {
         self.fetcher = fetcher
         self.detector = detector
         self.renderHTML = renderHTML ?? { url in await WebViewPriceRenderer.renderedHTML(for: url) }
+        self.overallTimeoutSeconds = overallTimeoutSeconds
     }
 
     func fetchPrice(forURLString urlString: String, prefetchedHTML: String?) async -> ProductPrice? {
+        await withTaskGroup(of: ProductPrice?.self) { group in
+            group.addTask { await self.resolvePrice(forURLString: urlString, prefetchedHTML: prefetchedHTML) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: self.overallTimeoutSeconds * 1_000_000_000)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    /// The actual resolution (static markup → WebView render). Bounded by the
+    /// overall timeout in `fetchPrice`.
+    private func resolvePrice(forURLString urlString: String, prefetchedHTML: String?) async -> ProductPrice? {
         // 1) Static markup (structured data → embedded JSON), no WebView.
         let staticMarkup: String?
         if let prefetchedHTML {
@@ -147,13 +169,20 @@ enum WebViewPriceRenderer {
             webView.navigationDelegate = self
             self.webView = webView
 
+            // ONE hard deadline bounds the ENTIRE render (navigation + price poll), so
+            // a save can never hang: a page that neither loads nor shows a price exits
+            // by `deadline` and the caller falls back to a normal article.
+            let deadline = Date().addingTimeInterval(TimeInterval(timeoutSeconds))
             webView.load(URLRequest(url: url, timeoutInterval: TimeInterval(timeoutSeconds)))
 
-            // Wait for the navigation to finish (or fail), bounded by a hard timeout.
+            // Wait for the navigation to finish (or fail), bounded by the SAME hard
+            // deadline — not a fresh full timeout — so navigation + poll together can't
+            // exceed `timeoutSeconds`.
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { await self.awaitNavigation() }
                 group.addTask {
-                    try? await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
+                    let remaining = max(0, deadline.timeIntervalSinceNow)
+                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
                     await self.resumeNavigation()
                 }
                 await group.next()
@@ -161,10 +190,9 @@ enum WebViewPriceRenderer {
             }
 
             // Poll the rendered DOM until the price hydrates (deterministic exit), or
-            // give up at the hard timeout. Re-scraping at a fixed cadence — rather than
+            // give up at the hard deadline. Re-scraping at a fixed cadence — rather than
             // sleeping a fixed window then scraping once — removes the JS-vs-sleep race
             // that made the same page sometimes yield a price and sometimes not.
-            let deadline = Date().addingTimeInterval(TimeInterval(timeoutSeconds))
             var latestHTML = await outerHTML(of: webView)
             while Date() < deadline {
                 if let html = latestHTML, hasPrice(html) { break }

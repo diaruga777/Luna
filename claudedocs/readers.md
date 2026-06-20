@@ -170,6 +170,16 @@ Opening a `.needsCaptcha` item (`ReadingListViewController.presentArchiveReader`
 
 A **second, real-Safari path** for paywalled articles (the ClipSafari "Read in Queue" button) is documented in `safari-extension.md`.
 
+## Replays (save diagnostics)
+
+`ArchiveWebReaderViewController` and the reader's end-of-article share footer
+(`ArticleShareView`) participate in the **Replays** diagnostics feature
+(`claudedocs/replays.md`): the archive reader records its interactive loaded
+URLs/stages + extracted WKWebView HTML and terminates its replay success/failed;
+the share footer shows a ladybug **bug icon to the left of the Share button**
+opening a "Report a bug" / "Dismiss" menu (`ReplayBugReporter` marks the save's
+replay `.userReported` and shares its zip).
+
 ## Tests
 
 `ClipTests/RSVPEngineTests.swift` (ORP, timing, flags). `ClipTests/ArticleExtractorTests.swift` (layering, junk stripping, archived-page gate/comment rejection).

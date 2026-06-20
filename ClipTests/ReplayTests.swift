@@ -242,6 +242,46 @@ final class ReplayTests: XCTestCase {
         XCTAssertNotNil(response.error)
     }
 
+    // MARK: - Resolver bypass-strategy logging
+
+    /// `ArticleResolver.resolve` emits a `bypassStrategy` event (with the strategy's
+    /// stable name) for each silent strategy it tries when the direct fetch isn't
+    /// readable — the events the integration harness replays.
+    func testResolverLogsBypassStrategyAttempts() async {
+        let fetcher = MockArticleFetcher()
+        let url = URL(string: "https://nytimes.com/2026/story")!
+        // Direct fetch returns a server-locked paywall stub (not readable) so the
+        // silent bypass strategies run; all of them throw (only the direct URL is
+        // stubbed) → no readable result, but each attempt is logged.
+        fetcher.htmlByURL = [url.absoluteString: """
+            <html><head><meta property="article:content_tier" content="locked"></head>
+            <body><p>To continue reading, subscribe now.</p></body></html>
+            """]
+        let recorded = LoggedEvents()
+        _ = await ArticleResolver.resolve(
+            url: url, fetcher: fetcher,
+            replayLog: { event in await recorded.append(event) })
+
+        let names = await recorded.bypassNames()
+        XCTAssertFalse(names.isEmpty, "expected at least one bypassStrategy event")
+        // Every logged bypass attempt should have failed (no readable stub).
+        let succeeded = await recorded.anyBypassSucceeded()
+        XCTAssertFalse(succeeded)
+    }
+
+    /// Collects logged `EventKind`s from a resolver `replayLog` (an actor for the
+    /// concurrency-safe append).
+    actor LoggedEvents {
+        private var events: [EventKind] = []
+        func append(_ event: EventKind) { events.append(event) }
+        func bypassNames() -> [String] {
+            events.compactMap { if case let .bypassStrategy(name, _, _) = $0 { return name }; return nil }
+        }
+        func anyBypassSucceeded() -> Bool {
+            events.contains { if case .bypassStrategy(_, _, true) = $0 { return true }; return false }
+        }
+    }
+
     // MARK: - Media redaction
 
     func testMediaBodiesAreNeverStoredAsBytes() throws {

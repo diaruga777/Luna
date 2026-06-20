@@ -115,7 +115,9 @@ enum ReplayPlayer {
             guard case let .note(text) = event.kind else { continue }
             let lowercased = text.lowercased()
             if lowercased.hasPrefix("youtube") || lowercased.hasPrefix("platform")
-                || lowercased.hasPrefix("document") {
+                || lowercased.hasPrefix("document") || lowercased.hasPrefix("product")
+                || lowercased.hasPrefix("created price tracker")
+                || lowercased.hasPrefix("merged into existing tracker") {
                 return text
             }
         }

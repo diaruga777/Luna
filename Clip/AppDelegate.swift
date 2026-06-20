@@ -21,6 +21,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     /// often.
     private static let mailFetchTaskID = "com.hpiddy.clip.mailFetch"
     private static let mailFetchInterval: TimeInterval = 12 * 60 * 60
+    /// Periodic task (~every 12h) that re-fetches every non-archived price
+    /// tracker's store prices and fires a local notification on a first drop past
+    /// threshold. Processing-class (needs network) like the mail fetch.
+    private static let priceRefreshTaskID = "com.hpiddy.clip.priceRefresh"
+    private static let priceRefreshInterval: TimeInterval = 12 * 60 * 60
 
     func application(
         _ application: UIApplication,
@@ -62,6 +67,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         ) { [weak self] task in
             self?.handleMailFetch(task as? BGProcessingTask)
         }
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: Self.priceRefreshTaskID, using: nil
+        ) { [weak self] task in
+            self?.handlePriceRefresh(task as? BGProcessingTask)
+        }
 
         Task {
             await SocialMessageCenter.shared.ensureSubscription()
@@ -74,12 +84,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         SemanticIndexer.shared.scheduleRun()
         scheduleInboxRefresh()
         scheduleMailFetch()
+        schedulePriceRefresh()
         return true
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         scheduleInboxRefresh()
         scheduleMailFetch()
+        schedulePriceRefresh()
     }
 
     private func scheduleInboxRefresh() {
@@ -131,6 +143,34 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         }
         task.expirationHandler = {
             DiagnosticLog.shared.record("mail-fetch task expired", category: "mail")
+            work.cancel()
+        }
+    }
+
+    private func schedulePriceRefresh() {
+        let request = BGProcessingTaskRequest(identifier: Self.priceRefreshTaskID)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: Self.priceRefreshInterval)
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = false
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            logger.error("Couldn't schedule price refresh: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func handlePriceRefresh(_ task: BGProcessingTask?) {
+        guard let task else { return }
+        DiagnosticLog.shared.record("price-refresh task fired", category: "price")
+        schedulePriceRefresh() // chain the next one (~every 12h)
+        let work = Task {
+            await PriceRefreshCoordinator.shared.refreshAndNotify()
+            task.setTaskCompleted(success: true)
+        }
+        task.expirationHandler = {
+            // The refresher persists each tracker as it finishes and processes
+            // stalest-first, so a cancelled run still made progress.
+            DiagnosticLog.shared.record("price-refresh task expired", category: "price")
             work.cancel()
         }
     }

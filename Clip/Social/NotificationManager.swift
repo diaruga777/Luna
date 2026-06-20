@@ -46,6 +46,16 @@ enum NotificationManager {
         post(content)
     }
 
+    /// Posts a price-drop alert when a tracked product first drops past its
+    /// threshold during a background refresh.
+    static func postPriceDrop(productName: String, newPrice: String, discountPercent: Int) {
+        let content = UNMutableNotificationContent()
+        content.title = "Price drop: \(productName)"
+        content.body = "Now \(newPrice) — \(discountPercent)% off what you were watching."
+        content.sound = .default
+        post(content)
+    }
+
     private static func post(_ content: UNMutableNotificationContent) {
         let request = UNNotificationRequest(
             identifier: UUID().uuidString, content: content, trigger: nil)

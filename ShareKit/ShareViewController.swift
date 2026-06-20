@@ -432,6 +432,29 @@ final class ShareViewController: UIViewController {
                 let fetcher: HTMLFetching = replayID
                     .map { RecordingHTMLFetcher(wrapping: ArticleFetcher(), recorder: recorder, replayID: $0) }
                     ?? ArticleFetcher()
+
+                // A product page with a price becomes a price tracker rather than
+                // an article. The extension can't present the main-app price UI,
+                // so it saves the tracker silently; the user edits it in the app.
+                if let html = try? await fetcher.fetchHTML(from: url),
+                   let product = ProductPageDetector().detect(urlString: url.absoluteString, html: html),
+                   let item = ReadingListStore.shared.item(forURLString: url.absoluteString) {
+                    let tracker = PriceTracker(
+                        productName: product.name, firstStoreURL: url.absoluteString,
+                        price: product.priceAmount, currency: product.priceCurrency,
+                        brand: product.brand, productID: product.productID)
+                    ReadingListStore.shared.savePriceTracker(tracker, for: item.id)
+                    if let replayID {
+                        await recorder.record(.note("created price tracker"), for: replayID)
+                        await recorder.terminate(replayID, state: .success, finalContent: nil)
+                    }
+                    await MainActor.run {
+                        badge.removeFromSuperview()
+                        self.confirmSavedThenComplete()
+                    }
+                    return
+                }
+
                 let resolution = await ArticleResolver.resolve(
                     url: url, fetcher: fetcher,
                     replayLog: replayID.map { id in { event in await recorder.record(event, for: id) } })

@@ -2,9 +2,12 @@
 
 > `MessageBody` cases: `friendAdd`, `readingListItem(urlString,title)`,
 > `mediaItem(kind,creator,title)` (URL-less music/podcast — see
-> `content-platforms.md`), `unknown`. `SocialMessageCenter.sendMediaItem` sends
-> the media case; the receive branch materializes it via
-> `createURLlessMediaItem`. URL-based platform items share via `readingListItem`.
+> `content-platforms.md`), `priceTracker(PriceTrackerShare)` (a shared price
+> tracker — see `price-tracking.md`; `sendPriceTracker` sends it, the receive
+> branch recreates it via `share.makeTracker()`), `unknown`.
+> `SocialMessageCenter.sendMediaItem` sends the media case; the receive branch
+> materializes it via `createURLlessMediaItem`. URL-based platform items share via
+> `readingListItem`.
 
 Users get a durable identity (UUID + X25519 encryption keypair + Ed25519
 signing keypair) created during first-launch onboarding and stored in the

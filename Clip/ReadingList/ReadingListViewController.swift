@@ -160,6 +160,9 @@ final class ReadingListViewController: UITableViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(checkPasteboard),
             name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(priceTrackerSavedInteractively(_:)),
+            name: .priceTrackerSavedInteractively, object: nil)
         reload()
         checkPasteboard()
     }
@@ -322,6 +325,20 @@ final class ReadingListViewController: UITableViewController {
             filters.append(.priceTrackers)
         }
         return filters
+    }
+
+    /// An interactive save just became a price tracker: present its editor so the
+    /// user can add more store URLs (or Cancel → save it as a normal article). Only
+    /// when this list is the top of its nav stack (not over a reader/other screen).
+    @objc private func priceTrackerSavedInteractively(_ note: Notification) {
+        guard let itemID = note.userInfo?["itemID"] as? UUID,
+              presentedViewController == nil,
+              navigationController?.topViewController === self else { return }
+        let isMerge = (note.userInfo?["isMerge"] as? Bool) ?? false
+        let highlightedURL = note.userInfo?["highlightedURL"] as? String
+        let viewController = PriceTrackingViewController(
+            mode: .creation(itemID: itemID, isMerge: isMerge, highlightedURL: highlightedURL))
+        navigationController?.pushViewController(viewController, animated: true)
     }
 
     @objc private func filterChanged(_ control: UISegmentedControl) {

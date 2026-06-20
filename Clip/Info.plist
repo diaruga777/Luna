@@ -46,6 +46,7 @@
 	<array>
 		<string>com.hpiddy.clip.inboxRefresh</string>
 		<string>com.hpiddy.clip.mailFetch</string>
+		<string>com.hpiddy.clip.priceRefresh</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

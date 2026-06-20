@@ -259,8 +259,13 @@ recorded state (`failed`/`userReported`) is satisfied by any non-`success` outco
   watch the test fail, fix the pipeline until it passes.
 
 **Caveats / not-yet-replayable:**
-- Non-article saves (YouTube/platform/document) carry a `note`, not resolvable
-  article HTML, so the harness rejects them (`PlaybackError.unsupportedSource`).
+- Non-article saves (YouTube/platform/document/**price tracker**) carry a `note`,
+  not resolvable article HTML, so the harness rejects them
+  (`PlaybackError.unsupportedSource`). A price-tracker save (see
+  `claudedocs/price-tracking.md`) records `note("product detected: …")`, its per-URL
+  price fetch as `networkRequest`/`networkResponse`, the product image as a
+  `mediaReference` (URL only), `note("created price tracker"`/`"merged into existing
+  tracker …")`, and terminates `.success`.
 - The interactive WKWebView archive reader path (`archiveStage` events) isn't
   replayed — those saves live in a separate replay and need a rendered DOM, not a
   recorded `HTMLFetching` body.

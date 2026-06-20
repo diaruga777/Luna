@@ -5,6 +5,15 @@
 
 import UIKit
 
+extension Notification.Name {
+    /// Posted when an interactive save (paste/manual/app intent) created or merged
+    /// a price tracker, so the foreground reading list can present its editor with
+    /// a Cancel → save-as-article fallback. `userInfo`: `itemID: UUID`,
+    /// `isMerge: Bool`, `highlightedURL: String?`.
+    static let priceTrackerSavedInteractively =
+        Notification.Name("priceTrackerSavedInteractively")
+}
+
 /// Shows and edits one price tracker: a table of its store URLs (each row shows
 /// the extracted price; tapping opens the URL in the in-app browser), a **+**
 /// button to add another store URL for the same product, and a bottom alert-config

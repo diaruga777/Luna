@@ -14,6 +14,7 @@ final class ReadingListIngestor {
     private let fetcher = ArticleFetcher()
     private let extractor = ArticleExtractor()
     private let youTubeMetadataFetcher: YouTubeMetadataFetching = YouTubeOEmbedFetcher()
+    private let productDetector = ProductPageDetector()
     /// Records a `Replay` for each save (diagnostics). `NoopReplayRecorder` keeps
     /// recording off the hot path optional — a save runs identically without it.
     private let recorder: ReplayRecording
@@ -106,15 +107,26 @@ final class ReadingListIngestor {
             return
         }
 
+        // The fetcher is wrapped so every request/response is captured into the replay.
+        let resolveFetcher: HTMLFetching = replayID
+            .map { RecordingHTMLFetcher(wrapping: fetcher, recorder: recorder, replayID: $0) }
+            ?? fetcher
+
+        // Product-page detection: a page that advertises a price becomes a PRICE
+        // TRACKER rather than an article. Fetch once and try detection; on a hit,
+        // create/merge a tracker and terminate. On no price (or a failed fetch),
+        // fall through to the normal article pipeline (which re-fetches as needed).
+        if let html = try? await resolveFetcher.fetchHTML(from: url),
+           let product = productDetector.detect(urlString: url.absoluteString, html: html) {
+            await ingestProductTracker(item, url: url, product: product, replayID: replayID)
+            return
+        }
+
         // Direct fetch + extract, falling back to web archives for hard-paywalled
         // sites (WSJ: 401; FT: subscription stub). A paywall whose body we can't
         // read but whose title we can lands in `.needsCaptcha` — the archive.today
         // snapshot it needs requires a user-solved CAPTCHA a background fetch can't
         // pass, so the user unlocks it from the list. No title → genuinely broken.
-        // The fetcher is wrapped so every request/response is captured into the replay.
-        let resolveFetcher: HTMLFetching = replayID
-            .map { RecordingHTMLFetcher(wrapping: fetcher, recorder: recorder, replayID: $0) }
-            ?? fetcher
         let resolution = await ArticleResolver.resolve(
             url: url, fetcher: resolveFetcher, extractor: extractor,
             replayLog: replayID.map { id in { [recorder] event in await recorder.record(event, for: id) } })
@@ -176,6 +188,111 @@ final class ReadingListIngestor {
         }
         let ready = store.item(withID: itemID)?.state == .ready
         await recorder.terminate(replayID, state: ready ? .success : .failed, finalContent: nil)
+    }
+
+    /// Turns a detected product page into a price tracker. Intelligent matching:
+    /// if the product matches an existing tracker (by product id, else fuzzy
+    /// name+brand), the new URL is MERGED into that tracker; otherwise a new
+    /// tracker is created on this item. Records the product-detection decision and
+    /// the per-URL price fetch into the replay, terminating `.success`.
+    private func ingestProductTracker(
+        _ item: ReadingListItem, url: URL, product: ProductInfo, replayID: UUID?
+    ) async {
+        if let replayID {
+            await recorder.record(
+                .note("product detected: \(product.name) \(product.priceCurrency) "
+                      + "\(NSDecimalNumber(decimal: product.priceAmount).stringValue)"),
+                for: replayID)
+        }
+
+        // Try to merge into an existing tracker for the same product.
+        let existing: [(id: UUID, tracker: PriceTracker)] = store.items().compactMap {
+            guard let tracker = $0.priceTracker, $0.id != item.id else { return nil }
+            return ($0.id, tracker)
+        }
+        if let matchID = ProductMatcher.bestMatch(for: product, among: existing),
+           var matched = store.item(withID: matchID)?.priceTracker,
+           !matched.hasStore(urlString: url.absoluteString) {
+            matched.upsertStore(PriceTrackerStore(
+                urlString: url.absoluteString, lastPrice: product.priceAmount,
+                currency: product.priceCurrency, lastRefreshed: Date()))
+            store.updatePriceTracker(matched, for: matchID)
+            // The just-saved item was a duplicate route into an existing tracker;
+            // drop its placeholder item so only the merged tracker remains.
+            store.delete(item)
+            if let replayID {
+                await recorder.record(.note("merged into existing tracker \(matchID)"), for: replayID)
+                if let imageURL = product.imageURL {
+                    await recorder.record(
+                        .mediaReference(role: "productImage", urlString: imageURL.absoluteString),
+                        for: replayID)
+                }
+                await recorder.terminate(replayID, state: .success, finalContent: nil)
+            }
+            postPriceTrackerSaved(itemID: matchID, source: item.effectiveCaptureSource,
+                                  isMerge: true, highlightedURL: url.absoluteString)
+            return
+        }
+
+        var tracker = PriceTracker(
+            productName: product.name, firstStoreURL: url.absoluteString,
+            price: product.priceAmount, currency: product.priceCurrency,
+            brand: product.brand, productID: product.productID)
+        if let imageURL = product.imageURL,
+           let data = await downloadProductImage(imageURL) {
+            let fileName = "\(item.id.uuidString)-product.jpg"
+            try? data.write(
+                to: store.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
+            tracker.imageFileName = fileName
+        }
+        store.savePriceTracker(tracker, for: item.id)
+
+        if let replayID {
+            await recorder.record(.note("created price tracker"), for: replayID)
+            if let imageURL = product.imageURL {
+                await recorder.record(
+                    .mediaReference(role: "productImage", urlString: imageURL.absoluteString),
+                    for: replayID)
+            }
+            await recorder.terminate(replayID, state: .success, finalContent: nil)
+        }
+        postPriceTrackerSaved(itemID: item.id, source: item.effectiveCaptureSource,
+                              isMerge: false, highlightedURL: nil)
+    }
+
+    /// Announces a just-created/merged price tracker from an INTERACTIVE save
+    /// (paste / manual / app intent) so the foreground reading list can present
+    /// the price-tracking screen (with a Cancel → save as article fallback).
+    /// Background/extension/friend-share saves stay silent.
+    private func postPriceTrackerSaved(
+        itemID: UUID, source: CaptureSource, isMerge: Bool, highlightedURL: String?
+    ) {
+        switch source {
+        case .paste, .manual, .appIntent:
+            break
+        case .shareSheet, .friendShare, .email:
+            return
+        }
+        let userInfo: [String: Any] = [
+            "itemID": itemID, "isMerge": isMerge,
+            "highlightedURL": highlightedURL as Any,
+        ]
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .priceTrackerSavedInteractively, object: nil, userInfo: userInfo)
+        }
+    }
+
+    /// Downloads a product image (by reference only in the replay; bytes never
+    /// recorded). Returns nil on any failure.
+    private func downloadProductImage(_ imageURL: URL) async -> Data? {
+        var request = URLRequest(url: imageURL, timeoutInterval: 8)
+        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              data.count > 512, data.count <= 5 * 1024 * 1024
+        else { return nil }
+        return data
     }
 
     /// Downloads an article's cover image (og:image / twitter:image) with a short

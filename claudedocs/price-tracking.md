@@ -40,7 +40,9 @@ fetched price becomes a tracker — otherwise the page is saved as a plain artic
   - **`priceFromEmbeddedJSON`** scans `__NEXT_DATA__`, every
     `<script type=application/json>`, and inline `window.__…={…}` blobs
     (`firstJSONObjectLiteral` balanced-brace extractor). `firstPrice(in:)` recurses
-    JSON for the first object carrying a price-context key (`priceAvailable`/
+    JSON **in sorted-key order** (Swift dictionary iteration is hash-seed randomized
+    per process — sorted traversal keeps a tree with >1 price node resolving to the
+    same price every launch) for the first object carrying a price-context key (`priceAvailable`/
     `priceType`/`priceCurrency`/`currencyIso`/`currencyCode`/`sellPrice`/`nowPrice`/
     `salePrice`/`formattedValue`), a numeric value (`value`/`amount`/`*price`, or a
     `formattedValue` like `"$99.00"`), and a currency (sibling currency key, or a
@@ -61,10 +63,12 @@ fetched price becomes a tracker — otherwise the page is saved as a plain artic
   exist after rendering). Returns nil when no price is found by any method (→ article
   fallback). Reused by BOTH save-time and the background refresher, so the WebView
   fallback runs in both. `WebViewPriceRenderer` runs on the main actor, creates/tears
-  down its WebView per call (nothing held between fetches), bounded by a settle
-  window + a hard timeout. Lives in ReaderKit (UIKit/WebKit, like
-  `ArchiveWebReaderViewController`), so it works in the main app and the UI-hosting
-  action/share extension.
+  down its WebView per call (nothing held between fetches). It **polls** the rendered
+  DOM (`pollIntervalSeconds`) and returns as soon as `staticPrice` is extractable, up
+  to a hard timeout — NOT a fixed settle sleep, which would race JS hydration and make
+  the same page sometimes yield a price and sometimes time out (→ article). Lives in
+  ReaderKit (UIKit/WebKit, like `ArchiveWebReaderViewController`), so it works in the
+  main app and the UI-hosting action/share extension.
 - `ProductInfo { name, priceAmount: Decimal, priceCurrency, imageURL?, brand?,
   productID? }` (in `ProductPageDetector.swift`) — a candidate paired with a fetched
   price, built via `ProductInfo(candidate:price:)`. The price is **required**; a
@@ -86,9 +90,11 @@ fetched price becomes a tracker — otherwise the page is saved as a plain artic
     `initialPrice` (the baseline is fixed at creation).
   - `PriceTrackerShare` — portable friend-share form (URLs + best price at share
     time + threshold + brand/productID); `makeTracker()` rebuilds on receipt.
-- `ReaderKit/ProductMatcher.swift` — **pure** same-product matching: (1) normalized
-  `productID` equality wins; (2) else fuzzy token-Jaccard name similarity ≥ 0.6 with
-  compatible brand (equal, or one side unbranded). Stop-words stripped.
+- `ReaderKit/ProductMatcher.swift` — **pure, order-stable** same-product matching:
+  (1) normalized `productID` equality wins (lowest id when several match); (2) else
+  fuzzy token-Jaccard name similarity ≥ 0.6 with compatible brand (equal, or one side
+  unbranded), highest score, **ties broken by lowest id** (not input order). Stop-words
+  stripped.
 - `ReaderKit/PriceRefresher.swift` — **pure-ish** background-refresh logic.
   `PriceTrackerPersisting` seam (`ReadingListStore` conforms); injects a
   `PriceFetching` + a clock. `refreshAll()` processes trackers **stalest-first**,
@@ -160,6 +166,34 @@ plain article — never a broken tracker, never paywall-bypassed).
   is why the action extension never paywall-bypasses a product page. No fetchable
   price → article path.
 
+## Determinism (same URL → same result, always)
+
+The classification of a page ("is this a product → is it a tracker, and which
+price") must be a **pure deterministic function of the page content**. The only
+allowed non-determinism is genuine network failure, which fails safely+consistently
+(→ article) rather than flipping the classification. Sources that were fixed:
+
+- **Hash-randomized JSON traversal.** `ProductPageDetector.firstPrice` and
+  `firstProductNode` recursed `dictionary.values` in Swift's per-process hash-seed
+  order, so a JSON tree with more than one price-bearing (or `@type:Product`) node
+  resolved differently per app launch. Both now traverse children in **sorted-key
+  order**. `price(inDictionary:)` likewise resolves lowercased-key collisions by
+  the sorted-first original key.
+- **Matcher tie-breaks.** `ProductMatcher.bestMatch` now breaks equal name scores
+  and multiple id matches by **lowest id**, independent of the order `existing` is in.
+- **WebView render race.** `WebViewPriceRenderer` **polls** the rendered DOM until
+  the price is extractable (or a hard timeout) instead of a fixed settle sleep that
+  raced JS hydration. Bunnings never needs the WebView at all — its price is static
+  in `__NEXT_DATA__` and the static path returns 99 AUD deterministically.
+- **Re-save dedup BEFORE re-detection.** `ReadingListIngestor.ingest` checks
+  `ReadingListStore.priceTracker(containingStoreURL:)` first: if the URL is already a
+  store inside an existing tracker (e.g. a previously-merged URL whose placeholder
+  item was deleted), it short-circuits to that tracker and drops the duplicate
+  instead of re-detecting (which could reach a different outcome) or creating a
+  duplicate tracker. A NEW (un-merged) tracker keeps its item `.ready`, so `ingest`'s
+  top guard already blocks re-detection. Paste and the extensions reach the same
+  decision for a given URL.
+
 ## Background refresh (`AppDelegate`)
 
 `BGProcessingTaskRequest` id `com.hpiddy.clip.priceRefresh` (~every 12h, needs
@@ -198,7 +232,9 @@ notes), like youtube/platform/document saves.
   (NEXT_DATA value+currencyIso → 99 AUD, sellPrice shape, no-context rejection),
   URL-pattern matching, news-article negative (productish URL alone is below the ≥2
   threshold), + price/currency parsing. The Bunnings price is recovered via the
-  **static** embedded-JSON path (no WebView).
+  **static** embedded-JSON path (no WebView). **Determinism**: detect+staticPrice over
+  the Bunnings fixture is identical across 200 runs; `firstPrice` and JSON-LD product
+  selection are order-stable when a tree has >1 price/Product node.
 - `PriceFetcherTests` (4) — static embedded price uses prefetched HTML with **no
   WebView render**; structured price fetched when no prefetched HTML; **WebView
   render fallback recovers a JS-loaded price** (the static markup has none, the
@@ -206,8 +242,9 @@ notes), like youtube/platform/document saves.
   fallback). Uses `MockArticleFetcher` + an injected `renderHTML` closure (headless).
 - `PriceTrackerTests` (14) — best price, discount/alert, threshold, ≥1-store
   invariant, baseline immutability, Codable migration + clamp, stalest-first.
-- `ProductMatcherTests` (6) — productID, fuzzy name+brand, brand block, unbranded,
-  no-match, highest-score.
+- `ProductMatcherTests` (8) — productID, fuzzy name+brand, brand block, unbranded,
+  no-match, highest-score, + **order-independent tie-breaks** (equal name score and
+  multiple id matches both resolve to the lowest id regardless of input order).
 - `PriceRefresherTests` (5) — price update + newly-alerting, already-alerting,
   stalest-first order, failing fetch (`MockPriceFetcher` yields nil → unchanged),
   archived skip. Driven by `MockPriceFetcher` (prices keyed by URL).

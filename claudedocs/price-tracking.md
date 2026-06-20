@@ -7,23 +7,78 @@ top-of-list badge) when the price drops past a threshold.
 
 ## Key files
 
-- `ReaderKit/ProductPageDetector.swift` — **pure** detection (`ProductInfo`). Given
-  URL + HTML returns an optional `ProductInfo { name, priceAmount: Decimal,
-  priceCurrency, imageURL?, brand?, productID? }`. Signals, trust order: (1) JSON-LD
-  `Product`/`Offer` (`offers.price`/`priceCurrency`, recursing `@graph`/arrays and
-  `AggregateOffer.offers`/`lowPrice`/`priceSpecification`); (2) OpenGraph
-  `product:price:amount`/`og:price:amount` + currency; (3) schema.org microdata
-  (`itemprop=price`/`priceCurrency`); (4) bare price meta. `parsePrice` tolerates
-  `$1,234.56` (US) and `1.234,56`/`23,50 €` (EU); `normalizeCurrency` maps `$£€¥` →
-  ISO codes. `productID` from gtin13/12/14/8/gtin/isbn/mpn/sku/productID. Reuses the
-  article extractor's recursive JSON-LD walk pattern.
+**The price is MANDATORY.** A tracker is only ever created from a real numeric
+price + currency, fetched up front (and re-fetched on every background cycle).
+There is no pending/unknown/nil price state. Detection identifies a product
+*candidate*; the `PriceFetcher` resolves the price; only a candidate with a real
+fetched price becomes a tracker — otherwise the page is saved as a plain article.
+
+- `ReaderKit/ProductPageDetector.swift` — **pure** detection. Given URL + HTML
+  returns an optional `ProductCandidate { name, staticPrice: ProductPrice?,
+  imageURL?, brand?, productID? }`. `ProductPrice { amount: Decimal, currency }` is
+  the shared (always-present) price value type. Detection answers "is this a
+  product?" and reports the price in the static markup (`staticPrice`); it does NOT
+  gate on a price (a heuristic candidate may have its price only in the rendered
+  DOM). **Two tiers:**
+  - **Tier 1 — structured price (a single hit = product; `staticPrice` non-nil).**
+    (1) JSON-LD `Product`/`Offer` (`offers.price`/`priceCurrency`, recursing
+    `@graph`/arrays and `AggregateOffer.offers`/`lowPrice`/`priceSpecification`); (2)
+    OpenGraph `product:price:amount`/`og:price:amount` + currency; (3) schema.org
+    microdata (`itemprop=price`/`priceCurrency`); (4) bare price meta.
+  - **Tier 2 — heuristic (no structured price; retailers that render price
+    client-side, e.g. Bunnings).** `heuristicProductScore` sums STRONG signals, each
+    worth 1: `og:type=product`; an "add to cart"/`addToCart` affordance (button text
+    or JS handler); a rating (`aggregateRating`/`ratingValue`/"out of 5"/"Star
+    Rating"); a retail URL pattern (`urlLooksLikeProduct`: `_p<digits>`, `/dp/<id>`,
+    `/p/<digits>`, `/products/<slug>`, `/itm/<id>`); and a price recovered from
+    embedded app-state JSON. **≥2 (`minimumHeuristicScore`) ⇒ product.** The
+    candidate's `staticPrice` is the embedded-JSON price if found, else **nil** (the
+    price is only in the rendered DOM → the `PriceFetcher`'s WebView fallback).
+  - **`staticPrice(urlString:html:)`** — resolves the price visible in the STATIC
+    markup (Tier 1 structured data → Tier 2 embedded JSON), independent of product
+    detection; the `PriceFetcher` calls it for its fast, no-WebView paths.
+  - **`priceFromEmbeddedJSON`** scans `__NEXT_DATA__`, every
+    `<script type=application/json>`, and inline `window.__…={…}` blobs
+    (`firstJSONObjectLiteral` balanced-brace extractor). `firstPrice(in:)` recurses
+    JSON for the first object carrying a price-context key (`priceAvailable`/
+    `priceType`/`priceCurrency`/`currencyIso`/`currencyCode`/`sellPrice`/`nowPrice`/
+    `salePrice`/`formattedValue`), a numeric value (`value`/`amount`/`*price`, or a
+    `formattedValue` like `"$99.00"`), and a currency (sibling currency key, or a
+    `formattedValue` symbol). Bunnings fixture → **99 AUD** (`{currencyIso:"AUD",
+    formattedValue:"$99.00",priceAvailable:true,priceType:"FROM",value:99}`).
+  - `parsePrice` tolerates `$1,234.56` (US) and `1.234,56`/`23,50 €` (EU);
+    `normalizeCurrency` maps `$£€¥` → ISO codes. `productID` from
+    gtin13/12/14/8/gtin/isbn/mpn/sku/productID. Reuses the article extractor's
+    recursive JSON-LD walk pattern.
+- `ReaderKit/PriceFetcher.swift` — `PriceFetching` (protocol + live `PriceFetcher` +
+  `MockPriceFetcher` in tests). `fetchPrice(forURLString:prefetchedHTML:)` resolves
+  the **mandatory** current price in order: **(a) static markup** (structured data →
+  embedded JSON via `ProductPageDetector.staticPrice`, using `prefetchedHTML` when
+  the caller already fetched it, else fetching), **(b) WKWebView render fallback** —
+  if the static paths find nothing, `WebViewPriceRenderer.renderedHTML(for:)` loads
+  the page in an off-screen `WKWebView` so client-side JS runs, then re-applies the
+  same static extractor to the rendered `outerHTML` (recovering prices that only
+  exist after rendering). Returns nil when no price is found by any method (→ article
+  fallback). Reused by BOTH save-time and the background refresher, so the WebView
+  fallback runs in both. `WebViewPriceRenderer` runs on the main actor, creates/tears
+  down its WebView per call (nothing held between fetches), bounded by a settle
+  window + a hard timeout. Lives in ReaderKit (UIKit/WebKit, like
+  `ArchiveWebReaderViewController`), so it works in the main app and the UI-hosting
+  action/share extension.
+- `ProductInfo { name, priceAmount: Decimal, priceCurrency, imageURL?, brand?,
+  productID? }` (in `ProductPageDetector.swift`) — a candidate paired with a fetched
+  price, built via `ProductInfo(candidate:price:)`. The price is **required**; a
+  `ProductInfo` only exists once a real price is in hand, so a tracker can never be
+  created without one.
 - `ReaderKit/PriceTracker.swift` — the model + the friend-share payload:
   - `PriceTrackerStore { urlString, lastPrice: Decimal?, currency, lastRefreshed: Date? }`.
   - `PriceTracker` — `productName`, `stores` (private(set), **always ≥1**), `brand?`,
     `productID?`, `imageFileName?`, `initialPrice` (best at creation = alert
     baseline), `initialCurrency`, `alertThresholdFraction` (default 0.10),
-    `isArchived`. Computed: `currentBestPrice` (min across fetched store prices,
-    else `initialPrice`), `displayCurrency`, `discountFraction`, `isAlerting`
+    `isArchived`. **`init(price:)` takes a required `Decimal`** — a tracker cannot
+    exist without a real numeric price (the `PriceFetcher` resolves it before the
+    tracker is created). Computed: `currentBestPrice` (min across fetched store
+    prices, else `initialPrice`), `displayCurrency`, `discountFraction`, `isAlerting`
     (`!isArchived && discount ≥ threshold`), `thresholdAbsoluteDrop`. Mutators:
     `upsertStore`, `removeStore` (no-ops on the last store → ≥1 invariant),
     `setPrice`. **Migration-safe** `Codable` (all fields defaulted; empty `stores`
@@ -35,15 +90,17 @@ top-of-list badge) when the price drops past a threshold.
   `productID` equality wins; (2) else fuzzy token-Jaccard name similarity ≥ 0.6 with
   compatible brand (equal, or one side unbranded). Stop-words stripped.
 - `ReaderKit/PriceRefresher.swift` — **pure-ish** background-refresh logic.
-  `PriceTrackerPersisting` seam (`ReadingListStore` conforms); injects
-  `HTMLFetching` + `ProductPageDetector` + a clock. `refreshAll()` processes
-  trackers **stalest-first**, re-fetches each store, updates prices, persists each
-  tracker as it finishes (resumable), and returns `PriceRefreshOutcome` per tracker
-  with `newlyAlerting` (crossed threshold THIS run = the notification trigger).
+  `PriceTrackerPersisting` seam (`ReadingListStore` conforms); injects a
+  `PriceFetching` + a clock. `refreshAll()` processes trackers **stalest-first**,
+  re-fetches each store's price via the same `PriceFetcher` (incl. the WebView
+  fallback), updates prices, persists each tracker as it finishes (resumable), and
+  returns `PriceRefreshOutcome` per tracker with `newlyAlerting` (crossed threshold
+  THIS run = the notification trigger).
 - `ReaderKit/PriceFormatting.swift` — **pure** currency string (`$45.99`, `€23.50`,
   `AUD 89.00`) and `thresholdDescription` ("10% off — alert below $90.00").
 - `Clip/ReadingList/PriceTrackingManager.swift` — `PriceTrackingManaging`
-  (`detectProduct(urlString:)`); live impl = `ArticleFetcher` + detector.
+  (`fetchPrice(urlString:) -> ProductPrice?`); live impl wraps `PriceFetcher` so the
+  add-a-store UI resolves a new URL's price with the same strategy.
 - `Clip/ReadingList/PriceTrackingViewController.swift` — the tracker editor (main
   app). `Mode.existing(itemID:)` (tap a row) or `.creation(itemID:isMerge:highlightedURL:)`
   (save-time). Insets table of store rows (each shows extracted price; tap → in-app
@@ -78,15 +135,30 @@ top-of-list badge) when the price drops past a threshold.
 
 ## Save-time UX
 
-- **In-app paste / manual / app-intent**: `ReadingListIngestor.ingest` fetches once
-  and runs `ProductPageDetector` after the YouTube/platform checks, before the
-  article resolve. On a hit → `ingestProductTracker` (intelligent merge via
+**Product detection + the mandatory price fetch run BEFORE any paywall/archive
+treatment in every save path**, so a product page (incl. a client-rendered one
+detected heuristically) routes to price tracking and is NEVER classified
+`.paywalled`/`.unreadable` or sent through the archive/removepaywall bypass. Paste
+and the action/share extension reach the SAME decision for a given URL. **Tracker
+creation is gated on a successful price fetch**: detect a candidate → fetch the
+price (static → embedded JSON → WebView) → if a price is obtained, create the
+tracker; if NO price by any method, fall through to the normal article pipeline (a
+plain article — never a broken tracker, never paywall-bypassed).
+
+- **In-app paste / manual / app-intent**: `ReadingListIngestor.ingest` fetches once,
+  runs `ProductPageDetector` after the YouTube/platform checks (**before** the
+  article resolve), then `PriceFetcher.fetchPrice` on a candidate. On a real price →
+  `ProductInfo(candidate:price:)` → `ingestProductTracker` (intelligent merge via
   `ProductMatcher`, else new tracker; downloads the product image), then posts
-  `.priceTrackerSavedInteractively`. The reading list presents the `.creation`
-  editor (top-of-stack only). Merge highlights the new row.
+  `.priceTrackerSavedInteractively`; the reading list presents the `.creation` editor
+  (top-of-stack only; merge highlights the new row). No fetchable price → records a
+  note and falls through to `ArticleResolver`.
 - **Share / action extension** (`ShareKit/ShareViewController.ingestArticleThenComplete`):
-  detects the product and saves the tracker **silently** (extensions can't present
-  the main-app editor); the user edits it in the app.
+  runs `ProductPageDetector` then `PriceFetcher` on the fetched HTML **before**
+  `ArticleResolver.resolve`; on a real price saves the tracker **silently**
+  (extensions can't present the main-app editor); the user edits it in the app. This
+  is why the action extension never paywall-bypasses a product page. No fetchable
+  price → article path.
 
 ## Background refresh (`AppDelegate`)
 
@@ -95,7 +167,9 @@ network), registered + scheduled alongside the existing inbox/mail tasks; the
 identifier is in `Info.plist` `BGTaskSchedulerPermittedIdentifiers`. Handler →
 `PriceRefreshCoordinator.refreshAndNotify`. Resumable: stalest-first + per-tracker
 persistence, so a cancelled run still advances the oldest trackers. Archived
-trackers are skipped.
+trackers are skipped. Every cycle re-fetches the real current price via the same
+`PriceFetcher` (incl. the off-screen WKWebView fallback), so JS-rendered sites
+refresh correctly.
 
 ## Friend sharing (`MessageBody.priceTracker`)
 
@@ -117,15 +191,26 @@ notes), like youtube/platform/document saves.
 
 ## Tests
 
-- `ProductPageDetectorTests` (11) — fixtures `ClipTests/Fixtures/Products/`
+- `ProductPageDetectorTests` (18) — fixtures `ClipTests/Fixtures/Products/`
   (amazon JSON-LD, shopify OG, bestbuy microdata, generic `@graph`+AggregateOffer+EU
-  price, article no-price negative) + price/currency parsing.
+  price, article no-price negative, **bunnings-nextdata** heuristic+embedded-JSON;
+  Tier-1 candidates assert `staticPrice`) + embedded-price `firstPrice` unit tests
+  (NEXT_DATA value+currencyIso → 99 AUD, sellPrice shape, no-context rejection),
+  URL-pattern matching, news-article negative (productish URL alone is below the ≥2
+  threshold), + price/currency parsing. The Bunnings price is recovered via the
+  **static** embedded-JSON path (no WebView).
+- `PriceFetcherTests` (4) — static embedded price uses prefetched HTML with **no
+  WebView render**; structured price fetched when no prefetched HTML; **WebView
+  render fallback recovers a JS-loaded price** (the static markup has none, the
+  injected render returns the hydrated HTML); no price by any method → nil (article
+  fallback). Uses `MockArticleFetcher` + an injected `renderHTML` closure (headless).
 - `PriceTrackerTests` (14) — best price, discount/alert, threshold, ≥1-store
   invariant, baseline immutability, Codable migration + clamp, stalest-first.
 - `ProductMatcherTests` (6) — productID, fuzzy name+brand, brand block, unbranded,
   no-match, highest-score.
 - `PriceRefresherTests` (5) — price update + newly-alerting, already-alerting,
-  stalest-first order, failing fetch, archived skip.
+  stalest-first order, failing fetch (`MockPriceFetcher` yields nil → unchanged),
+  archived skip. Driven by `MockPriceFetcher` (prices keyed by URL).
 - `PriceFormattingTests` (3) — currency string, threshold description percent+abs.
 - `ReadingListSectioningTests` — price-tracking bucket, archived exclusion, alerting
   float-out + greatest-discount, filter visibility, displayOrder.

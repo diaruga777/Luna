@@ -31,13 +31,8 @@ final class PriceRefresherTests: XCTestCase {
         }
     }
 
-    private func productHTML(price: String, currency: String = "USD") -> String {
-        """
-        <html><head><script type="application/ld+json">
-        {"@type":"Product","name":"Widget",
-         "offers":{"@type":"Offer","price":"\(price)","priceCurrency":"\(currency)"}}
-        </script></head><body></body></html>
-        """
+    private func price(_ amount: String, currency: String = "USD") -> ProductPrice {
+        ProductPrice(amount: Decimal(string: amount)!, currency: currency)
     }
 
     private func trackerItem(url: String, initialPrice: String, threshold: Double,
@@ -59,10 +54,10 @@ final class PriceRefresherTests: XCTestCase {
         let item = trackerItem(url: url, initialPrice: "100", threshold: 0.10,
                                refreshedAt: Date(timeIntervalSince1970: 0))
         let store = FakeStore([item])
-        let fetcher = MockArticleFetcher()
-        fetcher.htmlByURL[url] = productHTML(price: "80")
+        let fetcher = MockPriceFetcher()
+        fetcher.priceByURL[url] = price("80")
 
-        let refresher = PriceRefresher(store: store, fetcher: fetcher,
+        let refresher = PriceRefresher(store: store, priceFetcher: fetcher,
                                        now: { Date(timeIntervalSince1970: 10_000) })
         let outcomes = await refresher.refreshAll()
 
@@ -83,10 +78,10 @@ final class PriceRefresherTests: XCTestCase {
         item.priceTracker?.setPrice(Decimal(string: "70"), currency: "USD", urlString: url,
                                     at: Date(timeIntervalSince1970: 0))
         let store = FakeStore([item])
-        let fetcher = MockArticleFetcher()
-        fetcher.htmlByURL[url] = productHTML(price: "65")
+        let fetcher = MockPriceFetcher()
+        fetcher.priceByURL[url] = price("65")
 
-        let outcomes = await PriceRefresher(store: store, fetcher: fetcher).refreshAll()
+        let outcomes = await PriceRefresher(store: store, priceFetcher: fetcher).refreshAll()
         XCTAssertTrue(outcomes[0].isAlerting)
         XCTAssertFalse(outcomes[0].newlyAlerting)
     }
@@ -99,11 +94,11 @@ final class PriceRefresherTests: XCTestCase {
         let stale = trackerItem(url: staleURL, initialPrice: "10", threshold: 0.1,
                                 refreshedAt: Date(timeIntervalSince1970: 100))
         let store = FakeStore([fresh, stale])
-        let fetcher = MockArticleFetcher()
-        fetcher.htmlByURL[freshURL] = productHTML(price: "10")
-        fetcher.htmlByURL[staleURL] = productHTML(price: "10")
+        let fetcher = MockPriceFetcher()
+        fetcher.priceByURL[freshURL] = price("10")
+        fetcher.priceByURL[staleURL] = price("10")
 
-        let outcomes = await PriceRefresher(store: store, fetcher: fetcher).refreshAll()
+        let outcomes = await PriceRefresher(store: store, priceFetcher: fetcher).refreshAll()
         XCTAssertEqual(outcomes.map(\.itemID), [stale.id, fresh.id])
         XCTAssertEqual(store.updateOrder, [stale.id, fresh.id])
     }
@@ -113,10 +108,10 @@ final class PriceRefresherTests: XCTestCase {
         let item = trackerItem(url: url, initialPrice: "100", threshold: 0.1,
                                refreshedAt: Date(timeIntervalSince1970: 0))
         let store = FakeStore([item])
-        let fetcher = MockArticleFetcher()
-        fetcher.failingURLs = [url]
+        // No price stubbed for the URL → the fetcher yields nil (all methods failed).
+        let fetcher = MockPriceFetcher()
 
-        let outcomes = await PriceRefresher(store: store, fetcher: fetcher).refreshAll()
+        let outcomes = await PriceRefresher(store: store, priceFetcher: fetcher).refreshAll()
         XCTAssertEqual(outcomes[0].newBest, Decimal(string: "100"))
         XCTAssertFalse(outcomes[0].isAlerting)
     }
@@ -127,11 +122,11 @@ final class PriceRefresherTests: XCTestCase {
                                refreshedAt: Date(timeIntervalSince1970: 0))
         item.priceTracker?.isArchived = true
         let store = FakeStore([item])
-        let fetcher = MockArticleFetcher()
-        fetcher.htmlByURL[url] = productHTML(price: "10")
+        let fetcher = MockPriceFetcher()
+        fetcher.priceByURL[url] = price("10")
 
-        let outcomes = await PriceRefresher(store: store, fetcher: fetcher).refreshAll()
+        let outcomes = await PriceRefresher(store: store, priceFetcher: fetcher).refreshAll()
         XCTAssertTrue(outcomes.isEmpty)
-        XCTAssertTrue(fetcher.calls.isEmpty)
+        XCTAssertTrue(fetcher.requestedURLs.isEmpty)
     }
 }

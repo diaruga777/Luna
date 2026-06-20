@@ -119,4 +119,27 @@ final class ArchiveStageDecisionTests: XCTestCase {
         XCTAssertEqual(decide("page:"), .wait)
         XCTAssertEqual(decide("page"), .wait)
     }
+
+    // MARK: - JS-required gate (pre-stage hardening)
+
+    func testJavaScriptRequiredGateDetectedOnShortBody() {
+        XCTAssertTrue(ArchiveWebReaderViewController.isJavaScriptRequiredGate(
+            text: "Please enable JavaScript to continue."))
+        XCTAssertTrue(ArchiveWebReaderViewController.isJavaScriptRequiredGate(
+            text: "JavaScript is required to view this content."))
+        XCTAssertTrue(ArchiveWebReaderViewController.isJavaScriptRequiredGate(
+            text: "Enable JS and reload."))
+    }
+
+    func testJavaScriptRequiredGateNotTrippedByLongArticle() {
+        // A real, rendered article that merely mentions JavaScript must NOT be
+        // treated as a gate (gated on a short body).
+        let article = String(repeating: "This post is about JavaScript frameworks. ", count: 60)
+        XCTAssertFalse(ArchiveWebReaderViewController.isJavaScriptRequiredGate(text: article))
+    }
+
+    func testJavaScriptRequiredGateNotTrippedByUnrelatedShortPage() {
+        XCTAssertFalse(ArchiveWebReaderViewController.isJavaScriptRequiredGate(
+            text: "Loading your article…"))
+    }
 }

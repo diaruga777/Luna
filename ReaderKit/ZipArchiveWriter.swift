@@ -1,13 +1,14 @@
 //
 //  ZipArchiveWriter.swift
-//  Clip
+//  ReaderKit
 //
 
 import Foundation
 
 /// Minimal ZIP archive writer: stored (uncompressed) entries only, which is all
-/// an EPUB needs. Entries appear in the archive in the order they were added —
-/// EPUB requires `mimetype` to be the first, uncompressed entry.
+/// an EPUB (or a Replay export) needs. Entries appear in the archive in the order
+/// they were added — EPUB requires `mimetype` to be the first, uncompressed entry.
+/// Lives in `ReaderKit` so the share/action extensions can zip Replay exports too.
 struct ZipArchiveWriter {
 
     private struct Entry {

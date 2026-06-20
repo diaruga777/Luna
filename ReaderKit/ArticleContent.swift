@@ -7,7 +7,7 @@ import Foundation
 
 /// Extracted, formatted article text: an ordered list of text blocks with
 /// inline link ranges (UTF-16 offsets, ready for NSAttributedString).
-struct ArticleContent: Codable {
+struct ArticleContent: Codable, Equatable {
     var title: String
     var author: String?
     var blocks: [Block]
@@ -19,8 +19,8 @@ struct ArticleContent: Codable {
     }
 
     /// One paragraph-level unit of the article.
-    struct Block: Codable {
-        enum Kind: String, Codable {
+    struct Block: Codable, Equatable {
+        enum Kind: String, Codable, Equatable {
             case paragraph
             case heading
             case quote
@@ -48,7 +48,7 @@ struct ArticleContent: Codable {
     }
 
     /// An inline link inside a block. `start`/`length` are UTF-16 offsets into `text`.
-    struct Link: Codable {
+    struct Link: Codable, Equatable {
         var start: Int
         var length: Int
         var urlString: String

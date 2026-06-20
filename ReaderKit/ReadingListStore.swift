@@ -379,6 +379,52 @@ final class ReadingListStore {
         }
     }
 
+    // MARK: - Price tracking
+
+    /// Attaches a price-tracker payload to an item and marks it ready (a tracker
+    /// has no article content to download). Returns the refreshed item.
+    @discardableResult
+    func savePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
+        coordinatedMutate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
+            all[index].priceTracker = tracker
+            all[index].title = tracker.productName
+            all[index].state = .ready
+            return all[index]
+        }
+    }
+
+    /// Replaces the price-tracker payload of an existing tracker (add/remove store,
+    /// change threshold, archive). Returns the refreshed item.
+    @discardableResult
+    func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
+        coordinatedMutate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }),
+                  all[index].priceTracker != nil else { return nil }
+            all[index].priceTracker = tracker
+            all[index].title = tracker.productName
+            return all[index]
+        }
+    }
+
+    /// All non-archived price trackers, ordered stalest-first (oldest minimum
+    /// `lastRefreshed` across their stores) so a killed background refresh makes
+    /// progress on the longest-unrefreshed trackers each run.
+    func priceTrackersStalestFirst() -> [ReadingListItem] {
+        items()
+            .filter { ($0.priceTracker?.isArchived == false) }
+            .sorted { lhs, rhs in
+                Self.stalestRefresh(lhs.priceTracker) < Self.stalestRefresh(rhs.priceTracker)
+            }
+    }
+
+    /// The oldest `lastRefreshed` across a tracker's stores (a never-refreshed
+    /// store sorts first, as `.distantPast`).
+    static func stalestRefresh(_ tracker: PriceTracker?) -> Date {
+        guard let tracker else { return .distantPast }
+        return tracker.stores.map { $0.lastRefreshed ?? .distantPast }.min() ?? .distantPast
+    }
+
     // MARK: - Catch-up
 
     /// Stamps a new bump date on an item and moves it to the top of the list (it

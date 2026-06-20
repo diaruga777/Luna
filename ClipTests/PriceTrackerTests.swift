@@ -1,0 +1,177 @@
+//
+//  PriceTrackerTests.swift
+//  ClipTests
+//
+
+import XCTest
+@testable import Clip
+
+/// Coverage for the `PriceTracker` model: best-price/alert math, threshold
+/// formatting, store invariants, Codable migration safety, and the store's
+/// stalest-first refresh ordering.
+final class PriceTrackerTests: XCTestCase {
+
+    private func makeTracker(price: String = "100.00", currency: String = "USD",
+                             threshold: Double = 0.10) -> PriceTracker {
+        PriceTracker(
+            productName: "Widget",
+            firstStoreURL: "https://a.example/p",
+            price: Decimal(string: price)!,
+            currency: currency,
+            alertThresholdFraction: threshold,
+            now: Date(timeIntervalSince1970: 1000))
+    }
+
+    // MARK: - Best price
+
+    func testCurrentBestPriceIsMinimumAcrossStores() {
+        var tracker = makeTracker(price: "100")
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: Decimal(string: "85"), currency: "USD"))
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://c.example/p", lastPrice: Decimal(string: "92"), currency: "USD"))
+        XCTAssertEqual(tracker.currentBestPrice, Decimal(string: "85"))
+    }
+
+    func testCurrentBestPriceFallsBackToInitialWhenNoFetchedPrice() {
+        var tracker = makeTracker(price: "50")
+        // Add an unrefreshed store (no price).
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: nil, currency: "USD"))
+        XCTAssertEqual(tracker.currentBestPrice, Decimal(string: "50"))
+    }
+
+    // MARK: - Discount + alert
+
+    func testDiscountFractionAndAlerting() {
+        var tracker = makeTracker(price: "100", threshold: 0.10)
+        XCTAssertEqual(tracker.discountFraction, 0, accuracy: 0.0001)
+        XCTAssertFalse(tracker.isAlerting)
+
+        tracker.setPrice(Decimal(string: "80"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+        XCTAssertEqual(tracker.discountFraction, 0.20, accuracy: 0.0001)
+        XCTAssertTrue(tracker.isAlerting)
+    }
+
+    func testAlertingRequiresMeetingThreshold() {
+        var tracker = makeTracker(price: "100", threshold: 0.25)
+        tracker.setPrice(Decimal(string: "80"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+        XCTAssertFalse(tracker.isAlerting, "20% drop must not alert with a 25% threshold")
+        tracker.setPrice(Decimal(string: "75"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+        XCTAssertTrue(tracker.isAlerting, "exactly 25% drop alerts")
+    }
+
+    func testArchivedTrackerNeverAlerts() {
+        var tracker = makeTracker(price: "100")
+        tracker.setPrice(Decimal(string: "10"), currency: "USD",
+                         urlString: "https://a.example/p", at: Date())
+        tracker.isArchived = true
+        XCTAssertFalse(tracker.isAlerting)
+    }
+
+    func testThresholdAbsoluteDrop() {
+        let tracker = makeTracker(price: "200", threshold: 0.15)
+        XCTAssertEqual(tracker.thresholdAbsoluteDrop, Decimal(string: "30"))
+    }
+
+    // MARK: - Store invariants
+
+    func testRemoveStoreKeepsAtLeastOne() {
+        var tracker = makeTracker()
+        XCTAssertFalse(tracker.removeStore(urlString: "https://a.example/p"),
+                       "cannot remove the last store")
+        XCTAssertEqual(tracker.stores.count, 1)
+
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: Decimal(string: "90"), currency: "USD"))
+        XCTAssertTrue(tracker.removeStore(urlString: "https://a.example/p"))
+        XCTAssertEqual(tracker.stores.map(\.urlString), ["https://b.example/p"])
+    }
+
+    func testUpsertReplacesExistingStore() {
+        var tracker = makeTracker(price: "100")
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://a.example/p", lastPrice: Decimal(string: "70"), currency: "USD"))
+        XCTAssertEqual(tracker.stores.count, 1)
+        XCTAssertEqual(tracker.currentBestPrice, Decimal(string: "70"))
+    }
+
+    func testMergingCheaperStoreDoesNotLowerBaseline() {
+        var tracker = makeTracker(price: "100")
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: Decimal(string: "60"), currency: "USD"))
+        XCTAssertEqual(tracker.initialPrice, Decimal(string: "100"))
+        XCTAssertEqual(tracker.discountFraction, 0.40, accuracy: 0.0001)
+    }
+
+    // MARK: - Codable migration safety
+
+    func testDecodesMinimalPayloadAndRepairsEmptyStores() throws {
+        let json = #"{"productName":"X","initialPrice":42,"initialCurrency":"GBP"}"#
+        let tracker = try JSONDecoder().decode(PriceTracker.self, from: Data(json.utf8))
+        XCTAssertEqual(tracker.stores.count, 1, "empty stores repaired to satisfy ≥1 invariant")
+        XCTAssertEqual(tracker.initialPrice, Decimal(42))
+        XCTAssertEqual(tracker.initialCurrency, "GBP")
+        XCTAssertEqual(tracker.alertThresholdFraction, 0.10)
+        XCTAssertFalse(tracker.isArchived)
+    }
+
+    func testRoundTripCodable() throws {
+        var tracker = makeTracker(price: "129.99", currency: "EUR", threshold: 0.2)
+        tracker.brand = "Acme"
+        tracker.productID = "SKU-1"
+        let data = try JSONEncoder().encode(tracker)
+        let decoded = try JSONDecoder().decode(PriceTracker.self, from: data)
+        XCTAssertEqual(decoded, tracker)
+    }
+
+    func testClampsOutOfRangeThreshold() throws {
+        let json = #"{"productName":"X","initialPrice":10,"initialCurrency":"USD","alertThresholdFraction":5.0}"#
+        let tracker = try JSONDecoder().decode(PriceTracker.self, from: Data(json.utf8))
+        XCTAssertEqual(tracker.alertThresholdFraction, 0.95, accuracy: 0.0001)
+    }
+
+    // MARK: - Stalest-first ordering
+
+    func testStalestRefreshUsesOldestStore() {
+        var tracker = makeTracker()
+        tracker.setPrice(Decimal(10), currency: "USD", urlString: "https://a.example/p",
+                         at: Date(timeIntervalSince1970: 5000))
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: Decimal(9), currency: "USD",
+            lastRefreshed: Date(timeIntervalSince1970: 2000)))
+        XCTAssertEqual(ReadingListStore.stalestRefresh(tracker),
+                       Date(timeIntervalSince1970: 2000))
+    }
+
+    func testStalestFirstOrdersTrackersAndExcludesArchived() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let store = ReadingListStore(containerURL: dir)
+
+        let fresh = store.add(urlString: "https://fresh.example/p")
+        var freshTracker = makeTracker()
+        freshTracker.setPrice(Decimal(1), currency: "USD", urlString: "https://a.example/p",
+                              at: Date(timeIntervalSince1970: 9000))
+        store.savePriceTracker(freshTracker, for: fresh.id)
+
+        let stale = store.add(urlString: "https://stale.example/p")
+        var staleTracker = makeTracker()
+        staleTracker.setPrice(Decimal(1), currency: "USD", urlString: "https://a.example/p",
+                              at: Date(timeIntervalSince1970: 100))
+        store.savePriceTracker(staleTracker, for: stale.id)
+
+        let archived = store.add(urlString: "https://archived.example/p")
+        var archivedTracker = makeTracker()
+        archivedTracker.isArchived = true
+        store.savePriceTracker(archivedTracker, for: archived.id)
+
+        let ordered = store.priceTrackersStalestFirst()
+        XCTAssertEqual(ordered.map(\.urlString),
+                       ["https://stale.example/p", "https://fresh.example/p"])
+    }
+}

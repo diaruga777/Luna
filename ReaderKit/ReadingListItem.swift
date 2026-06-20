@@ -118,7 +118,16 @@ struct ReadingListItem: Codable, Identifiable {
     /// on legacy items (treated as `.manual`).
     var captureSource: CaptureSource?
 
+    /// When this save is a price tracker (a product page with a price), this
+    /// payload carries the watched store URLs, prices, and alert config. Absent
+    /// for ordinary articles/media. Its presence is what makes the item render in
+    /// the price-tracking section instead of the reader.
+    var priceTracker: PriceTracker?
+
     var url: URL? { URL(string: urlString) }
+
+    /// Whether this save is a price tracker rather than an article/media item.
+    var isPriceTracker: Bool { priceTracker != nil }
 
     /// Capture source for routing/auto-send, defaulting legacy items to `.manual`.
     var effectiveCaptureSource: CaptureSource { captureSource ?? .manual }
@@ -194,6 +203,7 @@ struct ReadingListItem: Codable, Identifiable {
         self.mediaItemTitle = nil
         self.mediaSourceService = nil
         self.captureSource = nil
+        self.priceTracker = nil
     }
 
     /// Legacy single-destination send keys, read only to migrate old reading-list
@@ -254,5 +264,6 @@ struct ReadingListItem: Codable, Identifiable {
         mediaItemTitle = try container.decodeIfPresent(String.self, forKey: .mediaItemTitle)
         mediaSourceService = try container.decodeIfPresent(MusicProvider.self, forKey: .mediaSourceService)
         captureSource = try container.decodeIfPresent(CaptureSource.self, forKey: .captureSource)
+        priceTracker = try container.decodeIfPresent(PriceTracker.self, forKey: .priceTracker)
     }
 }

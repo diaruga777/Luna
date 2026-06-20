@@ -121,6 +121,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if UITestSeeder.requestedOnboardingStep != nil {
             return OnboardingFlow.make { [weak self] in self?.showMainUI() }
         }
+        if let screen = UITestSeeder.requestedScreen {
+            return UITestScreenBuilder.rootViewController(for: screen)
+        }
         if UITestSeeder.isActive {
             return UINavigationController(rootViewController: ReadingListViewController())
         }

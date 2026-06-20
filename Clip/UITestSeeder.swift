@@ -24,6 +24,7 @@ enum UITestSeeder {
     /// Launch-argument keys.
     private static let stateArg = "-uiTestState"
     private static let onboardingStepArg = "-uiTestOnboardingStep"
+    private static let screenArg = "-uiTestScreen"
 
     /// Whether the app was launched into a UI-test seeded state.
     static var isActive: Bool { requestedState != nil }
@@ -50,12 +51,28 @@ enum UITestSeeder {
         #endif
     }
 
+    /// A specific screen the harness wants deep-linked as the window root, if
+    /// requested (and recognized). When present, `SceneDelegate` builds that screen
+    /// directly instead of the reading list, so the screenshot agent can capture any
+    /// screen on any device without coordinate-tapping. DEBUG-only.
+    static var requestedScreen: UITestScreen? {
+        #if DEBUG
+        guard let raw = argumentValue(for: screenArg) else { return nil }
+        return UITestScreen(rawValue: raw)
+        #else
+        return nil
+        #endif
+    }
+
     /// Applies the seed if a state was requested: wipes + seeds the shared store and
     /// disables animations. Call once, early in scene setup. No-ops in release or
     /// when no state argument is present.
     static func applyIfNeeded() {
         #if DEBUG
-        guard let state = requestedState else { return }
+        // A screen deep-link without an explicit state still wants a populated store
+        // (price-editor, catch-up, search read the shared store) — default to mixed.
+        let state = requestedState ?? (requestedScreen != nil ? .mixed : nil)
+        guard let state else { return }
         UIView.setAnimationsEnabled(false)
         seedSharedStore(state)
         #endif

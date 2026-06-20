@@ -1120,6 +1120,38 @@ final class ReadingListViewController: UITableViewController {
         present(sheet, animated: true)
     }
 
+    /// Shares a price tracker (all store URLs + best price + threshold) to a friend.
+    private func sendTrackerToFriend(_ tracker: PriceTracker, from sourceView: UIView) {
+        let friends = FriendsStore.shared.items()
+        guard !friends.isEmpty else {
+            presentInfoAlert(
+                title: "No Friends Yet",
+                message: "Add friends from the Friends screen to share directly.")
+            return
+        }
+        let sheet = UIAlertController(
+            title: tracker.productName, message: nil, preferredStyle: .actionSheet)
+        for friend in friends {
+            sheet.addAction(UIAlertAction(
+                title: "Send to \(friend.card.username)", style: .default
+            ) { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    guard await ICloudGate.requireICloud(presenting: self) else { return }
+                    do {
+                        try await SocialMessageCenter.shared.sendPriceTracker(tracker, to: friend)
+                        Toast.show("Sent to \(friend.card.username)", from: self)
+                    } catch {
+                        self.presentInfoAlert(title: "Couldn't Send", message: "\(error)")
+                    }
+                }
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = sourceView
+        present(sheet, animated: true)
+    }
+
     // MARK: - Video playback
 
     /// Prefers the YouTube app (marks read on successful handoff); otherwise
@@ -1259,6 +1291,32 @@ final class ReadingListViewController: UITableViewController {
             guard let self else { return }
             let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
             self.sendMediaToFriend(item, from: sourceView)
+        }
+
+        // Price trackers get a focused menu: share the tracker to a friend,
+        // archive/unarchive it (archived = hidden + excluded from refresh), delete.
+        if let tracker = item.priceTracker {
+            var trackerChildren: [UIAction] = []
+            if !FriendsStore.shared.items().isEmpty {
+                trackerChildren.append(UIAction(
+                    title: "Send to Friend…", image: UIImage(systemName: "person.2")
+                ) { [weak self] _ in
+                    guard let self else { return }
+                    let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+                    self.sendTrackerToFriend(tracker, from: sourceView)
+                })
+            }
+            let archiveTitle = tracker.isArchived ? "Unarchive Tracker" : "Archive Tracker"
+            let archiveIcon = tracker.isArchived ? "tray.and.arrow.up" : "archivebox"
+            trackerChildren.append(UIAction(
+                title: archiveTitle, image: UIImage(systemName: archiveIcon)
+            ) { [weak self] _ in
+                guard let self, var updated = self.store.item(withID: item.id)?.priceTracker else { return }
+                updated.isArchived.toggle()
+                self.store.updatePriceTracker(updated, for: item.id)
+            })
+            trackerChildren.append(delete)
+            return UIMenu(title: tracker.productName, children: trackerChildren)
         }
 
         var children: [UIAction] = []

@@ -40,14 +40,25 @@ final class DiagnosticsViewController: UIViewController {
 
         // Keep both actions on the right so the navigation back button (the way
         // out of this screen) stays in place. When presented modally rather than
-        // pushed, add an explicit Done button.
+        // pushed, add an explicit Done button. "Replays" opens the per-save replay
+        // diagnostics list.
         navigationItem.rightBarButtonItems = [
             UIBarButtonItem(barButtonSystemItem: .action, target: self, action: #selector(share)),
             UIBarButtonItem(title: "Clear", style: .plain, target: self, action: #selector(clear)),
+            UIBarButtonItem(title: "Replays", style: .plain, target: self, action: #selector(openReplays)),
         ]
         if navigationController?.viewControllers.first === self || navigationController == nil {
             navigationItem.leftBarButtonItem = UIBarButtonItem(
                 barButtonSystemItem: .done, target: self, action: #selector(done))
+        }
+    }
+
+    @objc private func openReplays() {
+        let replays = ReplaysViewController()
+        if let navigationController {
+            navigationController.pushViewController(replays, animated: true)
+        } else {
+            present(UINavigationController(rootViewController: replays), animated: true)
         }
     }
 

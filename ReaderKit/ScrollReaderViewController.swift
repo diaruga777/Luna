@@ -122,6 +122,11 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
                 guard let self else { return }
                 shareProvider.sendToSuggestedFriend(
                     urlString: self.item.urlString, title: self.content.title, from: self)
+            },
+            onReportBug: { [weak self] in
+                guard let self, let shareView = self.shareView else { return }
+                ReplayBugReporter.report(
+                    itemURLString: self.item.urlString, from: self, sourceView: shareView)
             })
     }
 

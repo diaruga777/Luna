@@ -41,6 +41,33 @@ final class PriceTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.currentBestPrice, Decimal(string: "50"))
     }
 
+    // MARK: - Best-price row (catch-up card highlight)
+
+    func testBestPriceStoreIDPicksTheLowestFetchedPrice() {
+        var tracker = makeTracker(price: "100")  // first store @ 100
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: Decimal(string: "85"), currency: "USD"))
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://c.example/p", lastPrice: Decimal(string: "92"), currency: "USD"))
+        XCTAssertEqual(tracker.bestPriceStoreID, "https://b.example/p")
+    }
+
+    func testBestPriceStoreIDIsNilWhenNoStoreHasFetchedPrice() {
+        // A tracker whose only store carries no fetched price has nothing to highlight.
+        var tracker = makeTracker(price: "30")
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://a.example/p", lastPrice: nil, currency: "USD"))
+        XCTAssertNil(tracker.bestPriceStoreID)
+    }
+
+    func testBestPriceStoreIDBreaksTiesByFirstStoreOrder() {
+        var tracker = makeTracker(price: "60")  // first store @ 60
+        tracker.upsertStore(PriceTrackerStore(
+            urlString: "https://b.example/p", lastPrice: Decimal(string: "60"), currency: "USD"))
+        // Tie at 60 → the first store in order wins (deterministic highlight).
+        XCTAssertEqual(tracker.bestPriceStoreID, "https://a.example/p")
+    }
+
     // MARK: - Discount + alert
 
     func testDiscountFractionAndAlerting() {

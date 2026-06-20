@@ -78,7 +78,25 @@ for the pills.
   only claims horizontal drags so the article's vertical scroll still works. The bottom
   buttons call `performAction(_:)` for the same fly-off.
 - **`CatchUpSubviews.swift`** — `CatchUpMessageView` (accent SF Symbol + bold text for
-  the delete/done screens), `CatchUpCardHeader`, `CatchUpMediaCardBody`.
+  the delete/done screens), `CatchUpCardHeader`, `CatchUpMediaCardBody`,
+  `CatchUpPriceTrackerCardBody`, `PriceTrackerStoreRowsView`.
+
+**Price-tracker cards.** A non-archived, unread price tracker surfaces in the queue
+(`catchUpQueue` keeps every non-`.read` non-reader item) and gets its OWN layout
+(`CatchUpPriceTrackerCardBody`, no date strip — it fills the whole content area,
+vertically centered): top→bottom = a **small product thumbnail** (120pt), the
+**product name** (centered), a **non-tappable mini-table** of the tracked sites
+(`PriceTrackerStoreRowsView`: one row per `store`, host left + price right, no chevron
+/ no selection; the **current best-price** row is accent-tinted + bold via
+`PriceTracker.bestPriceStoreID`), and the shared **`AlertThresholdSlider`** at the
+bottom. The thumbnail is resolved the SAME way as `ReadingListItemCell` —
+`PriceTracker.imageFileName` inside `store.articlesDirectory` (NOT
+`item.thumbnailFileName`, which is nil for trackers — that was the missing-thumbnail
+bug), falling back to a `tag`/`tag.fill` glyph. The card's slider drives the same
+`alertThresholdFraction` and persists via `store.updatePriceTracker` on commit, so
+editing the threshold from catch-up sticks. `CatchUpCardView.gestureRecognizer(_:shouldReceive:)`
+rejects touches landing on a `UISlider` so the card swipe doesn't steal the slider drag.
+The slider component is shared with the editor — see `price-tracking.md`.
 
 ## Model / store
 
@@ -95,3 +113,8 @@ Sim-verified via the bottom buttons (drag isn't synthesizable by the harness —
 `simulator-testing.md`): entry button, article reader card (mode switcher + scroll),
 media card, Bump (re-sorts to top), Mark Read, delete-prompt screen, done screen, Undo.
 The pulse triggers at >12 unread.
+
+Snapshot coverage (`CatchUpAndPriceScreenTests`): `catchup-cards`, `catchup-mixed`,
+and `catchup-price-tracker` (the tracker card — thumbnail, name, per-store mini-table,
+threshold slider). `PriceTracker.bestPriceStoreID` (best-price-row selection +
+deterministic tie-break) is unit-tested in `PriceTrackerTests`.

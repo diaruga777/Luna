@@ -45,6 +45,19 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         SnapshotTesting.assertSnapshot(of: catchUp, named: "catchup-mixed")
     }
 
+    /// A price tracker surfaces as a catch-up card with the dedicated tracker layout:
+    /// thumbnail, product name, per-store mini-table, and the alert-threshold slider.
+    func testCatchUpPriceTrackerCardSnapshot() {
+        UITestSupport.seedSharedStore(.mixed)
+        let trackers = ReadingListStore.shared.items().filter { $0.isPriceTracker }
+        XCTAssertFalse(trackers.isEmpty, "mixed fixture should seed price trackers")
+        let router = ReadingListViewController()
+        _ = UITestSupport.host(UINavigationController(rootViewController: router))
+        // Build a queue of just the trackers so the first card is a tracker card.
+        let catchUp = CatchUpViewController(unread: trackers, router: router)
+        SnapshotTesting.assertSnapshot(of: catchUp, named: "catchup-price-tracker")
+    }
+
     func testCatchUpLayoutHasOnScreenContent() {
         UITestSupport.seedSharedStore(.catchUpEligible)
         let router = ReadingListViewController()

@@ -143,7 +143,7 @@ fetched price becomes a tracker — otherwise the page is saved as a plain artic
   `PriceTrackingExitContext`. Insets table of seller rows (header **"Sellers"**; each
   shows extracted price; tap → in-app Safari; swipe → remove, guarded by ≥1), an
   **"Add seller"** table FOOTER (+ icon) — replaces the old nav-bar +, available in
-  all contexts, and a bottom alert-config (threshold slider as percent AND absolute).
+  all contexts, and a bottom **`AlertThresholdSlider`** (the shared threshold control).
   - **Navigation chrome** (from `exitContext`, set in `configureNavigationChrome`):
     - **Top-left** (always): `.back` chevron in-app (pops) / system **Done** in an
       extension (dismisses). Routes through `dismissOrPop()` — pop when not the nav
@@ -162,6 +162,14 @@ fetched price becomes a tracker — otherwise the page is saved as a plain artic
     convenience for the paste path) wraps `PriceFetcher` (static → embedded JSON →
     WebView). The search overlay's captured HTML feeds the fast static path.
   - Declares `Notification.Name.priceTrackerSavedInteractively`.
+- `Clip/ReadingList/AlertThresholdSlider.swift` — the **shared** alert-threshold
+  control: a liquid-glass pill (`GlassStyle.barEffect()`) with the title **"Alert
+  threshold"**, a slider (0.01…0.90), and a readout line
+  (`PriceFormatting.thresholdDescription` — percent + absolute "alert below $…").
+  Presentation-only: `configure(fraction:initialPrice:currency:)` seeds it; reports
+  via `onChanged` (live) / `onCommitted` (on release → host persists). Used IDENTICALLY
+  by `PriceTrackingViewController`'s footer AND the catch-up price-tracker card, so
+  both render the same and drive the same `alertThresholdFraction`.
 - `Clip/ReadingList/PriceRefreshCoordinator.swift` — main-app side effects: runs
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
   per `newlyAlerting` outcome.

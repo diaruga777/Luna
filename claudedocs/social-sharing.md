@@ -139,6 +139,29 @@ extension (Open Settings; explains data is local-only) → shortcut/Action Butto
 notification authorization for already-onboarded users, so new users get the
 prompt (with context) during the notifications step.
 
+**Small-screen + keyboard handling.** Every onboarding screen is fully scrollable
+so 100% of its content (icon/title/body/fields/buttons) is reachable on an
+iPhone-mini-sized screen:
+
+- `OnboardingStepViewController` — title/body in a `UIScrollView` that centers when
+  content fits and scrolls when it doesn't; primary/continue buttons pinned to the
+  bottom safe area (never compressed).
+- `OnboardingViewController` (identity entry) — title + username/email/phone fields
+  in a `UIScrollView`; the **Continue button is pinned to `view.keyboardLayoutGuide`**
+  (priority `.defaultHigh`, capped at the bottom safe area) so it rises just above the
+  keyboard while editing and returns when it hides. Keyboard avoidance: observes
+  `keyboardWillShow/ChangeFrame/Hide` (`[weak self]`, removed in `deinit`), sets the
+  scroll view's bottom content/indicator inset to the keyboard overlap, and scrolls
+  the focused field into the still-visible region. A background `UITapGestureRecognizer`
+  (`cancelsTouchesInView = false`) ends editing without swallowing field/button taps.
+  `textFieldShouldReturn` advances username → email.
+
+The keyboard-frame math (`bottomInset`, `contentOffsetToReveal`) is factored into the
+pure `KeyboardAvoidance` enum (`Clip/Social/KeyboardAvoidance.swift`), unit-tested by
+`ClipTests/KeyboardAvoidanceTests.swift`. Small-screen layout is asserted by
+`OnboardingScreenTests` (`testIdentityStepFitsSmallScreen`, `testSetupStepsFitSmallScreen`,
+hosted at 375×812).
+
 ## Diagnostics (`Clip/Diagnostics/`)
 
 On-device log capture, because Console.app can't read an iOS-beta device's

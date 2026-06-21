@@ -90,6 +90,8 @@ final class PriceTrackingViewController: UIViewController {
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let thresholdSlider = AlertThresholdSlider()
+    private let productHeader = UIView()
+    private let productTitleLabel = UILabel()
 
     private var itemID: UUID { mode.itemID }
     private var exitContext: PriceTrackingExitContext { mode.exitContext }
@@ -121,10 +123,23 @@ final class PriceTrackingViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
-        title = tracker?.productName ?? "Price Tracker"
+        title = "Price Tracker"
+        navigationItem.largeTitleDisplayMode = .never
+
+        productHeader.backgroundColor = .systemGroupedBackground
+        productHeader.translatesAutoresizingMaskIntoConstraints = false
+        productTitleLabel.font = .preferredFont(forTextStyle: .title3)
+        productTitleLabel.adjustsFontForContentSizeCategory = true
+        productTitleLabel.textColor = .label
+        productTitleLabel.numberOfLines = 0
+        productTitleLabel.lineBreakMode = .byWordWrapping
+        productTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        productHeader.addSubview(productTitleLabel)
+        view.addSubview(productHeader)
 
         tableView.dataSource = self
         tableView.delegate = self
+        tableView.contentInsetAdjustmentBehavior = .never
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "store")
         tableView.tableFooterView = makeAddSellerFooter()
@@ -135,7 +150,14 @@ final class PriceTrackingViewController: UIViewController {
         view.addSubview(footer)
 
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            productHeader.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            productHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            productHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            productTitleLabel.topAnchor.constraint(equalTo: productHeader.topAnchor, constant: 12),
+            productTitleLabel.leadingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.leadingAnchor),
+            productTitleLabel.trailingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.trailingAnchor),
+            productTitleLabel.bottomAnchor.constraint(equalTo: productHeader.bottomAnchor, constant: -10),
+            tableView.topAnchor.constraint(equalTo: productHeader.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: footer.topAnchor),
@@ -229,7 +251,7 @@ final class PriceTrackingViewController: UIViewController {
         thresholdSlider.configure(
             fraction: tracker.alertThresholdFraction,
             initialPrice: tracker.initialPrice, currency: tracker.initialCurrency)
-        title = tracker.productName
+        productTitleLabel.text = tracker.productName
     }
 
     // MARK: - Add seller
@@ -321,7 +343,13 @@ final class PriceTrackingViewController: UIViewController {
         let searchURL = ProductSearchURL.googleShoppingURL(forProductName: productName)
             ?? URL(string: "https://www.google.com")
         guard let searchURL else { return }
-        let overlay = ProductSearchOverlayViewController(initialURL: searchURL)
+        let trackedProduct = ProductInfo(
+            name: tracker?.productName ?? productName,
+            priceAmount: tracker?.initialPrice ?? 0,
+            priceCurrency: tracker?.initialCurrency ?? "USD",
+            imageURL: nil, brand: tracker?.brand, productID: tracker?.productID)
+        let overlay = ProductSearchOverlayViewController(
+            initialURL: searchURL, trackedProduct: trackedProduct)
         overlay.onUseThisPage = { [weak self] urlString, html, completion in
             self?.addSeller(
                 urlString: urlString, prefetchedHTML: html.isEmpty ? nil : html,

@@ -50,20 +50,20 @@ final class SurfaceParityTests: XCTestCase {
     // MARK: - Fake extension host (records what the driver presented)
 
     private final class FakeExtensionHost: ExtensionHost {
-        let isActionExtension: Bool
         var readerMode: ShareReaderViewController.Mode?
         private(set) var presented: [UIViewController] = []
         private(set) var confirmedSaved = false
+        private(set) var completedSilently = false
         private(set) var autoDownloadedURL: String?
         private(set) var error: String?
 
         init(isActionExtension: Bool) {
-            self.isActionExtension = isActionExtension
             self.readerMode = isActionExtension ? .reader : nil
         }
 
         func presentModally(_ viewController: UIViewController) { presented.append(viewController) }
         func confirmSavedThenComplete() { confirmedSaved = true }
+        func completeSilently() { completedSilently = true }
         func autoDownloadThenComplete(urlString: String) { autoDownloadedURL = urlString }
         func failOrComplete(_ message: String) { error = message }
 

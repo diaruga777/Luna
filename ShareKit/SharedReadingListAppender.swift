@@ -16,7 +16,8 @@ enum SharedReadingListAppender {
     static let appGroupID = "group.com.hpiddy.clip"
 
     static func append(urlString: String) {
-        guard !urlString.isEmpty else { return }
+        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
+        let urlString = url.absoluteString
         insertIfNew(dedupeURLString: urlString) {
             newItemDict(id: UUID(), urlString: urlString, title: nil, documentType: nil)
         }

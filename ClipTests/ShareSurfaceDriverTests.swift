@@ -18,16 +18,15 @@ final class ShareSurfaceDriverTests: XCTestCase {
     /// Records everything the driver asked the host to do, so the per-surface
     /// presentation can be asserted in isolation.
     final class FakeExtensionHost: ExtensionHost {
-        let isActionExtension: Bool
         var readerMode: ShareReaderViewController.Mode?
 
         private(set) var presented: [UIViewController] = []
         private(set) var confirmedSaved = false
+        private(set) var completedSilently = false
         private(set) var autoDownloadedURL: String?
         private(set) var error: String?
 
         init(isActionExtension: Bool) {
-            self.isActionExtension = isActionExtension
             // Mirrors `ShareViewController.readerMode`: action ext opens a reader, the
             // zero-UI share ext saves silently (nil).
             self.readerMode = isActionExtension ? .reader : nil
@@ -35,6 +34,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
 
         func presentModally(_ viewController: UIViewController) { presented.append(viewController) }
         func confirmSavedThenComplete() { confirmedSaved = true }
+        func completeSilently() { completedSilently = true }
         func autoDownloadThenComplete(urlString: String) { autoDownloadedURL = urlString }
         func failOrComplete(_ message: String) { error = message }
     }
@@ -99,8 +99,9 @@ final class ShareSurfaceDriverTests: XCTestCase {
                        "YouTube still takes the (no-op) auto-download/confirm path")
     }
 
-    /// A social post via the share extension persists its platform + item id too.
-    func testShareExtensionPersistsSocialClassification() {
+    /// A downloadable social post in the share extension persists its platform +
+    /// item id and opens the same explicit media-download UI as the action extension.
+    func testShareExtensionPresentsDownloadUIForSocialMedia() {
         let urlString = "https://x.com/jack/status/20"
         _ = store.add(urlString: urlString)
         let (driver, host) = makeDriver(isActionExtension: false)
@@ -110,7 +111,22 @@ final class ShareSurfaceDriverTests: XCTestCase {
         let saved = store.item(forURLString: urlString)
         XCTAssertEqual(saved?.contentPlatform, .x)
         XCTAssertEqual(saved?.platformItemID, "20")
-        XCTAssertEqual(host.autoDownloadedURL, urlString)
+        XCTAssertTrue(host.presented.first is SavedNonTextualViewController)
+        XCTAssertNil(host.autoDownloadedURL)
+    }
+
+    /// TikTok is a video platform but is not a YouTube player. Its identity must
+    /// survive extension presentation so it receives the social media UI.
+    func testShareExtensionPresentsDownloadUIForTikTokVideo() {
+        let urlString = "https://www.tiktok.com/@u/video/7212345678901234567"
+        _ = store.add(urlString: urlString)
+        let (driver, host) = makeDriver(isActionExtension: false)
+
+        driver.present(.video(.tiktok, itemID: "7212345678901234567"), url: url(urlString))
+
+        XCTAssertEqual(store.item(forURLString: urlString)?.contentPlatform, .tiktok)
+        XCTAssertTrue(host.presented.first is SavedNonTextualViewController)
+        XCTAssertNil(host.autoDownloadedURL)
     }
 
     /// The action extension shows the saved-non-textual screen for a video (the reader
@@ -162,7 +178,7 @@ final class ShareSurfaceDriverTests: XCTestCase {
     // MARK: - Article / failure parity
 
     /// The action extension presents the in-sheet reader for an article and persists
-    /// the content; the share extension saves silently + confirms.
+    /// the content; the share extension completes with no UI.
     func testArticlePresentationDiffersByHostButPersistsBoth() {
         let urlString = "https://example.com/story"
 
@@ -177,12 +193,13 @@ final class ShareSurfaceDriverTests: XCTestCase {
         _ = store.add(urlString: urlString)
         let (shareDriver, shareHost) = makeDriver(isActionExtension: false)
         shareDriver.present(.article(sampleContent(), html: "<html></html>"), url: url(urlString))
-        XCTAssertTrue(shareHost.confirmedSaved, "share ext saves silently + confirms for an article")
+        XCTAssertTrue(shareHost.completedSilently, "share ext must show no UI for an article")
+        XCTAssertFalse(shareHost.confirmedSaved)
         XCTAssertTrue(shareHost.presented.isEmpty)
     }
 
-    /// `.failed` shows an error in the action extension (never a "Saved" checkmark) and
-    /// completes quietly in the share extension (marking the item failed for retry).
+    /// `.failed` shows an error in the action extension and completes without UI in
+    /// the share extension (marking the item failed for retry).
     func testFailedSurfacesErrorInActionAndQuietCompleteInShare() {
         let urlString = "https://example.com/dead"
 
@@ -196,7 +213,8 @@ final class ShareSurfaceDriverTests: XCTestCase {
         _ = store.add(urlString: urlString)
         let (shareDriver, shareHost) = makeDriver(isActionExtension: false)
         shareDriver.present(.failed, url: url(urlString))
-        XCTAssertTrue(shareHost.confirmedSaved)
+        XCTAssertTrue(shareHost.completedSilently)
+        XCTAssertFalse(shareHost.confirmedSaved)
         XCTAssertEqual(store.item(forURLString: urlString)?.state, .failed)
     }
 }

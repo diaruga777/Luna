@@ -1,6 +1,7 @@
 project_doc_fallback_filenames = [".claude/rules/blitz.md", ".claude/rules/teenybase.md"]
 project_doc_max_bytes = 65536
 
+sandbox_mode = "danger-full-access"
 [mcp_servers.blitz_macos]
 command = "/Users/hsp/.blitz/blitz-macos-mcp"
 cwd = "/Users/hsp/.blitz/projects/clip"

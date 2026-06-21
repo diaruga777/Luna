@@ -258,6 +258,7 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         case .media(let image):
             if let image {
                 previewImageView.image = image
+                persistPreviewThumbnail(image)
             } else {
                 // Media exists but its still couldn't be fetched — show a labeled box
                 // (not blank) so the empty space reads as a load failure, not a bug.
@@ -266,6 +267,16 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
             downloadButton.alpha = 1
             downloadButton.isUserInteractionEnabled = true
         }
+    }
+
+    /// The extension is the first surface to resolve this media. Persist the
+    /// downsampled still into the shared store so the main app's platform card has
+    /// a thumbnail even though no article ingestion will run for a ready platform
+    /// item.
+    private func persistPreviewThumbnail(_ image: UIImage) {
+        guard let data = image.jpegData(compressionQuality: 0.88),
+              let item = ReadingListStore.shared.item(forURLString: articleURLString) else { return }
+        ReadingListStore.shared.setThumbnail(data, for: item.id)
     }
 
     private func startMediaDownload() {

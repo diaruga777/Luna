@@ -185,7 +185,10 @@ final class ShareViewController: UIViewController {
     }
 
     /// Handles the Safari JavaScript-preprocessing result: a property-list whose
-    /// `NSExtensionJavaScriptPreprocessingResultsKey` holds `{URL, title}`.
+    /// `NSExtensionJavaScriptPreprocessingResultsKey` holds `{URL, title, Kind,
+    /// ArticleText}`. Safari only sends the compact text snapshot after its cheap DOM
+    /// classifier identifies a substantial ordinary article; product/paywall/platform
+    /// links continue into their dedicated pipeline paths.
     private func handleJavaScriptResult(_ provider: NSItemProvider) {
         SharedDiagnosticLog.record("action: loading JS result", category: "share")
         // Strong self: the work + reader presentation need the VC alive, and
@@ -196,17 +199,21 @@ final class ShareViewController: UIViewController {
             let dict = item as? NSDictionary
             let results = dict?[NSExtensionJavaScriptPreprocessingResultsKey] as? NSDictionary
             let rawURLString = results?["URL"] as? String
-            // Offline-unwrap (Facebook deep link / classic Google News) to a real http
-            // URL before the gate; the pipeline finishes any async unwrap downstream.
-            let urlString = rawURLString.map(URLUnwrapper.unwrapOffline)
+            let title = results?["title"] as? String
+            let kind = results?["Kind"] as? String
+            let articleText = results?["ArticleText"] as? String
+            let prefetchedHTML = kind == "article"
+                ? Self.articleSnapshotHTML(title: title, text: articleText)
+                : nil
+            let url = rawURLString.flatMap { URLUnwrapper.ingestURL(from: $0) }
             SharedDiagnosticLog.record(
-                "action: JS callback url=\(urlString ?? "nil") err=\(error.map { String(describing: $0) } ?? "nil")",
+                "action: JS callback url=\(url?.absoluteString ?? "nil") err=\(error.map { String(describing: $0) } ?? "nil")",
                 category: "share")
             DispatchQueue.main.async {
-                if let urlString, urlString.hasPrefix("http"), let url = URL(string: urlString) {
-                    SharedReadingListAppender.append(urlString: urlString)
-                    SharedDiagnosticLog.record("saved url (js) \(urlString)", category: "share")
-                    self.presentSavedOrReader(url: url)
+                if let url {
+                    SharedReadingListAppender.append(urlString: url.absoluteString)
+                    SharedDiagnosticLog.record("saved url (js) \(url.absoluteString)", category: "share")
+                    self.presentSavedOrReader(url: url, prefetchedHTML: prefetchedHTML)
                 } else {
                     self.failOrComplete("Couldn't read the shared page's address.")
                 }
@@ -218,19 +225,15 @@ final class ShareViewController: UIViewController {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
             guard let self else { return }
             self.cancelLoadWatchdog()
-            // Offline-unwrap a Facebook deep link (`fbrpc://…&target_url=…`) /
-            // classic Google News id to its real http URL BEFORE the http gate (a
-            // file URL is left untouched). The pipeline finishes any async unwrap.
             let raw = value as? URL
-            let normalized = raw.flatMap { $0.isFileURL ? $0 : URLUnwrapper.unwrapOffline($0).url }
-            if let url = normalized, url.absoluteString.hasPrefix("http") {
+            if let raw, raw.isFileURL {
+                SharedReadingListAppender.appendDocument(sourceURL: raw)
+                SharedDiagnosticLog.record("saved file \(raw.lastPathComponent)", category: "share")
+                self.completeAfterDirectSave()
+            } else if let raw, let url = URLUnwrapper.ingestURL(from: raw.absoluteString) {
                 SharedReadingListAppender.append(urlString: url.absoluteString)
                 SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
                 self.presentSavedOrReader(url: url)
-            } else if let url = value as? URL, url.isFileURL {
-                SharedReadingListAppender.appendDocument(sourceURL: url)
-                SharedDiagnosticLog.record("saved file \(url.lastPathComponent)", category: "share")
-                self.confirmSavedThenComplete()
             } else {
                 SharedDiagnosticLog.record("url attachment had no URL value", category: "share")
                 self.failOrComplete("Couldn't read the shared link.")
@@ -242,11 +245,34 @@ final class ShareViewController: UIViewController {
     /// through the host-agnostic `ShareSurfaceDriver` (which unwraps + classifies +
     /// processes under a hard timeout, then persists + presents the `Outcome` via this
     /// VC as its `ExtensionHost`). Safe to call from any thread.
-    private func presentSavedOrReader(url originalURL: URL) {
+    private func presentSavedOrReader(url originalURL: URL, prefetchedHTML: String? = nil) {
         Task { [weak self] in
             guard let self else { return }
-            await ShareSurfaceDriver(host: self).ingestAndPresent(originalURL: originalURL)
+            await ShareSurfaceDriver(host: self).ingestAndPresent(
+                originalURL: originalURL, prefetchedHTML: prefetchedHTML)
         }
+    }
+
+    /// Converts Safari's text-only action snapshot into the smallest valid HTML
+    /// document our shared extractor consumes. The JavaScript preprocessor classifies
+    /// before sending this data, so this never turns a product or paywall into an
+    /// article merely to avoid a fetch.
+    private static func articleSnapshotHTML(title: String?, text: String?) -> String? {
+        guard let text, text.count >= ArticleContent.readableBodyThreshold else { return nil }
+        let escapedTitle = escapeHTML(title ?? "Untitled")
+        let escapedText = escapeHTML(text).replacingOccurrences(of: "\n", with: "<br>")
+        return "<html><head><title>\(escapedTitle)</title></head>"
+            + "<body><article><p>\(escapedText)"
+            + "</p></article></body></html>"
+    }
+
+    private static func escapeHTML(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 
     /// Handles a shared text item by extracting the first web link from it (how
@@ -259,8 +285,9 @@ final class ShareViewController: UIViewController {
             // A Facebook deep link (`fbrpc://…&target_url=…`) shared as text isn't a
             // link `ShareTextURL.extract` can detect, so unwrap it to its real http
             // article first; otherwise fall back to the normal link extraction.
-            guard let text, let url = Self.facebookTargetIfPresent(in: text)
-                ?? ShareTextURL.extract(from: text) else {
+            guard let text, let extracted = Self.facebookTargetIfPresent(in: text)
+                ?? ShareTextURL.extract(from: text),
+                  let url = URLUnwrapper.ingestURL(from: extracted.absoluteString) else {
                 self.failOrComplete("No link found to save.")
                 return
             }
@@ -293,24 +320,25 @@ final class ShareViewController: UIViewController {
             // the file (drop the surrounding text).
             if type.conforms(to: .text),
                let contents = try? String(contentsOf: url, encoding: .utf8),
-               let extracted = ShareTextURL.extract(from: contents) {
-                SharedReadingListAppender.append(urlString: extracted.absoluteString)
+               let extracted = ShareTextURL.extract(from: contents),
+               let normalized = URLUnwrapper.ingestURL(from: extracted.absoluteString) {
+                SharedReadingListAppender.append(urlString: normalized.absoluteString)
                 SharedDiagnosticLog.record(
-                    "saved url (text file) \(extracted.absoluteString)", category: "share")
-                self.presentSavedOrReader(url: extracted)
+                    "saved url (text file) \(normalized.absoluteString)", category: "share")
+                self.presentSavedOrReader(url: normalized)
                 return
             }
             SharedReadingListAppender.appendDocument(sourceURL: url)
             SharedDiagnosticLog.record("saved document \(url.lastPathComponent)", category: "share")
-            self.confirmSavedThenComplete()
+            self.completeAfterDirectSave()
         }
     }
 
     private func handleFriendShare(_ provider: NSItemProvider, friendUUID: UUID) {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
             self?.cancelLoadWatchdog()
-            let normalized = (value as? URL).map { URLUnwrapper.unwrapOffline($0).url }
-            if let url = normalized, url.absoluteString.hasPrefix("http") {
+            if let raw = value as? URL,
+               let url = URLUnwrapper.ingestURL(from: raw.absoluteString) {
                 PendingFriendShareWriter.enqueue(
                     friendUUID: friendUUID, urlString: url.absoluteString)
             }
@@ -339,6 +367,19 @@ final class ShareViewController: UIViewController {
         DispatchQueue.main.async { [weak self] in
             self?.showSavedBadge()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { self?.finishRequest() }
+        }
+    }
+
+    func completeSilently() {
+        cancelLoadWatchdog()
+        complete()
+    }
+
+    private func completeAfterDirectSave() {
+        if isActionExtension {
+            confirmSavedThenComplete()
+        } else {
+            completeSilently()
         }
     }
 

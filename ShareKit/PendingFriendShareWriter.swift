@@ -17,6 +17,7 @@ enum PendingFriendShareWriter {
     }
 
     static func enqueue(friendUUID: UUID, urlString: String) {
+        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
         guard let fileURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: SharedReadingListAppender.appGroupID)?
             .appendingPathComponent("pendingFriendShares.json")
@@ -26,7 +27,7 @@ enum PendingFriendShareWriter {
            let decoded = try? JSONDecoder().decode([Share].self, from: data) {
             queue = decoded
         }
-        queue.append(Share(friendUUID: friendUUID, urlString: urlString))
+        queue.append(Share(friendUUID: friendUUID, urlString: url.absoluteString))
         if let data = try? JSONEncoder().encode(queue) {
             try? data.write(to: fileURL, options: .atomic)
         }

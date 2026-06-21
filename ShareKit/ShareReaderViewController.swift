@@ -87,7 +87,7 @@ final class ShareReaderViewController: UIViewController {
         if let precomputedOutcome {
             outcome = precomputedOutcome
         } else {
-            outcome = await IngestPipeline.process(IngestInput(url: url, source: .appIntent))
+            outcome = await IngestPipeline.process(IngestInput(url: url, source: .shareSheet))
         }
 
         switch outcome {

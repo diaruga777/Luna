@@ -55,6 +55,7 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
                          _ completion: @escaping (ProductSearchAddOutcome) -> Void) -> Void)?
 
     private let initialURL: URL
+    private let trackedProduct: ProductInfo
 
     private let dimView = UIView()
     private let card = UIView()
@@ -89,8 +90,9 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
     private static let buttonSize: CGFloat = 40
     private static let buttonInset: CGFloat = 14
 
-    init(initialURL: URL) {
+    init(initialURL: URL, trackedProduct: ProductInfo) {
         self.initialURL = initialURL
+        self.trackedProduct = trackedProduct
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
     }
@@ -232,7 +234,7 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
         // is up — matching `SearchViewController`'s pattern.
         let aboveKeyboard = bottomBar.bottomAnchor.constraint(
             equalTo: view.keyboardLayoutGuide.topAnchor)
-        aboveKeyboard.priority = .defaultHigh
+        aboveKeyboard.priority = .required
         let cap = bottomBar.bottomAnchor.constraint(
             lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8)
         bottomBarBottomCap = cap
@@ -381,7 +383,8 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
                 guard let self else { return }
                 let metadata = await ProductPageSuggestion.resolve(url: url, html: html)
                 await MainActor.run {
-                    guard metadata != nil,
+                guard let metadata,
+                      Self.matchesTrackedProduct(metadata, tracked: self.trackedProduct),
                           !self.isOfferingUseThisPage,
                           self.suggestionDebouncer.shouldOffer(urlString: url.absoluteString)
                     else { return }
@@ -389,5 +392,20 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
                 }
             }
         }
+    }
+
+    /// A seller suggestion must be for the tracker currently being edited, not just
+    /// any priced product reached from a shopping search.
+    private static func matchesTrackedProduct(_ metadata: ProductMetadata, tracked: ProductInfo) -> Bool {
+        let candidate = ProductInfo(
+            name: metadata.name, priceAmount: metadata.price.amount,
+            priceCurrency: metadata.price.currency, imageURL: metadata.imageURL,
+            brand: metadata.brand, productID: metadata.productID)
+        if let candidateID = ProductMatcher.normalizedID(candidate.productID),
+           candidateID == ProductMatcher.normalizedID(tracked.productID) {
+            return true
+        }
+        return ProductMatcher.brandsCompatible(candidate.brand, tracked.brand)
+            && ProductMatcher.nameSimilarity(candidate.name, tracked.name) >= ProductMatcher.nameThreshold
     }
 }

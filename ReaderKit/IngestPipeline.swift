@@ -86,6 +86,14 @@ enum Outcome: Equatable {
     }
 }
 
+/// The complete result of URL ingestion. `url` is the exact canonical URL that
+/// was classified and processed, including any async wrapper resolution. Store
+/// writers must use it instead of independently re-unwrapping the input.
+struct IngestResult: Equatable {
+    let url: URL
+    let outcome: Outcome
+}
+
 /// THE single shared ingest pipeline every surface calls. It runs the WHOLE
 /// decision identically for the main app, both share-sheet extensions, the app
 /// intents, and incoming friend shares — so they can never diverge in WHAT they
@@ -104,8 +112,8 @@ enum Outcome: Equatable {
 ///
 /// The whole call is wrapped in ONE mandatory overall timeout (`processTimeout`),
 /// so it can NEVER hang — on timeout it returns `.failed` (or `.needsArchive` for a
-/// hard-paywall host). This + the Stage-2 "WebView render unreachable in
-/// extensions" (`render == nil`) is the action-extension "spinner forever" fix.
+/// hard-paywall host). Every production surface uses the same no-WebView processing
+/// policy, keeping classification independent of the capture host.
 ///
 /// Dependency-free of UIKit/CloudKit so it compiles in the extension targets. Never
 /// writes the store — the surface persists from the `Outcome`. Tested by
@@ -121,9 +129,8 @@ enum IngestPipeline {
     /// returns `.needsArchive` for a hard-paywall host (the archive reader is its
     /// only route) and `.failed` otherwise — never an infinite wait.
     ///
-    /// - `render`: the bounded WKWebView render tier for a JS-only product price.
-    ///   DEFAULT nil ⇒ structurally unreachable, so an extension can never spin up a
-    ///   WebView (the "spins forever" fix). The main app injects a real renderer.
+    /// - `render`: an optional rendered-HTML test seam for JS-only product prices.
+    ///   Production callers leave it nil so every capture surface processes equally.
     static func process(
         _ input: IngestInput,
         timeout: TimeInterval = processTimeout,
@@ -136,7 +143,29 @@ enum IngestPipeline {
         runner: BypassRunning? = nil,
         replayLog: ((EventKind) async -> Void)? = nil
     ) async -> Outcome {
-        await withTaskGroup(of: Outcome?.self) { group in
+        await processResolved(
+            input, timeout: timeout, session: session, fetcher: fetcher,
+            extractor: extractor, productDetector: productDetector,
+            metadataExtractor: metadataExtractor, render: render, runner: runner,
+            replayLog: replayLog).outcome
+    }
+
+    /// Runs the pipeline and returns both the outcome and the canonical URL it
+    /// processed. This is the persistence-facing API used by every surface that
+    /// needs to update/dedupe a stored item after an async unwrap.
+    static func processResolved(
+        _ input: IngestInput,
+        timeout: TimeInterval = processTimeout,
+        session: URLSession = .shared,
+        fetcher: HTMLFetching = ArticleFetcher(),
+        extractor: ArticleExtractor = ArticleExtractor(),
+        productDetector: ProductPageDetector = ProductPageDetector(),
+        metadataExtractor: ProductMetadataExtractor = ProductMetadataExtractor(),
+        render: ((URL) async -> String?)? = nil,
+        runner: BypassRunning? = nil,
+        replayLog: ((EventKind) async -> Void)? = nil
+    ) async -> IngestResult {
+        await withTaskGroup(of: IngestResult?.self) { group in
             group.addTask {
                 await runUnbounded(
                     input, session: session, fetcher: fetcher, extractor: extractor,
@@ -147,13 +176,15 @@ enum IngestPipeline {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 // The timeout leg returns the hard-fail fallback for `input.url` — a
                 // hard-paywall host parks for the archive reader, everything else fails.
-                return ArticleFetcher.isHardPaywallHost(input.url)
-                    ? .needsArchive(title: ArticleFetcher.articleTitleGuess(from: input.url))
+                let url = URLUnwrapper.unwrapOffline(input.url).url
+                let outcome = ArticleFetcher.isHardPaywallHost(url)
+                    ? Outcome.needsArchive(title: ArticleFetcher.articleTitleGuess(from: url))
                     : .failed
+                return IngestResult(url: url, outcome: outcome)
             }
-            let first = await group.next() ?? .failed
+            let first = await group.next() ?? IngestResult(url: input.url, outcome: .failed)
             group.cancelAll()
-            return first ?? .failed
+            return first ?? IngestResult(url: input.url, outcome: .failed)
         }
     }
 
@@ -169,7 +200,7 @@ enum IngestPipeline {
         render: ((URL) async -> String?)?,
         runner: BypassRunning?,
         replayLog: ((EventKind) async -> Void)?
-    ) async -> Outcome {
+    ) async -> IngestResult {
         // (1) Unwrap ONCE — every surface gets the same offline-first, tracking-
         // stripped unwrap (Facebook deep links, Apple/Google News, shorteners).
         let unwrapped = await URLUnwrapper.unwrap(input.url, session: session)
@@ -185,21 +216,22 @@ enum IngestPipeline {
         let kind = Classifier.classify(url: url, documentType: input.documentType)
         switch kind {
         case .document(let type):
-            return .document(type: type)
+            return IngestResult(url: url, outcome: .document(type: type))
         case let .video(platform, itemID):
-            return .video(platform, itemID: itemID)
+            return IngestResult(url: url, outcome: .video(platform, itemID: itemID))
         case let .social(platform, itemID):
-            return .social(platform, itemID: itemID)
+            return IngestResult(url: url, outcome: .social(platform, itemID: itemID))
         case let .audio(platform, service, itemID):
-            return .audio(platform, service: service, itemID: itemID)
+            return IngestResult(
+                url: url, outcome: .audio(platform, service: service, itemID: itemID))
         case .product, .article, .paywalledArticle, .undetermined:
             // Web processing: only NOW do we fetch HTML, (re)classify with the HTML
             // for the undetermined/product confirmation, fetch price, resolve the
             // article, run the bypass plan.
-            return await processWeb(
+            return IngestResult(url: url, outcome: await processWeb(
                 url: url, classifiedKind: kind, input: input, fetcher: fetcher, extractor: extractor,
                 productDetector: productDetector, metadataExtractor: metadataExtractor,
-                render: render, runner: runner, replayLog: replayLog)
+                render: render, runner: runner, replayLog: replayLog))
         }
     }
 

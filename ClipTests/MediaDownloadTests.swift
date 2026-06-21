@@ -14,6 +14,7 @@ final class MediaDownloadTests: XCTestCase {
         XCTAssertTrue(MediaDownloadablePlatform.supports("https://x.com/jack/status/20"))
         XCTAssertTrue(MediaDownloadablePlatform.supports("https://www.instagram.com/p/ABC123/"))
         XCTAssertTrue(MediaDownloadablePlatform.supports("https://www.tiktok.com/@user/video/123"))
+        XCTAssertTrue(MediaDownloadablePlatform.supports("https://www.facebook.com/reel/123"))
         XCTAssertFalse(MediaDownloadablePlatform.supports("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
         XCTAssertFalse(MediaDownloadablePlatform.supports("https://example.com/article"))
         XCTAssertFalse(MediaDownloadablePlatform.supports("https://reddit.com/r/swift/comments/1/x"))
@@ -176,6 +177,23 @@ final class MediaDownloadTests: XCTestCase {
         let resolver = SocialMediaResolver(fetch: { _ in json })
         let assets = await resolver.resolveAssets(for: URL(string: "https://x.com/jack/status/20")!)
         XCTAssertEqual(assets, [MediaAsset(url: URL(string: "https://video.twimg.com/b.mp4")!, kind: .video)])
+    }
+
+    func testResolverUsesFacebookOpenGraphVideo() async {
+        let html = Data("""
+        <html><head>
+        <meta property="og:image" content="https://cdn.facebook.com/poster.jpg">
+        <meta property="og:video" content="https://cdn.facebook.com/reel.mp4">
+        </head></html>
+        """.utf8)
+        let resolver = SocialMediaResolver(fetch: { _ in html })
+
+        let assets = await resolver.resolveAssets(
+            for: URL(string: "https://www.facebook.com/reel/123")!)
+
+        XCTAssertEqual(assets, [
+            MediaAsset(url: URL(string: "https://cdn.facebook.com/reel.mp4")!, kind: .video),
+        ])
     }
 
     func testResolverReturnsEmptyForUnsupported() async {

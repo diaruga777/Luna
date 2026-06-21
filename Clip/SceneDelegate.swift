@@ -85,12 +85,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             pendingReadURL = articleURL
             return
         }
+        guard let normalizedURL = URLUnwrapper.ingestURL(from: articleURL) else { return }
+        let urlString = normalizedURL.absoluteString
         Task { @MainActor in
-            let result = await ReadingListIngestor.shared.handleSavePress(urlString: articleURL)
+            let result = await ReadingListIngestor.shared.handleSavePress(urlString: urlString)
             let itemID: UUID?
             switch result {
             case .saved(let item), .sentToEreaders(let item): itemID = item.id
-            case .ignored: itemID = ReadingListStore.shared.item(forURLString: articleURL)?.id
+            case .ignored: itemID = ReadingListStore.shared.item(forURLString: urlString)?.id
             }
             nav.popToRootViewController(animated: false)
             guard let itemID, let item = ReadingListStore.shared.item(withID: itemID),

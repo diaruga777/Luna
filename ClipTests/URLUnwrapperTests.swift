@@ -60,6 +60,19 @@ final class URLUnwrapperTests: XCTestCase {
         return url
     }
 
+    func testIngestURLIsTheSharedInputGate() {
+        XCTAssertEqual(
+            URLUnwrapper.ingestURL(
+                from: " fbrpc://nativethirdparty/f?target_url=https%3A%2F%2Fexample.com%2Fstory%3Futm_source%3Dshare ")?
+                .absoluteString,
+            "https://example.com/story")
+        XCTAssertEqual(
+            URLUnwrapper.ingestURL(from: "example.com/story", allowBareHost: true)?.absoluteString,
+            "https://example.com/story")
+        XCTAssertNil(URLUnwrapper.ingestURL(from: "mailto:person@example.com"))
+        XCTAssertNil(URLUnwrapper.ingestURL(from: "not a url"))
+    }
+
     override func setUp() {
         super.setUp()
         UnwrapMockProtocol.reset()

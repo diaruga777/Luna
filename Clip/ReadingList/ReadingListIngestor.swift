@@ -53,25 +53,29 @@ final class ReadingListIngestor {
             source: .capture(item.effectiveCaptureSource))
         if let replayID { await recorder.attachItemID(item.id, to: replayID) }
 
-        // Unwrap news-aggregator wrappers (Apple News, Google News, link
-        // shorteners) ONCE, up front, so the store URL / replay / dedup all see the
-        // real publisher article — both extraction and the archive.today reader need
-        // the real URL, not the wrapper. The pipeline below unwraps again
-        // idempotently (a non-wrapper URL returns unchanged), keeping it the single
-        // decision authority while this step owns the store-repoint side effect.
         var item = item
-        var url = initialURL
-        let unwrapped = await URLUnwrapper.unwrap(initialURL)
-        if unwrapped.didUnwrap {
+        let url = initialURL
+
+        // The fetcher is wrapped so every request/response is captured into the replay.
+        let resolveFetcher: HTMLFetching = replayID
+            .map { RecordingHTMLFetcher(wrapping: fetcher, recorder: recorder, replayID: $0) }
+            ?? fetcher
+
+        // The ONE shared pipeline resolves wrappers, classifies, and processes every
+        // URL. Its result carries the exact final URL, so this store is repointed
+        // without independently repeating the unwrap work.
+        let result = await IngestPipeline.processResolved(
+            IngestInput(url: url, source: item.effectiveCaptureSource,
+                        documentType: item.sanitizedDocumentType, forceArticle: forceArticle),
+            fetcher: resolveFetcher, extractor: extractor,
+            replayLog: replayID.map { id in { [recorder] event in await recorder.record(event, for: id) } })
+
+        let resolvedURL = result.url
+        if resolvedURL != url {
             SharedDiagnosticLog.record(
-                "ingest: unwrapped \(initialURL.absoluteString) → \(unwrapped.url.absoluteString)",
+                "ingest: unwrapped \(url.absoluteString) → \(resolvedURL.absoluteString)",
                 category: "ingest")
-            if let replayID {
-                await recorder.record(
-                    .unwrap(fromURLString: initialURL.absoluteString,
-                            toURLString: unwrapped.url.absoluteString), for: replayID)
-            }
-            guard let updated = store.updateURL(unwrapped.url.absoluteString, for: item.id) else {
+            guard let updated = store.updateURL(resolvedURL.absoluteString, for: item.id) else {
                 // The unwrapped article already exists in the list; wrapper dropped.
                 if let replayID {
                     await recorder.record(.note("unwrapped URL already saved; dropped"), for: replayID)
@@ -80,19 +84,16 @@ final class ReadingListIngestor {
                 return
             }
             item = updated
-            url = updated.url ?? unwrapped.url
-            if let replayID { await recorder.updateItemURL(url.absoluteString, for: replayID) }
+            if let replayID { await recorder.updateItemURL(resolvedURL.absoluteString, for: replayID) }
         }
 
-        // Re-save dedup BEFORE the pipeline: if this exact URL is already a store
+        // Re-save dedup AFTER resolution: if this exact URL is already a store
         // inside an existing price tracker, it was already classified as
-        // price-tracking on a previous save. Re-running the pipeline could reach a
-        // different outcome (UA/render variance) and a re-merge would no-op into a
-        // duplicate tracker — so short-circuit to the existing tracker
-        // deterministically. (The merge path deletes the placeholder on first merge,
-        // so a re-save arrives as a fresh placeholder here.)
+        // price-tracking on a previous save. The merge path deletes the placeholder,
+        // so a re-save arrives as a fresh placeholder here.
         if !forceArticle,
-           let (existingTrackerItemID, _) = store.priceTracker(containingStoreURL: url.absoluteString),
+           let (existingTrackerItemID, _) = store.priceTracker(
+               containingStoreURL: resolvedURL.absoluteString),
            existingTrackerItemID != item.id {
             store.delete(item)
             if let replayID {
@@ -102,30 +103,12 @@ final class ReadingListIngestor {
                 await recorder.terminate(replayID, state: .success, finalContent: nil)
             }
             postPriceTrackerSaved(itemID: existingTrackerItemID, source: item.effectiveCaptureSource,
-                                  isMerge: true, highlightedURL: url.absoluteString)
+                                  isMerge: true, highlightedURL: resolvedURL.absoluteString)
             return
         }
 
-        // The fetcher is wrapped so every request/response is captured into the replay.
-        let resolveFetcher: HTMLFetching = replayID
-            .map { RecordingHTMLFetcher(wrapping: fetcher, recorder: recorder, replayID: $0) }
-            ?? fetcher
-
-        // The ONE shared pipeline: unwrap → classify (platform/video/audio/document
-        // first, so a video can never be text-extracted) → per-kind processing, all
-        // under ONE overall timeout so it can never hang. The app and every extension
-        // decide identically; they differ only in how they present the `Outcome`.
-        let outcome = await IngestPipeline.process(
-            IngestInput(url: url, source: item.effectiveCaptureSource,
-                        documentType: item.sanitizedDocumentType, forceArticle: forceArticle),
-            fetcher: resolveFetcher, extractor: extractor,
-            // Main app only: the bounded WKWebView render tier for a JS-only price. The
-            // extensions pass no renderer (default nil), so they can never spin one up.
-            render: { url in await WebViewPriceRenderer.renderedHTML(for: url) },
-            replayLog: replayID.map { id in { [recorder] event in await recorder.record(event, for: id) } })
-
-        let presenter = IngestorOutcomePresenter(ingestor: self, url: url, replayID: replayID)
-        await presenter.present(outcome, for: item)
+        let presenter = IngestorOutcomePresenter(ingestor: self, url: resolvedURL, replayID: replayID)
+        await presenter.present(result.outcome, for: item)
     }
 
     // MARK: - Outcome handling (the main-app presenter, store-writing)
@@ -286,17 +269,16 @@ final class ReadingListIngestor {
                               isMerge: false, highlightedURL: nil)
     }
 
-    /// Announces a just-created/merged price tracker from an INTERACTIVE save
-    /// (paste / manual / app intent) so the foreground reading list can present
-    /// the price-tracking screen (with a Cancel → save as article fallback).
-    /// Background/extension/friend-share saves stay silent.
+    /// Announces a just-created/merged price tracker from an interactive in-app
+    /// save (paste/manual) so the foreground list can present the price editor.
+    /// App Intents, extensions, and background/friend saves must never trigger UI.
     private func postPriceTrackerSaved(
         itemID: UUID, source: CaptureSource, isMerge: Bool, highlightedURL: String?
     ) {
         switch source {
-        case .paste, .manual, .appIntent:
+        case .paste, .manual:
             break
-        case .shareSheet, .friendShare, .email:
+        case .appIntent, .shareSheet, .friendShare, .email:
             return
         }
         let userInfo: [String: Any] = [
@@ -496,6 +478,8 @@ final class ReadingListIngestor {
     /// URL is ignored. Awaits the resulting work (callers bound it with a timeout).
     @discardableResult
     func handleSavePress(urlString: String, source: CaptureSource = .manual) async -> SavePressResult {
+        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }
+        let urlString = url.absoluteString
         let existing = store.item(forURLString: urlString)
         let previousPress = existing.map { store.recordSaveAttempt(for: $0.id) } ?? nil
 
@@ -532,6 +516,8 @@ final class ReadingListIngestor {
     /// re-detected back into a tracker). Adds a fresh item when none exists, then
     /// ingests it with detection forced off.
     func saveAsArticle(urlString: String, source: CaptureSource = .manual) async {
+        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
+        let urlString = url.absoluteString
         let item = store.item(forURLString: urlString) ?? store.add(urlString: urlString, source: source)
         await ingest(item, forceArticle: true)
     }
@@ -542,7 +528,9 @@ final class ReadingListIngestor {
     @discardableResult
     func saveNewWithContent(
         urlString: String, content: ArticleContent, source: CaptureSource = .manual
-    ) async -> ReadingListItem {
+    ) async -> ReadingListItem? {
+        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
+        let urlString = url.absoluteString
         let item = store.add(urlString: urlString, source: source)
         fireAutoShares(urlString: urlString)
         // The pre-fetched content was extracted from `urlString` as given. If that
@@ -550,7 +538,7 @@ final class ReadingListIngestor {
         // pre-fetched content is the wrapper shell, not the article — so unwrap and
         // run the full pipeline on the real URL instead of persisting the stale shell.
         // A non-wrapper URL keeps the fast path (persist the content directly).
-        if let url = URL(string: urlString), await URLUnwrapper.unwrap(url).didUnwrap {
+        if await URLUnwrapper.unwrap(url).didUnwrap {
             await ingest(item)
             return store.item(withID: item.id) ?? item
         }

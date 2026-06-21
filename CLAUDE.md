@@ -4,6 +4,10 @@ Clip is an experimental weblink reader iOS app (UIKit, bundle com.hpiddy.clip, A
 
 Targets: Clip (app), ClipSafari (Safari web extension), ClipShare (share extension), ClipTests (unit tests). Dependency: SwiftSoup. Dev with Xcode 27 beta / iOS 27 simulator; archive/upload with stable Xcode 26.2.
 
+## Agent workflow
+
+- Commit completed work in small, logical chunks as it is verified. Do not bundle unrelated changes into the same commit.
+
 # Swift Project — Blitz AI Agent Guide
 
 ## blitz-macos

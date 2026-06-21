@@ -108,7 +108,7 @@ final class CatchUpMediaCardBody: UIView {
 
         let title = UILabel()
         title.text = item.title ?? item.urlString
-        title.font = .systemFont(ofSize: 22, weight: .bold)
+        title.font = .systemFont(ofSize: 20, weight: .bold)
         title.numberOfLines = 4
 
         let subtitle = UILabel()
@@ -275,21 +275,21 @@ final class CatchUpPriceTrackerCardBody: UIView {
 
         let stack = UIStackView(arrangedSubviews: [thumb, title, rows, thresholdReadout])
         stack.axis = .vertical
-        stack.spacing = 16
+        stack.spacing = 10
         stack.alignment = .fill
-        stack.setCustomSpacing(14, after: thumb)
-        stack.setCustomSpacing(10, after: title)
+        stack.setCustomSpacing(8, after: thumb)
+        stack.setCustomSpacing(6, after: title)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
-        // Centered vertically so the top of the card stays clear for the corner pills.
+        // Pin the content below the corner pills. Centering a tall stack caused its
+        // title/readout to compress into the card chrome on shorter devices.
         NSLayoutConstraint.activate([
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stack.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 56),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 56),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -24),
             // A small thumbnail at the top (a fraction of the body width).
-            thumb.widthAnchor.constraint(equalToConstant: 120),
+            thumb.widthAnchor.constraint(equalToConstant: 60),
             thumb.heightAnchor.constraint(equalTo: thumb.widthAnchor),
             thumb.centerXAnchor.constraint(equalTo: stack.centerXAnchor),
         ])
@@ -335,17 +335,21 @@ final class CatchUpPriceTrackerCardBody: UIView {
         changeButton.contentHorizontalAlignment = .leading
         changeButton.addAction(UIAction { _ in onChange() }, for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [title, readout, changeButton])
-        stack.axis = .vertical
-        stack.spacing = 8
-        stack.alignment = .leading
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        glassPill.contentView.addSubview(stack)
+        let copy = UIStackView(arrangedSubviews: [title, readout])
+        copy.axis = .vertical
+        copy.spacing = 3
+        copy.alignment = .leading
+        copy.translatesAutoresizingMaskIntoConstraints = false
+        glassPill.contentView.addSubview(copy)
+        changeButton.translatesAutoresizingMaskIntoConstraints = false
+        glassPill.contentView.addSubview(changeButton)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: glassPill.contentView.topAnchor, constant: 16),
-            stack.bottomAnchor.constraint(equalTo: glassPill.contentView.bottomAnchor, constant: -16),
-            stack.leadingAnchor.constraint(equalTo: glassPill.contentView.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: glassPill.contentView.trailingAnchor, constant: -20),
+            copy.topAnchor.constraint(equalTo: glassPill.contentView.topAnchor, constant: 12),
+            copy.bottomAnchor.constraint(equalTo: glassPill.contentView.bottomAnchor, constant: -12),
+            copy.leadingAnchor.constraint(equalTo: glassPill.contentView.leadingAnchor, constant: 16),
+            copy.trailingAnchor.constraint(lessThanOrEqualTo: changeButton.leadingAnchor, constant: -12),
+            changeButton.centerYAnchor.constraint(equalTo: glassPill.contentView.centerYAnchor),
+            changeButton.trailingAnchor.constraint(equalTo: glassPill.contentView.trailingAnchor, constant: -16),
         ])
         return glassPill
     }

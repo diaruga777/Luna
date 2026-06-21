@@ -62,6 +62,34 @@ struct WrapperHandler {
 /// and every extension unwrap identically.
 enum URLUnwrapper {
 
+    /// Parses an incoming user/share URL into the one canonical URL every ingest
+    /// surface stores and processes. This is deliberately the only URL-entry gate:
+    /// it trims input, optionally accepts a host-shaped manual entry, rejects
+    /// non-web schemes, applies offline wrapper resolution, and strips tracking
+    /// parameters. Network-backed unwraps still occur in `IngestPipeline`.
+    static func ingestURL(from string: String, allowBareHost: Bool = false) -> URL? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let parsed: URL?
+        if let url = URL(string: trimmed), url.scheme != nil {
+            parsed = url
+        } else if allowBareHost,
+                  trimmed.contains("."),
+                  trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil {
+            parsed = URL(string: "https://\(trimmed)")
+        } else {
+            parsed = nil
+        }
+
+        guard let parsed else { return nil }
+        let normalized = unwrapOffline(parsed).url
+        guard let normalizedScheme = normalized.scheme?.lowercased(),
+              normalizedScheme == "http" || normalizedScheme == "https"
+        else { return nil }
+        return normalized
+    }
+
     /// EXTEND HERE: add a wrapper by appending a handler. Matchers are otherwise
     /// disjoint; order matters only on overlap (Facebook runs first because an
     /// `fbrpc://` deep link has no http host and must be tried before the host gate).

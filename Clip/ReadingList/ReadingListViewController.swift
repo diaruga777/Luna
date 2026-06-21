@@ -211,7 +211,8 @@ final class ReadingListViewController: UITableViewController {
         }
         // Show a spinner row immediately, then fill it in once the preview
         // (content + thumbnail) resolves.
-        let urlString = url.absoluteString
+        guard let normalizedURL = URLUnwrapper.ingestURL(from: url.absoluteString) else { return }
+        let urlString = normalizedURL.absoluteString
         guard store.item(forURLString: urlString) == nil else { return }
         pasteboardCandidate = nil
         evaluatingPasteboardURL = urlString
@@ -677,12 +678,7 @@ final class ReadingListViewController: UITableViewController {
             guard let entered = alert?.textFields?.first?.text?
                 .trimmingCharacters(in: .whitespacesAndNewlines), !entered.isEmpty
             else { return }
-            // Unwrap an offline wrapper (Facebook `fbrpc://` deep link, classic Google
-            // News id) BEFORE the http gate — otherwise an `fbrpc://` link would be
-            // mangled into `https://fbrpc://…`. The full async unwrap (apple.news /
-            // shorteners) runs later inside the pipeline.
-            let unwrapped = URLUnwrapper.unwrapOffline(entered)
-            guard let normalized = Self.normalizedTypedURL(unwrapped) else { return }
+            guard let normalized = Self.normalizedTypedURL(entered) else { return }
             Task { await ReadingListIngestor.shared.handleSavePress(urlString: normalized) }
         })
         present(alert, animated: true)
@@ -694,15 +690,7 @@ final class ReadingListViewController: UITableViewController {
     /// ONLY when the entry has no scheme but looks like a host (contains a dot, no
     /// spaces); rejects everything else (a non-http scheme or junk) with nil.
     static func normalizedTypedURL(_ entered: String) -> String? {
-        let trimmed = entered.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased() {
-            return (scheme == "http" || scheme == "https") ? trimmed : nil
-        }
-        // No scheme: only accept something host-shaped (a dot, no whitespace) and
-        // give it https://. Rejects bare words and anything with spaces.
-        guard trimmed.contains("."), !trimmed.contains(" ") else { return nil }
-        return "https://" + trimmed
+        URLUnwrapper.ingestURL(from: entered, allowBareHost: true)?.absoluteString
     }
 
     @objc private func settingsTapped() {

@@ -13,7 +13,7 @@ enum AutoDownloadSettings {
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
     /// Platforms that support auto-download, in display order.
-    static let platforms: [ContentPlatform] = [.x, .instagram, .tiktok]
+    static let platforms: [ContentPlatform] = [.x, .instagram, .tiktok, .facebook]
 
     private static func key(for platform: ContentPlatform) -> String {
         "autoDownloadMedia.\(platform.rawValue)"

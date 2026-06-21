@@ -49,6 +49,23 @@ final class IngestPipelineTests: XCTestCase {
         guard case .article = outcome else { return XCTFail("expected .article, got \(outcome)") }
     }
 
+    /// Safari's action extension supplies its already-loaded page HTML. That snapshot
+    /// must take the direct text-extraction path and never wait for a second network
+    /// request (or price lookup) before presenting the reader.
+    func testActionExtensionPrefetchedArticleAvoidsNetworkFetch() async {
+        let start = Date()
+        let outcome = await IngestPipeline.process(
+            IngestInput(
+                url: url("https://example.com/story"), source: .appIntent,
+                prefetchedHTML: readableHTML()),
+            timeout: 1, fetcher: NeverReturningFetcher())
+
+        guard case .article = outcome else {
+            return XCTFail("expected the prefetched article, got \(outcome)")
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.9)
+    }
+
     func testProductPageIsProduct() async {
         let productURL = "https://www.bunnings.com.au/ryobi-trimmer_p0208315"
         let html = BypassFixtures.html("Products/bunnings-nextdata.html")
@@ -136,6 +153,22 @@ final class IngestPipelineTests: XCTestCase {
             let first = outcomes[0]
             for outcome in outcomes {
                 XCTAssertEqual(outcome, first, "outcome must be identical across sources for \(urlString)")
+            }
+        }
+    }
+
+    func testResolvedResultCarriesTheSameOfflineUnwrappedURLForEverySource() async {
+        let fbrpc = "fbrpc://nativethirdparty/f?app_id=123"
+            + "&target_url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ%26utm_source%3Dshare"
+        let expected = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+        for source in CaptureSource.allCases {
+            let result = await IngestPipeline.processResolved(
+                IngestInput(url: url(fbrpc), source: source),
+                timeout: 10, fetcher: MockArticleFetcher())
+            XCTAssertEqual(result.url.absoluteString, expected)
+            guard case .video(.youtube, itemID: "dQw4w9WgXcQ") = result.outcome else {
+                return XCTFail("expected YouTube outcome for \(source)")
             }
         }
     }

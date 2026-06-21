@@ -21,12 +21,6 @@ import UIKit
 /// only on UIKit + ReaderKit value types.
 @MainActor
 protocol ExtensionHost: AnyObject {
-    /// True for the "Read in Queue" action extension (`com.apple.ui-services`), which
-    /// always opens an in-sheet reader/saved screen; false for the zero-UI share
-    /// extension (`com.apple.share-services`), which saves and dismisses. This is the
-    /// SINGLE per-surface data difference — everything else is shared logic.
-    var isActionExtension: Bool { get }
-
     /// The reader mode the in-sheet reader should open in (action extension only);
     /// nil for the zero-UI share extension (no in-sheet UI at all). Drives the
     /// reader-vs-save-silently fork in the unified presenter.
@@ -38,8 +32,12 @@ protocol ExtensionHost: AnyObject {
     func presentModally(_ viewController: UIViewController)
 
     /// Shows the brief "Saved" checkmark, then completes the request. The terminal
-    /// success affordance for the zero-UI share extension.
+    /// success affordance for an interactive extension surface.
     func confirmSavedThenComplete()
+
+    /// Completes without showing extension UI. The zero-UI share extension uses
+    /// this for ordinary articles, documents, and failures.
+    func completeSilently()
 
     /// Saves silently while a media auto-download runs, swapping to the "Saved"
     /// checkmark when it finishes, then completes. Falls back to `confirmSavedThenComplete`

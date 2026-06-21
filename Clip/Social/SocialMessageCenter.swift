@@ -332,11 +332,12 @@ final class SocialMessageCenter {
                 logger.info("dropping article from non-friend \(record.senderUUID, privacy: .public)")
                 return
             }
-            guard URL(string: urlString) != nil else { return }
+            guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
             // Recipient-side dedupe via the store's single URL-existence authority:
             // an incoming share of a URL we already have is dropped entirely (no
             // re-ingest, no attribution change).
-            guard let saved = readingListStore.addIfAbsent(urlString: urlString, source: .friendShare) else {
+            guard let saved = readingListStore.addIfAbsent(
+                urlString: url.absoluteString, source: .friendShare) else {
                 logger.info("dropping duplicate shared article")
                 return
             }
@@ -371,7 +372,9 @@ final class SocialMessageCenter {
                 logger.info("dropping price tracker from non-friend \(record.senderUUID, privacy: .public)")
                 return
             }
-            guard let firstURL = share.storeURLStrings.first else { return }
+            guard let rawFirstURL = share.storeURLStrings.first,
+                  let firstURL = URLUnwrapper.ingestURL(from: rawFirstURL)?.absoluteString
+            else { return }
             guard let tracker = share.makeTracker() else { return }
             // Dedupe on the first store URL like other shared items, via the same
             // store authority.

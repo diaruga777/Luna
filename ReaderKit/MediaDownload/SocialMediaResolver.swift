@@ -31,6 +31,8 @@ struct SocialMediaResolver: SocialMediaResolving {
             return await resolveTikTok(url: url)
         case .instagram:
             return await resolveInstagram(url: url, shortcode: recognized.itemID)
+        case .facebook:
+            return await resolveFacebook(url: url)
         default:
             return []
         }
@@ -77,6 +79,26 @@ struct SocialMediaResolver: SocialMediaResolving {
         return []
     }
 
+    /// Facebook's public post markup exposes direct media in Open Graph tags to
+    /// unfurlers. Prefer video (including reels) and fall back to its preview image.
+    /// This is intentionally best-effort: inaccessible/private posts simply expose
+    /// no asset and the caller keeps the saved link usable.
+    private func resolveFacebook(url: URL) async -> [MediaAsset] {
+        guard let data = await fetch(metaScrapeRequest(url)),
+              let html = String(data: data, encoding: .utf8) else { return [] }
+        if let videoURL = OpenGraphMediaParser.content(named: "og:video", in: html)
+            ?? OpenGraphMediaParser.content(named: "og:video:secure_url", in: html),
+           let url = URL(string: videoURL) {
+            return [MediaAsset(url: url, kind: .video)]
+        }
+        if let imageURL = OpenGraphMediaParser.content(named: "og:image", in: html)
+            ?? OpenGraphMediaParser.content(named: "og:image:secure_url", in: html),
+           let url = URL(string: imageURL) {
+            return [MediaAsset(url: url, kind: .image)]
+        }
+        return []
+    }
+
     // MARK: - Requests
 
     private func jsonRequest(_ url: URL) -> URLRequest {
@@ -115,6 +137,26 @@ enum MediaDownloadHTTP {
     static let browserUserAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
         "(KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+}
+
+/// Small, dependency-free Open Graph parser for social pages. Attribute order in
+/// `<meta>` tags is not stable, so inspect each tag rather than matching one order.
+private enum OpenGraphMediaParser {
+    static func content(named name: String, in html: String) -> String? {
+        let tags = html.components(separatedBy: "<meta")
+        for tag in tags {
+            let lowercased = tag.lowercased()
+            guard lowercased.contains("property=\"\(name)\"")
+                    || lowercased.contains("property='\(name)'") else { continue }
+            for quote in ["\"", "'"] {
+                let marker = "content=\(quote)"
+                guard let start = tag.range(of: marker, options: [.caseInsensitive])?.upperBound,
+                      let end = tag[start...].firstIndex(of: Character(quote)) else { continue }
+                return String(tag[start..<end]).replacingOccurrences(of: "&amp;", with: "&")
+            }
+        }
+        return nil
+    }
 }
 
 // MARK: - Pure parsers (unit-tested against fixtures)

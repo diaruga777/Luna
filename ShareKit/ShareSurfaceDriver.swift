@@ -17,12 +17,14 @@ import UIKit
 /// every other surface.
 ///
 /// Differences between the share extension and the action extension are pure DATA
-/// (`host.isActionExtension` / `host.readerMode`), never divergent logic — both call
-/// the same pipeline and the same exhaustive `Outcome` switch here. Every case
-/// PERSISTS the classified metadata to the shared store (so an extension save is
+/// (`host.isActionExtension` / `host.readerMode`), never divergent processing logic
+/// — both call the same pipeline and exhaustive `Outcome` switch here. Every case
+/// persists the classified metadata to the shared store (so an extension save is
 /// shaped identically to a main-app save — the fix for the YouTube-via-share bug,
 /// where a `.video` used to be dropped to a bare URL the main app had to
-/// re-classify) and presents real UI; `.failed` shows an error, never "Saved".
+/// re-classify). Presentation policy is narrow: the action extension shows its
+/// reader/saved UI, while the share extension only presents media, price, and
+/// archive-bypass UI.
 @MainActor
 final class ShareSurfaceDriver {
 
@@ -30,12 +32,14 @@ final class ShareSurfaceDriver {
     private let store: ReadingListStore
     /// Injectable so tests can drive the pipeline with a mock fetcher / fixtures and
     /// a nil render tier (extension-safe). Production uses the live defaults.
-    private let process: (IngestInput) async -> Outcome
+    private let process: (IngestInput) async -> IngestResult
 
     init(
         host: ExtensionHost,
         store: ReadingListStore = .shared,
-        process: @escaping (IngestInput) async -> Outcome = { await IngestPipeline.process($0) }
+        process: @escaping (IngestInput) async -> IngestResult = {
+            await IngestPipeline.processResolved($0)
+        }
     ) {
         self.host = host
         self.store = store
@@ -43,20 +47,17 @@ final class ShareSurfaceDriver {
     }
 
     /// Runs the shared pipeline for the just-appended `originalURL`, repoints the saved
-    /// item if the pipeline unwrapped to a different URL (so the main app extracts the
-    /// real article), then presents + persists the `Outcome` via this surface's host.
-    func ingestAndPresent(originalURL: URL) async {
-        let isAction = host?.isActionExtension == true
-        let outcome = await process(IngestInput(
-            url: originalURL, source: isAction ? .appIntent : .shareSheet))
+    /// item to the pipeline's resolved URL, then presents + persists the `Outcome` via
+    /// this surface's host.
+    func ingestAndPresent(originalURL: URL, prefetchedHTML: String? = nil) async {
+        let result = await process(IngestInput(
+            url: originalURL, source: .shareSheet, prefetchedHTML: prefetchedHTML))
 
-        // Repoint the just-saved item if the pipeline unwrapped to a different URL.
-        let unwrapped = await URLUnwrapper.unwrap(originalURL)
-        let url = unwrapped.didUnwrap ? unwrapped.url : originalURL
-        if unwrapped.didUnwrap, let item = store.item(forURLString: originalURL.absoluteString) {
+        let url = result.url
+        if url != originalURL, let item = store.item(forURLString: originalURL.absoluteString) {
             _ = store.updateURL(url.absoluteString, for: item.id)
         }
-        present(outcome, url: url)
+        present(result.outcome, url: url)
     }
 
     /// The EXHAUSTIVE per-surface presenter over the unified `Outcome` (no `default`,
@@ -69,7 +70,7 @@ final class ShareSurfaceDriver {
             if let mode = host.readerMode {
                 presentReader(url: url, mode: mode, outcome: outcome)
             } else {
-                host.confirmSavedThenComplete()
+                host.completeSilently()
             }
 
         case let .product(product, _):
@@ -80,7 +81,13 @@ final class ShareSurfaceDriver {
 
         case let .video(platform, itemID):
             persistPlatform(platform, service: nil, itemID: itemID, url: url)
-            presentNonTextual(.youTube(videoID: itemID ?? ""), url: url)
+            // TikTok and Facebook are video platforms too, but only YouTube has an
+            // inline player. Keeping the original platform here is what enables the
+            // social-media preview/download UI for the other two.
+            let content: NonTextualContent = platform == .youtube
+                ? .youTube(videoID: itemID ?? "")
+                : .platform(platform, itemID: itemID)
+            presentNonTextual(content, url: url)
 
         case let .social(platform, itemID):
             persistPlatform(platform, service: nil, itemID: itemID, url: url)
@@ -91,7 +98,11 @@ final class ShareSurfaceDriver {
             presentNonTextual(.platform(platform, itemID: itemID), url: url)
 
         case .document:
-            host.confirmSavedThenComplete()
+            if host.readerMode != nil {
+                host.confirmSavedThenComplete()
+            } else {
+                host.completeSilently()
+            }
 
         case let .needsArchive(title):
             presentArchive(url: url, title: title)
@@ -103,7 +114,7 @@ final class ShareSurfaceDriver {
                 host.failOrComplete("Couldn't load this link.")
             } else {
                 store.item(forURLString: url.absoluteString).map { store.markFailed($0.id) }
-                host.confirmSavedThenComplete()
+                host.completeSilently()
             }
         }
     }
@@ -127,11 +138,25 @@ final class ShareSurfaceDriver {
             _ = store.saveYouTubeMetadata(
                 videoID: videoID, title: saved.title ?? platform.displayName,
                 channelName: nil, thumbnailFileName: nil, for: saved.id)
+            fetchYouTubeThumbnail(videoID: videoID, itemID: saved.id)
         } else {
             _ = store.savePlatformMetadata(
                 platform: platform, platformItemID: itemID, title: nil, creator: nil,
                 thumbnailFileName: nil, mediaCreatorName: nil, mediaItemTitle: nil,
                 mediaSourceService: service, for: saved.id)
+        }
+    }
+
+    /// The extension does not run the main app's oEmbed ingestor, so capture the
+    /// stable YouTube poster now instead of leaving this saved video without art.
+    private func fetchYouTubeThumbnail(videoID: String, itemID: UUID) {
+        guard let url = YouTubeURL.thumbnailURL(videoID: videoID) else { return }
+        let store = store
+        Task {
+            guard let (data, response) = try? await URLSession.shared.data(from: url),
+                  let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+                  !data.isEmpty else { return }
+            store.setThumbnail(data, for: itemID)
         }
     }
 
@@ -158,12 +183,13 @@ final class ShareSurfaceDriver {
         host.presentModally(reader)
     }
 
-    /// Routes a non-textual outcome: the action extension shows the saved-content
-    /// screen (so the reader VC never sees a video); the share extension takes the
-    /// auto-download path (the metadata is already persisted above).
+    /// Routes a non-textual outcome. Downloadable social media always opens the
+    /// saved-content screen on BOTH extension surfaces so the user can explicitly
+    /// choose the media download. YouTube remains a saved/video preview, and other
+    /// non-downloadable items retain the share extension's silent-save behavior.
     private func presentNonTextual(_ content: NonTextualContent, url: URL) {
         guard let host else { return }
-        if host.readerMode != nil {
+        if host.readerMode != nil || MediaDownloadablePlatform.supports(url.absoluteString) {
             let saved = SavedNonTextualViewController(
                 articleURLString: url.absoluteString, content: content) { [weak host] in
                 host?.confirmSavedThenComplete()

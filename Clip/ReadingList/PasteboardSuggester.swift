@@ -61,41 +61,32 @@ final class PasteboardSuggester: PasteboardSuggesting {
     }
 
     func evaluate(urlString: String) async -> PasteboardCandidate? {
-        let entered = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Unwrap an offline wrapper (Facebook `fbrpc://` deep link, classic Google
-        // News id) to its real http article BEFORE the http gate — exactly as the
-        // in-app "+" path (`ReadingListViewController.addTapped`) does. Without this
-        // a Facebook link on the pasteboard (`fbrpc://…&target_url=http…`) has a
-        // non-http scheme and is rejected here, so it never becomes a suggestion even
-        // though the "+" path saves it fine. The full async unwrap (apple.news /
-        // shorteners) runs later inside `IngestPipeline.process`.
-        let trimmed = URLUnwrapper.unwrapOffline(entered)
-        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else { return nil }
+        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
+        let normalizedURLString = url.absoluteString
         // Already saved → nothing to suggest. Match loosely (tracking params, www,
         // http/https, trailing slash) and by platform post id, since the pasteboard
         // copy of e.g. an X link often carries `?s=…` the saved one doesn't.
-        guard !isAlreadySaved(trimmed) else { return nil }
+        guard !isAlreadySaved(normalizedURLString) else { return nil }
 
-        if let videoID = YouTubeURL.videoID(from: trimmed) {
+        if let videoID = YouTubeURL.videoID(from: normalizedURLString) {
             guard let metadata = try? await youTubeMetadataFetcher.fetchMetadata(videoID: videoID)
             else { return nil }
             let thumbnail = (try? await youTubeMetadataFetcher.fetchThumbnail(videoID: videoID))
                 .flatMap { UIImage(data: $0) }
             return PasteboardCandidate(
-                urlString: trimmed, title: metadata.title,
+                urlString: normalizedURLString, title: metadata.title,
                 channelName: metadata.channelName, videoID: videoID, content: nil,
                 thumbnail: thumbnail)
         }
 
         // A recognized platform URL (tweet, skeet, …) surfaces as a platform
         // candidate (saved + ingested on tap; no article preview).
-        if let match = PlatformRegistry.shared.detect(trimmed) {
+        if let match = PlatformRegistry.shared.detect(normalizedURLString) {
             let art = await PlatformRegistry.shared.module(for: match.platform)?
-                .metadataFetcher?.fetchMetadata(for: match, urlString: trimmed)?
+                .metadataFetcher?.fetchMetadata(for: match, urlString: normalizedURLString)?
                 .thumbnailData.flatMap { UIImage(data: $0) }
             return PasteboardCandidate(
-                urlString: trimmed, title: match.platform.displayName,
+                urlString: normalizedURLString, title: match.platform.displayName,
                 channelName: nil, videoID: nil, content: nil, platform: match.platform,
                 thumbnail: art)
         }
@@ -106,7 +97,7 @@ final class PasteboardSuggester: PasteboardSuggesting {
         else { return nil }
         let cover = await coverImage(html: html, baseURL: url)
         return PasteboardCandidate(
-            urlString: trimmed, title: content.title,
+            urlString: normalizedURLString, title: content.title,
             channelName: nil, videoID: nil, content: content, thumbnail: cover)
     }
 

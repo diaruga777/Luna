@@ -19,7 +19,7 @@ struct MediaAsset: Equatable {
 
 /// Why a media download failed, with a user-facing message.
 enum MediaDownloadError: Error {
-    case unsupported      // not an X / Instagram / TikTok post
+    case unsupported      // not an X / Instagram / TikTok / Facebook post
     case noMedia          // the post had no downloadable media
     case permissionDenied // Photos add access not granted
     case downloadFailed   // the media file couldn't be fetched
@@ -42,7 +42,7 @@ enum MediaDownloadError: Error {
 /// list row's long-press menu) both gate on this.
 enum MediaDownloadablePlatform {
     /// The platforms whose posts expose downloadable still/gif/video media.
-    static let supported: Set<ContentPlatform> = [.x, .instagram, .tiktok]
+    static let supported: Set<ContentPlatform> = [.x, .instagram, .tiktok, .facebook]
 
     /// Whether `urlString` is a post on a platform we can pull media from.
     static func supports(_ urlString: String) -> Bool {

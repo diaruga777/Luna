@@ -67,11 +67,8 @@ enum IntentIngestHelper {
     /// already in the list), or nil when the outcome couldn't be determined
     /// before the timeout.
     static func handleSavePressWithTimeout(urlString: String) async -> String? {
-        // Offline-unwrap a wrapper (Facebook `fbrpc://` deep link, classic Google
-        // News id) so EVERY intent entry point saves a real http URL the rest of the
-        // pipeline can read. The full async unwrap (apple.news / shorteners) runs
-        // inside the pipeline. Idempotent for ordinary URLs.
-        let urlString = URLUnwrapper.unwrapOffline(urlString)
+        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
+        let urlString = url.absoluteString
         return await withTaskGroup(of: String?.self) { group in
             group.addTask {
                 let result = await ReadingListIngestor.shared.handleSavePress(

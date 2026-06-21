@@ -30,11 +30,6 @@ struct InstagramPlatform: PlatformModule {
     let platform: ContentPlatform = .instagram
     let glyphSymbolName = "camera.fill"
 
-    func classify(_ urlString: String) -> PlatformMatch? {
-        guard InstagramLink.isInstagram(urlString) else { return nil }
-        return PlatformMatch(platform: .instagram, itemID: InstagramLink.shortcode(from: urlString))
-    }
-
     func subtitle(for item: ReadingListItem) -> String? { item.channelName }
     func appDeepLink(for item: ReadingListItem) -> URL? { nil }
     func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }

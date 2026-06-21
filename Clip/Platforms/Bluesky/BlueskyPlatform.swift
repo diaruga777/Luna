@@ -12,11 +12,6 @@ struct BlueskyPlatform: PlatformModule {
     let platform: ContentPlatform = .bluesky
     let glyphSymbolName = "bubble.left.and.bubble.right.fill"
 
-    func classify(_ urlString: String) -> PlatformMatch? {
-        guard let post = BlueskyLink.post(from: urlString) else { return nil }
-        return PlatformMatch(platform: .bluesky, itemID: post.rkey)
-    }
-
     func subtitle(for item: ReadingListItem) -> String? {
         if let channel = item.channelName { return channel }
         guard let author = BlueskyLink.post(from: item.urlString)?.author else { return nil }

@@ -37,11 +37,6 @@ struct FacebookPlatform: PlatformModule {
     let platform: ContentPlatform = .facebook
     let glyphSymbolName = "play.tv.fill"
 
-    func classify(_ urlString: String) -> PlatformMatch? {
-        guard FacebookLink.isFacebook(urlString) else { return nil }
-        return PlatformMatch(platform: .facebook, itemID: FacebookLink.itemID(from: urlString))
-    }
-
     func subtitle(for item: ReadingListItem) -> String? { item.channelName }
     func appDeepLink(for item: ReadingListItem) -> URL? { nil }
     func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }

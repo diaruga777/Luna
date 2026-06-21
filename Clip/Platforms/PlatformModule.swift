@@ -42,9 +42,6 @@ protocol PlatformModule {
     /// SF Symbol used as the row glyph / thumbnail fallback (until brand logos ship).
     var glyphSymbolName: String { get }
 
-    /// Recognizes a URL as this platform, or nil.
-    func classify(_ urlString: String) -> PlatformMatch?
-
     /// Subtitle line for the list row (creator/handle/artist), or nil.
     func subtitle(for item: ReadingListItem) -> String?
 

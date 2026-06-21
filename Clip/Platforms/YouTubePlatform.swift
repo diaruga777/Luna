@@ -13,11 +13,6 @@ struct YouTubePlatform: PlatformModule {
     let platform: ContentPlatform = .youtube
     let glyphSymbolName = "play.rectangle.fill"
 
-    func classify(_ urlString: String) -> PlatformMatch? {
-        guard let videoID = YouTubeURL.videoID(from: urlString) else { return nil }
-        return PlatformMatch(platform: .youtube, itemID: videoID)
-    }
-
     func subtitle(for item: ReadingListItem) -> String? { item.channelName }
 
     func appDeepLink(for item: ReadingListItem) -> URL? {

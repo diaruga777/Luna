@@ -49,11 +49,6 @@ struct RedditPlatform: PlatformModule {
     let platform: ContentPlatform = .reddit
     let glyphSymbolName = "bubble.left.and.text.bubble.right.fill"
 
-    func classify(_ urlString: String) -> PlatformMatch? {
-        guard RedditLink.isReddit(urlString) else { return nil }
-        return PlatformMatch(platform: .reddit, itemID: RedditLink.postID(from: urlString))
-    }
-
     func subtitle(for item: ReadingListItem) -> String? {
         item.channelName ?? RedditLink.subreddit(from: item.urlString)
     }

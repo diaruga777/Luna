@@ -12,11 +12,6 @@ struct MusicPlatform: PlatformModule {
     let platform: ContentPlatform = .music
     let glyphSymbolName = "music.note"
 
-    func classify(_ urlString: String) -> PlatformMatch? {
-        guard let match = MediaLink.classify(urlString), match.platform == .music else { return nil }
-        return PlatformMatch(platform: .music, itemID: match.itemID, sourceService: match.service)
-    }
-
     func subtitle(for item: ReadingListItem) -> String? { item.mediaCreatorName ?? item.channelName }
     func appDeepLink(for item: ReadingListItem) -> URL? { nil }
     func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
@@ -28,11 +23,6 @@ struct MusicPlatform: PlatformModule {
 struct PodcastPlatform: PlatformModule {
     let platform: ContentPlatform = .podcast
     let glyphSymbolName = "mic.fill"
-
-    func classify(_ urlString: String) -> PlatformMatch? {
-        guard let match = MediaLink.classify(urlString), match.platform == .podcast else { return nil }
-        return PlatformMatch(platform: .podcast, itemID: match.itemID, sourceService: match.service)
-    }
 
     func subtitle(for item: ReadingListItem) -> String? { item.mediaCreatorName ?? item.channelName }
     func appDeepLink(for item: ReadingListItem) -> URL? { nil }

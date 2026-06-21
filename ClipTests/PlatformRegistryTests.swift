@@ -31,12 +31,13 @@ final class PlatformRegistryTests: XCTestCase {
         XCTAssertNil(registry.detect("https://example.com/article"))
     }
 
-    func testYouTubeModuleClassifiesAndRejects() {
-        let module = YouTubePlatform()
-        let match = module.classify("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    func testRegistryClassifiesYouTubeAndRejects() {
+        // Recognition is the registry's `detect` (backed by `PlatformRecognizer`) —
+        // the per-module `classify` was removed (modules keep rendering only).
+        let match = PlatformRegistry.shared.detect("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         XCTAssertEqual(match?.platform, .youtube)
         XCTAssertEqual(match?.itemID, "dQw4w9WgXcQ")
-        XCTAssertNil(module.classify("https://example.com/not-a-video"))
+        XCTAssertNil(PlatformRegistry.shared.detect("https://example.com/not-a-video"))
     }
 
     func testDefaultRegistryRecognizesYouTube() {

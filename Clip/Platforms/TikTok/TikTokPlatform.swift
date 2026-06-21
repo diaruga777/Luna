@@ -38,11 +38,6 @@ struct TikTokPlatform: PlatformModule {
     let platform: ContentPlatform = .tiktok
     let glyphSymbolName = "music.note"
 
-    func classify(_ urlString: String) -> PlatformMatch? {
-        guard TikTokLink.isTikTok(urlString) else { return nil }
-        return PlatformMatch(platform: .tiktok, itemID: TikTokLink.videoID(from: urlString))
-    }
-
     func subtitle(for item: ReadingListItem) -> String? {
         item.channelName ?? TikTokLink.handle(from: item.urlString)
     }

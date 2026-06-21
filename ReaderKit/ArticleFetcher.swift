@@ -146,23 +146,20 @@ struct ArticleFetcher: HTMLFetching {
         return explicitLast ?? lastMemento
     }
 
-    /// Hosts that hard-paywall or aggressively bot-block, so a direct/background
-    /// fetch yields no readable body. For these an unreadable result is parked for a
-    /// user-solved archive CAPTCHA (`.needsCaptcha`) rather than failed outright —
-    /// the archive snapshot is the only way in, and only an interactive web view
-    /// can clear archive.today's Cloudflare gate.
-    private static let hardPaywallHosts: Set<String> = [
-        "wsj.com", "ft.com", "nytimes.com", "economist.com", "bloomberg.com",
-        "washingtonpost.com", "newyorker.com", "theatlantic.com", "wired.com",
-        "barrons.com", "businessinsider.com", "theinformation.com", "hbr.org",
-        "foreignpolicy.com", "foreignaffairs.com", "thetimes.co.uk", "telegraph.co.uk",
-        "nikkei.com", "seekingalpha.com", "latimes.com", "bostonglobe.com",
-    ]
-
-    /// Whether `url`'s host (or a subdomain of it) is a known hard-paywall site.
+    /// Whether `url`'s host (or a subdomain of it) is a known hard-paywall /
+    /// aggressively bot-blocking site, for which a direct/background fetch yields no
+    /// readable body — so an unreadable result is parked for a user-solved archive
+    /// CAPTCHA (`.needsCaptcha`) rather than failed outright (the archive snapshot is
+    /// the only way in, and only an interactive web view can clear archive.today's
+    /// Cloudflare gate).
+    ///
+    /// SINGLE SOURCE: a host is hard-paywall iff `BypassRuleTable` has a per-host rule
+    /// for it (every seeded rule is a publisher whose body rarely ships
+    /// unauthenticated and ends in the `.archiveToday` terminal flow). This folds the
+    /// former parallel `hardPaywallHosts` Set into the one routing table, so the two
+    /// can no longer drift.
     static func isHardPaywallHost(_ url: URL) -> Bool {
-        guard let host = url.host?.lowercased() else { return false }
-        return hardPaywallHosts.contains { host == $0 || host.hasSuffix("." + $0) }
+        BypassRuleTable.rule(for: url) != nil
     }
 
     /// A human-readable placeholder title for an article we couldn't read yet

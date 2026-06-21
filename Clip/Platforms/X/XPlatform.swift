@@ -45,11 +45,6 @@ struct XPlatform: PlatformModule {
     let platform: ContentPlatform = .x
     let glyphSymbolName = "bird.fill"
 
-    func classify(_ urlString: String) -> PlatformMatch? {
-        guard let id = XLink.tweetID(from: urlString) else { return nil }
-        return PlatformMatch(platform: .x, itemID: id)
-    }
-
     func subtitle(for item: ReadingListItem) -> String? {
         item.channelName ?? XLink.handle(from: item.urlString)
     }

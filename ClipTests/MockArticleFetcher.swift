@@ -21,7 +21,7 @@ final class MockArticleFetcher: HTMLFetching {
         var kind: Kind
 
         enum Kind: String, Equatable {
-            case plain, userAgent, referer, freshSession, waybackRaw, jina, archived
+            case plain, userAgent, referer, freshSession, waybackRaw, jina
         }
     }
 
@@ -75,9 +75,4 @@ final class MockArticleFetcher: HTMLFetching {
         return try html(for: url)
     }
 
-    func fetchArchivedHTML(for url: URL) async throws -> String {
-        calls.append(.init(url: url, userAgent: nil, referer: nil, xForwardedFor: nil,
-                           noCookies: false, kind: .archived))
-        return try html(for: url)
-    }
 }

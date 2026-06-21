@@ -19,76 +19,77 @@ protocol BypassRunning {
     /// the extracted content + winning source HTML, or nil.
     func run(
         _ strategy: BypassStrategy, url: URL, directHTML: String?
-    ) async -> (ArticleContent, String)?
+    ) async -> ExtractedArticle?
 }
 
 /// The live `BypassRunning` implementation: maps each silent strategy to the
-/// concrete `HTMLFetching` call, then extracts.
+/// concrete `HTMLFetching` call via the shared `BypassURLs` mapper, then extracts
+/// through the shared `ArticleExtraction.fetchAndExtract` helper.
 struct BypassRunner: BypassRunning {
     let fetcher: HTMLFetching
-    let extractor: ArticleExtractor
+    let extraction: ArticleExtraction
 
     init(fetcher: HTMLFetching = ArticleFetcher(), extractor: ArticleExtractor = ArticleExtractor()) {
         self.fetcher = fetcher
-        self.extractor = extractor
+        self.extraction = ArticleExtraction(extractor: extractor)
     }
 
     func run(
         _ strategy: BypassStrategy, url: URL, directHTML: String?
-    ) async -> (ArticleContent, String)? {
+    ) async -> ExtractedArticle? {
         switch strategy {
         case .jsonLDBody:
             // Zero network: re-parse the HTML we already have, forcing the JSON-LD
             // articleBody layer even if the rendered DOM looked paywalled.
             guard let directHTML,
-                  let content = extractor.extractFromJSONLD(html: directHTML, baseURL: url)
+                  let content = extraction.extractFromJSONLD(html: directHTML, baseURL: url)
             else { return nil }
-            return (content, directHTML)
+            return ExtractedArticle(content: content, sourceHTML: directHTML)
 
         case let .userAgent(agent):
-            return await extracted(baseURL: url) {
+            return await extraction.fetchAndExtract(baseURL: url) {
                 try await fetcher.fetchHTML(from: url, userAgent: agent.userAgent,
                                             xForwardedFor: agent.xForwardedFor)
             }
 
         case let .referer(origin):
-            return await extracted(baseURL: url) {
+            return await extraction.fetchAndExtract(baseURL: url) {
                 try await fetcher.fetchHTML(from: url, referer: origin.url)
             }
 
         case .trailingDotHost:
-            guard let dotted = TrailingDotBypass.trailingDotURL(for: url) else { return nil }
+            guard let dotted = BypassURLs.requestURL(for: .trailingDotHost, article: url) else { return nil }
             // The base URL stays the canonical (no-dot) URL so extracted links resolve
             // against the real host, not the dotted variant.
-            return await extracted(baseURL: url) {
+            return await extraction.fetchAndExtract(baseURL: url) {
                 try await fetcher.fetchHTML(from: dotted)
             }
 
         case .freshSession:
-            return await extracted(baseURL: url) {
+            return await extraction.fetchAndExtract(baseURL: url) {
                 try await fetcher.fetchHTMLWithoutCookies(from: url)
             }
 
         case .amp:
             guard let directHTML, let ampURL = ArticleResolver.ampURL(in: directHTML, base: url)
             else { return nil }
-            return await extracted(baseURL: ampURL) {
+            return await extraction.fetchAndExtract(baseURL: ampURL) {
                 try await fetcher.fetchHTML(from: ampURL)
             }
 
         case .waybackRaw:
-            return await extracted(baseURL: url) {
+            return await extraction.fetchAndExtract(baseURL: url) {
                 try await fetcher.fetchWaybackRawHTML(for: url)
             }
 
         case .jinaReader:
-            return await extracted(baseURL: url) {
+            return await extraction.fetchAndExtract(baseURL: url) {
                 try await fetcher.fetchJinaReader(for: url)
             }
 
         case let .ladderProxy(proxy):
-            guard let proxyURL = proxy.url(for: url) else { return nil }
-            return await extracted(baseURL: url) {
+            guard let proxyURL = BypassURLs.requestURL(for: .ladderProxy(proxy), article: url) else { return nil }
+            return await extraction.fetchAndExtract(baseURL: url) {
                 try await fetcher.fetchHTML(from: proxyURL)
             }
 
@@ -96,16 +97,5 @@ struct BypassRunner: BypassRunning {
             // WKWebView-only — handled by ArchiveWebReaderViewController, not here.
             return nil
         }
-    }
-
-    /// Runs a fetch and extracts it, pairing content with its source HTML; nil on any
-    /// fetch/parse failure (so a dead strategy falls through gracefully).
-    private func extracted(
-        baseURL: URL, fetch: () async throws -> String
-    ) async -> (ArticleContent, String)? {
-        guard let html = try? await fetch(),
-              let content = try? extractor.extract(html: html, baseURL: baseURL)
-        else { return nil }
-        return (content, html)
     }
 }

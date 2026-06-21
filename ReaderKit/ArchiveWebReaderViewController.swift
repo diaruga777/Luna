@@ -440,27 +440,18 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         return url
     }
 
-    /// The ordered WKWebView pre-stage URLs for `articleURL`: the strategy list from
-    /// `BypassStrategySelector`, filtered to the JS-rendered strategies worth a real
-    /// browser (`.trailingDotHost`, `.thirdPartyWeb`) and mapped to a loadable URL.
-    /// archive.today is excluded — it's the terminal flow, not a pre-stage. Silent
-    /// strategies are excluded (they already ran in the background path). Pure +
-    /// static so the ordering is unit-testable without a web view.
+    /// The ordered WKWebView pre-stage URLs for `articleURL`, taken from the SAME
+    /// `BypassPlan` factory the resolver's silent leg uses (so the two paths can't
+    /// diverge) — its `webPreStages` leg mapped to loadable URLs via `BypassURLs`.
+    /// archive.today is excluded (the terminal flow, not a pre-stage); a trailing-dot
+    /// that already ran silently is excluded by the plan (it doesn't benefit from a JS
+    /// retry, so NYT skips the ~9s redundant pre-stage). Pure + static so the ordering
+    /// is unit-testable without a web view.
     static func webPreStageURLs(for articleURL: URL) -> [URL] {
         // A URL already on archive.today goes straight to the snapshot flow.
         guard !ArticleFetcher.isArchiveTodayURL(articleURL) else { return [] }
-        let strategies = BypassStrategySelector.strategies(for: articleURL, directHTML: nil)
-        return strategies.compactMap { strategy -> URL? in
-            switch strategy {
-            case .trailingDotHost:
-                return TrailingDotBypass.trailingDotURL(for: articleURL)
-            case let .thirdPartyWeb(service):
-                return service.url(for: articleURL)
-            default:
-                // Silent strategies + archive.today are not WKWebView pre-stages.
-                return nil
-            }
-        }
+        let plan = BypassPlan.make(for: articleURL, directHTML: nil)
+        return plan.webPreStages.compactMap { BypassURLs.loadURL(for: $0, article: articleURL) }
     }
 
     /// Opens the archive in real Safari (the proven-working path when the embedded

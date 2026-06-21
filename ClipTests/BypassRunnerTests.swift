@@ -106,7 +106,7 @@ final class BypassRunnerTests: XCTestCase {
         let html = BypassFixtures.html("jsonld-bloomberg.html")
         let result = await runner.run(.jsonLDBody, url: articleURL, directHTML: html)
         XCTAssertNotNil(result)
-        XCTAssertTrue(result!.0.bodyTextLength > 600)
+        XCTAssertTrue(result!.content.bodyTextLength > 600)
         XCTAssertTrue(fetcher.calls.isEmpty, "JSON-LD recovery must not hit the network")
     }
 

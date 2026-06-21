@@ -64,12 +64,13 @@ struct ArticleContent: Codable, Equatable {
         blocks.reduce(0) { $0 + $1.text.count }
     }
 
-    /// Enough body text to be worth reading rather than a paywall stub. Shared by
-    /// the ingestor and both extensions so they agree on the threshold. A body that
-    /// clears the length bar but `looksPaywalled` does NOT count — that's a
-    /// subscription wall or a crawler teaser, not the article.
+    /// Enough body text to be worth reading rather than a paywall stub — the
+    /// text-only convenience reading of the shared `ArticleExtraction.isReadableArticle`
+    /// predicate (no source HTML, so the publisher-declared lock signal isn't applied).
+    /// Callers holding the source HTML should use `ArticleExtraction.isReadableArticle`
+    /// for the stronger, HTML-aware judgment.
     var hasReadableBody: Bool {
-        bodyTextLength >= Self.readableBodyThreshold && !looksPaywalled
+        ArticleExtraction.isReadableArticle(self, html: nil)
     }
 
     /// Minimum block-text length for `hasReadableBody`.

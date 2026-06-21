@@ -83,10 +83,6 @@ actor ReplayHTMLFetcher: HTMLFetching {
         try answer(for: url)
     }
 
-    func fetchArchivedHTML(for url: URL) async throws -> String {
-        try answer(for: url)
-    }
-
     // MARK: - Recorded-response replay
 
     /// Consumes the next recorded response for `url` and reproduces its outcome:

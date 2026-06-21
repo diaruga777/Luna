@@ -17,14 +17,21 @@ final class ArchiveWebPreStageTests: XCTestCase {
         return url
     }
 
-    func testNYTLeadsWithTrailingDotThenThirdPartyPages() {
+    /// NYT's rule leads with a SILENT trailing-dot strategy, so it already ran in the
+    /// background path. A trailing-dot origin trick returns the same wall in a browser
+    /// (it doesn't benefit from a JS retry), so the plan OMITS it from the WKWebView
+    /// pre-stages — NYT goes silent-trailing-dot → (fail) → third-party pages →
+    /// archive.today, skipping the ~9s redundant trailing-dot pre-stage (the speed fix).
+    func testNYTOmitsTrailingDotAndLeadsWithThirdPartyPages() {
         let stages = ArchiveWebReaderViewController.webPreStageURLs(
             for: url("https://www.nytimes.com/2026/06/20/story.html"))
-        XCTAssertEqual(stages.first?.host, "www.nytimes.com.")
+        // Trailing-dot already ran silently → never repeated as a pre-stage.
+        XCTAssertFalse(stages.contains { $0.host?.hasSuffix(".") ?? false },
+                       "trailing-dot must not be repeated as a WKWebView pre-stage")
         // No archive.today URL is ever a pre-stage.
         XCTAssertFalse(stages.contains { ArticleFetcher.isArchiveTodayURL($0) })
-        // The third-party reader pages follow.
-        XCTAssertTrue(stages.contains { $0.absoluteString.hasPrefix("https://smry.ai/") })
+        // The third-party reader pages are the pre-stages.
+        XCTAssertEqual(stages.first?.absoluteString.hasPrefix("https://smry.ai/"), true)
     }
 
     func testWSJHasNoTrailingDotButHasThirdPartyPages() {

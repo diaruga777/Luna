@@ -10,7 +10,10 @@ import Foundation
 /// live implementation; `MockArticleFetcher` (tests) records calls and returns canned
 /// HTML.
 protocol HTMLFetching {
-    /// Fetches HTML for `url` with the default UA chain (Googlebot then Safari).
+    /// Fetches HTML for `url` with a single, deterministic Safari UA — the bytes a
+    /// normal reader sees, so the paywall judgment is computed over reader-served HTML
+    /// and re-runs are reproducible. The Googlebot crawler trick is NOT the default; it
+    /// is an explicit `.userAgent(.googlebotDesktop)` bypass strategy.
     func fetchHTML(from url: URL) async throws -> String
     /// Fetches `url` with an explicit crawler User-Agent and optional
     /// `X-Forwarded-For` (for crawler-whitelist paywalls).
@@ -25,17 +28,15 @@ protocol HTMLFetching {
     func fetchWaybackRawHTML(for url: URL) async throws -> String
     /// Fetches the r.jina.ai reader rendering of `url` (`https://r.jina.ai/<url>`).
     func fetchJinaReader(for url: URL) async throws -> String
-    /// Fetches a public web-archive copy (Wayback, then archive.today's URLSession
-    /// path) — the legacy last-silent attempt before the WKWebView archive reader.
-    func fetchArchivedHTML(for url: URL) async throws -> String
 }
 
-/// Downloads raw HTML for a weblink. Requests with a Googlebot user agent first —
-/// many soft paywalls serve full content to crawlers and never trigger without
-/// JavaScript — and falls back to a regular Safari user agent.
+/// Downloads raw HTML for a weblink with a single, deterministic Safari user agent
+/// (the bytes a normal reader sees). The Googlebot crawler trick — which many soft
+/// paywalls serve full content to — is no longer the default read; it is an explicit
+/// `.userAgent(.googlebotDesktop)` bypass strategy (`CrawlerAgent.googlebotDesktop`),
+/// so the direct read is reproducible and the paywall judgment isn't computed over
+/// crawler-served HTML.
 struct ArticleFetcher: HTMLFetching {
-    static let googlebotUserAgent =
-        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
     static let safariUserAgent =
         "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1"
     /// Cap on the HTML we hold in memory. Real article pages are far smaller;
@@ -50,17 +51,10 @@ struct ArticleFetcher: HTMLFetching {
     }
 
     func fetchHTML(from url: URL) async throws -> String {
-        do {
-            return try await fetch(url: url, userAgent: Self.googlebotUserAgent)
-        } catch FetchError.tooLarge {
-            throw FetchError.tooLarge   // deterministic — a second UA re-downloads the same oversized page
-        } catch FetchError.notHTML {
-            throw FetchError.notHTML
-        } catch {
-            // Bot-blocked or transient: many soft paywalls only serve full content
-            // to a crawler UA, so retry once as Safari.
-            return try await fetch(url: url, userAgent: Self.safariUserAgent)
-        }
+        // ONE UA, no fallback chain: deterministic + reproducible. A bot-blocked soft
+        // paywall is recovered by the explicit `.userAgent(.googlebotDesktop)` bypass
+        // strategy, not by silently swapping the UA on the direct read.
+        try await fetch(url: url, userAgent: Self.safariUserAgent)
     }
 
     /// Common tracking query params stripped before an archive lookup so the
@@ -190,16 +184,6 @@ struct ArticleFetcher: HTMLFetching {
         return (article.host ?? "Article").replacingOccurrences(of: "www.", with: "")
     }
 
-    /// Fetches a public web-archive copy of a URL — a fallback for hard-paywalled /
-    /// bot-blocked pages (WSJ, FT, …) the direct fetch can't read (401, or only a
-    /// subscription stub). Tries the **Wayback Machine** first (automation-friendly,
-    /// no CAPTCHA, often carries the full text), then **archive.today** (user-submitted
-    /// snapshots that bypass more paywalls but rate-limit/CAPTCHA aggressively).
-    func fetchArchivedHTML(for url: URL) async throws -> String {
-        if let wayback = try? await fetchWaybackHTML(for: url) { return wayback }
-        return try await fetchArchiveTodayHTML(for: url)
-    }
-
     /// The Wayback Machine's replay snapshot. (NOT the `id_` raw variant — for JS-heavy
     /// sites like WSJ the raw capture is a contentless app shell, whereas the replay
     /// preserves the server-rendered article body the extractor needs.)
@@ -221,19 +205,6 @@ struct ArticleFetcher: HTMLFetching {
                 of: "http://web.archive.org", with: "https://web.archive.org"))
         else { throw FetchError.badResponse }
         return try await fetch(url: snapshotURL, userAgent: Self.safariUserAgent, timeout: 30)
-    }
-
-    /// `archive.ph/newest/<url>` 302-redirects to the latest archive.today snapshot,
-    /// which URLSession follows. Succeeds only for the minority of IPs archive.today
-    /// doesn't challenge; everyone else gets a Cloudflare CAPTCHA (which a `URLSession`
-    /// can't solve) and falls through to the interactive `ArchiveWebReaderViewController`.
-    /// Short timeout so that common failure doesn't stall the foreground share sheet.
-    private func fetchArchiveTodayHTML(for url: URL) async throws -> String {
-        let target = Self.canonicalForArchiving(url).absoluteString
-        guard let archiveURL = URL(string: "https://archive.ph/newest/\(target)"),
-              archiveURL.host == "archive.ph"   // reject if the article URL smuggled a different host
-        else { throw FetchError.badResponse }
-        return try await fetch(url: archiveURL, userAgent: Self.safariUserAgent, timeout: 12)
     }
 
     // MARK: - Bypass-strategy fetches (HTMLFetching)

@@ -64,12 +64,6 @@ struct RecordingHTMLFetcher: HTMLFetching {
             fetch: { try await wrapped.fetchJinaReader(for: url) })
     }
 
-    func fetchArchivedHTML(for url: URL) async throws -> String {
-        try await record(
-            url: url, headers: [:], note: "archivedHTML",
-            fetch: { try await wrapped.fetchArchivedHTML(for: url) })
-    }
-
     /// Records the request, runs `fetch`, records the response (HTML on success,
     /// error on failure), then returns/rethrows the result unchanged.
     private func record(

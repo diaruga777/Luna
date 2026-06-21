@@ -50,39 +50,46 @@ enum ArticleResolver {
         runner: BypassRunning? = nil,
         replayLog: ((EventKind) async -> Void)? = nil
     ) async -> ArticleResolution {
+        let extraction = ArticleExtraction(extractor: extractor)
         // Reuse the caller's already-fetched direct HTML when supplied (the shared
         // decider fetches it once for product detection), else fetch it now.
-        let direct = await extractedContent(
-            from: { if let prefetchedHTML { return prefetchedHTML }
-                    return try await fetcher.fetchHTML(from: url) },
-            baseURL: url, extractor: extractor)
+        let direct = await extraction.fetchAndExtract(baseURL: url) {
+            if let prefetchedHTML { return prefetchedHTML }
+            return try await fetcher.fetchHTML(from: url)
+        }
         // Skip everything else when the direct read already succeeded.
-        if Self.isReadable(direct) {
-            return .readable(direct!.0, html: direct!.1)
+        if let direct, ArticleExtraction.isReadableArticle(direct) {
+            return .readable(direct.content, html: direct.sourceHTML)
         }
 
-        // Walk the data-driven SILENT strategy list (per-host rule, else the generic
-        // signal-based fallback). The first readable, non-locked extraction wins. The
-        // WKWebView-only strategies (third-party reader pages, archive.today) are
-        // skipped here and run later in the archive reader.
+        // Build the ONE typed bypass plan (per-host rule, else the generic
+        // signal-based fallback) and walk its silent leg. The first readable,
+        // non-locked extraction wins. The WKWebView strategies (third-party reader
+        // pages, archive.today) live in the plan's web leg and run later in the
+        // archive reader. A bounded aggregate deadline keeps the ingest path from
+        // serially burning a minute of silent fetches before parking.
         let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
-        let strategies = BypassStrategySelector.strategies(for: url, directHTML: direct?.1)
-        for strategy in strategies where strategy.runsSilently {
-            let pair = await bypassRunner.run(strategy, url: url, directHTML: direct?.1)
-            let succeeded = pair.map(Self.isReadable) ?? false
+        let plan = BypassPlan.make(for: url, directHTML: direct?.sourceHTML)
+        let silentDeadline = Date().addingTimeInterval(BypassPlan.silentChainDeadlineSeconds)
+        for strategy in plan.silent {
+            let candidate = await bypassRunner.run(strategy.asBypassStrategy, url: url,
+                                                   directHTML: direct?.sourceHTML)
+            let succeeded = candidate.map(ArticleExtraction.isReadableArticle) ?? false
             await replayLog?(.bypassStrategy(
-                name: strategy.replayName, runsSilently: true, succeeded: succeeded))
-            if let pair, Self.isReadable(pair) {
-                return .readable(pair.0, html: pair.1)
+                name: strategy.asBypassStrategy.replayName, runsSilently: true, succeeded: succeeded))
+            if let candidate, ArticleExtraction.isReadableArticle(candidate) {
+                return .readable(candidate.content, html: candidate.sourceHTML)
             }
+            if Date() > silentDeadline { break }
         }
 
-        // No silent strategy worked. Try the legacy archive fetch as a last silent
-        // attempt, then map to the resolution — preserving the title so the item
-        // parks for the WKWebView archive path (unchanged downstream behavior).
-        let archived = await extractedContent(from: { try await fetcher.fetchArchivedHTML(for: url) },
-                                              baseURL: url, extractor: extractor)
-        return resolution(direct: direct, archived: archived)
+        // No silent strategy worked. Map to the resolution — preserving the title so
+        // the item parks for the WKWebView archive path. (The legacy `fetchArchivedHTML`
+        // last-silent attempt was dropped: `.waybackRaw` already covers Wayback in every
+        // rule, and `archive.ph/newest` belongs to the bounded WKWebView terminal flow,
+        // not a silent fetch — removing the duplicate Wayback hit + near-always-failing
+        // archive.ph GET is the NYT/WSJ "no silent strategy worked" speed fix.)
+        return resolution(direct: direct, archived: nil)
     }
 
     /// The page's advertised AMP URL (`<link rel="amphtml" href="…">`), absolute,
@@ -100,34 +107,20 @@ enum ArticleResolver {
     /// (no I/O), so the title-preservation strategy is unit-testable: prefer a
     /// readable body from either source, else the best non-placeholder title
     /// (direct page first — it's canonical — then the archive snapshot), else
-    /// `.unreadable`.
+    /// `.unreadable`. Judged by the shared `ArticleExtraction.isReadableArticle`
+    /// predicate (the only place the readable/locked decision lives).
     static func resolution(
-        direct: (ArticleContent, String)?, archived: (ArticleContent, String)?
+        direct: ExtractedArticle?, archived: ExtractedArticle?
     ) -> ArticleResolution {
-        if Self.isReadable(direct) { return .readable(direct!.0, html: direct!.1) }
-        if Self.isReadable(archived) { return .readable(archived!.0, html: archived!.1) }
-        let title = [direct?.0.title, archived?.0.title]
+        if let direct, ArticleExtraction.isReadableArticle(direct) {
+            return .readable(direct.content, html: direct.sourceHTML)
+        }
+        if let archived, ArticleExtraction.isReadableArticle(archived) {
+            return .readable(archived.content, html: archived.sourceHTML)
+        }
+        let title = [direct?.content.title, archived?.content.title]
             .compactMap { $0 }
             .first { !$0.isEmpty && $0 != "Untitled" }
         return title.map { .paywalled(title: $0) } ?? .unreadable
-    }
-
-    /// A fetched+extracted pair is "readable" only if it has a real body AND its
-    /// source HTML doesn't declare a paywall (schema.org `isAccessibleForFree:false`
-    /// etc.) — the latter catches walls whose CTA text the extractor stripped.
-    private static func isReadable(_ pair: (ArticleContent, String)?) -> Bool {
-        guard let pair else { return false }
-        return pair.0.hasReadableBody && !PaywallDetector.htmlDeclaresLocked(pair.1)
-    }
-
-    /// Runs an HTML fetch and extracts it, pairing the parsed content with its
-    /// source HTML. Returns nil if the fetch or parse fails.
-    private static func extractedContent(
-        from fetch: () async throws -> String, baseURL: URL, extractor: ArticleExtractor
-    ) async -> (ArticleContent, String)? {
-        guard let html = try? await fetch(),
-              let content = try? extractor.extract(html: html, baseURL: baseURL)
-        else { return nil }
-        return (content, html)
     }
 }

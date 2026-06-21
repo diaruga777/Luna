@@ -91,11 +91,12 @@ enum BypassGate {
             return .block(.productPage)
         }
 
-        // (3) A fully-readable, non-paywalled article needs no bypass. `hasReadableBody`
-        // already excludes locked/teaser stubs; the HTML lock signal is the belt-and-
-        // braces check for a wall whose CTA text the extractor stripped.
+        // (3) A fully-readable, non-paywalled article needs no bypass. Judged by the
+        // shared `ArticleExtraction.isReadableArticle` predicate (HTML-aware: it folds
+        // in the publisher-declared lock signal for a wall whose CTA text the extractor
+        // stripped) — the single place the readable/locked decision lives.
         let htmlDeclaresLocked = html.map(PaywallDetector.htmlDeclaresLocked) ?? false
-        if let extracted, extracted.hasReadableBody, !htmlDeclaresLocked {
+        if let extracted, ArticleExtraction.isReadableArticle(extracted, html: html) {
             return .block(.readableArticle)
         }
 

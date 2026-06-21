@@ -138,13 +138,14 @@ struct ArticleFetcher: HTMLFetching {
     /// the only way in, and only an interactive web view can clear archive.today's
     /// Cloudflare gate).
     ///
-    /// SINGLE SOURCE: a host is hard-paywall iff `BypassRuleTable` has a per-host rule
-    /// for it (every seeded rule is a publisher whose body rarely ships
-    /// unauthenticated and ends in the `.archiveToday` terminal flow). This folds the
-    /// former parallel `hardPaywallHosts` Set into the one routing table, so the two
-    /// can no longer drift.
+    /// SINGLE SOURCE: a host is hard-paywall iff the classifier's
+    /// `hardPaywallNewsSites` table names it — the SAME list the classifier uses to
+    /// return `.paywalledArticle(hardHost: true)`, so determination and the
+    /// "unreadable → park for archive" routing can never drift. (`BypassRuleTable`
+    /// only refines the per-host bypass STRATEGY ordering; a hard-paywall host with no
+    /// bespoke rule still routes to the archive reader via the generic plan.)
     static func isHardPaywallHost(_ url: URL) -> Bool {
-        BypassRuleTable.rule(for: url) != nil
+        Classifier.isHardPaywallHost(url)
     }
 
     /// A human-readable placeholder title for an article we couldn't read yet

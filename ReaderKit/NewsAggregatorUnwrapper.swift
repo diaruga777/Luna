@@ -13,51 +13,15 @@ import Foundation
 /// not the article) and the archive flow (archive.today can't snapshot it), so we
 /// resolve it up front and continue as if the publisher URL had been saved.
 ///
-/// `unwrap` returns nil for any non-wrapper URL (after a cheap host check, no
-/// network) and for wrappers with no recoverable underlying URL (e.g. an Apple
-/// News+ exclusive) — callers then proceed with the original URL unchanged.
+/// This `enum` is now ONLY the home of the pure, well-tested wrapper parsers
+/// (`facebookRedirectTarget`, `googleNewsArticleID`/`googleNewsURL`/
+/// `googleNewsBatchExecute`, `appleNewsPublisherURL`, `resolveFinalRedirect`,
+/// `fetchText`). The app-wide unwrap dispatch lives in `URLUnwrapper`, whose
+/// `[WrapperHandler]` registry wraps these parsers; every surface unwraps through
+/// `URLUnwrapper` (offline-first, tracking-stripped). The old async `unwrap` /
+/// `normalizedIncomingURL*` shims were deleted once the last callers moved to
+/// `URLUnwrapper.unwrap` / `unwrapOffline`.
 enum NewsAggregatorUnwrapper {
-
-    /// Resolves `url` to its underlying publisher URL, or nil. Network-backed only
-    /// for recognized wrapper hosts; every other host returns nil immediately.
-    ///
-    /// Thin shim over `URLUnwrapper.unwrap` (the extensible registry replacing this
-    /// `enum`'s old hand-written ladder). Preserves the historical contract — nil for
-    /// a non-wrapper URL — by mapping the registry's `UnwrapResult.didUnwrap`. Stages
-    /// 3–4 repoint callers to `URLUnwrapper` directly and delete this shim.
-    static func unwrap(_ url: URL, session: URLSession = .shared) async -> URL? {
-        let result = await URLUnwrapper.unwrap(url, session: session)
-        return result.didUnwrap ? result.url : nil
-    }
-
-    /// Normalizes a raw incoming URL/string at a SAVE ENTRY POINT, before any
-    /// `hasPrefix("http")` gate. A Facebook deep link (`fbrpc://…&target_url=…`)
-    /// carries its real http(s) article inline but has no http scheme, so the
-    /// plain http gates at the share/action extensions, the in-app "Save a Link"
-    /// alert, and the app intents would otherwise drop it (or, in the alert,
-    /// mangle it into `https://fbrpc://…`). This applies the offline Facebook
-    /// unwrap up front and returns the http target when present, else the original
-    /// URL unchanged. Pure (no network) — the async `unwrap` in `ingest` still
-    /// handles apple.news / google / shortener cases later.
-    ///
-    /// NOTE: this legacy entry returns the target VERBATIM (tracking params
-    /// preserved). The new `URLUnwrapper.unwrapOffline` returns a tracking-stripped
-    /// result; Stages 3–4 migrate callers to it. Until then this shim keeps the
-    /// historical (un-stripped) shape its callers and tests expect.
-    static func normalizedIncomingURL(_ url: URL) -> URL {
-        facebookRedirectTarget(url) ?? url
-    }
-
-    /// String overload of `normalizedIncomingURL(_:)` for entry points that hold a
-    /// raw string (the in-app "Save a Link" alert, app intents). Returns the http
-    /// target's string when the input is a Facebook deep link, else the original
-    /// string unchanged (so a non-URL string is left for the caller's own gate).
-    static func normalizedIncomingURLString(_ string: String) -> String {
-        guard let url = URL(string: string), let target = facebookRedirectTarget(url) else {
-            return string
-        }
-        return target.absoluteString
-    }
 
     // MARK: - Host classification
 

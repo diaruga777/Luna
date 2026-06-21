@@ -227,15 +227,74 @@ Every surface builds an `IngestInput`, calls `IngestPipeline.process`, and prese
 - `OutcomePresenterTests` (5) — exhaustive `Outcome`→intent mapping, video/social/audio never
   route to the reader, `.failed` never "Saved", and typed-URL scheme validation.
 
-### Seam left for Stage 4 (fixtures/parity/cleanup)
+## Stage 4 — Fixtures, parity, and the final cleanup (DONE)
 
-- Per-site fixtures for amazon/target/walmart + nytimes/washingtonpost/wsj/smh.com.au +
-  youtube/x/instagram/tiktok/facebook driving the pipeline parity table directly (Stage 3's
-  parity test covers the cross-source guarantee; Stage 4 broadens the named-site matrix).
-- `NonTextualContent` / `PlatformClassifier` / `PlatformRegistry` remain as thin shims over
-  `PlatformRecognizer` — Stage 4 may repoint the last call sites (PasteboardSuggester,
-  MediaDownload) and remove them.
-- The double-dedup audit note (SMC "already saved" vs the ingestor tracker re-save) was left as
-  two distinct guards (different conditions); confirm one is truly redundant before removing.
-- `URLUnwrapper`'s tracking-strip and `ArticleFetcher.canonicalForArchiving` could fold into one
-  `URLCanonicalizer.strip` (Stage 1 seam, still open).
+Stage 4 pins the pipeline with a named-site fixture/parity matrix, removes the last
+Stage-1/3 shims, and folds the remaining duplicate sources into one each. Suite is
+green; Release (generic/iOS) compiles.
+
+### Named-site fixtures + the parity table (`ClipTests/NamedSiteParityTests.swift`)
+
+A single data-driven table drives the REAL `IngestPipeline.process` (so
+`URLUnwrapper` → `Classifier` → per-kind processing all run) with a mock `HTMLFetching`
+and a nil render tier — no live network. Each row is `fixture/URL → Expected Outcome`,
+asserted identically across EVERY `CaptureSource` (the headline parity guarantee):
+
+- **Shops → `.product` + price/currency:** amazon.com.au (buy-box `priceAmount`,
+  AUD from the TLD), amazon.com (buy-box `$42.50` wins over the `$59.99` strikethrough
+  list price, USD), target (`current_retail` 24.99 USD), walmart (`currentPrice.price`
+  17.88 USD). Reuses the Stage-2 `Fixtures/Products/*`.
+- **News → `.article` (readable) or `.needsArchive` (hard-paywall stub):** nytimes,
+  washingtonpost, wsj, smh.com.au — both variants each. Reuses `Fixtures/Readable/*`.
+- **Social/video/audio → never `.article`:** youtube/tiktok/facebook → `.video`;
+  x/instagram/reddit/bluesky → `.social`; spotify/apple → `.audio`. URL-only, decided
+  before any fetch. A second test attaches article-shaped HTML to every platform URL
+  and asserts none become `.article`.
+
+### Last shims removed
+
+- **`PlatformClassifier` (+ `PlatformClassification` + `PlatformClassifierTests`)** —
+  DELETED. Every caller (`PlatformRegistry.detect`, `PasteboardSuggester`,
+  `SocialMediaResolver`, `NonTextualContent.detect`, `BypassGate`, `MediaDownload`,
+  `MediaAutoDownloader`) now calls `PlatformRecognizer.recognize` directly. Host-variant
+  coverage lives in `PlatformRecognizerTests` (the deleted tests were a strict subset).
+- **`NewsAggregatorUnwrapper.unwrap` (async) / `normalizedIncomingURL` /
+  `normalizedIncomingURLString`** — DELETED (no production callers left; tests covered by
+  `URLUnwrapperTests`). The enum keeps ONLY the pure wrapper parsers that `URLUnwrapper`'s
+  registry and `ShareViewController.facebookRedirectTarget` wrap.
+- **Kept (genuine unique use, documented):** `NonTextualContent` is the share extension's
+  non-textual presentation value type (YouTube embed URL / referer / poster); it is no
+  longer a recognition shim. `PlatformRegistry` stays as the module registry (`module(for:)`
+  drives rendering); its `detect` is a thin convenience over the recognizer.
+
+### Single-source consolidations
+
+- **`ReaderKit/URLCanonicalizer.strip(_:)`** — the ONE tracking-param list (utm_*, fbclid,
+  …) + fragment drop. Both `URLUnwrapper` (unwrap leg) and
+  `ArticleFetcher.canonicalForArchiving` (archive leg, which still unwraps an archive
+  snapshot first, then strips) canonicalize through it — one list, no drift.
+- **Hard-paywall determination = one source.** `Classifier.isHardPaywallHost` derives from
+  `hardPaywallNewsSites` (the SAME table that returns `.paywalledArticle(hardHost: true)`),
+  and `ArticleFetcher.isHardPaywallHost` now delegates to it. Previously the routing read
+  `BypassRuleTable.rule(for:) != nil` (22 hosts) while classification read
+  `hardPaywallNewsSites` (24 hosts) — so smh.com.au/theage.com.au/afr.com classified as
+  hard-paywall but failed instead of parking for archive on timeout/unreadable.
+  `BypassRuleTable` now ONLY refines per-host strategy ordering (generic plan, ending in
+  `.archiveToday`, covers a hard-paywall host with no bespoke rule).
+- **Product determination trusts the classifier.** When the classifier deterministically
+  returns `.product(.knownShopHost)`, `IngestPipeline.processWeb` goes straight to
+  `ProductMetadataExtractor.extract` — it no longer re-gates on `ProductPageDetector.detect`
+  (which lacks the host-specific Target `current_retail` / Walmart `currentPrice` price
+  shapes the per-host `ProductPriceRule` knows). The heuristic detector still confirms
+  products on `.undetermined`/article-classified pages.
+- **Dedup authority.** `ReadingListStore.addIfAbsent` is the single URL-existence dedup
+  ("drop a duplicate incoming item without re-attributing"); `SocialMessageCenter`'s
+  friend-share cases route through it instead of repeating `item(forURLString:) == nil`.
+  The ingestor's separate guard (`priceTracker(containingStoreURL:)`) is an ORTHOGONAL
+  condition (same URL inside a DIFFERENT item's tracker), kept and documented.
+
+### Still green / extension-safe / replay
+
+- `ReaderKit` stays extension-safe: `URLCanonicalizer`, `Classifier.isHardPaywallHost`, and
+  the pipeline change add no UIKit/CloudKit/main-app deps. Release (generic/iOS) compiles.
+- Replay round-trips unchanged (the pipeline's unwrap/decision events are untouched).

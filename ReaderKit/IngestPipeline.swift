@@ -182,7 +182,8 @@ enum IngestPipeline {
         // (2) Classify deterministically (URL-only). Platform/video/audio/document
         // are decided here, before any fetch — a YouTube/X/etc. URL can never reach
         // article extraction.
-        switch Classifier.classify(url: url, documentType: input.documentType) {
+        let kind = Classifier.classify(url: url, documentType: input.documentType)
+        switch kind {
         case .document(let type):
             return .document(type: type)
         case let .video(platform, itemID):
@@ -196,18 +197,19 @@ enum IngestPipeline {
             // for the undetermined/product confirmation, fetch price, resolve the
             // article, run the bypass plan.
             return await processWeb(
-                url: url, input: input, fetcher: fetcher, extractor: extractor,
+                url: url, classifiedKind: kind, input: input, fetcher: fetcher, extractor: extractor,
                 productDetector: productDetector, metadataExtractor: metadataExtractor,
                 render: render, runner: runner, replayLog: replayLog)
         }
     }
 
     /// The web-processing branch for an article/product/paywalled/undetermined URL.
-    /// Product detection runs first (a product is never paywall-bypassed); otherwise
+    /// Product handling runs first (a product is never paywall-bypassed); otherwise
     /// the article is resolved through the gated silent bypass strategies and mapped
     /// to `.article` / `.needsArchive` / `.failed`.
     private static func processWeb(
         url: URL,
+        classifiedKind: ContentKind,
         input: IngestInput,
         fetcher: HTMLFetching,
         extractor: ArticleExtractor,
@@ -228,10 +230,17 @@ enum IngestPipeline {
             directHTML = try? await fetcher.fetchHTML(from: url)
         }
 
-        // (3a) Product detection — a product page with a fetchable price becomes a
-        // tracker and is NEVER paywall-bypassed. `forceArticle` skips this entirely.
+        // (3a) Product handling — a product page becomes a tracker and is NEVER
+        // paywall-bypassed. `forceArticle` skips this entirely. A deterministic
+        // `.product(.knownShopHost)` from the classifier is TRUSTED — we go straight
+        // to extraction (no redundant `ProductPageDetector.detect` gate, which would
+        // otherwise miss host-specific price shapes the per-host `ProductPriceRule`
+        // extractor knows, e.g. Target `current_retail` / Walmart `currentPrice`).
+        // Only an undetermined/article-classified page needs the heuristic detector to
+        // confirm it's really a product before extracting.
+        let classifiedAsProduct: Bool = { if case .product = classifiedKind { return true }; return false }()
         if !input.forceArticle, let html = directHTML,
-           productDetector.detect(urlString: url.absoluteString, html: html) != nil,
+           classifiedAsProduct || productDetector.detect(urlString: url.absoluteString, html: html) != nil,
            let metadata = await metadataExtractor.extract(url: url, html: html, render: render) {
             let product = ProductInfo(
                 name: metadata.name, priceAmount: metadata.price.amount,

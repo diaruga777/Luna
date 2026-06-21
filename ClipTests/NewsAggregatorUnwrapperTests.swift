@@ -180,25 +180,6 @@ final class NewsAggregatorUnwrapperTests: XCTestCase {
         }
         XCTAssertEqual(
             NewsAggregatorUnwrapper.facebookRedirectTarget(parsed)?.absoluteString, expected)
-        // The save-entry normalize helper must surface that http target too.
-        XCTAssertEqual(
-            NewsAggregatorUnwrapper.normalizedIncomingURL(parsed).absoluteString, expected)
-        XCTAssertEqual(
-            NewsAggregatorUnwrapper.normalizedIncomingURLString(verbatim), expected)
-    }
-
-    func testNormalizedIncomingURLLeavesOrdinaryURLUnchanged() {
-        let ordinary = url("https://www.nytimes.com/2026/06/20/world/story.html")
-        XCTAssertEqual(
-            NewsAggregatorUnwrapper.normalizedIncomingURL(ordinary).absoluteString,
-            ordinary.absoluteString)
-        XCTAssertEqual(
-            NewsAggregatorUnwrapper.normalizedIncomingURLString(ordinary.absoluteString),
-            ordinary.absoluteString)
-        // A non-URL string is returned unchanged for the caller's own gate.
-        XCTAssertEqual(
-            NewsAggregatorUnwrapper.normalizedIncomingURLString("example.com/foo"),
-            "example.com/foo")
     }
 
     func testFacebookRPCUnwrapStripsTrackingViaCanonicalization() {
@@ -207,12 +188,5 @@ final class NewsAggregatorUnwrapperTests: XCTestCase {
         XCTAssertEqual(
             ArticleFetcher.canonicalForArchiving(target).absoluteString,
             "https://techcrunch.com/2026/06/09/its-not-faang-anymore-its-mangos/")
-    }
-
-    // MARK: - Non-wrapper URLs are left alone (no network)
-
-    func testUnwrapReturnsNilForOrdinaryURL() async {
-        let result = await NewsAggregatorUnwrapper.unwrap(url("https://www.nytimes.com/2026/06/20/world/story.html"))
-        XCTAssertNil(result)
     }
 }

@@ -125,6 +125,15 @@ enum Classifier {
 
     static let newsSites: [KnownSite] = [hardPaywallNewsSites, freeNewsSites]
 
+    /// Whether `url` is a known hard-paywall news host — the SINGLE determination
+    /// source shared by classification (`.paywalledArticle(hardHost: true)`) and the
+    /// "unreadable → park for the archive reader" routing in `IngestPipeline` /
+    /// `ArticleFetcher.isHardPaywallHost`. Derives straight from
+    /// `hardPaywallNewsSites`, so the two can never drift apart.
+    static func isHardPaywallHost(_ url: URL) -> Bool {
+        hardPaywallNewsSites.matches(url)
+    }
+
     // MARK: - Phase 2: HTML heuristics (table-miss only)
 
     /// The heuristic phase, run only when the deterministic table is undetermined.

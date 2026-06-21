@@ -121,3 +121,121 @@ ONE typed plan `{ silent: [SilentStrategy], webPreStages: [WebStrategy], allowsA
 - `Classifier` is not yet wired into `ReadingListIngestor` / `ArticleIngestDecider`. Stage 3 makes the classifier the determination stage (table first, HTML heuristics only when undetermined), strips fetch/price/bypass out of `ArticleIngestDecider`, and folds the four scattered host sets (`hardPaywallHosts`, `archiveTodayHosts`, `youtubeHosts`, inlined platform `matches`) into `knownSites`.
 - `PlatformRecognizer` is standalone; `PlatformClassifier`/`PlatformRegistry`/`NonTextualContent` still run live. Stage 3 shims them to `recognize`, deletes the dead module `classify`, and gates recognition as the FIRST branch of the processing decision so no surface can bypass it.
 - `ProductPageDetector.hasStructuredProductData` was added as the Tier-1-only seam the classifier's tightened product guard uses.
+
+## Stage 3 — Pipeline + surfaces (DONE)
+
+Stage 3 builds the SINGLE shared pipeline and makes every input surface a thin
+presenter over it. `Classifier` becomes THE determination stage; `ArticleIngestDecider`
+is deleted (folded in); all six surfaces call one entry. Suite 840 → 847; Release
+(generic/iOS) compiles.
+
+### `ReaderKit/IngestPipeline.swift`
+
+The ONE shared entry: `IngestPipeline.process(_ input: IngestInput, timeout:…, …) async -> Outcome`.
+
+- **`struct IngestInput`** — `url` + `source: CaptureSource` (paste / manual / appIntent
+  / shareSheet / friendShare / email) + optional `documentType` + `prefetchedHTML` +
+  `forceArticle`. The source travels with the input so presentation policy is data, not
+  per-surface branching.
+- **`enum Outcome: Equatable`** — the unified, EXHAUSTIVE result: `.article(ArticleContent, html:)`
+  / `.product(ProductInfo, html:)` / `.social(ContentPlatform, itemID:)` /
+  `.video(ContentPlatform, itemID:)` / `.audio(ContentPlatform, service:, itemID:)` /
+  `.document(type:)` / `.needsArchive(title:)` / `.failed`. Absorbs the old
+  `NonTextualContent` (video/social/audio) and the document gate, so the pipeline
+  classifies EVERYTHING and no surface re-derives it.
+- **Fixed order**: (1) `URLUnwrapper.unwrap` ONCE (offline-first, tracking-stripped —
+  every surface unwraps now) → replay `.unwrap`; (2) `Classifier.classify` (deterministic
+  table first; platform/video/audio/document are the FIRST branch ⇒ a YouTube/X/etc. URL
+  is decided before any fetch and can NEVER reach article extraction on any surface);
+  (3) per-kind processing — product detect (→ `.product`, never paywall-bypassed) → article
+  resolve via the gated silent `BypassPlan` → `.article` / `.needsArchive` / `.failed`.
+- **ONE mandatory overall timeout** (`processTimeout = 28s`) via `withTaskGroup` + a sleeping
+  deadline leg wrapping the WHOLE call ⇒ it can NEVER hang. On timeout: `.needsArchive` for a
+  hard-paywall host (the archive reader is its only route), else `.failed`. This + the
+  Stage-2 "WebView render unreachable in extensions" (`render == nil` default) is the
+  action-extension "spinner forever" fix.
+- `render` defaults nil (extension-safe); the main app injects `WebViewPriceRenderer`.
+
+### `ReaderKit/OutcomePresenter.swift`
+
+`protocol OutcomePresenter { func present(_ outcome: Outcome, for item: ReadingListItem) async }`
+— a thin per-surface presenter whose body is an EXHAUSTIVE switch over `Outcome` (no
+`default`, compiler-checked). Every case shows real UI; `.failed`/timeout shows an error,
+NEVER an infinite spinner.
+
+### The six surfaces (all thin presenters now)
+
+Every surface builds an `IngestInput`, calls `IngestPipeline.process`, and presents via its
+`OutcomePresenter`:
+- **main app** `ReadingListIngestor.ingest` → `IngestorOutcomePresenter` (the headless
+  store-writing presenter shared by paste/manual/appIntent/friendShare; the foreground list
+  opens a saved item via `open(_:presenter:)` on tap). Unwrap is done ONCE up front to
+  repoint the store, then the pipeline runs (idempotent re-unwrap). The paste happy-path
+  `saveNewWithContent` now routes through the full pipeline when the URL unwraps (so the
+  pre-fetched wrapper shell isn't persisted). In-app typed-URL (`addTapped`) uses
+  `normalizedTypedURL` — validates the scheme (accepts http(s), bare-prefixes a host-shaped
+  entry, rejects `mailto:`/`tel:`/junk) instead of the old blind `https://` prefix.
+- **action extension** (`ShareViewController` `com.apple.ui-services`) + **share extension**
+  (`com.apple.share-services`) → `ShareOutcomePresenter` (one presenter; `mode == nil` ⇒
+  zero-UI share = save+checkmark, `mode != nil` ⇒ action = in-sheet reader / saved-non-textual
+  screen). The ad-hoc `NonTextualContent.detect` gating in `routeSavedOrReader` is GONE — the
+  pipeline decides. `.failed` no longer shows a misleading "Saved" checkmark (action ext shows
+  an error; share ext completes quietly for the app to retry). The action-ext reader
+  (`ShareReaderViewController`) takes the already-computed `Outcome` (no re-process).
+- **app intents** (`IntentIngestHelper.handleSavePressWithTimeout` → `handleSavePress` →
+  `ingest`) and **incoming friend share** (`SocialMessageCenter.process` → `startIngest` →
+  `ingest`) inherit the pipeline transitively through the ingestor.
+
+### Deleted / folded
+
+- **`ArticleIngestDecider`** (+ `ArticleIngestDeciderTests`) — folded into `IngestPipeline`.
+- **dead per-module `PlatformModule.classify`** (8 bodies + the protocol requirement) — modules
+  keep rendering + `metadataFetcher`; `PlatformRecognizer` is the recognition authority.
+- **`PlatformClassifier`** collapsed to a thin shim over `PlatformRecognizer` (one rule table,
+  no duplicate host/path ladder). `PlatformRegistry.detect` / `NonTextualContent.detect` go
+  through it transitively (kept as shims their call sites — PasteboardSuggester, MediaDownload,
+  module rendering — still use).
+- **`ArticleFetcher.hardPaywallHosts`** (the parallel Set) — `isHardPaywallHost` now derives
+  from `BypassRuleTable.rule(for:) != nil` (single host source).
+- Remaining `NewsAggregatorUnwrapper.normalizedIncomingURL*` call-sites (share VC, intents)
+  repointed to `URLUnwrapper.unwrapOffline`; the pure parsers stay (backing `URLUnwrapper`),
+  the async `unwrap`/`normalized*` remain as test-covered shims.
+
+### How the six reported bugs are resolved
+
+- **Action-ext spinner-forever** → the overall `process` timeout + the extension-safe
+  `render == nil` (no WebView) + the exhaustive presenter (`.failed`/timeout shows an error).
+- **YouTube text-extracted** → platform/video recognition is `Classifier`'s FIRST branch,
+  shared by all surfaces — a video returns `.video` before any fetch/extraction.
+- **Amazon never a tracker** → Stage-2 buy-box price rule + single price source, reached via
+  the pipeline's product branch (extension-safe static path).
+- **NYT too slow** → Stage-2 `BypassPlan` (trailing-dot first silent, no 9s WebView repeat,
+  dropped redundant Wayback/archive.ph) under the bounded pipeline.
+- **Facebook fbrpc** → `URLUnwrapper.unwrap` runs ONCE at the single shared entry on every
+  surface (offline Facebook handler first), closing the old `saveNewWithContent` /
+  friend-share unwrap gaps.
+- **"3 pastes, 3 results"** → one deterministic price source + classify-before-fetch + the
+  single pipeline decision (no per-surface re-derivation, no WebView race in the decision).
+
+### Tests (Stage 3)
+
+- `IngestPipelineTests` (12) — classification through the pipeline (article/product/paywalled/
+  fail), platform/video/social/audio recognized BEFORE extraction (never `.article`), document
+  flag wins, PARITY (same `IngestInput` across all `CaptureSource`s → same `Outcome`), and the
+  overall-timeout never-hangs (a `NeverReturningFetcher` resolves to `.failed` within the
+  deadline; a hard-paywall host → `.needsArchive`).
+- `OutcomePresenterTests` (5) — exhaustive `Outcome`→intent mapping, video/social/audio never
+  route to the reader, `.failed` never "Saved", and typed-URL scheme validation.
+
+### Seam left for Stage 4 (fixtures/parity/cleanup)
+
+- Per-site fixtures for amazon/target/walmart + nytimes/washingtonpost/wsj/smh.com.au +
+  youtube/x/instagram/tiktok/facebook driving the pipeline parity table directly (Stage 3's
+  parity test covers the cross-source guarantee; Stage 4 broadens the named-site matrix).
+- `NonTextualContent` / `PlatformClassifier` / `PlatformRegistry` remain as thin shims over
+  `PlatformRecognizer` — Stage 4 may repoint the last call sites (PasteboardSuggester,
+  MediaDownload) and remove them.
+- The double-dedup audit note (SMC "already saved" vs the ingestor tracker re-save) was left as
+  two distinct guards (different conditions); confirm one is truly redundant before removing.
+- `URLUnwrapper`'s tracking-strip and `ArticleFetcher.canonicalForArchiving` could fold into one
+  `URLCanonicalizer.strip` (Stage 1 seam, still open).

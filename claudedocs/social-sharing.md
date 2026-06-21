@@ -51,7 +51,10 @@ articles into each other's reading lists.
   trust-on-first-use IF embedded card uuid == record senderUUID AND card
   signing key == actual signer; `readingListItem` accepted ONLY from a stored
   friend whose stored signing key matches the signer → `ReadingListStore.add`
-  + ingest (NOT `handleSavePress` — must not trip double-save Kindle logic);
+  + ingest (NOT `handleSavePress` — must not trip double-save Kindle logic).
+  Ingest runs the SAME shared `IngestPipeline.process` as every other surface
+  (Stage 3) — incoming shares unwrap + classify + bound identically; the
+  `.friendShare` source keeps a `.product` save silent (no interactive price UI).
   unknown/undecryptable → deleted, ignored. `sendFriendAdd`, `sendArticle`.
 - UI: `OnboardingViewController` (gates the app in SceneDelegate when no
   identity), `FriendsViewController` (My Code QR + editable profile + share

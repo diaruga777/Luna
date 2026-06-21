@@ -38,7 +38,7 @@ resolvable (→ article, never a price-less tracker).
     `Offer` → OG `product:price` → microdata → embedded app-state JSON.
 - **The WKWebView render tier is structurally unreachable in extensions.** `extract`
   takes `render: ((URL) async -> String?)?`; the render tier runs ONLY when `render !=
-  nil`. `ArticleIngestDecider.decide` defaults `render` to **nil**, so the share/action
+  nil`. `IngestPipeline.process` defaults `render` to **nil**, so the share/action
   extensions can never spin up a `WKWebView` (the "spins forever" fix); only the main
   app (`ReadingListIngestor`) injects `WebViewPriceRenderer.renderedHTML`. Where it does
   run it is hard-bounded (deterministic poll + single deadline).

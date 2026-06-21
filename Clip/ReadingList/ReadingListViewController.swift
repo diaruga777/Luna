@@ -677,14 +677,32 @@ final class ReadingListViewController: UITableViewController {
             guard let entered = alert?.textFields?.first?.text?
                 .trimmingCharacters(in: .whitespacesAndNewlines), !entered.isEmpty
             else { return }
-            // A pasted Facebook deep link (`fbrpc://…&target_url=…`) carries its real
-            // http article inline; unwrap it BEFORE the http-prefix prepend, which
-            // would otherwise mangle it into `https://fbrpc://…`.
-            var text = NewsAggregatorUnwrapper.normalizedIncomingURLString(entered)
-            if !text.hasPrefix("http") { text = "https://" + text }
-            Task { await ReadingListIngestor.shared.handleSavePress(urlString: text) }
+            // Unwrap an offline wrapper (Facebook `fbrpc://` deep link, classic Google
+            // News id) BEFORE the http gate — otherwise an `fbrpc://` link would be
+            // mangled into `https://fbrpc://…`. The full async unwrap (apple.news /
+            // shorteners) runs later inside the pipeline.
+            let unwrapped = URLUnwrapper.unwrapOffline(entered)
+            guard let normalized = Self.normalizedTypedURL(unwrapped) else { return }
+            Task { await ReadingListIngestor.shared.handleSavePress(urlString: normalized) }
         })
         present(alert, animated: true)
+    }
+
+    /// Validates a typed/pasted URL string before saving, replacing the old blind
+    /// `https://` prefix (which mangled `mailto:`/`tel:`/bare words into
+    /// `https://mailto:…`). Accepts an `http(s)` URL as-is; bare-prefixes `https://`
+    /// ONLY when the entry has no scheme but looks like a host (contains a dot, no
+    /// spaces); rejects everything else (a non-http scheme or junk) with nil.
+    static func normalizedTypedURL(_ entered: String) -> String? {
+        let trimmed = entered.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased() {
+            return (scheme == "http" || scheme == "https") ? trimmed : nil
+        }
+        // No scheme: only accept something host-shaped (a dot, no whitespace) and
+        // give it https://. Rejects bare words and anything with spaces.
+        guard trimmed.contains("."), !trimmed.contains(" ") else { return nil }
+        return "https://" + trimmed
     }
 
     @objc private func settingsTapped() {

@@ -35,11 +35,15 @@ final class ShareReaderViewController: UIViewController {
     private let url: URL
     private let mode: Mode
     private let onDone: () -> Void
+    /// A pre-computed `Outcome` to present (the action extension already ran the
+    /// shared `IngestPipeline`), or nil to run the pipeline itself on `viewDidLoad`.
+    private let precomputedOutcome: Outcome?
     private let spinner = UIActivityIndicatorView(style: .large)
 
-    init(url: URL, mode: Mode, onDone: @escaping () -> Void) {
+    init(url: URL, mode: Mode, outcome: Outcome? = nil, onDone: @escaping () -> Void) {
         self.url = url
         self.mode = mode
+        self.precomputedOutcome = outcome
         self.onDone = onDone
         super.init(nibName: nil, bundle: nil)
     }
@@ -75,19 +79,25 @@ final class ShareReaderViewController: UIViewController {
         // the user exits mid-read; reuse the item the extension just appended.
         let item = ReadingListStore.shared.add(urlString: url.absoluteString)
 
-        // The SAME shared decision routine the main app + share extension use: it
-        // runs product detection AND the bypass gate, which the action-extension
-        // reader previously SKIPPED entirely (calling ArticleResolver.resolve
-        // directly) — the divergence this unification removes.
-        switch await ArticleIngestDecider.decide(url: url) {
+        // Use the action extension's already-computed `Outcome` (the ONE shared
+        // `IngestPipeline` ran upstream — bounded, classified video/social before any
+        // extraction), or run the pipeline here if presented standalone. Either way
+        // it's the SAME pipeline as every other surface.
+        let outcome: Outcome
+        if let precomputedOutcome {
+            outcome = precomputedOutcome
+        } else {
+            outcome = await IngestPipeline.process(IngestInput(url: url, source: .appIntent))
+        }
+
+        switch outcome {
         case .article(let content, _):
             // Persist the parsed content so the main app has it too.
             let saved = ReadingListStore.shared.saveContent(content, for: item)
             presentReader(item: saved, content: content)
-        case let .priceTracker(product, _):
+        case let .product(product, _):
             // A product page: save it as a price tracker silently (the reader can't
-            // present the main-app price UI) and confirm, exactly as the share
-            // extension does — never paywall-treated, never a failure screen.
+            // present the main-app price UI) and confirm — never paywall-treated.
             let tracker = PriceTracker(
                 productName: product.name, firstStoreURL: url.absoluteString,
                 price: product.priceAmount, currency: product.priceCurrency,
@@ -96,9 +106,13 @@ final class ShareReaderViewController: UIViewController {
             presentSavedConfirmation(productName: product.name)
         case .needsArchive(let title):
             // A genuine paywall (WSJ/FT/…): resolve its archive.today CAPTCHA right
-            // here in the extension's own UI — the user never types the URL (it's
-            // pre-filled), at most they solve a CAPTCHA.
+            // here in the extension's own UI — the URL is pre-filled.
             presentArchiveReader(for: item, fallbackTitle: title)
+        case .video, .social, .audio, .document:
+            // A video/post/audio/document reached the reader VC (shouldn't, since the
+            // host routes those to SavedNonTextualViewController) — never extract it;
+            // confirm the save and let the app render it.
+            presentSavedConfirmation(productName: url.host ?? "Saved")
         case .failed:
             presentFailure()
         }

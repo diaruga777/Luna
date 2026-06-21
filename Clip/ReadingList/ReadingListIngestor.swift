@@ -54,23 +54,24 @@ final class ReadingListIngestor {
         if let replayID { await recorder.attachItemID(item.id, to: replayID) }
 
         // Unwrap news-aggregator wrappers (Apple News, Google News, link
-        // shorteners) to the real publisher article BEFORE anything else, then
-        // continue as if that had been saved — both extraction and the
-        // archive.today reader need the real URL, not the wrapper. Non-wrapper
-        // URLs return immediately (no network).
+        // shorteners) ONCE, up front, so the store URL / replay / dedup all see the
+        // real publisher article — both extraction and the archive.today reader need
+        // the real URL, not the wrapper. The pipeline below unwraps again
+        // idempotently (a non-wrapper URL returns unchanged), keeping it the single
+        // decision authority while this step owns the store-repoint side effect.
         var item = item
         var url = initialURL
-        if let unwrapped = await NewsAggregatorUnwrapper.unwrap(initialURL),
-           unwrapped.absoluteString != initialURL.absoluteString {
+        let unwrapped = await URLUnwrapper.unwrap(initialURL)
+        if unwrapped.didUnwrap {
             SharedDiagnosticLog.record(
-                "ingest: unwrapped \(initialURL.absoluteString) → \(unwrapped.absoluteString)",
+                "ingest: unwrapped \(initialURL.absoluteString) → \(unwrapped.url.absoluteString)",
                 category: "ingest")
             if let replayID {
                 await recorder.record(
                     .unwrap(fromURLString: initialURL.absoluteString,
-                            toURLString: unwrapped.absoluteString), for: replayID)
+                            toURLString: unwrapped.url.absoluteString), for: replayID)
             }
-            guard let updated = store.updateURL(unwrapped.absoluteString, for: item.id) else {
+            guard let updated = store.updateURL(unwrapped.url.absoluteString, for: item.id) else {
                 // The unwrapped article already exists in the list; wrapper dropped.
                 if let replayID {
                     await recorder.record(.note("unwrapped URL already saved; dropped"), for: replayID)
@@ -79,46 +80,17 @@ final class ReadingListIngestor {
                 return
             }
             item = updated
-            url = updated.url ?? unwrapped
+            url = updated.url ?? unwrapped.url
             if let replayID { await recorder.updateItemURL(url.absoluteString, for: replayID) }
         }
 
-        if item.isDocument {
-            await ingestDocument(item)
-            if let replayID {
-                await recorder.record(.note("document ingest (\(item.sanitizedDocumentType ?? "?"))"),
-                                      for: replayID)
-                await recorder.terminate(
-                    replayID, state: store.item(withID: item.id)?.state == .ready ? .success : .failed,
-                    finalContent: nil)
-            }
-            return
-        }
-
-        if let videoID = YouTubeURL.videoID(from: item.urlString) {
-            await ingestYouTubeVideo(item, videoID: videoID)
-            await terminateNonArticle(replayID, itemID: item.id, note: "youtube video \(videoID)")
-            return
-        }
-
-        // A recognized platform URL (X, Bluesky, …) is accepted as a no-content
-        // item — NEVER run through the article extractor (which would fail and
-        // mark it "Couldn't Load").
-        if let match = PlatformRegistry.shared.detect(item.urlString) {
-            await ingestPlatformItem(item, match: match)
-            await terminateNonArticle(replayID, itemID: item.id, note: "platform \(match.platform)")
-            return
-        }
-
-        // Re-save dedup BEFORE any (re)detection: if this exact URL is already a
-        // store inside an existing price tracker, it was already classified as
-        // price-tracking on a previous save. Re-running detection could reach a
+        // Re-save dedup BEFORE the pipeline: if this exact URL is already a store
+        // inside an existing price tracker, it was already classified as
+        // price-tracking on a previous save. Re-running the pipeline could reach a
         // different outcome (UA/render variance) and a re-merge would no-op into a
-        // duplicate tracker — so short-circuit to the existing tracker deterministically.
-        // This is the merge path's re-save (the placeholder item was deleted on the
-        // first merge, so `item(forURLString:)` misses and a fresh placeholder arrives
-        // here). A NEW (un-merged) tracker keeps its item `.ready`, so `ingest`'s
-        // top guard already prevents re-detection for that case.
+        // duplicate tracker — so short-circuit to the existing tracker
+        // deterministically. (The merge path deletes the placeholder on first merge,
+        // so a re-save arrives as a fresh placeholder here.)
         if !forceArticle,
            let (existingTrackerItemID, _) = store.priceTracker(containingStoreURL: url.absoluteString),
            existingTrackerItemID != item.id {
@@ -139,58 +111,96 @@ final class ReadingListIngestor {
             .map { RecordingHTMLFetcher(wrapping: fetcher, recorder: recorder, replayID: $0) }
             ?? fetcher
 
-        // The SHARED decision routine runs the WHOLE pipeline identically to the
-        // share-sheet extensions: product detection (→ price tracker, never
-        // paywall-bypassed) → article resolution through the gated silent bypass
-        // strategies → classification. This is the single point of truth so the app
-        // and the extensions can never diverge in WHAT they decide; they differ only
-        // in how they present the result.
-        let decision = await ArticleIngestDecider.decide(
-            url: url, skipProductDetection: forceArticle,
+        // The ONE shared pipeline: unwrap → classify (platform/video/audio/document
+        // first, so a video can never be text-extracted) → per-kind processing, all
+        // under ONE overall timeout so it can never hang. The app and every extension
+        // decide identically; they differ only in how they present the `Outcome`.
+        let outcome = await IngestPipeline.process(
+            IngestInput(url: url, source: item.effectiveCaptureSource,
+                        documentType: item.sanitizedDocumentType, forceArticle: forceArticle),
             fetcher: resolveFetcher, extractor: extractor,
             // Main app only: the bounded WKWebView render tier for a JS-only price. The
-            // extensions pass no renderer (the default nil), so they can never spin one up.
+            // extensions pass no renderer (default nil), so they can never spin one up.
             render: { url in await WebViewPriceRenderer.renderedHTML(for: url) },
             replayLog: replayID.map { id in { [recorder] event in await recorder.record(event, for: id) } })
-        switch decision {
-        case let .priceTracker(product, _):
-            await ingestProductTracker(item, url: url, product: product, replayID: replayID)
-        case .article(let content, let html):
-            if let replayID {
-                await recorder.record(.resolveDecision(.readable), for: replayID)
-                await recorder.record(.extraction(
-                    blockCount: content.blocks.count, bodyTextLength: content.bodyTextLength,
-                    title: content.title, hasReadableBody: content.hasReadableBody), for: replayID)
-            }
-            let resolvedContent = await downloadImages(for: content, itemID: item.id)
-            // Best-effort cover/banner art for the list row (kept before the
-            // ready flip so the row's spinner covers the whole fetch).
-            let coverData = await fetchCoverImageData(html: html, baseURL: url)
-            let updated = store.saveContent(resolvedContent, for: item)
-            if let coverData { store.setThumbnail(coverData, for: item.id) }
-            if updated.state == .ready {
-                ArticleSendCoordinator.shared.articleBecameReady(updated)
-            }
-            // The save reached its terminal readable UI state — no further network.
-            if let replayID {
-                await recorder.terminate(replayID, state: .success, finalContent: resolvedContent)
-            }
-        case .needsArchive(let title):
-            // A genuine paywall: park it for the interactive archive reader (the
-            // archive.today snapshot needs a user-solved CAPTCHA a background fetch
-            // can't pass). NOT terminal for the replay: the web reader owns its own.
-            store.markNeedsCaptcha(item.id, title: title)
-            if let replayID {
-                await recorder.record(.resolveDecision(.paywalled), for: replayID)
-                await recorder.terminate(replayID, state: .failed, finalContent: nil)
-            }
-        case .failed:
-            store.markFailed(item.id)
-            if let replayID {
-                await recorder.record(.resolveDecision(.unreadable), for: replayID)
-                await recorder.terminate(replayID, state: .failed, finalContent: nil)
-            }
+
+        let presenter = IngestorOutcomePresenter(ingestor: self, url: url, replayID: replayID)
+        await presenter.present(outcome, for: item)
+    }
+
+    // MARK: - Outcome handling (the main-app presenter, store-writing)
+
+    /// Persists a readable article: downloads its images + cover art, saves the
+    /// content, flips ready, and terminates the replay `.success`.
+    fileprivate func persistArticle(
+        _ content: ArticleContent, html: String, for item: ReadingListItem, url: URL, replayID: UUID?
+    ) async {
+        if let replayID {
+            await recorder.record(.resolveDecision(.readable), for: replayID)
+            await recorder.record(.extraction(
+                blockCount: content.blocks.count, bodyTextLength: content.bodyTextLength,
+                title: content.title, hasReadableBody: content.hasReadableBody), for: replayID)
         }
+        let resolvedContent = await downloadImages(for: content, itemID: item.id)
+        let coverData = await fetchCoverImageData(html: html, baseURL: url)
+        let updated = store.saveContent(resolvedContent, for: item)
+        if let coverData { store.setThumbnail(coverData, for: item.id) }
+        if updated.state == .ready {
+            ArticleSendCoordinator.shared.articleBecameReady(updated)
+        }
+        if let replayID {
+            await recorder.terminate(replayID, state: .success, finalContent: resolvedContent)
+        }
+    }
+
+    /// Parks a paywalled article for the interactive archive reader. NOT terminal for
+    /// the replay — the web reader owns its own.
+    fileprivate func parkNeedsArchive(title: String, for item: ReadingListItem, replayID: UUID?) async {
+        store.markNeedsCaptcha(item.id, title: title)
+        if let replayID {
+            await recorder.record(.resolveDecision(.paywalled), for: replayID)
+            await recorder.terminate(replayID, state: .failed, finalContent: nil)
+        }
+    }
+
+    /// Marks a genuine failure and terminates the replay `.failed`.
+    fileprivate func markFailed(for item: ReadingListItem, replayID: UUID?) async {
+        store.markFailed(item.id)
+        if let replayID {
+            await recorder.record(.resolveDecision(.unreadable), for: replayID)
+            await recorder.terminate(replayID, state: .failed, finalContent: nil)
+        }
+    }
+
+    /// Ingests a document outcome, recording + terminating the replay.
+    fileprivate func handleDocument(type: String, for item: ReadingListItem, replayID: UUID?) async {
+        await ingestDocument(item)
+        if let replayID {
+            await recorder.record(.note("document ingest (\(type))"), for: replayID)
+            await recorder.terminate(
+                replayID, state: store.item(withID: item.id)?.state == .ready ? .success : .failed,
+                finalContent: nil)
+        }
+    }
+
+    /// Ingests a recognized YouTube video outcome (best-effort metadata).
+    fileprivate func handleVideo(itemID: String?, for item: ReadingListItem, replayID: UUID?) async {
+        if let videoID = itemID {
+            await ingestYouTubeVideo(item, videoID: videoID)
+        } else {
+            store.markFailed(item.id)
+        }
+        await terminateNonArticle(replayID, itemID: item.id, note: "youtube video \(itemID ?? "?")")
+    }
+
+    /// Ingests a recognized social/audio platform outcome (best-effort metadata).
+    fileprivate func handlePlatform(
+        _ platform: ContentPlatform, service: MusicProvider?, itemID: String?,
+        for item: ReadingListItem, replayID: UUID?
+    ) async {
+        await ingestPlatformItem(
+            item, match: PlatformMatch(platform: platform, itemID: itemID, sourceService: service))
+        await terminateNonArticle(replayID, itemID: item.id, note: "platform \(platform)")
     }
 
     /// Terminates the replay for a non-article item (video/platform): these never
@@ -211,7 +221,7 @@ final class ReadingListIngestor {
     /// name+brand), the new URL is MERGED into that tracker; otherwise a new
     /// tracker is created on this item. Records the product-detection decision and
     /// the per-URL price fetch into the replay, terminating `.success`.
-    private func ingestProductTracker(
+    fileprivate func ingestProductTracker(
         _ item: ReadingListItem, url: URL, product: ProductInfo, replayID: UUID?
     ) async {
         if let replayID {
@@ -535,6 +545,15 @@ final class ReadingListIngestor {
     ) async -> ReadingListItem {
         let item = store.add(urlString: urlString, source: source)
         fireAutoShares(urlString: urlString)
+        // The pre-fetched content was extracted from `urlString` as given. If that
+        // URL is a wrapper (Facebook deep link / Apple-Google News / shortener), the
+        // pre-fetched content is the wrapper shell, not the article — so unwrap and
+        // run the full pipeline on the real URL instead of persisting the stale shell.
+        // A non-wrapper URL keeps the fast path (persist the content directly).
+        if let url = URL(string: urlString), await URLUnwrapper.unwrap(url).didUnwrap {
+            await ingest(item)
+            return store.item(withID: item.id) ?? item
+        }
         let saved = store.saveContent(content, for: item)
         if saved.state == .ready {
             ArticleSendCoordinator.shared.articleBecameReady(saved)
@@ -563,5 +582,38 @@ final class ReadingListIngestor {
         else { return }
         ShareSuggestionStore.shared.armSemanticSuggestion(
             urlString: urlString, friendUUID: match.uuid, friendUsername: match.username)
+    }
+}
+
+/// The main-app (foreground reading-list) presenter: maps each `Outcome` to the
+/// ingestor's store-writing helpers. Exhaustive — every case is handled, so a new
+/// `Outcome` kind can't be silently dropped. This is the headless persistence
+/// presenter shared by interactive saves (paste/manual), app intents, and incoming
+/// friend shares; the foreground list opens the saved item via
+/// `ReadingListViewController.open(_:presenter:)` when tapped.
+struct IngestorOutcomePresenter: OutcomePresenter {
+    let ingestor: ReadingListIngestor
+    let url: URL
+    let replayID: UUID?
+
+    func present(_ outcome: Outcome, for item: ReadingListItem) async {
+        switch outcome {
+        case let .article(content, html):
+            await ingestor.persistArticle(content, html: html, for: item, url: url, replayID: replayID)
+        case let .product(product, _):
+            await ingestor.ingestProductTracker(item, url: url, product: product, replayID: replayID)
+        case let .video(_, itemID):
+            await ingestor.handleVideo(itemID: itemID, for: item, replayID: replayID)
+        case let .social(platform, itemID):
+            await ingestor.handlePlatform(platform, service: nil, itemID: itemID, for: item, replayID: replayID)
+        case let .audio(platform, service, itemID):
+            await ingestor.handlePlatform(platform, service: service, itemID: itemID, for: item, replayID: replayID)
+        case let .document(type):
+            await ingestor.handleDocument(type: type, for: item, replayID: replayID)
+        case let .needsArchive(title):
+            await ingestor.parkNeedsArchive(title: title, for: item, replayID: replayID)
+        case .failed:
+            await ingestor.markFailed(for: item, replayID: replayID)
+        }
     }
 }

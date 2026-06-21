@@ -24,7 +24,7 @@ final class ShareViewController: UIViewController {
     /// (`com.apple.ui-services`) rather than the zero-UI share extension
     /// (`com.apple.share-services`). The action extension always opens the
     /// reader; the share extension only does when the user enabled it.
-    private var isActionExtension: Bool {
+    fileprivate var isActionExtension: Bool {
         let nsExtension = Bundle.main.infoDictionary?["NSExtension"] as? [String: Any]
         return (nsExtension?["NSExtensionPointIdentifier"] as? String) == "com.apple.ui-services"
     }
@@ -171,7 +171,7 @@ final class ShareViewController: UIViewController {
 
     /// Action extension: surface a failure as visible error text (never a silent
     /// death). Share extension: stay zero-UI and just complete.
-    private func failOrComplete(_ message: String) {
+    fileprivate func failOrComplete(_ message: String) {
         SharedDiagnosticLog.record("share extension finished: \(message)", category: "share")
         cancelLoadWatchdog()
         guard isActionExtension else { complete(); return }
@@ -196,8 +196,9 @@ final class ShareViewController: UIViewController {
             let dict = item as? NSDictionary
             let results = dict?[NSExtensionJavaScriptPreprocessingResultsKey] as? NSDictionary
             let rawURLString = results?["URL"] as? String
-            // Normalize a Facebook deep link to its real http article before the gate.
-            let urlString = rawURLString.map(NewsAggregatorUnwrapper.normalizedIncomingURLString)
+            // Offline-unwrap (Facebook deep link / classic Google News) to a real http
+            // URL before the gate; the pipeline finishes any async unwrap downstream.
+            let urlString = rawURLString.map(URLUnwrapper.unwrapOffline)
             SharedDiagnosticLog.record(
                 "action: JS callback url=\(urlString ?? "nil") err=\(error.map { String(describing: $0) } ?? "nil")",
                 category: "share")
@@ -217,9 +218,11 @@ final class ShareViewController: UIViewController {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
             guard let self else { return }
             self.cancelLoadWatchdog()
-            // Normalize a Facebook deep link (`fbrpc://…&target_url=…`) to its real
-            // http article BEFORE the http gate below — otherwise it fails the gate.
-            let normalized = (value as? URL).map(NewsAggregatorUnwrapper.normalizedIncomingURL)
+            // Offline-unwrap a Facebook deep link (`fbrpc://…&target_url=…`) /
+            // classic Google News id to its real http URL BEFORE the http gate (a
+            // file URL is left untouched). The pipeline finishes any async unwrap.
+            let raw = value as? URL
+            let normalized = raw.flatMap { $0.isFileURL ? $0 : URLUnwrapper.unwrapOffline($0).url }
             if let url = normalized, url.absoluteString.hasPrefix("http") {
                 SharedReadingListAppender.append(urlString: url.absoluteString)
                 SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
@@ -243,58 +246,43 @@ final class ShareViewController: UIViewController {
         isActionExtension ? ActionReaderMode.last : nil
     }
 
-    /// Unwraps a news-aggregator wrapper (Apple News, Google News, shorteners) to
-    /// the real publisher article and repoints the just-saved item at it, then
-    /// routes. Both the in-sheet reader and the inline ingest need the real URL,
-    /// not the wrapper (which breaks extraction AND the archive flow). Non-wrapper
-    /// URLs return immediately (no network). Safe to call from any thread.
+    /// Runs the ONE shared `IngestPipeline` for the just-appended `originalURL` (it
+    /// unwraps the URL ONCE — Apple/Google News, shorteners, Facebook deep links —
+    /// classifies it, and processes it under a hard overall timeout so the extension
+    /// can never hang), then presents the `Outcome` via this extension's presenter.
+    /// Safe to call from any thread.
     private func presentSavedOrReader(url originalURL: URL) {
+        let mode = readerMode()
         Task { [weak self] in
             guard let self else { return }
-            var url = originalURL
-            if let unwrapped = await NewsAggregatorUnwrapper.unwrap(originalURL),
-               unwrapped.absoluteString != originalURL.absoluteString {
-                if let item = ReadingListStore.shared.item(forURLString: originalURL.absoluteString) {
-                    _ = ReadingListStore.shared.updateURL(unwrapped.absoluteString, for: item.id)
-                }
-                SharedDiagnosticLog.record(
-                    "share: unwrapped \(originalURL.absoluteString) → \(unwrapped.absoluteString)",
-                    category: "share")
-                url = unwrapped
+            let outcome = await IngestPipeline.process(
+                IngestInput(url: originalURL,
+                            source: self.isActionExtension ? .appIntent : .shareSheet))
+            // Repoint the just-saved item if the pipeline unwrapped to a different URL,
+            // so the main app extracts/archives the real article.
+            let unwrapped = await URLUnwrapper.unwrap(originalURL)
+            let url = unwrapped.didUnwrap ? unwrapped.url : originalURL
+            if unwrapped.didUnwrap,
+               let item = ReadingListStore.shared.item(forURLString: originalURL.absoluteString) {
+                _ = ReadingListStore.shared.updateURL(url.absoluteString, for: item.id)
             }
-            await MainActor.run { self.routeSavedOrReader(url: url) }
+            let presenter = ShareOutcomePresenter(host: self, url: url, mode: mode)
+            await presenter.present(outcome, for: self.placeholderItem(url: url))
         }
     }
 
-    /// Routes a (already-unwrapped) saved web URL: the share extension always just
-    /// saves and closes; the action extension opens the in-sheet reader for
-    /// articles, or — for non-textual content (a video, …) — the saved-content
-    /// screen with playback and an "Open in Queue" button.
-    private func routeSavedOrReader(url: URL) {
-        guard let mode = readerMode() else {
-            // Share extension (no reader mode). Media/platform links take the
-            // auto-download path. A plain article is ingested inline so that a hard
-            // paywall's archive CAPTCHA can be solved right here — keeping the sheet
-            // open — instead of silently landing as a locked item in the app.
-            if NonTextualContent.detect(urlString: url.absoluteString) != nil {
-                autoDownloadThenComplete(urlString: url.absoluteString)
-            } else {
-                ingestArticleThenComplete(url: url)
-            }
-            return
-        }
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if let content = NonTextualContent.detect(urlString: url.absoluteString) {
-                self.presentSavedNonTextual(url: url, content: content)
-            } else {
-                self.presentReader(url: url, mode: mode)
-            }
-        }
+    /// A best-effort `ReadingListItem` for the presenter — the real shared item if it
+    /// was already appended, else a transient one carrying the URL (the presenter only
+    /// needs the id + url).
+    private func placeholderItem(url: URL) -> ReadingListItem {
+        ReadingListStore.shared.item(forURLString: url.absoluteString)
+            ?? ReadingListItem(urlString: url.absoluteString)
     }
 
-    private func presentReader(url: URL, mode: ShareReaderViewController.Mode) {
-        let reader = ShareReaderViewController(url: url, mode: mode) { [weak self] in
+    fileprivate func presentReader(
+        url: URL, mode: ShareReaderViewController.Mode, outcome: Outcome? = nil
+    ) {
+        let reader = ShareReaderViewController(url: url, mode: mode, outcome: outcome) { [weak self] in
             self?.complete()
         }
         let nav = UINavigationController(rootViewController: reader)
@@ -302,7 +290,7 @@ final class ShareViewController: UIViewController {
         present(nav, animated: true)
     }
 
-    private func presentSavedNonTextual(url: URL, content: NonTextualContent) {
+    fileprivate func presentSavedNonTextual(url: URL, content: NonTextualContent) {
         let saved = SavedNonTextualViewController(
             articleURLString: url.absoluteString, content: content) { [weak self] in
             self?.complete()
@@ -372,7 +360,7 @@ final class ShareViewController: UIViewController {
     private func handleFriendShare(_ provider: NSItemProvider, friendUUID: UUID) {
         provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
             self?.cancelLoadWatchdog()
-            let normalized = (value as? URL).map(NewsAggregatorUnwrapper.normalizedIncomingURL)
+            let normalized = (value as? URL).map { URLUnwrapper.unwrapOffline($0).url }
             if let url = normalized, url.absoluteString.hasPrefix("http") {
                 PendingFriendShareWriter.enqueue(
                     friendUUID: friendUUID, urlString: url.absoluteString)
@@ -381,7 +369,7 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    private func complete() {
+    fileprivate func complete() {
         DispatchQueue.main.async { [weak self] in self?.finishRequest() }
     }
 
@@ -397,7 +385,7 @@ final class ShareViewController: UIViewController {
 
     /// Shows a brief liquid-glass "Saved" checkmark, then completes. Call only
     /// after an actual save (no reader is being presented).
-    private func confirmSavedThenComplete() {
+    fileprivate func confirmSavedThenComplete() {
         cancelLoadWatchdog()
         DispatchQueue.main.async { [weak self] in
             self?.showSavedBadge()
@@ -409,7 +397,7 @@ final class ShareViewController: UIViewController {
     /// alive showing a "Saving media…" spinner until the download finishes, then the
     /// "Saved" checkmark, then dismisses — so the download completes before the
     /// process is killed. Otherwise it just saves and dismisses normally.
-    private func autoDownloadThenComplete(urlString: String) {
+    fileprivate func autoDownloadThenComplete(urlString: String) {
         cancelLoadWatchdog()
         guard MediaAutoDownloader.isEnabled(forURLString: urlString) else {
             confirmSavedThenComplete()
@@ -429,110 +417,11 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    /// Share-extension path for a plain article: ingest inline (direct fetch, then
-    /// the public web archives) so a hard paywall's archive CAPTCHA can be solved
-    /// right here. The URL is already saved; on success this fills in its content,
-    /// on a paywall it presents the archive web reader (keeping the sheet open),
-    /// and either way it ends in the "Saved" checkmark and dismisses.
-    private func ingestArticleThenComplete(url: URL) {
-        cancelLoadWatchdog()
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let badge = self.showDownloadingBadge(text: "Saving…")
-            Task {
-                // Record a diagnostic replay for the extension's inline ingest.
-                let recorder = ReplayRecorder.shared
-                let source: ReplaySource = .capture(self.isActionExtension ? .appIntent : .shareSheet)
-                let replayID = await recorder.begin(urlString: url.absoluteString, source: source)
-                if let item = ReadingListStore.shared.item(forURLString: url.absoluteString),
-                   let replayID {
-                    await recorder.attachItemID(item.id, to: replayID)
-                }
-                let fetcher: HTMLFetching = replayID
-                    .map { RecordingHTMLFetcher(wrapping: ArticleFetcher(), recorder: recorder, replayID: $0) }
-                    ?? ArticleFetcher()
-
-                // The SAME shared decision routine the main app uses: product
-                // detection (→ price tracker, never paywall-bypassed) → gated article
-                // resolution → unified classification. The extension and the app can
-                // never decide differently; they differ only in presentation below.
-                let decision = await ArticleIngestDecider.decide(
-                    url: url, fetcher: fetcher,
-                    replayLog: replayID.map { id in { event in await recorder.record(event, for: id) } })
-                if let replayID {
-                    await self.recordExtensionDecision(decision, replayID: replayID, recorder: recorder)
-                }
-                await MainActor.run {
-                    badge.removeFromSuperview()
-                    self.finishArticleIngest(url: url, decision: decision)
-                }
-            }
-        }
-    }
-
-    /// Records the decision (and on success the final content + terminal `success`
-    /// state) for the extension's inline ingest. A needs-archive/failed result is NOT
-    /// terminal here — the archive web reader may continue — so it terminates
-    /// `.failed`, recording that the silent path lost (the interactive archive solve,
-    /// if any, isn't part of this background replay).
-    private func recordExtensionDecision(
-        _ decision: ArticleIngestDecision, replayID: UUID, recorder: ReplayRecording
-    ) async {
-        switch decision {
-        case let .article(content, _):
-            await recorder.record(.resolveDecision(.readable), for: replayID)
-            await recorder.record(.extraction(
-                blockCount: content.blocks.count, bodyTextLength: content.bodyTextLength,
-                title: content.title, hasReadableBody: content.hasReadableBody), for: replayID)
-            await recorder.terminate(replayID, state: .success, finalContent: content)
-        case .priceTracker:
-            await recorder.record(.note("created price tracker"), for: replayID)
-            await recorder.terminate(replayID, state: .success, finalContent: nil)
-        case .needsArchive:
-            await recorder.record(.resolveDecision(.paywalled), for: replayID)
-            await recorder.terminate(replayID, state: .failed, finalContent: nil)
-        case .failed:
-            await recorder.record(.resolveDecision(.unreadable), for: replayID)
-            await recorder.terminate(replayID, state: .failed, finalContent: nil)
-        }
-    }
-
-    /// Routes the result of the share-extension inline ingest: a product page is
-    /// saved as a price tracker (the user edits it in the app); real content is saved
-    /// and the checkmark shown; a paywalled-but-titled article opens the archive web
-    /// reader so the user can solve its CAPTCHA; a genuine failure just confirms the
-    /// save (the app retries the fetch later).
-    private func finishArticleIngest(url: URL, decision: ArticleIngestDecision) {
-        guard let item = ReadingListStore.shared.item(forURLString: url.absoluteString) else {
-            confirmSavedThenComplete()
-            return
-        }
-        switch decision {
-        case let .priceTracker(product, _):
-            // The extension can't present the main-app price UI, so it saves the
-            // tracker silently; the user edits it in the app.
-            let tracker = PriceTracker(
-                productName: product.name, firstStoreURL: url.absoluteString,
-                price: product.priceAmount, currency: product.priceCurrency,
-                brand: product.brand, productID: product.productID)
-            ReadingListStore.shared.savePriceTracker(tracker, for: item.id)
-            confirmSavedThenComplete()
-        case .article(let content, _):
-            _ = ReadingListStore.shared.saveContent(content, for: item)
-            confirmSavedThenComplete()
-        case .needsArchive(let title):
-            ReadingListStore.shared.markNeedsCaptcha(item.id, title: title)
-            presentArchiveReaderForCaptcha(url: url, itemID: item.id)
-        case .failed:
-            confirmSavedThenComplete()
-        }
-    }
-
     /// Presents the archive web reader full-screen so the user can solve the
     /// archive.today CAPTCHA. Solving it extracts the article and flips the item to
     /// `.ready`, after which we show the checkmark and dismiss; exiting first leaves
     /// the item `.needsCaptcha`, unlockable later from the app.
-    private func presentArchiveReaderForCaptcha(url: URL, itemID: UUID) {
+    fileprivate func presentArchiveReaderForCaptcha(url: URL, itemID: UUID) {
         let archive = ArchiveWebReaderViewController(articleURL: url, itemID: itemID)
         archive.onClose = { [weak self] in self?.complete() }
         archive.onExtracted = { [weak self] in
@@ -634,6 +523,85 @@ final class ShareViewController: UIViewController {
         ) {
             badge.transform = .identity
             badge.alpha = 1
+        }
+    }
+}
+
+/// The share/action-extension presenter over the unified `Outcome`. Exhaustive —
+/// every case shows real UI and `.failed`/timeout shows an error (the share
+/// extension no longer shows a misleading "Saved" checkmark on a failure). The
+/// `mode` (nil for the zero-UI share extension; non-nil for the "Read in Queue"
+/// action extension) selects save-and-close vs the in-sheet reader.
+struct ShareOutcomePresenter: OutcomePresenter {
+    weak var host: ShareViewController?
+    let url: URL
+    /// nil ⇒ zero-UI share extension (save + checkmark); non-nil ⇒ action extension
+    /// (in-sheet reader / saved-non-textual screen).
+    let mode: ShareReaderViewController.Mode?
+
+    func present(_ outcome: Outcome, for item: ReadingListItem) async {
+        await MainActor.run { presentOnMain(outcome) }
+    }
+
+    @MainActor
+    private func presentOnMain(_ outcome: Outcome) {
+        guard let host else { return }
+        switch outcome {
+        case let .article(content, _):
+            if let mode {
+                host.presentReader(url: url, mode: mode, outcome: outcome)
+            } else {
+                if let saved = ReadingListStore.shared.item(forURLString: url.absoluteString) {
+                    _ = ReadingListStore.shared.saveContent(content, for: saved)
+                }
+                host.confirmSavedThenComplete()
+            }
+        case let .product(product, _):
+            // Neither extension can present the main-app price UI — save the tracker
+            // silently; the user edits it in the app.
+            if let saved = ReadingListStore.shared.item(forURLString: url.absoluteString) {
+                let tracker = PriceTracker(
+                    productName: product.name, firstStoreURL: url.absoluteString,
+                    price: product.priceAmount, currency: product.priceCurrency,
+                    brand: product.brand, productID: product.productID)
+                ReadingListStore.shared.savePriceTracker(tracker, for: saved.id)
+            }
+            host.confirmSavedThenComplete()
+        case let .video(_, itemID):
+            presentNonTextual(.youTube(videoID: itemID ?? ""), host: host)
+        case let .social(platform, itemID):
+            presentNonTextual(.platform(platform, itemID: itemID), host: host)
+        case let .audio(platform, _, itemID):
+            presentNonTextual(.platform(platform, itemID: itemID), host: host)
+        case .document:
+            host.confirmSavedThenComplete()
+        case let .needsArchive(title):
+            if let saved = ReadingListStore.shared.item(forURLString: url.absoluteString) {
+                ReadingListStore.shared.markNeedsCaptcha(saved.id, title: title)
+                host.presentArchiveReaderForCaptcha(url: url, itemID: saved.id)
+            } else {
+                host.confirmSavedThenComplete()
+            }
+        case .failed:
+            // NEVER a misleading "Saved": surface the failure (action ext) / complete
+            // quietly (share ext) — the app retries in the background either way.
+            if mode != nil {
+                host.failOrComplete("Couldn't load this link.")
+            } else {
+                host.confirmSavedThenComplete()
+            }
+        }
+    }
+
+    /// Routes a non-textual outcome: the action extension shows the saved-content
+    /// screen (so the reader VC never sees a video); the share extension takes the
+    /// auto-download path.
+    @MainActor
+    private func presentNonTextual(_ content: NonTextualContent, host: ShareViewController) {
+        if mode != nil {
+            host.presentSavedNonTextual(url: url, content: content)
+        } else {
+            host.autoDownloadThenComplete(urlString: url.absoluteString)
         }
     }
 }

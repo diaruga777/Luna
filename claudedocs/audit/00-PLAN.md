@@ -55,11 +55,11 @@ incoming (url + source)
 - **Facebook fbrpc** → single shared unwrap entry (offline) on every surface.
 - **"3 pastes, 3 results"** → single deterministic price source + sorted traversal (already) + no WebView race in the decision.
 
-## Staged implementation order (serial; verify Debug+Release between)
-1. **Foundation (new pure files):** `ContentKind`, `KnownSite` table, `Classifier`; `URLUnwrapper` registry; `PlatformRecognizer` + `[PlatformRule]`. Keep old types as thin shims temporarily.
-2. **Processing:** `ArticleExtraction` + single readable predicate; `ProductMetadataExtractor` + `ProductPriceRule` table; `BypassPlan`. Migrate `ArticleResolver` to consume them; delete duplicates.
-3. **Pipeline + surfaces:** `IngestPipeline` + `Outcome` + `OutcomePresenter`; migrate ingestor, both extensions, intents, friend-share, in-app paste; delete `ArticleIngestDecider`/old gating tangle and dead module `classify`.
-4. **Tests + fixtures + cleanup:** fixtures for amazon/target/walmart, nytimes/washingtonpost/wsj/smh.com.au, youtube/x/instagram/tiktok/facebook; parity tests (same input → same Outcome across all sources); delete remaining dead code; Replay still round-trips; full Debug + Release green.
+## Staged implementation order (serial; verify Debug+Release between) — ALL STAGES DONE
+1. **[DONE] Foundation (new pure files):** `ContentKind`, `KnownSite` table, `Classifier`; `URLUnwrapper` registry; `PlatformRecognizer` + `[PlatformRule]`. Keep old types as thin shims temporarily.
+2. **[DONE] Processing:** `ArticleExtraction` + single readable predicate; `ProductMetadataExtractor` + `ProductPriceRule` table; `BypassPlan`. Migrate `ArticleResolver` to consume them; delete duplicates.
+3. **[DONE] Pipeline + surfaces:** `IngestPipeline` + `Outcome` + `OutcomePresenter`; migrate ingestor, both extensions, intents, friend-share, in-app paste; delete `ArticleIngestDecider`/old gating tangle and dead module `classify`.
+4. **[DONE] Tests + fixtures + cleanup:** `NamedSiteParityTests` over amazon(.com/.com.au)/target/walmart, nytimes/washingtonpost/wsj/smh.com.au, youtube/x/instagram/tiktok/facebook/reddit/bluesky/spotify/apple — one data-driven parity table (same input → same Outcome across all sources). Deleted the last shims (`PlatformClassifier`, dead `NewsAggregatorUnwrapper` async-unwrap/`normalizedIncomingURL*`). Folded tracking-strip into `URLCanonicalizer.strip`; made `Classifier.isHardPaywallHost` the single hard-paywall source; trusted the classifier's `.product` over the redundant detector gate; `ReadingListStore.addIfAbsent` is the single URL-existence dedup. Replay round-trips; full Debug (green) + Release (compiles). See `claudedocs/url-pipeline.md` Stage 4 for the final shape.
 
 ## Test matrix (named sites)
 - Price: amazon (.com/.com.au), target, walmart → `.product` + buy-box price/currency.

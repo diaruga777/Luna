@@ -37,7 +37,7 @@ snapinsta, …) with keyless, client-side extraction.
 
 - **`MediaDownload.swift`** — `MediaAsset` (`url` + `Kind` = image/gif/video),
   `MediaDownloadError` (with `.message`), `MediaDownloadablePlatform` (supported set =
-  `.x/.instagram/.tiktok`, `supports(urlString)` via `PlatformClassifier`), and the
+  `.x/.instagram/.tiktok`, `supports(urlString)` via `PlatformRecognizer`), and the
   protocols `SocialMediaResolving` / `PhotoLibrarySaving` / `MediaDownloading`.
 - **`SocialMediaResolver.swift`** — `resolveAssets(for:)` dispatches by platform; fetch
   is injectable (`Fetch` closure) so the **pure parsers** are unit-tested:

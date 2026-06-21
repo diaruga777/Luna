@@ -10,8 +10,45 @@ top-of-list badge) when the price drops past a threshold.
 **The price is MANDATORY.** A tracker is only ever created from a real numeric
 price + currency, fetched up front (and re-fetched on every background cycle).
 There is no pending/unknown/nil price state. Detection identifies a product
-*candidate*; the `PriceFetcher` resolves the price; only a candidate with a real
-fetched price becomes a tracker — otherwise the page is saved as a plain article.
+*candidate*; the price is resolved; only a candidate with a real price becomes a
+tracker — otherwise the page is saved as a plain article.
+
+### Save-time price extraction (Stage 2 — `ReaderKit/ProductMetadataExtractor.swift`)
+
+The save-time path now uses **`ProductMetadataExtractor`**: given a page already
+classified `.product` (the classifier / `ProductPageDetector.detect` owns "is this a
+product?"; this component never re-decides it), it produces `ProductMetadata { name,
+price: ProductPrice, imageURL?, brand?, productID? }` from **ONE parse, ONE price
+source** — no detect-then-refetch double parse (the former "sometimes saves" root). The
+price is **non-optional in the type**; `extract` returns nil when no real price is
+resolvable (→ article, never a price-less tracker).
+
+- **Extensible `[ProductPriceRule]` table.** First rule whose `matches(host:)` is true
+  wins; each resolves its OWN currency (declared code, else host/TLD map) — never a
+  silent USD default. Adding a retailer = adding one conformer.
+  - **`AmazonPriceRule`** — buy-box price from Amazon's price model
+    (`"priceAmount"`/`"displayPrice"`), then the buy-box-SCOPED `.a-offscreen`
+    (`#corePriceDisplay…`/`#buybox`/…) — NOT the first `.a-offscreen` on the page (often
+    a strikethrough list price). Strict `matches` suffix check over the storefront TLDs
+    (so `amazon.scam.com`/`cdn.amazon.akamai.net` can't match); TLD→currency
+    (`.com.au`→AUD, `.com`→USD, …).
+  - **`TargetPriceRule`** — `__NEXT_DATA__` `price.current_retail` (USD).
+  - **`WalmartPriceRule`** — `__NEXT_DATA__` `priceInfo.currentPrice.price` (USD).
+  - **Generic fallback** (`ProductPageDetector.genericStructuredPrice`) — JSON-LD
+    `Offer` → OG `product:price` → microdata → embedded app-state JSON.
+- **The WKWebView render tier is structurally unreachable in extensions.** `extract`
+  takes `render: ((URL) async -> String?)?`; the render tier runs ONLY when `render !=
+  nil`. `ArticleIngestDecider.decide` defaults `render` to **nil**, so the share/action
+  extensions can never spin up a `WKWebView` (the "spins forever" fix); only the main
+  app (`ReadingListIngestor`) injects `WebViewPriceRenderer.renderedHTML`. Where it does
+  run it is hard-bounded (deterministic poll + single deadline).
+- Tests: `ProductMetadataExtractorTests` (amazon buy-box vs list-price fixture, lookalike
+  host rejection, target/walmart `__NEXT_DATA__`, generic JSON-LD/OG/bunnings, no-price→nil,
+  render-unreachable-with-nil, render-used-when-provided, determinism). Fixtures:
+  `Products/{amazon-dp,amazon-listprice,target-nextdata,walmart-nextdata}.html`.
+
+The legacy **`PriceFetcher`/`PriceFetching`** below now backs the **background refresher
+only** (`PriceRefresher`); the save-time decision no longer calls it.
 
 - `ReaderKit/ProductPageDetector.swift` — **pure** detection. Given URL + HTML
   returns an optional `ProductCandidate { name, staticPrice: ProductPrice?,

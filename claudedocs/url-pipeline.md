@@ -76,7 +76,46 @@ Registry `handlers = [.facebook, .googleNews, .appleNews, .shorteners(redirectSh
 - `ClipTests/PlatformRecognizerTests.swift` (13) — data-driven sweep over real example URLs (youtube/x/instagram/tiktok/facebook/reddit/bluesky/spotify/apple) with expected platform + itemID + kind, plus negatives, plus the derived `platformHosts` gate.
 - Fixtures: `ClipTests/Fixtures/classifier-article-stray-addtocart.html`, `classifier-paywall-locked.html` (+ reuses `Fixtures/Products/*`). Fixtures load by file path (`BypassFixtures.html`), not bundled resources.
 
-### Seams left for Stage 2/3
+## Stage 2 — Processing components (DONE)
+
+Stage 2 builds the per-kind **processing** components (each a pure core + bounded I/O,
+independently tested), migrates `ArticleResolver` to consume them, and deletes the
+duplicated/dead code. Surfaces (`ReadingListIngestor`/`ShareViewController`/
+`ArticleIngestDecider`) keep their external decision shape; Stage 3 rewires them onto
+the classifier. Suite 816 → 840, all green; Release (generic/iOS) compiles.
+
+### `ReaderKit/ArticleExtraction.swift`
+
+The ONE `HTML → ArticleContent` component + the ONE readable predicate.
+- `struct ExtractedArticle { content; sourceHTML }` — replaces the `(ArticleContent, String)` tuple.
+- `ArticleExtraction.extract` / `extractFromJSONLD` delegate to the pure `ArticleExtractor`.
+- `fetchAndExtract(baseURL:fetch:) -> ExtractedArticle?` — the ONE fetch-then-extract helper (the byte-identical `ArticleResolver.extractedContent` + `BypassRunner.extracted` duplicates were DELETED).
+- `static isReadableArticle(_:html:)` = `bodyTextLength >= ArticleContent.readableBodyThreshold && !PaywallDetector.looksPaywalled(content:html:)` — the single HTML-aware predicate that **consolidated the three duplicates**: `ArticleResolver.isReadable` (deleted), `BypassGate` step 3 (now routes here), and the implicit `!looksPaywalled` inside `ArticleContent.hasReadableBody` (now a thin `html: nil` call). The magic `600` in `ArticleExtractor` layer arbitration now references `ArticleContent.readableBodyThreshold`.
+
+### Deterministic fetch (`ArticleFetcher`)
+
+`fetchHTML(from:)` is single-UA (Safari), no fallback chain — reproducible, reader-served bytes. Googlebot is demoted to the explicit `.userAgent(.googlebotDesktop)` bypass strategy; the duplicate Googlebot UA string is gone. The legacy `fetchArchivedHTML`/`fetchArchiveTodayHTML` (the duplicate Wayback hit + near-always-failing archive.ph GET — the NYT/WSJ slowness) were removed from `HTMLFetching` and every conformer; `.waybackRaw` already covers Wayback and archive.today is the WKWebView terminal flow.
+
+### `ReaderKit/ProductMetadataExtractor.swift`
+
+`HTML(classified .product) → ProductMetadata` with a MANDATORY price from ONE source (no detect-then-refetch). Extensible `[ProductPriceRule]` table: `AmazonPriceRule` (buy-box `priceAmount`/`displayPrice`, then buy-box-scoped `.a-offscreen` — never the first list-price span; strict `isAmazonHost`; TLD→currency), `TargetPriceRule`/`WalmartPriceRule` (`__NEXT_DATA__`), generic JSON-LD/OG/microdata/embedded fallback. Currency per-rule (no silent USD). The WebView `render` tier runs ONLY when `render != nil`; `ArticleIngestDecider` defaults it to nil ⇒ **structurally unreachable in extensions** (the "spins forever" fix); the main app injects `WebViewPriceRenderer`. Detection stays in the classifier/`ProductPageDetector`; this only EXTRACTS once classified.
+
+### `ReaderKit/BypassPlan.swift`
+
+ONE typed plan `{ silent: [SilentStrategy], webPreStages: [WebStrategy], allowsArchiveToday: Bool }` from a single factory `BypassPlan.make(for:directHTML:)` that splits `BypassStrategySelector`'s ordered list. Both the resolver (silent leg, bounded by `silentChainDeadlineSeconds = 20`) and the archive reader (web leg via `webPreStageURLs`) consume it, so they can't diverge. Trailing-dot is the first silent strategy and `benefitsFromJSRetry == false`, so it's NEVER repeated as a ~9s WebView pre-stage (NYT speed). `BypassURLs` is the ONE strategy→URL mapper (killed the duplicated switch in `BypassRunner` + `webPreStageURLs`). `BypassGate.hardPaywallHosts` stays the host source consulted by the gate; the rule table is the routing source (folding remains a Stage-3 nicety).
+
+### Tests (Stage 2: +24)
+
+`ArticleExtractionTests` (12) — per-site readable + paywalled-stub table (nytimes/washingtonpost/wsj/smh.com.au) through `isReadableArticle`, the HTML-lock false-negative guard, the long-article-quoting-gate-phrase locked policy. `ProductMetadataExtractorTests` (12) — amazon buy-box vs list-price, lookalike-host rejection, target/walmart `__NEXT_DATA__`, generic, no-price→nil, render-unreachable-with-nil. `BypassPlanTests` (12) — NYT trailing-dot first silent + omitted from webPreStages, silent/web split, plan stability across consumers, bounded deadline, `BypassURLs`. (Net +24 after consolidating the moved decider/runner/extraction tests.) Fixtures: `Fixtures/Readable/*` + `Fixtures/Products/{amazon-listprice,target-nextdata,walmart-nextdata}.html`.
+
+### Seams left for Stage 3 (surfaces)
+
+- The classifier (`Classifier.classify`) is still NOT the determination stage — `ArticleIngestDecider` still uses `ProductPageDetector.detect` for the product gate and `BypassGate`/`BypassStrategySelector` for the paywall gate. Stage 3 makes `Classifier` the single determination stage feeding the per-kind processing components built here.
+- `ArticleIngestDecider.decide` keeps its decision shape but now takes `metadataExtractor` + `render` (was `priceFetcher`). Stage 3 folds it into the unified `IngestPipeline.process(IngestInput) -> Outcome` with ONE overall timeout + exhaustive per-surface `OutcomePresenter`.
+- `BypassGate.hardPaywallHosts` and `BypassRuleTable.rules` are still two parallel host lists (they line up; nothing enforces it). Stage 3 folds them into one source.
+- `PriceFetcher`/`PriceFetching` now back only the background refresher; the save-time path uses `ProductMetadataExtractor`.
+
+### Seams left from Stage 1 (still open)
 
 - `URLUnwrapper.unwrapOffline` returns a tracking-stripped URL; `NewsAggregatorUnwrapper.normalizedIncomingURL*` still returns the verbatim target. Stage 3 repoints the 6 sprinkled fbrpc/normalize call-sites + the async `unwrap` choke point to `URLUnwrapper` directly (single shared entry on every surface, closing the `saveNewWithContent` / `handleFriendShare` unwrap gaps), then folds tracking-strip into one `URLCanonicalizer.strip` shared with `canonicalForArchiving`.
 - `Classifier` is not yet wired into `ReadingListIngestor` / `ArticleIngestDecider`. Stage 3 makes the classifier the determination stage (table first, HTML heuristics only when undetermined), strips fetch/price/bypass out of `ArticleIngestDecider`, and folds the four scattered host sets (`hardPaywallHosts`, `archiveTodayHosts`, `youtubeHosts`, inlined platform `matches`) into `knownSites`.

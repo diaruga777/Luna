@@ -109,7 +109,7 @@ final class PasteboardSuggester: PasteboardSuggesting {
         let items = store.items()
         if items.contains(where: { $0.urlString == urlString }) { return true }
 
-        if let match = PlatformClassifier.classify(urlString), let id = match.itemID,
+        if let match = PlatformRecognizer.recognize(urlString), let id = match.itemID,
            items.contains(where: { $0.contentPlatform == match.platform && $0.platformItemID == id }) {
             return true
         }

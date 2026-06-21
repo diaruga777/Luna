@@ -333,13 +333,13 @@ final class SocialMessageCenter {
                 return
             }
             guard URL(string: urlString) != nil else { return }
-            // Recipient-side dedupe: an incoming share of a URL we already
-            // have is dropped entirely (no re-ingest, no attribution change).
-            guard readingListStore.item(forURLString: urlString) == nil else {
+            // Recipient-side dedupe via the store's single URL-existence authority:
+            // an incoming share of a URL we already have is dropped entirely (no
+            // re-ingest, no attribution change).
+            guard let saved = readingListStore.addIfAbsent(urlString: urlString, source: .friendShare) else {
                 logger.info("dropping duplicate shared article")
                 return
             }
-            let saved = readingListStore.add(urlString: urlString, source: .friendShare)
             readingListStore.setSharedBy(friend.card.username, for: saved.id)
             startIngest(saved)
             logger.info("accepted shared article from \(friend.card.username, privacy: .public)")
@@ -372,13 +372,13 @@ final class SocialMessageCenter {
                 return
             }
             guard let firstURL = share.storeURLStrings.first else { return }
-            // Dedupe on the first store URL like other shared items.
-            guard readingListStore.item(forURLString: firstURL) == nil else {
+            guard let tracker = share.makeTracker() else { return }
+            // Dedupe on the first store URL like other shared items, via the same
+            // store authority.
+            guard let saved = readingListStore.addIfAbsent(urlString: firstURL, source: .friendShare) else {
                 logger.info("dropping duplicate shared price tracker")
                 return
             }
-            guard let tracker = share.makeTracker() else { return }
-            let saved = readingListStore.add(urlString: firstURL, source: .friendShare)
             readingListStore.savePriceTracker(tracker, for: saved.id)
             readingListStore.setSharedBy(friend.card.username, for: saved.id)
             notifyOfReceivedShare(from: friend, title: share.productName)

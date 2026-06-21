@@ -15,14 +15,14 @@ enum NonTextualContent: Equatable {
     /// Any recognized non-YouTube platform (X, Bluesky, Reddit, music, …).
     case platform(ContentPlatform, itemID: String?)
 
-    /// Classifies a URL via the shared `PlatformClassifier`, or nil when it's a
+    /// Classifies a URL via the shared `PlatformRecognizer`, or nil when it's a
     /// readable article/document.
     static func detect(urlString: String) -> NonTextualContent? {
-        guard let classification = PlatformClassifier.classify(urlString) else { return nil }
-        if classification.platform == .youtube, let videoID = classification.itemID {
+        guard let recognized = PlatformRecognizer.recognize(urlString) else { return nil }
+        if recognized.platform == .youtube, let videoID = recognized.itemID {
             return .youTube(videoID: videoID)
         }
-        return .platform(classification.platform, itemID: classification.itemID)
+        return .platform(recognized.platform, itemID: recognized.itemID)
     }
 
     /// The classified platform.

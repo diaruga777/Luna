@@ -69,9 +69,9 @@ struct PlatformRule {
 /// The single deterministic platform recognizer, used identically on every
 /// surface (ingest, paste, share/action extensions, intents, friend receive).
 /// Pure: no network, no UIKit — compiles in extensions. This is the ONE place
-/// URL → platform rules live; the per-module `classify` bodies and the inline
-/// ladder in `PlatformClassifier` are shims/legacy over this table (removed in a
-/// later stage).
+/// URL → platform rules live; every caller (`PlatformRegistry.detect`,
+/// `NonTextualContent.detect`, `BypassGate`, the media-download path,
+/// `PasteboardSuggester`) recognizes through this single table.
 enum PlatformRecognizer {
 
     /// EXTEND HERE: add a platform by appending one rule. Order matters only when
@@ -112,8 +112,8 @@ enum PlatformRecognizer {
 
     // MARK: - The rules
     //
-    // Each rule reuses the SAME host/path logic the live `PlatformClassifier`
-    // ladder applies, so the recognizer and the classifier agree exactly.
+    // Each rule owns the host/path logic for its platform; the recognizer is the
+    // single authority every surface classifies through.
 
     /// YouTube — delegates id extraction to the one extracted recognizer
     /// (`YouTubeURL`), which owns the broad host coverage and the 11-char id
@@ -138,7 +138,7 @@ enum PlatformRecognizer {
 
     /// Bluesky — `bsky.app/profile/<author>/post/<rkey>`. Unlike the other social
     /// platforms, a bare Bluesky profile (no `/post/`) does NOT classify (matching
-    /// the live `PlatformClassifier`): only a post is a recognized item.
+    /// other social platforms): only a post is a recognized item.
     static let bluesky = PlatformRule(
         platform: .bluesky, service: nil, hosts: ["bsky.app"],
         recognizes: { blueskyPostID($0.segments) != nil },
@@ -220,9 +220,9 @@ enum PlatformRecognizer {
         platform: .podcast, service: .apple, hosts: ["podcasts.apple.com"],
         itemID: { $0.query.first(where: { $0.name == "i" })?.value ?? $0.segments.last })
 
-    /// The Spotify content kind named by the leading path segment, mirroring the
-    /// live `PlatformClassifier` split (track/album/artist → music; episode/show →
-    /// podcast; anything else → nil so no Spotify rule claims the URL).
+    /// The Spotify content kind named by the leading path segment (track/album/artist
+    /// → music; episode/show → podcast; anything else → nil so no Spotify rule claims
+    /// the URL).
     private enum SpotifyKind { case music, audioPodcast }
     private static func spotifyKind(_ segments: [String]) -> SpotifyKind? {
         switch segments.first {

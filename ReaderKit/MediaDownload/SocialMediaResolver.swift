@@ -23,14 +23,14 @@ struct SocialMediaResolver: SocialMediaResolving {
     }
 
     func resolveAssets(for url: URL) async -> [MediaAsset] {
-        guard let classification = PlatformClassifier.classify(url.absoluteString) else { return [] }
-        switch classification.platform {
+        guard let recognized = PlatformRecognizer.recognize(url.absoluteString) else { return [] }
+        switch recognized.platform {
         case .x:
-            return await resolveX(id: classification.itemID)
+            return await resolveX(id: recognized.itemID)
         case .tiktok:
             return await resolveTikTok(url: url)
         case .instagram:
-            return await resolveInstagram(url: url, shortcode: classification.itemID)
+            return await resolveInstagram(url: url, shortcode: recognized.itemID)
         default:
             return []
         }

@@ -46,7 +46,7 @@ enum MediaDownloadablePlatform {
 
     /// Whether `urlString` is a post on a platform we can pull media from.
     static func supports(_ urlString: String) -> Bool {
-        guard let platform = PlatformClassifier.classify(urlString)?.platform else { return false }
+        guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
         return supported.contains(platform)
     }
 }

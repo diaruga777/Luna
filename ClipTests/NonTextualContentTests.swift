@@ -8,7 +8,7 @@ import XCTest
 
 /// Covers the pure derivations on `NonTextualContent` (embed/preview URLs,
 /// labels, and the YouTube-vs-platform branch of `detect`). The underlying URL
-/// classification is `PlatformClassifier`'s job (tested separately).
+/// classification is `PlatformRecognizer`'s job (tested separately).
 final class NonTextualContentTests: XCTestCase {
 
     // MARK: - detect

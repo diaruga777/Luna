@@ -123,6 +123,23 @@ final class ReadingListStore {
         }
     }
 
+    /// Adds a URL only when it isn't already saved, returning the new item, or nil
+    /// when an item with that exact URL already exists. THE single URL-existence
+    /// dedup authority for "drop a duplicate incoming item" (the recipient-side
+    /// friend-share guard): callers that must NOT re-attribute / re-notify a
+    /// duplicate route through here rather than pre-checking `item(forURLString:)`
+    /// then calling `add`. (The ingestor's separate tracker-merge guard is an
+    /// orthogonal condition — same URL inside a different item's price tracker.)
+    func addIfAbsent(urlString: String, source: CaptureSource = .manual) -> ReadingListItem? {
+        coordinatedMutate { all in
+            guard !all.contains(where: { $0.urlString == urlString }) else { return nil }
+            var item = ReadingListItem(urlString: urlString)
+            item.captureSource = source
+            all.insert(item, at: 0) // newest first
+            return item
+        }
+    }
+
     // Mutations are targeted (fetch-fresh, set one field, save) rather than
     // whole-item writes: callers hold stale copies, and overwriting the whole
     // item silently reverts fields written by other screens in the meantime.

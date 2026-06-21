@@ -14,7 +14,7 @@ enum MediaAutoDownloader {
     /// Whether a saved URL is a platform whose media should auto-download (enabled +
     /// supported). Used by the share extension to decide whether to stay alive.
     static func isEnabled(forURLString urlString: String) -> Bool {
-        guard let platform = PlatformClassifier.classify(urlString)?.platform else { return false }
+        guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
         return MediaDownloadablePlatform.supported.contains(platform)
             && AutoDownloadSettings.isEnabled(for: platform)
     }

@@ -123,13 +123,13 @@ enum URLUnwrapper {
     /// Builds a result for a handler hit, stripping tracking params from the target
     /// so dedupe / display / share all see one canonical URL.
     private static func result(unwrapped target: URL, wrapper: WrapperKind) -> UnwrapResult {
-        UnwrapResult(url: ArticleFetcher.canonicalForArchiving(target), didUnwrap: true, wrapper: wrapper)
+        UnwrapResult(url: URLCanonicalizer.strip(target), didUnwrap: true, wrapper: wrapper)
     }
 
     /// Builds a result for a non-wrapper URL: the original URL, also
     /// tracking-stripped so every surface agrees on the canonical form.
     private static func result(unchanged url: URL) -> UnwrapResult {
-        UnwrapResult(url: ArticleFetcher.canonicalForArchiving(url), didUnwrap: false, wrapper: nil)
+        UnwrapResult(url: URLCanonicalizer.strip(url), didUnwrap: false, wrapper: nil)
     }
 
     // MARK: - Shortener host set

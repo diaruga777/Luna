@@ -57,27 +57,12 @@ struct ArticleFetcher: HTMLFetching {
         try await fetch(url: url, userAgent: Self.safariUserAgent)
     }
 
-    /// Common tracking query params stripped before an archive lookup so the
-    /// snapshot matches the canonical URL (and a stray fragment can't alter the
-    /// archive path).
-    private static let trackingParams: Set<String> = [
-        "mod", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-        "fbclid", "gclid", "igshid", "ref", "cmpid", "ocid", "spm", "smid",
-    ]
-
-    /// Canonical form for archive lookups: drops the fragment and known tracking
-    /// params. Keeps real query params so distinct articles still resolve. An
-    /// already-archived URL is first unwrapped to the original article, so we
-    /// archive the real page rather than double-wrapping an archive snapshot.
+    /// Canonical form for archive lookups: an already-archived URL is first
+    /// unwrapped to the original article (so we archive the real page rather than
+    /// double-wrapping a snapshot), then tracking-stripped via the single
+    /// `URLCanonicalizer.strip` shared with the unwrap path.
     static func canonicalForArchiving(_ url: URL) -> URL {
-        let article = originalURL(fromArchiveURL: url) ?? url
-        guard var comps = URLComponents(url: article, resolvingAgainstBaseURL: false) else { return article }
-        comps.fragment = nil
-        if let queryItems = comps.queryItems {
-            let kept = queryItems.filter { !trackingParams.contains($0.name.lowercased()) }
-            comps.queryItems = kept.isEmpty ? nil : kept
-        }
-        return comps.url ?? article
+        URLCanonicalizer.strip(originalURL(fromArchiveURL: url) ?? url)
     }
 
     /// archive.today's family of interchangeable domains (DNS round-robin; the same

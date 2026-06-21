@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<!--
+  Representative Target product page. Target renders price client-side but ships it in
+  __NEXT_DATA__ as price.current_retail (a bare number) with no JSON-LD / og:price /
+  itemprop=price. The TargetPriceRule must recover 24.99 USD from current_retail.
+-->
+<html lang="en">
+<head>
+  <title>Threshold 12oz Stoneware Mug - Target</title>
+  <meta property="og:title" content="Threshold 12oz Stoneware Mug">
+  <meta property="og:image" content="https://target.scene7.com/is/image/Target/mug.jpg">
+</head>
+<body>
+  <main>
+    <h1>Threshold 12oz Stoneware Mug</h1>
+    <button data-test="orderPickupButton">Add to cart</button>
+  </main>
+  <script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"__APOLLO_STATE__":{"Product:54321":{"__typename":"Product","tcin":"54321","price":{"__typename":"Price","current_retail":24.99,"formatted_current_price":"$24.99","reg_retail":29.99}}}}},"page":"/p/[slug]","buildId":"tgt987"}</script>
+</body>
+</html>

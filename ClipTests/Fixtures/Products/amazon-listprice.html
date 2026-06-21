@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!--
+  amazon.com /dp page where a STRIKETHROUGH LIST PRICE (.a-offscreen "$59.99") appears
+  BEFORE the buy-box price (.a-offscreen "$42.50" inside #corePriceDisplay). There is no
+  "priceAmount"/"displayPrice" JSON, so the rule must fall back to the BUY-BOX-scoped
+  .a-offscreen and pick $42.50 — NOT the first .a-offscreen on the page ($59.99 list).
+  amazon.com TLD ⇒ USD.
+-->
+<html lang="en-us">
+<head>
+  <title>Acme Widget : Amazon.com</title>
+  <link rel="canonical" href="https://www.amazon.com/Acme-Widget/dp/B0ACME1234" />
+</head>
+<body>
+<div id="dp-container">
+  <h1 id="productTitle">Acme Widget Deluxe</h1>
+
+  <!-- List price (strikethrough) — appears FIRST, must be ignored. -->
+  <div id="listPrice_feature_div">
+    <span class="a-price a-text-price" data-a-strike="true">
+      <span class="a-offscreen">$59.99</span>
+    </span>
+  </div>
+
+  <!-- Buy-box price — the real price. -->
+  <div id="corePriceDisplay_desktop_feature_div" data-csa-c-type="widget">
+    <span class="a-price" data-a-size="m">
+      <span class="a-offscreen">$42.50</span>
+      <span aria-hidden="true"><span class="a-price-symbol">$</span><span class="a-price-whole">42</span></span>
+    </span>
+  </div>
+
+  <div id="addToCart_feature_div">
+    <input id="add-to-cart-button" name="submit.add-to-cart" type="submit" value="Add to Cart" />
+  </div>
+</div>
+</body>
+</html>

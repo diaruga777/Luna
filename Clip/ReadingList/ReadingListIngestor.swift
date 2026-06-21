@@ -14,9 +14,6 @@ final class ReadingListIngestor {
     private let fetcher = ArticleFetcher()
     private let extractor = ArticleExtractor()
     private let youTubeMetadataFetcher: YouTubeMetadataFetching = YouTubeOEmbedFetcher()
-    /// Resolves the mandatory price for a detected product (static → embedded JSON
-    /// → WKWebView render). A product never becomes a tracker without a real price.
-    private let priceFetcher: PriceFetching = PriceFetcher()
     /// Records a `Replay` for each save (diagnostics). `NoopReplayRecorder` keeps
     /// recording off the hot path optional — a save runs identically without it.
     private let recorder: ReplayRecording
@@ -150,7 +147,10 @@ final class ReadingListIngestor {
         // in how they present the result.
         let decision = await ArticleIngestDecider.decide(
             url: url, skipProductDetection: forceArticle,
-            fetcher: resolveFetcher, extractor: extractor, priceFetcher: priceFetcher,
+            fetcher: resolveFetcher, extractor: extractor,
+            // Main app only: the bounded WKWebView render tier for a JS-only price. The
+            // extensions pass no renderer (the default nil), so they can never spin one up.
+            render: { url in await WebViewPriceRenderer.renderedHTML(for: url) },
             replayLog: replayID.map { id in { [recorder] event in await recorder.record(event, for: id) } })
         switch decision {
         case let .priceTracker(product, _):

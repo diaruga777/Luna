@@ -125,6 +125,31 @@ struct ProductPageDetector {
         return priceFromMetaOrMicrodata(document: document) != nil
     }
 
+    /// The descriptive metadata fields (name/image/brand/id) for a parsed product
+    /// page — the single place those fields come from, reused by
+    /// `ProductMetadataExtractor` so detection and extraction agree on them.
+    func metadataFields(
+        document: Document, baseURL: URL?
+    ) -> (name: String, imageURL: URL?, brand: String?, productID: String?) {
+        (name: productName(document: document, baseURL: baseURL),
+         imageURL: productImage(document: document, baseURL: baseURL),
+         brand: brand(document: document),
+         productID: microdataProductID(document: document))
+    }
+
+    /// The GENERIC structured price — JSON-LD `Offer`, OpenGraph `product:price`,
+    /// schema.org microdata, then embedded app-state JSON — with NO retailer-specific
+    /// logic. The fallback `ProductMetadataExtractor` consults when no per-host rule
+    /// matches. Pure.
+    func genericStructuredPrice(document: Document, baseURL: URL?) -> ProductPrice? {
+        if let price = priceFromMetaOrMicrodata(document: document) { return price }
+        if let candidate = candidateFromJSONLD(document: document, baseURL: baseURL),
+           let price = candidate.staticPrice {
+            return price
+        }
+        return priceFromEmbeddedJSON(document: document)
+    }
+
     /// Detection over an already-parsed document (lets the article pipeline reuse
     /// a parse it already has).
     func detect(document: Document, baseURL: URL?) -> ProductCandidate? {
@@ -203,12 +228,18 @@ struct ProductPageDetector {
         return nil
     }
 
-    /// True for any Amazon storefront host (`amazon.com`, `amazon.com.au`,
-    /// `www.amazon.co.uk`, …).
+    /// True ONLY for a real Amazon storefront host (`amazon.com`, `amazon.com.au`,
+    /// `www.amazon.co.uk`, …). Strict suffix check against the known storefront TLDs so
+    /// a lookalike (`amazon.scam.com`, `cdn.amazon.akamai.net`) can't match.
     private static func isAmazonHost(_ host: String?) -> Bool {
-        guard let host = host?.lowercased() else { return false }
-        return host == "amazon.com" || host.contains(".amazon.") || host.hasPrefix("amazon.")
-            || host.hasSuffix(".amazon.com")
+        guard var host = host?.lowercased() else { return false }
+        if host.hasSuffix(".") { host.removeLast() }
+        let tldSuffixes = [".com.au", ".co.uk", ".co.jp", ".ca", ".de", ".fr",
+                           ".it", ".es", ".in", ".com"]
+        return tldSuffixes.contains { suffix in
+            let storefront = "amazon" + suffix
+            return host == storefront || host.hasSuffix("." + storefront)
+        }
     }
 
     /// A currency explicitly declared in Amazon's embedded price JSON

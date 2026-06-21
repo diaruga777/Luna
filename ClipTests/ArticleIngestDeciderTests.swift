@@ -10,7 +10,9 @@ import XCTest
 /// app (`ReadingListIngestor.ingest`) and both share-sheet extensions now call. The
 /// key assertions are PARITY: the same URL/HTML yields the same classification
 /// regardless of entry point, because there's only one routine. Driven by a mock
-/// `HTMLFetching` + `PriceFetching` so it's network-free.
+/// `HTMLFetching`; the product price comes from the real `ProductMetadataExtractor`
+/// over fixture HTML with `render: nil` (the extension-safe path — no WebView), so the
+/// whole test is network-free.
 final class ArticleIngestDeciderTests: XCTestCase {
 
     private func url(_ string: String) -> URL {
@@ -32,11 +34,11 @@ final class ArticleIngestDeciderTests: XCTestCase {
     }
 
     private func decide(
-        _ urlString: String, html: String?, fetcher: MockArticleFetcher,
-        price: MockPriceFetcher = MockPriceFetcher()
+        _ urlString: String, html: String?, fetcher: MockArticleFetcher
     ) async -> ArticleIngestDecision {
+        // render: nil ⇒ static-only price extraction (the extension-safe path).
         await ArticleIngestDecider.decide(
-            url: url(urlString), prefetchedHTML: html, fetcher: fetcher, priceFetcher: price)
+            url: url(urlString), prefetchedHTML: html, fetcher: fetcher)
     }
 
     // MARK: classification cases
@@ -50,10 +52,10 @@ final class ArticleIngestDeciderTests: XCTestCase {
     func testProductPageIsPriceTracker() async {
         let productURL = "https://www.bunnings.com.au/ryobi-18v-one-25-30cm-cordless-line-trimmer-tool-only_p0208315"
         let html = BypassFixtures.html("Products/bunnings-nextdata.html")
-        let price = MockPriceFetcher()
-        price.priceByURL[productURL] = ProductPrice(amount: 99, currency: "AUD")
         let fetcher = MockArticleFetcher()
-        let decision = await decide(productURL, html: html, fetcher: fetcher, price: price)
+        // Bunnings has no per-host rule → the generic embedded-JSON fallback recovers
+        // the price (99 AUD) from __NEXT_DATA__ statically, no WebView needed.
+        let decision = await decide(productURL, html: html, fetcher: fetcher)
         guard case let .priceTracker(product, _) = decision else {
             return XCTFail("expected .priceTracker, got \(decision)")
         }
@@ -95,18 +97,18 @@ final class ArticleIngestDeciderTests: XCTestCase {
     }
 
     func testSkipProductDetectionForcesArticlePath() async {
-        // A product page, but forceArticle/skipProductDetection is set → article path.
-        let productURL = "https://www.bunnings.com.au/widget_p0208315"
-        let html = "<html><head><meta property=\"og:type\" content=\"product\"></head>"
+        // A product page (with a recoverable embedded price), but skipProductDetection
+        // is set → it MUST take the article path and never become a price tracker.
+        let productURL = "https://www.bunnings.com.au/ryobi-18v-one-25-30cm_p0208315"
+        let html = "<html><head><meta property=\"og:type\" content=\"product\">"
+            + "<script id=\"__NEXT_DATA__\" type=\"application/json\">"
+            + "{\"a\":{\"currencyIso\":\"AUD\",\"priceAvailable\":true,\"value\":50}}</script></head>"
             + "<body><article>\(readableHTML())</article></body></html>"
-        let price = MockPriceFetcher()
-        price.priceByURL[productURL] = ProductPrice(amount: 50, currency: "AUD")
         let fetcher = MockArticleFetcher()
         let decision = await ArticleIngestDecider.decide(
             url: url(productURL), prefetchedHTML: html, skipProductDetection: true,
-            fetcher: fetcher, priceFetcher: price)
+            fetcher: fetcher)
         guard case .article = decision else { return XCTFail("expected .article, got \(decision)") }
-        XCTAssertTrue(price.requestedURLs.isEmpty, "price must not be fetched when product detection is skipped")
     }
 
     // MARK: PARITY — the same inputs yield the same decision through every entry point

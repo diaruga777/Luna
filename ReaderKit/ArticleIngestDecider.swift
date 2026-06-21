@@ -48,6 +48,11 @@ enum ArticleIngestDecider {
     /// 3. Classification — `.article` on success; on a paywall, `.needsArchive`
     ///    (with a real or guessed title) for a hard-paywall host / archive URL,
     ///    else `.failed` for an ordinary unreachable page.
+    /// - `render`: the bounded WebView render tier for the product price extractor.
+    ///   DEFAULT nil ⇒ the render tier is structurally unreachable, so a product page
+    ///   whose price is JS-only resolves to no-price → article (never a spinning
+    ///   WebView). App extensions take the default; the main app passes a real renderer
+    ///   only because it can afford a `WKWebView`.
     static func decide(
         url: URL,
         prefetchedHTML: String? = nil,
@@ -55,14 +60,16 @@ enum ArticleIngestDecider {
         fetcher: HTMLFetching = ArticleFetcher(),
         extractor: ArticleExtractor = ArticleExtractor(),
         productDetector: ProductPageDetector = ProductPageDetector(),
-        priceFetcher: PriceFetching = PriceFetcher(),
+        metadataExtractor: ProductMetadataExtractor = ProductMetadataExtractor(),
+        render: ((URL) async -> String?)? = nil,
         runner: BypassRunning? = nil,
         replayLog: ((EventKind) async -> Void)? = nil
     ) async -> ArticleIngestDecision {
         // (1) Product detection runs BEFORE any paywall/archive treatment, so a
         // product page is routed to price tracking and never paywall-bypassed. The
         // mandatory price decides whether a candidate actually becomes a tracker — a
-        // candidate with no fetchable price falls through to the article path.
+        // page with no resolvable price falls through to the article path. ONE parse,
+        // ONE price source (the extractor's per-host rule table, else generic fallback).
         // `skipProductDetection` forces the article path (the "Read instead" override).
         let directHTML: String?
         if skipProductDetection {
@@ -74,10 +81,12 @@ enum ArticleIngestDecider {
                 directHTML = try? await fetcher.fetchHTML(from: url)
             }
             if let html = directHTML,
-               let candidate = productDetector.detect(urlString: url.absoluteString, html: html),
-               let price = await priceFetcher.fetchPrice(
-                   forURLString: url.absoluteString, prefetchedHTML: html) {
-                return .priceTracker(ProductInfo(candidate: candidate, price: price), html: html)
+               productDetector.detect(urlString: url.absoluteString, html: html) != nil,
+               let metadata = await metadataExtractor.extract(url: url, html: html, render: render) {
+                return .priceTracker(ProductInfo(
+                    name: metadata.name, priceAmount: metadata.price.amount,
+                    priceCurrency: metadata.price.currency, imageURL: metadata.imageURL,
+                    brand: metadata.brand, productID: metadata.productID), html: html)
             }
         }
 

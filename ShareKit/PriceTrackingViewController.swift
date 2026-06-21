@@ -1,6 +1,6 @@
 //
 //  PriceTrackingViewController.swift
-//  Clip
+//  ShareKit
 //
 
 import UIKit
@@ -71,6 +71,23 @@ final class PriceTrackingViewController: UIViewController {
     private let store = ReadingListStore.shared
     private let manager: PriceTrackingManaging
 
+    /// Re-saves a URL as a normal article when the user taps "Read instead". Injected
+    /// so the editor stays extension-safe (ShareKit has no `ReadingListIngestor`): the
+    /// main app installs `defaultSaveAsArticle` (→ the ingestor's forced-article save);
+    /// the action extension passes a per-instance handler that re-appends + lets the app
+    /// ingest. Falls back to the static default when no per-instance handler is given.
+    private let saveAsArticleOverride: ((String) -> Void)?
+
+    /// The main app's "Read instead" save-as-article behavior, installed once at launch
+    /// so in-app `PriceTrackingViewController`s need no per-instance handler. Lives as a
+    /// static hook (not a hard reference) to keep ShareKit free of main-app deps.
+    static var defaultSaveAsArticle: ((String) -> Void)?
+
+    /// Invoked when the editor is dismissed via the extension **Done** button, so the
+    /// host (action extension) can complete its request. nil in-app (the back chevron
+    /// just pops). Set by the extension host after construction.
+    var onDone: (() -> Void)?
+
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let thresholdSlider = AlertThresholdSlider()
 
@@ -82,12 +99,19 @@ final class PriceTrackingViewController: UIViewController {
     init(itemID: UUID, manager: PriceTrackingManaging = PriceTrackingManager()) {
         self.mode = .existing(itemID: itemID)
         self.manager = manager
+        self.saveAsArticleOverride = nil
         super.init(nibName: nil, bundle: nil)
     }
 
-    init(mode: Mode, manager: PriceTrackingManaging = PriceTrackingManager()) {
+    /// `onReadInstead` overrides the "Read instead" re-save (extension surfaces inject
+    /// their own; in-app callers omit it to use the static `defaultSaveAsArticle`).
+    init(
+        mode: Mode, manager: PriceTrackingManaging = PriceTrackingManager(),
+        onReadInstead: ((String) -> Void)? = nil
+    ) {
         self.mode = mode
         self.manager = manager
+        self.saveAsArticleOverride = onReadInstead
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -300,6 +324,9 @@ final class PriceTrackingViewController: UIViewController {
     ///   article.
     /// Then leave the screen. Never shown for the existing entry.
     @objc private func readInsteadTapped() {
+        // The re-save is injected (extension-safe): a per-instance handler wins, else
+        // the static default the main app installs. ShareKit holds no `ReadingListIngestor`.
+        let saveAsArticle = saveAsArticleOverride ?? Self.defaultSaveAsArticle
         switch exitContext.readInsteadAction {
         case .hidden:
             return
@@ -307,21 +334,24 @@ final class PriceTrackingViewController: UIViewController {
             guard let item = store.item(withID: itemID) else { dismissOrPop(); return }
             let urlString = item.urlString
             store.delete(item)
-            Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
+            saveAsArticle?(urlString)
         case .revertAddedStore(let urlString):
             if var current = tracker, current.removeStore(urlString: urlString) {
                 store.updatePriceTracker(current, for: itemID)
             }
-            Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
+            saveAsArticle?(urlString)
         }
         dismissOrPop()
     }
 
-    /// Leaves the screen whichever way it was shown: pop when pushed onto a nav
-    /// stack, otherwise dismiss the modal presentation. Always exits.
+    /// Leaves the screen whichever way it was shown: pop when pushed onto a nav stack
+    /// (in-app), else hand off to the extension host's `onDone` (which completes the
+    /// extension request), else dismiss the modal presentation. Always exits.
     private func dismissOrPop() {
         if let navigationController, navigationController.viewControllers.first !== self {
             navigationController.popViewController(animated: true)
+        } else if let onDone {
+            onDone()
         } else {
             dismiss(animated: true)
         }

@@ -22,7 +22,7 @@ final class OutcomePresenterTests: XCTestCase {
     }
 
     /// A recording presenter exercising the exhaustive switch contract — the same
-    /// shape as `IngestorOutcomePresenter` / `ShareOutcomePresenter`, minus the
+    /// shape as `IngestorOutcomePresenter` / `ShareSurfaceDriver`, minus the
     /// UIKit/store side effects, so the routing can be asserted in isolation.
     struct RecordingPresenter {
         func intent(for outcome: Outcome) -> PresentationIntent {

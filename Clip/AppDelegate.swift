@@ -37,6 +37,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         ReaderSettings.migrateFromStandardIfNeeded()
         recordEnvironmentSnapshot()
 
+        // Install the in-app "Read instead" behavior for the price-tracking editor
+        // (now shared with the extensions in ShareKit, which can't reference the
+        // ingestor): a forced-article re-save, no re-detection back into a tracker.
+        PriceTrackingViewController.defaultSaveAsArticle = { urlString in
+            Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
+        }
+
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
         ReadingListIngestor.shared.ingestAllPending()

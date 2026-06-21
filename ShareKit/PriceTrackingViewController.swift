@@ -253,14 +253,27 @@ final class PriceTrackingViewController: UIViewController {
         present(alert, animated: true)
     }
 
-    /// Adds `urlString` as a seller: fetches its price (mandatory) and only adds the
-    /// store when a price is readable; surfaces a message otherwise. Dedupes a URL
-    /// already tracked. `prefetchedHTML` (from the search overlay) lets the fetcher
-    /// skip a redundant network round-trip.
-    private func addSeller(urlString: String, prefetchedHTML: String? = nil) {
+    /// Adds `urlString` as a seller: fetches its price (mandatory, via the same
+    /// `PriceFetcher` path the rest of the app uses) and only adds the store when a
+    /// price is readable; surfaces a message otherwise. Dedupes a URL already tracked.
+    /// `prefetchedHTML` (the search overlay's rendered `outerHTML`) lets the fetcher
+    /// take its fast static path and SEE JS-loaded prices without a re-fetch.
+    ///
+    /// `report` (the search-overlay add path) receives the typed outcome so the
+    /// overlay can dismiss on success or show a clear message — never a silent no-op.
+    /// When `report` shows the message itself, the paste path omits it and this method
+    /// presents its own alert.
+    private func addSeller(
+        urlString: String, prefetchedHTML: String? = nil,
+        report: ((ProductSearchAddOutcome) -> Void)? = nil
+    ) {
         guard let tracker else { return }
         if tracker.hasStore(urlString: urlString) {
-            presentMessage(title: "Already tracked", message: "This page is already a seller.")
+            if let report {
+                report(.duplicate)
+            } else {
+                presentMessage(title: "Already tracked", message: "This page is already a seller.")
+            }
             return
         }
         Task { [weak self] in
@@ -269,17 +282,25 @@ final class PriceTrackingViewController: UIViewController {
                 urlString: urlString, prefetchedHTML: prefetchedHTML)
             await MainActor.run {
                 guard var current = self.tracker else { return }
-                if current.hasStore(urlString: urlString) { return }
+                if current.hasStore(urlString: urlString) {
+                    report?(.duplicate)
+                    return
+                }
                 guard let price else {
-                    self.presentMessage(
-                        title: "No price found",
-                        message: "We couldn't read a price on that page, so it wasn't added.")
+                    if let report {
+                        report(.noPrice)
+                    } else {
+                        self.presentMessage(
+                            title: "No price found",
+                            message: "We couldn't read a price on that page, so it wasn't added.")
+                    }
                     return
                 }
                 current.upsertStore(PriceTrackerStore(
                     urlString: urlString, lastPrice: price.amount,
                     currency: price.currency, lastRefreshed: Date()))
                 self.store.updatePriceTracker(current, for: self.itemID)
+                report?(.added)
             }
         }
     }
@@ -301,8 +322,10 @@ final class PriceTrackingViewController: UIViewController {
             ?? URL(string: "https://www.google.com")
         guard let searchURL else { return }
         let overlay = ProductSearchOverlayViewController(initialURL: searchURL)
-        overlay.onUseThisPage = { [weak self] urlString, html in
-            self?.addSeller(urlString: urlString, prefetchedHTML: html.isEmpty ? nil : html)
+        overlay.onUseThisPage = { [weak self] urlString, html, completion in
+            self?.addSeller(
+                urlString: urlString, prefetchedHTML: html.isEmpty ? nil : html,
+                report: completion)
         }
         present(overlay, animated: true)
     }

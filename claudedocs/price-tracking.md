@@ -184,12 +184,34 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   back/forward `GlassStyle.circularButtonConfiguration`), and a bottom glass bar with
   an editable URL field + a circular **+**. Preloads the Google Shopping search for
   the product. Free browse/type-and-go. **+** → a **"Use this page?"** alert
-  ("Add to tracker" / "No thanks"). **Auto-detect:** on `didFinish` it reads
-  `document.documentElement.outerHTML` and, if `ProductPageDetector.detect` classifies
-  it a product, AUTO-presents the same alert (debounced per-URL via `autoOfferedURLStrings`).
-  On confirm it hands the current URL + rendered HTML up via `onUseThisPage`; it never
-  touches the store (the host does the mandatory price fetch + dedupe + add). Lives in
-  ReaderKit (WebKit, reusable), free of ReadingList deps.
+  ("Add to tracker" / "No thanks").
+  - **Keyboard avoidance:** the bottom bar is a direct child of the root view (NOT the
+    card) and its `bottomAnchor` is pinned to `view.keyboardLayoutGuide.topAnchor`
+    (`.defaultHigh`) with a `lessThanOrEqualTo` `safeAreaLayoutGuide.bottomAnchor` cap —
+    so it rides up just above the keyboard while typing and drops back on dismiss, the
+    URL field always visible/usable. Same pattern as `SearchViewController`.
+  - **Auto-suggest (UNIFIED):** on `didFinish` it reads
+    `document.documentElement.outerHTML` and runs `ProductPageSuggestion.resolve`
+    (`ReaderKit/ProductPageSuggestion.swift`) — the SAME `Classifier.classify == .product`
+    + `ProductMetadataExtractor` (`render: nil`, the page is already rendered) the ingest
+    pipeline uses. If the rendered page is a product WITH a resolvable price it
+    AUTO-presents the "Use this page?" alert. This is exactly the Add-success condition,
+    so a page that auto-suggests is a page whose Add will succeed (no parallel detector).
+    Debounced per-URL via `ProductSuggestionDebouncer` (`ReaderKit/`, pure, tested) so it
+    fires at most once per page.
+  - **Add → outcome:** on confirm (manual + or auto-suggest) it hands the current URL +
+    rendered HTML up via `onUseThisPage(urlString, html, completion)` and AWAITS the
+    host's `ProductSearchAddOutcome`. On `.added` it **dismisses** (returning to the
+    tracker page, now updated); on `.noPrice` it shows **"Couldn't find a price"**; on
+    `.duplicate` it shows "Already tracked" — never a silent no-op. It never touches the
+    store (the host does the mandatory price fetch + dedupe + add). Lives in ReaderKit
+    (WebKit, reusable), free of ReadingList deps.
+- `ReaderKit/ProductPageSuggestion.swift` — **pure** unified suggest decision.
+  `resolve(url:html:)` returns `ProductMetadata?` = `Classifier.classify == .product`
+  AND `ProductMetadataExtractor.extract(render: nil)` over the RENDERED `outerHTML`
+  (JS-loaded prices already in the DOM). The single source of "suggest = Add succeeds".
+- `ReaderKit/ProductSuggestionDebouncer.swift` — **pure** per-URL debounce
+  (`shouldOffer(urlString:)` true once per URL; `hasOffered(urlString:)`).
 - `ShareKit/PriceTrackingViewController.swift` — the tracker editor (in `ShareKit/` so
   it compiles into the main app AND the extension targets), PUSHED onto the reading-list
   nav stack in-app, or PRESENTED modally by the action/share extension's

@@ -6,6 +6,21 @@
 import UIKit
 import WebKit
 
+/// The outcome the host reports after attempting to add the overlay's current page
+/// as a seller. Drives the overlay's exit behavior: a successful add dismisses the
+/// overlay (returning to the price-tracker page); a failure keeps it open and shows
+/// a clear, visible message — never a silent no-op.
+enum ProductSearchAddOutcome {
+    /// The page was added (price resolved + store upserted). The overlay dismisses.
+    case added
+    /// No price could be extracted from the page. The overlay shows a "couldn't find
+    /// a price" message and stays open so the user can pick another page.
+    case noPrice
+    /// The page is already a seller for this tracker. The overlay shows a message and
+    /// stays open.
+    case duplicate
+}
+
 /// A near-fullscreen web search/browse overlay for adding a seller to a price
 /// tracker, styled like the inline reader (`SplitWebOverlayViewController`): a themed
 /// `WKWebView` inside an inset rounded glass card with a glass header (close +
@@ -14,22 +29,32 @@ import WebKit
 /// It preloads a Google Shopping search for the product, lets the user browse/type
 /// freely, and offers two ways to add the page being viewed as a seller:
 /// - tapping the "+" button → a "Use this page?" confirmation, or
-/// - **auto-detection**: when a page finishes loading and `ProductPageDetector`
-///   classifies it as a product, the same confirmation is presented automatically
-///   (debounced per-URL so it never re-fires for the same page).
+/// - **auto-detection**: when a page finishes loading and the UNIFIED
+///   `ProductPageSuggestion` (same `Classifier` + `ProductMetadataExtractor` the
+///   ingest pipeline uses) says the rendered page is a product WITH a price, the same
+///   confirmation is presented automatically — debounced per-URL via
+///   `ProductSuggestionDebouncer` so it never re-fires for the same page.
 ///
 /// The overlay never touches the reading-list store: when the user confirms, it
-/// hands the current URL + its rendered HTML up via `onUseThisPage`, and the host
-/// (the price-tracking editor) performs the mandatory price fetch + dedupe + add.
+/// hands the current URL + its rendered HTML up via `onUseThisPage` and AWAITS the
+/// host's `ProductSearchAddOutcome`. On `.added` the overlay dismisses (returning to
+/// the tracker); on `.noPrice`/`.duplicate` it shows a message and stays open.
+///
+/// The bottom URL bar is pinned to `view.keyboardLayoutGuide.topAnchor` (high
+/// priority) with a safe-area cap, so it rides up just above the keyboard while the
+/// user types and drops back when the keyboard dismisses — the field stays visible
+/// and usable the whole time (the same pattern as `SearchViewController`).
 final class ProductSearchOverlayViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegate {
 
-    /// Called when the user confirms "Add to tracker" for the current page. The host
-    /// performs the price fetch (mandatory) + dedupe + add. `html` is the page's
-    /// rendered `outerHTML` (so the host can reuse it for the fast price path).
-    var onUseThisPage: ((_ urlString: String, _ html: String) -> Void)?
+    /// Called when the user confirms "Add to tracker" for the current page. `html` is
+    /// the page's rendered `outerHTML` (the host reuses it for the fast price path).
+    /// The host performs the mandatory price fetch + dedupe + add and MUST call
+    /// `completion` with the outcome so the overlay can dismiss on success or show a
+    /// clear message on failure (never a silent no-op).
+    var onUseThisPage: ((_ urlString: String, _ html: String,
+                         _ completion: @escaping (ProductSearchAddOutcome) -> Void) -> Void)?
 
     private let initialURL: URL
-    private let detector = ProductPageDetector()
 
     private let dimView = UIView()
     private let card = UIView()
@@ -46,9 +71,13 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
 
     private var webView: WKWebView?
 
-    /// URLs we've already offered "Use this page?" for via auto-detection, so it
-    /// fires at most once per page even as `didFinish` re-fires on in-page updates.
-    private var autoOfferedURLStrings: Set<String> = []
+    /// Pins the bottom bar above the keyboard (high priority); a safe-area cap keeps
+    /// it above the home indicator when the keyboard is down. Auto Layout so the bar
+    /// animates with the keyboard — the URL field is never covered while typing.
+    private var bottomBarBottomCap: NSLayoutConstraint?
+
+    /// Per-URL debounce so auto-suggest fires at most once per page.
+    private var suggestionDebouncer = ProductSuggestionDebouncer()
     /// True while a "Use this page?" alert is on screen, so a finishing navigation
     /// doesn't stack a second one.
     private var isOfferingUseThisPage = false
@@ -175,7 +204,11 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
         bottomBar.layer.cornerRadius = Self.cardCornerRadius
         bottomBar.layer.cornerCurve = .continuous
         bottomBar.layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-        card.addSubview(bottomBar)
+        // The bar is a direct child of the root view (NOT the card) so it can be
+        // pinned to the keyboard layout guide and ride above the keyboard. It is
+        // visually flush with the card's bottom when the keyboard is down.
+        bottomBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bottomBar)
 
         urlField.borderStyle = .roundedRect
         urlField.font = .preferredFont(forTextStyle: .footnote)
@@ -192,14 +225,29 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
         addButton.tintColor = GlassStyle.readingAccent
         addButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
         bottomBar.contentView.addSubview(addButton)
+
+        // Rise above the keyboard while typing (the guide tracks the real keyboard
+        // frame); cap above the bottom safe area when the keyboard is down. High
+        // priority so the keyboard guide wins over the cap exactly when the keyboard
+        // is up — matching `SearchViewController`'s pattern.
+        let aboveKeyboard = bottomBar.bottomAnchor.constraint(
+            equalTo: view.keyboardLayoutGuide.topAnchor)
+        aboveKeyboard.priority = .defaultHigh
+        let cap = bottomBar.bottomAnchor.constraint(
+            lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8)
+        bottomBarBottomCap = cap
+        NSLayoutConstraint.activate([
+            bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.cardInset),
+            bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Self.cardInset),
+            bottomBar.heightAnchor.constraint(equalToConstant: Self.bottomBarHeight),
+            aboveKeyboard,
+            cap,
+        ])
     }
 
     private func layoutCardContents() {
         webView?.frame = card.bounds
         header.frame = CGRect(x: 0, y: 0, width: card.bounds.width, height: Self.headerHeight)
-        bottomBar.frame = CGRect(
-            x: 0, y: card.bounds.height - Self.bottomBarHeight,
-            width: card.bounds.width, height: Self.bottomBarHeight)
 
         let s = Self.buttonSize
         let y = (Self.headerHeight - s) / 2
@@ -215,7 +263,7 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
 
         let by = (Self.bottomBarHeight - s) / 2
         addButton.frame = CGRect(
-            x: card.bounds.width - Self.buttonInset - s, y: by, width: s, height: s)
+            x: bottomBar.bounds.width - Self.buttonInset - s, y: by, width: s, height: s)
         urlField.frame = CGRect(
             x: Self.buttonInset, y: (Self.bottomBarHeight - 36) / 2,
             width: addButton.frame.minX - 8 - Self.buttonInset, height: 36)
@@ -267,11 +315,40 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
         present(alert, animated: true)
     }
 
+    /// Reads the rendered HTML and hands it to the host, then routes the host's
+    /// outcome to the overlay's exit behavior (dismiss on success, message otherwise).
     private func handleAddCurrentPage(urlString: String) {
         webView?.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, _ in
+            guard let self else { return }
             let html = (result as? String) ?? ""
-            self?.onUseThisPage?(urlString, html)
+            self.onUseThisPage?(urlString, html) { [weak self] outcome in
+                self?.handleAddOutcome(outcome)
+            }
         }
+    }
+
+    /// Applies the host's add outcome: dismiss + return to the tracker on success,
+    /// otherwise a clear visible message so the user is never left wondering.
+    private func handleAddOutcome(_ outcome: ProductSearchAddOutcome) {
+        switch outcome {
+        case .added:
+            dismiss(animated: true)
+        case .noPrice:
+            presentMessage(
+                title: "Couldn't find a price",
+                message: "We couldn't find a price on this page, so it wasn't added. "
+                    + "Try a product page that shows a price.")
+        case .duplicate:
+            presentMessage(
+                title: "Already tracked",
+                message: "This page is already a seller for this product.")
+        }
+    }
+
+    private func presentMessage(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 
     // MARK: - WKNavigationDelegate
@@ -290,18 +367,27 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
         _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error
     ) { updateNavButtons() }
 
-    /// Reads the finished page's rendered HTML and, if `ProductPageDetector` says it's
-    /// a product page we haven't already offered, auto-presents "Use this page?".
+    /// Reads the finished page's rendered HTML and, if the UNIFIED
+    /// `ProductPageSuggestion` says it's a product WITH a resolvable price (the exact
+    /// condition under which Add succeeds), auto-presents "Use this page?".
+    /// Debounced per-URL so it fires once per page.
     private func autoDetectProductIfNeeded(in webView: WKWebView) {
-        guard let urlString = webView.url?.absoluteString,
-              !autoOfferedURLStrings.contains(urlString),
+        guard let url = webView.url,
+              !suggestionDebouncer.hasOffered(urlString: url.absoluteString),
               !isOfferingUseThisPage else { return }
         webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, _ in
-            guard let self, let html = result as? String,
-                  self.detector.detect(urlString: urlString, html: html) != nil else { return }
-            // Debounce: offer at most once per URL.
-            self.autoOfferedURLStrings.insert(urlString)
-            self.offerUseThisPage()
+            guard let self, let html = result as? String else { return }
+            Task { [weak self] in
+                guard let self else { return }
+                let metadata = await ProductPageSuggestion.resolve(url: url, html: html)
+                await MainActor.run {
+                    guard metadata != nil,
+                          !self.isOfferingUseThisPage,
+                          self.suggestionDebouncer.shouldOffer(urlString: url.absoluteString)
+                    else { return }
+                    self.offerUseThisPage()
+                }
+            }
         }
     }
 }

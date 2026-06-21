@@ -298,3 +298,67 @@ asserted identically across EVERY `CaptureSource` (the headline parity guarantee
 - `ReaderKit` stays extension-safe: `URLCanonicalizer`, `Classifier.isHardPaywallHost`, and
   the pipeline change add no UIKit/CloudKit/main-app deps. Release (generic/iOS) compiles.
 - Replay round-trips unchanged (the pipeline's unwrap/decision events are untouched).
+
+## Stage 5 — Surface unification (DONE)
+
+Stage 4 made the PIPELINE source-invariant; Stage 5 makes every INPUT SURFACE feed and
+present it identically (the surfaces still diverged in how they fed/presented the one
+pipeline). Suite → 852, all green; Release (all extension targets) compiles.
+
+### The extension surfaces become a testable shared driver
+
+- **`ShareKit/ExtensionHost.swift`** — `protocol ExtensionHost` (extension-safe): the ONLY
+  parts of the real `NSExtensionContext`/UIKit harness the ingest+present flow touches —
+  `isActionExtension` / `readerMode` (the single per-surface data), `presentModally`,
+  `confirmSavedThenComplete`, `autoDownloadThenComplete`, `failOrComplete`.
+- **`ShareKit/ShareSurfaceDriver.swift`** — the HOST-AGNOSTIC ingest+present flow extracted
+  out of `ShareViewController`/`ShareReaderViewController`. `ingestAndPresent(originalURL:)`
+  runs the ONE `IngestPipeline` (injectable `process` for tests), repoints on unwrap, then
+  `present(_:url:)` is an EXHAUSTIVE `Outcome` switch that PERSISTS the classified metadata
+  for every kind and presents real UI via the host. `ShareViewController` is now a thin
+  `ExtensionHost` adapter (attachment loading + live UIKit chrome only); the old divergent
+  `ShareOutcomePresenter` + `presentReader`/`presentSavedNonTextual`/`presentArchiveReaderForCaptcha`
+  are DELETED. `FakeExtensionHost` (in `ShareSurfaceDriverTests`) drives the whole flow
+  with no `NSExtensionContext`.
+
+### The four surface bugs this resolves (divergence collapsed, not special-cased)
+
+- **Bug 2 — Facebook link auto-detected on the pasteboard FAILS but "+" succeeds.**
+  `PasteboardSuggester.evaluate` rejected any non-http scheme before evaluating, so an
+  `fbrpc://…&target_url=http…` never became a suggestion; the "+" path
+  (`addTapped`) unwrapped offline first. FIX: `evaluate` now runs
+  `URLUnwrapper.unwrapOffline` BEFORE the http-scheme gate, identical to `addTapped` — both
+  build the same normalized URL and feed the same pipeline.
+- **Bug 3 — action extension doesn't show the price-tracking UI for a `.product`.** Both
+  extensions used to save the tracker silently + a checkmark. FIX: the driver's `.product`
+  case PRESENTS the SAME `PriceTrackingViewController` the main app shows, hosted in the
+  extension via `PriceTrackingHost.extension` (Done chrome). The editor + its small deps
+  (`AlertThresholdSlider`, `PriceTrackingManager`, `InAppBrowser`) MOVED from `Clip/` into
+  `ShareKit/` (compiled into all targets); the one main-app-only call ("Read instead" →
+  `ReadingListIngestor.saveAsArticle`) is now an injected closure — a static
+  `PriceTrackingViewController.defaultSaveAsArticle` the app installs at launch, a re-append
+  in the extension.
+- **Bug 4 — sharing a YouTube link via the SHARE extension fails.** The zero-UI share
+  extension routed `.video` straight to auto-download and persisted only a bare URL (no
+  platform/videoID), so the saved item was incomplete and the main app had to re-classify.
+  FIX: the driver's `.video`/`.social`/`.audio` cases call `saveYouTubeMetadata` /
+  `savePlatformMetadata` — an extension save is now shaped IDENTICALLY to a main-app save.
+- **`.needsArchive` presentation unified.** The action extension used to wrap the
+  archive-CAPTCHA reader in `ShareReaderViewController`; the main app showed
+  `ArchiveWebReaderViewController` directly. The driver now opens
+  `ArchiveWebReaderViewController` directly on EVERY surface (action ext swaps to the in-sheet
+  native reader on extract). `SurfaceParityTests` caught this divergence and forced the
+  collapse.
+
+### Cross-surface parity tests (`ClipTests/SurfaceParityTests.swift`)
+
+Drives the SAME nine example links — amazon, nytimes, wsj, an fbrpc Facebook link, an
+apple.news link, a Google News link, youtube, instagram, x — through the MAIN-APP source AND
+both EXTENSION surfaces (via the real `ShareSurfaceDriver` + `FakeExtensionHost`), with a
+mock fetcher + the Stage-1–4 fixtures, a nil render tier, and an offline-failing
+`URLSession` for the network-unwrap legs (NO live network). Asserts: (1) identical `Outcome`
+across `.manual`/`.shareSheet`/`.appIntent`; (2) identical PRESENTATION INTENT across the
+main-app presenter and the extension driver; (3) the extension persists the classified item
+the same shape (youtube keeps its platform/videoID; amazon becomes a tracker). It FAILS if
+any surface diverges again. (+`ShareSurfaceDriverTests` unit-drives each `Outcome` through
+the fake host.)

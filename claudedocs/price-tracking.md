@@ -190,8 +190,15 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   On confirm it hands the current URL + rendered HTML up via `onUseThisPage`; it never
   touches the store (the host does the mandatory price fetch + dedupe + add). Lives in
   ReaderKit (WebKit, reusable), free of ReadingList deps.
-- `Clip/ReadingList/PriceTrackingViewController.swift` — the tracker editor (main
-  app), PUSHED onto the reading-list nav stack (or presentable in an extension).
+- `ShareKit/PriceTrackingViewController.swift` — the tracker editor (in `ShareKit/` so
+  it compiles into the main app AND the extension targets), PUSHED onto the reading-list
+  nav stack in-app, or PRESENTED modally by the action/share extension's
+  `ShareSurfaceDriver` on a `.product` outcome (`PriceTrackingHost.extension`, Done chrome
+  via the injected `onDone`). Extension-safe: "Read instead" re-saves via an injected
+  closure — the static `defaultSaveAsArticle` the main app installs at launch (→
+  `ReadingListIngestor.saveAsArticle`), or a `SharedReadingListAppender.append` re-add in
+  the extension (ShareKit holds no `ReadingListIngestor`). `AlertThresholdSlider`,
+  `PriceTrackingManager`, and `InAppBrowser` moved to `ShareKit/` alongside it.
   `Mode.existing(itemID:)` (tap a row) / `.creation(itemID:host:)` /
   `.merge(itemID:addedStoreURLString:host:)` (save-time). Each `Mode` maps to a
   `PriceTrackingExitContext`. Insets table of seller rows (header **"Sellers"**; each

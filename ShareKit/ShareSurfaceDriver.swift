@@ -191,15 +191,14 @@ final class ShareSurfaceDriver {
         host.presentModally(editor)
     }
 
-    /// A paywalled article: the action extension opens its in-sheet reader (which runs
-    /// the archive-CAPTCHA flow and swaps to the native reader on extract); the zero-UI
-    /// share extension opens the archive reader directly, confirming on extract.
+    /// A paywalled article: EVERY surface opens the same `ArchiveWebReaderViewController`
+    /// (the archive-CAPTCHA reader, URL pre-filled), identically to the main app — so the
+    /// presentation intent matches across surfaces (it used to diverge: the action
+    /// extension wrapped it in `ShareReaderViewController`). On a successful extract the
+    /// action extension swaps in the in-sheet native reader showing the captured content;
+    /// the zero-UI share extension confirms the save.
     private func presentArchive(url: URL, title: String) {
         guard let host else { return }
-        if let mode = host.readerMode {
-            presentReader(url: url, mode: mode, outcome: .needsArchive(title: title))
-            return
-        }
         guard let saved = store.item(forURLString: url.absoluteString) else {
             host.confirmSavedThenComplete()
             return
@@ -207,7 +206,17 @@ final class ShareSurfaceDriver {
         store.markNeedsCaptcha(saved.id, title: title)
         let archive = ArchiveWebReaderViewController(articleURL: url, itemID: saved.id)
         archive.onClose = { [weak host] in host?.confirmSavedThenComplete() }
-        archive.onExtracted = { [weak host] in host?.confirmSavedThenComplete() }
+        let mode = host.readerMode
+        archive.onExtracted = { [weak self, weak host] in
+            guard let host else { return }
+            if let mode, let self,
+               let fresh = self.store.item(withID: saved.id),
+               let content = self.store.content(for: fresh) {
+                self.presentReader(url: url, mode: mode, outcome: .article(content, html: ""))
+            } else {
+                host.confirmSavedThenComplete()
+            }
+        }
         host.presentModally(archive)
     }
 }

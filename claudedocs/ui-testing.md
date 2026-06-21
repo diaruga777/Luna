@@ -123,7 +123,19 @@ the reference for inspection.
 | `ReaderScreenTests` | scroll / highlight / rsvp / inline-header / standalone scroll + rsvp | mode switcher swaps hosted child VC; reader child in-bounds |
 | `CatchUpAndPriceScreenTests` | catch-up cards (eligible + mixed/locked); price editor (normal + alerting) | catch-up + price-editor layout/store list |
 | `ShareKitScreenTests` | action-reader loading; SavedNonTextual (YouTube + platform) | Done item; layout sanity |
+| `ShareSurfaceDriverTests` | — | drives `ShareSurfaceDriver` with a `FakeExtensionHost`: each `Outcome` → the right presented VC + the store written the same shape (YouTube keeps platform/videoID, product → tracker, `.failed` → error not "Saved") |
+| `SurfaceParityTests` | — | 9 example links (amazon/nytimes/wsj/fbrpc-facebook/apple.news/google-news/youtube/instagram/x) through the main-app source AND both extension surfaces → identical `Outcome` + identical presentation intent; fails if any surface diverges |
 | `SocialAndSeederTests` | — | friends-screen layout; seeder contract (every state ↔ fixture, mixed covers all types, deterministic ids, wipe) |
+
+### Extension surface fixture (the `ExtensionHost` / `ShareSurfaceDriver` seam)
+
+The share/action extension's ingest+present flow is extracted into the host-agnostic
+**`ShareSurfaceDriver`** (`ShareKit/`), driven by an injected **`ExtensionHost`** (the only
+seams the real `NSExtensionContext` harness provides — `isActionExtension`/`readerMode`,
+`presentModally`, `confirmSavedThenComplete`, `autoDownloadThenComplete`, `failOrComplete`).
+A `FakeExtensionHost` records what the driver asked for, so the whole "URL → pipeline →
+Outcome → present" flow is asserted in `ClipTests` without the real share sheet (which a
+simulator can't drive). The real `ShareViewController` is a thin `ExtensionHost` adapter.
 
 ### Not snapshotted (flagged, with reason)
 

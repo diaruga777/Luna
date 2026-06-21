@@ -77,4 +77,22 @@ final class PasteboardSuggesterTests: XCTestCase {
             .evaluate(urlString: "https://youtu.be/dQw4w9WgXcQ")
         XCTAssertNil(result)
     }
+
+    /// Bug 2 regression: a Facebook `fbrpc://` deep link on the pasteboard must be
+    /// offline-unwrapped to its real http target BEFORE the http-scheme gate — exactly
+    /// as the in-app "+" path does — so it produces a candidate. Before the fix the
+    /// non-http `fbrpc` scheme was rejected outright, so a Facebook link auto-detected
+    /// on the pasteboard failed while the SAME url via "+" succeeded.
+    func testFacebookDeepLinkOnPasteboardIsUnwrappedToCandidate() async {
+        // An fbrpc deep link whose target is a YouTube watch URL: unwrapping it offline
+        // yields a real http(s) URL that the YouTube branch then recognizes (so the
+        // test needs no article fetcher — it exercises the unwrap → scheme-gate path).
+        let fbrpc = "fbrpc://nativethirdparty/f?app_id=123"
+            + "&target_url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ"
+        let result = await suggester(youtubeTitle: "Never Gonna Give You Up")
+            .evaluate(urlString: fbrpc)
+        XCTAssertNotNil(result, "an fbrpc Facebook link should unwrap and become a candidate")
+        XCTAssertTrue(result?.isVideo ?? false)
+        XCTAssertEqual(result?.videoID, "dQw4w9WgXcQ")
+    }
 }

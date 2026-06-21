@@ -61,7 +61,15 @@ final class PasteboardSuggester: PasteboardSuggesting {
     }
 
     func evaluate(urlString: String) async -> PasteboardCandidate? {
-        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let entered = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Unwrap an offline wrapper (Facebook `fbrpc://` deep link, classic Google
+        // News id) to its real http article BEFORE the http gate — exactly as the
+        // in-app "+" path (`ReadingListViewController.addTapped`) does. Without this
+        // a Facebook link on the pasteboard (`fbrpc://…&target_url=http…`) has a
+        // non-http scheme and is rejected here, so it never becomes a suggestion even
+        // though the "+" path saves it fine. The full async unwrap (apple.news /
+        // shorteners) runs later inside `IngestPipeline.process`.
+        let trimmed = URLUnwrapper.unwrapOffline(entered)
         guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else { return nil }
         // Already saved → nothing to suggest. Match loosely (tracking params, www,

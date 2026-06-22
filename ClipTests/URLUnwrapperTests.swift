@@ -195,6 +195,18 @@ final class URLUnwrapperTests: XCTestCase {
         XCTAssertEqual(result.url.absoluteString, finalURL.absoluteString)
     }
 
+    func testUnwrapAmazonAsiaShareLinkToRegionalStorefront() async {
+        // Amazon's APAC mobile share flow emits amzn.asia links. The final URL must
+        // reach the regional storefront before classification can recover its price.
+        let finalURL = url("https://www.amazon.com.au/dp/B0CWRSYTTK?ref_=share")
+        UnwrapMockProtocol.routes = [("amzn.asia", 200, Data(), finalURL)]
+        let result = await URLUnwrapper.unwrap(
+            url("https://amzn.asia/d/086QqAGn"), session: UnwrapMockProtocol.session())
+        XCTAssertTrue(result.didUnwrap)
+        XCTAssertEqual(result.wrapper, .shortener)
+        XCTAssertEqual(result.url.absoluteString, finalURL.absoluteString)
+    }
+
     func testUnwrapShortenerStayingOnHostIsNotUnwrapped() async {
         // Final URL resolves back to the same shortener host → not an unwrap.
         let sameHost = url("https://t.co/landing")

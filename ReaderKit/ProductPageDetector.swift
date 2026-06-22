@@ -228,18 +228,11 @@ struct ProductPageDetector {
         return nil
     }
 
-    /// True ONLY for a real Amazon storefront host (`amazon.com`, `amazon.com.au`,
-    /// `www.amazon.co.uk`, …). Strict suffix check against the known storefront TLDs so
-    /// a lookalike (`amazon.scam.com`, `cdn.amazon.akamai.net`) can't match.
+    /// True ONLY for a real Amazon storefront (`amazon.com`, `amazon.com.au`,
+    /// `www.amazon.co.za`, …). The shared registry rejects lookalikes such as
+    /// `amazon.scam.com` and keeps static-price parsing aligned with classification.
     private static func isAmazonHost(_ host: String?) -> Bool {
-        guard var host = host?.lowercased() else { return false }
-        if host.hasSuffix(".") { host.removeLast() }
-        let tldSuffixes = [".com.au", ".co.uk", ".co.jp", ".ca", ".de", ".fr",
-                           ".it", ".es", ".in", ".com"]
-        return tldSuffixes.contains { suffix in
-            let storefront = "amazon" + suffix
-            return host == storefront || host.hasSuffix("." + storefront)
-        }
+        AmazonPriceRule.storefront(for: host) != nil
     }
 
     /// A currency explicitly declared in Amazon's embedded price JSON
@@ -258,16 +251,7 @@ struct ProductPageDetector {
     /// declares no currency code (a bare `$`/`£`/… symbol can't disambiguate AUD vs
     /// USD vs CAD). Deterministic.
     static func amazonCurrency(forHost host: String?) -> String? {
-        guard let host = host?.lowercased() else { return nil }
-        let tldCurrencies: [(suffix: String, currency: String)] = [
-            (".com.au", "AUD"), (".co.uk", "GBP"), (".co.jp", "JPY"),
-            (".ca", "CAD"), (".de", "EUR"), (".fr", "EUR"), (".it", "EUR"),
-            (".es", "EUR"), (".in", "INR"), (".com", "USD"),
-        ]
-        for entry in tldCurrencies where host.hasSuffix(entry.suffix) {
-            return entry.currency
-        }
-        return nil
+        AmazonPriceRule.storefront(for: host)?.currency
     }
 
     // MARK: - Heuristic detection (Tier 2)

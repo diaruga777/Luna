@@ -39,6 +39,14 @@ final class ClassifierTests: XCTestCase {
         }
     }
 
+    func testEveryAmazonStorefrontClassifiesAsProduct() {
+        for host in AmazonPriceRule.storefrontHosts {
+            let storefront = "https://www.\(host)/dp/B09ABCDEF"
+            XCTAssertEqual(
+                Classifier.classify(url: url(storefront)), .product(.knownShopHost), "for \(host)")
+        }
+    }
+
     // MARK: - Deterministic table: news
 
     func testHardPaywallNewsClassifiesAsPaywalledHardHost() {

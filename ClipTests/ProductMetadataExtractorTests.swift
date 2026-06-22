@@ -52,6 +52,20 @@ final class ProductMetadataExtractorTests: XCTestCase {
         XCTAssertTrue(AmazonPriceRule().matches(host: "amazon.co.uk"))
     }
 
+    func testAmazonStorefrontRegistryIncludesInternationalMarkets() {
+        let rule = AmazonPriceRule()
+        let expectedCurrencies = [
+            "amazon.com.mx": "MXN", "amazon.com.br": "BRL", "amazon.pl": "PLN",
+            "amazon.com.tr": "TRY", "amazon.com.be": "EUR", "amazon.ie": "EUR",
+            "amazon.ae": "AED", "amazon.sa": "SAR", "amazon.eg": "EGP",
+            "amazon.co.za": "ZAR", "amazon.sg": "SGD", "amazon.se": "SEK",
+        ]
+        for (host, currency) in expectedCurrencies {
+            XCTAssertTrue(rule.matches(host: "www.\(host)"), "expected storefront \(host)")
+            XCTAssertEqual(ProductPageDetector.amazonCurrency(forHost: host), currency)
+        }
+    }
+
     // MARK: - Target / Walmart (__NEXT_DATA__)
 
     func testTargetNextDataCurrentRetail() async {

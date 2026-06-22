@@ -109,31 +109,34 @@ struct ProductMetadataExtractor {
 /// Amazon: the buy-box price from Amazon's price model (`"priceAmount"` /
 /// `"displayPrice"`), NOT the first `.a-offscreen` span (often a strikethrough list
 /// price). Currency is a declared code, else the storefront TLD (so a bare `$` on
-/// amazon.com.au resolves to AUD), never a blind USD default. Host matching is a strict
-/// suffix check so `amazon.scam.com` can't match.
+/// amazon.com.au resolves to AUD), never a blind USD default. Host matching uses the
+/// complete current Amazon retail-storefront catalog, so `amazon.scam.com` can't
+/// match and newly supported regional URLs stay consistent across the app.
 struct AmazonPriceRule: ProductPriceRule {
 
-    /// Amazon storefront TLD suffixes and their currency. The ONLY TLDs treated as
-    /// Amazon storefronts (so the host match can't be tricked by a lookalike).
-    static let tldCurrency: [(suffix: String, code: String)] = [
-        (".com.au", "AUD"), (".co.uk", "GBP"), (".co.jp", "JPY"), (".ca", "CAD"),
-        (".de", "EUR"), (".fr", "EUR"), (".it", "EUR"), (".es", "EUR"),
-        (".in", "INR"), (".com", "USD"),
+    /// Every current Amazon retail storefront and its local transaction currency.
+    /// The hostname registry is deliberately explicit (rather than accepting any
+    /// `amazon.*` domain) to prevent lookalike hosts from becoming price sources.
+    static let storefronts: [(host: String, currency: String)] = [
+        ("amazon.com", "USD"), ("amazon.ca", "CAD"), ("amazon.com.mx", "MXN"),
+        ("amazon.com.br", "BRL"), ("amazon.co.uk", "GBP"), ("amazon.de", "EUR"),
+        ("amazon.fr", "EUR"), ("amazon.it", "EUR"), ("amazon.es", "EUR"),
+        ("amazon.nl", "EUR"), ("amazon.se", "SEK"), ("amazon.pl", "PLN"),
+        ("amazon.com.tr", "TRY"), ("amazon.com.be", "EUR"), ("amazon.ie", "EUR"),
+        ("amazon.co.jp", "JPY"), ("amazon.in", "INR"), ("amazon.com.au", "AUD"),
+        ("amazon.sg", "SGD"), ("amazon.ae", "AED"), ("amazon.sa", "SAR"),
+        ("amazon.eg", "EGP"), ("amazon.co.za", "ZAR"),
     ]
 
+    static let storefrontHosts = storefronts.map(\.host)
+
     func matches(host: String) -> Bool {
-        // Strict: `amazon.<tld>` or `*.amazon.<tld>` for a KNOWN storefront TLD only.
-        // `amazon.scam.com` fails (its suffix `.com` would require the host to be
-        // `amazon.com` or end in `.amazon.com`, which `amazon.scam.com` does not).
-        Self.tldCurrency.contains { entry in
-            let storefront = "amazon" + entry.suffix
-            return host == storefront || host.hasSuffix("." + storefront)
-        }
+        Self.storefront(for: host) != nil
     }
 
     func price(html: String, document: Document, host: String) -> ProductPrice? {
         let currency = declaredCurrency(html)
-            ?? Self.tldCurrency.first { host.hasSuffix($0.suffix) }?.code
+            ?? Self.storefront(for: host)?.currency
         guard let currency else { return nil }   // no silent USD default
 
         // Buy-box first (Amazon's price model), then the buy-box-scoped offscreen span —
@@ -145,6 +148,14 @@ struct AmazonPriceRule: ProductPriceRule {
             return nil
         }
         return ProductPrice(amount: value, currency: currency)
+    }
+
+    static func storefront(for host: String?) -> (host: String, currency: String)? {
+        guard var normalized = host?.lowercased() else { return nil }
+        if normalized.hasSuffix(".") { normalized.removeLast() }
+        return storefronts.first { storefront in
+            normalized == storefront.host || normalized.hasSuffix("." + storefront.host)
+        }
     }
 
     /// A currency code explicitly declared in Amazon's embedded JSON.

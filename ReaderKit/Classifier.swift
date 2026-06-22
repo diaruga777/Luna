@@ -80,11 +80,9 @@ enum Classifier {
     /// Known shops → `.product(.knownShopHost)`. A deterministic hit lets real shops
     /// skip the fuzzy heuristic scorer entirely (fewer false positives). APPEND here.
     static let shopSites: [KnownSite] = [
-        // Amazon — every storefront TLD (amazon.com / .co.uk / .com.au / .de / …).
-        KnownSite(hosts: ["amazon.com", "amazon.co.uk", "amazon.com.au", "amazon.ca",
-                          "amazon.de", "amazon.fr", "amazon.it", "amazon.es",
-                          "amazon.co.jp", "amazon.in", "amazon.com.br", "amazon.com.mx",
-                          "amazon.nl", "amazon.se", "amazon.sg", "amzn.to", "amzn.com"],
+        // Amazon — every regional storefront. Amazon share domains are unwrapped
+        // before classification, so they never bypass the storefront price rules.
+        KnownSite(hosts: AmazonPriceRule.storefrontHosts,
                   kind: { _ in .product(.knownShopHost) }),
         // General-merchandise retailers.
         KnownSite(hosts: ["target.com", "walmart.com", "bestbuy.com", "ebay.com", "ebay.co.uk",

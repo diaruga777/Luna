@@ -120,16 +120,30 @@ enum NewsAggregatorUnwrapper {
 
     // MARK: - Redirect shorteners
 
-    /// Follows `url`'s HTTP redirects (HEAD, so no body is downloaded) and returns
-    /// the final URL — but only if it actually left the shortener's host. Internal
-    /// (not private) so `URLUnwrapper`'s shortener handler reuses it.
+    /// Follows `url`'s HTTP redirects and returns the final URL — but only if it
+    /// actually left the shortener's host. Prefer HEAD so no body is downloaded, but
+    /// retry with a one-kilobyte GET range when a service rejects HEAD. Amazon's
+    /// `amzn.asia` links are one such service: a HEAD returns 404 while a GET returns
+    /// the real regional storefront redirect. Internal (not private) so
+    /// `URLUnwrapper`'s shortener handler reuses it.
     static func resolveFinalRedirect(_ url: URL, session: URLSession) async -> URL? {
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.httpMethod = "HEAD"
         request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        if let final = await finalRedirect(for: request, originalHost: url.host, session: session) { return final }
+
+        request.httpMethod = "GET"
+        request.setValue("bytes=0-1023", forHTTPHeaderField: "Range")
+        return await finalRedirect(for: request, originalHost: url.host, session: session)
+    }
+
+    private static func finalRedirect(
+        for request: URLRequest, originalHost: String?, session: URLSession
+    ) async -> URL? {
         guard let (_, response) = try? await session.data(for: request),
-              let final = response.url, let finalHost = final.host?.lowercased(),
-              finalHost != url.host?.lowercased()
+              let final = response.url,
+              let finalHost = final.host?.lowercased(),
+              finalHost != originalHost?.lowercased()
         else { return nil }
         return final
     }

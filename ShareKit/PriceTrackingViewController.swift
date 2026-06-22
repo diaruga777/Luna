@@ -28,7 +28,7 @@ extension Notification.Name {
 ///   whole new tracker and saves the URL as a normal article; **merge** reverts
 ///   ONLY the just-added seller and saves that one URL as an article. **Existing**
 ///   (returning to a saved tracker) shows no "Read instead" button.
-final class PriceTrackingViewController: UIViewController {
+final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDelegate {
 
     /// How the screen was opened, mapped to a `PriceTrackingExitContext`.
     enum Mode {
@@ -92,6 +92,9 @@ final class PriceTrackingViewController: UIViewController {
     private let thresholdSlider = AlertThresholdSlider()
     private let productHeader = UIView()
     private let productTitleLabel = UILabel()
+    /// UIKit owns the navigation controller's normal interactive-pop delegate. Keep
+    /// it so this screen can temporarily opt in without changing other screens.
+    private weak var previousInteractivePopGestureDelegate: UIGestureRecognizerDelegate?
 
     private var itemID: UUID { mode.itemID }
     private var exitContext: PriceTrackingExitContext { mode.exitContext }
@@ -170,6 +173,41 @@ final class PriceTrackingViewController: UIViewController {
         syncThresholdControl()
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
+    }
+
+    /// Installing a custom left button (the explicit Back/Done decision above)
+    /// suppresses UIKit's interactive-pop recognizer by default. Restore it for the
+    /// in-app pushed editor so the root reading list remains reachable by the normal
+    /// left-edge swipe; extension-hosted editors still have no navigation stack.
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard exitContext.host == .inApp,
+              let popGesture = navigationController?.interactivePopGestureRecognizer else { return }
+        if popGesture.delegate !== self {
+            previousInteractivePopGestureDelegate = popGesture.delegate
+        }
+        popGesture.delegate = self
+        popGesture.isEnabled = true
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        guard let popGesture = navigationController?.interactivePopGestureRecognizer,
+              popGesture.delegate === self else { return }
+        // Return ownership to UIKit before another screen becomes visible.
+        popGesture.delegate = previousInteractivePopGestureDelegate
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === navigationController?.interactivePopGestureRecognizer else {
+            return true
+        }
+        guard exitContext.host == .inApp,
+              let navigationController,
+              navigationController.viewControllers.count > 1 else { return false }
+        // Do not begin a second interactive transition while the navigation
+        // controller is already pushing or popping.
+        return navigationController.transitionCoordinator == nil
     }
 
     /// Installs the top-left (back/done) and top-right ("Read instead") buttons from

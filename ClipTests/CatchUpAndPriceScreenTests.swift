@@ -142,6 +142,31 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         _ = window
     }
 
+    /// The price editor uses a custom Back item, which otherwise disables UIKit's
+    /// stock interactive-pop recognizer. A left-edge swipe must still return a
+    /// tracker opened from the root reading list to that root controller.
+    func testExistingModeEnablesInteractivePopBackToReadingList() {
+        UITestSupport.seedSharedStore(.priceTracking)
+        guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
+            XCTFail("no price tracker seeded"); return
+        }
+        let list = ReadingListViewController()
+        let nav = UINavigationController(rootViewController: list)
+        let window = UITestSupport.host(nav)
+        let editor = PriceTrackingViewController(itemID: tracker.id)
+        nav.pushViewController(editor, animated: false)
+        editor.loadViewIfNeeded()
+        editor.viewDidAppear(false)
+
+        guard let popGesture = nav.interactivePopGestureRecognizer else {
+            XCTFail("navigation controller should provide an interactive-pop gesture"); return
+        }
+        XCTAssertTrue(popGesture.delegate === editor)
+        XCTAssertTrue(popGesture.isEnabled)
+        XCTAssertTrue(editor.gestureRecognizerShouldBegin(popGesture))
+        _ = window
+    }
+
     /// Creation-mode "Read instead" discards the whole new tracker: the item is
     /// removed (re-saved as an article) and the screen pops.
     func testCreationModeReadInsteadDiscardsTrackerAndPops() {

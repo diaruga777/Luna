@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import ClipHTMLClassification
 
 /// Decides whether a page/extracted article is a subscription wall (a metered
 /// teaser / "subscribe to continue" stub) rather than the real article — the
@@ -71,19 +72,6 @@ enum PaywallDetector {
     /// which false-flags free pages that merely contain "premium"). Whitespace is
     /// collapsed so attribute spacing/quoting doesn't matter.
     static func htmlDeclaresLocked(_ html: String) -> Bool {
-        let compact = html.lowercased().filter { !$0.isWhitespace }
-        if compact.contains("\"isaccessibleforfree\":false")
-            || compact.contains("\"isaccessibleforfree\":\"false\"") {
-            return true
-        }
-        for value in ["locked", "metered", "premium"] {
-            if compact.contains("content_tier\"content=\"\(value)")
-                || compact.contains("content-tier\"content=\"\(value)")
-                || compact.contains("content=\"\(value)\"property=\"article:content_tier")
-                || compact.contains("content=\"\(value)\"name=\"article:content_tier") {
-                return true
-            }
-        }
-        return false
+        HTMLClassification.declaresPaywall(in: html)
     }
 }

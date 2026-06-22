@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import ClipContentRendering
 
 /// Extracted, formatted article text: an ordered list of text blocks with
 /// inline link ranges (UTF-16 offsets, ready for NSAttributedString).
@@ -55,7 +56,7 @@ struct ArticleContent: Codable, Equatable {
     }
 
     var wholeText: String {
-        blocks.map(\.text).joined(separator: "\n\n")
+        ArticleBlockRendering.plainText(blocks: blocks.map(\.text))
     }
 
     /// Total length of all block text — the cheap heuristic for "is this a real

@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import ClipPriceMetadata
 import SwiftSoup
 
 /// The complete metadata for a page already classified as a `.product`. Price is
@@ -99,6 +100,10 @@ struct ProductMetadataExtractor {
                let price = rule.price(html: html, document: document, host: host) {
                 return price
             }
+        }
+        if let parsed = ProductMetadataParsing.firstJSONLDProduct(in: html),
+           let amount = parsed.price, let currency = parsed.currency, !currency.isEmpty {
+            return ProductPrice(amount: amount, currency: currency)
         }
         return detector.genericStructuredPrice(document: document, baseURL: url)
     }

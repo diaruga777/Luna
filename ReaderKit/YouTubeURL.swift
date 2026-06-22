@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import ClipURLClassification
 
 /// Recognizes YouTube video links and extracts the video ID.
 enum YouTubeURL {
@@ -15,26 +16,8 @@ enum YouTubeURL {
 
     /// The video ID, or nil when the URL isn't a YouTube video link.
     static func videoID(from urlString: String) -> String? {
-        guard let url = URL(string: urlString),
-              let host = url.host?.lowercased()
-        else { return nil }
-
-        if host == "youtu.be" {
-            return validated(url.pathComponents.dropFirst().first)
-        }
-
-        guard youtubeHosts.contains(host) else { return nil }
-        let pathParts = url.pathComponents.dropFirst()
-
-        switch pathParts.first {
-        case "watch":
-            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
-            return validated(query?.first(where: { $0.name == "v" })?.value)
-        case "shorts", "embed", "live", "v":
-            return validated(pathParts.dropFirst().first)
-        default:
-            return nil
-        }
+        guard let url = URL(string: urlString) else { return nil }
+        return URLClassification.youTubeVideoID(in: url)
     }
 
     /// Standard watch URL for a video ID.

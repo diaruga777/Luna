@@ -15,6 +15,21 @@
 		AA0100000000000000000002 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
 		AA0100000000000000000003 /* ClipShare.appex in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* ClipShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AA0100000000000000000004 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000004 /* SwiftSoup */; };
+		C100000000000000000000021 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
+		C100000000000000000000022 /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
+		C100000000000000000000023 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
+		C100000000000000000000024 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
+		C100000000000000000000025 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
+		C100000000000000000000031 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
+		C100000000000000000000032 /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
+		C100000000000000000000033 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
+		C100000000000000000000034 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
+		C100000000000000000000035 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
+		C100000000000000000000041 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
+		C100000000000000000000042 /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
+		C100000000000000000000043 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
+		C100000000000000000000044 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
+		C100000000000000000000045 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -121,6 +136,11 @@
 			files = (
 				79583DFF2FE0BAD100C775CA /* UniformTypeIdentifiers.framework in Frameworks */,
 				AA0100000000000000000004 /* SwiftSoup in Frameworks */,
+				C100000000000000000000031 /* ClipURLClassification in Frameworks */,
+				C100000000000000000000032 /* ClipHTMLClassification in Frameworks */,
+				C100000000000000000000033 /* ClipPaywallBypass in Frameworks */,
+				C100000000000000000000034 /* ClipPriceMetadata in Frameworks */,
+				C100000000000000000000035 /* ClipContentRendering in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -129,6 +149,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA0100000000000000000002 /* SwiftSoup in Frameworks */,
+				C100000000000000000000021 /* ClipURLClassification in Frameworks */,
+				C100000000000000000000022 /* ClipHTMLClassification in Frameworks */,
+				C100000000000000000000023 /* ClipPaywallBypass in Frameworks */,
+				C100000000000000000000024 /* ClipPriceMetadata in Frameworks */,
+				C100000000000000000000025 /* ClipContentRendering in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -152,6 +177,11 @@
 			files = (
 				7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */,
 				AA0100000000000000000003 /* ClipShare.appex in Frameworks */,
+				C100000000000000000000041 /* ClipURLClassification in Frameworks */,
+				C100000000000000000000042 /* ClipHTMLClassification in Frameworks */,
+				C100000000000000000000043 /* ClipPaywallBypass in Frameworks */,
+				C100000000000000000000044 /* ClipPriceMetadata in Frameworks */,
+				C100000000000000000000045 /* ClipContentRendering in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -224,6 +254,11 @@
 			name = "Clip Action Extension";
 			packageProductDependencies = (
 				AA0300000000000000000004 /* SwiftSoup */,
+				C100000000000000000000011 /* ClipURLClassification */,
+				C100000000000000000000012 /* ClipHTMLClassification */,
+				C100000000000000000000013 /* ClipPaywallBypass */,
+				C100000000000000000000014 /* ClipPriceMetadata */,
+				C100000000000000000000015 /* ClipContentRendering */,
 			);
 			productName = "Clip Action Extension";
 			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
@@ -253,6 +288,11 @@
 			name = Clip;
 			packageProductDependencies = (
 				AA0300000000000000000002 /* SwiftSoup */,
+				C100000000000000000000011 /* ClipURLClassification */,
+				C100000000000000000000012 /* ClipHTMLClassification */,
+				C100000000000000000000013 /* ClipPaywallBypass */,
+				C100000000000000000000014 /* ClipPriceMetadata */,
+				C100000000000000000000015 /* ClipContentRendering */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -323,6 +363,11 @@
 			name = ClipShare;
 			packageProductDependencies = (
 				AA0300000000000000000003 /* SwiftSoup */,
+				C100000000000000000000011 /* ClipURLClassification */,
+				C100000000000000000000012 /* ClipHTMLClassification */,
+				C100000000000000000000013 /* ClipPaywallBypass */,
+				C100000000000000000000014 /* ClipPriceMetadata */,
+				C100000000000000000000015 /* ClipContentRendering */,
 			);
 			productName = ClipShare;
 			productReference = AA0200000000000000000004 /* ClipShare.appex */;
@@ -375,6 +420,7 @@
 			mainGroup = AA0900000000000000000001;
 			packageReferences = (
 				AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+				C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */,
 			);
 			productRefGroup = AA0900000000000000000002 /* Products */;
 			projectDirPath = "";
@@ -942,6 +988,13 @@
 		};
 /* End XCRemoteSwiftPackageReference section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ClipLibraries;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		AA0300000000000000000002 /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -957,6 +1010,31 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;
+		};
+		C100000000000000000000011 /* ClipURLClassification */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipURLClassification;
+		};
+		C100000000000000000000012 /* ClipHTMLClassification */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipHTMLClassification;
+		};
+		C100000000000000000000013 /* ClipPaywallBypass */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipPaywallBypass;
+		};
+		C100000000000000000000014 /* ClipPriceMetadata */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipPriceMetadata;
+		};
+		C100000000000000000000015 /* ClipContentRendering */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipContentRendering;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

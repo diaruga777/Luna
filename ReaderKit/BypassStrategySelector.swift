@@ -16,12 +16,8 @@ enum BypassStrategySelector {
     ///
     /// Reasoning order:
     /// 1. The hard `BypassGate` blocks a bypass (product/platform/free page) → `[]`.
-    /// 2. A per-host rule exists → its strategy list (BPC parity), then normalized.
-    /// 3. Otherwise build a generic list from the paywall signals, then normalize.
-    ///
-    /// Normalization (always applied last) de-dups, drops `.jsonLDBody` when the HTML
-    /// carries no `articleBody`, and enforces the invariants: silent strategies
-    /// precede WKWebView-only ones, and `.archiveToday` is always last.
+    /// 2. A detected paywall goes straight to archive.is. We deliberately do not
+    ///    route users through third-party reader/proxy services.
     static func strategies(for url: URL, directHTML: String?) -> [BypassStrategy] {
         // The single gate decides whether ANY bypass may run. It blocks
         // product/platform pages and pages with no paywall evidence; `extracted` is
@@ -31,59 +27,6 @@ enum BypassStrategySelector {
             return []
         }
 
-        let raw: [BypassStrategy]
-        if let rule = BypassRuleTable.rule(for: url) {
-            raw = rule.strategies
-        } else {
-            raw = genericStrategies(directHTML: directHTML)
-        }
-        return normalize(raw, directHTML: directHTML)
-    }
-
-    /// The fallback list for an unknown, paywalled host. Cheap-first: JSON-LD body,
-    /// then client-side state tricks, then archive/proxy network fallbacks, with the
-    /// third-party reader pages and archive.today last.
-    private static func genericStrategies(directHTML: String?) -> [BypassStrategy] {
-        let declaresHardLock = directHTML.map(PaywallDetector.htmlDeclaresLocked) ?? false
-        var list: [BypassStrategy] = [.jsonLDBody]
-        // A server-side `locked` declaration means cookie/origin client tricks can't
-        // win — skip them and go straight to archive/proxy sources.
-        if !declaresHardLock {
-            list += [.freshSession, .trailingDotHost]
-        }
-        list += [
-            .amp, .waybackRaw, .jinaReader, .ladderProxy(.oneFt),
-            .thirdPartyWeb(.smry), .thirdPartyWeb(.removePaywalls),
-            .thirdPartyWeb(.removePaywall), .archiveToday,
-        ]
-        return list
-    }
-
-    /// De-dups (first occurrence wins), drops `.jsonLDBody` when the HTML has no
-    /// `articleBody` to recover, and enforces the ordering invariants: all silent
-    /// strategies first (in their relative order), then WKWebView-only ones, with
-    /// `.archiveToday` forced to the very end.
-    private static func normalize(_ strategies: [BypassStrategy], directHTML: String?) -> [BypassStrategy] {
-        let htmlHasArticleBody = directHTML.map(Self.htmlContainsJSONLDArticleBody) ?? false
-
-        var seen: Set<String> = []
-        let deduped = strategies.filter { strategy in
-            if strategy == .jsonLDBody, !htmlHasArticleBody { return false }
-            let key = String(describing: strategy)
-            return seen.insert(key).inserted
-        }
-
-        let silent = deduped.filter { $0.runsSilently }
-        let webOnly = deduped.filter { !$0.runsSilently && $0 != .archiveToday }
-        let archive = deduped.contains(.archiveToday) ? [BypassStrategy.archiveToday] : []
-        return silent + webOnly + archive
-    }
-
-    /// Cheap, dependency-free check for a JSON-LD `articleBody` somewhere in the page
-    /// (so `.jsonLDBody` is only offered when there's a body to recover). Matches the
-    /// key whether or not the JSON has whitespace around the colon.
-    static func htmlContainsJSONLDArticleBody(_ html: String) -> Bool {
-        let compact = html.lowercased().filter { !$0.isWhitespace }
-        return compact.contains("\"articlebody\":")
+        return [.archiveToday]
     }
 }

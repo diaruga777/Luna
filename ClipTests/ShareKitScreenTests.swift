@@ -68,4 +68,30 @@ final class ShareKitScreenTests: XCTestCase {
         }
         _ = window
     }
+
+    func testActionPreprocessingDecodesWrappedPropertyListData() throws {
+        let payload: [String: Any] = [
+            NSExtensionJavaScriptPreprocessingResultsKey: [
+                "URL": "https://www.nytimes.com/2026/06/20/story.html",
+                "title": "Story",
+                "Kind": "article",
+            ],
+        ]
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: payload, format: .binary, options: 0)
+
+        let result = ShareViewController.javaScriptResult(fromPropertyListData: data)
+
+        XCTAssertEqual(result?["URL"] as? String, "https://www.nytimes.com/2026/06/20/story.html")
+        XCTAssertEqual(result?["Kind"] as? String, "article")
+    }
+
+    func testActionPreprocessingAcceptsDirectPayload() {
+        let result = ShareViewController.javaScriptResult(from: [
+            "URL": "https://www.amazon.com/dp/B0ACME1234",
+            "Kind": "product",
+        ])
+
+        XCTAssertEqual(result?["URL"] as? String, "https://www.amazon.com/dp/B0ACME1234")
+    }
 }

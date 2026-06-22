@@ -52,21 +52,13 @@ enum WebStrategy: Equatable {
     /// already run as a silent strategy — `benefitsFromJSRetry` is false (a pure origin
     /// trick), so the plan factory never repeats it as a pre-stage when it was silent.
     case trailingDotHost
-    case thirdPartyWeb(ThirdPartyWebService)
-
     var asBypassStrategy: BypassStrategy {
         switch self {
         case .trailingDotHost: return .trailingDotHost
-        case let .thirdPartyWeb(service): return .thirdPartyWeb(service)
         }
     }
 
-    /// Only client-rendered services gain from a JS render on retry. A trailing-dot
-    /// origin trick returns the same wall, so it is never repeated as a pre-stage.
-    var benefitsFromJSRetry: Bool {
-        if case .thirdPartyWeb = self { return true }
-        return false
-    }
+    var benefitsFromJSRetry: Bool { false }
 }
 
 /// ONE typed, ordered bypass plan, built ONCE by `make(for:directHTML:)` and consumed
@@ -112,8 +104,6 @@ struct BypassPlan: Equatable {
                 // A trailing-dot rewrite returns the same wall in a browser, so it is
                 // only worth a pre-stage when it has NOT already run silently.
                 return triedTrailingDotSilently ? nil : .trailingDotHost
-            case let .thirdPartyWeb(service):
-                return .thirdPartyWeb(service)
             default:
                 return nil
             }
@@ -125,8 +115,7 @@ struct BypassPlan: Equatable {
             allowsArchiveToday: strategies.contains(.archiveToday))
     }
 
-    /// Maps a `BypassStrategy` to its `SilentStrategy` case, or nil for the WKWebView
-    /// strategies (`.thirdPartyWeb`, `.archiveToday`).
+    /// Maps a `BypassStrategy` to its `SilentStrategy` case, or nil for archive.is.
     private static func silentStrategy(_ strategy: BypassStrategy) -> SilentStrategy? {
         switch strategy {
         case .jsonLDBody: return .jsonLDBody
@@ -138,7 +127,7 @@ struct BypassPlan: Equatable {
         case .waybackRaw: return .waybackRaw
         case .jinaReader: return .jinaReader
         case let .ladderProxy(proxy): return .ladderProxy(proxy)
-        case .thirdPartyWeb, .archiveToday: return nil
+        case .archiveToday: return nil
         }
     }
 }
@@ -170,8 +159,6 @@ enum BypassURLs {
         switch strategy {
         case .trailingDotHost:
             return TrailingDotBypass.trailingDotURL(for: article)
-        case let .thirdPartyWeb(service):
-            return service.url(for: article)
         }
     }
 }

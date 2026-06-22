@@ -102,41 +102,30 @@ final class ArticleResolverTests: XCTestCase {
         }
     }
 
-    /// The resolver must keep WALKING the silent strategy list past strategies that
-    /// fail (return nil) and return the first one that yields a readable article —
-    /// not stop early, not skip the rest. NYT's rule leads with trailing-dot; we make
-    /// only `.waybackRaw` (a later strategy) succeed.
-    func testResolverAdvancesPastFailingStrategiesToReadableOne() async {
+    /// Once a paywall is detected, the resolver does not use a proxy/archive ladder.
+    /// It preserves the title and leaves the interactive archive.is reader to handle
+    /// the page.
+    func testResolverParksPaywallWithoutRunningFallbackServices() async {
         let articleURL = URL(string: "https://www.nytimes.com/2026/06/20/story.html")!
         let fetcher = MockArticleFetcher()
         fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML   // direct read = locked
-        let readable = ArticleContent(title: "Real", blocks: [
-            .init(kind: .paragraph, text: String(repeating: "a", count: 1000), links: []),
-        ])
-        let runner = StubRunner(succeedOn: .waybackRaw, readable: readable, html: readableHTML("wayback"))
+        let runner = StubRunner(
+            succeedOn: .waybackRaw,
+            readable: ArticleContent(title: "Real", blocks: [
+                .init(kind: .paragraph, text: String(repeating: "a", count: 1000), links: []),
+            ]), html: readableHTML("wayback"))
 
         let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher, runner: runner)
-        guard case let .readable(content, _) = result else {
-            return XCTFail("expected a readable resolution, got \(result)")
-        }
-        XCTAssertEqual(content.title, "Real")
-        // It must have ATTEMPTED the earlier strategies before reaching waybackRaw.
-        XCTAssertTrue(runner.attempted.contains(.trailingDotHost), "should have tried trailing-dot first")
-        XCTAssertTrue(runner.attempted.contains(.waybackRaw), "should have advanced to waybackRaw")
-        // It must STOP at the first success — nothing after waybackRaw is attempted.
-        if let successIndex = runner.attempted.firstIndex(of: .waybackRaw) {
-            XCTAssertEqual(successIndex, runner.attempted.count - 1, "must stop at the first readable result")
-        }
+        XCTAssertEqual(result, .paywalled(title: "NYT Headline"))
+        XCTAssertTrue(runner.attempted.isEmpty)
     }
 
-    /// A strategy that yields an UNREADABLE (locked) result is rejected and the loop
-    /// continues — the resolver never accepts a locked result as readable.
-    func testResolverRejectsUnreadableStrategyResultAndAdvances() async {
+    func testResolverDoesNotRunInjectedFallbackRunnerForAPaywall() async {
         let articleURL = URL(string: "https://www.nytimes.com/2026/06/20/story.html")!
         let fetcher = MockArticleFetcher()
         fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML
 
-        // A runner that returns a LOCKED pair for the first strategy, readable later.
+        // An injected runner must not be used: archive.is is the only post-detection path.
         final class LockedThenReadableRunner: BypassRunning {
             let lockedHTML: String
             let readable: ExtractedArticle
@@ -162,11 +151,8 @@ final class ArticleResolverTests: XCTestCase {
         let runner = LockedThenReadableRunner(lockedHTML: lockedHTML, readable: readable)
 
         let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher, runner: runner)
-        guard case let .readable(content, _) = result else {
-            return XCTFail("expected readable (advanced past the locked result), got \(result)")
-        }
-        XCTAssertEqual(content.title, "Real")
-        XCTAssertGreaterThanOrEqual(runner.attempts, 2, "must reject the locked result and advance")
+        XCTAssertEqual(result, .paywalled(title: "NYT Headline"))
+        XCTAssertEqual(runner.attempts, 0)
     }
 
     /// When EVERY silent strategy fails (no readable result anywhere) on a host that

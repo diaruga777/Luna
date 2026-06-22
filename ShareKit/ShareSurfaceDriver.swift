@@ -230,15 +230,24 @@ final class ShareSurfaceDriver {
             return
         }
         store.markNeedsCaptcha(saved.id, title: title)
+        let archiveStore = store
         let archive = ArchiveWebReaderViewController(articleURL: url, itemID: saved.id)
         archive.onClose = { [weak host] in host?.confirmSavedThenComplete() }
         let mode = host.readerMode
-        archive.onExtracted = { [weak self, weak host] in
+        archive.onExtracted = { [weak host] in
             guard let host else { return }
-            if let mode, let self,
-               let fresh = self.store.item(withID: saved.id),
-               let content = self.store.content(for: fresh) {
-                self.presentReader(url: url, mode: mode, outcome: .article(content, html: ""))
+            if let mode,
+               let fresh = archiveStore.item(withID: saved.id),
+               let content = archiveStore.content(for: fresh) {
+                // `ShareSurfaceDriver` is intentionally short-lived. Archive
+                // extraction finishes later, so never depend on a weak driver here:
+                // create the action-extension reader directly in the host's existing
+                // navigation context instead of falling through to "Saved".
+                let reader = ShareReaderViewController(
+                    url: url, mode: mode, outcome: .article(content, html: "")) {
+                    host.confirmSavedThenComplete()
+                }
+                host.presentModally(reader)
             } else {
                 host.confirmSavedThenComplete()
             }

@@ -11,7 +11,7 @@ import Foundation
 /// the pipeline — protocol-ized so callers can mock it, and itself driven by the
 /// `HTMLFetching` protocol so it's testable without the network.
 ///
-/// WKWebView-only strategies (`.thirdPartyWeb`, `.archiveToday`) are not silent;
+/// archive.is is not silent;
 /// `run` returns nil for them (they're handled by the archive web reader).
 protocol BypassRunning {
     /// Runs `strategy` for `url`. `directHTML` is the already-fetched direct page,
@@ -93,8 +93,8 @@ struct BypassRunner: BypassRunning {
                 try await fetcher.fetchHTML(from: proxyURL)
             }
 
-        case .thirdPartyWeb, .archiveToday:
-            // WKWebView-only — handled by ArchiveWebReaderViewController, not here.
+        case .archiveToday:
+            // Interactive-only — handled by ArchiveWebReaderViewController, not here.
             return nil
         }
     }

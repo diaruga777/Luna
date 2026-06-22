@@ -110,10 +110,8 @@ final class BypassRunnerTests: XCTestCase {
         XCTAssertTrue(fetcher.calls.isEmpty, "JSON-LD recovery must not hit the network")
     }
 
-    func testThirdPartyWebAndArchiveTodayAreNotSilent() async {
-        let smry = await runner.run(.thirdPartyWeb(.smry), url: articleURL, directHTML: nil)
+    func testArchiveTodayIsNotSilent() async {
         let archive = await runner.run(.archiveToday, url: articleURL, directHTML: nil)
-        XCTAssertNil(smry)
         XCTAssertNil(archive)
         XCTAssertTrue(fetcher.calls.isEmpty)
     }

@@ -99,7 +99,7 @@ struct ArticleFetcher: HTMLFetching {
     /// returns nil when the TimeMap is unreachable/gated/empty (caller falls back).
     func resolveNewestArchiveSnapshot(for url: URL) async -> URL? {
         let target = Self.canonicalForArchiving(url).absoluteString
-        guard let timeMapURL = URL(string: "https://archive.today/timemap/\(target)") else { return nil }
+        guard let timeMapURL = URL(string: "https://archive.is/timemap/\(target)") else { return nil }
         var request = URLRequest(url: timeMapURL, timeoutInterval: 10)
         request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),

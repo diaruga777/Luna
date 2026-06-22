@@ -79,7 +79,7 @@ final class ArticleFetcherTests: XCTestCase {
 
     func testNewestMementoPrefersLastMementoEntry() {
         let timeMap = """
-        <http://archive.today/timemap/https://www.wsj.com/x>;rel="self";type="application/link-format",
+        <http://archive.is/timemap/https://www.wsj.com/x>;rel="self";type="application/link-format",
         <https://www.wsj.com/x>;rel="original",
         <https://archive.ph/abc11>;rel="first memento";datetime="Mon, 01 Jan 2024 00:00:00 GMT",
         <https://archive.ph/def22>;rel="memento";datetime="Wed, 05 Mar 2025 12:00:00 GMT",

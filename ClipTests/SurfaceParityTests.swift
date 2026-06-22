@@ -117,7 +117,7 @@ final class SurfaceParityTests: XCTestCase {
         let expectedExtensionActionIntent: SurfaceIntent?
     }
 
-    /// The nine links the unification must handle identically on every surface.
+    /// The requested links the unification must handle identically on every surface.
     private func links() -> [Link] {
         [
             Link(name: "amazon",
@@ -132,12 +132,20 @@ final class SurfaceParityTests: XCTestCase {
                  url: "https://www.wsj.com/articles/apple-prices",
                  fixtures: ["Readable/wsj-paywalled.html": "https://www.wsj.com/articles/apple-prices"],
                  expectedExtensionActionIntent: .archiveReader),
+            // Facebook's outbound redirect must be unwrapped before either surface
+            // classifies it; both then render the destination article, not Facebook.
+            Link(name: "facebook redirect",
+                 url: "https://l.facebook.com/l.php?u=https%3A%2F%2Fwww.nytimes.com%2F2026%2F06%2F20%2Fstory.html",
+                 fixtures: ["Readable/nytimes-readable.html": "https://www.nytimes.com/2026/06/20/story.html"],
+                 expectedExtensionActionIntent: .reader),
             // fbrpc Facebook deep link → unwraps OFFLINE to its YouTube target → video.
-            Link(name: "facebook (fbrpc → youtube)",
+            Link(name: "facebook fbrpc video redirect",
                  url: "fbrpc://nativethirdparty/f?app_id=1"
                     + "&target_url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ",
-                 fixtures: [:],
-                 expectedExtensionActionIntent: .nonTextual),
+                 fixtures: [:], expectedExtensionActionIntent: .nonTextual),
+            Link(name: "tiktok",
+                 url: "https://www.tiktok.com/@u/video/7212345678901234567",
+                 fixtures: [:], expectedExtensionActionIntent: .nonTextual),
             Link(name: "youtube",
                  url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
                  fixtures: [:],

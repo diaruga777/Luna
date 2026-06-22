@@ -5,7 +5,7 @@ let package = Package(
     name: "ClipLibraries",
     // macOS support exists solely so the pure-library test suite can run in CI;
     // products are consumed by the iOS app and its extensions.
-    platforms: [.iOS(.v26), .macOS(.v14)],
+    platforms: [.iOS(.v18), .macOS(.v14)],
     products: [
         .library(name: "ClipModels", targets: ["ClipModels"]),
         .library(name: "ClipURLClassification", targets: ["ClipURLClassification"]),

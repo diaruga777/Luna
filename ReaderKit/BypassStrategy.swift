@@ -37,18 +37,15 @@ enum BypassStrategy: Equatable {
     /// A server-rendering proxy (1ft.io) whose response is plain HTML a URLSession
     /// can extract. Silent.
     case ladderProxy(LadderProxy)
-    /// A third-party reader page that only renders client-side (smry.ai,
-    /// removepaywall(s).com). WKWebView-only.
-    case thirdPartyWeb(ThirdPartyWebService)
-    /// archive.today snapshot via the interactive WKWebView reader. WKWebView-only,
+    /// archive.is snapshot via the interactive WKWebView reader. WKWebView-only,
     /// always the terminal (most expensive/hostile) strategy.
     case archiveToday
 
     /// Whether this strategy can run in the background URLSession path. The
-    /// client-rendered third-party pages and archive.today are not silent.
+    /// archive.is is not silent.
     var runsSilently: Bool {
         switch self {
-        case .archiveToday, .thirdPartyWeb:
+        case .archiveToday:
             return false
         default:
             return true
@@ -68,7 +65,6 @@ enum BypassStrategy: Equatable {
         case .waybackRaw: return "waybackRaw"
         case .jinaReader: return "jinaReader"
         case let .ladderProxy(proxy): return "ladderProxy(\(proxy))"
-        case let .thirdPartyWeb(service): return "thirdPartyWeb(\(service))"
         case .archiveToday: return "archiveToday"
         }
     }
@@ -141,40 +137,4 @@ enum LadderProxy: Equatable {
             return URL(string: "https://1ft.io/" + article.absoluteString)
         }
     }
-}
-
-/// Client-rendered third-party reader pages. Their article only materializes after a
-/// client-side render, so they need a real WKWebView (not a URLSession GET).
-enum ThirdPartyWebService: Equatable {
-    case smry
-    case removePaywalls
-    case removePaywall
-
-    /// The reader-page URL for `article`, or nil if it can't be formed. Path-prefix
-    /// services append the article URL raw; removepaywall.com percent-encodes it
-    /// because it rides in a real query parameter.
-    func url(for article: URL) -> URL? {
-        switch self {
-        case .smry:
-            return URL(string: "https://smry.ai/" + article.absoluteString)
-        case .removePaywalls:
-            return URL(string: "https://removepaywalls.com/" + article.absoluteString)
-        case .removePaywall:
-            guard let encoded = article.absoluteString.addingPercentEncoding(
-                withAllowedCharacters: .urlQueryValueAllowed) else { return nil }
-            return URL(string: "https://www.removepaywall.com/search?url=" + encoded)
-        }
-    }
-}
-
-private extension CharacterSet {
-    /// Characters allowed unescaped in a single URL query-parameter *value*. Starts
-    /// from `.urlQueryAllowed` and removes the sub-delimiters that are significant
-    /// inside a value (`&`, `=`, `+`, `?`, `/`, `:`, …) so a nested `https://…?a=b`
-    /// is encoded whole rather than splitting the outer query.
-    static let urlQueryValueAllowed: CharacterSet = {
-        var set = CharacterSet.urlQueryAllowed
-        set.remove(charactersIn: "&=+?/:#@!$'()*,;")
-        return set
-    }()
 }

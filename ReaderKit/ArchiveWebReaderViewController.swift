@@ -68,19 +68,16 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// user is never stranded on a permanent "Unlocking…" screen (e.g. a homepage
     /// whose submit token never appears). Reset whenever the overlay is down.
     private var coveredPollCount = 0
-    private static let stallPollLimit = 23   // ≈ 30s at the 1.3s poll interval
+    private static let stallPollLimit = 86   // ≈ 30s at the 0.35s poll interval
     /// Consecutive poll ticks on archive.today's "enable JS / disable ad blocker"
     /// gate. It doesn't clear in a WKWebView, so past `blockedPollLimit` we treat it
     /// as terminal (the un-archivable message + Safari escape).
     private var blockedPollCount = 0
-    private static let blockedPollLimit = 3   // ≈ 4s — tolerate a transient flash
+    private static let blockedPollLimit = 12  // ≈ 4s — tolerate a transient flash
     /// The ordered WKWebView pre-stage URLs to try BEFORE the archive.today flow —
     /// derived from `BypassStrategySelector` filtered to the strategies worth a real
-    /// browser (the trailing-dot host variant, smry.ai, removepaywall(s).com). Each
-    /// is loaded in turn; a readable extraction from any of them finishes via the
-    /// normal `onExtracted` path with no archive.today at all. Empty → straight to
-    /// archive.today. The silent strategies already ran (and failed) in the
-    /// background path, so only the JS-rendered ones are repeated here.
+    /// browser. The archive-only policy leaves this empty, taking every detected
+    /// paywall straight to archive.is with no proxy or reader-service pre-stage.
     private let webPreStageURLs: [URL]
     /// Index of the pre-stage currently loaded; advances as each one times out.
     private var currentPreStageIndex = 0
@@ -287,7 +284,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// react when the CAPTCHA clears via an in-page transition.
     private func startPolling() {
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.3, repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { [weak self] _ in
             self?.checkStage()
         }
     }
@@ -649,9 +646,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// A WKWebView pre-stage page: the page is the (hopefully un-paywalled) article
     /// itself (no archive, no CAPTCHA), so just poll its text + try extracting. Two
     /// ways to leave the current pre-stage early instead of stalling:
-    /// - a "please enable JavaScript" gate (some pre-stages — e.g.
-    ///   removepaywall.com — serve a tiny JS-required interstitial that never
-    ///   renders the article in a WKWebView): detected on a SHORT body so a real
+    /// - a "please enable JavaScript" gate: detected on a SHORT body so a real
     ///   article that merely mentions JavaScript can't trip it → advance immediately.
     /// - otherwise, `bypassPollLimit` ticks without a readable extraction (the trick
     ///   stopped working / a paywall is still up / the service didn't render) →
@@ -680,9 +675,8 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         }
     }
 
-    /// Whether `text` is a "please enable JavaScript" interstitial (the kind a
-    /// removepaywall.com / smry.ai pre-stage can serve, which never renders the
-    /// article in our WKWebView). Pure + static so it's unit-testable.
+    /// Whether `text` is a "please enable JavaScript" interstitial. Pure + static
+    /// so it remains unit-testable if future first-party pre-stages are added.
     ///
     /// Gated on a SHORT body — a real, rendered article that happens to mention
     /// "JavaScript" (e.g. a tech post) is long, so it can't trip this. This is the

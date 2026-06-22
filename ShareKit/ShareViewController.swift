@@ -32,6 +32,9 @@ final class ShareViewController: UIViewController {
     private let spinner = UIActivityIndicatorView(style: .large)
     private let statusLabel = UILabel()
     private let closeButton = UIButton(type: .system)
+    /// The action extension owns one navigation context for its entire lifetime.
+    /// Replacing its root avoids stacking a second modal over the extension sheet.
+    private var actionNavigationController: UINavigationController?
 
     /// True once the request has been completed, so completion happens at most
     /// once (a double `completeRequest` is undefined behavior). Main-thread only.
@@ -92,10 +95,14 @@ final class ShareViewController: UIViewController {
 
         // Safari (action extension) delivers the page URL via the JavaScript
         // preprocessing result — a property-list attachment — NOT a public.url.
-        if let plistProvider = providers.first(where: {
+        if let item = items.first(where: { item in
+            (item.attachments ?? []).contains {
+                $0.hasItemConformingToTypeIdentifier(UTType.propertyList.identifier)
+            }
+        }), let plistProvider = item.attachments?.first(where: {
             $0.hasItemConformingToTypeIdentifier(UTType.propertyList.identifier)
         }) {
-            handleJavaScriptResult(plistProvider)
+            handleJavaScriptResult(plistProvider, inputItem: item)
             return
         }
 
@@ -189,34 +196,118 @@ final class ShareViewController: UIViewController {
     /// ArticleText}`. Safari only sends the compact text snapshot after its cheap DOM
     /// classifier identifies a substantial ordinary article; product/paywall/platform
     /// links continue into their dedicated pipeline paths.
-    private func handleJavaScriptResult(_ provider: NSItemProvider) {
+    private func handleJavaScriptResult(_ provider: NSItemProvider, inputItem: NSExtensionItem) {
         SharedDiagnosticLog.record("action: loading JS result", category: "share")
+        if let result = Self.javaScriptResult(from: inputItem.userInfo) {
+            SharedDiagnosticLog.record("action: read JS result from item userInfo", category: "share")
+            consumeJavaScriptResult(result, error: nil)
+            return
+        }
+        loadJavaScriptResult(provider, inputItem: inputItem, attempt: 0)
+    }
+
+    /// Safari occasionally exposes its preprocessing provider before its XPC endpoint
+    /// is ready (NSItemProvider error -1000 / Cocoa 4101). Retry briefly rather than
+    /// treating that transient state as a missing page.
+    private func loadJavaScriptResult(
+        _ provider: NSItemProvider, inputItem: NSExtensionItem, attempt: Int
+    ) {
         // Strong self: the work + reader presentation need the VC alive, and
         // there's no retain cycle (nothing holds the closure once it runs).
         provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier, options: nil) { [weak self] item, error in
             guard let self else { return }
-            self.cancelLoadWatchdog()
-            let dict = item as? NSDictionary
-            let results = dict?[NSExtensionJavaScriptPreprocessingResultsKey] as? NSDictionary
-            let rawURLString = results?["URL"] as? String
-            let title = results?["title"] as? String
-            let kind = results?["Kind"] as? String
-            let articleText = results?["ArticleText"] as? String
-            let prefetchedHTML = kind == "article"
-                ? Self.articleSnapshotHTML(title: title, text: articleText)
-                : nil
-            let url = rawURLString.flatMap { URLUnwrapper.ingestURL(from: $0) }
-            SharedDiagnosticLog.record(
-                "action: JS callback url=\(url?.absoluteString ?? "nil") err=\(error.map { String(describing: $0) } ?? "nil")",
-                category: "share")
-            DispatchQueue.main.async {
-                if let url {
-                    SharedReadingListAppender.append(urlString: url.absoluteString)
-                    SharedDiagnosticLog.record("saved url (js) \(url.absoluteString)", category: "share")
-                    self.presentSavedOrReader(url: url, prefetchedHTML: prefetchedHTML)
-                } else {
-                    self.failOrComplete("Couldn't read the shared page's address.")
+            if let result = Self.javaScriptResult(from: item) {
+                self.consumeJavaScriptResult(result, error: error)
+                return
+            }
+
+            if attempt < 3 {
+                SharedDiagnosticLog.record(
+                    "action: JS provider empty (attempt \(attempt + 1)); retrying", category: "share")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    self.loadJavaScriptResult(provider, inputItem: inputItem, attempt: attempt + 1)
                 }
+                return
+            }
+
+            // On recent iOS versions Safari's action-extension provider can advertise
+            // `public.property-list` but return nil from `loadItem`. Its bytes are
+            // still available through the data-representation API, so decode that
+            // representation before treating the page URL as unavailable.
+            SharedDiagnosticLog.record(
+                "action: JS loadItem returned no decodable property list; retrying as data", category: "share")
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.propertyList.identifier) {
+                [weak self] data, dataError in
+                guard let self else { return }
+                let result = data.flatMap(Self.javaScriptResult(fromPropertyListData:))
+                    ?? Self.urlOnlyJavaScriptResult(from: inputItem)
+                self.consumeJavaScriptResult(result, error: dataError ?? error)
+            }
+        }
+    }
+
+    /// iOS 26 Safari can invalidate the property-list provider despite including the
+    /// page URL in the extension item's text metadata. Keep this last-resort path
+    /// narrow: only an actual HTTP(S) URL is accepted.
+    nonisolated static func urlOnlyJavaScriptResult(from item: NSExtensionItem) -> [String: Any]? {
+        let values = [item.attributedContentText?.string, item.attributedTitle?.string]
+        for value in values.compactMap({ $0 }) {
+            if let url = ShareTextURL.extract(from: value) {
+                return ["URL": url.absoluteString, "Kind": "unknown"]
+            }
+        }
+        return nil
+    }
+
+    /// Extracts Safari's preprocessing dictionary from either its normal wrapped
+    /// property-list shape or the direct payload shape seen from some extension hosts.
+    /// Internal for regression tests; this is deliberately Foundation-only so it is
+    /// identical in the app and action-extension processes.
+    nonisolated static func javaScriptResult(from item: Any?) -> [String: Any]? {
+        let dictionary: [String: Any]?
+        if let payload = item as? [String: Any] {
+            dictionary = payload
+        } else if let payload = item as? NSDictionary {
+            dictionary = payload as? [String: Any]
+        } else if let data = item as? Data {
+            return javaScriptResult(fromPropertyListData: data)
+        } else {
+            dictionary = nil
+        }
+        guard let dictionary else { return nil }
+        if let wrapped = dictionary[NSExtensionJavaScriptPreprocessingResultsKey] as? [String: Any] {
+            return wrapped
+        }
+        return dictionary["URL"] is String ? dictionary : nil
+    }
+
+    nonisolated static func javaScriptResult(fromPropertyListData data: Data) -> [String: Any]? {
+        guard let propertyList = try? PropertyListSerialization.propertyList(
+            from: data, options: [], format: nil)
+        else { return nil }
+        return javaScriptResult(from: propertyList)
+    }
+
+    private func consumeJavaScriptResult(_ result: [String: Any]?, error: Error?) {
+        cancelLoadWatchdog()
+        let rawURLString = result?["URL"] as? String
+        let title = result?["title"] as? String
+        let kind = result?["Kind"] as? String
+        let articleText = result?["ArticleText"] as? String
+        let prefetchedHTML = kind == "article"
+            ? Self.articleSnapshotHTML(title: title, text: articleText)
+            : nil
+        let url = rawURLString.flatMap { URLUnwrapper.ingestURL(from: $0) }
+        SharedDiagnosticLog.record(
+            "action: JS callback url=\(url?.absoluteString ?? "nil") err=\(error.map { String(describing: $0) } ?? "nil")",
+            category: "share")
+        DispatchQueue.main.async {
+            if let url {
+                SharedReadingListAppender.append(urlString: url.absoluteString)
+                SharedDiagnosticLog.record("saved url (js) \(url.absoluteString)", category: "share")
+                self.presentSavedOrReader(url: url, prefetchedHTML: prefetchedHTML)
+            } else {
+                self.failOrComplete("Couldn't read the shared page's address.")
             }
         }
     }
@@ -520,8 +611,32 @@ extension ShareViewController: ExtensionHost {
         isActionExtension ? ActionReaderMode.last : nil
     }
 
-    /// Presents `viewController` full-screen, wrapped in a nav controller.
+    /// The share extension presents normally. The action extension keeps all of its
+    /// screens inside one embedded navigation controller, so archive → reader does
+    /// not create a second presentation that can dismiss the extension host.
     func presentModally(_ viewController: UIViewController) {
+        if isActionExtension {
+            spinner.stopAnimating()
+            statusLabel.isHidden = true
+            closeButton.isHidden = true
+            if let navigationController = actionNavigationController {
+                navigationController.setViewControllers([viewController], animated: false)
+                return
+            }
+            let navigationController = UINavigationController(rootViewController: viewController)
+            navigationController.view.translatesAutoresizingMaskIntoConstraints = false
+            addChild(navigationController)
+            view.addSubview(navigationController.view)
+            NSLayoutConstraint.activate([
+                navigationController.view.topAnchor.constraint(equalTo: view.topAnchor),
+                navigationController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                navigationController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                navigationController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            ])
+            navigationController.didMove(toParent: self)
+            actionNavigationController = navigationController
+            return
+        }
         let nav = UINavigationController(rootViewController: viewController)
         nav.modalPresentationStyle = .fullScreen
         present(nav, animated: true)

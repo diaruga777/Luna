@@ -44,7 +44,8 @@ enum ProductSearchAddOutcome {
 /// priority) with a safe-area cap, so it rides up just above the keyboard while the
 /// user types and drops back when the keyboard dismisses — the field stays visible
 /// and usable the whole time (the same pattern as `SearchViewController`).
-final class ProductSearchOverlayViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegate {
+final class ProductSearchOverlayViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegate,
+    WKScriptMessageHandler {
 
     /// Called when the user confirms "Add to tracker" for the current page. `html` is
     /// the page's rendered `outerHTML` (the host reuses it for the fast price path).
@@ -82,6 +83,11 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
     /// True while a "Use this page?" alert is on screen, so a finishing navigation
     /// doesn't stack a second one.
     private var isOfferingUseThisPage = false
+
+    /// The bridge observes Google Shopping's selected-item popover, which changes
+    /// the DOM without committing a WebKit navigation. It reports the first visible
+    /// merchant CTA from that popover, never a Google URL.
+    private static let googleShoppingSellerMessageName = "puttyGoogleShoppingSeller"
 
     private static let cardInset: CGFloat = 12
     private static let cardCornerRadius: CGFloat = 26
@@ -152,7 +158,14 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
     // MARK: - Web view
 
     private func configureWebView() {
-        let webView = WKWebView(frame: .zero, configuration: WebJunkBlocker.makeConfiguration())
+        let configuration = WebJunkBlocker.makeConfiguration()
+        configuration.userContentController.add(
+            self, name: Self.googleShoppingSellerMessageName)
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: Self.googleShoppingSellerObserver,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true))
+        let webView = WKWebView(frame: .zero, configuration: configuration)
         self.webView = webView
         let themed = ReaderDepth.backgroundColor(for: 0)
         webView.isOpaque = false
@@ -301,7 +314,15 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
     /// Presents the "Use this page?" confirmation. On "Add to tracker" it reads the
     /// page's rendered HTML and hands it (with the current URL) up to the host.
     private func offerUseThisPage() {
-        guard !isOfferingUseThisPage, let webView, let url = webView.url else { return }
+        guard let webView, let url = webView.url else { return }
+        offerUseThisPage(urlString: url.absoluteString, html: nil)
+    }
+
+    /// Presents the same confirmation as the + button. Auto-detection supplies the
+    /// pipeline's canonical seller URL and HTML; manual + keeps reading the live
+    /// page at confirmation time.
+    private func offerUseThisPage(urlString: String, html: String?) {
+        guard !isOfferingUseThisPage else { return }
         isOfferingUseThisPage = true
         let alert = UIAlertController(
             title: "Use this page?",
@@ -309,7 +330,7 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Add to tracker", style: .default) { [weak self] _ in
             self?.isOfferingUseThisPage = false
-            self?.handleAddCurrentPage(urlString: url.absoluteString)
+            self?.handleAddCurrentPage(urlString: urlString, prefetchedHTML: html)
         })
         alert.addAction(UIAlertAction(title: "No thanks", style: .cancel) { [weak self] _ in
             self?.isOfferingUseThisPage = false
@@ -319,7 +340,13 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
 
     /// Reads the rendered HTML and hands it to the host, then routes the host's
     /// outcome to the overlay's exit behavior (dismiss on success, message otherwise).
-    private func handleAddCurrentPage(urlString: String) {
+    private func handleAddCurrentPage(urlString: String, prefetchedHTML: String?) {
+        if let prefetchedHTML {
+            onUseThisPage?(urlString, prefetchedHTML) { [weak self] outcome in
+                self?.handleAddOutcome(outcome)
+            }
+            return
+        }
         webView?.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, _ in
             guard let self else { return }
             let html = (result as? String) ?? ""
@@ -381,17 +408,114 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
             guard let self, let html = result as? String else { return }
             Task { [weak self] in
                 guard let self else { return }
-                let metadata = await ProductPageSuggestion.resolve(url: url, html: html)
+                let suggestion = await ProductPageSuggestion.resolve(url: url, html: html)
                 await MainActor.run {
-                guard let metadata,
-                      Self.matchesTrackedProduct(metadata, tracked: self.trackedProduct),
+                guard let suggestion,
+                      webView.url == url,
+                      Self.matchesTrackedProduct(suggestion.metadata, tracked: self.trackedProduct),
                           !self.isOfferingUseThisPage,
-                          self.suggestionDebouncer.shouldOffer(urlString: url.absoluteString)
+                          self.suggestionDebouncer.shouldOffer(urlString: suggestion.url.absoluteString)
                     else { return }
-                    self.offerUseThisPage()
+                    self.offerUseThisPage(urlString: suggestion.url.absoluteString, html: suggestion.html)
                 }
             }
         }
+    }
+
+    // MARK: - Google Shopping selected-item popovers
+
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard message.name == Self.googleShoppingSellerMessageName,
+              let urlString = message.body as? String,
+              let url = URL(string: urlString),
+              !isOfferingUseThisPage,
+              !suggestionDebouncer.hasOffered(urlString: urlString) else { return }
+        processSellerCandidate(url)
+    }
+
+    /// A Google result detail is not a navigation: its HTML describes Google, not
+    /// the seller. Process the first merchant URL independently through the shared
+    /// pipeline, then present exactly the same confirmation as a + tap.
+    private func processSellerCandidate(_ url: URL) {
+        Task { [weak self] in
+            guard let self else { return }
+            let suggestion = await ProductPageSuggestion.resolve(url: url)
+            await MainActor.run {
+                guard let suggestion,
+                      Self.matchesTrackedProduct(suggestion.metadata, tracked: self.trackedProduct),
+                      !self.isOfferingUseThisPage,
+                      self.suggestionDebouncer.shouldOffer(urlString: suggestion.url.absoluteString)
+                else { return }
+                self.offerUseThisPage(urlString: suggestion.url.absoluteString, html: suggestion.html)
+            }
+        }
+    }
+
+    private static let googleShoppingSellerObserver = #"""
+    (() => {
+      if (!/(^|\.)google\.[a-z.]+$/i.test(location.hostname)) return;
+      const message = 'puttyGoogleShoppingSeller';
+      let lastSeller = '';
+      const visible = element => {
+        const style = getComputedStyle(element);
+        return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+      };
+      const destination = href => {
+        try {
+          const url = new URL(href, location.href);
+          if (!/(^|\.)google\.[a-z.]+$/i.test(url.hostname)) return url.href;
+          for (const key of ['url', 'q', 'adurl']) {
+            const value = url.searchParams.get(key);
+            if (value && /^https?:/i.test(value)) return value;
+          }
+        } catch (_) {}
+        return '';
+      };
+      const findSeller = () => {
+        const dialogs = [...document.querySelectorAll('[role="dialog"], [aria-modal="true"]')]
+          .filter(visible);
+        // Google changes its detail-panel accessibility markup frequently. Prefer a
+        // dialog when it exists, but after a product-card tap fall back to the page
+        // so the selected panel still works when it has no dialog role.
+        const roots = dialogs.length ? dialogs : [document.body];
+        for (const root of roots) {
+          const links = [...root.querySelectorAll('a[href]')].filter(visible);
+          const merchantCTA = links.find(link => /^(visit site|go to (store|site)|shop now|buy now)$/i.test((link.innerText || '').trim()));
+          const seller = merchantCTA || links.find(link => destination(link.href));
+          if (seller) {
+            const url = destination(seller.href);
+            if (url) return url;
+          }
+        }
+        return '';
+      };
+      let queued = false;
+      let userSelectedItem = false;
+      const inspect = () => {
+        if (!userSelectedItem) return;
+        if (queued) return;
+        queued = true;
+        setTimeout(() => {
+          queued = false;
+          const seller = findSeller();
+          if (seller && seller !== lastSeller) {
+            lastSeller = seller;
+            window.webkit.messageHandlers[message].postMessage(seller);
+          }
+        }, 150);
+      };
+      new MutationObserver(inspect).observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+      document.addEventListener('click', () => {
+        userSelectedItem = true;
+        inspect();
+      }, true);
+    })();
+    """#
+
+    deinit {
+        webView?.configuration.userContentController.removeScriptMessageHandler(
+            forName: Self.googleShoppingSellerMessageName)
     }
 
     /// A seller suggestion must be for the tracker currently being edited, not just

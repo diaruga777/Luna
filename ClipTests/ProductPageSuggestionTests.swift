@@ -6,11 +6,10 @@
 import XCTest
 @testable import Clip
 
-/// Covers the UNIFIED auto-suggest decision (`ProductPageSuggestion`) and the
-/// per-URL debounce (`ProductSuggestionDebouncer`) used by the price-check search
-/// overlay. The decision must be identical to the Add path: suggest exactly when the
-/// page classifies as a product AND a price is resolvable — the same `Classifier` +
-/// `ProductMetadataExtractor` the ingest pipeline uses.
+/// Covers the shared-pipeline auto-suggest decision (`ProductPageSuggestion`) and
+/// the per-URL debounce (`ProductSuggestionDebouncer`) used by the price-check
+/// search overlay. A suggestion exists only when `IngestPipeline` produces a priced
+/// product — the same eligibility rule every capture surface uses.
 final class ProductPageSuggestionTests: XCTestCase {
 
     private func url(_ string: String) -> URL {
@@ -20,7 +19,7 @@ final class ProductPageSuggestionTests: XCTestCase {
 
     private func resolve(_ urlString: String, fixture: String) async -> ProductMetadata? {
         await ProductPageSuggestion.resolve(
-            url: url(urlString), html: BypassFixtures.html("Products/\(fixture)"))
+            url: url(urlString), html: BypassFixtures.html("Products/\(fixture)"))?.metadata
     }
 
     // MARK: - Unified product + price decision
@@ -52,14 +51,11 @@ final class ProductPageSuggestionTests: XCTestCase {
     }
 
     func testProductLookingPageWithoutResolvablePriceIsNotSuggested() async {
-        // Even if a page were product-shaped, no resolvable price ⇒ nil (no suggest).
-        // The article fixture stands in for "no price by any static method".
-        let classifyAsProduct: (URL, String) -> ContentKind = { _, _ in .product(.heuristicScore(2)) }
+        // Even an explicit known-shop URL cannot suggest without a resolved price.
         let metadata = await ProductPageSuggestion.resolve(
-            url: url("https://news.example.com/story"),
-            html: BypassFixtures.html("Products/article-no-price.html"),
-            classify: classifyAsProduct)
-        XCTAssertNil(metadata, "Product classification alone must not suggest without a price")
+            url: url("https://www.amazon.com.au/dp/B0EXAMPLE"),
+            html: BypassFixtures.html("Products/article-no-price.html"))
+        XCTAssertNil(metadata, "A product URL alone must not suggest without a price")
     }
 
     // MARK: - Debounce

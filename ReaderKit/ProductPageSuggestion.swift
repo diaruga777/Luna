@@ -5,35 +5,44 @@
 
 import Foundation
 
-/// The pure, UNIFIED "should this live page be suggested as a seller?" decision.
-///
-/// It is exactly the condition under which an Add succeeds, so a page that
-/// auto-suggests is precisely a page whose Add will work: the page must
-/// 1. classify as a `.product` via the shared `Classifier`, AND
-/// 2. yield a real price via the shared `ProductMetadataExtractor`.
-///
-/// Both checks run over the WKWebView's RENDERED `outerHTML`, so JS-loaded prices
-/// are seen (the render-tier equivalent for a live WebView — the page is already
-/// rendered, so no off-screen render is needed and `render: nil` is correct here).
-/// There is no special-case detection: the same two components the ingest pipeline
-/// uses make this call.
-enum ProductPageSuggestion {
+/// The shared-pipeline result used to offer a product page as a seller.
+struct ProductPageSuggestion: Equatable {
+    let url: URL
+    let html: String
+    let metadata: ProductMetadata
+}
 
-    /// Whether `html` (a rendered page at `url`) is a product page WITH a resolvable
-    /// price. Returns the resolved metadata so the caller can avoid re-extracting,
-    /// or nil when the page is not a priced product (→ do not suggest / Add fails).
+/// The UNIFIED "should this live page be suggested as a seller?" decision.
+///
+/// This deliberately calls `IngestPipeline` rather than reproducing its classifier
+/// and metadata-extractor branches. The search overlay is therefore subject to the
+/// same URL unwrapping, classification, product eligibility, and price rules as
+/// every other capture surface.
+///
+/// A rendered `outerHTML` is supplied as `prefetchedHTML`, which avoids refetching
+/// a page that is already open and lets JS-hydrated product data take the same path.
+/// Google Shopping merchant links intentionally omit it: that HTML belongs to
+/// Google, so the pipeline fetches and evaluates the selected seller's own page.
+/// There is no special-case product detection in this type.
+extension ProductPageSuggestion {
+
+    /// Processes `url` through the shared URL pipeline and returns a suggestion only
+    /// for a price-tracking-eligible product result.
     static func resolve(
         url: URL,
-        html: String,
-        classify: (URL, String) -> ContentKind = { Classifier.classify(url: $0, html: $1) },
-        extractor: ProductMetadataExtractor = ProductMetadataExtractor()
-    ) async -> ProductMetadata? {
-        let isProduct: Bool = {
-            if case .product = classify(url, html) { return true }
-            return false
-        }()
-        guard isProduct else { return nil }
-        // The rendered HTML is already in hand → no render tier needed (render: nil).
-        return await extractor.extract(url: url, html: html, render: nil)
+        html: String? = nil
+    ) async -> ProductPageSuggestion? {
+        let result = await IngestPipeline.processResolved(
+            IngestInput(url: url, source: .manual, prefetchedHTML: html))
+        guard case let .product(product, processedHTML) = result.outcome else { return nil }
+        return ProductPageSuggestion(
+            url: result.url,
+            html: processedHTML,
+            metadata: ProductMetadata(
+                name: product.name,
+                price: ProductPrice(amount: product.priceAmount, currency: product.priceCurrency),
+                imageURL: product.imageURL,
+                brand: product.brand,
+                productID: product.productID))
     }
 }

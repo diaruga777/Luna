@@ -352,8 +352,11 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         statusLabel.textColor = .secondaryLabel
         statusLabel.textAlignment = .center
 
-        wpmDownButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "tortoise.fill", padding: 12)
-        wpmUpButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "hare.fill", padding: 12)
+        wpmDownButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "tortoise.fill", padding: 18)
+        wpmUpButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "hare.fill", padding: 18)
+        let paceSymbolSize = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        wpmDownButton.configuration?.preferredSymbolConfigurationForImage = paceSymbolSize
+        wpmUpButton.configuration?.preferredSymbolConfigurationForImage = paceSymbolSize
         wpmDownButton.accessibilityLabel = "Slow down"
         wpmDownButton.accessibilityHint = "Decreases reading speed by 25 words per minute"
         wpmUpButton.accessibilityLabel = "Speed up"

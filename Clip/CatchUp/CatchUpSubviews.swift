@@ -289,7 +289,7 @@ final class CatchUpPriceTrackerCardBody: UIView {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -24),
             // A small thumbnail at the top (a fraction of the body width).
-            thumb.widthAnchor.constraint(equalToConstant: 60),
+            thumb.widthAnchor.constraint(equalToConstant: 44),
             thumb.heightAnchor.constraint(equalTo: thumb.widthAnchor),
             thumb.centerXAnchor.constraint(equalTo: stack.centerXAnchor),
         ])
@@ -328,11 +328,16 @@ final class CatchUpPriceTrackerCardBody: UIView {
         readout.numberOfLines = 0
 
         var configuration = UIButton.Configuration.plain()
-        configuration.title = "Change"
-        configuration.baseForegroundColor = GlassStyle.readingAccent
+        configuration.title = "Change alert"
+        configuration.baseForegroundColor = .secondaryLabel
         configuration.contentInsets = .zero
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .preferredFont(forTextStyle: .footnote)
+            return outgoing
+        }
         let changeButton = UIButton(configuration: configuration)
-        changeButton.contentHorizontalAlignment = .leading
+        changeButton.contentHorizontalAlignment = .trailing
         changeButton.addAction(UIAction { _ in onChange() }, for: .touchUpInside)
 
         let copy = UIStackView(arrangedSubviews: [title, readout])
@@ -345,11 +350,11 @@ final class CatchUpPriceTrackerCardBody: UIView {
         glassPill.contentView.addSubview(changeButton)
         NSLayoutConstraint.activate([
             copy.topAnchor.constraint(equalTo: glassPill.contentView.topAnchor, constant: 12),
-            copy.bottomAnchor.constraint(equalTo: glassPill.contentView.bottomAnchor, constant: -12),
             copy.leadingAnchor.constraint(equalTo: glassPill.contentView.leadingAnchor, constant: 16),
-            copy.trailingAnchor.constraint(lessThanOrEqualTo: changeButton.leadingAnchor, constant: -12),
-            changeButton.centerYAnchor.constraint(equalTo: glassPill.contentView.centerYAnchor),
+            copy.trailingAnchor.constraint(equalTo: glassPill.contentView.trailingAnchor, constant: -16),
+            changeButton.topAnchor.constraint(equalTo: copy.bottomAnchor, constant: 6),
             changeButton.trailingAnchor.constraint(equalTo: glassPill.contentView.trailingAnchor, constant: -16),
+            changeButton.bottomAnchor.constraint(equalTo: glassPill.contentView.bottomAnchor, constant: -10),
         ])
         return glassPill
     }

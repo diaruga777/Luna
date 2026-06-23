@@ -83,6 +83,10 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
     /// True while a "Use this page?" alert is on screen, so a finishing navigation
     /// doesn't stack a second one.
     private var isOfferingUseThisPage = false
+    /// Product metadata often arrives after WebKit's initial completion for
+    /// JavaScript storefronts. Cancel these checks on navigation so a stale page
+    /// cannot offer itself as the current seller.
+    private var productDetectionWorkItems: [DispatchWorkItem] = []
 
     /// The bridge observes Google Shopping's selected-item popover, which changes
     /// the DOM without committing a WebKit navigation. It reports the first visible
@@ -385,7 +389,16 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         updateNavButtons()
         if let current = webView.url?.absoluteString { urlField.text = current }
-        autoDetectProductIfNeeded(in: webView)
+        scheduleProductDetection(for: webView, delays: [0, 0.35, 1.1, 2.5, 5])
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        cancelProductDetection()
+        updateNavButtons()
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        scheduleProductDetection(for: webView, delays: [0.15])
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -420,6 +433,25 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
                 }
             }
         }
+    }
+
+    /// Re-checks the live DOM while a page hydrates, while preserving the existing
+    /// unified suggestion pipeline and one-prompt-per-URL debounce.
+    private func scheduleProductDetection(for webView: WKWebView, delays: [TimeInterval]) {
+        cancelProductDetection()
+        for delay in delays {
+            let work = DispatchWorkItem { [weak self, weak webView] in
+                guard let self, let webView else { return }
+                self.autoDetectProductIfNeeded(in: webView)
+            }
+            productDetectionWorkItems.append(work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+    }
+
+    private func cancelProductDetection() {
+        productDetectionWorkItems.forEach { $0.cancel() }
+        productDetectionWorkItems.removeAll()
     }
 
     // MARK: - Google Shopping selected-item popovers
@@ -514,6 +546,7 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
     """#
 
     deinit {
+        productDetectionWorkItems.forEach { $0.cancel() }
         webView?.configuration.userContentController.removeScriptMessageHandler(
             forName: Self.googleShoppingSellerMessageName)
     }

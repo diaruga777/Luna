@@ -94,6 +94,9 @@ final class ReadingListViewController: UITableViewController {
     /// The Articles / Media & Links filter — only shown when the list actually has
     /// both a reader item and a media/link item, otherwise it's pointless.
     private let filterControl = UISegmentedControl()
+    /// Holds natural-width segments so "Media & Links" is never silently clipped.
+    private let filterScrollView = UIScrollView()
+    private var filterWidthConstraint: NSLayoutConstraint?
     private var filterHeaderView: UIView?
 
     /// Non-blocking bottom pill for media-download progress/result (created lazily).
@@ -147,13 +150,26 @@ final class ReadingListViewController: UITableViewController {
         refreshControl?.addTarget(self, action: #selector(pulledToRefresh), for: .valueChanged)
 
         filterControl.addTarget(self, action: #selector(filterChanged(_:)), for: .valueChanged)
+        filterControl.apportionsSegmentWidthsByContent = true
         let header = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
+        filterScrollView.showsHorizontalScrollIndicator = false
+        filterScrollView.alwaysBounceHorizontal = true
+        filterScrollView.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(filterScrollView)
         filterControl.translatesAutoresizingMaskIntoConstraints = false
-        header.addSubview(filterControl)
+        filterScrollView.addSubview(filterControl)
+        let width = filterControl.widthAnchor.constraint(equalToConstant: 0)
+        filterWidthConstraint = width
         NSLayoutConstraint.activate([
-            filterControl.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 20),
-            filterControl.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -20),
-            filterControl.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            filterScrollView.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 16),
+            filterScrollView.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -16),
+            filterScrollView.topAnchor.constraint(equalTo: header.topAnchor),
+            filterScrollView.bottomAnchor.constraint(equalTo: header.bottomAnchor),
+            filterControl.leadingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.leadingAnchor),
+            filterControl.trailingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.trailingAnchor),
+            filterControl.centerYAnchor.constraint(equalTo: filterScrollView.frameLayoutGuide.centerYAnchor),
+            filterControl.heightAnchor.constraint(equalToConstant: 32),
+            width,
         ])
         filterHeaderView = header
 
@@ -180,6 +196,16 @@ final class ReadingListViewController: UITableViewController {
         super.viewWillAppear(animated)
         pinCatchUpButtonToNavBar()
         catchUpButton.isHidden = isEditing
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard let header = filterHeaderView else { return }
+        if header.frame.width != tableView.bounds.width {
+            header.frame.size.width = tableView.bounds.width
+            tableView.tableHeaderView = header
+        }
+        updateFilterWidth()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -387,10 +413,22 @@ final class ReadingListViewController: UITableViewController {
             filterControl.insertSegment(withTitle: option.displayName, at: index, animated: false)
         }
         filterControl.selectedSegmentIndex = filters.firstIndex(of: filter) ?? 0
+        updateFilterWidth()
 
         if tableView.tableHeaderView !== filterHeaderView {
             tableView.tableHeaderView = filterHeaderView
         }
+    }
+
+    /// Preserves each label's natural width. Horizontal scrolling only activates
+    /// when the complete row cannot fit on the current device width.
+    private func updateFilterWidth() {
+        let font = UIFont.preferredFont(forTextStyle: .subheadline)
+        let naturalWidth = visibleFilters().reduce(CGFloat(0)) { partial, option in
+            partial + ceil((option.displayName as NSString).size(withAttributes: [.font: font]).width) + 34
+        }
+        let viewportWidth = max(0, tableView.bounds.width - 32)
+        filterWidthConstraint?.constant = max(viewportWidth, naturalWidth)
     }
 
     @objc private func pulledToRefresh() {

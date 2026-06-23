@@ -228,13 +228,15 @@ extension WrapperHandler {
             }
         })
 
-    /// Apple News (`apple.news`, `*.apple.news`) — fetch the page and read the
-    /// `redirectToUrlAfterTimeout(...)` publisher URL out of it.
+    /// Apple News (`apple.news`, `*.apple.news`) and Apple Stocks article links
+    /// (`stocks.apple.com`) — fetch the page and read the publisher URL from its
+    /// `redirectToUrlAfterTimeout(...)` call. The apparent delay is browser-only;
+    /// the target is already present in the initial HTML response.
     static let appleNews = WrapperHandler(
         kind: .appleNews,
         matches: { _, host in
             guard let host else { return false }
-            return host == "apple.news" || host.hasSuffix(".apple.news")
+            return NewsAggregatorUnwrapper.isAppleNews(host)
         },
         resolve: { url in
             .fetch { session in

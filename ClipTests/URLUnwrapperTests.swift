@@ -162,6 +162,18 @@ final class URLUnwrapperTests: XCTestCase {
         XCTAssertEqual(result.url.absoluteString, "https://www.weatherzone.com.au/news/story/1")
     }
 
+    func testUnwrapAppleStocksNewsFetchesPublisherURLWithoutWaitingForBrowserRedirect() async {
+        let html = #"redirectToUrlAfterTimeout("https://www.reuters.com/legal/litigation/story", 8000);"#
+        UnwrapMockProtocol.routes = [("stocks.apple.com", 200, Data(html.utf8), nil)]
+        let result = await URLUnwrapper.unwrap(
+            url("https://stocks.apple.com/ALXfiNEtWT8Kg7GJlnGAQJQ"),
+            session: UnwrapMockProtocol.session())
+
+        XCTAssertTrue(result.didUnwrap)
+        XCTAssertEqual(result.wrapper, .appleNews)
+        XCTAssertEqual(result.url.absoluteString, "https://www.reuters.com/legal/litigation/story")
+    }
+
     func testUnwrapAppleNewsPlusExclusiveStaysUnchanged() async {
         let html = "<html><body>Open in the News app.</body></html>"
         UnwrapMockProtocol.routes = [("apple.news", 200, Data(html.utf8), nil)]

@@ -25,8 +25,12 @@ enum NewsAggregatorUnwrapper {
 
     // MARK: - Host classification
 
+    /// Apple News articles are shared from both `apple.news` and the Stocks app's
+    /// web landing host. Both return the publisher URL in their HTML's delayed
+    /// redirect call; the delay is only for browsers and is never needed here.
     static func isAppleNews(_ host: String) -> Bool {
         host == "apple.news" || host.hasSuffix(".apple.news")
+            || host == "stocks.apple.com"
     }
 
     static func isGoogleNews(_ host: String) -> Bool {

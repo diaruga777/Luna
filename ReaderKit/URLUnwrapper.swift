@@ -170,6 +170,10 @@ enum URLUnwrapper {
         "flip.it", "trib.al", "t.co", "bit.ly", "buff.ly", "apple.co",
         "nyti.ms", "wapo.st", "on.ft.com", "econ.st", "reut.rs",
         "cnn.it", "bbc.in", "nbcnews.to", "abcn.ws", "cbsn.ws",
+        // Bloomberg newsletter links make two ordinary HTTP hops: Iterable's
+        // `links.message.bloomberg.com` tracking host → `bloom.bg` → publisher.
+        // Treat both as redirect-only so the stored URL is the publisher article.
+        "links.message.bloomberg.com", "bloom.bg",
     ]
 
     /// Amazon-issued share links are redirects, not storefronts. Keep them separate

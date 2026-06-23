@@ -3,7 +3,6 @@
 //  Clip
 //
 
-import SafariServices
 import UIKit
 
 /// The home screen. Items are grouped into sections in FIFO (oldest-saved
@@ -1039,7 +1038,12 @@ final class ReadingListViewController: UITableViewController {
         let nav = UINavigationController(rootViewController: reader)
         reader.onClose = { [weak nav] in nav?.dismiss(animated: true) }
         reader.onOpenInBrowser = { [weak nav] archiveURL in
-            nav?.present(SFSafariViewController(url: archiveURL), animated: true)
+            // This is an escape from archive.is's WKWebView-specific bot gate, so
+            // it must leave Queue for the system browser — an SFSafari sheet remains
+            // inside our presentation and doesn't provide the requested escape.
+            nav?.dismiss(animated: true) {
+                UIApplication.shared.open(archiveURL)
+            }
         }
         reader.onExtracted = { [weak self, weak nav, weak presenter] in
             nav?.dismiss(animated: true) {

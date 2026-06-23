@@ -207,6 +207,23 @@ final class URLUnwrapperTests: XCTestCase {
         XCTAssertEqual(result.url.absoluteString, finalURL.absoluteString)
     }
 
+    func testUnwrapBloombergNewsletterTrackingLinkFollowsPublisherRedirect() async {
+        let wsj = url("https://www.wsj.com/finance/investing/story-ef4f7feb?mod=itp_wsj")
+        UnwrapMockProtocol.routes = [
+            // URLSession follows both the Iterable → bloom.bg and bloom.bg → WSJ
+            // redirects before exposing the final response URL to the resolver.
+            ("links.message.bloomberg.com", 303, Data(), wsj),
+        ]
+
+        let result = await URLUnwrapper.unwrap(
+            url("https://links.message.bloomberg.com/s/c/opaque-campaign-link"),
+            session: UnwrapMockProtocol.session())
+
+        XCTAssertTrue(result.didUnwrap)
+        XCTAssertEqual(result.wrapper, .shortener)
+        XCTAssertEqual(result.url.absoluteString, "https://www.wsj.com/finance/investing/story-ef4f7feb")
+    }
+
     func testUnwrapAmazonAsiaShareLinkToRegionalStorefront() async {
         // Amazon's APAC mobile share flow emits amzn.asia links. The final URL must
         // reach the regional storefront before classification can recover its price.

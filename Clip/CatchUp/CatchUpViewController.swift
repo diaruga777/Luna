@@ -3,7 +3,6 @@
 //  Clip
 //
 
-import SafariServices
 import UIKit
 
 /// A Slack-style "catch up" experience over the reading list's UNREAD items. Each
@@ -345,7 +344,9 @@ final class CatchUpViewController: UIViewController {
         reader.onClose = { [weak nav] in nav?.dismiss(animated: true) }
         // Escape hatch when the embedded web view can't clear archive.today's gate.
         reader.onOpenInBrowser = { [weak nav] archiveURL in
-            nav?.present(SFSafariViewController(url: archiveURL), animated: true)
+            nav?.dismiss(animated: true) {
+                UIApplication.shared.open(archiveURL)
+            }
         }
         reader.onExtracted = { [weak self, weak nav] in
             nav?.dismiss(animated: true) { self?.reloadCurrentCard() }

@@ -49,6 +49,10 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     private var speechWordOffsets: [Int] = []
 
     private let wordLabel = UILabel()
+    /// Nearby prose is only visible while paused, so the reader can regain their
+    /// place without diluting RSVP's single-word focus during playback.
+    private let previousContextLabel = UILabel()
+    private let nextContextLabel = UILabel()
     /// Liquid-glass capsule behind the focal word, replacing the old red
     /// guideline notches.
     /// Glass reticule marks above and below the ORP letter (replaces the pill).
@@ -86,6 +90,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     /// Target characters visible on one line — the font is sized so a word this
     /// long fits, and longer words split (`WordSplitter`).
     private static let targetCharactersAcross = 15
+    private static let contextWordCount = 20
 
     /// Sized at init from the device width so `targetCharactersAcross`
     /// characters fit beside the focal column without running off-screen.
@@ -146,6 +151,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
 
         configureFocusPill()
         configureWordLabel()
+        configurePausedContext()
         configureLinkPill()
         configureControls()
 
@@ -164,6 +170,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutFocusPill()
+        layoutPausedContext()
         layoutLinkPill()
         showWord(at: currentIndex)
     }
@@ -213,6 +220,45 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         wordLabel.font = wordFont
         wordLabel.textColor = .label
         view.addSubview(wordLabel)
+    }
+
+    private func configurePausedContext() {
+        for label in [previousContextLabel, nextContextLabel] {
+            label.font = .systemFont(ofSize: 15, weight: .regular)
+            label.textColor = .tertiaryLabel
+            label.numberOfLines = 3
+            label.lineBreakMode = .byTruncatingTail
+            label.alpha = 1 // The reader starts paused.
+            view.addSubview(label)
+        }
+        previousContextLabel.textAlignment = .natural
+        nextContextLabel.textAlignment = .natural
+    }
+
+    /// Uses the otherwise-empty space immediately above and below the focal word
+    /// when paused. The lower paragraph deliberately clears the link pill and the
+    /// persistent playback controls.
+    private func layoutPausedContext() {
+        let focalCenterY = view.bounds.midY - 40
+        let horizontalMargin: CGFloat = 28
+        let width = max(0, view.bounds.width - horizontalMargin * 2)
+        let upperHeight: CGFloat = 104
+        let lowerHeight: CGFloat = 96
+        previousContextLabel.frame = CGRect(
+            x: horizontalMargin,
+            y: max(view.safeAreaInsets.top + 20, focalCenterY - 178),
+            width: width,
+            height: upperHeight)
+
+        let controlsTop = controlsStack.frame.minY > 0
+            ? controlsStack.frame.minY
+            : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
+        let lowerY = focalCenterY + 116
+        nextContextLabel.frame = CGRect(
+            x: horizontalMargin,
+            y: lowerY,
+            width: width,
+            height: max(0, min(lowerHeight, controlsTop - lowerY - 12)))
     }
 
     private func configureLinkPill() {
@@ -290,11 +336,10 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     }
 
     private func configureControls() {
-        var playConfig = UIButton.Configuration.plain()
-        playConfig.image = UIImage(systemName: "play.fill")
-        playConfig.baseForegroundColor = .label
+        var playConfig = GlassStyle.circularButtonConfiguration(symbol: "play.fill", padding: 16)
         playConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 28)
         playPauseButton.configuration = playConfig
+        playPauseButton.accessibilityLabel = "Play"
         playPauseButton.addTarget(self, action: #selector(togglePlayPause), for: .touchUpInside)
 
         scrubber.minimumValue = 0
@@ -307,42 +352,38 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         statusLabel.textColor = .secondaryLabel
         statusLabel.textAlignment = .center
 
-        wpmDownButton.setTitle("−25", for: .normal)
-        wpmUpButton.setTitle("+25", for: .normal)
-        for button in [wpmDownButton, wpmUpButton] {
-            button.setTitleColor(.label, for: .normal)
-            button.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 16, weight: .semibold)
-        }
+        wpmDownButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "tortoise.fill", padding: 12)
+        wpmUpButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "hare.fill", padding: 12)
+        wpmDownButton.accessibilityLabel = "Slow down"
+        wpmDownButton.accessibilityHint = "Decreases reading speed by 25 words per minute"
+        wpmUpButton.accessibilityLabel = "Speed up"
+        wpmUpButton.accessibilityHint = "Increases reading speed by 25 words per minute"
         wpmDownButton.addTarget(self, action: #selector(wpmDown), for: .touchUpInside)
         wpmUpButton.addTarget(self, action: #selector(wpmUp), for: .touchUpInside)
 
-        let skipSymbols = UIImage.SymbolConfiguration(pointSize: 20)
-        skipBackButton.configuration = {
-            var config = UIButton.Configuration.plain()
-            config.image = UIImage(systemName: "gobackward.minus")
-            config.baseForegroundColor = .label
-            config.preferredSymbolConfigurationForImage = skipSymbols
-            return config
-        }()
-        skipForwardButton.configuration = {
-            var config = UIButton.Configuration.plain()
-            config.image = UIImage(systemName: "goforward.plus")
-            config.baseForegroundColor = .label
-            config.preferredSymbolConfigurationForImage = skipSymbols
-            return config
-        }()
+        var skipBackConfig = GlassStyle.circularButtonConfiguration(symbol: "backward.fill", padding: 12)
+        skipBackConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 19)
+        skipBackButton.configuration = skipBackConfig
+        var skipForwardConfig = GlassStyle.circularButtonConfiguration(symbol: "forward.fill", padding: 12)
+        skipForwardConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 19)
+        skipForwardButton.configuration = skipForwardConfig
+        skipBackButton.accessibilityLabel = "Skip back 25 words"
+        skipForwardButton.accessibilityLabel = "Skip forward 25 words"
         skipBackButton.addTarget(self, action: #selector(skipBack), for: .touchUpInside)
         skipForwardButton.addTarget(self, action: #selector(skipForward), for: .touchUpInside)
 
-        // Plain container with explicit constraints so the play button sits
-        // exactly on the screen's center line, with symmetric skip / speed
-        // buttons flanking it (skip outermost, ±25 wpm inner).
+        // Grouped glass controls have visible, generous hit targets while the
+        // adaptive stack keeps them on-screen even on narrow iPhones.
         let speedRow = UIView()
-        for button in [playPauseButton, wpmDownButton, wpmUpButton,
-                       skipBackButton, skipForwardButton] {
-            button.translatesAutoresizingMaskIntoConstraints = false
-            speedRow.addSubview(button)
-        }
+        let buttonRow = UIStackView(arrangedSubviews: [
+            skipBackButton, wpmDownButton, playPauseButton, wpmUpButton, skipForwardButton,
+        ])
+        buttonRow.axis = .horizontal
+        buttonRow.alignment = .center
+        buttonRow.distribution = .equalSpacing
+        buttonRow.spacing = 8
+        buttonRow.translatesAutoresizingMaskIntoConstraints = false
+        speedRow.addSubview(buttonRow)
 
         controlsStack.addArrangedSubview(scrubber)
         controlsStack.addArrangedSubview(statusLabel)
@@ -366,17 +407,21 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
             shareView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             shareView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             shareView.bottomAnchor.constraint(equalTo: controlsStack.topAnchor, constant: -16),
-            speedRow.heightAnchor.constraint(equalToConstant: 56),
-            playPauseButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            playPauseButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
-            wpmDownButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: -110),
-            wpmDownButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
-            wpmUpButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 110),
-            wpmUpButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
-            skipBackButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: -170),
-            skipBackButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
-            skipForwardButton.centerXAnchor.constraint(equalTo: view.centerXAnchor, constant: 170),
-            skipForwardButton.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
+            speedRow.heightAnchor.constraint(equalToConstant: 64),
+            buttonRow.leadingAnchor.constraint(greaterThanOrEqualTo: speedRow.leadingAnchor, constant: 8),
+            buttonRow.trailingAnchor.constraint(lessThanOrEqualTo: speedRow.trailingAnchor, constant: -8),
+            buttonRow.centerXAnchor.constraint(equalTo: speedRow.centerXAnchor),
+            buttonRow.centerYAnchor.constraint(equalTo: speedRow.centerYAnchor),
+            playPauseButton.widthAnchor.constraint(equalToConstant: 60),
+            playPauseButton.heightAnchor.constraint(equalToConstant: 60),
+            skipBackButton.widthAnchor.constraint(equalToConstant: 48),
+            skipBackButton.heightAnchor.constraint(equalToConstant: 48),
+            wpmDownButton.widthAnchor.constraint(equalToConstant: 48),
+            wpmDownButton.heightAnchor.constraint(equalToConstant: 48),
+            wpmUpButton.widthAnchor.constraint(equalToConstant: 48),
+            wpmUpButton.heightAnchor.constraint(equalToConstant: 48),
+            skipForwardButton.widthAnchor.constraint(equalToConstant: 48),
+            skipForwardButton.heightAnchor.constraint(equalToConstant: 48),
         ])
     }
 
@@ -442,6 +487,27 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
             y: centerY - wordLabel.bounds.height / 2)
 
         updateLinkPill(for: word.url)
+        if !isPlaying { updatePausedContext(animated: false) }
+    }
+
+    private func updatePausedContext(animated: Bool, duration: TimeInterval = 0) {
+        let words = engine.words
+        if words.indices.contains(currentIndex) {
+            let precedingStart = max(0, currentIndex - Self.contextWordCount)
+            let followingEnd = min(words.count, currentIndex + Self.contextWordCount + 1)
+            previousContextLabel.text = words[precedingStart..<currentIndex].map(\.text).joined(separator: " ")
+            nextContextLabel.text = words[(currentIndex + 1)..<followingEnd].map(\.text).joined(separator: " ")
+        } else {
+            previousContextLabel.text = nil
+            nextContextLabel.text = nil
+        }
+
+        let update = {
+            self.previousContextLabel.alpha = self.isPlaying ? 0 : 1
+            self.nextContextLabel.alpha = self.isPlaying ? 0 : 1
+        }
+        guard animated else { update(); return }
+        UIView.animate(withDuration: duration, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: update)
     }
 
     // MARK: - Playback
@@ -453,6 +519,8 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         }
         isPlaying = true
         playPauseButton.configuration?.image = UIImage(systemName: "pause.fill")
+        playPauseButton.accessibilityLabel = "Pause"
+        updatePausedContext(animated: true, duration: 0.05)
         if isSpeechMode {
             activateAudioSession()
             speakCurrentSentence()
@@ -472,6 +540,8 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
             deactivateAudioSession()
         }
         playPauseButton.configuration?.image = UIImage(systemName: "play.fill")
+        playPauseButton.accessibilityLabel = "Play"
+        updatePausedContext(animated: true, duration: 0.2)
         saveProgress()
     }
 

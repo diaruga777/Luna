@@ -555,17 +555,19 @@ struct ArticleExtractor {
     /// sibling `<source>`; choosing the largest responsive candidate avoids that
     /// particular failure mode for article headers.
     private func imageURLString(from element: Element, baseURL: URL) -> String? {
-        let attributes = ["data-src", "data-original", "data-lazy-src", "data-image", "src"]
-        for attribute in attributes {
-            if let raw = try? element.attr(attribute),
-               let url = resolvedImageURL(raw, baseURL: baseURL) {
-                return url.absoluteString
-            }
-        }
+        // Responsive source sets are often the only real image URL; `src` is a
+        // tiny placeholder. Prefer them before any direct attribute.
         let sourceAttributes = ["data-srcset", "data-lazy-srcset", "srcset"]
         for attribute in sourceAttributes {
             if let raw = try? element.attr(attribute),
                let url = largestImageURL(in: raw, baseURLString: baseURL.absoluteString) {
+                return url.absoluteString
+            }
+        }
+        let attributes = ["data-src", "data-original", "data-lazy-src", "data-image", "src"]
+        for attribute in attributes {
+            if let raw = try? element.attr(attribute),
+               let url = resolvedImageURL(raw, baseURL: baseURL) {
                 return url.absoluteString
             }
         }

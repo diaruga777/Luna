@@ -41,9 +41,10 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     private var gazeLockGate = GazeLockGate()
 
     private let item: ReadingListItem
-    private let content: ArticleContent
-    private let rendered: RenderedArticle
-    private let wordMap: WordMap
+    private var content: ArticleContent
+    private var rendered: RenderedArticle
+    private var wordMap: WordMap
+    private var imageDownloadTask: Task<Void, Never>?
     private let textView = UITextView()
     private let store = ReadingListStore.shared
     private var didFinishReading = false
@@ -137,6 +138,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     required init?(coder: NSCoder) { fatalError("not used") }
 
     deinit {
+        imageDownloadTask?.cancel()
         speech?.stop()
         chunk?.stop()
         gazeTracker?.stop()
@@ -216,6 +218,8 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         textView.addGestureRecognizer(imageTap)
         textView.addInteraction(UIContextMenuInteraction(delegate: self))
 
+        fetchMissingImagesIfNeeded()
+
         configureFooter()
 
         if let shareView {
@@ -276,6 +280,37 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     }
 
     // MARK: - Inline images
+
+    /// The main ingestor normally downloads every extracted image before the reader
+    /// opens. The action/share surface can present a reader immediately after parsing,
+    /// though, so finish that same local-cache step here and redraw once it lands.
+    private func fetchMissingImagesIfNeeded() {
+        guard content.blocks.contains(where: { $0.kind == .image && $0.imageFileName == nil }) else { return }
+        guard let refererURL = item.url ?? URL(string: item.urlString) else {
+            SharedDiagnosticLog.record("reader: skipped inline image download without a valid source URL", category: "images")
+            return
+        }
+        let source = content
+        imageDownloadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let updated = await ArticleImageDownloader.download(
+                source, itemID: self.item.id, store: self.store,
+                refererURL: refererURL)
+            guard !Task.isCancelled,
+                  updated.blocks.contains(where: { $0.imageFileName != nil }),
+                  updated != self.content
+            else { return }
+            self.content = updated
+            self.rendered = ArticleTextRenderer.render(updated)
+            self.wordMap = WordMap(content: updated, rendered: self.rendered)
+            let offset = self.textView.contentOffset
+            self.textView.attributedText = self.rendered.text
+            self.textView.setContentOffset(offset, animated: false)
+            self.textView.layoutManager.ensureLayout(for: self.textView.textContainer)
+            self.layoutShareView()
+            SharedDiagnosticLog.record("reader: refreshed inline image attachments", category: "images")
+        }
+    }
 
     private func image(at point: CGPoint) -> (image: UIImage, frame: CGRect)? {
         let containerPoint = CGPoint(

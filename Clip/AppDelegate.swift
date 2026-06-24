@@ -26,6 +26,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     /// threshold. Processing-class (needs network) like the mail fetch.
     private static let priceRefreshTaskID = "com.hpiddy.clip.priceRefresh"
     private static let priceRefreshInterval: TimeInterval = 12 * 60 * 60
+    private var readingListObserver: NSObjectProtocol?
 
     func application(
         _ application: UIApplication,
@@ -64,20 +65,28 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Background polling fallback: silent CloudKit pushes are unreliable
         // (and currently broken by an iOS 26.4 regression), so also drain the
         // inbox on the system's periodic background-refresh schedule.
-        BGTaskScheduler.shared.register(
+        let inboxRegistered = BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.inboxRefreshTaskID, using: nil
         ) { [weak self] task in
             self?.handleInboxRefresh(task as? BGAppRefreshTask)
         }
-        BGTaskScheduler.shared.register(
+        let mailRegistered = BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.mailFetchTaskID, using: nil
         ) { [weak self] task in
             self?.handleMailFetch(task as? BGProcessingTask)
         }
-        BGTaskScheduler.shared.register(
+        let priceRegistered = BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.priceRefreshTaskID, using: nil
         ) { [weak self] task in
             self?.handlePriceRefresh(task as? BGProcessingTask)
+        }
+        DiagnosticLog.shared.record(
+            "price refresh: BG task registration=\(priceRegistered) (inbox=\(inboxRegistered), mail=\(mailRegistered))",
+            category: "price")
+        readingListObserver = NotificationCenter.default.addObserver(
+            forName: .readingListChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.schedulePriceRefresh(reason: "reading list changed")
         }
 
         Task {
@@ -91,14 +100,15 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         SemanticIndexer.shared.scheduleRun()
         scheduleInboxRefresh()
         scheduleMailFetch()
-        schedulePriceRefresh()
+        schedulePriceRefresh(reason: "launch")
+        refreshOverduePriceTrackersOnLaunch()
         return true
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         scheduleInboxRefresh()
         scheduleMailFetch()
-        schedulePriceRefresh()
+        schedulePriceRefresh(reason: "entered background")
     }
 
     private func scheduleInboxRefresh() {
@@ -154,31 +164,85 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         }
     }
 
-    private func schedulePriceRefresh() {
+    private func schedulePriceRefresh(reason: String) {
+        let trackers = ReadingListStore.shared.priceTrackersStalestFirst()
+        let activeTrackers = trackers.count
+        guard activeTrackers > 0 else {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.priceRefreshTaskID)
+            DiagnosticLog.shared.record(
+                "price refresh: no active trackers; cancelled schedule (\(reason))", category: "price")
+            return
+        }
+        // A new tracker or completed run replaces the old request with a fresh
+        // earliest date. Crucially, this date is derived from the oldest actual
+        // refresh, not from *now*, so opening the app cannot defer an overdue
+        // tracker indefinitely. BGTaskScheduler allows one pending request per id.
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.priceRefreshTaskID)
         let request = BGProcessingTaskRequest(identifier: Self.priceRefreshTaskID)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: Self.priceRefreshInterval)
+        let oldestRefresh = trackers
+            .map { ReadingListStore.stalestRefresh($0.priceTracker) }
+            .min() ?? .distantPast
+        let dueDate = oldestRefresh.addingTimeInterval(Self.priceRefreshInterval)
+        request.earliestBeginDate = max(Date(), dueDate)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false
         do {
             try BGTaskScheduler.shared.submit(request)
+            DiagnosticLog.shared.record(
+                "price refresh: scheduled \(activeTrackers) active tracker(s), earliest=\(request.earliestBeginDate?.description ?? "unknown") (\(reason))",
+                category: "price")
         } catch {
             logger.error("Couldn't schedule price refresh: \(String(describing: error), privacy: .public)")
+            DiagnosticLog.shared.record(
+                "price refresh: schedule FAILED (\(reason)): \(error)", category: "price")
+        }
+    }
+
+    /// iOS decides when a BGProcessingTask actually runs, and it may defer it
+    /// for power or scheduling reasons. When the user opens the app with a stale
+    /// tracker, make that missed background work up immediately rather than
+    /// leaving the displayed price stale until the OS grants another launch.
+    private func refreshOverduePriceTrackersOnLaunch() {
+        let trackers = ReadingListStore.shared.priceTrackersStalestFirst()
+        guard let oldest = trackers
+            .map({ ReadingListStore.stalestRefresh($0.priceTracker) })
+            .min(),
+              oldest.addingTimeInterval(Self.priceRefreshInterval) <= Date()
+        else { return }
+
+        DiagnosticLog.shared.record(
+            "price refresh: launch fallback started for \(trackers.count) overdue active tracker(s)",
+            category: "price")
+        Task { [weak self] in
+            let outcomes = await PriceRefreshCoordinator.shared.refreshAndNotify()
+            DiagnosticLog.shared.record(
+                "price refresh: launch fallback completed, processed=\(outcomes.count)",
+                category: "price")
+            self?.schedulePriceRefresh(reason: "launch fallback completion")
         }
     }
 
     private func handlePriceRefresh(_ task: BGProcessingTask?) {
-        guard let task else { return }
-        DiagnosticLog.shared.record("price-refresh task fired", category: "price")
-        schedulePriceRefresh() // chain the next one (~every 12h)
-        let work = Task {
-            await PriceRefreshCoordinator.shared.refreshAndNotify()
-            task.setTaskCompleted(success: true)
+        guard let task else {
+            DiagnosticLog.shared.record("price refresh: handler received wrong task type", category: "price")
+            return
+        }
+        DiagnosticLog.shared.record("price refresh: background task started", category: "price")
+        let work = Task { [weak self] in
+            let outcomes = await PriceRefreshCoordinator.shared.refreshAndNotify()
+            let completed = !Task.isCancelled
+            task.setTaskCompleted(success: completed)
+            DiagnosticLog.shared.record(
+                "price refresh: background task completed success=\(completed), processed=\(outcomes.count)",
+                category: "price")
+            self?.schedulePriceRefresh(reason: "background completion")
         }
         task.expirationHandler = {
             // The refresher persists each tracker as it finishes and processes
             // stalest-first, so a cancelled run still made progress.
-            DiagnosticLog.shared.record("price-refresh task expired", category: "price")
+            DiagnosticLog.shared.record("price refresh: background task expired", category: "price")
             work.cancel()
+            self.schedulePriceRefresh(reason: "background expiration")
         }
     }
 

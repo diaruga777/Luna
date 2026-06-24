@@ -19,25 +19,40 @@ enum ArticleImageDownloader {
         var downloaded = 0
         var blocks: [ArticleContent.Block] = []
 
-        for var block in content.blocks {
+        for (index, var block) in content.blocks.enumerated() {
             guard block.kind == .image else {
+                blocks.append(block)
+                continue
+            }
+            // A main-app ingestion may already have cached this image before the
+            // action/share reader opens; preserve it rather than re-fetching it.
+            if block.imageFileName != nil {
                 blocks.append(block)
                 continue
             }
             guard downloaded < maxImages,
                   let rawURL = block.imageURLString,
-                  let imageURL = URL(string: rawURL),
-                  let image = await fetch(imageURL, refererURL: refererURL)
-            else { continue }
+                  let imageURL = URL(string: rawURL)
+            else {
+                blocks.append(block)
+                continue
+            }
+            guard let image = await fetch(imageURL, refererURL: refererURL) else {
+                SharedDiagnosticLog.record("image download failed: \(imageURL.absoluteString)", category: "images")
+                blocks.append(block)
+                continue
+            }
 
-            let fileName = "\(itemID.uuidString)-img\(downloaded).\(image.fileExtension)"
+            let fileName = "\(itemID.uuidString)-img\(index).\(image.fileExtension)"
             let destination = store.articlesDirectory.appendingPathComponent(fileName)
             do {
                 try image.data.write(to: destination, options: .atomic)
                 block.imageFileName = fileName
                 blocks.append(block)
                 downloaded += 1
+                SharedDiagnosticLog.record("image downloaded: \(imageURL.absoluteString)", category: "images")
             } catch {
+                blocks.append(block)
                 continue
             }
         }

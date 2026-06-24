@@ -22,7 +22,9 @@ final class PriceRefreshCoordinator {
     }
 
     /// Refreshes all non-archived trackers and notifies on first threshold crossings.
-    func refreshAndNotify() async {
+    @discardableResult
+    func refreshAndNotify() async -> [PriceRefreshOutcome] {
+        DiagnosticLog.shared.record("price refresh: runner started", category: "price")
         let outcomes = await refresher.refreshAll()
         let dropped = outcomes.filter { $0.newlyAlerting }
         DiagnosticLog.shared.record(
@@ -35,5 +37,7 @@ final class PriceRefreshCoordinator {
                     amount: outcome.newBest, currency: outcome.displayCurrency),
                 discountPercent: Int((outcome.discountFraction * 100).rounded()))
         }
+        DiagnosticLog.shared.record("price refresh: runner completed", category: "price")
+        return outcomes
     }
 }

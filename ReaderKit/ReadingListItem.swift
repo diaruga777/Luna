@@ -43,6 +43,8 @@ struct ReadingListItem: Codable, Identifiable {
         case highlight
         /// One word/chunk at a time, centered (ReadMaxx-style).
         case rsvp
+        /// A locally saved HTML snapshot of the original page.
+        case original
     }
 
     /// Send-to-Kindle delivery status. Absent means never requested.
@@ -66,6 +68,8 @@ struct ReadingListItem: Codable, Identifiable {
     var state: State
     /// File name (inside the Articles directory) of the extracted `ArticleContent` JSON.
     var contentFileName: String?
+    /// Locally saved, sanitized HTML snapshot used by the Original reader mode.
+    var originalPageFileName: String?
     /// RSVP resume position (word index).
     var lastWordIndex: Int?
     var readState: ReadState
@@ -181,6 +185,7 @@ struct ReadingListItem: Codable, Identifiable {
         self.bumpDate = nil
         self.state = .pending
         self.contentFileName = nil
+        self.originalPageFileName = nil
         self.lastWordIndex = nil
         self.readState = .unopened
         self.lastReaderMode = nil
@@ -241,6 +246,7 @@ struct ReadingListItem: Codable, Identifiable {
         self.bumpDate = bumpDate
         self.state = state
         self.contentFileName = nil
+        self.originalPageFileName = nil
         self.lastWordIndex = nil
         self.readState = readState
         self.lastReaderMode = lastReaderMode
@@ -303,6 +309,7 @@ struct ReadingListItem: Codable, Identifiable {
         bumpDate = try container.decodeIfPresent(Date.self, forKey: .bumpDate)
         state = try container.decode(State.self, forKey: .state)
         contentFileName = try container.decodeIfPresent(String.self, forKey: .contentFileName)
+        originalPageFileName = try container.decodeIfPresent(String.self, forKey: .originalPageFileName)
         lastWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastWordIndex)
         readState = try container.decodeIfPresent(ReadState.self, forKey: .readState) ?? .unopened
         lastReaderMode = try container.decodeIfPresent(ReaderMode.self, forKey: .lastReaderMode)

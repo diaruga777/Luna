@@ -28,6 +28,9 @@ final class ShareReaderViewController: UIViewController {
             case .scroll: self = .reader
             case .rsvp: self = .rsvp
             case .highlight: self = .chunk
+            // The action extension never persists a page archive, so its closest
+            // equivalent is the standard local reader.
+            case .original: self = .reader
             }
         }
     }

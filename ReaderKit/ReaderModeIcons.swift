@@ -24,6 +24,9 @@ enum ReaderModeIcons {
             return highlightedText()
         case .rsvp:
             return reticuleText()
+        case .original:
+            return UIImage(systemName: "doc.richtext")?
+                .withRenderingMode(.alwaysTemplate) ?? UIImage()
         }
     }
 

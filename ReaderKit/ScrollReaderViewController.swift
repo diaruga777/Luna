@@ -10,7 +10,8 @@ import UIKit
 /// offers save/share. Supports read-aloud with
 /// word highlighting + follow-scroll, remembers the scroll position, and
 /// estimates the last-read word via eye tracking on supported devices.
-final class ScrollReaderViewController: UIViewController, UITextViewDelegate, ReaderPositionTracking {
+final class ScrollReaderViewController: UIViewController, UITextViewDelegate, ReaderPositionTracking,
+    UIContextMenuInteractionDelegate, UIGestureRecognizerDelegate {
 
     /// Fired once when the user reaches the end of the article.
     var onFinishedReading: (() -> Void)?
@@ -209,6 +210,12 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
 
+        let imageTap = UITapGestureRecognizer(target: self, action: #selector(imageTapped(_:)))
+        imageTap.delegate = self
+        imageTap.cancelsTouchesInView = false
+        textView.addGestureRecognizer(imageTap)
+        textView.addInteraction(UIContextMenuInteraction(delegate: self))
+
         configureFooter()
 
         if let shareView {
@@ -265,6 +272,53 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             didRestoreScroll = true
             applyInitialScrollPosition()
             revealContent()
+        }
+    }
+
+    // MARK: - Inline images
+
+    private func image(at point: CGPoint) -> (image: UIImage, frame: CGRect)? {
+        let containerPoint = CGPoint(
+            x: point.x - textView.textContainerInset.left + textView.contentOffset.x,
+            y: point.y - textView.textContainerInset.top + textView.contentOffset.y)
+        let index = textView.layoutManager.characterIndex(
+            for: containerPoint, in: textView.textContainer, fractionOfDistanceBetweenInsertionPoints: nil)
+        guard let entry = rendered.imageRanges.first(where: { NSLocationInRange(index, $0.range) }),
+              let image = UIImage(contentsOfFile: entry.fileURL.path)
+        else { return nil }
+        let glyphRect = textView.layoutManager.boundingRect(forGlyphRange: entry.range, in: textView.textContainer)
+        let textRect = CGRect(
+            x: glyphRect.minX + textView.textContainerInset.left - textView.contentOffset.x,
+            y: glyphRect.minY + textView.textContainerInset.top - textView.contentOffset.y,
+            width: glyphRect.width,
+            height: glyphRect.height)
+        return (image, textView.convert(textRect, to: view))
+    }
+
+    @objc private func imageTapped(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended,
+              let hit = image(at: gesture.location(in: textView)) else { return }
+        let lightbox = ImageLightboxViewController(image: hit.image, sourceFrame: hit.frame)
+        present(lightbox, animated: false)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        image(at: touch.location(in: textView)) != nil
+    }
+
+    func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard let hit = image(at: location) else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            UIMenu(children: [
+                UIAction(title: "Copy Image", image: UIImage(systemName: "doc.on.doc")) { _ in
+                    UIPasteboard.general.image = hit.image
+                },
+                UIAction(title: "Save Image", image: UIImage(systemName: "square.and.arrow.down")) { _ in
+                    UIImageWriteToSavedPhotosAlbum(hit.image, nil, nil, nil)
+                },
+            ])
         }
     }
 

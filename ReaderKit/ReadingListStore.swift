@@ -573,6 +573,34 @@ final class ReadingListStore {
         return try? JSONDecoder().decode(ArticleContent.self, from: data)
     }
 
+    /// Saves the self-contained HTML snapshot used by the Original reader mode.
+    /// The HTML is written before its file name is committed to the list, so the UI
+    /// can never point at a half-written snapshot.
+    func saveOriginalPage(_ html: String, for item: ReadingListItem) {
+        let fileName = "\(item.id.uuidString)-original.html"
+        let url = articlesDirectory.appendingPathComponent(fileName)
+        guard let data = html.data(using: .utf8) else { return }
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            return
+        }
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == item.id }),
+                  all[index].originalPageFileName != fileName else { return false }
+            all[index].originalPageFileName = fileName
+            return true
+        }
+    }
+
+    func originalPageURL(for item: ReadingListItem) -> URL? {
+        guard let fileName = item.originalPageFileName,
+              fileName == URL(fileURLWithPath: fileName).lastPathComponent
+        else { return nil }
+        let url = articlesDirectory.appendingPathComponent(fileName)
+        return fileManager.fileExists(atPath: url.path) ? url : nil
+    }
+
     // MARK: - Private
 
     private static func decodeItems(at url: URL) -> [ReadingListItem] {
@@ -647,6 +675,10 @@ final class ReadingListStore {
     /// `documentType` can't point the delete outside the Articles directory.
     private func removeFiles(for item: ReadingListItem) {
         if let fileName = item.contentFileName {
+            try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(fileName))
+        }
+        if let fileName = item.originalPageFileName,
+           fileName == URL(fileURLWithPath: fileName).lastPathComponent {
             try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(fileName))
         }
         if let ext = item.sanitizedDocumentType {

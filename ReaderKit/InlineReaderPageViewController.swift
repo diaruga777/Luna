@@ -189,6 +189,12 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
             let rsvp = RSVPViewController(item: transient, content: content)
             rsvp.onLinkActivated = { [weak self] in self?.onLinkActivated?($0) }
             child = rsvp
+        case .original:
+            // Inline browsing has no durable page archive. Keep this transient
+            // reader on its normal locally extracted page instead.
+            let scroll = ScrollReaderViewController(item: transient, content: content, autoHighlight: false)
+            scroll.onLinkActivated = { [weak self] in self?.onLinkActivated?($0) }
+            child = scroll
         }
         addChild(child)
         child.view.translatesAutoresizingMaskIntoConstraints = false

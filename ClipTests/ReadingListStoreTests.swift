@@ -141,4 +141,17 @@ final class ReadingListStoreTests: XCTestCase {
         XCTAssertEqual(loaded?.blocks.first?.text, "Hello world")
         XCTAssertEqual(loaded?.blocks.first?.links.first?.length, 5)
     }
+
+    func testOriginalPageSnapshotPersistsLocallyAndIsRemovedWithItem() throws {
+        let item = store.add(urlString: "https://example.com/original")
+        let html = "<html><body><h1>Saved offline</h1></body></html>"
+
+        store.saveOriginalPage(html, for: item)
+        let saved = try XCTUnwrap(store.item(withID: item.id))
+        let pageURL = try XCTUnwrap(store.originalPageURL(for: saved))
+        XCTAssertEqual(try String(contentsOf: pageURL, encoding: .utf8), html)
+
+        store.delete(saved)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: pageURL.path))
+    }
 }

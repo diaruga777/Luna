@@ -12,6 +12,18 @@ import UIKit
 struct RenderedArticle {
     let text: NSAttributedString
     let blockTextRanges: [NSRange?]
+    /// Attachment ranges and their local source files, for inline-image gestures.
+    let imageRanges: [(range: NSRange, fileURL: URL)]
+
+    init(
+        text: NSAttributedString,
+        blockTextRanges: [NSRange?],
+        imageRanges: [(range: NSRange, fileURL: URL)] = []
+    ) {
+        self.text = text
+        self.blockTextRanges = blockTextRanges
+        self.imageRanges = imageRanges
+    }
 }
 
 /// Builds the attributed string for the scrolling reader from extracted blocks,
@@ -22,6 +34,7 @@ enum ArticleTextRenderer {
     static func render(_ content: ArticleContent) -> RenderedArticle {
         let result = NSMutableAttributedString()
         var blockTextRanges: [NSRange?] = []
+        var imageRanges: [(NSRange, URL)] = []
         let imagesDirectory = ReadingListStore.shared.articlesDirectory
         // Cap to the readable text column so images don't overflow on iPad.
         let maxImageWidth = min(UIScreen.main.bounds.width - 40, 660)
@@ -54,7 +67,9 @@ enum ArticleTextRenderer {
                    let imageString = attributedImage(
                        at: imagesDirectory.appendingPathComponent(fileName),
                        maxWidth: maxImageWidth) {
+                    let attachmentRange = NSRange(location: result.length, length: 1)
                     result.append(imageString)
+                    imageRanges.append((attachmentRange, imagesDirectory.appendingPathComponent(fileName)))
                 }
                 blockTextRanges.append(nil)
                 continue
@@ -65,7 +80,7 @@ enum ArticleTextRenderer {
                 length: (block.text as NSString).length))
             result.append(blockString)
         }
-        return RenderedArticle(text: result, blockTextRanges: blockTextRanges)
+        return RenderedArticle(text: result, blockTextRanges: blockTextRanges, imageRanges: imageRanges)
     }
 
     // MARK: - Images

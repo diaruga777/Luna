@@ -64,6 +64,11 @@ struct ArticleExtractor {
             chosen = rawBlocks(from: document)
         }
         guard !chosen.isEmpty else { throw ExtractError.noContent }
+        // Publisher hero art is commonly declared only in Open Graph metadata,
+        // outside the scored article container. Treat it as the lead block so it
+        // appears directly under the title instead of being silently limited to
+        // the reading-list thumbnail.
+        prependLeadImage(from: document, to: &chosen, baseURL: baseURL)
         return ArticleContent(title: title, author: author, blocks: chosen)
     }
 
@@ -159,9 +164,9 @@ struct ArticleExtractor {
         try removeVisuallyHiddenElements(in: document)
 
         let container = try bestContainer(in: document)
-        var blocks = try extractBlocks(from: container)
+        var blocks = try extractBlocks(from: container, baseURL: baseURL)
         if totalTextLength(blocks) < 200, let body = document.body() {
-            blocks = try extractBlocks(from: body)
+            blocks = try extractBlocks(from: body, baseURL: baseURL)
         }
         return trimTrailingJunk(blocks)
     }
@@ -196,9 +201,9 @@ struct ArticleExtractor {
             try element.remove()
         }
         let container = try bestContainer(in: document)
-        var blocks = try extractBlocks(from: container)
+        var blocks = try extractBlocks(from: container, baseURL: baseURL)
         if totalTextLength(blocks) < 200, let body = document.body() {
-            blocks = try extractBlocks(from: body)
+            blocks = try extractBlocks(from: body, baseURL: baseURL)
         }
         return blocks
     }
@@ -380,14 +385,14 @@ struct ArticleExtractor {
         "figure", "figcaption", "form", "pre", "h1", "h2", "h3", "h4", "h5", "h6",
     ]
 
-    private func extractBlocks(from container: Element) throws -> [ArticleContent.Block] {
+    private func extractBlocks(from container: Element, baseURL: URL) throws -> [ArticleContent.Block] {
         var blocks: [ArticleContent.Block] = []
         for element in try container.select(blockTags.joined(separator: ", ") + ", div, section, img") {
             if element.tagName() == "img" {
                 // Standalone images (inside divs/figures); images nested in a
                 // paragraph are collected by that paragraph's walk below.
                 if hasBlockAncestor(element, within: container) { continue }
-                if let imageBlock = makeImageBlock(from: element) {
+                if let imageBlock = makeImageBlock(from: element, baseURL: baseURL) {
                     blocks.append(imageBlock)
                 }
                 continue
@@ -406,7 +411,7 @@ struct ArticleExtractor {
             // Skip elements nested inside another matched block (e.g. p inside
             // blockquote) so the same text isn't emitted twice.
             if hasBlockAncestor(element, within: container) { continue }
-            let (block, nestedImages) = makeBlock(from: element)
+            let (block, nestedImages) = makeBlock(from: element, baseURL: baseURL)
             if let block {
                 blocks.append(block)
             }
@@ -417,13 +422,55 @@ struct ArticleExtractor {
 
     // MARK: - Images
 
+    /// Inserts the highest-priority Open Graph/Twitter lead image at the top of
+    /// the article. If the same image was already found in the body, move it
+    /// rather than showing the hero twice.
+    private func prependLeadImage(
+        from document: Document, to blocks: inout [ArticleContent.Block], baseURL: URL
+    ) {
+        guard let leadURL = leadImageURL(from: document, baseURL: baseURL) else { return }
+        let leadString = leadURL.absoluteString
+        if let index = blocks.firstIndex(where: {
+            $0.kind == .image && normalizedImageURL($0.imageURLString) == leadString
+        }) {
+            blocks.insert(blocks.remove(at: index), at: 0)
+        } else {
+            blocks.insert(
+                ArticleContent.Block(kind: .image, text: "", links: [], imageURLString: leadString), at: 0)
+        }
+    }
+
+    /// Metadata selectors are deliberately attribute-order independent. Several
+    /// publishers use `og:image:secure_url`, and large images are often only in
+    /// `twitter:image:src`, neither of which was covered by the old body-only
+    /// extraction.
+    private func leadImageURL(from document: Document, baseURL: URL) -> URL? {
+        let acceptedMetaNames = [
+            "og:image", "og:image:url", "og:image:secure_url",
+            "twitter:image", "twitter:image:src",
+        ]
+        let metas = (try? document.select("meta[property], meta[name]").array()) ?? []
+        for name in acceptedMetaNames {
+            guard let meta = metas.first(where: {
+                let property = (try? $0.attr("property"))?.lowercased()
+                let metaName = (try? $0.attr("name"))?.lowercased()
+                return property == name || metaName == name
+            }), let raw = try? meta.attr("content"), let url = resolvedImageURL(raw, baseURL: baseURL)
+            else { continue }
+            return url
+        }
+        let links = (try? document.select("link[rel]").array()) ?? []
+        guard let link = links.first(where: {
+            (try? $0.attr("rel"))?.lowercased().split(separator: " ").contains("image_src") == true
+        }), let raw = try? link.attr("href")
+        else { return nil }
+        return resolvedImageURL(raw, baseURL: baseURL)
+    }
+
     /// Article-image heuristic: skip obvious ad/tracking/chrome images and
     /// anything declared tiny.
-    private func makeImageBlock(from element: Element) -> ArticleContent.Block? {
-        let src = (try? element.attr("abs:src")) ?? ""
-        let lazySrc = (try? element.attr("abs:data-src")) ?? ""
-        var urlString = src.hasPrefix("http") ? src : lazySrc
-        guard urlString.hasPrefix("http") else { return nil }
+    private func makeImageBlock(from element: Element, baseURL: URL) -> ArticleContent.Block? {
+        guard var urlString = imageURLString(from: element, baseURL: baseURL) else { return nil }
         if urlString.hasSuffix(".svg") || urlString.hasSuffix(".gif") { return nil }
 
         // Token-exact matching: substring matching would reject legitimate
@@ -455,6 +502,70 @@ struct ArticleExtractor {
         return ArticleContent.Block(kind: .image, text: "", links: [], imageURLString: urlString)
     }
 
+    /// Resolves standard, lazy-load, and responsive image attributes. `src` is
+    /// frequently a 1px placeholder while the real URL is in `data-srcset` or a
+    /// sibling `<source>`; choosing the largest responsive candidate avoids that
+    /// particular failure mode for article headers.
+    private func imageURLString(from element: Element, baseURL: URL) -> String? {
+        let attributes = ["data-src", "data-original", "data-lazy-src", "data-image", "src"]
+        for attribute in attributes {
+            if let raw = try? element.attr(attribute),
+               let url = resolvedImageURL(raw, baseURL: baseURL) {
+                return url.absoluteString
+            }
+        }
+        let sourceAttributes = ["data-srcset", "data-lazy-srcset", "srcset"]
+        for attribute in sourceAttributes {
+            if let raw = try? element.attr(attribute),
+               let url = largestImageURL(in: raw, baseURLString: baseURL.absoluteString) {
+                return url.absoluteString
+            }
+        }
+        if let parent = element.parent(),
+           let source = try? parent.select("source").first() {
+            for attribute in sourceAttributes {
+                if let raw = try? source.attr(attribute),
+                   let url = largestImageURL(in: raw, baseURLString: baseURL.absoluteString) {
+                    return url.absoluteString
+                }
+            }
+        }
+        return nil
+    }
+
+    private func largestImageURL(in srcset: String, baseURLString: String) -> URL? {
+        let candidates = srcset.split(separator: ",").compactMap { entry -> (URL, Int)? in
+            let parts = entry.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ")
+            guard let raw = parts.first,
+                  let url = resolvedImageURL(String(raw), baseURLString: baseURLString)
+            else { return nil }
+            let width = parts.dropFirst().first.flatMap { Int($0.dropLast()) } ?? 0
+            return (url, width)
+        }
+        return candidates.max(by: { $0.1 < $1.1 })?.0
+    }
+
+    private func resolvedImageURL(_ raw: String, baseURL: URL) -> URL? {
+        resolvedImageURL(raw, baseURLString: baseURL.absoluteString)
+    }
+
+    private func resolvedImageURL(_ raw: String, baseURLString: String) -> URL? {
+        let cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "&amp;", with: "&")
+        guard !cleaned.isEmpty, !cleaned.hasPrefix("data:"),
+              let url = URL(string: cleaned, relativeTo: URL(string: baseURLString))?.absoluteURL,
+              url.scheme == "http" || url.scheme == "https"
+        else { return nil }
+        return url
+    }
+
+    private func normalizedImageURL(_ urlString: String?) -> String? {
+        guard let urlString, let url = URL(string: urlString) else { return nil }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        return components?.url?.absoluteString
+    }
+
     private func hasBlockAncestor(_ element: Element, within container: Element) -> Bool {
         var parent = element.parent()
         while let current = parent, current !== container {
@@ -467,7 +578,9 @@ struct ArticleExtractor {
     /// Builds a block by walking the element's nodes in order, collapsing
     /// whitespace incrementally so the recorded UTF-16 link ranges stay valid.
     /// Images found inside the block are returned separately, in order.
-    private func makeBlock(from element: Element) -> (ArticleContent.Block?, [ArticleContent.Block]) {
+    private func makeBlock(
+        from element: Element, baseURL: URL
+    ) -> (ArticleContent.Block?, [ArticleContent.Block]) {
         var text = ""
         var links: [ArticleContent.Link] = []
         var nestedImages: [ArticleContent.Block] = []
@@ -509,7 +622,7 @@ struct ArticleExtractor {
             }
             guard let child = node as? Element else { return }
             if child.tagName() == "img" {
-                if let imageBlock = makeImageBlock(from: child) {
+                if let imageBlock = makeImageBlock(from: child, baseURL: baseURL) {
                     nestedImages.append(imageBlock)
                 }
                 return

@@ -5,8 +5,9 @@
 
 import UIKit
 
-/// Hosts the three reading modes — scrolling text, chunk-highlight, and RSVP —
-/// swapping them via a three-way switcher, with a separate audio (read-aloud)
+/// Hosts the reader modes — scrolling text, chunk-highlight, RSVP, and the
+/// locally saved original-page snapshot — swapping them via the mode switcher,
+/// with a separate audio (read-aloud)
 /// toggle that applies to whichever mode is showing. Remembers the last used
 /// mode per article and globally (the default for new articles), and tracks
 /// opened/read state.
@@ -59,7 +60,7 @@ final class ReaderViewController: UIViewController {
     private let inlineHeaderSubtitle: String?
     private let inlineHeader = UIVisualEffectView(effect: GlassStyle.barEffect())
 
-    private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
+    private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp, .original]
 
     init(item: ReadingListItem, content: ArticleContent,
          forceMode: ReadingListItem.ReaderMode? = nil,
@@ -210,6 +211,7 @@ final class ReaderViewController: UIViewController {
         case .scroll: return audioOn ? -92 : -24   // lift to clear the read-aloud footer
         case .highlight: return -92                 // clear the chunk-navigation footer
         case .rsvp: return -168                     // clear the scrubber + playback controls
+        case .original: return -24
         }
     }
 
@@ -293,6 +295,8 @@ final class ReaderViewController: UIViewController {
                 shareProvider: shareProvider, resumeWordIndex: resumeWordIndex)
             rsvp.onFinishedReading = { [weak self] in self?.markRead() }
             child = rsvp
+        case .original:
+            child = OriginalPageViewController(item: item, content: content, store: store)
         }
 
         addChild(child)

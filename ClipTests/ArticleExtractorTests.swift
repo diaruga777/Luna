@@ -83,6 +83,25 @@ final class ArticleExtractorTests: XCTestCase {
         XCTAssertEqual(images.first?.imageURLString, "https://example.com/wp-content/uploads/hero-photo.png")
     }
 
+    func testPrependsMetadataHeroImageAndUsesLazyResponsiveBodyImages() throws {
+        let html = """
+        <html><head>
+        <meta property="og:image:secure_url" content="https://cdn.example.com/header.webp">
+        </head><body><article>
+        <p>Opening article paragraph with enough text to give the article container a dominant score here.</p>
+        <figure><img src="data:image/gif;base64,placeholder" data-srcset="/body-small.jpg 640w, /body-large.jpg 1600w"></figure>
+        <p>Closing article paragraph with enough text to keep the article container scoring dominant.</p>
+        </article></body></html>
+        """
+
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        let images = content.blocks.filter { $0.kind == .image }
+        XCTAssertEqual(images.map(\.imageURLString), [
+            "https://cdn.example.com/header.webp",
+            "https://example.com/body-large.jpg",
+        ])
+    }
+
     func testStripsTrailingLinkFarmsAndFooterBoilerplate() throws {
         let html = """
         <html><head><meta name="author" content="Jane Writer" /></head><body><article>

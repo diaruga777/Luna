@@ -63,6 +63,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// `…/newest/<url>` deep link, which triggers archive.today's self-reloading
     /// challenge loop. True once we've acted on the cleared homepage (once).
     private var didLeaveHomepage = false
+    private var isSubmittingHomepage = false
     /// Consecutive poll ticks where the opaque overlay is covering the page without
     /// progress; past `stallPollLimit` we surface the rate-limit guidance so the
     /// user is never stranded on a permanent "Unlocking…" screen (e.g. a homepage
@@ -573,6 +574,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             switch Self.decideStage(
                 stage,
                 didLeaveHomepage: self.didLeaveHomepage,
+                isSubmittingHomepage: self.isSubmittingHomepage,
                 hasResolvedSnapshot: self.resolvedSnapshotURL != nil,
                 blockedCount: self.blockedPollCount,
                 blockedLimit: Self.blockedPollLimit
@@ -580,7 +582,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             case .wait, .challenge:
                 break   // not ready / user solving the CAPTCHA — keep polling
             case .submitHomepage:
-                self.didLeaveHomepage = true   // set synchronously so a poll tick mid-submit can't re-fire
+                self.isSubmittingHomepage = true
                 self.submitURLOnHomepage()
             case .loadResolvedSnapshot:
                 self.didLeaveHomepage = true
@@ -621,6 +623,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     static func decideStage(
         _ stage: String,
         didLeaveHomepage: Bool,
+        isSubmittingHomepage: Bool,
         hasResolvedSnapshot: Bool,
         blockedCount: Int = 0,
         blockedLimit: Int = 3,
@@ -636,11 +639,18 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         // archive.today's "Error -32602: Invalid InterceptionId" (the capture session
         // went stale) — terminal; retrying/solving won't help, so show the error.
         if stage == "error" { return .cannotArchive }
+        if stage.hasPrefix("homepage"), isSubmittingHomepage {
+            return .wait
+        }
         if stage.hasPrefix("homepage"), !didLeaveHomepage {
             return hasResolvedSnapshot ? .loadResolvedSnapshot : .submitHomepage
         }
         let length = Int(stage.split(separator: ":").last ?? "") ?? 0
-        return length > minExtractLength ? .attemptExtract : .wait
+        if length > minExtractLength {
+            return .attemptExtract
+        } else {
+            return .wait
+        }
     }
 
     /// A WKWebView pre-stage page: the page is the (hopefully un-paywalled) article
@@ -713,6 +723,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         SharedDiagnosticLog.record(
             "archive: pre-stages didn't yield a readable article → archive.today flow", category: "archive")
         didLeaveHomepage = false
+        isSubmittingHomepage = false
         loadArchive()
         resolveSnapshotInParallel()
     }
@@ -736,9 +747,11 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         })()
         """
         SharedDiagnosticLog.record("archive: homepage → typing URL + submitting form", category: "archive")
-        webView.evaluateJavaScript(fill) { result, _ in
+        webView.evaluateJavaScript(fill) { [weak self] result, _ in
             SharedDiagnosticLog.record(
                 "archive: form submit result=\(result as? String ?? "nil")", category: "archive")
+            self?.didLeaveHomepage = true
+            self?.isSubmittingHomepage = false
         }
     }
 

@@ -75,7 +75,7 @@ struct ArticleContent: Codable, Equatable {
     }
 
     /// Minimum block-text length for `hasReadableBody`.
-    static let readableBodyThreshold = 600
+    static let readableBodyThreshold = 1200
 
     /// Whether this extracted text reads as a subscription wall / metered teaser
     /// rather than the real article. Delegates to the shared `PaywallDetector`

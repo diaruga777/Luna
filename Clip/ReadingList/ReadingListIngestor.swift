@@ -127,10 +127,11 @@ final class ReadingListIngestor {
         let resolvedContent = await ArticleImageDownloader.download(
             content, itemID: item.id, store: store, refererURL: url)
         let coverData = await fetchCoverImageData(html: html, baseURL: url)
-        // Save a local page artifact while the original extraction is in hand. The
-        // Original mode never navigates back to the publisher or depends on a live
-        // page remaining available.
-        store.saveOriginalPage(OfflinePageArchive.make(content: resolvedContent), for: item)
+        // Capture the source page BEFORE saving parsed reader content. This is a
+        // real WebKit web archive, not a synthetic page assembled from blocks.
+        if let archive = await WebArchiveCapturer.capture(html: html, baseURL: url) {
+            store.saveWebArchive(archive, for: item)
+        }
         let updated = store.saveContent(resolvedContent, for: item)
         if let coverData { store.setThumbnail(coverData, for: item.id) }
         if updated.state == .ready {

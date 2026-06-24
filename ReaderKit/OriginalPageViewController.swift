@@ -6,18 +6,16 @@
 import UIKit
 import WebKit
 
-/// Displays the page snapshot written at ingest time. The web view only receives a
-/// file URL inside the app-group Articles directory, so changing into this mode
-/// never waits on (or replays) the publisher request.
+/// Displays source material captured at save time: a WebKit `.webarchive` for web
+/// pages, or an imported source document such as a PDF. It never rebuilds a page
+/// from parsed reader content and it never reaches back to the network.
 final class OriginalPageViewController: UIViewController {
     private let item: ReadingListItem
-    private let content: ArticleContent
     private let store: ReadingListStore
     private let webView: WKWebView
 
-    init(item: ReadingListItem, content: ArticleContent, store: ReadingListStore) {
+    init(item: ReadingListItem, store: ReadingListStore) {
         self.item = item
-        self.content = content
         self.store = store
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
@@ -43,22 +41,19 @@ final class OriginalPageViewController: UIViewController {
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
-        loadSnapshot()
+        loadOriginal()
     }
 
-    private func loadSnapshot() {
-        var savedItem = store.item(withID: item.id) ?? item
-        if store.originalPageURL(for: savedItem) == nil {
-            store.saveOriginalPage(OfflinePageArchive.make(content: content), for: savedItem)
-            savedItem = store.item(withID: item.id) ?? savedItem
-        }
-        if let pageURL = store.originalPageURL(for: savedItem) {
-            webView.loadFileURL(pageURL, allowingReadAccessTo: store.articlesDirectory)
-        } else {
-            // The action extension reads a transient item that is not in the main
-            // list. It still gets the same offline snapshot, just without writing
-            // a list entry that it does not own.
-            webView.loadHTMLString(OfflinePageArchive.make(content: content), baseURL: store.articlesDirectory)
+    private func loadOriginal() {
+        let savedItem = store.item(withID: item.id) ?? item
+        if let archiveURL = store.webArchiveURL(for: savedItem),
+           let data = try? Data(contentsOf: archiveURL) {
+            // `createWebArchiveData` documents this MIME type as loadable directly
+            // in WKWebView. The base URL is only used for the archive's own origin.
+            webView.load(data, mimeType: "application/x-webarchive", characterEncodingName: "utf-8",
+                         baseURL: savedItem.url ?? archiveURL)
+        } else if let documentURL = store.originalDocumentURL(for: savedItem) {
+            webView.loadFileURL(documentURL, allowingReadAccessTo: store.articlesDirectory)
         }
     }
 }

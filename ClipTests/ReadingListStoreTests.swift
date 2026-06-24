@@ -142,16 +142,32 @@ final class ReadingListStoreTests: XCTestCase {
         XCTAssertEqual(loaded?.blocks.first?.links.first?.length, 5)
     }
 
-    func testOriginalPageSnapshotPersistsLocallyAndIsRemovedWithItem() throws {
+    func testWebArchivePersistsLocallyAndIsRemovedWithItem() throws {
         let item = store.add(urlString: "https://example.com/original")
-        let html = "<html><body><h1>Saved offline</h1></body></html>"
+        let archive = Data("web archive bytes".utf8)
 
-        store.saveOriginalPage(html, for: item)
+        store.saveWebArchive(archive, for: item)
         let saved = try XCTUnwrap(store.item(withID: item.id))
-        let pageURL = try XCTUnwrap(store.originalPageURL(for: saved))
-        XCTAssertEqual(try String(contentsOf: pageURL, encoding: .utf8), html)
+        let archiveURL = try XCTUnwrap(store.webArchiveURL(for: saved))
+        XCTAssertEqual(try Data(contentsOf: archiveURL), archive)
+        XCTAssertTrue(store.hasOriginalSource(for: saved))
 
         store.delete(saved)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: pageURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: archiveURL.path))
+    }
+
+    func testOriginalDocumentUsesSourceFileAndCleansItUp() throws {
+        var item = store.add(urlString: "clipdoc://document")
+        item.documentType = "pdf"
+        store.restore([item])
+        let sourceURL = store.articlesDirectory
+            .appendingPathComponent("\(item.id.uuidString)-source.pdf")
+        try Data("%PDF-original".utf8).write(to: sourceURL)
+
+        XCTAssertEqual(store.originalDocumentURL(for: item), sourceURL)
+        XCTAssertTrue(store.hasOriginalSource(for: item))
+
+        store.delete(item)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sourceURL.path))
     }
 }

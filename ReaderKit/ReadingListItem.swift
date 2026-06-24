@@ -68,8 +68,10 @@ struct ReadingListItem: Codable, Identifiable {
     var state: State
     /// File name (inside the Articles directory) of the extracted `ArticleContent` JSON.
     var contentFileName: String?
-    /// Locally saved, sanitized HTML snapshot used by the Original reader mode.
-    var originalPageFileName: String?
+    /// A preserved `.webarchive` in OriginalArchives, captured from the source page
+    /// before parsing. The Original reader loads this artifact directly; it never
+    /// rebuilds a page from parsed reader blocks.
+    var originalArchiveFileName: String?
     /// RSVP resume position (word index).
     var lastWordIndex: Int?
     var readState: ReadState
@@ -185,7 +187,7 @@ struct ReadingListItem: Codable, Identifiable {
         self.bumpDate = nil
         self.state = .pending
         self.contentFileName = nil
-        self.originalPageFileName = nil
+        self.originalArchiveFileName = nil
         self.lastWordIndex = nil
         self.readState = .unopened
         self.lastReaderMode = nil
@@ -246,7 +248,7 @@ struct ReadingListItem: Codable, Identifiable {
         self.bumpDate = bumpDate
         self.state = state
         self.contentFileName = nil
-        self.originalPageFileName = nil
+        self.originalArchiveFileName = nil
         self.lastWordIndex = nil
         self.readState = readState
         self.lastReaderMode = lastReaderMode
@@ -296,7 +298,7 @@ struct ReadingListItem: Codable, Identifiable {
     /// JSON into the per-destination `sendStates`/`datesSent` (folded under the
     /// "kindle" id, which is all that existed before).
     private enum LegacyCodingKeys: String, CodingKey {
-        case sendState, dateSent
+        case sendState, dateSent, originalPageFileName
     }
 
     // Manual decoding so items saved before readState existed still decode.
@@ -309,7 +311,14 @@ struct ReadingListItem: Codable, Identifiable {
         bumpDate = try container.decodeIfPresent(Date.self, forKey: .bumpDate)
         state = try container.decode(State.self, forKey: .state)
         contentFileName = try container.decodeIfPresent(String.self, forKey: .contentFileName)
-        originalPageFileName = try container.decodeIfPresent(String.self, forKey: .originalPageFileName)
+        originalArchiveFileName = try container.decodeIfPresent(String.self, forKey: .originalArchiveFileName)
+        // Pre-webarchive builds stored a reconstructed HTML reader page under this
+        // key. Retain only the name long enough for delete cleanup; `.html` is never
+        // considered an original archive by `ReadingListStore`.
+        if originalArchiveFileName == nil {
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            originalArchiveFileName = try legacy.decodeIfPresent(String.self, forKey: .originalPageFileName)
+        }
         lastWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastWordIndex)
         readState = try container.decodeIfPresent(ReadState.self, forKey: .readState) ?? .unopened
         lastReaderMode = try container.decodeIfPresent(ReaderMode.self, forKey: .lastReaderMode)

@@ -60,7 +60,8 @@ final class ReaderViewController: UIViewController {
     private let inlineHeaderSubtitle: String?
     private let inlineHeader = UIVisualEffectView(effect: GlassStyle.barEffect())
 
-    private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp, .original]
+    private static let baseModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
+    private let availableModes: [ReadingListItem.ReaderMode]
 
     init(item: ReadingListItem, content: ArticleContent,
          forceMode: ReadingListItem.ReaderMode? = nil,
@@ -80,8 +81,10 @@ final class ReaderViewController: UIViewController {
         self.inlineControlsHeader = inlineControlsHeader
         self.inlineHeaderSubtitle = inlineHeaderSubtitle
         self.onModeChange = onModeChange
+        self.availableModes = Self.baseModes + (ReadingListStore.shared.hasOriginalSource(for: item) ? [.original] : [])
         // First time on this article, fall back to the global last-used mode.
-        self.mode = forceMode ?? item.lastReaderMode ?? ReaderSettings.lastReaderMode
+        let requestedMode = forceMode ?? item.lastReaderMode ?? ReaderSettings.lastReaderMode
+        self.mode = self.availableModes.contains(requestedMode) ? requestedMode : .scroll
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -92,11 +95,11 @@ final class ReaderViewController: UIViewController {
         view.backgroundColor = .systemBackground
         navigationItem.largeTitleDisplayMode = .never
 
-        for (index, mode) in Self.orderedModes.enumerated() {
+        for (index, mode) in availableModes.enumerated() {
             modeControl.insertSegment(
                 with: ReaderModeIcons.image(for: mode), at: index, animated: false)
         }
-        modeControl.selectedSegmentIndex = Self.orderedModes.firstIndex(of: mode) ?? 0
+        modeControl.selectedSegmentIndex = availableModes.firstIndex(of: mode) ?? 0
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
         audioButton.addTarget(self, action: #selector(audioToggled), for: .touchUpInside)
         updateAudioButton()
@@ -240,8 +243,8 @@ final class ReaderViewController: UIViewController {
     // MARK: - Mode & audio switching
 
     @objc private func modeChanged() {
-        let newMode = Self.orderedModes[
-            max(0, min(modeControl.selectedSegmentIndex, Self.orderedModes.count - 1))]
+        let newMode = availableModes[
+            max(0, min(modeControl.selectedSegmentIndex, availableModes.count - 1))]
         guard newMode != mode else { return }
         mode = newMode
         if persistsModePreference {
@@ -296,7 +299,7 @@ final class ReaderViewController: UIViewController {
             rsvp.onFinishedReading = { [weak self] in self?.markRead() }
             child = rsvp
         case .original:
-            child = OriginalPageViewController(item: item, content: content, store: store)
+            child = OriginalPageViewController(item: item, store: store)
         }
 
         addChild(child)

@@ -54,6 +54,15 @@ final class ReadingListStore {
         return dir
     }
 
+    /// Original page artifacts are deliberately separate from parsed article JSON
+    /// and downloaded reader images. A `.webarchive` is immutable source material;
+    /// the reader must never regenerate it from `ArticleContent`.
+    var originalArchivesDirectory: URL {
+        let dir = containerURL.appendingPathComponent("OriginalArchives", isDirectory: true)
+        try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
     // MARK: - List operations
 
     /// All items in saved order — newest first (new items prepend), reorderable
@@ -532,11 +541,16 @@ final class ReadingListStore {
     /// a fixed fixture set.
     func seedForTesting(items: [ReadingListItem], contents: [UUID: ArticleContent]) {
         let articlesDir = articlesDirectory
+        let originalsDir = originalArchivesDirectory
         coordinatedMutate { all in
             // Remove every prior article content/source file so leftover state from
             // an earlier seed can't leak into this one.
             if let existing = try? self.fileManager.contentsOfDirectory(
                 at: articlesDir, includingPropertiesForKeys: nil) {
+                for file in existing { try? self.fileManager.removeItem(at: file) }
+            }
+            if let existing = try? self.fileManager.contentsOfDirectory(
+                at: originalsDir, includingPropertiesForKeys: nil) {
                 for file in existing { try? self.fileManager.removeItem(at: file) }
             }
             var seeded = items
@@ -556,9 +570,14 @@ final class ReadingListStore {
     /// Empties the reading list and removes all article files. DEBUG-only.
     func wipeForTesting() {
         let articlesDir = articlesDirectory
+        let originalsDir = originalArchivesDirectory
         coordinatedMutate { all in
             if let existing = try? self.fileManager.contentsOfDirectory(
                 at: articlesDir, includingPropertiesForKeys: nil) {
+                for file in existing { try? self.fileManager.removeItem(at: file) }
+            }
+            if let existing = try? self.fileManager.contentsOfDirectory(
+                at: originalsDir, includingPropertiesForKeys: nil) {
                 for file in existing { try? self.fileManager.removeItem(at: file) }
             }
             all = []
@@ -573,13 +592,12 @@ final class ReadingListStore {
         return try? JSONDecoder().decode(ArticleContent.self, from: data)
     }
 
-    /// Saves the self-contained HTML snapshot used by the Original reader mode.
-    /// The HTML is written before its file name is committed to the list, so the UI
-    /// can never point at a half-written snapshot.
-    func saveOriginalPage(_ html: String, for item: ReadingListItem) {
-        let fileName = "\(item.id.uuidString)-original.html"
-        let url = articlesDirectory.appendingPathComponent(fileName)
-        guard let data = html.data(using: .utf8) else { return }
+    /// Saves an immutable WebKit web archive. The archive is written before its
+    /// file name is committed to the list, so the Original mode can never point at
+    /// a half-written artifact.
+    func saveWebArchive(_ data: Data, for item: ReadingListItem) {
+        let fileName = "\(item.id.uuidString).webarchive"
+        let url = originalArchivesDirectory.appendingPathComponent(fileName)
         do {
             try data.write(to: url, options: .atomic)
         } catch {
@@ -587,18 +605,32 @@ final class ReadingListStore {
         }
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == item.id }),
-                  all[index].originalPageFileName != fileName else { return false }
-            all[index].originalPageFileName = fileName
+                  all[index].originalArchiveFileName != fileName else { return false }
+            all[index].originalArchiveFileName = fileName
             return true
         }
     }
 
-    func originalPageURL(for item: ReadingListItem) -> URL? {
-        guard let fileName = item.originalPageFileName,
+    /// The saved web archive, when one was successfully captured for a web page.
+    func webArchiveURL(for item: ReadingListItem) -> URL? {
+        guard let fileName = item.originalArchiveFileName,
+              fileName.hasSuffix(".webarchive"),
               fileName == URL(fileURLWithPath: fileName).lastPathComponent
         else { return nil }
-        let url = articlesDirectory.appendingPathComponent(fileName)
+        let url = originalArchivesDirectory.appendingPathComponent(fileName)
         return fileManager.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// An imported document is already its own original artifact. Mail imports have
+    /// neither a web archive nor a source file, so they intentionally return nil.
+    func originalDocumentURL(for item: ReadingListItem) -> URL? {
+        guard let ext = item.sanitizedDocumentType else { return nil }
+        let url = articlesDirectory.appendingPathComponent("\(item.id.uuidString)-source.\(ext)")
+        return fileManager.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func hasOriginalSource(for item: ReadingListItem) -> Bool {
+        webArchiveURL(for: item) != nil || originalDocumentURL(for: item) != nil
     }
 
     // MARK: - Private
@@ -677,9 +709,10 @@ final class ReadingListStore {
         if let fileName = item.contentFileName {
             try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(fileName))
         }
-        if let fileName = item.originalPageFileName,
+        if let fileName = item.originalArchiveFileName,
            fileName == URL(fileURLWithPath: fileName).lastPathComponent {
-            try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(fileName))
+            let directory = fileName.hasSuffix(".webarchive") ? originalArchivesDirectory : articlesDirectory
+            try? fileManager.removeItem(at: directory.appendingPathComponent(fileName))
         }
         if let ext = item.sanitizedDocumentType {
             try? fileManager.removeItem(at: articlesDirectory

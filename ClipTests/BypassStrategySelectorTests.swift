@@ -15,16 +15,15 @@ final class BypassStrategySelectorTests: XCTestCase {
         XCTAssertEqual(BypassStrategySelector.strategies(for: url("https://example.com/x"), directHTML: html), [])
     }
 
-    func testEveryDetectedPaywallGoesStraightToArchiveIs() {
+    func testNYTTriesTrailingDotBeforeArchiveIs() {
         let locked = "<html><body>subscribe to continue reading</body></html>"
-        for article in [
-            "https://www.wsj.com/articles/x",
-            "https://www.nytimes.com/story",
-            "https://unknown.example/story",
-        ] {
-            XCTAssertEqual(
-                BypassStrategySelector.strategies(for: url(article), directHTML: locked),
-                [.archiveToday], article)
+        XCTAssertEqual(
+            BypassStrategySelector.strategies(
+                for: url("https://www.nytimes.com/story"), directHTML: locked),
+            [.trailingDotHost, .archiveToday])
+        for article in ["https://www.wsj.com/articles/x", "https://unknown.example/story"] {
+            XCTAssertEqual(BypassStrategySelector.strategies(for: url(article), directHTML: locked),
+                           [.archiveToday], article)
         }
     }
 }

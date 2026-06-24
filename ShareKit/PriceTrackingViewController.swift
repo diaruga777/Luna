@@ -459,10 +459,10 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
         config.text = storeListing.url?.host?.replacingOccurrences(of: "www.", with: "")
             ?? storeListing.urlString
         if let price = storeListing.lastPrice {
-            config.secondaryText = PriceFormatting.string(
-                amount: price, currency: storeListing.currency)
+            let formatted = PriceFormatting.string(amount: price, currency: storeListing.currency)
+            config.secondaryText = "\(formatted) · \(refreshDescription(for: storeListing))"
         } else {
-            config.secondaryText = "Price unavailable"
+            config.secondaryText = "Price unavailable · \(refreshDescription(for: storeListing))"
         }
         cell.contentConfiguration = config
         cell.accessoryType = .disclosureIndicator
@@ -496,5 +496,15 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
             done(removed)
         }
         return UISwipeActionsConfiguration(actions: [delete])
+    }
+}
+
+private extension PriceTrackingViewController {
+    func refreshDescription(for store: PriceTrackerStore) -> String {
+        guard let refreshed = store.lastRefreshed else { return "Not yet refreshed" }
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.setLocalizedDateFormatFromTemplate("MMM d, h:mm a")
+        return "Refreshed \(formatter.string(from: refreshed))"
     }
 }

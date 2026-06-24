@@ -107,12 +107,18 @@ final class ArchiveStageDecisionTests: XCTestCase {
     }
 
     func testPageAtThresholdWaits() {
-        // Strictly greater-than: exactly 1500 is not enough.
-        XCTAssertEqual(decide("page:1500"), .wait)
+        // Strictly greater-than: exactly the readable-body threshold is not enough.
+        XCTAssertEqual(decide("page:600"), .wait)
     }
 
     func testPageJustOverThresholdExtracts() {
-        XCTAssertEqual(decide("page:1501"), .attemptExtract)
+        XCTAssertEqual(decide("page:601"), .attemptExtract)
+    }
+
+    func testReadableLengthSnapshotExtractsInsteadOfTimingOut() {
+        // archive.is pages can be short once their reader shell strips the
+        // publisher chrome; 700 characters is still a valid reader article.
+        XCTAssertEqual(decide("page:700"), .attemptExtract)
     }
 
     func testMalformedStageWaits() {

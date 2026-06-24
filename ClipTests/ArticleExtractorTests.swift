@@ -102,6 +102,20 @@ final class ArticleExtractorTests: XCTestCase {
         ])
     }
 
+    func testPrependsJSONLDHeroWhenOpenGraphImageIsAbsent() throws {
+        let html = """
+        <html><head><script type="application/ld+json">
+        {"@type":"NewsArticle","image":{"url":"/images/hero.jpg"}}
+        </script></head><body><article>
+        <p>Opening article paragraph with enough text to give the article container a dominant score here.</p>
+        <p>Closing article paragraph with enough text to keep the article container scoring dominant.</p>
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertEqual(content.blocks.first?.kind, .image)
+        XCTAssertEqual(content.blocks.first?.imageURLString, "https://example.com/images/hero.jpg")
+    }
+
     func testStripsTrailingLinkFarmsAndFooterBoilerplate() throws {
         let html = """
         <html><head><meta name="author" content="Jane Writer" /></head><body><article>

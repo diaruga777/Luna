@@ -624,7 +624,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         hasResolvedSnapshot: Bool,
         blockedCount: Int = 0,
         blockedLimit: Int = 3,
-        minExtractLength: Int = 1500
+        minExtractLength: Int = ArticleContent.readableBodyThreshold
     ) -> StageDecision {
         if stage == "challenge" { return .challenge }
         if stage == "blocked" {
@@ -669,7 +669,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
                 self.advanceToNextPreStage()
                 return
             }
-            guard text.count > 1500 else { return }   // still rendering — try again next tick
+            guard text.count > ArticleContent.readableBodyThreshold else { return }
             self.isExtracting = true
             self.extractAndSave()   // readable → save + onExtracted; not readable → resets, retries
         }

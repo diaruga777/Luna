@@ -27,6 +27,12 @@ enum BypassStrategySelector {
             return []
         }
 
+        // NYT's trailing-dot host is a cheap, first-party origin variant that often
+        // clears the metered overlay outright. Try it before the interactive archive
+        // flow so `nytimes.com/foo` is not unnecessarily sent to archive.is.
+        if let host = url.host, TrailingDotBypass.isNYTHost(host) {
+            return [.trailingDotHost, .archiveToday]
+        }
         return [.archiveToday]
     }
 }

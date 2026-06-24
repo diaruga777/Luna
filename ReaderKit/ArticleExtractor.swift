@@ -459,12 +459,60 @@ struct ArticleExtractor {
             else { continue }
             return url
         }
+        // Schema.org is the other common home for a lead image. NYT and several
+        // CMSes omit og:image on their reader response but keep JSON-LD's `image`.
+        if let scripts = try? document.select("script[type=application/ld+json]") {
+            for script in scripts {
+                guard let data = script.data().data(using: .utf8),
+                      let object = try? JSONSerialization.jsonObject(with: data),
+                      let raw = firstImageURL(inJSONLD: object),
+                      let url = resolvedImageURL(raw, baseURL: baseURL)
+                else { continue }
+                return url
+            }
+        }
+        // Some reader endpoints supply their hero only as a preloaded resource.
+        if let preload = try? document.select("link[rel=preload][as=image]").first(),
+           let raw = try? preload.attr("href"), let url = resolvedImageURL(raw, baseURL: baseURL) {
+            return url
+        }
         let links = (try? document.select("link[rel]").array()) ?? []
         guard let link = links.first(where: {
             (try? $0.attr("rel"))?.lowercased().split(separator: " ").contains("image_src") == true
         }), let raw = try? link.attr("href")
         else { return nil }
         return resolvedImageURL(raw, baseURL: baseURL)
+    }
+
+    private func firstImageURL(inJSONLD object: Any) -> String? {
+        if let dictionary = object as? [String: Any] {
+            for key in ["image", "thumbnailUrl", "thumbnailURL"] {
+                if let value = dictionary[key], let found = imageURLString(inJSONLDValue: value) {
+                    return found
+                }
+            }
+            for value in dictionary.values {
+                if let found = firstImageURL(inJSONLD: value) { return found }
+            }
+        } else if let array = object as? [Any] {
+            for value in array {
+                if let found = firstImageURL(inJSONLD: value) { return found }
+            }
+        }
+        return nil
+    }
+
+    private func imageURLString(inJSONLDValue value: Any) -> String? {
+        if let string = value as? String { return string }
+        if let array = value as? [Any] {
+            return array.lazy.compactMap(imageURLString(inJSONLDValue:)).first
+        }
+        if let dictionary = value as? [String: Any] {
+            for key in ["url", "contentUrl", "@id"] {
+                if let string = dictionary[key] as? String { return string }
+            }
+        }
+        return nil
     }
 
     /// Article-image heuristic: skip obvious ad/tracking/chrome images and

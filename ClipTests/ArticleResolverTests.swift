@@ -102,10 +102,9 @@ final class ArticleResolverTests: XCTestCase {
         }
     }
 
-    /// Once a paywall is detected, the resolver does not use a proxy/archive ladder.
-    /// It preserves the title and leaves the interactive archive.is reader to handle
-    /// the page.
-    func testResolverParksPaywallWithoutRunningFallbackServices() async {
+    /// NYT gets one cheap trailing-dot origin attempt before it parks for the
+    /// interactive archive.is reader; it never runs the old proxy/archive ladder.
+    func testResolverTriesNYTTrailingDotBeforeParking() async {
         let articleURL = URL(string: "https://www.nytimes.com/2026/06/20/story.html")!
         let fetcher = MockArticleFetcher()
         fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML   // direct read = locked
@@ -117,15 +116,16 @@ final class ArticleResolverTests: XCTestCase {
 
         let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher, runner: runner)
         XCTAssertEqual(result, .paywalled(title: "NYT Headline"))
-        XCTAssertTrue(runner.attempted.isEmpty)
+        XCTAssertEqual(runner.attempted, [.trailingDotHost])
     }
 
-    func testResolverDoesNotRunInjectedFallbackRunnerForAPaywall() async {
+    func testResolverDoesNotAcceptLockedNYTTrailingDotResult() async {
         let articleURL = URL(string: "https://www.nytimes.com/2026/06/20/story.html")!
         let fetcher = MockArticleFetcher()
         fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML
 
-        // An injected runner must not be used: archive.is is the only post-detection path.
+        // The trailing-dot attempt itself can still return a long locked page; it
+        // must be rejected before the item parks for archive.is.
         final class LockedThenReadableRunner: BypassRunning {
             let lockedHTML: String
             let readable: ExtractedArticle
@@ -152,7 +152,7 @@ final class ArticleResolverTests: XCTestCase {
 
         let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher, runner: runner)
         XCTAssertEqual(result, .paywalled(title: "NYT Headline"))
-        XCTAssertEqual(runner.attempts, 0)
+        XCTAssertEqual(runner.attempts, 1)
     }
 
     /// When EVERY silent strategy fails (no readable result anywhere) on a host that

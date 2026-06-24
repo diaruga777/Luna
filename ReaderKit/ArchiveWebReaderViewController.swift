@@ -64,6 +64,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// challenge loop. True once we've acted on the cleared homepage (once).
     private var didLeaveHomepage = false
     private var isSubmittingHomepage = false
+    /// The timeout is advisory, not terminal: archive.is can take a long time to
+    /// finish a capture. Keep polling/extracting while giving the user Safari.
+    private var didShowStuckNotice = false
     /// Consecutive poll ticks where the opaque overlay is covering the page without
     /// progress; past `stallPollLimit` we surface the rate-limit guidance so the
     /// user is never stranded on a permanent "Unlocking…" screen (e.g. a homepage
@@ -132,6 +135,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// won't help, so we stop and tell the user plainly rather than spin forever.
     private static let cannotArchiveMessage =
         "This site can't be archived right now. Try again in a little while, or open it in Safari."
+
+    private static let mayBeStuckMessage =
+        "This archive is taking longer than usual. It may be stuck, but we’re still waiting."
 
     init(articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared,
          recorder: ReplayRecording = ReplayRecorder.shared) {
@@ -472,6 +478,12 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
                 "archive: navAction type=\(navigationAction.navigationType.rawValue) "
                 + "\(navigationAction.request.url?.absoluteString ?? "")", category: "archive")
         }
+        if navigationAction.targetFrame?.isMainFrame ?? true,
+           isSubmittingHomepage,
+           !Self.isArchiveHomepageURL(navigationAction.request.url) {
+            didLeaveHomepage = true
+            isSubmittingHomepage = false
+        }
         decisionHandler(.allow)
     }
 
@@ -498,6 +510,16 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         checkStage()
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        // The form stays in archive.is's chrome even on a completed snapshot. A
+        // main-frame navigation away from the actual root homepage is the durable
+        // signal that the target was submitted; never infer it from page text.
+        if let url = webView.url, !Self.isArchiveHomepageURL(url) {
+            didLeaveHomepage = true
+            isSubmittingHomepage = false
+        }
+    }
+
     /// Probes the loaded page and acts on its stage:
     /// - **challenge** → wait (the user is solving the CAPTCHA).
     /// - **homepage** (the search form `input[name=url]` is present) → reach the
@@ -507,10 +529,8 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private func checkStage() {
         guard !didExtract, !isExtracting, viewIfLoaded?.window != nil else { return }
         if isAttemptingDirectBypass { checkDirectBypassStage(); return }
-        // Returns "error" (Invalid interception ID), "homepage:<len>" (the search
-        // form is present → type the URL + submit), "challenge:<len>" (a Cloudflare/
-        // reCAPTCHA gate, detected by WIDGET not just text so the overlay reliably
-        // lifts), or "page:<len>".
+        // Returns only structural state. In particular, no text length is used:
+        // archive.is's idle homepage and its request-log shell can both be long.
         //
         // The homepage check comes FIRST: archive.today's own save form can carry a
         // spam-protection reCAPTCHA, which must NOT be mistaken for a blocking
@@ -531,12 +551,13 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             // can't trip it. Checked before the homepage box so it wins if the gate
             // also carries the site chrome.
             var lc = t.toLowerCase();
-            if (lc.length < 800
-                && (lc.indexOf('enable js') >= 0 || lc.indexOf('enable javascript') >= 0)
+            if ((lc.indexOf('enable js') >= 0 || lc.indexOf('enable javascript') >= 0)
                 && (lc.indexOf('ad blocker') >= 0 || lc.indexOf('adblocker') >= 0)) {
                 return 'blocked';
             }
-            if (document.querySelector('input[name="url"]')) { return 'homepage:' + t.length; }
+            var homeForm = document.querySelector('input[name="url"]');
+            var onRootHomepage = location.pathname === '/' || location.pathname === '';
+            if (onRootHomepage && homeForm && homeForm.form) { return 'homepage'; }
             var challengeWidget = document.querySelector(
                 'iframe[src*="recaptcha"], iframe[src*="challenges.cloudflare.com"], '
                 + 'iframe[title*="recaptcha" i], iframe[title*="challenge" i], '
@@ -547,7 +568,12 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             if (/Why do I have to complete a CAPTCHA|Checking your browser|Just a moment|Verifying you are human|needs to review the security/i.test(t)) {
                 return 'challenge';
             }
-            return 'page:' + t.length;
+            // A snapshot becomes eligible only when it exposes a semantic content
+            // root. The extractor is the final authority; this merely keeps archive
+            // request/status text outside the extraction path.
+            var root = document.querySelector(
+                'article, [itemprop="articleBody"], main article, [class*="article-body"], #CONTENT');
+            return root ? 'content-root' : 'waiting';
         })()
         """
         webView.evaluateJavaScript(probe) { [weak self] result, _ in
@@ -566,7 +592,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
                 self.coveredPollCount = 0
             } else {
                 self.coveredPollCount += 1
-                if self.coveredPollCount > Self.stallPollLimit { self.showRateLimit(); return }
+                if self.coveredPollCount > Self.stallPollLimit { self.showStuckNotice() }
             }
             // Track how long we've sat on the "enable JS / ad blocker" gate so
             // `decideStage` can give up on it after a brief tolerance.
@@ -606,13 +632,10 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// Pure + `Equatable` so the decision is unit-testable without a live web view.
     ///
     /// Crucially, after the homepage has been submitted (`didLeaveHomepage`), a
-    /// page that still shows the `input[name=url]` box (reported as `homepage:<len>`)
-    /// is NOT treated as the homepage again — every archive.today page carries that
-    /// box in its chrome, so it would otherwise pin us on a spinner forever once the
-    /// `/wip/` progress shell renders the real article. We fall through to the
-    /// length gate and let `extractAndSave`'s readability check be the final arbiter.
+    /// page that still shows the `input[name=url]` box is NOT treated as the
+    /// homepage again — every archive.today page carries that box in its chrome.
     enum StageDecision: Equatable {
-        case wait                  // challenge held, or page too short — keep polling
+        case wait                  // waiting for a semantic page transition/root
         case challenge             // a CAPTCHA gate is up — reveal the page for the user
         case submitHomepage        // on the homepage form, not yet submitted — submit the URL
         case loadResolvedSnapshot  // homepage cleared and a TimeMap snapshot is resolved — load it
@@ -626,8 +649,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         isSubmittingHomepage: Bool,
         hasResolvedSnapshot: Bool,
         blockedCount: Int = 0,
-        blockedLimit: Int = 3,
-        minExtractLength: Int = ArticleContent.readableBodyThreshold
+        blockedLimit: Int = 3
     ) -> StageDecision {
         if stage == "challenge" { return .challenge }
         if stage == "blocked" {
@@ -639,18 +661,13 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         // archive.today's "Error -32602: Invalid InterceptionId" (the capture session
         // went stale) — terminal; retrying/solving won't help, so show the error.
         if stage == "error" { return .cannotArchive }
-        if stage.hasPrefix("homepage"), isSubmittingHomepage {
+        if stage == "homepage", isSubmittingHomepage {
             return .wait
         }
-        if stage.hasPrefix("homepage"), !didLeaveHomepage {
+        if stage == "homepage", !didLeaveHomepage {
             return hasResolvedSnapshot ? .loadResolvedSnapshot : .submitHomepage
         }
-        let length = Int(stage.split(separator: ":").last ?? "") ?? 0
-        if length > minExtractLength {
-            return .attemptExtract
-        } else {
-            return .wait
-        }
+        return stage == "content-root" && didLeaveHomepage ? .attemptExtract : .wait
     }
 
     /// A WKWebView pre-stage page: the page is the (hopefully un-paywalled) article
@@ -667,9 +684,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             advanceToNextPreStage()
             return
         }
-        // Probe both the body text (length for the extract gate) and whether it's a
-        // JS-required interstitial.
-        let probe = "(function(){return document.body ? document.body.innerText : '';})()"
+        // The pre-stage uses semantic extraction as its readiness test too: a long
+        // status page must not become an article merely because it has verbose text.
+        let probe = "(function(){return document.querySelector('article, [itemprop=articleBody], main article, [class*=article-body], #CONTENT') ? 'content-root' : (document.body ? document.body.innerText : '');})()"
         webView.evaluateJavaScript(probe) { [weak self] result, _ in
             guard let self, self.isAttemptingDirectBypass, !self.didExtract, !self.isExtracting else { return }
             let text = (result as? String) ?? ""
@@ -679,7 +696,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
                 self.advanceToNextPreStage()
                 return
             }
-            guard text.count > ArticleContent.readableBodyThreshold else { return }
+            guard text == "content-root" else { return }
             self.isExtracting = true
             self.extractAndSave()   // readable → save + onExtracted; not readable → resets, retries
         }
@@ -750,8 +767,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         webView.evaluateJavaScript(fill) { [weak self] result, _ in
             SharedDiagnosticLog.record(
                 "archive: form submit result=\(result as? String ?? "nil")", category: "archive")
-            self?.didLeaveHomepage = true
-            self?.isSubmittingHomepage = false
+            if result as? String != "submitted" { self?.isSubmittingHomepage = false }
         }
     }
 
@@ -777,7 +793,14 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private func extractAndSave() {
         guard let itemID else { isExtracting = false; return }
         let baseURL = articleURL
-        webView.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, _ in
+        let snapshotHTML = """
+        (function () {
+            var root = document.querySelector('article, [itemprop="articleBody"], main article, [class*="article-body"], #CONTENT');
+            if (!root) { return null; }
+            return '<html><head><title>' + document.title + '</title></head><body>' + root.outerHTML + '</body></html>';
+        })()
+        """
+        webView.evaluateJavaScript(snapshotHTML) { [weak self] result, _ in
             guard let self else { return }
             guard let html = result as? String else { self.isExtracting = false; return }
             // The Cloudflare challenge page can be long enough to clear the
@@ -826,6 +849,24 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// archive.today returned an error after the CAPTCHA (un-archivable page / stale
     /// session) — solving again won't help.
     private func showCannotArchive() { showTerminalMessage(Self.cannotArchiveMessage) }
+
+    /// Unlike a terminal archive error, this keeps the automation alive. It is a
+    /// user-visible nudge after a long quiet period, with the same Safari escape.
+    private func showStuckNotice() {
+        guard !didShowStuckNotice, !didShowTerminalMessage else { return }
+        didShowStuckNotice = true
+        overlayLabel.text = Self.mayBeStuckMessage
+        overlayLabel.textColor = .secondaryLabel
+        overlaySafariButton.isHidden = (onOpenInBrowser == nil)
+        overlaySpinner.startAnimating()
+        loadingOverlay.isHidden = false
+        view.bringSubviewToFront(loadingOverlay)
+    }
+
+    private static func isArchiveHomepageURL(_ url: URL?) -> Bool {
+        guard let url, ArticleFetcher.isArchiveTodayURL(url) else { return false }
+        return url.path.isEmpty || url.path == "/"
+    }
 
     /// Surfaces a terminal message IN the overlay (not a popup): stops the spinner,
     /// shows the message text, and — in the main app — an Open-in-Safari escape.

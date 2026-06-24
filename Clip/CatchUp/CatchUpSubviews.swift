@@ -280,6 +280,10 @@ final class CatchUpPriceTrackerCardBody: UIView {
         stack.setCustomSpacing(8, after: thumb)
         stack.setCustomSpacing(6, after: title)
         stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let thumbWidthConstraint = thumb.widthAnchor.constraint(equalToConstant: 44)
+        thumbWidthConstraint.priority = .required
+
         addSubview(stack)
         // Pin the content below the corner pills. Centering a tall stack caused its
         // title/readout to compress into the card chrome on shorter devices.
@@ -289,7 +293,7 @@ final class CatchUpPriceTrackerCardBody: UIView {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -24),
             // A small thumbnail at the top (a fraction of the body width).
-            thumb.widthAnchor.constraint(equalToConstant: 44),
+            thumbWidthConstraint,
             thumb.heightAnchor.constraint(equalTo: thumb.widthAnchor),
             thumb.centerXAnchor.constraint(equalTo: stack.centerXAnchor),
         ])

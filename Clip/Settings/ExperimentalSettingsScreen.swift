@@ -9,7 +9,7 @@ import UIKit
 /// suggestions, and YouTube integration (sign-in, playlist, auto-add).
 final class ExperimentalSettingsScreen: UITableViewController {
 
-    private enum Section: Int, CaseIterable { case semantic, archiveOverlay, youtube }
+    private enum Section: Int, CaseIterable { case semantic, archiveOverlay, halftone, youtube }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
 
     init() { super.init(style: .insetGrouped) }
@@ -27,6 +27,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         switch Section(rawValue: section)! {
         case .semantic: return 1
         case .archiveOverlay: return 1
+        case .halftone: return 1
         case .youtube: return YouTubeRow.allCases.count
         }
     }
@@ -35,6 +36,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         switch Section(rawValue: section)! {
         case .semantic: return "Suggest Shares Based on Content"
         case .archiveOverlay: return "Archive Reader Cover"
+        case .halftone: return "Halftone Effect"
         case .youtube: return "DEV ONLY: YouTube"
         }
     }
@@ -45,6 +47,9 @@ final class ExperimentalSettingsScreen: UITableViewController {
             return "When you save something that resembles things you've shared with a friend before, Queue can suggest sharing it with them. Slide all the way left to turn this off."
         case .archiveOverlay:
             return "Opacity of overlay while we work to unlock web articles"
+        case .halftone:
+            return "A real-time dot-matrix shader. Apply it to the whole app, tune its "
+                + "parameters, and preview it on your own photos, videos, and GIFs."
         case .youtube:
             return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read.\n\nYour email must be whitelisted for this to work while in development."
         }
@@ -58,6 +63,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
             return semanticSensitivityCell()
         case .archiveOverlay:
             return overlayAlphaCell()
+        case .halftone:
+            return halftoneCell()
         case .youtube:
             return youTubeCell(for: YouTubeRow(rawValue: indexPath.row)!)
         }
@@ -127,6 +134,17 @@ final class ExperimentalSettingsScreen: UITableViewController {
         return cell
     }
 
+    /// Disclosure row that drills into the Halftone effect controls.
+    private func halftoneCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        var content = cell.defaultContentConfiguration()
+        content.text = "Halftone Effect"
+        content.image = UIImage(systemName: "circle.grid.3x3.fill")
+        cell.contentConfiguration = content
+        cell.accessoryType = .disclosureIndicator
+        return cell
+    }
+
     private func endCaption(_ text: String) -> UILabel {
         let label = UILabel()
         label.text = text
@@ -137,11 +155,17 @@ final class ExperimentalSettingsScreen: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard Section(rawValue: indexPath.section) == .youtube else { return }
-        switch YouTubeRow(rawValue: indexPath.row)! {
-        case .signIn: signInTapped()
-        case .playlist: choosePlaylistTapped()
-        case .autoAdd: break
+        switch Section(rawValue: indexPath.section)! {
+        case .halftone:
+            navigationController?.pushViewController(HalftoneSettingsScreen(), animated: true)
+        case .youtube:
+            switch YouTubeRow(rawValue: indexPath.row)! {
+            case .signIn: signInTapped()
+            case .playlist: choosePlaylistTapped()
+            case .autoAdd: break
+            }
+        case .semantic, .archiveOverlay:
+            break
         }
     }
 

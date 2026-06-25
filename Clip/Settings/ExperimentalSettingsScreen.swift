@@ -9,7 +9,7 @@ import UIKit
 /// suggestions, and YouTube integration (sign-in, playlist, auto-add).
 final class ExperimentalSettingsScreen: UITableViewController {
 
-    private enum Section: Int, CaseIterable { case semantic, archiveOverlay, halftone, youtube }
+    private enum Section: Int, CaseIterable { case semantic, archiveOverlay, halftone, frostedGlass, youtube }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
 
     init() { super.init(style: .insetGrouped) }
@@ -28,6 +28,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .semantic: return 1
         case .archiveOverlay: return 1
         case .halftone: return 1
+        case .frostedGlass: return 1
         case .youtube: return YouTubeRow.allCases.count
         }
     }
@@ -37,6 +38,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .semantic: return "Suggest Shares Based on Content"
         case .archiveOverlay: return "Archive Reader Cover"
         case .halftone: return "Halftone Effect"
+        case .frostedGlass: return "Frosted Neon Effect"
         case .youtube: return "DEV ONLY: YouTube"
         }
     }
@@ -48,8 +50,11 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .archiveOverlay:
             return "Opacity of overlay while we work to unlock web articles"
         case .halftone:
-            return "A real-time dot-matrix shader. Apply it to the whole app, tune its "
-                + "parameters, and preview it on your own photos, videos, and GIFs."
+            return "A real-time dot-matrix shader. Tune its parameters and preview it "
+                + "on your own photos, videos, and GIFs; tap the preview to ripple it in."
+        case .frostedGlass:
+            return "A real-time \"neon lights through frosted glass\" shader, with its own "
+                + "parameters, live preview, and tap-to-ripple wave."
         case .youtube:
             return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read.\n\nYour email must be whitelisted for this to work while in development."
         }
@@ -65,6 +70,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
             return overlayAlphaCell()
         case .halftone:
             return halftoneCell()
+        case .frostedGlass:
+            return frostedGlassCell()
         case .youtube:
             return youTubeCell(for: YouTubeRow(rawValue: indexPath.row)!)
         }
@@ -145,6 +152,17 @@ final class ExperimentalSettingsScreen: UITableViewController {
         return cell
     }
 
+    /// Disclosure row that drills into the Frosted Neon effect controls.
+    private func frostedGlassCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        var content = cell.defaultContentConfiguration()
+        content.text = "Frosted Neon Effect"
+        content.image = UIImage(systemName: "lightspectrum.horizontal")
+        cell.contentConfiguration = content
+        cell.accessoryType = .disclosureIndicator
+        return cell
+    }
+
     private func endCaption(_ text: String) -> UILabel {
         let label = UILabel()
         label.text = text
@@ -158,6 +176,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
         switch Section(rawValue: indexPath.section)! {
         case .halftone:
             navigationController?.pushViewController(HalftoneSettingsScreen(), animated: true)
+        case .frostedGlass:
+            navigationController?.pushViewController(FrostedGlassSettingsScreen(), animated: true)
         case .youtube:
             switch YouTubeRow(rawValue: indexPath.row)! {
             case .signIn: signInTapped()

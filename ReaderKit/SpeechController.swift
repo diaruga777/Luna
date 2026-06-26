@@ -26,6 +26,12 @@ final class SpeechController: NSObject {
     weak var delegate: SpeechControllerDelegate?
 
     private let synthesizer = AVSpeechSynthesizer()
+    /// The TTS engine to speak with. Resolved at `play(fromWordIndex:)` time from
+    /// the user's selection, falling back to a usable engine if the selected one
+    /// isn't currently available (model missing / no enhanced voice installed).
+    /// Every engine drives this same `AVSpeechSynthesizer`, so word-range
+    /// highlighting works identically regardless of engine.
+    private var engine: SpeechEngine = BasicSpeechEngine()
     /// Speakable blocks: original block index + text.
     private let speakable: [(blockIndex: Int, text: String)]
     private let blockTextRanges: [NSRange?]
@@ -64,6 +70,10 @@ final class SpeechController: NSObject {
     }
 
     func play(fromWordIndex wordIndex: Int?) {
+        // Resolve the engine once per play session (the selection can change in
+        // Settings between sessions). `resolveSelected` guarantees a usable
+        // engine, falling back from an unavailable selection.
+        engine = SpeechEngineFactory.resolveSelected()
         configureAudioSession()
         setupRemoteCommands()
         synthesizer.stopSpeaking(at: .immediate)
@@ -193,8 +203,8 @@ final class SpeechController: NSObject {
             return
         }
         let utterance = AVSpeechUtterance(string: remaining)
-        utterance.voice = SpeechVoice.best
-        utterance.rate = min(AVSpeechUtteranceDefaultSpeechRate * rateFactor, AVSpeechUtteranceMaximumSpeechRate)
+        let rate = min(AVSpeechUtteranceDefaultSpeechRate * rateFactor, AVSpeechUtteranceMaximumSpeechRate)
+        engine.configure(utterance, rate: rate)
         utterance.postUtteranceDelay = 0.25
         synthesizer.speak(utterance)
     }

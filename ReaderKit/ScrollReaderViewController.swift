@@ -547,6 +547,9 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         footer.isHidden = false
         layoutShareView()
         speech?.play(fromWordIndex: resumeWordIndex)
+        // First-ever read-aloud: nudge the user toward higher-quality voices.
+        // Non-blocking — playback above has already begun. No-op in extensions.
+        VoiceFirstRunPrompt.showIfNeeded(from: self)
     }
 
     private func startChunkHighlight() {

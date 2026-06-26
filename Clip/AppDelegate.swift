@@ -45,6 +45,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
         }
 
+        // Wire the read-aloud first-run prompt's "Open Settings" to push the
+        // Voice settings screen. Setting this hook is what enables the prompt in
+        // the main app (extensions leave it nil → the prompt is skipped).
+        VoiceFirstRunPrompt.openVoiceSettings = { presenter in
+            let voice = VoiceSettingsScreen()
+            if let nav = presenter.navigationController {
+                nav.pushViewController(voice, animated: true)
+            } else {
+                let nav = UINavigationController(rootViewController: voice)
+                presenter.present(nav, animated: true)
+            }
+        }
+
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
         ReadingListIngestor.shared.ingestAllPending()

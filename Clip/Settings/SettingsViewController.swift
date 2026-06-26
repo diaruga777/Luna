@@ -33,6 +33,7 @@ final class SettingsViewController: UITableViewController {
 
     private let categories: [Category] = [
         Category(title: "Reader", symbol: "textformat.size") { ReaderSettingsScreen() },
+        Category(title: "Voice", symbol: "speaker.wave.2") { VoiceSettingsScreen() },
         Category(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
         Category(title: "Visual Progress", symbol: "eye") { EyeTrackingSettingsScreen() },
         Category(title: "Email & Kindle", symbol: "envelope") { EmailAndKindleSettingsScreen() },

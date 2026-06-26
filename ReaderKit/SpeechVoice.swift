@@ -5,26 +5,30 @@
 
 import AVFoundation
 
-/// Picks the best on-device voice for read-aloud: premium > enhanced > default
-/// quality for the user's language (no downloads — only what's installed).
+/// Picks on-device voices for read-aloud. The multi-engine system
+/// (`SpeechEngine`) now owns voice selection per engine; this enum holds the
+/// shared, no-download primitives those engines build on.
 enum SpeechVoice {
-    static let best: AVSpeechSynthesisVoice? = {
+
+    /// The system default voice for the current language. On the simulator we
+    /// return `nil` (= the synthesizer's own default) because the high-quality
+    /// voice assets listed there don't reliably render (synthesis silently
+    /// stalls). An `AVSpeechUtterance` with a `nil` voice always speaks.
+    static var systemDefault: AVSpeechSynthesisVoice? {
         #if targetEnvironment(simulator)
-        // High-quality voice assets are listed but don't reliably render in
-        // the simulator (synthesis silently stalls) — use the system default.
         return nil
         #else
-        let language = AVSpeechSynthesisVoice.currentLanguageCode()
-        let prefix = String(language.prefix(2))
-        let candidates = AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language == language || $0.language.hasPrefix(prefix) }
-        let exactLanguage = candidates.filter { $0.language == language }
-
-        for pool in [exactLanguage, candidates] {
-            if let premium = pool.first(where: { $0.quality == .premium }) { return premium }
-            if let enhanced = pool.first(where: { $0.quality == .enhanced }) { return enhanced }
-        }
-        return AVSpeechSynthesisVoice(language: language)
+        return AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
         #endif
-    }()
+    }
+
+    /// The best installed voice (premium > enhanced > default) for the user's
+    /// language. Retained for callers not yet migrated to `SpeechEngine`.
+    static var best: AVSpeechSynthesisVoice? {
+        #if targetEnvironment(simulator)
+        return nil
+        #else
+        return AppleEnhancedEngine.bestEnhancedVoice ?? systemDefault
+        #endif
+    }
 }

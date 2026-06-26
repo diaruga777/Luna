@@ -573,8 +573,11 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         speechSentenceBase = currentIndex
 
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = SpeechVoice.best
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        // Speak with the user-selected TTS engine (falling back if unavailable);
+        // all engines drive this `AVSpeechSynthesizer`, so the per-word flash
+        // driven by `willSpeakRangeOfSpeechString` is unaffected.
+        SpeechEngineFactory.resolveSelected().configure(
+            utterance, rate: AVSpeechUtteranceDefaultSpeechRate)
         utterance.postUtteranceDelay = 0.12
         synthesizer.speak(utterance)
     }

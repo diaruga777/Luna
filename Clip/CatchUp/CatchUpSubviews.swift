@@ -261,6 +261,14 @@ final class CatchUpPriceTrackerCardBody: UIView {
         thumb.translatesAutoresizingMaskIntoConstraints = false
         Self.configureThumbnail(thumb, tracker: tracker, store: store)
 
+        // The thumbnail lives inside a full-width row so the stack's `.fill` alignment
+        // stretches the ROW, not the image — otherwise fill pins the image edge-to-edge
+        // and it balloons to the whole card. The image is forced to a small fixed size,
+        // centred in the row.
+        let thumbRow = UIView()
+        thumbRow.translatesAutoresizingMaskIntoConstraints = false
+        thumbRow.addSubview(thumb)
+
         let title = UILabel()
         title.text = tracker.productName
         title.font = .systemFont(ofSize: 22, weight: .bold)
@@ -285,17 +293,13 @@ final class CatchUpPriceTrackerCardBody: UIView {
             self?.onChangeThreshold?()
         }
 
-        let stack = UIStackView(arrangedSubviews: [thumb, title, rowsScroll, thresholdReadout])
+        let stack = UIStackView(arrangedSubviews: [thumbRow, title, rowsScroll, thresholdReadout])
         stack.axis = .vertical
         stack.spacing = 10
         stack.alignment = .fill
-        stack.setCustomSpacing(8, after: thumb)
+        stack.setCustomSpacing(10, after: thumbRow)
         stack.setCustomSpacing(6, after: title)
         stack.translatesAutoresizingMaskIntoConstraints = false
-
-        // Half the previous size, so the name, sites, and threshold get the room.
-        let thumbWidthConstraint = thumb.widthAnchor.constraint(equalToConstant: 22)
-        thumbWidthConstraint.priority = .required
 
         addSubview(stack)
         // Pin the content below the corner pills, filling the card so the rows
@@ -305,10 +309,12 @@ final class CatchUpPriceTrackerCardBody: UIView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -24),
-            // A small thumbnail at the top (a fraction of the body width).
-            thumbWidthConstraint,
-            thumb.heightAnchor.constraint(equalTo: thumb.widthAnchor),
-            thumb.centerXAnchor.constraint(equalTo: stack.centerXAnchor),
+            // A small, fixed-size thumbnail centred in its full-width row.
+            thumb.widthAnchor.constraint(equalToConstant: 64),
+            thumb.heightAnchor.constraint(equalToConstant: 64),
+            thumb.centerXAnchor.constraint(equalTo: thumbRow.centerXAnchor),
+            thumb.topAnchor.constraint(equalTo: thumbRow.topAnchor),
+            thumb.bottomAnchor.constraint(equalTo: thumbRow.bottomAnchor),
             // The scrolled list's content is exactly the scroll viewport wide and as
             // tall as its rows (so vertical overflow scrolls).
             rows.topAnchor.constraint(equalTo: rowsScroll.contentLayoutGuide.topAnchor),
@@ -344,19 +350,27 @@ final class CatchUpPriceTrackerCardBody: UIView {
         title.textColor = .label
 
         let readout = UILabel()
-        readout.text = PriceFormatting.thresholdDescription(
+        // "25% off" and "alert below <price>" on their own lines (the formatter joins
+        // them with " — "; break it so each reads cleanly and leaves horizontal room).
+        let description = PriceFormatting.thresholdDescription(
             fraction: tracker.alertThresholdFraction,
             initialPrice: tracker.initialPrice, currency: tracker.initialCurrency)
+        readout.text = description.replacingOccurrences(of: " — ", with: "\n")
         readout.font = .preferredFont(forTextStyle: .subheadline)
         readout.textColor = .secondaryLabel
         readout.numberOfLines = 0
 
-        var configuration = UIButton.Configuration.tinted()
+        // A small, low-key text button — less prominent than a filled capsule, so the
+        // threshold copy keeps the horizontal room.
+        var configuration = UIButton.Configuration.plain()
         configuration.title = "Change"
-        configuration.image = UIImage(systemName: "slider.horizontal.3")
-        configuration.imagePadding = 5
-        configuration.cornerStyle = .capsule
-        configuration.buttonSize = .small
+        configuration.baseForegroundColor = .secondaryLabel
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .preferredFont(forTextStyle: .footnote)
+            return outgoing
+        }
         let changeButton = UIButton(configuration: configuration)
         changeButton.setContentHuggingPriority(.required, for: .horizontal)
         changeButton.setContentCompressionResistancePriority(.required, for: .horizontal)

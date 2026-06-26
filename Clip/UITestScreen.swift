@@ -43,6 +43,9 @@ enum UITestScreen: String, CaseIterable {
 
     // Diagnostics.
     case replays
+
+    // Catch-up showing only a price-tracker card (for verifying that card's layout).
+    case priceCatchUp
 }
 
 /// Builds the forced root view controller for a deep-linked UI-test screen. Some
@@ -98,6 +101,16 @@ enum UITestScreenBuilder {
                     rootViewController: PriceTrackingViewController(itemID: tracker.id))
             }
             return UINavigationController(rootViewController: ReadingListViewController())
+
+        case .priceCatchUp:
+            let router = ReadingListViewController()
+            let host = UINavigationController(rootViewController: router)
+            return PresentingHostViewController(host: host) { [weak router] in
+                guard let router else { return nil }
+                let trackers = ReadingListStore.shared.items().filter { $0.isPriceTracker }
+                guard !trackers.isEmpty else { return nil }
+                return CatchUpViewController(unread: trackers, router: router)
+            }
 
         case .readerScroll:
             return UINavigationController(rootViewController: reader(forceMode: .scroll))

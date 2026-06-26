@@ -43,6 +43,9 @@ enum FrostedGlassSettings {
     private static func bool(_ key: String, _ fallback: Bool) -> Bool {
         defaults.object(forKey: key) == nil ? fallback : defaults.bool(forKey: key)
     }
+    private static func int(_ key: String, _ fallback: Int) -> Int {
+        defaults.object(forKey: key) == nil ? fallback : defaults.integer(forKey: key)
+    }
 
     // MARK: Properties
 
@@ -136,6 +139,15 @@ enum FrostedGlassSettings {
         get { double("frosted.rippleDuration", 0) }
         set { defaults.set(newValue, forKey: "frosted.rippleDuration") }
     }
+    static var revealMode: FrostedGlassConfig.RevealMode {
+        get { FrostedGlassConfig.RevealMode(rawValue: int("frosted.revealMode", 0)) ?? .radial }
+        set { defaults.set(newValue.rawValue, forKey: "frosted.revealMode") }
+    }
+    static var revealAngle: Double {
+        get { double("frosted.revealAngle", 0) }
+        set { defaults.set(newValue, forKey: "frosted.revealAngle") }
+    }
+    static let revealAngleRange: ClosedRange<Double> = 0...(2 * .pi)
 
     // MARK: Build the effect config
 
@@ -159,6 +171,8 @@ enum FrostedGlassSettings {
         c.rippleWavelength = CGFloat(rippleWavelength)
         c.rippleDecay = CGFloat(rippleDecay)
         c.rippleDuration = TimeInterval(rippleDuration)
+        c.revealMode = revealMode
+        c.revealAngle = CGFloat(revealAngle)
         return c
     }
 }

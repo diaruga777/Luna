@@ -73,8 +73,8 @@ struct HalftoneUniforms {
     float  dragRadius;        // px, influence radius of the finger drag
 
     float2 dragVector;        // px, displacement the dragged dots follow (springy)
-    float  _pad0;
-    float  _pad1;
+    float  revealMode;        // 0 radial, 1 diamond, 2 bars, 3 dissolve, 4 spiral, 5 venetian
+    float  revealAngle;       // radians, direction for the bars/venetian reveal
 };
 
 struct VSOut {
@@ -109,6 +109,33 @@ static inline float2 hash22(float2 p) {
     float3 p3 = fract(float3(p.xyx) * float3(0.1031, 0.1030, 0.0973));
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+// The per-fragment "front coordinate" the reveal wave compares against its radius
+// `R`: behind the front a fragment shows `revealTo`, ahead `revealFrom`. Swapping
+// the metric is what turns one ripple into many transition shapes.
+static inline float revealFrontCoord(constant HalftoneUniforms& U, float2 toOrigin,
+                                     float distO, float2 fragPx) {
+    if (U.revealMode < 0.5) {            // radial — expanding circle
+        return distO;
+    } else if (U.revealMode < 1.5) {     // diamond — expanding square (Chebyshev)
+        return max(abs(toOrigin.x), abs(toOrigin.y));
+    } else if (U.revealMode < 2.5) {     // bars — twin fronts sweeping along an axis
+        float c = cos(U.revealAngle), s = sin(U.revealAngle);
+        return abs(toOrigin.x * c + toOrigin.y * s);
+    } else if (U.revealMode < 3.5) {     // dissolve — radial front roughened per cell
+        float2 cell = floor(fragPx / max(U.cellSize, 1.0));
+        float n = hash22(cell).x;
+        return distO + (n - 0.5) * max(U.rippleEdge, 1.0) * 10.0;
+    } else if (U.revealMode < 4.5) {     // spiral — radius wound by angle
+        float ang = atan2(toOrigin.y, toOrigin.x);
+        return distO + ang * max(U.rippleEdge, 1.0) * 3.0;
+    } else {                             // venetian — repeating slats across an axis
+        float c = cos(U.revealAngle), s = sin(U.revealAngle);
+        float along = toOrigin.x * c + toOrigin.y * s;
+        float slat = max(U.cellSize, 8.0) * 3.0;
+        return distO * 0.15 + abs(fract(along / slat) - 0.5) * slat * 2.0;
+    }
 }
 
 // --- fragment --------------------------------------------------------------
@@ -232,7 +259,8 @@ fragment float4 halftone_fragment(VSOut in [[stage_in]],
     // --- reveal: the wave sweeps between dots and the non-dot view ----------
     float reveal;
     if (U.rippleActive > 0.5) {
-        float behindFront = smoothstep(R + U.rippleEdge, R - U.rippleEdge, distO);
+        float frontCoord  = revealFrontCoord(U, toOrigin, distO, fragPx);
+        float behindFront = smoothstep(R + U.rippleEdge, R - U.rippleEdge, frontCoord);
         reveal = mix(U.revealFrom, U.revealTo, behindFront);
     } else {
         reveal = U.revealTo;

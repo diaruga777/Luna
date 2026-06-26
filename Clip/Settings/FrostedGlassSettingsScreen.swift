@@ -178,7 +178,7 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         case .frost: return frostSliders.count
         case .glow: return glowSliders.count + 2   // sliders + tint color + additive toggle
         case .tone: return toneSliders.count
-        case .ripple: return rippleSliders.count
+        case .ripple: return rippleSliders.count + 2   // + reveal-mode picker + angle
         }
     }
 
@@ -216,8 +216,48 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         case .tone:
             return sliderCell(toneSliders[indexPath.row])
         case .ripple:
-            return sliderCell(rippleSliders[indexPath.row])
+            switch indexPath.row {
+            case 0: return revealModeCell()
+            case 1: return revealAngleCell()
+            default: return sliderCell(rippleSliders[indexPath.row - 2])
+            }
         }
+    }
+
+    /// Segmented control choosing the transition wavefront shape.
+    private func revealModeCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        let control = UISegmentedControl(items: FrostedGlassConfig.RevealMode.allCases.map(\.title))
+        control.selectedSegmentIndex = FrostedGlassSettings.revealMode.rawValue
+        control.apportionsSegmentWidthsByContent = true
+        control.addAction(UIAction { [weak self] _ in
+            if let mode = FrostedGlassConfig.RevealMode(rawValue: control.selectedSegmentIndex) {
+                FrostedGlassSettings.revealMode = mode
+                self?.settingsChanged()
+            }
+        }, for: .valueChanged)
+        embed(control, in: cell)
+        return cell
+    }
+
+    private func revealAngleCell() -> UITableViewCell {
+        sliderCell(SliderSpec(
+            title: "Reveal Angle", range: FrostedGlassSettings.revealAngleRange,
+            get: { FrostedGlassSettings.revealAngle }, set: { FrostedGlassSettings.revealAngle = $0 },
+            format: { String(format: "%.0f°", $0 * 180 / .pi) }))
+    }
+
+    /// Pins a control inside a cell's content view with standard margins.
+    private func embed(_ control: UIView, in cell: UITableViewCell) {
+        control.translatesAutoresizingMaskIntoConstraints = false
+        cell.contentView.addSubview(control)
+        NSLayoutConstraint.activate([
+            control.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
+            control.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+            control.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
+            control.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8),
+        ])
     }
 
     // MARK: Cell builders

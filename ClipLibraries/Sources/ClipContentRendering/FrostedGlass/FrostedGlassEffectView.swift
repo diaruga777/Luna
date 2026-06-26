@@ -98,6 +98,27 @@ public struct FrostedGlassConfig: Equatable {
     /// Total duration of the transition, in seconds. 0 auto-fits to the view.
     public var rippleDuration: TimeInterval = 0
 
+    /// How the tap-ripple sweeps the effect in and out — the wavefront *shape*.
+    public enum RevealMode: Int, CaseIterable {
+        case radial, diamond, bars, dissolve, spiral, venetian
+        public var title: String {
+            switch self {
+            case .radial: return "Radial"
+            case .diamond: return "Diamond"
+            case .bars: return "Bars"
+            case .dissolve: return "Dissolve"
+            case .spiral: return "Spiral"
+            case .venetian: return "Venetian"
+            }
+        }
+    }
+
+    /// The wavefront shape used by `ripple(at:)`.
+    public var revealMode: RevealMode = .radial
+
+    /// Direction (radians) for the bars / venetian reveals.
+    public var revealAngle: CGFloat = 0
+
     public init() {}
 }
 
@@ -136,7 +157,12 @@ private struct FrostedUniforms {
     var revealTo: Float = 1
     var ripplePhase: Float = 0
     var additiveGlow: Float = 0
-    var _pad: Float = 0
+    var revealMode: Float = 0
+
+    var revealAngle: Float = 0
+    var _pad0: Float = 0
+    var _pad1: Float = 0
+    var _pad2: Float = 0
 }
 
 // MARK: - FrostedGlassEffectView
@@ -623,6 +649,8 @@ public final class FrostedGlassEffectView: UIView {
         u.brightness = Float(config.brightness)
         u.tint = config.tint.straightSimd4
         u.additiveGlow = config.additiveGlow ? 1 : 0
+        u.revealMode = Float(config.revealMode.rawValue)
+        u.revealAngle = Float(config.revealAngle)
         u.time = Float(CACurrentMediaTime() - startTime)
 
         // The effect only ever captures a single-content stage via CARenderer, whose

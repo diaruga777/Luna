@@ -47,7 +47,12 @@ struct FrostedUniforms {
     float  revealTo;          // 0/1, effect state the wave moves toward (steady)
     float  ripplePhase;       // radians, dispersion oscillation phase
     float  additiveGlow;      // 0 = screen blend the glow, 1 = additive
-    float  _pad;
+    float  revealMode;        // 0 radial,1 diamond,2 bars,3 dissolve,4 spiral,5 venetian
+
+    float  revealAngle;       // radians, direction for the bars/venetian reveal
+    float  _pad0;
+    float  _pad1;
+    float  _pad2;
 };
 
 struct VSOut {
@@ -71,6 +76,30 @@ static inline float2 fhash22(float2 p) {
 }
 
 static inline float fluma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
+
+// Per-fragment "front coordinate" the reveal wave compares against its radius `R`;
+// swapping the metric turns the single ripple into several transition shapes.
+static inline float frostedFrontCoord(constant FrostedUniforms& U, float2 toOrigin,
+                                       float distO, float2 fragPx) {
+    if (U.revealMode < 0.5) {            // radial
+        return distO;
+    } else if (U.revealMode < 1.5) {     // diamond
+        return max(abs(toOrigin.x), abs(toOrigin.y));
+    } else if (U.revealMode < 2.5) {     // bars
+        float c = cos(U.revealAngle), s = sin(U.revealAngle);
+        return abs(toOrigin.x * c + toOrigin.y * s);
+    } else if (U.revealMode < 3.5) {     // dissolve
+        float2 cell = floor(fragPx / 24.0);
+        return distO + (fhash22(cell).x - 0.5) * max(U.rippleEdge, 1.0) * 10.0;
+    } else if (U.revealMode < 4.5) {     // spiral
+        return distO + atan2(toOrigin.y, toOrigin.x) * max(U.rippleEdge, 1.0) * 3.0;
+    } else {                             // venetian
+        float c = cos(U.revealAngle), s = sin(U.revealAngle);
+        float along = toOrigin.x * c + toOrigin.y * s;
+        float slat = 96.0;
+        return distO * 0.15 + abs(fract(along / slat) - 0.5) * slat * 2.0;
+    }
+}
 
 fragment float4 frosted_fragment(VSOut in [[stage_in]],
                                  texture2d<float, access::sample> src [[texture(0)]],
@@ -158,7 +187,8 @@ fragment float4 frosted_fragment(VSOut in [[stage_in]],
     // --- reveal between raw and effect at the wavefront --------------------
     float reveal;
     if (U.rippleActive > 0.5) {
-        float behind = smoothstep(R + U.rippleEdge, R - U.rippleEdge, distO);
+        float frontCoord = frostedFrontCoord(U, toOrigin, distO, fragPx);
+        float behind = smoothstep(R + U.rippleEdge, R - U.rippleEdge, frontCoord);
         reveal = mix(U.revealFrom, U.revealTo, behind);
     } else {
         reveal = U.revealTo;

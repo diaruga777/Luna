@@ -203,7 +203,7 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         case .shape: return 2
         case .dots: return dotSliders.count + 3
         case .gaps: return gapSliders.count + 1
-        case .ripple: return rippleSliders.count
+        case .ripple: return rippleSliders.count + 2   // + reveal-mode picker + angle
         case .drag: return dragSliders.count
         }
     }
@@ -255,10 +255,38 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
             if indexPath.row == 0 { return gapColorCell() }
             return sliderCell(gapSliders[indexPath.row - 1])
         case .ripple:
-            return sliderCell(rippleSliders[indexPath.row])
+            switch indexPath.row {
+            case 0: return revealModeCell()
+            case 1: return revealAngleCell()
+            default: return sliderCell(rippleSliders[indexPath.row - 2])
+            }
         case .drag:
             return sliderCell(dragSliders[indexPath.row])
         }
+    }
+
+    /// Segmented control choosing the transition wavefront shape.
+    private func revealModeCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        let control = UISegmentedControl(items: HalftoneConfig.RevealMode.allCases.map(\.title))
+        control.selectedSegmentIndex = HalftoneSettings.revealMode.rawValue
+        control.apportionsSegmentWidthsByContent = true
+        control.addAction(UIAction { [weak self] _ in
+            if let mode = HalftoneConfig.RevealMode(rawValue: control.selectedSegmentIndex) {
+                HalftoneSettings.revealMode = mode
+                self?.settingsChanged()
+            }
+        }, for: .valueChanged)
+        embed(control, in: cell)
+        return cell
+    }
+
+    private func revealAngleCell() -> UITableViewCell {
+        sliderCell(SliderSpec(
+            title: "Reveal Angle", range: HalftoneSettings.revealAngleRange,
+            get: { HalftoneSettings.revealAngle }, set: { HalftoneSettings.revealAngle = $0 },
+            format: { String(format: "%.0f°", $0 * 180 / .pi) }))
     }
 
     // MARK: Cell builders

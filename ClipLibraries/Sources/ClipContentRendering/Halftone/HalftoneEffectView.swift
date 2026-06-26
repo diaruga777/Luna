@@ -167,6 +167,30 @@ public struct HalftoneConfig: Equatable {
     /// settle back (the "current can only drag them so far").
     public var dragMaxDistance: CGFloat = 70
 
+    // -- transition / reveal animation ---------------------------------------
+
+    /// How the tap-ripple sweeps the effect in and out — the *shape* of the
+    /// wavefront, independent of the dot look itself.
+    public enum RevealMode: Int, CaseIterable {
+        case radial, diamond, bars, dissolve, spiral, venetian
+        public var title: String {
+            switch self {
+            case .radial: return "Radial"
+            case .diamond: return "Diamond"
+            case .bars: return "Bars"
+            case .dissolve: return "Dissolve"
+            case .spiral: return "Spiral"
+            case .venetian: return "Venetian"
+            }
+        }
+    }
+
+    /// The wavefront shape used by `ripple(at:)`.
+    public var revealMode: RevealMode = .radial
+
+    /// Direction (radians) for the bars / venetian reveals.
+    public var revealAngle: CGFloat = 0
+
     public init() {}
 
     // Convenience presets ---------------------------------------------------
@@ -261,8 +285,8 @@ private struct HalftoneUniforms {
     var dragRadius: Float = 0
 
     var dragVector = SIMD2<Float>(0, 0)
-    var _pad0: Float = 0
-    var _pad1: Float = 0
+    var revealMode: Float = 0
+    var revealAngle: Float = 0
 }
 
 // MARK: - HalftoneEffectView
@@ -808,6 +832,10 @@ public final class HalftoneEffectView: UIView {
         u.dragOrigin = dragOriginPx
         u.dragVector = dragVectorPx
         u.dragRadius = dragActive ? Float(config.dragRadius) * scale : 0
+
+        // Transition shape.
+        u.revealMode = Float(config.revealMode.rawValue)
+        u.revealAngle = Float(config.revealAngle)
 
         // On iOS, CARenderer captures the layer tree in UIKit's top-left orientation,
         // and the CPU snapshot path flips in its own CGContext, so neither path needs

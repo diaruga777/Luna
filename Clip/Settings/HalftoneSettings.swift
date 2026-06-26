@@ -165,6 +165,15 @@ enum HalftoneSettings {
         get { double("halftone.rippleDuration", 0) }
         set { defaults.set(newValue, forKey: "halftone.rippleDuration") }
     }
+    static var revealMode: HalftoneConfig.RevealMode {
+        get { HalftoneConfig.RevealMode(rawValue: int("halftone.revealMode", 0)) ?? .radial }
+        set { defaults.set(newValue.rawValue, forKey: "halftone.revealMode") }
+    }
+    static var revealAngle: Double {
+        get { double("halftone.revealAngle", 0) }
+        set { defaults.set(newValue, forKey: "halftone.revealAngle") }
+    }
+    static let revealAngleRange: ClosedRange<Double> = 0...(2 * .pi)
 
     // Drag (finger-follow) parameters.
     static var dragRadius: Double {
@@ -245,6 +254,8 @@ enum HalftoneSettings {
         c.rippleWavelength = CGFloat(rippleWavelength)
         c.rippleDecay = CGFloat(rippleDecay)
         c.rippleDuration = TimeInterval(rippleDuration)
+        c.revealMode = revealMode
+        c.revealAngle = CGFloat(revealAngle)
         c.dragRadius = CGFloat(dragRadius)
         c.dragStrength = CGFloat(dragStrength)
         c.dragMaxDistance = CGFloat(dragMaxDistance)

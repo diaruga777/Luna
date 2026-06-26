@@ -541,12 +541,14 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
             stageView.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -16),
             stageView.bottomAnchor.constraint(equalTo: footer.safeAreaLayoutGuide.bottomAnchor, constant: -10),
         ]
-        // Stage placement when expanded to fill the screen.
+        // Stage placement when expanded to fill the screen. Pinned to `view` (the
+        // stage is reparented there in toggleFullscreen) — NOT the 260pt footer, or
+        // it would be sized/positioned relative to the footer region.
         fullscreenStageConstraints = [
-            stageView.heightAnchor.constraint(equalToConstant: UIScreen.main.bounds.height * 0.8),
-            stageView.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 4),
-            stageView.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -4),
-            stageView.bottomAnchor.constraint(equalTo: footer.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            stageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            stageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            stageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            stageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ]
 
         NSLayoutConstraint.activate([
@@ -734,6 +736,9 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     private func startLiveLink() {
         teardownLiveLink()
         let link = CADisplayLink(target: VideoLinkProxy(self), selector: #selector(VideoLinkProxy.tick))
+        // Most clips are <=30fps and the dot grid hides the difference; cap the tick so
+        // we don't decode/capture/render at 120Hz on ProMotion for no visible gain.
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
         link.add(to: .main, forMode: .common)
         videoLink = link
     }
@@ -744,23 +749,31 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     }
 
     fileprivate func liveTick() {
-        if videoOutput != nil { readVideoFrame() }
-        // Animated GIF frames advance inside the image view; either way, the captured
-        // content changed this frame, so ask the effect to re-capture.
-        mediaEffect?.setNeedsCapture()
+        if videoOutput != nil {
+            // Only re-capture when a NEW video frame was actually decoded — otherwise
+            // we'd force a capture + shader pass on every tick with no new content.
+            if readVideoFrame() { mediaEffect?.setNeedsCapture() }
+        } else {
+            // Animated GIF: frames advance inside the image view, so re-capture each tick.
+            mediaEffect?.setNeedsCapture()
+        }
     }
 
-    private func readVideoFrame() {
-        guard let output = videoOutput else { return }
+    /// Decodes the current video frame into the image view. Returns true iff a new
+    /// frame was available (so callers only re-capture when something changed).
+    @discardableResult
+    private func readVideoFrame() -> Bool {
+        guard let output = videoOutput else { return false }
         let time = output.itemTime(forHostTime: CACurrentMediaTime())
         guard output.hasNewPixelBuffer(forItemTime: time),
               let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil)
-        else { return }
+        else { return false }
         var ciImage = CIImage(cvPixelBuffer: buffer)
         if let orientation = videoOrientation { ciImage = ciImage.oriented(orientation) }
-        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
+        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return false }
         mediaImageView.stopAnimating()
         mediaImageView.image = UIImage(cgImage: cgImage)
+        return true
     }
 
     private func teardownVideo() {

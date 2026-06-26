@@ -1,26 +1,26 @@
 //
 //  StoneEffectView.swift
-//  FrostedGlassEffect
+//  ClipContentRendering
 //
-//  A standalone UIKit component that applies a real-time "neon lights through
-//  frosted glass" effect to a view: the captured content is diffused by a
-//  scattered glass blur, its bright regions bloom into a tinted neon glow, and a
-//  tap fires an expanding ripple that sweeps the effect in/out from the touch
-//  point. Forked from HalftoneEffectView — it shares the capture/ripple/display-
-//  link machinery but swaps in the frosted-neon fragment shader and uniforms.
+//  A standalone UIKit component that applies a real-time "stone" effect to a view:
+//  the captured content is diffused by a scattered glass blur, then tinted toward a
+//  stone colour with a centre→edge coverage gradient (clear rim, coloured middle)
+//  and a fuzzy tumbled speckle. Two materials — jellystone (pastel sea glass) and
+//  quartz (milky, cool). A tap fires an expanding ripple that sweeps the effect
+//  in/out. Shares the capture/ripple/display-link machinery with the other effects.
 //
 //  Usage:
 //      let effect = imageView.applyStone { c in
-//          c.frostRadius = 12
-//          c.glowIntensity = 1.6
-//          c.tint = .cyan
+//          c.material = .jellystone
+//          c.blurRadius = 12
+//          c.tint = UIColor(red: 0.55, green: 0.85, blue: 0.78, alpha: 0.55)
 //      }
 //      effect.ripplesOnTap = true     // tap to ripple the effect on/off
 //      effect.remove()                // or imageView.removeStone()
 //
 //  Each display-link tick the target layer tree is rendered into an IOSurface-
 //  backed Metal texture via `CARenderer` (GPU, animation-accurate), then a single
-//  fragment-shader pass produces the frosted-neon look. A CPU snapshot path is the
+//  fragment-shader pass produces the stone look. A CPU snapshot path is the
 //  fallback if CARenderer is unavailable.
 //
 
@@ -140,18 +140,18 @@ public struct StoneConfig: Equatable {
     public init() {}
 }
 
-// MARK: - Uniforms (must match FrostedGlassShaders.metal exactly)
+// MARK: - Uniforms (must match StoneShaders.metal field order exactly)
 
 private struct StoneUniforms {
     var resolution = SIMD2<Float>(0, 0)
     var contentScale = SIMD2<Float>(1, 1)
 
-    var frostRadius: Float = 10
-    var frostScatter: Float = 0.5
-    var glowThreshold: Float = 0.55
-    var glowIntensity: Float = 1.4
+    var blurRadius: Float = 10
+    var grain: Float = 0.5
+    var colorBias: Float = 0.55
+    var translucency: Float = 1.4
 
-    var glowRadius: Float = 22
+    var edgeFeather: Float = 22
     var saturation: Float = 1.3
     var brightness: Float = 1
     var flipVertical: Float = 1
@@ -174,7 +174,7 @@ private struct StoneUniforms {
 
     var revealTo: Float = 1
     var ripplePhase: Float = 0
-    var additiveGlow: Float = 0
+    var material: Float = 0
     var revealMode: Float = 0
 
     var revealAngle: Float = 0
@@ -334,8 +334,8 @@ public final class StoneEffectView: UIView {
         guard let lib = library,
               let vfn = lib.makeFunction(name: "stone_vertex"),
               let ffn = lib.makeFunction(name: "stone_fragment") else {
-            assertionFailure("HalftoneEffect: could not load Metal functions. " +
-                             "Ensure HalftoneShaders.metal is in the target.")
+            assertionFailure("StoneEffect: could not load Metal functions. " +
+                             "Ensure StoneShaders.metal is in the target.")
             return false
         }
 
@@ -357,7 +357,7 @@ public final class StoneEffectView: UIView {
             pipeline = try device.makeRenderPipelineState(descriptor: desc)
             return true
         } catch {
-            assertionFailure("HalftoneEffect: pipeline error \(error)")
+            assertionFailure("StoneEffect: pipeline error \(error)")
             return false
         }
     }
@@ -658,15 +658,15 @@ public final class StoneEffectView: UIView {
         // Source texture is the same pixel size as the drawable in our setup.
         u.contentScale = SIMD2(1, 1)
 
-        u.frostRadius = Float(config.blurRadius) * scale
-        u.frostScatter = Float(config.grain)
-        u.glowThreshold = Float(config.colorBias)
-        u.glowIntensity = Float(config.translucency)
-        u.glowRadius = Float(config.edgeFeather) * scale
+        u.blurRadius = Float(config.blurRadius) * scale
+        u.grain = Float(config.grain)
+        u.colorBias = Float(config.colorBias)
+        u.translucency = Float(config.translucency)
+        u.edgeFeather = Float(config.edgeFeather) * scale
         u.saturation = Float(config.saturation)
         u.brightness = Float(config.brightness)
         u.tint = config.tint.straightSimd4
-        u.additiveGlow = Float(config.material.rawValue)   // 0 jellystone, 1 quartz
+        u.material = Float(config.material.rawValue)   // 0 jellystone, 1 quartz
         u.revealMode = Float(config.revealMode.rawValue)
         u.revealAngle = Float(config.revealAngle)
         u.chromaticAberration = Float(config.chromaticAberration) * scale

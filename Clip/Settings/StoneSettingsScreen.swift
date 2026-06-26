@@ -613,6 +613,9 @@ final class StoneSettingsScreen: UIViewController, UITableViewDataSource, UITabl
     private func startLiveLink() {
         teardownLiveLink()
         let link = CADisplayLink(target: VideoLinkProxy(self), selector: #selector(VideoLinkProxy.tick))
+        // Most clips are <=30fps and the effect hides the difference; cap the tick so
+        // we don't decode/capture/render at 120Hz on ProMotion for no visible gain.
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
         link.add(to: .main, forMode: .common)
         videoLink = link
     }
@@ -623,23 +626,31 @@ final class StoneSettingsScreen: UIViewController, UITableViewDataSource, UITabl
     }
 
     fileprivate func liveTick() {
-        if videoOutput != nil { readVideoFrame() }
-        // Animated GIF frames advance inside the image view; either way, the captured
-        // content changed this frame, so ask the effect to re-capture.
-        mediaEffect?.setNeedsCapture()
+        if videoOutput != nil {
+            // Only re-capture when a NEW video frame was actually decoded — otherwise
+            // we'd force a capture + shader pass on every tick with no new content.
+            if readVideoFrame() { mediaEffect?.setNeedsCapture() }
+        } else {
+            // Animated GIF: frames advance inside the image view, so re-capture each tick.
+            mediaEffect?.setNeedsCapture()
+        }
     }
 
-    private func readVideoFrame() {
-        guard let output = videoOutput else { return }
+    /// Decodes the current video frame into the image view. Returns true iff a new
+    /// frame was available (so callers only re-capture when something changed).
+    @discardableResult
+    private func readVideoFrame() -> Bool {
+        guard let output = videoOutput else { return false }
         let time = output.itemTime(forHostTime: CACurrentMediaTime())
         guard output.hasNewPixelBuffer(forItemTime: time),
               let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil)
-        else { return }
+        else { return false }
         var ciImage = CIImage(cvPixelBuffer: buffer)
         if let orientation = videoOrientation { ciImage = ciImage.oriented(orientation) }
-        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
+        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return false }
         mediaImageView.stopAnimating()
         mediaImageView.image = UIImage(cgImage: cgImage)
+        return true
     }
 
     private func teardownVideo() {

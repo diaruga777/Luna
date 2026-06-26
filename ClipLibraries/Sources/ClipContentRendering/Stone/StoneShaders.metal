@@ -1,14 +1,15 @@
 //
-//  FrostedGlassShaders.metal
-//  FrostedGlassEffect
+//  StoneShaders.metal
+//  ClipContentRendering
 //
-//  Real-time "neon lights through frosted glass" post-process. The source content
-//  is diffused by a scattered disk blur (the frosting), then its bright/saturated
-//  regions are bloomed into a soft neon glow, optionally tinted. A wave transition
-//  (shared in spirit with the halftone effect) reveals the effect from a tap point
-//  with a radial ripple through the "glass".
+//  Real-time "stone" post-process: the source is diffused by a scattered disk blur,
+//  then tinted toward a stone colour with a centre→edge coverage gradient (clear at
+//  the rim, coloured in the middle) and a fuzzy tumbled speckle. Two materials:
+//  jellystone (pastel sea glass) and quartz (milky, cool). A tap fires a ripple that
+//  sweeps the effect in/out from the touch point.
 //
-//  Mirrors `StoneUniforms` in Swift — keep field order/packing identical.
+//  Mirrors `StoneUniforms` in Swift — keep field order/packing identical (the two
+//  structs are matched by field ORDER, not name).
 //
 
 #include <metal_stdlib>
@@ -18,17 +19,17 @@ struct StoneUniforms {
     float2 resolution;        // drawable size in pixels
     float2 contentScale;      // usually (1,1); lets the source differ in size
 
-    float  frostRadius;       // px, radius of the frosted diffusion blur
-    float  frostScatter;      // 0..1, per-pixel random jitter of the frost taps
-    float  glowThreshold;     // 0..1, luminance above which a pixel blooms
-    float  glowIntensity;     // strength the neon glow is added back
+    float  blurRadius;        // px, radius of the frosted diffusion blur (glass softness)
+    float  grain;             // 0..1, fuzzy tumbled speckle of beach glass
+    float  colorBias;         // 0..1, how far the coloured body reaches toward the rim
+    float  translucency;      // 0..1, max coverage of the body over the raw image
 
-    float  glowRadius;        // px, spread of the neon glow
+    float  edgeFeather;       // px, softness of the body→clear gradient at the rim
     float  saturation;        // 0..n saturation multiplier
     float  brightness;        // brightness multiplier
     float  flipVertical;      // 0 = sample as-is, 1 = flip source vertically
 
-    float4 tint;              // straight RGBA neon tint (a = tint strength)
+    float4 tint;              // straight RGBA stone colour (a = tint strength)
 
     float  time;              // seconds (reserved / animated noise)
     float  rippleActive;      // 0 = steady (reveal = revealTo), 1 = wave in flight
@@ -46,7 +47,7 @@ struct StoneUniforms {
 
     float  revealTo;          // 0/1, effect state the wave moves toward (steady)
     float  ripplePhase;       // radians, dispersion oscillation phase
-    float  additiveGlow;      // 0 = screen blend the glow, 1 = additive
+    float  material;          // 0 = jellystone sea-glass, 1 = quartz
     float  revealMode;        // 0 radial,1 diamond,2 bars,3 dissolve,4 spiral,5 venetian
 
     float  revealAngle;       // radians, direction for the bars/venetian reveal
@@ -141,14 +142,14 @@ fragment float4 stone_fragment(VSOut in [[stage_in]],
     float2 texel = U.contentScale / U.resolution;
 
     // --- frosted glass: jittered disk blur (golden-angle spiral) -----------
-    float2 jitter = (shash22(fragPx + U.time) - 0.5) * 2.0 * U.frostScatter * U.frostRadius;
+    float2 jitter = (shash22(fragPx + U.time) - 0.5) * 2.0 * U.grain * U.blurRadius;
     float3 frost = float3(0.0);
     float  wsum  = 0.0;
     const int FROST_TAPS = 16;
     for (int i = 0; i < FROST_TAPS; i++) {
         float t   = (float(i) + 0.5) / float(FROST_TAPS);
         float ang = float(i) * 2.39996323;            // golden angle
-        float2 off = float2(cos(ang), sin(ang)) * sqrt(t) * U.frostRadius + jitter;
+        float2 off = float2(cos(ang), sin(ang)) * sqrt(t) * U.blurRadius + jitter;
         float wt  = 1.0 - 0.5 * t;                     // weight the centre a bit more
         frost += src.sample(linearSampler, baseUV + off * texel).rgb * wt;
         wsum  += wt;
@@ -156,30 +157,26 @@ fragment float4 stone_fragment(VSOut in [[stage_in]],
     frost /= max(wsum, 1e-3);
 
     // --- stone compositing -------------------------------------------------
-    // Repurposed uniform slots for the stone look:
-    //   glowThreshold -> colorBias   (how far the coloured body reaches outward)
-    //   glowIntensity -> translucency (max coverage of the body over the raw image)
-    //   glowRadius    -> edge feather (px) softening the body→clear transition
-    //   additiveGlow  -> material     (0 = jellystone sea-glass, 1 = quartz)
-    //   frostScatter  -> grain        (fuzzy tumbled speckle)
     // A centre→edge coverage gradient gives the sea-glass "clear at the rim,
-    // coloured in the middle" character.
+    // coloured in the middle" character: `colorBias` sets how far the body reaches,
+    // `edgeFeather` softens the body→clear transition, `translucency` caps how much
+    // the body veils the raw image, and `material` picks jellystone vs quartz.
     float2 cc = U.resolution * 0.5;
     float2 nd = (fragPx - cc) / max(min(cc.x, cc.y), 1.0);   // 0 centre → ~1 nearest edge
     float rdist = length(nd);
-    float reach = mix(0.35, 1.20, clamp(U.glowThreshold, 0.0, 1.0));
-    float feather = max(U.glowRadius / max(min(cc.x, cc.y), 1.0), 0.05);
-    float coverage = smoothstep(reach, reach - feather, rdist) * clamp(U.glowIntensity, 0.0, 1.0);
+    float reach = mix(0.35, 1.20, clamp(U.colorBias, 0.0, 1.0));
+    float feather = max(U.edgeFeather / max(min(cc.x, cc.y), 1.0), 0.05);
+    float coverage = smoothstep(reach, reach - feather, rdist) * clamp(U.translucency, 0.0, 1.0);
 
     // Frozen per-pixel speckle — the tumbled, fuzzy frosting of beach glass.
-    float speckle = (shash22(floor(fragPx)).x - 0.5) * U.frostScatter;
+    float speckle = (shash22(floor(fragPx)).x - 0.5) * U.grain;
 
     float3 base = frost;
     base = mix(float3(sluma(base)), base, U.saturation);
     base *= U.brightness;
 
     float3 body;
-    if (U.additiveGlow < 0.5) {
+    if (U.material < 0.5) {
         // Jellystone — cheerful pastel sea glass: lift the frosted base toward a
         // soft pastel tint, a touch milkier toward the centre, with speckle.
         float3 pastel = U.tint.rgb;

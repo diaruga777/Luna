@@ -327,8 +327,8 @@ public final class FrostedGlassEffectView: UIView {
         guard let lib = library,
               let vfn = lib.makeFunction(name: "frosted_vertex"),
               let ffn = lib.makeFunction(name: "frosted_fragment") else {
-            assertionFailure("HalftoneEffect: could not load Metal functions. " +
-                             "Ensure HalftoneShaders.metal is in the target.")
+            assertionFailure("FrostedGlassEffect: could not load Metal functions. " +
+                             "Ensure FrostedGlassShaders.metal is in the target.")
             return false
         }
 
@@ -350,7 +350,7 @@ public final class FrostedGlassEffectView: UIView {
             pipeline = try device.makeRenderPipelineState(descriptor: desc)
             return true
         } catch {
-            assertionFailure("HalftoneEffect: pipeline error \(error)")
+            assertionFailure("FrostedGlassEffect: pipeline error \(error)")
             return false
         }
     }

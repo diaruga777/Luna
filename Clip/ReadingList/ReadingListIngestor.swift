@@ -127,11 +127,10 @@ final class ReadingListIngestor {
         let resolvedContent = await ArticleImageDownloader.download(
             content, itemID: item.id, store: store, refererURL: url)
         let coverData = await fetchCoverImageData(html: html, baseURL: url)
-        // Capture the source page BEFORE saving parsed reader content. This is a
-        // real WebKit web archive, not a synthetic page assembled from blocks.
-        if let archive = await WebArchiveCapturer.capture(html: html, baseURL: url) {
-            store.saveWebArchive(archive, for: item)
-        }
+        // Capture the source page BEFORE saving parsed reader content. Prefer a live
+        // URL navigation (WebKit fetches every subresource, so Original renders like
+        // the real page); fall back to the fetched HTML only if that fails.
+        await captureWebArchiveIfPossible(for: item, url: url, html: html)
         let updated = store.saveContent(resolvedContent, for: item)
         if let coverData { store.setThumbnail(coverData, for: item.id) }
         if updated.state == .ready {
@@ -420,6 +419,37 @@ final class ReadingListIngestor {
         for item in store.items() where item.state == .pending || item.state == .failed {
             Task { await self.ingest(item) }
         }
+        backfillMissingWebArchives()
+    }
+
+    /// `.webarchive` capture was added after many items were saved, and several save
+    /// surfaces (extensions, paste, friend-share) don't capture inline. This repairs
+    /// every ready web page that lacks an archive — one WebKit capture at a time so we
+    /// never run a fleet of web views — which is also how those surfaces get covered.
+    func backfillMissingWebArchives() {
+        Task { @MainActor in
+            let candidates = store.items().filter { item in
+                item.state == .ready
+                    && item.sanitizedDocumentType == nil          // documents already have a source file
+                    && store.webArchiveURL(for: item) == nil
+                    && (URL(string: item.urlString)?.scheme?.hasPrefix("http") ?? false)  // excludes clipmail://
+            }
+            // Cap per pass so a large backlog doesn't tie up a web view indefinitely.
+            for item in candidates.prefix(8) {
+                guard let url = URL(string: item.urlString) else { continue }
+                await captureWebArchiveIfPossible(for: item, url: url, html: nil)
+            }
+        }
+    }
+
+    /// Captures and stores a `.webarchive` for a web page, preferring the live URL.
+    fileprivate func captureWebArchiveIfPossible(for item: ReadingListItem, url: URL, html: String?) async {
+        guard url.scheme?.hasPrefix("http") ?? false else { return }   // never for clipmail://, clipdoc://
+        var archive = await WebArchiveCapturer.capture(url: url)
+        if archive == nil, let html, !html.isEmpty {
+            archive = await WebArchiveCapturer.capture(html: html, baseURL: url)
+        }
+        if let archive { store.saveWebArchive(archive, for: item) }
     }
 
     /// What a save press did, so intents can wait on the right work.

@@ -149,6 +149,24 @@ enum FrostedGlassSettings {
     }
     static let revealAngleRange: ClosedRange<Double> = 0...(2 * .pi)
 
+    // Stylize parameters.
+    static let chromaticRange: ClosedRange<Double> = 0...12
+    static let scanlineStrengthRange: ClosedRange<Double> = 0...1
+    static let scanlineSpacingRange: ClosedRange<Double> = 2...20
+
+    static var chromaticAberration: Double {
+        get { double("frosted.chromaticAberration", 0) }
+        set { defaults.set(newValue, forKey: "frosted.chromaticAberration") }
+    }
+    static var scanlineStrength: Double {
+        get { double("frosted.scanlineStrength", 0) }
+        set { defaults.set(newValue, forKey: "frosted.scanlineStrength") }
+    }
+    static var scanlineSpacing: Double {
+        get { double("frosted.scanlineSpacing", 4) }
+        set { defaults.set(newValue, forKey: "frosted.scanlineSpacing") }
+    }
+
     // MARK: Build the effect config
 
     static var currentConfig: FrostedGlassConfig {
@@ -173,6 +191,9 @@ enum FrostedGlassSettings {
         c.rippleDuration = TimeInterval(rippleDuration)
         c.revealMode = revealMode
         c.revealAngle = CGFloat(revealAngle)
+        c.chromaticAberration = CGFloat(chromaticAberration)
+        c.scanlineStrength = CGFloat(scanlineStrength)
+        c.scanlineSpacing = CGFloat(scanlineSpacing)
         return c
     }
 }

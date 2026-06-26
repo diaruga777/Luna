@@ -119,6 +119,17 @@ public struct FrostedGlassConfig: Equatable {
     /// Direction (radians) for the bars / venetian reveals.
     public var revealAngle: CGFloat = 0
 
+    // -- stylize -------------------------------------------------------------
+
+    /// RGB dispersion split for the frosted result, in points. 0 = off.
+    public var chromaticAberration: CGFloat = 0
+
+    /// Darkening of alternating scanlines, 0...1. 0 = off.
+    public var scanlineStrength: CGFloat = 0
+
+    /// Scanline period, in points.
+    public var scanlineSpacing: CGFloat = 4
+
     public init() {}
 }
 
@@ -160,9 +171,9 @@ private struct FrostedUniforms {
     var revealMode: Float = 0
 
     var revealAngle: Float = 0
-    var _pad0: Float = 0
-    var _pad1: Float = 0
-    var _pad2: Float = 0
+    var chromaticAberration: Float = 0
+    var scanlineStrength: Float = 0
+    var scanlineSpacing: Float = 4
 }
 
 // MARK: - FrostedGlassEffectView
@@ -651,6 +662,9 @@ public final class FrostedGlassEffectView: UIView {
         u.additiveGlow = config.additiveGlow ? 1 : 0
         u.revealMode = Float(config.revealMode.rawValue)
         u.revealAngle = Float(config.revealAngle)
+        u.chromaticAberration = Float(config.chromaticAberration) * scale
+        u.scanlineStrength = Float(config.scanlineStrength)
+        u.scanlineSpacing = max(Float(config.scanlineSpacing) * scale, 2)
         u.time = Float(CACurrentMediaTime() - startTime)
 
         // The effect only ever captures a single-content stage via CARenderer, whose

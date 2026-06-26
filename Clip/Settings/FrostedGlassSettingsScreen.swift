@@ -26,7 +26,7 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
     }
 
     private enum Section: Int, CaseIterable {
-        case frost, glow, tone, ripple
+        case frost, glow, tone, stylize, ripple
     }
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
@@ -60,6 +60,18 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         SliderSpec(title: "Brightness", range: FrostedGlassSettings.brightnessRange,
                    get: { FrostedGlassSettings.brightness }, set: { FrostedGlassSettings.brightness = $0 },
                    format: { String(format: "%.2f×", $0) }),
+    ]
+
+    private lazy var stylizeSliders: [SliderSpec] = [
+        SliderSpec(title: "Chromatic Aberration", range: FrostedGlassSettings.chromaticRange,
+                   get: { FrostedGlassSettings.chromaticAberration }, set: { FrostedGlassSettings.chromaticAberration = $0 },
+                   format: { $0 < 0.1 ? "Off" : String(format: "%.1f px", $0) }),
+        SliderSpec(title: "Scanlines", range: FrostedGlassSettings.scanlineStrengthRange,
+                   get: { FrostedGlassSettings.scanlineStrength }, set: { FrostedGlassSettings.scanlineStrength = $0 },
+                   format: { $0 < 0.01 ? "Off" : String(format: "%.0f%%", $0 * 100) }),
+        SliderSpec(title: "Scanline Spacing", range: FrostedGlassSettings.scanlineSpacingRange,
+                   get: { FrostedGlassSettings.scanlineSpacing }, set: { FrostedGlassSettings.scanlineSpacing = $0 },
+                   format: { String(format: "%.0f px", $0) }),
     ]
 
     private lazy var rippleSliders: [SliderSpec] = [
@@ -178,6 +190,7 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         case .frost: return frostSliders.count
         case .glow: return glowSliders.count + 2   // sliders + tint color + additive toggle
         case .tone: return toneSliders.count
+        case .stylize: return stylizeSliders.count
         case .ripple: return rippleSliders.count + 2   // + reveal-mode picker + angle
         }
     }
@@ -187,6 +200,7 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         case .frost: return "Frosted Glass"
         case .glow: return "Neon Glow"
         case .tone: return "Tone"
+        case .stylize: return "Stylize"
         case .ripple: return "Ripple Transition"
         }
     }
@@ -215,6 +229,8 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
             return additiveGlowToggleCell()
         case .tone:
             return sliderCell(toneSliders[indexPath.row])
+        case .stylize:
+            return sliderCell(stylizeSliders[indexPath.row])
         case .ripple:
             switch indexPath.row {
             case 0: return revealModeCell()

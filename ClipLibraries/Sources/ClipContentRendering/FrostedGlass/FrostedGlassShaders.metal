@@ -50,9 +50,9 @@ struct FrostedUniforms {
     float  revealMode;        // 0 radial,1 diamond,2 bars,3 dissolve,4 spiral,5 venetian
 
     float  revealAngle;       // radians, direction for the bars/venetian reveal
-    float  _pad0;
-    float  _pad1;
-    float  _pad2;
+    float  chromaticAberration; // px, RGB split applied to the frosted result (0 = off)
+    float  scanlineStrength;  // 0..1 darkening of alternating scanlines (0 = off)
+    float  scanlineSpacing;   // px, period of the scanlines
 };
 
 struct VSOut {
@@ -182,6 +182,16 @@ fragment float4 frosted_fragment(VSOut in [[stage_in]],
     } else {
         color = 1.0 - (1.0 - clamp(color, 0.0, 1.0)) * (1.0 - clamp(glow, 0.0, 1.0)); // screen
     }
+
+    // Chromatic aberration: pull the R/B channels from offset samples for a glassy
+    // dispersion fringe (blended, so the frosted body is preserved).
+    if (U.chromaticAberration > 0.05) {
+        float2 off = float2(U.chromaticAberration, 0.0) * texel;
+        float r = src.sample(linearSampler, baseUV + off).r * U.brightness;
+        float b = src.sample(linearSampler, baseUV - off).b * U.brightness;
+        color.r = mix(color.r, r, 0.6);
+        color.b = mix(color.b, b, 0.6);
+    }
     float4 effect = float4(clamp(color, 0.0, 1.0), 1.0);
 
     // --- reveal between raw and effect at the wavefront --------------------
@@ -195,5 +205,13 @@ fragment float4 frosted_fragment(VSOut in [[stage_in]],
     }
     reveal = clamp(reveal, 0.0, 1.0);
 
-    return mix(raw, effect, reveal);
+    float4 outColor = mix(raw, effect, reveal);
+
+    // Scanlines over the revealed effect (CRT-ish neon look).
+    if (U.scanlineStrength > 0.001 && reveal > 0.001) {
+        float period = max(U.scanlineSpacing, 2.0);
+        float s = 0.5 + 0.5 * cos(6.2831853 * fragPx.y / period);
+        outColor.rgb *= 1.0 - U.scanlineStrength * s * reveal;
+    }
+    return outColor;
 }

@@ -21,12 +21,9 @@ enum BypassRuleTable {
         return rules.first { host == $0.domain || host.hasSuffix("." + $0.domain) }
     }
 
-    static let rules = [
-        "nytimes.com", "wsj.com", "ft.com", "economist.com", "barrons.com",
-        "bloomberg.com", "haaretz.com", "washingtonpost.com", "newyorker.com",
-        "theatlantic.com", "wired.com", "businessinsider.com", "telegraph.co.uk",
-        "thetimes.co.uk", "latimes.com", "bostonglobe.com", "nikkei.com",
-        "seekingalpha.com", "hbr.org", "theinformation.com", "foreignpolicy.com",
-        "foreignaffairs.com",
-    ].map { BypassRule(domain: $0, strategies: [.archiveToday]) }
+    /// Every hard-paywall host maps to the archive.is strategy. Built straight from
+    /// `NewsSites.hardPaywall` so the bypass table can never drift from the
+    /// classifier's notion of which hosts are hard-paywalled.
+    static let rules = NewsSites.hardPaywall
+        .map { BypassRule(domain: $0, strategies: [.archiveToday]) }
 }

@@ -84,41 +84,25 @@ enum Classifier {
         // before classification, so they never bypass the storefront price rules.
         KnownSite(hosts: AmazonPriceRule.storefrontHosts,
                   kind: { _ in .product(.knownShopHost) }),
-        // General-merchandise retailers.
-        KnownSite(hosts: ["target.com", "walmart.com", "bestbuy.com", "ebay.com", "ebay.co.uk",
-                          "ebay.com.au", "ebay.de", "etsy.com", "wayfair.com", "homedepot.com",
-                          "lowes.com", "costco.com", "ikea.com", "newegg.com", "aliexpress.com",
-                          "alibaba.com", "temu.com", "shein.com", "wish.com", "overstock.com",
-                          "macys.com", "nordstrom.com", "kohls.com", "argos.co.uk",
-                          "currys.co.uk", "johnlewis.com", "bunnings.com.au", "kmart.com.au",
-                          "bigw.com.au", "jbhifi.com.au", "harveynorman.com.au", "thegoodguys.com.au",
-                          "rei.com", "chewy.com", "zappos.com", "wickes.co.uk"],
+        // General-merchandise retailers (international list in `ShoppingSites`).
+        KnownSite(hosts: ShoppingSites.retailers,
                   kind: { _ in .product(.knownShopHost) }),
     ]
 
     // MARK: - Phase 1c: news rows
 
     /// Hard-paywall news hosts → `.paywalledArticle(hardHost: true)` (only the
-    /// archive-CAPTCHA route can read them). Folds in `ArticleFetcher.hardPaywallHosts`
-    /// plus named international peers. APPEND here.
+    /// archive-CAPTCHA route can read them). The worldwide list lives in
+    /// `NewsSites.hardPaywall`.
     static let hardPaywallNewsSites = KnownSite(
-        hosts: ["wsj.com", "ft.com", "nytimes.com", "economist.com", "bloomberg.com",
-                "washingtonpost.com", "newyorker.com", "theatlantic.com", "wired.com",
-                "barrons.com", "businessinsider.com", "theinformation.com", "hbr.org",
-                "foreignpolicy.com", "foreignaffairs.com", "thetimes.co.uk", "telegraph.co.uk",
-                "nikkei.com", "seekingalpha.com", "latimes.com", "bostonglobe.com",
-                "smh.com.au", "theage.com.au", "afr.com", "theaustralian.com.au",
-                "wsj.com.au", "thetimes.com"],
+        hosts: NewsSites.hardPaywall,
         kind: { _ in .paywalledArticle(hardHost: true) })
 
     /// Free-news hosts → `.article` (fast-path: skip the heuristic phase for a host
-    /// we already know is a readable article site). APPEND here.
+    /// we already know is a readable article site). The worldwide list lives in
+    /// `NewsSites.free`.
     static let freeNewsSites = KnownSite(
-        hosts: ["theguardian.com", "bbc.com", "bbc.co.uk", "reuters.com", "apnews.com",
-                "npr.org", "cnn.com", "nbcnews.com", "abcnews.go.com", "cbsnews.com",
-                "abc.net.au", "news.com.au", "9news.com.au", "aljazeera.com",
-                "techcrunch.com", "theverge.com", "arstechnica.com", "engadget.com",
-                "wikipedia.org"],
+        hosts: NewsSites.free,
         kind: { _ in .article })
 
     static let newsSites: [KnownSite] = [hardPaywallNewsSites, freeNewsSites]

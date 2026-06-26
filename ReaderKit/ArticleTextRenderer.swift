@@ -106,8 +106,18 @@ enum ArticleTextRenderer {
         return result
     }
 
+    /// In-memory cache of already-decoded, downsampled images. The bytes are on
+    /// disk (downloaded once at ingest), but decoding them is a synchronous, costly
+    /// main-thread operation — re-decoding on every reader open is the visible pause.
+    /// Keyed by file path + target width so a re-open is instant.
+    nonisolated(unsafe) private static let decodedCache = NSCache<NSString, UIImage>()
+
     /// Decodes the image already scaled down — never holds the full-size bitmap.
+    /// Cached so navigating back into an article (or reopening it) is instant.
     private static func downsampledImage(at fileURL: URL, maxWidth: CGFloat) -> UIImage? {
+        let key = "\(fileURL.path)|\(Int(maxWidth.rounded()))" as NSString
+        if let cached = decodedCache.object(forKey: key) { return cached }
+
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, sourceOptions) else {
             return nil
@@ -122,7 +132,9 @@ enum ArticleTextRenderer {
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
             return nil
         }
-        return UIImage(cgImage: cgImage, scale: scale, orientation: .up)
+        let image = UIImage(cgImage: cgImage, scale: scale, orientation: .up)
+        decodedCache.setObject(image, forKey: key)
+        return image
     }
 
     /// Returns the styled block string plus the offset of the block's text

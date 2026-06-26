@@ -49,6 +49,19 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             window.makeKeyAndVisible()
             return
         }
+        // Deep-link straight into the interactive archive/bypass reader for a URL, to
+        // exercise the trailing-dot WKWebView pre-stage end-to-end.
+        if let archiveArg = debugLaunchArgValue(after: "-openArchive"),
+           let archiveURL = URL(string: archiveArg) {
+            // A real item id is required for extraction to save (and not silently bail).
+            let item = ReadingListStore.shared.addIfAbsent(urlString: archiveURL.absoluteString)
+                ?? ReadingListStore.shared.add(urlString: archiveURL.absoluteString)
+            let reader = ArchiveWebReaderViewController(articleURL: archiveURL, itemID: item.id)
+            window.rootViewController = UINavigationController(rootViewController: reader)
+            self.window = window
+            window.makeKeyAndVisible()
+            return
+        }
         #endif
 
         if KeychainIdentityStore.shared.loadIdentity() == nil {

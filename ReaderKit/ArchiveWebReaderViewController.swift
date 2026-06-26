@@ -91,7 +91,11 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// Poll ticks spent on the current pre-stage page; past `bypassPollLimit` without
     /// a readable extraction we advance to the next pre-stage (or the archive flow).
     private var bypassPollCount = 0
-    private static let bypassPollLimit = 7   // ≈ 9s at the 1.3s poll interval
+    /// ≈12s at the 0.35s poll interval. A heavy SPA article (NYT et al.) hydrates its
+    /// full article DOM well after first paint, so the pre-stage needs a real budget to
+    /// let the body fill in before we give up and route to archive.today — the old
+    /// 7-tick (~2.45s) limit gave up before the text was extractable.
+    private static let bypassPollLimit = 34
     /// Set once we surface a terminal message in the overlay (rate-limit or
     /// un-archivable). Stops polling/extraction and any further overlay toggling.
     private var didShowTerminalMessage = false

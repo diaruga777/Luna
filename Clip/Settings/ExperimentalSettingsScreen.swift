@@ -4,12 +4,15 @@
 //
 
 import UIKit
+import ClipContentRendering
 
 /// Experimental features, off by default: on-device semantic sharing
 /// suggestions, and YouTube integration (sign-in, playlist, auto-add).
 final class ExperimentalSettingsScreen: UITableViewController {
 
-    private enum Section: Int, CaseIterable { case semantic, archiveOverlay, halftone, frostedGlass, youtube }
+    private enum Section: Int, CaseIterable {
+        case semantic, archiveOverlay, halftone, frostedGlass, jellystone, quartz, youtube
+    }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
 
     init() { super.init(style: .insetGrouped) }
@@ -22,6 +25,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
         switch name?.lowercased() {
         case "halftone": return HalftoneSettingsScreen()
         case "frosted", "frostedglass", "neon": return FrostedGlassSettingsScreen()
+        case "jellystone", "jelly", "seaglass": return StoneSettingsScreen(material: .jellystone)
+        case "quartz": return StoneSettingsScreen(material: .quartz)
         default: return nil
         }
     }
@@ -41,6 +46,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .archiveOverlay: return 1
         case .halftone: return 1
         case .frostedGlass: return 1
+        case .jellystone: return 1
+        case .quartz: return 1
         case .youtube: return YouTubeRow.allCases.count
         }
     }
@@ -51,6 +58,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .archiveOverlay: return "Archive Reader Cover"
         case .halftone: return "Halftone Effect"
         case .frostedGlass: return "Frosted Neon Effect"
+        case .jellystone: return "Jellystone Effect"
+        case .quartz: return "Quartz Effect"
         case .youtube: return "DEV ONLY: YouTube"
         }
     }
@@ -67,6 +76,12 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .frostedGlass:
             return "A real-time \"neon lights through frosted glass\" shader, with its own "
                 + "parameters, live preview, and tap-to-ripple wave."
+        case .jellystone:
+            return "A cheerful pastel sea-glass shader — fuzzy translucency fading from a "
+                + "clear rim to a coloured centre. Tune it and preview on your own media."
+        case .quartz:
+            return "A milky, semi-transparent quartz shader, with its own parameters, live "
+                + "preview, and tap-to-ripple wave."
         case .youtube:
             return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read.\n\nYour email must be whitelisted for this to work while in development."
         }
@@ -84,6 +99,10 @@ final class ExperimentalSettingsScreen: UITableViewController {
             return halftoneCell()
         case .frostedGlass:
             return frostedGlassCell()
+        case .jellystone:
+            return disclosureCell(title: "Jellystone Effect", symbol: "circle.hexagongrid.fill")
+        case .quartz:
+            return disclosureCell(title: "Quartz Effect", symbol: "diamond.fill")
         case .youtube:
             return youTubeCell(for: YouTubeRow(rawValue: indexPath.row)!)
         }
@@ -175,6 +194,17 @@ final class ExperimentalSettingsScreen: UITableViewController {
         return cell
     }
 
+    /// A generic disclosure row that drills into an effect's controls.
+    private func disclosureCell(title: String, symbol: String) -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        var content = cell.defaultContentConfiguration()
+        content.text = title
+        content.image = UIImage(systemName: symbol)
+        cell.contentConfiguration = content
+        cell.accessoryType = .disclosureIndicator
+        return cell
+    }
+
     private func endCaption(_ text: String) -> UILabel {
         let label = UILabel()
         label.text = text
@@ -190,6 +220,10 @@ final class ExperimentalSettingsScreen: UITableViewController {
             navigationController?.pushViewController(HalftoneSettingsScreen(), animated: true)
         case .frostedGlass:
             navigationController?.pushViewController(FrostedGlassSettingsScreen(), animated: true)
+        case .jellystone:
+            navigationController?.pushViewController(StoneSettingsScreen(material: .jellystone), animated: true)
+        case .quartz:
+            navigationController?.pushViewController(StoneSettingsScreen(material: .quartz), animated: true)
         case .youtube:
             switch YouTubeRow(rawValue: indexPath.row)! {
             case .signIn: signInTapped()

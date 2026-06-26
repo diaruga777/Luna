@@ -198,6 +198,11 @@ public final class FrostedGlassEffectView: UIView {
     private var rippleFrom: Float = 0
     private var rippleTo: Float = 1
 
+    // Render gating (perf): only capture/draw when something changed or an
+    // animation is in flight; otherwise the display link parks itself.
+    private var needsCapture = true
+    private var needsRender = true
+
     public override class var layerClass: AnyClass { CAMetalLayer.self }
     private var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
 
@@ -327,7 +332,23 @@ public final class FrostedGlassEffectView: UIView {
         displayLink = link
     }
 
-    fileprivate func setNeedsRedraw() { /* content is re-rendered every tick */ }
+    /// Request one (or a few) more rendered frames and un-park the display link.
+    /// Cheap to over-call; the link parks itself again once everything is idle.
+    private func wake() {
+        needsRender = true
+        if isRendering { displayLink?.isPaused = false }
+    }
+
+    /// A config/parameter change only re-runs the shader on the cached frame.
+    fileprivate func setNeedsRedraw() { wake() }
+
+    /// Tell the effect the captured source content changed (new image, video frame,
+    /// resize) so the next frame re-captures. Ripple animations deliberately do NOT
+    /// trigger a re-capture — they only re-run the shader on the cached frame.
+    public func setNeedsCapture() {
+        needsCapture = true
+        wake()
+    }
 
     // MARK: Hit testing
 
@@ -397,6 +418,8 @@ public final class FrostedGlassEffectView: UIView {
                             height: pointSize.height.rounded(.up))
         guard target != sourceTextureSize else { return }
         sourceTextureSize = target
+        needsCapture = true   // a resized texture must be re-captured
+        wake()
 
         let w = Int(target.width)
         let h = Int(target.height)
@@ -452,9 +475,20 @@ public final class FrostedGlassEffectView: UIView {
     fileprivate func renderFrame() {
         guard isRendering, let source = sourceView else { return }
 
-        // Capture the source content into our texture.
-        let captured = captureSource(source)
-        guard captured, let srcTex = sourceTexture else { return }
+        // Park the display link when nothing needs drawing: no wave in flight, no
+        // pending content/config change. This is the main power/heat win — a settled
+        // frosted image costs nothing once the ripple has finished.
+        guard rippleRunning || needsRender || needsCapture else {
+            displayLink?.isPaused = true
+            return
+        }
+
+        // Re-capture the source only when its content actually changed; the ripple
+        // animation reuses the cached texture and just re-runs the fragment shader.
+        if needsCapture {
+            if captureSource(source) { needsCapture = false }
+        }
+        guard let srcTex = sourceTexture else { return }
 
         guard let drawable = metalLayer.nextDrawable() else { return }
 
@@ -477,6 +511,12 @@ public final class FrostedGlassEffectView: UIView {
 
         cmd.present(drawable)
         cmd.commit()
+
+        needsRender = false
+        // Once the latest state is on screen and nothing is animating, park.
+        if !rippleRunning && !needsCapture {
+            displayLink?.isPaused = true
+        }
     }
 
     /// Render the source layer tree into `sourceTexture`. Returns true on success.
@@ -669,7 +709,7 @@ public final class FrostedGlassEffectView: UIView {
 
         rippleStart = CACurrentMediaTime()
         rippleRunning = true
-        isRendering = true
+        wake()
         return target
     }
 

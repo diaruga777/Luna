@@ -94,9 +94,17 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
     private let stagePlaceholder = UILabel()
     private var mediaEffect: FrostedGlassEffectView?
 
+    // Fullscreen toggle: the stage is pinned to the footer normally and to the whole
+    // view when expanded. Both constraint sets are swapped on toggle.
+    private let fullscreenButton = UIButton(type: .system)
+    private var footerStageConstraints: [NSLayoutConstraint] = []
+    private var fullscreenStageConstraints: [NSLayoutConstraint] = []
+    private var isStageFullscreen = false
+
     private var player: AVPlayer?
     private var videoOutput: AVPlayerItemVideoOutput?
     private var videoLink: CADisplayLink?
+    private var videoOrientation: CGImagePropertyOrientation?
     private let ciContext = CIContext(options: nil)
     private var loopObserver: NSObjectProtocol?
 
@@ -339,8 +347,34 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         chooseButton.translatesAutoresizingMaskIntoConstraints = false
         footer.addSubview(chooseButton)
 
+        // Fullscreen toggle, overlaid on the stage's top-right corner.
+        var fsCfg = UIButton.Configuration.plain()
+        fsCfg.image = UIImage(systemName: "arrow.up.left.and.arrow.down.right")
+        fsCfg.baseForegroundColor = .white
+        fsCfg.background.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        fsCfg.background.cornerRadius = 14
+        fullscreenButton.configuration = fsCfg
+        fullscreenButton.translatesAutoresizingMaskIntoConstraints = false
+        fullscreenButton.addAction(UIAction { [weak self] _ in self?.toggleFullscreen() }, for: .touchUpInside)
+        footer.addSubview(fullscreenButton)
+
         // The ripple tap is handled by the effect view itself (set `ripplesOnTap`
         // in `ensureMediaEffect`), which is the view actually on top of the stage.
+
+        // Stage placement when docked in the footer.
+        footerStageConstraints = [
+            stageView.topAnchor.constraint(equalTo: caption.bottomAnchor, constant: 8),
+            stageView.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 16),
+            stageView.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -16),
+            stageView.bottomAnchor.constraint(equalTo: footer.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+        ]
+        // Stage placement when expanded to fill the screen.
+        fullscreenStageConstraints = [
+            stageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            stageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            stageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            stageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ]
 
         NSLayoutConstraint.activate([
             topLine.topAnchor.constraint(equalTo: footer.topAnchor),
@@ -354,10 +388,10 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
             chooseButton.centerYAnchor.constraint(equalTo: caption.centerYAnchor),
             chooseButton.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -16),
 
-            stageView.topAnchor.constraint(equalTo: caption.bottomAnchor, constant: 8),
-            stageView.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 16),
-            stageView.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -16),
-            stageView.bottomAnchor.constraint(equalTo: footer.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            fullscreenButton.topAnchor.constraint(equalTo: stageView.topAnchor, constant: 8),
+            fullscreenButton.trailingAnchor.constraint(equalTo: stageView.trailingAnchor, constant: -8),
+            fullscreenButton.widthAnchor.constraint(equalToConstant: 38),
+            fullscreenButton.heightAnchor.constraint(equalToConstant: 38),
 
             mediaImageView.topAnchor.constraint(equalTo: stageView.topAnchor),
             mediaImageView.leadingAnchor.constraint(equalTo: stageView.leadingAnchor),
@@ -367,6 +401,32 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
             stagePlaceholder.centerXAnchor.constraint(equalTo: stageView.centerXAnchor),
             stagePlaceholder.centerYAnchor.constraint(equalTo: stageView.centerYAnchor),
         ])
+        NSLayoutConstraint.activate(footerStageConstraints)
+    }
+
+    /// Swap the stage between its docked footer slot and a full-screen presentation,
+    /// switching the media to aspect-fit so the whole frame is visible when expanded.
+    private func toggleFullscreen() {
+        isStageFullscreen.toggle()
+        let symbol = isStageFullscreen
+            ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
+        fullscreenButton.configuration?.image = UIImage(systemName: symbol)
+        mediaImageView.contentMode = isStageFullscreen ? .scaleAspectFit : .scaleAspectFill
+
+        if isStageFullscreen {
+            NSLayoutConstraint.deactivate(footerStageConstraints)
+            NSLayoutConstraint.activate(fullscreenStageConstraints)
+            footer.clipsToBounds = false
+        } else {
+            NSLayoutConstraint.deactivate(fullscreenStageConstraints)
+            NSLayoutConstraint.activate(footerStageConstraints)
+        }
+        UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseInOut) {
+            self.view.layoutIfNeeded()
+        } completion: { _ in
+            self.mediaEffect?.setNeedsCapture()
+        }
+        mediaEffect?.setNeedsCapture()
     }
 
     /// Apply the effect to the stage once it is laid out. The effect re-renders the
@@ -407,7 +467,10 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
     private func loadImage(from provider: NSItemProvider) {
         provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
             guard let image = object as? UIImage else { return }
-            DispatchQueue.main.async { self?.show(image: image) }
+            // Bake the EXIF orientation into the pixels so the GPU capture (which
+            // ignores `UIImage.imageOrientation`) always renders it upright.
+            let upright = image.normalizedUp()
+            DispatchQueue.main.async { self?.show(image: upright) }
         }
     }
 
@@ -435,13 +498,23 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
     private func show(image: UIImage) {
         stagePlaceholder.isHidden = true
         mediaImageView.image = image
-        if image.images != nil { mediaImageView.startAnimating() } else { mediaImageView.stopAnimating() }
         ensureMediaEffect()
+        if image.images != nil {
+            // Animated GIF: drive a per-frame re-capture so the effect tracks motion.
+            mediaImageView.startAnimating()
+            startLiveLink()
+        } else {
+            // Static image: stop any prior animation/link and capture exactly once.
+            mediaImageView.stopAnimating()
+            teardownLiveLink()
+            mediaEffect?.setNeedsCapture()
+        }
     }
 
     private func playVideo(url: URL) {
         stagePlaceholder.isHidden = true
-        let item = AVPlayerItem(url: url)
+        let asset = AVURLAsset(url: url)
+        let item = AVPlayerItem(asset: asset)
         let attrs: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
         ]
@@ -460,35 +533,60 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
             player?.play()
         }
 
-        // Route through a weak proxy: a CADisplayLink retains its target, and we
-        // retain the link — targeting `self` directly would leak the whole screen
-        // (and keep decoding frames) after it's popped.
-        let link = CADisplayLink(target: VideoLinkProxy(self), selector: #selector(VideoLinkProxy.tick))
-        link.add(to: .main, forMode: .common)
-        videoLink = link
+        // Resolve the track's display rotation so portrait clips render upright.
+        Task { [weak self] in
+            if let track = try? await asset.loadTracks(withMediaType: .video).first,
+               let transform = try? await track.load(.preferredTransform) {
+                await MainActor.run { self?.videoOrientation = transform.ciOrientation }
+            }
+        }
 
+        startLiveLink()
         player.play()
         ensureMediaEffect()
     }
 
-    fileprivate func readVideoFrame() {
+    /// Drives per-frame re-capture for live media (video or animated GIF). Routed
+    /// through a weak proxy: a CADisplayLink retains its target and we retain the
+    /// link, so targeting `self` directly would leak the screen and keep decoding.
+    private func startLiveLink() {
+        teardownLiveLink()
+        let link = CADisplayLink(target: VideoLinkProxy(self), selector: #selector(VideoLinkProxy.tick))
+        link.add(to: .main, forMode: .common)
+        videoLink = link
+    }
+
+    private func teardownLiveLink() {
+        videoLink?.invalidate()
+        videoLink = nil
+    }
+
+    fileprivate func liveTick() {
+        if videoOutput != nil { readVideoFrame() }
+        // Animated GIF frames advance inside the image view; either way, the captured
+        // content changed this frame, so ask the effect to re-capture.
+        mediaEffect?.setNeedsCapture()
+    }
+
+    private func readVideoFrame() {
         guard let output = videoOutput else { return }
         let time = output.itemTime(forHostTime: CACurrentMediaTime())
         guard output.hasNewPixelBuffer(forItemTime: time),
               let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil)
         else { return }
-        let ciImage = CIImage(cvPixelBuffer: buffer)
+        var ciImage = CIImage(cvPixelBuffer: buffer)
+        if let orientation = videoOrientation { ciImage = ciImage.oriented(orientation) }
         guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
         mediaImageView.stopAnimating()
         mediaImageView.image = UIImage(cgImage: cgImage)
     }
 
     private func teardownVideo() {
-        videoLink?.invalidate()
-        videoLink = nil
+        teardownLiveLink()
         player?.pause()
         player = nil
         videoOutput = nil
+        videoOrientation = nil
         if let loopObserver {
             NotificationCenter.default.removeObserver(loopObserver)
             self.loopObserver = nil
@@ -530,5 +628,30 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
 private final class VideoLinkProxy {
     weak var target: FrostedGlassSettingsScreen?
     init(_ target: FrostedGlassSettingsScreen) { self.target = target }
-    @objc func tick() { target?.readVideoFrame() }
+    @objc func tick() { target?.liveTick() }
+}
+
+private extension UIImage {
+    /// Returns a copy whose pixels are already rotated/mirrored to the `.up`
+    /// orientation, so consumers that ignore `imageOrientation` render it correctly.
+    func normalizedUp() -> UIImage {
+        guard imageOrientation != .up else { return self }
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.scale = scale
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in draw(in: CGRect(origin: .zero, size: size)) }
+    }
+}
+
+private extension CGAffineTransform {
+    /// Maps a video track's preferred transform to the equivalent image orientation.
+    var ciOrientation: CGImagePropertyOrientation {
+        switch (a, b, c, d) {
+        case (0, 1, -1, 0): return .right   // portrait
+        case (0, -1, 1, 0): return .left    // portrait upside-down
+        case (-1, 0, 0, -1): return .down   // landscape left
+        default: return .up                 // identity / landscape right
+        }
+    }
 }

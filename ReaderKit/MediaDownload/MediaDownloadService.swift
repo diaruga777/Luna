@@ -51,6 +51,38 @@ struct MediaDownloadService: MediaDownloading {
         return asset.kind
     }
 
+    func downloadFirstMediaToFile(
+        from url: URL, onProgress: @escaping (Double) -> Void
+    ) async throws -> DownloadedMedia {
+        guard MediaDownloadablePlatform.supports(url.absoluteString) else {
+            throw MediaDownloadError.unsupported
+        }
+        // No Photos permission here — previewing inline shouldn't prompt; the prompt
+        // is deferred until the user taps "Save to Photos".
+        let assets = await resolver.resolveAssets(for: url)
+        guard let asset = assets.first else { throw MediaDownloadError.noMedia }
+
+        let referer = MediaDownloadService.referer(for: url)
+        do {
+            let fileURL = try await MediaFileDownloader.download(
+                asset, referer: referer, onProgress: onProgress)
+            return DownloadedMedia(fileURL: fileURL, kind: asset.kind)
+        } catch {
+            throw MediaDownloadError.downloadFailed
+        }
+    }
+
+    func saveDownloadedMediaToPhotos(_ media: DownloadedMedia) async throws {
+        guard await saver.requestAddAuthorization() else {
+            throw MediaDownloadError.permissionDenied
+        }
+        do {
+            try await saver.save(fileURL: media.fileURL, kind: media.kind)
+        } catch {
+            throw MediaDownloadError.saveFailed
+        }
+    }
+
     /// TikTok media CDNs require the tiktok.com Referer; others download bare.
     private static func referer(for url: URL) -> String? {
         (url.host?.lowercased().contains("tiktok") ?? false) ? "https://www.tiktok.com/" : nil

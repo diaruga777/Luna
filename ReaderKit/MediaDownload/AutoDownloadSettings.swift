@@ -15,6 +15,21 @@ enum AutoDownloadSettings {
     /// Platforms that support auto-download, in display order.
     static let platforms: [ContentPlatform] = [.x, .instagram, .tiktok, .facebook]
 
+    // Master switch for the action extension's media preview: when ON (default),
+    // the preview auto-downloads the media inline; when OFF it starts in a pending
+    // state with a manual download button. Stored in the App Group so both the app
+    // (settings) and the extension (preview) read the same value. Distinct from the
+    // per-platform `isEnabled` toggles, which gate auto-saving to Photos during
+    // the main app's ingest funnel.
+    private static let autoDownloadMediaKey = "autoDownloadMediaInPreview"
+
+    /// Whether the action extension's media preview should auto-download inline.
+    /// Defaults to ON (no stored value reads as enabled).
+    static var autoDownloadMediaInPreview: Bool {
+        get { (defaults.object(forKey: autoDownloadMediaKey) as? Bool) ?? true }
+        set { defaults.set(newValue, forKey: autoDownloadMediaKey) }
+    }
+
     private static func key(for platform: ContentPlatform) -> String {
         "autoDownloadMedia.\(platform.rawValue)"
     }

@@ -22,19 +22,30 @@ final class AutoDownloadSettingsScreen: UITableViewController {
         navigationItem.largeTitleDisplayMode = .never
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { 1 }
+    // Section 0: the master "Auto-download media" switch (the action extension's
+    // inline preview reads this). Section 1: the per-platform auto-save-to-Photos
+    // toggles used by the main app's ingest funnel.
+    override func numberOfSections(in tableView: UITableView) -> Int { 2 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        platforms.count
+        section == 0 ? 1 : platforms.count
+    }
+
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        section == 1 ? "Auto-Save to Photos by Platform" : nil
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Auto-download media from saved posts from that platform and save straight to your photo library. Requires Photos access. Queue never reads or edits your photos."
+        if section == 0 {
+            return "When on, the action extension downloads a saved post's media automatically and shows it inline. Turn off to download manually with a button."
+        }
+        return "Auto-download media from saved posts from that platform and save straight to your photo library. Requires Photos access. Queue never reads or edits your photos."
     }
 
     override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
+        if indexPath.section == 0 { return autoDownloadCell() }
         let platform = platforms[indexPath.row]
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
@@ -52,6 +63,27 @@ final class AutoDownloadSettingsScreen: UITableViewController {
         toggle.addTarget(self, action: #selector(toggled(_:)), for: .valueChanged)
         cell.accessoryView = toggle
         return cell
+    }
+
+    /// The master "Auto-download media" row. No Photos prompt here — downloading
+    /// inline doesn't touch Photos; the prompt happens when the user saves.
+    private func autoDownloadCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = "Auto-download media"
+        content.image = UIImage(systemName: "arrow.down.circle")
+        cell.contentConfiguration = content
+
+        let toggle = UISwitch()
+        toggle.isOn = AutoDownloadSettings.autoDownloadMediaInPreview
+        toggle.addTarget(self, action: #selector(masterToggled(_:)), for: .valueChanged)
+        cell.accessoryView = toggle
+        return cell
+    }
+
+    @objc private func masterToggled(_ sender: UISwitch) {
+        AutoDownloadSettings.autoDownloadMediaInPreview = sender.isOn
     }
 
     @objc private func toggled(_ sender: UISwitch) {

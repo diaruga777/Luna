@@ -455,6 +455,11 @@ public final class FrostedGlassEffectView: UIView {
         }
         sourceTexture = tex
 
+        // Detach the outgoing renderer's captured layer before it's released — a
+        // CALayer can only root one CARenderer, so reassigning it across renderers
+        // otherwise leaves a dangling association (use-after-free).
+        caRenderer?.layer = nil
+
         let renderer = CARenderer(mtlTexture: tex, options: nil)
         renderer.bounds = CGRect(x: 0, y: 0, width: w, height: h)
         caRenderer = renderer
@@ -823,6 +828,22 @@ public extension UIView {
         var c = FrostedGlassConfig()
         build(&c)
         return applyFrostedGlass(c)
+    }
+
+    /// Apply the effect to `self` (the layout host) while capturing a *different*
+    /// `source` view's content. The effect is pinned to `self`, so `self` stays a
+    /// normal, layout-stable view. See the halftone equivalent for why the captured
+    /// view must not be the one that owns layout constraints (CARenderer orphans it).
+    @discardableResult
+    func applyFrostedGlass(_ config: FrostedGlassConfig = FrostedGlassConfig(), capturing source: UIView) -> FrostedGlassEffectView? {
+        removeFrostedGlass()
+        guard let effect = FrostedGlassEffectView(source: source, config: config) else { return nil }
+        effect.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(effect)
+        effect.pinEdges(to: self)   // pinned to the host, not the captured source
+        effect.updateOpaqueState()
+        frostedGlassEffect = effect
+        return effect
     }
 
     /// Remove any halftone effect from this view.

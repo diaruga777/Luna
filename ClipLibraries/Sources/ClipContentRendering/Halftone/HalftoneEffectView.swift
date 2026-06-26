@@ -624,6 +624,12 @@ public final class HalftoneEffectView: UIView {
         }
         sourceTexture = tex
 
+        // Detach the outgoing renderer's captured layer before it's released. A
+        // CALayer can only root one CARenderer; handing `source.layer` to a fresh
+        // renderer (below, in captureSource) while a deallocating one still claims it
+        // leaves a dangling association → a use-after-free when we next retain it.
+        caRenderer?.layer = nil
+
         let renderer = CARenderer(mtlTexture: tex, options: nil)
         renderer.bounds = CGRect(x: 0, y: 0, width: w, height: h)
         caRenderer = renderer
@@ -1014,6 +1020,27 @@ public extension UIView {
         var c = HalftoneConfig.ledPanel
         build(&c)
         return applyHalftone(c)
+    }
+
+    /// Apply the effect to `self` (the layout host) while capturing a *different*
+    /// `source` view's content. The effect is pinned to `self`, so `self` drives the
+    /// effect's size and stays a normal, layout-stable view.
+    ///
+    /// This is the right call when the captured content must NOT be the view that
+    /// owns layout constraints: `CARenderer` pulls the captured view's layer out of
+    /// the on-screen tree (orphaning it), so anything you later (re)constrain on the
+    /// captured view would crash with "no common ancestor". Capture a throwaway child
+    /// and host the effect on a stable container instead.
+    @discardableResult
+    func applyHalftone(_ config: HalftoneConfig = .ledPanel, capturing source: UIView) -> HalftoneEffectView? {
+        removeHalftone()
+        guard let effect = HalftoneEffectView(source: source, config: config) else { return nil }
+        effect.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(effect)
+        effect.pinEdges(to: self)   // pinned to the host, not the captured source
+        effect.updateOpaqueState()
+        halftoneEffect = effect
+        return effect
     }
 
     /// Remove any halftone effect from this view.

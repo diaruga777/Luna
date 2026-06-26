@@ -111,7 +111,8 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     // MARK: Live media footer
 
     private let footer = UIView()
-    private let stageView = UIView()
+    private let stageView = UIView()        // stable layout host (effect + fullscreen)
+    private let contentView = UIView()      // throwaway view the effect captures
     private let mediaImageView = UIImageView()
     private let stagePlaceholder = UILabel()
     private var mediaEffect: HalftoneEffectView?
@@ -161,6 +162,14 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         ensureMediaEffect()
+        // The captured content view is detached from the hierarchy, so it never gets
+        // automatic layout — size it to match the stage and lay it out by hand, then
+        // ask the effect to re-capture (e.g. on the fullscreen toggle).
+        if contentView.bounds.size != stageView.bounds.size {
+            contentView.bounds = CGRect(origin: .zero, size: stageView.bounds.size)
+            contentView.layoutIfNeeded()
+            mediaEffect?.setNeedsCapture()
+        }
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -427,11 +436,21 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         stageView.translatesAutoresizingMaskIntoConstraints = false
         footer.addSubview(stageView)
 
+        // `contentView` is the view the effect CAPTURES — and it is deliberately kept
+        // OUT of the on-screen view hierarchy. CARenderer renders an arbitrary layer
+        // tree into a texture; if the captured view were on-screen, UIKit would keep
+        // re-parenting its layer under the stage while CARenderer claims it as a render
+        // root, and that tug-of-war corrupts on resize (use-after-free). Detached, its
+        // layer is ours alone. We drive its bounds manually to match the stage.
+        contentView.backgroundColor = .black
+        contentView.frame = stageView.bounds
+
         mediaImageView.contentMode = .scaleAspectFill
         mediaImageView.clipsToBounds = true
         mediaImageView.backgroundColor = .black
-        mediaImageView.translatesAutoresizingMaskIntoConstraints = false
-        stageView.addSubview(mediaImageView)
+        mediaImageView.frame = contentView.bounds
+        mediaImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        contentView.addSubview(mediaImageView)
 
         stagePlaceholder.text = "Choose a photo, video, or GIF"
         stagePlaceholder.font = .systemFont(ofSize: 14)
@@ -460,7 +479,10 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         fullscreenButton.configuration = fsCfg
         fullscreenButton.translatesAutoresizingMaskIntoConstraints = false
         fullscreenButton.addAction(UIAction { [weak self] _ in self?.toggleFullscreen() }, for: .touchUpInside)
-        footer.addSubview(fullscreenButton)
+        // Lives in the stage (not the footer): in fullscreen the stage covers the
+        // screen, and a button parented to the 260pt footer would be drawn outside the
+        // footer's bounds and so never receive touches above it.
+        stageView.addSubview(fullscreenButton)
 
         // The ripple tap is handled by the effect view itself (set `ripplesOnTap`
         // in `ensureMediaEffect`), which is the view actually on top of the stage.
@@ -474,10 +496,10 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         ]
         // Stage placement when expanded to fill the screen.
         fullscreenStageConstraints = [
-            stageView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            stageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            stageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            stageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            stageView.heightAnchor.constraint(equalToConstant: UIScreen.main.bounds.height * 0.8),
+            stageView.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 4),
+            stageView.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -4),
+            stageView.bottomAnchor.constraint(equalTo: footer.safeAreaLayoutGuide.bottomAnchor, constant: -10),
         ]
 
         NSLayoutConstraint.activate([
@@ -497,11 +519,8 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
             fullscreenButton.widthAnchor.constraint(equalToConstant: 38),
             fullscreenButton.heightAnchor.constraint(equalToConstant: 38),
 
-            mediaImageView.topAnchor.constraint(equalTo: stageView.topAnchor),
-            mediaImageView.leadingAnchor.constraint(equalTo: stageView.leadingAnchor),
-            mediaImageView.trailingAnchor.constraint(equalTo: stageView.trailingAnchor),
-            mediaImageView.bottomAnchor.constraint(equalTo: stageView.bottomAnchor),
-
+            // contentView + mediaImageView are frame-driven (see buildFooter); only
+            // the placeholder stays Auto-Laid-out, centered in the stable stageView.
             stagePlaceholder.centerXAnchor.constraint(equalTo: stageView.centerXAnchor),
             stagePlaceholder.centerYAnchor.constraint(equalTo: stageView.centerYAnchor),
         ])
@@ -517,11 +536,16 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         fullscreenButton.configuration?.image = UIImage(systemName: symbol)
         mediaImageView.contentMode = isStageFullscreen ? .scaleAspectFit : .scaleAspectFill
 
+        // Reparent the stage to the top-level view when fullscreen so its whole area
+        // is hit-testable: parented to the 260pt footer, anything the stage draws
+        // above the footer's frame can't receive touches (the exit button included).
         if isStageFullscreen {
             NSLayoutConstraint.deactivate(footerStageConstraints)
+            view.addSubview(stageView)
             NSLayoutConstraint.activate(fullscreenStageConstraints)
         } else {
             NSLayoutConstraint.deactivate(fullscreenStageConstraints)
+            footer.addSubview(stageView)
             NSLayoutConstraint.activate(footerStageConstraints)
         }
         UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseInOut) {
@@ -538,9 +562,15 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     /// stage every frame, so media changes and live setting tweaks flow through.
     private func ensureMediaEffect() {
         guard mediaEffect == nil, stageView.bounds.width > 0 else { return }
-        let effect = stageView.applyHalftone(footerConfig())
+        contentView.bounds = CGRect(origin: .zero, size: stageView.bounds.size)
+        contentView.layoutIfNeeded()   // detached view: lay out its image by hand
+        // Capture the throwaway `contentView`; host the effect on the stable stageView.
+        let effect = stageView.applyHalftone(footerConfig(), capturing: contentView)
         effect?.ripplesOnTap = true   // tap the stage to fire the ripple transition
         mediaEffect = effect
+        // Keep the hint + fullscreen button above the effect overlay (and tappable).
+        stageView.bringSubviewToFront(stagePlaceholder)
+        stageView.bringSubviewToFront(fullscreenButton)
     }
 
     // MARK: Picking

@@ -37,6 +37,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             return
         }
 
+        #if DEBUG
+        // Debug hook: deep-link straight to an experimental effect screen via
+        // `-openEffect <name>` (the settings toolbar isn't reachable via UI
+        // automation). Gated to DEBUG + an explicit launch arg, so production never
+        // hits it.
+        if let effect = ExperimentalSettingsScreen.debugEffectScreen(
+            named: debugLaunchArgValue(after: "-openEffect")) {
+            window.rootViewController = UINavigationController(rootViewController: effect)
+            self.window = window
+            window.makeKeyAndVisible()
+            return
+        }
+        #endif
+
         if KeychainIdentityStore.shared.loadIdentity() == nil {
             window.rootViewController = OnboardingFlow.make { [weak self] in
                 self?.showMainUI()
@@ -60,6 +74,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             route(url)
         }
     }
+
+    #if DEBUG
+    /// Value following `flag` in the launch arguments (`-flag value`), or nil.
+    private func debugLaunchArgValue(after flag: String) -> String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+    #endif
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         guard let url = URLContexts.first?.url else { return }

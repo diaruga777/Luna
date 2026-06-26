@@ -89,7 +89,8 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
     // MARK: Live media footer
 
     private let footer = UIView()
-    private let stageView = UIView()
+    private let stageView = UIView()        // stable layout host (effect + fullscreen)
+    private let contentView = UIView()      // throwaway view the effect captures
     private let mediaImageView = UIImageView()
     private let stagePlaceholder = UILabel()
     private var mediaEffect: FrostedGlassEffectView?
@@ -139,6 +140,12 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         ensureMediaEffect()
+        // Detached capture view gets no automatic layout — size it to the stage.
+        if contentView.bounds.size != stageView.bounds.size {
+            contentView.bounds = CGRect(origin: .zero, size: stageView.bounds.size)
+            contentView.layoutIfNeeded()
+            mediaEffect?.setNeedsCapture()
+        }
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -323,11 +330,19 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         stageView.translatesAutoresizingMaskIntoConstraints = false
         footer.addSubview(stageView)
 
+        // `contentView` is the captured view, deliberately kept OUT of the on-screen
+        // hierarchy: CARenderer renders an arbitrary layer tree, and an on-screen
+        // captured layer triggers a UIKit/CARenderer tug-of-war that corrupts on
+        // resize. Detached, we drive its bounds by hand to match the stage.
+        contentView.backgroundColor = .black
+        contentView.frame = stageView.bounds
+
         mediaImageView.contentMode = .scaleAspectFill
         mediaImageView.clipsToBounds = true
         mediaImageView.backgroundColor = .black
-        mediaImageView.translatesAutoresizingMaskIntoConstraints = false
-        stageView.addSubview(mediaImageView)
+        mediaImageView.frame = contentView.bounds
+        mediaImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        contentView.addSubview(mediaImageView)
 
         stagePlaceholder.text = "Choose a photo, video, or GIF"
         stagePlaceholder.font = .systemFont(ofSize: 14)
@@ -356,7 +371,9 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         fullscreenButton.configuration = fsCfg
         fullscreenButton.translatesAutoresizingMaskIntoConstraints = false
         fullscreenButton.addAction(UIAction { [weak self] _ in self?.toggleFullscreen() }, for: .touchUpInside)
-        footer.addSubview(fullscreenButton)
+        // In the stage (not the footer) so it stays tappable when the stage is
+        // fullscreen and drawn above the 260pt footer's frame.
+        stageView.addSubview(fullscreenButton)
 
         // The ripple tap is handled by the effect view itself (set `ripplesOnTap`
         // in `ensureMediaEffect`), which is the view actually on top of the stage.
@@ -393,11 +410,8 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
             fullscreenButton.widthAnchor.constraint(equalToConstant: 38),
             fullscreenButton.heightAnchor.constraint(equalToConstant: 38),
 
-            mediaImageView.topAnchor.constraint(equalTo: stageView.topAnchor),
-            mediaImageView.leadingAnchor.constraint(equalTo: stageView.leadingAnchor),
-            mediaImageView.trailingAnchor.constraint(equalTo: stageView.trailingAnchor),
-            mediaImageView.bottomAnchor.constraint(equalTo: stageView.bottomAnchor),
-
+            // contentView + mediaImageView are frame-driven (see buildFooter); only
+            // the placeholder stays Auto-Laid-out, centered in the stable stageView.
             stagePlaceholder.centerXAnchor.constraint(equalTo: stageView.centerXAnchor),
             stagePlaceholder.centerYAnchor.constraint(equalTo: stageView.centerYAnchor),
         ])
@@ -413,11 +427,16 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         fullscreenButton.configuration?.image = UIImage(systemName: symbol)
         mediaImageView.contentMode = isStageFullscreen ? .scaleAspectFit : .scaleAspectFill
 
+        // Reparent the stage to the top-level view when fullscreen so its whole area
+        // is hit-testable (a stage parented to the 260pt footer can't receive touches
+        // above the footer's frame — the exit button included).
         if isStageFullscreen {
             NSLayoutConstraint.deactivate(footerStageConstraints)
+            view.addSubview(stageView)
             NSLayoutConstraint.activate(fullscreenStageConstraints)
         } else {
             NSLayoutConstraint.deactivate(fullscreenStageConstraints)
+            footer.addSubview(stageView)
             NSLayoutConstraint.activate(footerStageConstraints)
         }
         UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseInOut) {
@@ -432,9 +451,14 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
     /// stage every frame, so media changes and live setting tweaks flow through.
     private func ensureMediaEffect() {
         guard mediaEffect == nil, stageView.bounds.width > 0 else { return }
-        let effect = stageView.applyFrostedGlass(footerConfig())
+        contentView.bounds = CGRect(origin: .zero, size: stageView.bounds.size)
+        contentView.layoutIfNeeded()   // detached view: lay out its image by hand
+        // Capture the throwaway `contentView`; host the effect on the stable stageView.
+        let effect = stageView.applyFrostedGlass(footerConfig(), capturing: contentView)
         effect?.ripplesOnTap = true   // tap the stage to fire the ripple transition
         mediaEffect = effect
+        stageView.bringSubviewToFront(stagePlaceholder)
+        stageView.bringSubviewToFront(fullscreenButton)
     }
 
     // MARK: Picking

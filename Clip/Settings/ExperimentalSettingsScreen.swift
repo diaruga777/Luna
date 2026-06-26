@@ -15,6 +15,18 @@ final class ExperimentalSettingsScreen: UITableViewController {
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    #if DEBUG
+    /// Maps a `-openEffect <name>` launch arg to an effect settings screen so the
+    /// simulator harness can deep-link past the (un-automatable) settings toolbar.
+    static func debugEffectScreen(named name: String?) -> UIViewController? {
+        switch name?.lowercased() {
+        case "halftone": return HalftoneSettingsScreen()
+        case "frosted", "frostedglass", "neon": return FrostedGlassSettingsScreen()
+        default: return nil
+        }
+    }
+    #endif
+
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Experimental"

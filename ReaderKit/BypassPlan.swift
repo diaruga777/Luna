@@ -48,9 +48,10 @@ enum SilentStrategy: Equatable {
 /// is modeled separately as the terminal flow (`BypassPlan.allowsArchiveToday`), so a
 /// `WebStrategy` is always a non-terminal pre-stage.
 enum WebStrategy: Equatable {
-    /// The trailing-dot FQDN variant, loaded in a browser. ONLY emitted when it didn't
-    /// already run as a silent strategy — `benefitsFromJSRetry` is false (a pure origin
-    /// trick), so the plan factory never repeats it as a pre-stage when it was silent.
+    /// The trailing-dot FQDN variant, loaded in a real browser. Emitted whenever the
+    /// selector chose trailing-dot, INCLUDING when the silent fetch already tried it:
+    /// the trick is a client-side origin behaviour that only takes effect in a browser,
+    /// so the WKWebView attempt can succeed where the silent URLSession fetch could not.
     case trailingDotHost
     var asBypassStrategy: BypassStrategy {
         switch self {
@@ -96,14 +97,20 @@ struct BypassPlan: Equatable {
         let strategies = BypassStrategySelector.strategies(for: url, directHTML: directHTML)
 
         let silent: [SilentStrategy] = strategies.compactMap(Self.silentStrategy)
-        let triedTrailingDotSilently = silent.contains(.trailingDotHost)
 
         let webPreStages: [WebStrategy] = strategies.compactMap { strategy -> WebStrategy? in
             switch strategy {
             case .trailingDotHost:
-                // A trailing-dot rewrite returns the same wall in a browser, so it is
-                // only worth a pre-stage when it has NOT already run silently.
-                return triedTrailingDotSilently ? nil : .trailingDotHost
+                // The trailing-dot trick is a CLIENT-SIDE origin behaviour, not a server
+                // one: a real browser scopes the meter's host-keyed cookies/JS to
+                // `www.example.com` and treats `www.example.com.` as a *different* origin,
+                // so the article renders — whereas the silent URLSession fetch just gets
+                // the same gated server HTML. So it is ALWAYS worth a WKWebView pre-stage,
+                // even (especially) when the silent fetch already tried and failed: the
+                // web pre-stages only run once silent bypass has been exhausted and the
+                // item parked, so the browser attempt is the whole point of trying it here
+                // before falling back to archive.today.
+                return .trailingDotHost
             default:
                 return nil
             }

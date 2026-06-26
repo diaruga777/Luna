@@ -27,7 +27,7 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     }
 
     private enum Section: Int, CaseIterable {
-        case grid, shape, dots, gaps, ripple, drag
+        case grid, shape, dots, gaps, stylize, ripple, drag
     }
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
@@ -94,6 +94,21 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         SliderSpec(title: "Duration", range: HalftoneSettings.rippleDurationRange,
                    get: { HalftoneSettings.rippleDuration }, set: { HalftoneSettings.rippleDuration = $0 },
                    format: { $0 < 0.01 ? "Auto" : String(format: "%.2f s", $0) }),
+    ]
+
+    private lazy var stylizeSliders: [SliderSpec] = [
+        SliderSpec(title: "Posterize", range: HalftoneSettings.posterizeRange,
+                   get: { HalftoneSettings.posterizeLevels }, set: { HalftoneSettings.posterizeLevels = $0 },
+                   format: { $0 < 1.5 ? "Off" : String(format: "%.0f levels", $0) }),
+        SliderSpec(title: "Chromatic Aberration", range: HalftoneSettings.chromaticRange,
+                   get: { HalftoneSettings.chromaticAberration }, set: { HalftoneSettings.chromaticAberration = $0 },
+                   format: { $0 < 0.1 ? "Off" : String(format: "%.1f px", $0) }),
+        SliderSpec(title: "Scanlines", range: HalftoneSettings.scanlineStrengthRange,
+                   get: { HalftoneSettings.scanlineStrength }, set: { HalftoneSettings.scanlineStrength = $0 },
+                   format: { $0 < 0.01 ? "Off" : String(format: "%.0f%%", $0 * 100) }),
+        SliderSpec(title: "Scanline Spacing", range: HalftoneSettings.scanlineSpacingRange,
+                   get: { HalftoneSettings.scanlineSpacing }, set: { HalftoneSettings.scanlineSpacing = $0 },
+                   format: { String(format: "%.0f px", $0) }),
     ]
 
     private lazy var dragSliders: [SliderSpec] = [
@@ -203,6 +218,7 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         case .shape: return 2
         case .dots: return dotSliders.count + 3
         case .gaps: return gapSliders.count + 1
+        case .stylize: return stylizeSliders.count
         case .ripple: return rippleSliders.count + 2   // + reveal-mode picker + angle
         case .drag: return dragSliders.count
         }
@@ -214,6 +230,7 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         case .shape: return "Dot Shape"
         case .dots: return "Dots"
         case .gaps: return "Gaps (space between dots)"
+        case .stylize: return "Stylize"
         case .ripple: return "Ripple Transition"
         case .drag: return "Drag (finger-follow)"
         }
@@ -254,6 +271,8 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         case .gaps:
             if indexPath.row == 0 { return gapColorCell() }
             return sliderCell(gapSliders[indexPath.row - 1])
+        case .stylize:
+            return sliderCell(stylizeSliders[indexPath.row])
         case .ripple:
             switch indexPath.row {
             case 0: return revealModeCell()

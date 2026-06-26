@@ -175,6 +175,29 @@ enum HalftoneSettings {
     }
     static let revealAngleRange: ClosedRange<Double> = 0...(2 * .pi)
 
+    // Stylize parameters.
+    static let posterizeRange: ClosedRange<Double> = 0...16
+    static let chromaticRange: ClosedRange<Double> = 0...12
+    static let scanlineStrengthRange: ClosedRange<Double> = 0...1
+    static let scanlineSpacingRange: ClosedRange<Double> = 2...20
+
+    static var posterizeLevels: Double {
+        get { double("halftone.posterizeLevels", 0) }
+        set { defaults.set(newValue, forKey: "halftone.posterizeLevels") }
+    }
+    static var chromaticAberration: Double {
+        get { double("halftone.chromaticAberration", 0) }
+        set { defaults.set(newValue, forKey: "halftone.chromaticAberration") }
+    }
+    static var scanlineStrength: Double {
+        get { double("halftone.scanlineStrength", 0) }
+        set { defaults.set(newValue, forKey: "halftone.scanlineStrength") }
+    }
+    static var scanlineSpacing: Double {
+        get { double("halftone.scanlineSpacing", 4) }
+        set { defaults.set(newValue, forKey: "halftone.scanlineSpacing") }
+    }
+
     // Drag (finger-follow) parameters.
     static var dragRadius: Double {
         get { double("halftone.dragRadius", 90) }
@@ -256,6 +279,10 @@ enum HalftoneSettings {
         c.rippleDuration = TimeInterval(rippleDuration)
         c.revealMode = revealMode
         c.revealAngle = CGFloat(revealAngle)
+        c.posterizeLevels = CGFloat(posterizeLevels)
+        c.chromaticAberration = CGFloat(chromaticAberration)
+        c.scanlineStrength = CGFloat(scanlineStrength)
+        c.scanlineSpacing = CGFloat(scanlineSpacing)
         c.dragRadius = CGFloat(dragRadius)
         c.dragStrength = CGFloat(dragStrength)
         c.dragMaxDistance = CGFloat(dragMaxDistance)

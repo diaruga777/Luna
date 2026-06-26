@@ -75,6 +75,11 @@ struct HalftoneUniforms {
     float2 dragVector;        // px, displacement the dragged dots follow (springy)
     float  revealMode;        // 0 radial, 1 diamond, 2 bars, 3 dissolve, 4 spiral, 5 venetian
     float  revealAngle;       // radians, direction for the bars/venetian reveal
+
+    float  posterizeLevels;   // 0 = off; >=2 quantises each dot colour channel to N steps
+    float  chromaticAberration; // px, RGB sampling split for the dot colour (0 = off)
+    float  scanlineStrength;  // 0..1 darkening of alternating scanlines (0 = off)
+    float  scanlineSpacing;   // px, period of the scanlines
 };
 
 struct VSOut {
@@ -220,9 +225,20 @@ fragment float4 halftone_fragment(VSOut in [[stage_in]],
     } else {
         dotColor = src.sample(linearSampler, baseUV);
     }
+    // Chromatic aberration: split the R/B channels along the sampling axis.
+    if (U.chromaticAberration > 0.05) {
+        float2 off = float2(U.chromaticAberration, 0) / U.resolution * U.contentScale;
+        dotColor.r = src.sample(linearSampler, baseUV + off).r;
+        dotColor.b = src.sample(linearSampler, baseUV - off).b;
+    }
     dotColor.rgb *= U.brightnessBoost;
     if (U.monochrome > 0.5) {
         dotColor.rgb = float3(dot(dotColor.rgb, float3(0.299, 0.587, 0.114)));
+    }
+    // Posterize: quantise each channel to N steps for a banded, retro look.
+    if (U.posterizeLevels >= 1.5) {
+        float n = U.posterizeLevels;
+        dotColor.rgb = floor(dotColor.rgb * n) / max(n - 1.0, 1.0);
     }
 
     // --- raw (un-effected) colour for this fragment ------------------------
@@ -273,5 +289,14 @@ fragment float4 halftone_fragment(VSOut in [[stage_in]],
     float4 offColor = (U.transparentBackground > 0.5) ? float4(0.0) : rawColor;
     float4 gapFill  = (U.transparentBackground > 0.5) ? float4(0.0) : steadyGap;
     float4 onLook   = mix(gapFill, dotColor, dotMask);
-    return mix(offColor, onLook, reveal);
+    float4 outColor = mix(offColor, onLook, reveal);
+
+    // Scanlines: darken alternating horizontal bands (CRT-ish). Only dims where the
+    // effect is showing, so a transparent background stays clean.
+    if (U.scanlineStrength > 0.001 && reveal > 0.001) {
+        float period = max(U.scanlineSpacing, 2.0);
+        float s = 0.5 + 0.5 * cos(6.2831853 * fragPx.y / period);
+        outColor.rgb *= 1.0 - U.scanlineStrength * s * reveal;
+    }
+    return outColor;
 }

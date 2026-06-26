@@ -191,6 +191,20 @@ public struct HalftoneConfig: Equatable {
     /// Direction (radians) for the bars / venetian reveals.
     public var revealAngle: CGFloat = 0
 
+    // -- stylize -------------------------------------------------------------
+
+    /// Quantise each dot-colour channel to this many steps. 0 (or 1) = off.
+    public var posterizeLevels: CGFloat = 0
+
+    /// RGB sampling split for the dot colour, in points. 0 = off.
+    public var chromaticAberration: CGFloat = 0
+
+    /// Darkening of alternating scanlines, 0...1. 0 = off.
+    public var scanlineStrength: CGFloat = 0
+
+    /// Scanline period, in points.
+    public var scanlineSpacing: CGFloat = 4
+
     public init() {}
 
     // Convenience presets ---------------------------------------------------
@@ -287,6 +301,11 @@ private struct HalftoneUniforms {
     var dragVector = SIMD2<Float>(0, 0)
     var revealMode: Float = 0
     var revealAngle: Float = 0
+
+    var posterizeLevels: Float = 0
+    var chromaticAberration: Float = 0
+    var scanlineStrength: Float = 0
+    var scanlineSpacing: Float = 4
 }
 
 // MARK: - HalftoneEffectView
@@ -836,6 +855,12 @@ public final class HalftoneEffectView: UIView {
         // Transition shape.
         u.revealMode = Float(config.revealMode.rawValue)
         u.revealAngle = Float(config.revealAngle)
+
+        // Stylize.
+        u.posterizeLevels = Float(config.posterizeLevels)
+        u.chromaticAberration = Float(config.chromaticAberration) * scale
+        u.scanlineStrength = Float(config.scanlineStrength)
+        u.scanlineSpacing = max(Float(config.scanlineSpacing) * scale, 2)
 
         // On iOS, CARenderer captures the layer tree in UIKit's top-left orientation,
         // and the CPU snapshot path flips in its own CGContext, so neither path needs

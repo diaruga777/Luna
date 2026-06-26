@@ -181,7 +181,7 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         // automatic layout — size it to match the stage and lay it out by hand, then
         // ask the effect to re-capture (e.g. on the fullscreen toggle).
         if contentView.bounds.size != stageView.bounds.size {
-            contentView.bounds = CGRect(origin: .zero, size: stageView.bounds.size)
+            contentView.frame = CGRect(origin: .zero, size: stageView.bounds.size)
             contentView.layoutIfNeeded()
             mediaEffect?.setNeedsCapture()
         }
@@ -609,7 +609,7 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     /// stage every frame, so media changes and live setting tweaks flow through.
     private func ensureMediaEffect() {
         guard mediaEffect == nil, stageView.bounds.width > 0 else { return }
-        contentView.bounds = CGRect(origin: .zero, size: stageView.bounds.size)
+        contentView.frame = CGRect(origin: .zero, size: stageView.bounds.size)
         contentView.layoutIfNeeded()   // detached view: lay out its image by hand
         // Capture the throwaway `contentView`; host the effect on the stable stageView.
         let effect = stageView.applyHalftone(footerConfig(), capturing: contentView)

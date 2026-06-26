@@ -154,7 +154,7 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         ensureMediaEffect()
         // Detached capture view gets no automatic layout — size it to the stage.
         if contentView.bounds.size != stageView.bounds.size {
-            contentView.bounds = CGRect(origin: .zero, size: stageView.bounds.size)
+            contentView.frame = CGRect(origin: .zero, size: stageView.bounds.size)
             contentView.layoutIfNeeded()
             mediaEffect?.setNeedsCapture()
         }
@@ -507,7 +507,7 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
     /// stage every frame, so media changes and live setting tweaks flow through.
     private func ensureMediaEffect() {
         guard mediaEffect == nil, stageView.bounds.width > 0 else { return }
-        contentView.bounds = CGRect(origin: .zero, size: stageView.bounds.size)
+        contentView.frame = CGRect(origin: .zero, size: stageView.bounds.size)
         contentView.layoutIfNeeded()   // detached view: lay out its image by hand
         // Capture the throwaway `contentView`; host the effect on the stable stageView.
         let effect = stageView.applyFrostedGlass(footerConfig(), capturing: contentView)

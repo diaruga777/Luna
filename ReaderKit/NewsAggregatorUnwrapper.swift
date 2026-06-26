@@ -146,6 +146,7 @@ enum NewsAggregatorUnwrapper {
     ) async -> URL? {
         guard let (_, response) = try? await session.data(for: request),
               let final = response.url,
+              let scheme = final.scheme?.lowercased(), scheme == "http" || scheme == "https",
               let finalHost = final.host?.lowercased(),
               finalHost != originalHost?.lowercased()
         else { return nil }

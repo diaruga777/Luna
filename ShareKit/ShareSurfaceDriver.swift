@@ -55,7 +55,16 @@ final class ShareSurfaceDriver {
 
         let url = result.url
         if url != originalURL, let item = store.item(forURLString: originalURL.absoluteString) {
-            _ = store.updateURL(url.absoluteString, for: item.id)
+            // The item was saved keyed on the pre-resolve (wrapper/shortener) URL, but
+            // the pipeline resolved it to the publisher URL. If that publisher URL is
+            // ALREADY saved (e.g. shared once directly, once via apple.news), repointing
+            // would create two items at the same URL — instead drop the wrapper item and
+            // keep the existing one, so the same article never duplicates.
+            if let existing = store.item(forURLString: url.absoluteString), existing.id != item.id {
+                store.delete(item)
+            } else {
+                _ = store.updateURL(url.absoluteString, for: item.id)
+            }
         }
         present(result.outcome, url: url)
     }

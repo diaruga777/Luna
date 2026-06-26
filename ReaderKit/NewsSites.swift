@@ -29,11 +29,11 @@ enum NewsSites {
     static let hardPaywall: [String] = [
         // ── United States ────────────────────────────────────────────────
         "nytimes.com", "wsj.com", "washingtonpost.com", "bloomberg.com",
-        "barrons.com", "businessinsider.com", "insider.com", "theatlantic.com",
+        "barrons.com", "theatlantic.com",
         "wired.com", "newyorker.com", "vanityfair.com", "foreignpolicy.com",
         "foreignaffairs.com", "theinformation.com", "hbr.org", "seekingalpha.com",
         "latimes.com", "bostonglobe.com", "chicagotribune.com", "nymag.com",
-        "statnews.com", "marketwatch.com", "fortune.com",
+        "statnews.com",
         "nationalgeographic.com", "harpers.org", "thenation.com",
         "newrepublic.com", "wired.co.uk", "sfchronicle.com", "dallasnews.com",
         "miamiherald.com", "startribune.com", "denverpost.com", "seattletimes.com",
@@ -155,6 +155,8 @@ enum NewsSites {
     /// Public broadcasters, wire services, and free/open outlets worldwide.
     /// Routed to `.article` (fast-path, skip the heuristic phase).
     static let free: [String] = [
+        // ── Mostly-free / metered (must NOT be forced to the archive reader) ──
+        "businessinsider.com", "insider.com", "marketwatch.com", "fortune.com",
         // ── Wire services & global broadcasters ──────────────────────────
         "reuters.com", "apnews.com", "afp.com",
         "bbc.com", "bbc.co.uk", "aljazeera.com", "aljazeera.net",

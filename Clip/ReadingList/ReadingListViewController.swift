@@ -420,15 +420,20 @@ final class ReadingListViewController: UITableViewController {
         }
     }
 
-    /// Preserves each label's natural width. Horizontal scrolling only activates
+    /// Preserves each segment's natural width. Horizontal scrolling only activates
     /// when the complete row cannot fit on the current device width.
+    ///
+    /// We measure the control's *actual* content width (with the width constraint
+    /// temporarily off) rather than estimating per-segment padding — the estimate
+    /// undershot for four content-sized segments, so the control overflowed the
+    /// viewport-sized constraint and clipped on the right instead of scrolling.
     private func updateFilterWidth() {
-        let font = UIFont.preferredFont(forTextStyle: .subheadline)
-        let naturalWidth = visibleFilters().reduce(CGFloat(0)) { partial, option in
-            partial + ceil((option.displayName as NSString).size(withAttributes: [.font: font]).width) + 34
-        }
+        guard let widthConstraint = filterWidthConstraint else { return }
+        widthConstraint.isActive = false
+        let natural = filterControl.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
         let viewportWidth = max(0, tableView.bounds.width - 32)
-        filterWidthConstraint?.constant = max(viewportWidth, naturalWidth)
+        widthConstraint.constant = max(viewportWidth, ceil(natural))
+        widthConstraint.isActive = true
     }
 
     @objc private func pulledToRefresh() {

@@ -416,7 +416,6 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         if isStageFullscreen {
             NSLayoutConstraint.deactivate(footerStageConstraints)
             NSLayoutConstraint.activate(fullscreenStageConstraints)
-            footer.clipsToBounds = false
         } else {
             NSLayoutConstraint.deactivate(fullscreenStageConstraints)
             NSLayoutConstraint.activate(footerStageConstraints)
@@ -646,12 +645,15 @@ private extension UIImage {
 
 private extension CGAffineTransform {
     /// Maps a video track's preferred transform to the equivalent image orientation.
+    /// Decoded from the rotation angle (via `atan2`) so it's robust to transforms
+    /// that also carry a scale, which literal matrix-entry matching would miss.
     var ciOrientation: CGImagePropertyOrientation {
-        switch (a, b, c, d) {
-        case (0, 1, -1, 0): return .right   // portrait
-        case (0, -1, 1, 0): return .left    // portrait upside-down
-        case (-1, 0, 0, -1): return .down   // landscape left
-        default: return .up                 // identity / landscape right
+        let degrees = Int((atan2(b, a) * 180 / .pi).rounded())
+        switch (degrees % 360 + 360) % 360 {
+        case 90: return .right    // portrait
+        case 270: return .left    // portrait upside-down
+        case 180: return .down    // landscape (rotated 180°)
+        default: return .up       // identity / landscape right
         }
     }
 }

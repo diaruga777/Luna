@@ -26,7 +26,10 @@ enum HalftoneSettings {
     // MARK: Slider ranges (each parameter exposed across its full sensible range)
 
     static let cellSizeRange: ClosedRange<Double> = 2...80
-    static let dotScaleRange: ClosedRange<Double> = 0...1
+    static let dotSpacingRange: ClosedRange<Double> = 1...6
+    // Dot size is decoupled from spacing, so it can exceed one cell (dots can
+    // overlap their neighbours / fill the gaps left by wider spacing).
+    static let dotScaleRange: ClosedRange<Double> = 0...3
     static let cornerRadiusRange: ClosedRange<Double> = 0...1
     static let edgeSoftnessRange: ClosedRange<Double> = 0.5...16
     static let jitterRange: ClosedRange<Double> = 0...1
@@ -39,12 +42,17 @@ enum HalftoneSettings {
 
     // Ripple transition ranges.
     static let ripplePushRange: ClosedRange<Double> = 0...120
-    static let rippleSpeedRange: ClosedRange<Double> = 400...3000
+    static let rippleSpeedRange: ClosedRange<Double> = 80...3000
     static let rippleWidthRange: ClosedRange<Double> = 10...200
+    static let rippleEdgeRange: ClosedRange<Double> = 1...120
     static let rippleWavelengthRange: ClosedRange<Double> = 0...200
     static let rippleDecayRange: ClosedRange<Double> = 20...400
     static let rippleDurationRange: ClosedRange<Double> = 0...3
-    static let rippleFlipDurationRange: ClosedRange<Double> = 0.03...0.8
+
+    // Drag (finger-follow) ranges.
+    static let dragRadiusRange: ClosedRange<Double> = 20...240
+    static let dragStrengthRange: ClosedRange<Double> = 0...3
+    static let dragMaxDistanceRange: ClosedRange<Double> = 10...200
 
     // MARK: Storage
 
@@ -73,6 +81,10 @@ enum HalftoneSettings {
         get { double("halftone.dotScale", 0.84) }
         set { defaults.set(newValue, forKey: "halftone.dotScale") }
     }
+    static var dotSpacing: Double {
+        get { double("halftone.dotSpacing", 1.0) }
+        set { defaults.set(newValue, forKey: "halftone.dotSpacing") }
+    }
     static var shapeKind: ShapeKind {
         get { ShapeKind(rawValue: int("halftone.shapeKind", ShapeKind.rounded.rawValue)) ?? .rounded }
         set { defaults.set(newValue.rawValue, forKey: "halftone.shapeKind") }
@@ -100,6 +112,12 @@ enum HalftoneSettings {
     static var monochrome: Bool {
         get { bool("halftone.monochrome", false) }
         set { defaults.set(newValue, forKey: "halftone.monochrome") }
+    }
+    /// When on, the "off" (no-effect) state is fully transparent, so a tap ripples
+    /// the dots into/out of existence over a clear background.
+    static var transparentBackground: Bool {
+        get { bool("halftone.transparentBackground", false) }
+        set { defaults.set(newValue, forKey: "halftone.transparentBackground") }
     }
     static var dotOpacity: Double {
         get { double("halftone.dotOpacity", 1.0) }
@@ -131,6 +149,10 @@ enum HalftoneSettings {
         get { double("halftone.rippleWidth", 60) }
         set { defaults.set(newValue, forKey: "halftone.rippleWidth") }
     }
+    static var rippleEdge: Double {
+        get { double("halftone.rippleEdge", 24) }
+        set { defaults.set(newValue, forKey: "halftone.rippleEdge") }
+    }
     static var rippleWavelength: Double {
         get { double("halftone.rippleWavelength", 70) }
         set { defaults.set(newValue, forKey: "halftone.rippleWavelength") }
@@ -143,9 +165,19 @@ enum HalftoneSettings {
         get { double("halftone.rippleDuration", 0) }
         set { defaults.set(newValue, forKey: "halftone.rippleDuration") }
     }
-    static var rippleFlipDuration: Double {
-        get { double("halftone.rippleFlipDuration", 0.18) }
-        set { defaults.set(newValue, forKey: "halftone.rippleFlipDuration") }
+
+    // Drag (finger-follow) parameters.
+    static var dragRadius: Double {
+        get { double("halftone.dragRadius", 90) }
+        set { defaults.set(newValue, forKey: "halftone.dragRadius") }
+    }
+    static var dragStrength: Double {
+        get { double("halftone.dragStrength", 1.0) }
+        set { defaults.set(newValue, forKey: "halftone.dragStrength") }
+    }
+    static var dragMaxDistance: Double {
+        get { double("halftone.dragMaxDistance", 70) }
+        set { defaults.set(newValue, forKey: "halftone.dragMaxDistance") }
     }
 
     // Gap color stored as RGBA components (default opaque black).
@@ -186,6 +218,7 @@ enum HalftoneSettings {
         var c = HalftoneConfig()
         c.cellSize = CGFloat(cellSize)
         c.dotScale = CGFloat(dotScale)
+        c.dotSpacing = CGFloat(dotSpacing)
         switch shapeKind {
         case .circle: c.shape = .circle
         case .square: c.shape = .square
@@ -196,6 +229,7 @@ enum HalftoneSettings {
         c.brightnessBoost = CGFloat(brightnessBoost)
         c.averageCell = averageCell
         c.monochrome = monochrome
+        c.transparentBackground = transparentBackground
         c.dotOpacity = CGFloat(dotOpacity)
         c.gridAngle = CGFloat(gridAngle)
         c.gapColor = gapColor
@@ -207,10 +241,13 @@ enum HalftoneSettings {
         c.ripplePushDistance = CGFloat(ripplePush)
         c.rippleSpeed = CGFloat(rippleSpeed)
         c.rippleWidth = CGFloat(rippleWidth)
+        c.rippleEdge = CGFloat(rippleEdge)
         c.rippleWavelength = CGFloat(rippleWavelength)
         c.rippleDecay = CGFloat(rippleDecay)
         c.rippleDuration = TimeInterval(rippleDuration)
-        c.rippleFlipDuration = TimeInterval(rippleFlipDuration)
+        c.dragRadius = CGFloat(dragRadius)
+        c.dragStrength = CGFloat(dragStrength)
+        c.dragMaxDistance = CGFloat(dragMaxDistance)
         return c
     }
 }

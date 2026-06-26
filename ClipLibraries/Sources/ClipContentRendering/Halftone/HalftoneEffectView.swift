@@ -71,8 +71,13 @@ public struct HalftoneConfig: Equatable {
     /// Center-to-center spacing of the grid, in points. Smaller = finer dots.
     public var cellSize: CGFloat = 16
 
-    /// How much of each cell the dot fills, 0...1. 1.0 = dots touch.
+    /// Dot size as a fraction of the base cell. Can exceed 1 when `dotSpacing` > 1.
     public var dotScale: CGFloat = 0.82
+
+    /// Grid-pitch multiplier (>= 1). The dot keeps the size set by `cellSize` ×
+    /// `dotScale`; increasing this spreads the dots further apart without resizing
+    /// them.
+    public var dotSpacing: CGFloat = 1.0
 
     /// Shape of the dot. Internally converted to a corner-radius fraction.
     public var shape: DotShape = .roundedSquare(cornerRadius: 0.30)
@@ -92,6 +97,11 @@ public struct HalftoneConfig: Equatable {
 
     /// If true, the sampled dot colors are converted to greyscale (luminance).
     public var monochrome: Bool = false
+
+    /// If true, the "non-dot" view (and the gaps) are transparent instead of the
+    /// raw image, so the ripple toggles the dots appearing/disappearing over
+    /// nothing rather than crossfading to the unmodified content.
+    public var transparentBackground: Bool = false
 
     /// Overall opacity of the dots, 0...1.
     public var dotOpacity: CGFloat = 1.0
@@ -130,9 +140,9 @@ public struct HalftoneConfig: Equatable {
     /// Half-thickness, in points, of the Gaussian push ring.
     public var rippleWidth: CGFloat = 60
 
-    /// Time, in seconds, for a single dot to complete its flip in/out as the
-    /// wavefront passes over it. Smaller = snappier flips.
-    public var rippleFlipDuration: TimeInterval = 0.18
+    /// Softness, in points, of the reveal step at the wavefront (the dots fade
+    /// between on/off over this band).
+    public var rippleEdge: CGFloat = 24
 
     /// Wavelength, in points, of the dispersive trailing ripples. 0 disables the
     /// oscillation and leaves a single clean Gaussian ring.
@@ -144,6 +154,18 @@ public struct HalftoneConfig: Equatable {
     /// Total duration of the transition, in seconds. 0 auto-fits to the view so
     /// the wavefront just clears the farthest corner.
     public var rippleDuration: TimeInterval = 0
+
+    // -- finger drag (dots follow the touch, springing back) -----------------
+
+    /// Influence radius, in points, of a finger drag. 0 disables the drag effect.
+    public var dragRadius: CGFloat = 90
+
+    /// How strongly the dragged dots follow the finger, 0...1+.
+    public var dragStrength: CGFloat = 1.0
+
+    /// Maximum distance, in points, the dots are carried before they slip and
+    /// settle back (the "current can only drag them so far").
+    public var dragMaxDistance: CGFloat = 70
 
     public init() {}
 
@@ -204,7 +226,7 @@ private struct HalftoneUniforms {
     var cornerRadius: Float = 0.30
     var edgeSoftness: Float = 1.0
 
-    var shapeSides: Float = 4
+    var dotSpacing: Float = 1
     var jitter: Float = 0
     var brightnessBoost: Float = 1
     var sampleAverage: Float = 1
@@ -224,7 +246,7 @@ private struct HalftoneUniforms {
     var ripplePush: Float = 0
     var rippleWidth: Float = 0
 
-    var rippleFlipBand: Float = 0
+    var rippleEdge: Float = 0
     var rippleWavelength: Float = 0
     var rippleDecay: Float = 0
     var rippleFade: Float = 0
@@ -233,6 +255,14 @@ private struct HalftoneUniforms {
     var revealTo: Float = 1
     var ripplePhase: Float = 0
     var monochrome: Float = 0
+
+    var dragOrigin = SIMD2<Float>(0, 0)
+    var transparentBackground: Float = 0
+    var dragRadius: Float = 0
+
+    var dragVector = SIMD2<Float>(0, 0)
+    var _pad0: Float = 0
+    var _pad1: Float = 0
 }
 
 // MARK: - HalftoneEffectView
@@ -247,7 +277,7 @@ public final class HalftoneEffectView: UIView {
         didSet {
             if config != oldValue {
                 updateOpaqueState()
-                setNeedsRedraw()
+                wake()   // re-render the new look (no re-capture needed)
             }
         }
     }
@@ -273,8 +303,10 @@ public final class HalftoneEffectView: UIView {
             isUserInteractionEnabled = ripplesOnTap
             if ripplesOnTap {
                 addGestureRecognizer(rippleTapRecognizer)
+                addGestureRecognizer(rippleDragRecognizer)
             } else {
                 removeGestureRecognizer(rippleTapRecognizer)
+                removeGestureRecognizer(rippleDragRecognizer)
             }
         }
     }
@@ -282,8 +314,46 @@ public final class HalftoneEffectView: UIView {
     private lazy var rippleTapRecognizer =
         UITapGestureRecognizer(target: self, action: #selector(handleRippleTap(_:)))
 
+    private lazy var rippleDragRecognizer =
+        UIPanGestureRecognizer(target: self, action: #selector(handleDrag(_:)))
+
     @objc private func handleRippleTap(_ gesture: UITapGestureRecognizer) {
         ripple(at: gesture.location(in: self))
+    }
+
+    @objc private func handleDrag(_ gesture: UIPanGestureRecognizer) {
+        let scale = CGFloat(metalLayer.contentsScale)
+        switch gesture.state {
+        case .began, .changed:
+            dragActive = true
+            let loc = gesture.location(in: self)
+            dragOriginPx = SIMD2(Float(loc.x * scale), Float(loc.y * scale))
+            let t = gesture.translation(in: self)
+            var v = SIMD2(Float(t.x * scale), Float(t.y * scale)) * Float(config.dragStrength)
+            // Cap how far the "current" can carry the dots before they slip.
+            let maxPx = Float(config.dragMaxDistance * scale)
+            let len = (v.x * v.x + v.y * v.y).squareRoot()
+            if len > maxPx, len > 0 { v *= maxPx / len }
+            dragTargetPx = v
+            wake()
+        case .ended, .cancelled, .failed:
+            dragTargetPx = .zero   // release: the dots spring back to rest
+            wake()
+        default:
+            break
+        }
+    }
+
+    /// Critically-damped-ish follow of the drag displacement toward its target, so
+    /// the dots lag behind the finger (viscous) and spring back on release.
+    private func stepDrag() {
+        guard dragActive else { return }
+        dragVectorPx += (dragTargetPx - dragVectorPx) * 0.35
+        let restLen = (dragVectorPx.x * dragVectorPx.x + dragVectorPx.y * dragVectorPx.y).squareRoot()
+        if dragTargetPx == .zero, restLen < 0.5 {
+            dragVectorPx = .zero
+            dragActive = false
+        }
     }
 
     // Ripple transition state.
@@ -293,6 +363,17 @@ public final class HalftoneEffectView: UIView {
     private var rippleOriginPx = SIMD2<Float>(0, 0)
     private var rippleFrom: Float = 0
     private var rippleTo: Float = 1
+
+    // Finger-drag state.
+    private var dragActive = false
+    private var dragOriginPx = SIMD2<Float>(0, 0)
+    private var dragVectorPx = SIMD2<Float>(0, 0)
+    private var dragTargetPx = SIMD2<Float>(0, 0)
+
+    // Render gating (perf): only capture/draw when something changed or an
+    // animation is in flight; otherwise the display link parks itself.
+    private var needsCapture = true
+    private var needsRender = true
 
     public override class var layerClass: AnyClass { CAMetalLayer.self }
     private var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
@@ -423,7 +504,20 @@ public final class HalftoneEffectView: UIView {
         displayLink = link
     }
 
-    fileprivate func setNeedsRedraw() { /* content is re-rendered every tick */ }
+    /// Request one (or a few) more rendered frames and un-park the display link.
+    /// Cheap to over-call; the link parks itself again once everything is idle.
+    private func wake() {
+        needsRender = true
+        if isRendering { displayLink?.isPaused = false }
+    }
+
+    /// Tell the effect the captured source content changed (new image, video frame,
+    /// resize) so the next frame re-captures. Animations (ripple/drag) deliberately
+    /// do NOT trigger a re-capture — they only re-run the shader on the cached frame.
+    public func setNeedsCapture() {
+        needsCapture = true
+        wake()
+    }
 
     // MARK: Hit testing
 
@@ -493,6 +587,8 @@ public final class HalftoneEffectView: UIView {
                             height: pointSize.height.rounded(.up))
         guard target != sourceTextureSize else { return }
         sourceTextureSize = target
+        needsCapture = true   // a resized texture must be re-captured
+        wake()
 
         let w = Int(target.width)
         let h = Int(target.height)
@@ -548,11 +644,24 @@ public final class HalftoneEffectView: UIView {
     fileprivate func renderFrame() {
         guard isRendering, let source = sourceView else { return }
 
-        // Capture the source content into our texture.
-        let captured = captureSource(source)
-        guard captured, let srcTex = sourceTexture else { return }
+        // Park the display link when nothing needs drawing: no animation in flight,
+        // no pending content/config change. This is the main power/heat win — a
+        // static dotted image costs nothing once it has settled.
+        let animating = rippleRunning || dragActive
+        guard animating || needsRender || needsCapture else {
+            displayLink?.isPaused = true
+            return
+        }
 
-        guard let drawable = metalLayer.nextDrawable() else { return }
+        // Advance the springy drag before sampling its state into the uniforms.
+        stepDrag()
+
+        // Re-capture the source only when its content actually changed; ripple/drag
+        // animations reuse the cached texture and just re-run the fragment shader.
+        if needsCapture {
+            if captureSource(source) { needsCapture = false }
+        }
+        guard let srcTex = sourceTexture, let drawable = metalLayer.nextDrawable() else { return }
 
         updateUniforms(drawableSize: metalLayer.drawableSize, sourceSize: srcTex.sizeCG)
 
@@ -573,6 +682,12 @@ public final class HalftoneEffectView: UIView {
 
         cmd.present(drawable)
         cmd.commit()
+
+        needsRender = false
+        // Once the latest state is on screen and nothing is animating, park.
+        if !animating && !needsCapture {
+            displayLink?.isPaused = true
+        }
     }
 
     /// Render the source layer tree into `sourceTexture`. Returns true on success.
@@ -667,13 +782,14 @@ public final class HalftoneEffectView: UIView {
 
         u.cellSize = Float(config.cellSize) * scale
         u.dotScale = Float(config.dotScale)
+        u.dotSpacing = Float(max(config.dotSpacing, 1))
         u.cornerRadius = Float(config.cornerFraction)
         u.edgeSoftness = Float(config.edgeSoftness) * scale
-        u.shapeSides = 4
         u.jitter = Float(config.jitter)
         u.brightnessBoost = Float(config.brightnessBoost)
         u.sampleAverage = config.averageCell ? 1 : 0
         u.monochrome = config.monochrome ? 1 : 0
+        u.transparentBackground = config.transparentBackground ? 1 : 0
         u.dotOpacity = Float(config.dotOpacity)
         u.gridAngle = Float(config.gridAngle)
         u.time = Float(CACurrentMediaTime() - startTime)
@@ -681,6 +797,11 @@ public final class HalftoneEffectView: UIView {
         u.gapColor = config.gapColor.simd4
         u.gapBlur = Float(config.gapBlur) * scale
         u.gapSourceMix = Float(config.gapSourceMix)
+
+        // Finger drag (springy displacement of nearby dots toward the touch).
+        u.dragOrigin = dragOriginPx
+        u.dragVector = dragVectorPx
+        u.dragRadius = dragActive ? Float(config.dragRadius) * scale : 0
 
         // On iOS, CARenderer captures the layer tree in UIKit's top-left orientation,
         // and the CPU snapshot path flips in its own CGContext, so neither path needs
@@ -713,8 +834,7 @@ public final class HalftoneEffectView: UIView {
                 u.rippleOrigin = rippleOriginPx
                 u.ripplePush = Float(config.ripplePushDistance) * scale
                 u.rippleWidth = Float(config.rippleWidth) * scale
-                // Distance the front travels during one dot's flip = speed × flip time.
-                u.rippleFlipBand = max(speedPx * Float(config.rippleFlipDuration), 1)
+                u.rippleEdge = max(Float(config.rippleEdge) * scale, 0.75)
                 u.rippleWavelength = Float(config.rippleWavelength) * scale
                 u.rippleDecay = Float(config.rippleDecay) * scale
                 u.revealFrom = rippleFrom
@@ -738,7 +858,8 @@ public final class HalftoneEffectView: UIView {
     fileprivate func updateOpaqueState() {
         var a: CGFloat = 0
         config.gapColor.getRed(nil, green: nil, blue: nil, alpha: &a)
-        let fullyOpaque = (a >= 0.999) && config.dotOpacity >= 0.999 && config.gapSourceMix < 0.001
+        let fullyOpaque = !config.transparentBackground && (a >= 0.999)
+            && config.dotOpacity >= 0.999 && config.gapSourceMix < 0.001
         metalLayer.isOpaque = fullyOpaque
         isOpaque = fullyOpaque
     }
@@ -773,15 +894,13 @@ public final class HalftoneEffectView: UIView {
             let maxDist = corners.map { hypot($0.x - point.x, $0.y - point.y) }.max()
                 ?? max(b.width, b.height)
             let speed = max(config.rippleSpeed, 1)
-            // Time for the front to reach the farthest corner, plus the flip time so
-            // the outermost dots finish flipping before the animation ends.
-            rippleDurationResolved = Double((maxDist + config.rippleWidth) / speed)
-                + config.rippleFlipDuration
+            // Time for the front (plus its soft edge) to clear the farthest corner.
+            rippleDurationResolved = Double((maxDist + config.rippleWidth + config.rippleEdge) / speed)
         }
 
         rippleStart = CACurrentMediaTime()
         rippleRunning = true
-        isRendering = true
+        wake()
         return target
     }
 

@@ -31,14 +31,14 @@ struct HalftoneUniforms {
     float2 contentScale;      // (texelSize.x/resolution.x, ...) usually 1,1; lets the
                               // source texture differ in size from the drawable.
 
-    float  cellSize;          // grid pitch in pixels (center-to-center spacing)
-    float  dotScale;          // 0..1 fraction of the cell the dot fills (1 = touching)
+    float  cellSize;          // base dot size in pixels
+    float  dotScale;          // fraction of the base cell the dot fills (>1 = bigger)
     float  cornerRadius;      // 0..1 fraction of the dot half-size used as corner radius
                               //   0   => square dot
                               //   1   => circle/capsule
     float  edgeSoftness;      // px of antialiasing on the dot edge (>= ~0.75)
 
-    float  shapeSides;        // reserved/blend control (kept for ABI stability)
+    float  dotSpacing;        // grid-pitch multiplier (>=1); pitch = cellSize * dotSpacing
     float  jitter;            // 0..1 positional jitter of dots (organic look)
     float  brightnessBoost;   // multiplies sampled dot color (bloom-ish pop)
     float  sampleAverage;     // 0 = single center tap, 1 = 5-tap cell average
@@ -58,7 +58,7 @@ struct HalftoneUniforms {
     float  ripplePush;        // px, peak radial displacement of the dots at the front
     float  rippleWidth;       // px, half-thickness of the Gaussian push ring
 
-    float  rippleFlipBand;    // px, distance behind the front over which each dot flips in/out
+    float  rippleEdge;        // px, softness of the reveal step at the wavefront
     float  rippleWavelength;  // px, 0 = no oscillation; >0 = dispersive trailing ripples
     float  rippleDecay;       // px, e-folding length of the trailing ripples
     float  rippleFade;        // 0..1, global amplitude fade near the end of the animation
@@ -67,6 +67,14 @@ struct HalftoneUniforms {
     float  revealTo;          // 0/1, effect state the wave moves toward (steady when idle)
     float  ripplePhase;       // radians, phase of the dispersion oscillation
     float  monochrome;        // 0 = full colour dots, 1 = greyscale (luminance) dots
+
+    float2 dragOrigin;        // px, current drag point
+    float  transparentBackground; // 0 = non-dot view is the raw image, 1 = transparent
+    float  dragRadius;        // px, influence radius of the finger drag
+
+    float2 dragVector;        // px, displacement the dragged dots follow (springy)
+    float  _pad0;
+    float  _pad1;
 };
 
 struct VSOut {
@@ -116,12 +124,11 @@ fragment float4 halftone_fragment(VSOut in [[stage_in]],
     // Pixel coordinate of this fragment.
     float2 fragPx = in.uv * U.resolution;
 
-    // --- ripple displacement ----------------------------------------------
-    // Everything keys off the SIGNED distance from this fragment to the moving
-    // wavefront ring (d<0 behind the front, d>0 ahead). The push is a Gaussian
-    // ring (localised by `rippleWidth`) optionally modulated into a dispersive
-    // wave train (`rippleWavelength`) that trails off behind the front over
-    // `rippleDecay`. Every one of those parameters affects the result.
+    // --- displacement: ripple ring + finger drag --------------------------
+    // The ripple keys off the SIGNED distance to the moving wavefront ring (d<0
+    // behind, d>0 ahead): a Gaussian ring (`rippleWidth`) optionally modulated
+    // into a dispersive wave train (`rippleWavelength`) that trails off behind
+    // the front (`rippleDecay`).
     float2 toOrigin = fragPx - U.rippleOrigin;
     float  distO    = length(toOrigin);
     float2 rdir     = distO > 1e-4 ? toOrigin / distO : float2(0.0);
@@ -131,112 +138,82 @@ fragment float4 halftone_fragment(VSOut in [[stage_in]],
     float amp = 0.0;
     if (U.rippleActive > 0.5 && U.ripplePush > 0.0) {
         float w        = max(U.rippleWidth, 1.0);
-        float envelope = exp(-(d * d) / (w * w));                 // ring thickness (width)
+        float envelope = exp(-(d * d) / (w * w));
         float behind   = max(0.0, -d);
-        float trailing = exp(-behind / max(U.rippleDecay, 1.0));  // trailing falloff (decay)
+        float trailing = exp(-behind / max(U.rippleDecay, 1.0));
         float wave     = 1.0;
-        if (U.rippleWavelength > 0.5) {                            // oscillation (wavelength)
-            float k = 6.2831853 / U.rippleWavelength;
-            wave = cos(k * d - U.ripplePhase);
+        if (U.rippleWavelength > 0.5) {
+            wave = cos(6.2831853 / U.rippleWavelength * d - U.ripplePhase);
         }
         amp = U.ripplePush * envelope * trailing * wave * U.rippleFade;
     }
-    // Inverse map: sampling inward makes the dots VISUALLY translate outward, so
-    // the outermost dots slide past the view bounds and settle back as the ring
-    // passes (the envelope returns each pixel to rest once the front moves on).
-    float2 workPx = fragPx - rdir * amp;
+    float2 disp = rdir * amp;
 
-    // Work in a rotated grid space if requested.
+    // Finger drag: dots near the touch follow the finger, falling off with
+    // distance, so the field smears like paint on water dragged by a current.
+    if (U.dragRadius > 0.5) {
+        float2 toDrag = fragPx - U.dragOrigin;
+        float fall = exp(-dot(toDrag, toDrag) / (U.dragRadius * U.dragRadius));
+        disp += U.dragVector * fall;
+    }
+    // Inverse map: sampling inward shifts the dots outward / with the finger.
+    float2 workPx = fragPx - disp;
+
+    // Grid: pitch = base cell × spacing; the dot keeps the BASE size so spacing
+    // and dot size are independent.
     float ca = cos(U.gridAngle), sa = sin(U.gridAngle);
     float2 center = U.resolution * 0.5;
     float2 gridPx = rotate2(workPx - center, ca, sa) + center;
 
-    float cell = max(U.cellSize, 1.0);
+    float pitch = max(U.cellSize * max(U.dotSpacing, 1.0), 1.0);
+    float2 cellIndex = floor(gridPx / pitch);
+    float2 cellCenterPx = cellIndex * pitch + pitch * 0.5;
 
-    // Which cell are we in, and where inside it (-0.5..0.5).
-    float2 cellIndex = floor(gridPx / cell);
-    float2 cellOrigin = cellIndex * cell;
-    float2 cellCenterPx = cellOrigin + cell * 0.5;
-
-    // Optional per-cell jitter of the dot center.
     if (U.jitter > 0.0) {
-        float2 h = hash22(cellIndex + floor(U.time));
-        // smoothly animate between two random offsets
+        float2 h  = hash22(cellIndex + floor(U.time));
         float2 h2 = hash22(cellIndex + floor(U.time) + 1.0);
-        float f = fract(U.time);
-        float2 j = mix(h, h2, smoothstep(0.0, 1.0, f)) - 0.5;
-        cellCenterPx += j * cell * U.jitter;
+        float2 j  = mix(h, h2, smoothstep(0.0, 1.0, fract(U.time))) - 0.5;
+        cellCenterPx += j * pitch * U.jitter;
     }
 
-    // --- sample the source color for this cell -----------------------------
-    // Convert the cell center (in rotated grid space) back to screen space to
-    // sample the source, because the source content is NOT rotated.
+    // --- sample the cell colour --------------------------------------------
     float2 sampleScreenPx = rotate2(cellCenterPx - center, ca, -sa) + center;
     float2 baseUV = (sampleScreenPx / U.resolution) * U.contentScale;
-    if (U.flipVertical > 0.5) {
-        baseUV.y = U.contentScale.y - baseUV.y;
-    }
+    if (U.flipVertical > 0.5) baseUV.y = U.contentScale.y - baseUV.y;
 
     float4 dotColor;
     if (U.sampleAverage > 0.5) {
-        // 5-tap cross average across the cell for a smoother, more "averaged" dot.
-        float2 d = (cell * 0.30) / U.resolution * U.contentScale;
+        float2 t = (pitch * 0.30) / U.resolution * U.contentScale;
         float4 c = src.sample(linearSampler, baseUV);
-        c += src.sample(linearSampler, baseUV + float2( d.x, 0));
-        c += src.sample(linearSampler, baseUV + float2(-d.x, 0));
-        c += src.sample(linearSampler, baseUV + float2(0,  d.y));
-        c += src.sample(linearSampler, baseUV + float2(0, -d.y));
+        c += src.sample(linearSampler, baseUV + float2( t.x, 0));
+        c += src.sample(linearSampler, baseUV + float2(-t.x, 0));
+        c += src.sample(linearSampler, baseUV + float2(0,  t.y));
+        c += src.sample(linearSampler, baseUV + float2(0, -t.y));
         dotColor = c * 0.2;
     } else {
         dotColor = src.sample(linearSampler, baseUV);
     }
     dotColor.rgb *= U.brightnessBoost;
     if (U.monochrome > 0.5) {
-        float lum = dot(dotColor.rgb, float3(0.299, 0.587, 0.114));
-        dotColor.rgb = float3(lum);
+        dotColor.rgb = float3(dot(dotColor.rgb, float3(0.299, 0.587, 0.114)));
     }
 
     // --- raw (un-effected) colour for this fragment ------------------------
     float2 rawUV = in.uv * U.contentScale;
-    if (U.flipVertical > 0.5) {
-        rawUV.y = U.contentScale.y - rawUV.y;
-    }
+    if (U.flipVertical > 0.5) rawUV.y = U.contentScale.y - rawUV.y;
     float4 rawColor = src.sample(linearSampler, rawUV);
 
-    // --- per-dot flip transition -------------------------------------------
-    // As the wavefront sweeps over a cell, its dot flips in (or out) by rotating
-    // around its vertical centre line. `flipFactor` 0 = edge-on (raw shows
-    // through), 1 = full dot (halftone). Each cell flips based on when the front
-    // reached it, over `rippleFlipBand` points behind the front.
-    float flipFactor;
-    if (U.rippleActive > 0.5) {
-        float cellDist = length(sampleScreenPx - U.rippleOrigin);
-        float fp = clamp((R - cellDist) / max(U.rippleFlipBand, 1.0), 0.0, 1.0);
-        fp = smoothstep(0.0, 1.0, fp);
-        flipFactor = mix(U.revealFrom, U.revealTo, fp);
-    } else {
-        flipFactor = U.revealTo;
-    }
-    flipFactor = clamp(flipFactor, 0.0, 1.0);
-    // Horizontal scale of a card flip around the vertical axis: sin(flip * 90°).
-    float hsquish = sin(flipFactor * 1.5707963);
-
-    // --- dot shape mask (squished horizontally by the flip) ----------------
+    // --- dot shape mask (full size) ----------------------------------------
     float2 rel = gridPx - cellCenterPx;
-    float halfExtent = cell * 0.5 * clamp(U.dotScale, 0.0, 1.0);
-    float halfX = halfExtent * hsquish;
-    float r = min(halfX, halfExtent) * clamp(U.cornerRadius, 0.0, 1.0);
-    float sd = sdRoundBox(rel, float2(halfX, halfExtent), r);
+    float halfExtent = max(U.cellSize * 0.5 * U.dotScale, 0.0);
+    float r = halfExtent * clamp(U.cornerRadius, 0.0, 1.0);
+    float sd = sdRoundBox(rel, float2(halfExtent), r);
     float aa = max(U.edgeSoftness, 0.5);
     float dotMask = (1.0 - smoothstep(-aa, aa, sd)) * clamp(U.dotOpacity, 0.0, 1.0);
-    // Fully retract the dot when edge-on, so the raw state has no leftover slivers
-    // from the antialiased zero-width box.
-    dotMask *= smoothstep(0.0, 0.04, flipFactor);
 
-    // --- the gap (space between dots) -------------------------------------
+    // --- gap fill ----------------------------------------------------------
     float4 steadyGap = U.gapColor;
     if (U.gapBlur > 0.0 && U.gapSourceMix > 0.0) {
-        // Small fixed-tap blur of the source for the gap. 9 taps, cheap & gated.
         float2 rpx = U.gapBlur / U.resolution * U.contentScale;
         float4 b = float4(0.0);
         b += src.sample(linearSampler, baseUV + float2(-rpx.x, -rpx.y));
@@ -251,9 +228,22 @@ fragment float4 halftone_fragment(VSOut in [[stage_in]],
         b /= 10.0;
         steadyGap = mix(U.gapColor, b, clamp(U.gapSourceMix, 0.0, 1.0));
     }
-    // Gaps fade from the raw content to the gap colour as the dots flip in.
-    float4 gap = mix(rawColor, steadyGap, flipFactor);
 
-    // Composite: dot over gap.
-    return mix(gap, dotColor, dotMask);
+    // --- reveal: the wave sweeps between dots and the non-dot view ----------
+    float reveal;
+    if (U.rippleActive > 0.5) {
+        float behindFront = smoothstep(R + U.rippleEdge, R - U.rippleEdge, distO);
+        reveal = mix(U.revealFrom, U.revealTo, behindFront);
+    } else {
+        reveal = U.revealTo;
+    }
+    reveal = clamp(reveal, 0.0, 1.0);
+
+    // The "non-dot" view (and the gaps) are the raw image, or transparent when
+    // the transparent-background option is on — so the wave then toggles the dots
+    // appearing/disappearing over nothing.
+    float4 offColor = (U.transparentBackground > 0.5) ? float4(0.0) : rawColor;
+    float4 gapFill  = (U.transparentBackground > 0.5) ? float4(0.0) : steadyGap;
+    float4 onLook   = mix(gapFill, dotColor, dotMask);
+    return mix(offColor, onLook, reveal);
 }

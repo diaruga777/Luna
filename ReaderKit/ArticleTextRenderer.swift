@@ -110,7 +110,13 @@ enum ArticleTextRenderer {
     /// disk (downloaded once at ingest), but decoding them is a synchronous, costly
     /// main-thread operation — re-decoding on every reader open is the visible pause.
     /// Keyed by file path + target width so a re-open is instant.
-    nonisolated(unsafe) private static let decodedCache = NSCache<NSString, UIImage>()
+    nonisolated(unsafe) private static let decodedCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        // Bound the cache so a long reading session can't accumulate decoded bitmaps
+        // unboundedly (NSCache also evicts under memory pressure).
+        cache.countLimit = 24
+        return cache
+    }()
 
     /// Decodes the image already scaled down — never holds the full-size bitmap.
     /// Cached so navigating back into an article (or reopening it) is instant.

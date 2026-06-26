@@ -35,13 +35,6 @@ enum SilentStrategy: Equatable {
         case let .ladderProxy(proxy): return .ladderProxy(proxy)
         }
     }
-
-    /// Whether repeating this strategy in a WKWebView pre-stage can succeed where the
-    /// silent fetch failed. A pure origin/URL trick like trailing-dot returns the same
-    /// wall in a browser, so it is NOT repeated as a ~9s pre-stage (the NYT slowness);
-    /// only client-rendered services benefit from a real JS render (handled by the web
-    /// leg). All silent strategies are URLSession transforms, so none benefit here.
-    var benefitsFromJSRetry: Bool { false }
 }
 
 /// A bypass strategy that needs a real WKWebView (client-side JS render). archive.today
@@ -58,8 +51,6 @@ enum WebStrategy: Equatable {
         case .trailingDotHost: return .trailingDotHost
         }
     }
-
-    var benefitsFromJSRetry: Bool { false }
 }
 
 /// ONE typed, ordered bypass plan, built ONCE by `make(for:directHTML:)` and consumed
@@ -70,9 +61,9 @@ enum WebStrategy: Equatable {
 struct BypassPlan: Equatable {
     /// Ordered URLSession strategies for the background path — provably silent.
     let silent: [SilentStrategy]
-    /// Ordered WKWebView pre-stage strategies (archive.today excluded). Only strategies
-    /// that `benefitsFromJSRetry`, plus a trailing-dot that was NOT already tried
-    /// silently, appear here.
+    /// Ordered WKWebView pre-stage strategies (archive.today excluded) — the
+    /// browser-only tricks (currently the trailing-dot origin variant) tried before
+    /// the terminal archive flow.
     let webPreStages: [WebStrategy]
     /// Whether the archive.today terminal WKWebView flow is permitted at the end.
     let allowsArchiveToday: Bool
@@ -89,9 +80,9 @@ struct BypassPlan: Equatable {
     /// legs so the two consumers can't diverge.
     ///
     /// - `silent` = the silent prefix, in order.
-    /// - `webPreStages` = the WKWebView (non-archive) strategies, minus any trailing-dot
-    ///   that already ran silently (it doesn't benefit from a JS retry — the NYT
-    ///   redundant-pre-stage fix).
+    /// - `webPreStages` = the WKWebView (non-archive) strategies; trailing-dot is kept
+    ///   here even if it ran silently, because the trick only takes effect in a real
+    ///   browser (the silent fetch sees the same wall).
     /// - `allowsArchiveToday` = whether `.archiveToday` is in the selected list.
     static func make(for url: URL, directHTML: String?) -> BypassPlan {
         let strategies = BypassStrategySelector.strategies(for: url, directHTML: directHTML)

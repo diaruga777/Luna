@@ -127,10 +127,10 @@ final class ReadingListIngestor {
         let resolvedContent = await ArticleImageDownloader.download(
             content, itemID: item.id, store: store, refererURL: url)
         let coverData = await fetchCoverImageData(html: html, baseURL: url)
-        // Capture the source page BEFORE saving parsed reader content. Prefer a live
-        // URL navigation (WebKit fetches every subresource, so Original renders like
-        // the real page); fall back to the fetched HTML only if that fails.
-        await captureWebArchiveIfPossible(for: item, url: url, html: html)
+        // Persist reader content and flip the row to `.ready` FIRST — the reader is the
+        // primary artifact and must not wait on the (up-to-20s) web-archive capture, or
+        // a time-bounded save intent (e.g. the Kindle double-press) could miss its
+        // deadline. The archive is a "nice to have original", captured after.
         let updated = store.saveContent(resolvedContent, for: item)
         if let coverData { store.setThumbnail(coverData, for: item.id) }
         if updated.state == .ready {
@@ -139,6 +139,10 @@ final class ReadingListIngestor {
         if let replayID {
             await recorder.terminate(replayID, state: .success, finalContent: resolvedContent)
         }
+        // Capture the original page now that the reader is ready. Prefer a live URL
+        // navigation (WebKit fetches every subresource, so Original renders like the
+        // real page); fall back to the fetched HTML only if that fails.
+        await captureWebArchiveIfPossible(for: item, url: url, html: html)
     }
 
     /// Parks a paywalled article for the interactive archive reader. NOT terminal for
@@ -422,21 +426,35 @@ final class ReadingListIngestor {
         backfillMissingWebArchives()
     }
 
+    /// True while a backfill pass is running, so overlapping `ingestAllPending()`
+    /// calls (launch + pull-to-refresh) don't spin up a second fleet of web views.
+    @MainActor private var isBackfillingArchives = false
+    /// Items whose archive capture was attempted-and-failed this session, so we don't
+    /// re-attempt an un-archivable page (which never gets a saved file, so it would
+    /// otherwise re-enter the candidate set on every pass) on every refresh.
+    @MainActor private var archiveBackfillAttempted: Set<UUID> = []
+
     /// `.webarchive` capture was added after many items were saved, and several save
     /// surfaces (extensions, paste, friend-share) don't capture inline. This repairs
     /// every ready web page that lacks an archive — one WebKit capture at a time so we
     /// never run a fleet of web views — which is also how those surfaces get covered.
     func backfillMissingWebArchives() {
         Task { @MainActor in
+            guard !isBackfillingArchives else { return }
+            isBackfillingArchives = true
+            defer { isBackfillingArchives = false }
+
             let candidates = store.items().filter { item in
                 item.state == .ready
                     && item.sanitizedDocumentType == nil          // documents already have a source file
                     && store.webArchiveURL(for: item) == nil
+                    && !archiveBackfillAttempted.contains(item.id)  // don't retry a failed page forever
                     && (URL(string: item.urlString)?.scheme?.hasPrefix("http") ?? false)  // excludes clipmail://
             }
             // Cap per pass so a large backlog doesn't tie up a web view indefinitely.
             for item in candidates.prefix(8) {
                 guard let url = URL(string: item.urlString) else { continue }
+                archiveBackfillAttempted.insert(item.id)
                 await captureWebArchiveIfPossible(for: item, url: url, html: nil)
             }
         }

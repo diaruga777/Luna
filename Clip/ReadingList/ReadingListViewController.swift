@@ -97,6 +97,9 @@ final class ReadingListViewController: UITableViewController {
     /// Holds natural-width segments so "Media & Links" is never silently clipped.
     private let filterScrollView = UIScrollView()
     private var filterWidthConstraint: NSLayoutConstraint?
+    /// Cached natural (content) width of the filter control, remeasured only when the
+    /// segments change — read cheaply on every layout pass by `applyFilterWidth`.
+    private var filterNaturalWidth: CGFloat = 0
     private var filterHeaderView: UIView?
 
     /// Non-blocking bottom pill for media-download progress/result (created lazily).
@@ -205,7 +208,7 @@ final class ReadingListViewController: UITableViewController {
             header.frame.size.width = tableView.bounds.width
             tableView.tableHeaderView = header
         }
-        updateFilterWidth()
+        applyFilterWidth()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -413,27 +416,36 @@ final class ReadingListViewController: UITableViewController {
             filterControl.insertSegment(withTitle: option.displayName, at: index, animated: false)
         }
         filterControl.selectedSegmentIndex = filters.firstIndex(of: filter) ?? 0
-        updateFilterWidth()
+        measureFilterNaturalWidth()
 
         if tableView.tableHeaderView !== filterHeaderView {
             tableView.tableHeaderView = filterHeaderView
         }
     }
 
-    /// Preserves each segment's natural width. Horizontal scrolling only activates
-    /// when the complete row cannot fit on the current device width.
-    ///
-    /// We measure the control's *actual* content width (with the width constraint
-    /// temporarily off) rather than estimating per-segment padding — the estimate
-    /// undershot for four content-sized segments, so the control overflowed the
-    /// viewport-sized constraint and clipped on the right instead of scrolling.
-    private func updateFilterWidth() {
+    /// Measures the segmented control's *actual* content width (with the width
+    /// constraint temporarily off so it doesn't dominate the measurement) and caches
+    /// it. Call only when the segments change — not every layout pass. We measure
+    /// rather than estimate per-segment padding: the old estimate undershot for four
+    /// content-sized segments, so the control overflowed the viewport-sized constraint
+    /// and clipped on the right instead of scrolling.
+    private func measureFilterNaturalWidth() {
         guard let widthConstraint = filterWidthConstraint else { return }
+        let wasActive = widthConstraint.isActive
         widthConstraint.isActive = false
-        let natural = filterControl.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
-        let viewportWidth = max(0, tableView.bounds.width - 32)
-        widthConstraint.constant = max(viewportWidth, ceil(natural))
-        widthConstraint.isActive = true
+        filterNaturalWidth = ceil(
+            filterControl.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width)
+        widthConstraint.isActive = wasActive
+        applyFilterWidth()
+    }
+
+    /// Sizes the control to max(viewport, natural): it fills when the row fits and
+    /// scrolls when it doesn't. Cheap — only reassigns the constant when it actually
+    /// changes, so it doesn't thrash layout on every `viewDidLayoutSubviews`.
+    private func applyFilterWidth() {
+        guard let widthConstraint = filterWidthConstraint else { return }
+        let target = max(max(0, tableView.bounds.width - 32), filterNaturalWidth)
+        if abs(widthConstraint.constant - target) > 0.5 { widthConstraint.constant = target }
     }
 
     @objc private func pulledToRefresh() {

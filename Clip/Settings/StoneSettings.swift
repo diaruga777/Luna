@@ -18,9 +18,9 @@ struct StoneSettings {
 
     static let blurRange: ClosedRange<Double> = 0...30
     static let grainRange: ClosedRange<Double> = 0...1
-    static let colorBiasRange: ClosedRange<Double> = 0...1
+    static let distortionRange: ClosedRange<Double> = 0...40       // refraction strength, px
     static let translucencyRange: ClosedRange<Double> = 0...1
-    static let edgeFeatherRange: ClosedRange<Double> = 0...160
+    static let surfaceScaleRange: ClosedRange<Double> = 8...200    // surface feature size, px
     static let saturationRange: ClosedRange<Double> = 0...2
     static let brightnessRange: ClosedRange<Double> = 0.5...1.6
 
@@ -67,19 +67,19 @@ struct StoneSettings {
     // MARK: Properties
 
     var blurRadius: Double {
-        get { double("blur", 12) } nonmutating set { set(newValue, "blur") }
+        get { double("blur", 8) } nonmutating set { set(newValue, "blur") }
     }
     var grain: Double {
-        get { double("grain", 0.35) } nonmutating set { set(newValue, "grain") }
+        get { double("grain", 0.3) } nonmutating set { set(newValue, "grain") }
     }
-    var colorBias: Double {
-        get { double("colorBias", 0.62) } nonmutating set { set(newValue, "colorBias") }
+    var distortion: Double {
+        get { double("distortion", 10) } nonmutating set { set(newValue, "distortion") }
     }
     var translucency: Double {
-        get { double("translucency", 0.9) } nonmutating set { set(newValue, "translucency") }
+        get { double("translucency", 0.6) } nonmutating set { set(newValue, "translucency") }
     }
-    var edgeFeather: Double {
-        get { double("edgeFeather", 60) } nonmutating set { set(newValue, "edgeFeather") }
+    var surfaceScale: Double {
+        get { double("surfaceScale", 50) } nonmutating set { set(newValue, "surfaceScale") }
     }
     var saturation: Double {
         get { double("saturation", defaultSaturation) } nonmutating set { set(newValue, "saturation") }
@@ -153,9 +153,9 @@ struct StoneSettings {
         c.material = material
         c.blurRadius = CGFloat(blurRadius)
         c.grain = CGFloat(grain)
-        c.colorBias = CGFloat(colorBias)
+        c.distortion = CGFloat(distortion)
         c.translucency = CGFloat(translucency)
-        c.edgeFeather = CGFloat(edgeFeather)
+        c.surfaceScale = CGFloat(surfaceScale)
         c.tint = tint
         c.saturation = CGFloat(saturation)
         c.brightness = CGFloat(brightness)

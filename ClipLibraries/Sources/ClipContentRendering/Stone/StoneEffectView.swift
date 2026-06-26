@@ -54,21 +54,24 @@ public struct StoneConfig: Equatable {
     // -- stone body ----------------------------------------------------------
 
     /// Radius, in points, of the frosted diffusion blur (the glass softness).
-    public var blurRadius: CGFloat = 12
+    public var blurRadius: CGFloat = 8
 
     /// 0...1 fuzzy tumbled speckle — the gritty frosting of beach glass.
-    public var grain: CGFloat = 0.35
+    public var grain: CGFloat = 0.3
 
-    /// 0...1 how far the coloured body reaches toward the rim before it clears.
-    public var colorBias: CGFloat = 0.62
+    /// Refraction strength, in points: how much the stone's uneven surface bends the
+    /// image seen through it (0 = no bending, flat glass).
+    public var distortion: CGFloat = 10
 
-    /// 0...1 max coverage of the stone body over the underlying image.
-    public var translucency: CGFloat = 0.9
+    /// 0...1 milkiness/haze of the material (how cloudy/opaque the stone is).
+    public var translucency: CGFloat = 0.6
 
-    /// Softness, in points, of the body→clear gradient at the rim.
-    public var edgeFeather: CGFloat = 60
+    /// Feature size, in points, of the procedural surface — small = fine pebbly
+    /// facets, large = broad smooth undulations.
+    public var surfaceScale: CGFloat = 50
 
-    /// The stone's colour. Alpha is the tint strength (how saturated the body is).
+    /// The stone's colour. Alpha is the tint strength (how strongly the material is
+    /// recoloured / tinted).
     public var tint: UIColor = UIColor(red: 0.55, green: 0.85, blue: 0.78, alpha: 0.55)
 
     /// Saturation multiplier of the body. 1 = unchanged.
@@ -148,10 +151,10 @@ private struct StoneUniforms {
 
     var blurRadius: Float = 10
     var grain: Float = 0.5
-    var colorBias: Float = 0.55
+    var distortion: Float = 0.55
     var translucency: Float = 1.4
 
-    var edgeFeather: Float = 22
+    var surfaceScale: Float = 22
     var saturation: Float = 1.3
     var brightness: Float = 1
     var flipVertical: Float = 1
@@ -660,9 +663,9 @@ public final class StoneEffectView: UIView {
 
         u.blurRadius = Float(config.blurRadius) * scale
         u.grain = Float(config.grain)
-        u.colorBias = Float(config.colorBias)
+        u.distortion = Float(config.distortion)
         u.translucency = Float(config.translucency)
-        u.edgeFeather = Float(config.edgeFeather) * scale
+        u.surfaceScale = Float(config.surfaceScale) * scale
         u.saturation = Float(config.saturation)
         u.brightness = Float(config.brightness)
         u.tint = config.tint.straightSimd4

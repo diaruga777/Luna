@@ -46,17 +46,18 @@ final class StoneSettingsScreen: UIViewController, UITableViewDataSource, UITabl
 
     // Body section = these sliders, then the stone Tint colour cell.
     private lazy var bodySliders: [SliderSpec] = [
-        SliderSpec(title: "Glass Blur", range: StoneSettings.blurRange,
+        SliderSpec(title: "Frost Blur", range: StoneSettings.blurRange,
                    get: { self.settings.blurRadius }, set: { self.settings.blurRadius = $0 },
                    format: { String(format: "%.0f pt", $0) }),
         SliderSpec(title: "Grain", range: StoneSettings.grainRange,
                    get: { self.settings.grain }, set: { self.settings.grain = $0 }),
-        SliderSpec(title: "Colour Reach", range: StoneSettings.colorBiasRange,
-                   get: { self.settings.colorBias }, set: { self.settings.colorBias = $0 }),
+        SliderSpec(title: "Refraction", range: StoneSettings.distortionRange,
+                   get: { self.settings.distortion }, set: { self.settings.distortion = $0 },
+                   format: { String(format: "%.0f pt", $0) }),
         SliderSpec(title: "Translucency", range: StoneSettings.translucencyRange,
                    get: { self.settings.translucency }, set: { self.settings.translucency = $0 }),
-        SliderSpec(title: "Edge Feather", range: StoneSettings.edgeFeatherRange,
-                   get: { self.settings.edgeFeather }, set: { self.settings.edgeFeather = $0 },
+        SliderSpec(title: "Surface Scale", range: StoneSettings.surfaceScaleRange,
+                   get: { self.settings.surfaceScale }, set: { self.settings.surfaceScale = $0 },
                    format: { String(format: "%.0f pt", $0) }),
     ]
 
@@ -170,7 +171,36 @@ final class StoneSettingsScreen: UIViewController, UITableViewDataSource, UITabl
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         ensureMediaEffect()
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-effectSampleImage"), mediaImageView.image == nil {
+            show(image: Self.debugSampleImage(size: contentView.bounds.size))
+        }
+        #endif
     }
+
+    #if DEBUG
+    /// A procedural, content-rich test image (gradient + shapes + text) so the stone
+    /// material can be eyeballed over real pixels in the simulator.
+    static func debugSampleImage(size: CGSize) -> UIImage {
+        let s = size.width > 0 ? size : CGSize(width: 370, height: 200)
+        let r = UIGraphicsImageRenderer(size: s)
+        return r.image { ctx in
+            let c = ctx.cgContext
+            let cols = [UIColor.systemTeal.cgColor, UIColor.systemIndigo.cgColor, UIColor.systemOrange.cgColor]
+            let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                  colors: cols as CFArray, locations: [0, 0.5, 1])!
+            c.drawLinearGradient(grad, start: .zero, end: CGPoint(x: s.width, y: s.height), options: [])
+            UIColor.white.withAlphaComponent(0.9).setFill()
+            c.fillEllipse(in: CGRect(x: s.width * 0.55, y: s.height * 0.2, width: s.height * 0.5, height: s.height * 0.5))
+            UIColor.systemPink.setFill()
+            c.fill(CGRect(x: s.width * 0.1, y: s.height * 0.55, width: s.width * 0.35, height: s.height * 0.3))
+            let str = NSAttributedString(string: "STONE", attributes: [
+                .font: UIFont.systemFont(ofSize: s.height * 0.28, weight: .heavy),
+                .foregroundColor: UIColor.white])
+            str.draw(at: CGPoint(x: s.width * 0.08, y: s.height * 0.1))
+        }
+    }
+    #endif
 
     deinit {
         videoLink?.invalidate()

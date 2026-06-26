@@ -21,10 +21,10 @@ struct StoneUniforms {
 
     float  blurRadius;        // px, radius of the frosted diffusion blur (glass softness)
     float  grain;             // 0..1, fuzzy tumbled speckle of beach glass
-    float  colorBias;         // 0..1, how far the coloured body reaches toward the rim
+    float  distortion;         // 0..1, how far the coloured body reaches toward the rim
     float  translucency;      // 0..1, max coverage of the body over the raw image
 
-    float  edgeFeather;       // px, softness of the body→clear gradient at the rim
+    float  surfaceScale;       // px, softness of the body→clear gradient at the rim
     float  saturation;        // 0..n saturation multiplier
     float  brightness;        // brightness multiplier
     float  flipVertical;      // 0 = sample as-is, 1 = flip source vertically
@@ -77,6 +77,23 @@ static inline float2 shash22(float2 p) {
 }
 
 static inline float sluma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
+
+// Value noise + fbm, for the procedural stone surface (refraction normal + cloud
+// inclusions). Cheap enough for a per-fragment fbm at 4 octaves.
+static inline float vnoise(float2 p) {
+    float2 i = floor(p), f = fract(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    float a = fract(sin(dot(i + float2(0, 0), float2(127.1, 311.7))) * 43758.5453);
+    float b = fract(sin(dot(i + float2(1, 0), float2(127.1, 311.7))) * 43758.5453);
+    float c = fract(sin(dot(i + float2(0, 1), float2(127.1, 311.7))) * 43758.5453);
+    float d = fract(sin(dot(i + float2(1, 1), float2(127.1, 311.7))) * 43758.5453);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+static inline float sfbm(float2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++) { v += a * vnoise(p); p *= 2.02; a *= 0.5; }
+    return v;
+}
 
 // Per-fragment "front coordinate" the reveal wave compares against its radius `R`;
 // swapping the metric turns the single ripple into several transition shapes.
@@ -141,61 +158,73 @@ fragment float4 stone_fragment(VSOut in [[stage_in]],
 
     float2 texel = U.contentScale / U.resolution;
 
-    // --- frosted glass: jittered disk blur (golden-angle spiral) -----------
+    // --- stone material: transform the underlying pixels --------------------
+    // A procedural fbm surface is the stone's uneven face: its gradient is the
+    // surface normal, which REFRACTS the image beneath (we sample it displaced), and
+    // a frosted scatter blur softens it — so the image is seen THROUGH the stone
+    // rather than replaced by a flat colour.
+    float surf = max(U.surfaceScale, 4.0);                // surface feature size, px
+    float2 np  = workPx / surf;
+    float  e   = 0.6;
+    float  h0  = sfbm(np);
+    float2 grad = float2(sfbm(np + float2(e, 0.0)) - h0,
+                         sfbm(np + float2(0.0, e)) - h0); // surface slope = normal
+    float2 refr = grad * U.distortion;                    // refraction offset, px
+
+    // Frosted scatter (golden-angle disk), jittered by grain, along the refracted
+    // coordinate.
     float2 jitter = (shash22(fragPx + U.time) - 0.5) * 2.0 * U.grain * U.blurRadius;
     float3 frost = float3(0.0);
     float  wsum  = 0.0;
-    const int FROST_TAPS = 16;
-    for (int i = 0; i < FROST_TAPS; i++) {
-        float t   = (float(i) + 0.5) / float(FROST_TAPS);
-        float ang = float(i) * 2.39996323;            // golden angle
-        float2 off = float2(cos(ang), sin(ang)) * sqrt(t) * U.blurRadius + jitter;
-        float wt  = 1.0 - 0.5 * t;                     // weight the centre a bit more
-        frost += src.sample(linearSampler, baseUV + off * texel).rgb * wt;
+    const int TAPS = 8;
+    for (int i = 0; i < TAPS; i++) {
+        float t   = (float(i) + 0.5) / float(TAPS);
+        float ang = float(i) * 2.39996323;                // golden angle
+        float2 off = (float2(cos(ang), sin(ang)) * sqrt(t) * U.blurRadius + jitter + refr) * texel;
+        float wt  = 1.0 - 0.5 * t;
+        frost += src.sample(linearSampler, baseUV + off).rgb * wt;
         wsum  += wt;
     }
     frost /= max(wsum, 1e-3);
-
-    // --- stone compositing -------------------------------------------------
-    // A centre→edge coverage gradient gives the sea-glass "clear at the rim,
-    // coloured in the middle" character: `colorBias` sets how far the body reaches,
-    // `edgeFeather` softens the body→clear transition, `translucency` caps how much
-    // the body veils the raw image, and `material` picks jellystone vs quartz.
-    float2 cc = U.resolution * 0.5;
-    float2 nd = (fragPx - cc) / max(min(cc.x, cc.y), 1.0);   // 0 centre → ~1 nearest edge
-    float rdist = length(nd);
-    float reach = mix(0.35, 1.20, clamp(U.colorBias, 0.0, 1.0));
-    float feather = max(U.edgeFeather / max(min(cc.x, cc.y), 1.0), 0.05);
-    float coverage = smoothstep(reach, reach - feather, rdist) * clamp(U.translucency, 0.0, 1.0);
-
-    // Frozen per-pixel speckle — the tumbled, fuzzy frosting of beach glass.
-    float speckle = (shash22(floor(fragPx)).x - 0.5) * U.grain;
-
-    float3 base = frost;
-    base = mix(float3(sluma(base)), base, U.saturation);
-    base *= U.brightness;
-
-    float3 body;
-    if (U.material < 0.5) {
-        // Jellystone — cheerful pastel sea glass: lift the frosted base toward a
-        // soft pastel tint, a touch milkier toward the centre, with speckle.
-        float3 pastel = U.tint.rgb;
-        body = mix(base, pastel, U.tint.a);
-        body = mix(body, float3(1.0), 0.18 * coverage);
-        body += speckle * 0.18;
-    } else {
-        // Quartz — milky semi-transparent stone: desaturate toward white, add a
-        // cool internal cloudiness and a faint tint, with finer speckle.
-        float l = sluma(base);
-        float3 milky = mix(base, float3(l), 0.55);
-        float cloud = shash22(floor(fragPx / 3.0) + 7.0).x;
-        milky = mix(milky, float3(0.92, 0.95, 1.0), 0.30 * coverage + 0.12 * cloud * coverage);
-        milky = mix(milky, U.tint.rgb, U.tint.a * 0.5);
-        body = milky + speckle * 0.10;
+    // Chromatic dispersion through the crystal: split R/B along the refraction vector.
+    if (length(refr) > 0.01) {
+        frost.r = src.sample(linearSampler, baseUV + (refr *  1.6) * texel).r;
+        frost.b = src.sample(linearSampler, baseUV + (refr * -1.6) * texel).b;
     }
 
-    // Clear rim shows the raw image; the coloured body fills the middle.
-    float3 color = mix(raw.rgb, clamp(body, 0.0, 1.0), coverage);
+    // Tumbled-frost speckle + facet glints (steep surface slopes catch light).
+    float speckle = (shash22(floor(fragPx)).x - 0.5) * U.grain;
+    float facet   = clamp(length(grad) * U.distortion * 0.4, 0.0, 1.0);
+
+    float3 color;
+    if (U.material < 0.5) {
+        // Jellystone — the object recast in frosted pastel sea glass: keep the
+        // refracted structure but remap colour by luminance onto a pastel ramp
+        // (shadows lift toward the tint, highlights toward white — translucent, never
+        // pure black), then frost it. `tint.a` = recolour strength.
+        float l = sluma(frost);
+        float3 deep = mix(U.tint.rgb * 0.5, U.tint.rgb, 0.4);
+        float3 lite = mix(U.tint.rgb, float3(1.0), 0.65);
+        float3 pastel = mix(deep, lite, smoothstep(0.04, 0.96, l));
+        color = mix(frost, pastel, clamp(U.tint.a, 0.0, 1.0));
+        color = mix(color, float3(0.97, 0.98, 1.0), clamp(U.translucency, 0.0, 1.0) * 0.15);
+        color += smoothstep(0.72, 1.0, l) * 0.12;         // soft subsurface bloom
+        color += speckle * 0.16 + facet * 0.10;
+    } else {
+        // Quartz — milky translucent crystal: desaturate toward a cool white, add
+        // low-frequency cloud inclusions and a faint tint; the refracted image shows
+        // through the haze. `translucency` = how milky/opaque the crystal is.
+        float l = sluma(frost);
+        float3 milky = mix(frost, float3(l), 0.5);        // desaturate
+        float cloud = sfbm(np * 0.5 + 7.0);               // internal cloudiness
+        float haze = clamp(U.translucency, 0.0, 1.0) * (0.3 + 0.45 * cloud);
+        milky = mix(milky, float3(0.93, 0.95, 1.0), haze);
+        milky = mix(milky, U.tint.rgb, clamp(U.tint.a, 0.0, 1.0) * 0.35);
+        color = milky + speckle * 0.08 + facet * 0.16;    // brighter facet glints
+    }
+
+    color = mix(float3(sluma(color)), color, U.saturation);
+    color *= U.brightness;
 
     // Chromatic aberration: pull the R/B channels from offset samples for a glassy
     // dispersion fringe (blended, so the frosted body is preserved).

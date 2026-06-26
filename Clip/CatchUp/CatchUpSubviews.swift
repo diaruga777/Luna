@@ -268,12 +268,24 @@ final class CatchUpPriceTrackerCardBody: UIView {
         title.numberOfLines = 3
 
         let rows = PriceTrackerStoreRowsView(tracker: tracker)
+        rows.translatesAutoresizingMaskIntoConstraints = false
+
+        // The tracked-sites list scrolls when there are more sites than fit — it's the
+        // flexible element, so it never pushes the threshold readout off the card.
+        let rowsScroll = UIScrollView()
+        rowsScroll.translatesAutoresizingMaskIntoConstraints = false
+        rowsScroll.showsVerticalScrollIndicator = true
+        rowsScroll.alwaysBounceVertical = false
+        rowsScroll.contentInsetAdjustmentBehavior = .never
+        rowsScroll.addSubview(rows)
+        rowsScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
+        rowsScroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
         let thresholdReadout = Self.makeThresholdReadout(tracker: tracker) { [weak self] in
             self?.onChangeThreshold?()
         }
 
-        let stack = UIStackView(arrangedSubviews: [thumb, title, rows, thresholdReadout])
+        let stack = UIStackView(arrangedSubviews: [thumb, title, rowsScroll, thresholdReadout])
         stack.axis = .vertical
         stack.spacing = 10
         stack.alignment = .fill
@@ -281,21 +293,29 @@ final class CatchUpPriceTrackerCardBody: UIView {
         stack.setCustomSpacing(6, after: title)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        let thumbWidthConstraint = thumb.widthAnchor.constraint(equalToConstant: 44)
+        // Half the previous size, so the name, sites, and threshold get the room.
+        let thumbWidthConstraint = thumb.widthAnchor.constraint(equalToConstant: 22)
         thumbWidthConstraint.priority = .required
 
         addSubview(stack)
-        // Pin the content below the corner pills. Centering a tall stack caused its
-        // title/readout to compress into the card chrome on shorter devices.
+        // Pin the content below the corner pills, filling the card so the rows
+        // scroll-area gets the leftover height (and the threshold stays pinned low).
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: topAnchor, constant: 56),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -24),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -24),
             // A small thumbnail at the top (a fraction of the body width).
             thumbWidthConstraint,
             thumb.heightAnchor.constraint(equalTo: thumb.widthAnchor),
             thumb.centerXAnchor.constraint(equalTo: stack.centerXAnchor),
+            // The scrolled list's content is exactly the scroll viewport wide and as
+            // tall as its rows (so vertical overflow scrolls).
+            rows.topAnchor.constraint(equalTo: rowsScroll.contentLayoutGuide.topAnchor),
+            rows.bottomAnchor.constraint(equalTo: rowsScroll.contentLayoutGuide.bottomAnchor),
+            rows.leadingAnchor.constraint(equalTo: rowsScroll.contentLayoutGuide.leadingAnchor),
+            rows.trailingAnchor.constraint(equalTo: rowsScroll.contentLayoutGuide.trailingAnchor),
+            rows.widthAnchor.constraint(equalTo: rowsScroll.frameLayoutGuide.widthAnchor),
         ])
     }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -331,17 +351,15 @@ final class CatchUpPriceTrackerCardBody: UIView {
         readout.textColor = .secondaryLabel
         readout.numberOfLines = 0
 
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = "Change alert"
-        configuration.baseForegroundColor = .secondaryLabel
-        configuration.contentInsets = .zero
-        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-            var outgoing = incoming
-            outgoing.font = .preferredFont(forTextStyle: .footnote)
-            return outgoing
-        }
+        var configuration = UIButton.Configuration.tinted()
+        configuration.title = "Change"
+        configuration.image = UIImage(systemName: "slider.horizontal.3")
+        configuration.imagePadding = 5
+        configuration.cornerStyle = .capsule
+        configuration.buttonSize = .small
         let changeButton = UIButton(configuration: configuration)
-        changeButton.contentHorizontalAlignment = .trailing
+        changeButton.setContentHuggingPriority(.required, for: .horizontal)
+        changeButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         changeButton.addAction(UIAction { _ in onChange() }, for: .touchUpInside)
 
         let copy = UIStackView(arrangedSubviews: [title, readout])
@@ -352,13 +370,16 @@ final class CatchUpPriceTrackerCardBody: UIView {
         glassPill.contentView.addSubview(copy)
         changeButton.translatesAutoresizingMaskIntoConstraints = false
         glassPill.contentView.addSubview(changeButton)
+        // Text on the left, a self-sized capsule "Change" button on the right, side by
+        // side with a real gap — so the button is an unambiguous tap target and the
+        // multi-line readout can never run underneath it.
         NSLayoutConstraint.activate([
             copy.topAnchor.constraint(equalTo: glassPill.contentView.topAnchor, constant: 12),
             copy.leadingAnchor.constraint(equalTo: glassPill.contentView.leadingAnchor, constant: 16),
-            copy.trailingAnchor.constraint(equalTo: glassPill.contentView.trailingAnchor, constant: -16),
-            changeButton.topAnchor.constraint(equalTo: copy.bottomAnchor, constant: 6),
+            copy.bottomAnchor.constraint(equalTo: glassPill.contentView.bottomAnchor, constant: -12),
+            changeButton.leadingAnchor.constraint(equalTo: copy.trailingAnchor, constant: 12),
             changeButton.trailingAnchor.constraint(equalTo: glassPill.contentView.trailingAnchor, constant: -16),
-            changeButton.bottomAnchor.constraint(equalTo: glassPill.contentView.bottomAnchor, constant: -10),
+            changeButton.centerYAnchor.constraint(equalTo: glassPill.contentView.centerYAnchor),
         ])
         return glassPill
     }

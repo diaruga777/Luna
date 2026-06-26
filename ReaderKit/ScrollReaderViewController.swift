@@ -64,6 +64,9 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     private let footerPlayButton = UIButton(type: .system)
     private let footerRateButton = UIButton(type: .system)
     private var highlightedRange: NSRange?
+    /// Glass "lens" pills overlaying the current chunk (one per wrapped line),
+    /// magnifying the words instead of tinting their background.
+    private var lensViews: [UIView] = []
     private var followPlayback = true
 
     // Eye tracking (nil unless a gaze factory provided one — never in the sheet).
@@ -76,11 +79,6 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     /// there's no share provider).
     private lazy var shareView: ArticleShareView? = makeShareView()
     private var contentSizeObservation: NSKeyValueObservation?
-
-    // Matches the RSVP reader's liquid-glass focus accent (an inline text
-    // highlight, since a glass overlay would sit in front of and blur the very
-    // words being read).
-    private let highlightColor = GlassStyle.readingAccent.withAlphaComponent(0.28)
 
     init(item: ReadingListItem, content: ArticleContent,
          autoHighlight: Bool = false, audioEnabled: Bool = false,
@@ -612,15 +610,69 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     private func applyHighlight(_ range: NSRange) {
         guard range.location + range.length <= textView.textStorage.length else { return }
         removeHighlight()
-        textView.textStorage.addAttribute(.backgroundColor, value: highlightColor, range: range)
         highlightedRange = range
+
+        // A liquid-glass reticule "lens" over the chunk that slightly magnifies the
+        // words. A chunk that wraps across lines yields one pill per line fragment.
+        let lm = textView.layoutManager
+        let tc = textView.textContainer
+        let inset = textView.textContainerInset
+        let glyphRange = lm.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        lm.enumerateEnclosingRects(
+            forGlyphRange: glyphRange,
+            withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+            in: tc
+        ) { [weak self] lineRect, _ in
+            guard let self else { return }
+            let lineGlyphs = lm.glyphRange(forBoundingRect: lineRect, in: tc)
+            let portion = NSIntersectionRange(glyphRange, lineGlyphs)
+            guard portion.length > 0 else { return }
+            let charRange = lm.characterRange(forGlyphRange: portion, actualGlyphRange: nil)
+            guard charRange.location + charRange.length <= self.textView.textStorage.length else { return }
+            let sub = self.textView.textStorage.attributedSubstring(from: charRange)
+            let rect = lineRect.offsetBy(dx: inset.left, dy: inset.top)
+            let lens = self.makeLensPill(text: sub, over: rect)
+            self.textView.addSubview(lens)
+            self.lensViews.append(lens)
+        }
+    }
+
+    /// Builds one glass lens pill sized to `rect` (a line fragment of the chunk),
+    /// containing the same words rendered ~1.18× so they read magnified through it.
+    private func makeLensPill(text: NSAttributedString, over rect: CGRect) -> UIView {
+        let padX: CGFloat = 9, padY: CGFloat = 5
+        let pill = GlassStyle.lensEffectView()
+        pill.frame = rect.insetBy(dx: -padX, dy: -padY)
+        pill.isUserInteractionEnabled = false
+
+        let magnified = NSMutableAttributedString(attributedString: text)
+        let whole = NSRange(location: 0, length: magnified.length)
+        magnified.enumerateAttribute(.font, in: whole) { value, sub, _ in
+            let base = (value as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
+            magnified.addAttribute(.font, value: base.withSize(base.pointSize * 1.18), range: sub)
+        }
+        // Drop any residual background so only the glass shows behind the words.
+        magnified.removeAttribute(.backgroundColor, range: whole)
+
+        let label = UILabel()
+        label.attributedText = magnified
+        label.lineBreakMode = .byClipping
+        label.textAlignment = .center
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.7
+        label.translatesAutoresizingMaskIntoConstraints = false
+        pill.contentView.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: pill.contentView.leadingAnchor, constant: padX * 0.6),
+            label.trailingAnchor.constraint(equalTo: pill.contentView.trailingAnchor, constant: -padX * 0.6),
+            label.centerYAnchor.constraint(equalTo: pill.contentView.centerYAnchor),
+        ])
+        return pill
     }
 
     private func removeHighlight() {
-        if let old = highlightedRange,
-           old.location + old.length <= textView.textStorage.length {
-            textView.textStorage.removeAttribute(.backgroundColor, range: old)
-        }
+        lensViews.forEach { $0.removeFromSuperview() }
+        lensViews.removeAll()
         highlightedRange = nil
     }
 

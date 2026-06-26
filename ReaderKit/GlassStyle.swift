@@ -32,6 +32,25 @@ enum GlassStyle {
         return mark
     }
 
+    /// A liquid-glass capsule "lens" for the chunk reader: a glassy pill the
+    /// magnified chunk text sits inside, so the current words read as if under a
+    /// reticule loupe. Faintly accent-tinted; falls back to a thin material pre-26.
+    static func lensEffectView() -> UIVisualEffectView {
+        let v: UIVisualEffectView
+        if #available(iOS 26.0, *) {
+            let glass = UIGlassEffect()
+            glass.tintColor = readingAccent.withAlphaComponent(0.16)
+            v = UIVisualEffectView(effect: glass)
+            v.cornerConfiguration = .capsule()
+        } else {
+            v = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+            v.contentView.backgroundColor = readingAccent.withAlphaComponent(0.14)
+            v.layer.cornerCurve = .continuous
+            v.clipsToBounds = true
+        }
+        return v
+    }
+
     /// A capsule glass configuration for circular floating buttons.
     static func circularButtonConfiguration(symbol: String, padding: CGFloat = 10) -> UIButton.Configuration {
         var config: UIButton.Configuration

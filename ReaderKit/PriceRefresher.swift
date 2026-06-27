@@ -93,6 +93,8 @@ struct PriceRefresher {
             }
             updated.setPrice(price.amount, currency: price.currency,
                              urlString: storeListing.urlString, at: timestamp)
+            updated.recordPriceSample(price.amount, currency: price.currency,
+                                      urlString: storeListing.urlString, at: timestamp)
         }
 
         guard let persisted = store.updatePriceTracker(updated, for: itemID),

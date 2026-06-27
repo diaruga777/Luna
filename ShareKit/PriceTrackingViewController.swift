@@ -92,6 +92,13 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
     private let thresholdSlider = AlertThresholdSlider()
     private let productHeader = UIView()
     private let productTitleLabel = UILabel()
+    /// Price-history graph slot, BELOW the table and ABOVE the alert footer, outside
+    /// the scroll view. Shows the graph once there are ≥3 days of data, else a
+    /// pending "Awaiting more data" state.
+    private let graphContainer = UIView()
+    private let graphTitleLabel = UILabel()
+    private let graphView = PriceGraphView()
+    private let graphPendingLabel = UILabel()
     /// UIKit owns the navigation controller's normal interactive-pop delegate. Keep
     /// it so this screen can temporarily opt in without changing other screens.
     private weak var previousInteractivePopGestureDelegate: UIGestureRecognizerDelegate?
@@ -148,6 +155,9 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
         tableView.tableFooterView = makeAddSellerFooter()
         view.addSubview(tableView)
 
+        configureGraphContainer()
+        view.addSubview(graphContainer)
+
         let footer = makeThresholdFooter()
         footer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(footer)
@@ -163,7 +173,11 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
             tableView.topAnchor.constraint(equalTo: productHeader.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: footer.topAnchor),
+            tableView.bottomAnchor.constraint(equalTo: graphContainer.topAnchor),
+            graphContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            graphContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            graphContainer.bottomAnchor.constraint(equalTo: footer.topAnchor),
+            graphContainer.heightAnchor.constraint(equalToConstant: 168),
             footer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             footer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             footer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
@@ -171,6 +185,7 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
 
         configureNavigationChrome()
         syncThresholdControl()
+        refreshGraph()
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
     }
@@ -179,6 +194,11 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
     /// suppresses UIKit's interactive-pop recognizer by default. Restore it for the
     /// in-app pushed editor so the root reading list remains reachable by the normal
     /// left-edge swipe; extension-hosted editors still have no navigation stack.
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        refreshGraph()
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         guard exitContext.host == .inApp,
@@ -263,6 +283,53 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
     }
 
     // MARK: - Threshold footer
+
+    // MARK: - Price-history graph
+
+    private func configureGraphContainer() {
+        graphContainer.backgroundColor = .systemGroupedBackground
+        graphContainer.translatesAutoresizingMaskIntoConstraints = false
+
+        graphTitleLabel.text = "Price History"
+        graphTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        graphTitleLabel.textColor = .secondaryLabel
+        graphTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        graphContainer.addSubview(graphTitleLabel)
+
+        graphView.translatesAutoresizingMaskIntoConstraints = false
+        graphContainer.addSubview(graphView)
+
+        graphPendingLabel.text = "Awaiting more data"
+        graphPendingLabel.font = .systemFont(ofSize: 14, weight: .regular)
+        graphPendingLabel.textColor = .tertiaryLabel
+        graphPendingLabel.textAlignment = .center
+        graphPendingLabel.translatesAutoresizingMaskIntoConstraints = false
+        graphContainer.addSubview(graphPendingLabel)
+
+        NSLayoutConstraint.activate([
+            graphTitleLabel.topAnchor.constraint(equalTo: graphContainer.topAnchor, constant: 8),
+            graphTitleLabel.leadingAnchor.constraint(equalTo: graphContainer.layoutMarginsGuide.leadingAnchor),
+            graphTitleLabel.trailingAnchor.constraint(equalTo: graphContainer.layoutMarginsGuide.trailingAnchor),
+            graphView.topAnchor.constraint(equalTo: graphTitleLabel.bottomAnchor, constant: 2),
+            graphView.leadingAnchor.constraint(equalTo: graphContainer.leadingAnchor, constant: 12),
+            graphView.trailingAnchor.constraint(equalTo: graphContainer.trailingAnchor, constant: -12),
+            graphView.bottomAnchor.constraint(equalTo: graphContainer.bottomAnchor, constant: -8),
+            graphPendingLabel.centerXAnchor.constraint(equalTo: graphView.centerXAnchor),
+            graphPendingLabel.centerYAnchor.constraint(equalTo: graphView.centerYAnchor),
+        ])
+    }
+
+    /// Shows the graph when there are ≥3 days of data, else the pending state.
+    private func refreshGraph() {
+        guard let tracker else { graphContainer.isHidden = true; return }
+        graphContainer.isHidden = false
+        let series = PriceHistory.series(for: tracker)
+        let hasEnough = PriceHistory.distinctDayCount(tracker) >= PriceHistory.minimumDaysForGraph
+            && series.count >= 2
+        graphView.isHidden = !hasEnough
+        graphPendingLabel.isHidden = hasEnough
+        if hasEnough { graphView.setData(series, currency: tracker.displayCurrency) }
+    }
 
     private func makeThresholdFooter() -> UIView {
         let container = UIView()

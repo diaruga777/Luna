@@ -5,6 +5,19 @@
 
 import Foundation
 
+/// One day's price sample for a store, bucketed by calendar day: the LOWEST price
+/// seen that day (regardless of refresh time). `fxRate` is the snapshot rate to the
+/// tracker's display currency at fetch time (nil = unknown / same currency; FX-rate
+/// fetching is deferred — see price-graph-plan.md), so a future FX source slots in
+/// without a migration.
+struct PriceDaySnapshot: Codable, Equatable {
+    /// Local start-of-day for the bucket.
+    var dayStart: Date
+    var lowestPrice: Decimal
+    var currency: String
+    var fxRate: Decimal?
+}
+
 /// One store's listing of a tracked product: where to fetch it and the last
 /// price seen there. A tracker always has at least one of these.
 struct PriceTrackerStore: Codable, Equatable, Identifiable {
@@ -16,15 +29,53 @@ struct PriceTrackerStore: Codable, Equatable, Identifiable {
     var currency: String
     /// When this store was last refreshed (nil = never since creation).
     var lastRefreshed: Date?
+    /// Per-day price history (lowest price each calendar day), oldest-first.
+    var priceHistory: [PriceDaySnapshot]
 
     var id: String { urlString }
     var url: URL? { URL(string: urlString) }
 
-    init(urlString: String, lastPrice: Decimal?, currency: String, lastRefreshed: Date? = nil) {
+    init(urlString: String, lastPrice: Decimal?, currency: String, lastRefreshed: Date? = nil,
+         priceHistory: [PriceDaySnapshot] = []) {
         self.urlString = urlString
         self.lastPrice = lastPrice
         self.currency = currency
         self.lastRefreshed = lastRefreshed
+        self.priceHistory = priceHistory
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case urlString, lastPrice, currency, lastRefreshed, priceHistory
+    }
+
+    // Custom decode so items saved before `priceHistory` existed still load (the
+    // synthesized decoder would throw `keyNotFound` for the missing key).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        urlString = try c.decode(String.self, forKey: .urlString)
+        lastPrice = try c.decodeIfPresent(Decimal.self, forKey: .lastPrice)
+        currency = try c.decode(String.self, forKey: .currency)
+        lastRefreshed = try c.decodeIfPresent(Date.self, forKey: .lastRefreshed)
+        priceHistory = try c.decodeIfPresent([PriceDaySnapshot].self, forKey: .priceHistory) ?? []
+    }
+
+    /// Records a successful price fetch into the day buckets: appends a new day or
+    /// lowers the existing day's minimum. Pure; unit-tested.
+    mutating func recordSample(price: Decimal, currency: String, at date: Date,
+                               calendar: Calendar = .current) {
+        let day = calendar.startOfDay(for: date)
+        if let index = priceHistory.firstIndex(where: {
+            calendar.isDate($0.dayStart, inSameDayAs: day)
+        }) {
+            if price < priceHistory[index].lowestPrice {
+                priceHistory[index].lowestPrice = price
+                priceHistory[index].currency = currency
+            }
+        } else {
+            priceHistory.append(PriceDaySnapshot(
+                dayStart: day, lowestPrice: price, currency: currency, fxRate: nil))
+            priceHistory.sort { $0.dayStart < $1.dayStart }
+        }
     }
 }
 
@@ -240,6 +291,13 @@ struct PriceTracker: Codable, Equatable {
         stores[index].lastPrice = price
         if let currency { stores[index].currency = currency }
         stores[index].lastRefreshed = date
+    }
+
+    /// Records a SUCCESSFUL price fetch into the store's day-bucketed history (lowest
+    /// price per calendar day). Called only on a real fetch, not on a failed attempt.
+    mutating func recordPriceSample(_ price: Decimal, currency: String, urlString: String, at date: Date) {
+        guard let index = stores.firstIndex(where: { $0.urlString == urlString }) else { return }
+        stores[index].recordSample(price: price, currency: currency, at: date)
     }
 
     // MARK: - Migration-safe decoding

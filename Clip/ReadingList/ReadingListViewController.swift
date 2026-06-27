@@ -300,7 +300,7 @@ final class ReadingListViewController: UITableViewController {
         } else if let platform = candidate.platform {
             openPlatformItem(transient, platform: platform, from: self)
         } else if let content = candidate.content {
-            let reader = ReaderViewController(
+            let reader = ReaderHostFactory.make(
                 item: transient, content: content,
                 shareProvider: AppReaderShareProvider.shared,
                 gazeTrackerFactory: AppGazeTracker.factory)
@@ -1083,7 +1083,7 @@ final class ReadingListViewController: UITableViewController {
             return
         }
         guard item.state == .ready, let content = store.content(for: item) else { return }
-        let reader = ReaderViewController(
+        let reader = ReaderHostFactory.make(
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
             gazeTrackerFactory: AppGazeTracker.factory)

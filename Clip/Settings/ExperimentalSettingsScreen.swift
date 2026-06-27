@@ -11,7 +11,7 @@ import ClipContentRendering
 final class ExperimentalSettingsScreen: UITableViewController {
 
     private enum Section: Int, CaseIterable {
-        case semantic, paywallStrategies, archiveOverlay, halftone, frostedGlass, jellystone, quartz, youtube
+        case rabbitHole, semantic, paywallStrategies, archiveOverlay, halftone, frostedGlass, jellystone, quartz, youtube
     }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
 
@@ -42,6 +42,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
+        case .rabbitHole: return 1
         case .semantic: return 1
         case .paywallStrategies: return 1
         case .archiveOverlay: return 1
@@ -55,6 +56,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
+        case .rabbitHole: return "RabbitHole Reader"
         case .semantic: return "Suggest Shares Based on Content"
         case .paywallStrategies: return "Extra Paywall Unlock Strategies"
         case .archiveOverlay: return "Archive Reader Cover"
@@ -68,6 +70,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
+        case .rabbitHole:
+            return "Off by default. An experimental inline reader: tap a link to dive into it as a stacked layer, then keep diving — each layer leaves a tappable \"lip\" above and below so you never lose your place. Overscroll the top layer to pull the previous one back. Your trail is remembered across app launches. The standard reader is unchanged; flip this off to go back to it."
         case .semantic:
             return "When you save something that resembles things you've shared with a friend before, Queue can suggest sharing it with them. Slide all the way left to turn this off."
         case .paywallStrategies:
@@ -95,6 +99,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
         switch Section(rawValue: indexPath.section)! {
+        case .rabbitHole:
+            return rabbitHoleCell()
         case .semantic:
             return semanticSensitivityCell()
         case .paywallStrategies:
@@ -112,6 +118,23 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .youtube:
             return youTubeCell(for: YouTubeRow(rawValue: indexPath.row)!)
         }
+    }
+
+    /// A toggle that swaps the standard reader for the experimental RabbitHole reader.
+    private func rabbitHoleCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = "Use RabbitHole Reader"
+        cell.contentConfiguration = content
+        cell.accessoryView = makeToggle(
+            isOn: ReaderSettings.rabbitHoleReaderEnabled,
+            action: #selector(rabbitHoleToggled(_:)))
+        return cell
+    }
+
+    @objc private func rabbitHoleToggled(_ toggle: UISwitch) {
+        ReaderSettings.rabbitHoleReaderEnabled = toggle.isOn
     }
 
     /// A toggle that enables the on-device (non-archive) paywall-bypass strategies.
@@ -253,7 +276,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
             case .playlist: choosePlaylistTapped()
             case .autoAdd: break
             }
-        case .semantic, .paywallStrategies, .archiveOverlay:
+        case .rabbitHole, .semantic, .paywallStrategies, .archiveOverlay:
             break
         }
     }

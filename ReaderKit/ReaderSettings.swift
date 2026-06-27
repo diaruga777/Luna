@@ -30,7 +30,17 @@ enum ReaderSettings {
     private static let preloadDepthKey = "linkPreloadDepth"
     private static let accentKey = "readerAccentColor"
     private static let archiveOverlayAlphaKey = "archiveOverlayAlpha"
+    private static let rabbitHoleReaderKey = "rabbitHoleReaderEnabled"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
+
+    /// Experimental: when on, opening a save loads the forked "RabbitHole" reader
+    /// (breadcrumb / rabbit-hole stacked-layer inline reading) instead of the
+    /// standard `ReaderViewController`. **Off by default.** Purely a host-selection
+    /// switch — the standard reader is untouched and remains the default.
+    static var rabbitHoleReaderEnabled: Bool {
+        get { defaults.bool(forKey: rabbitHoleReaderKey) }
+        set { defaults.set(newValue, forKey: rabbitHoleReaderKey) }
+    }
 
     /// Opacity of the cover over the archive web view (experimental/diagnostic):
     /// 0.99 = effectively hidden (default); lower it to see the archive flow

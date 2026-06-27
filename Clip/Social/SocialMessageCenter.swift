@@ -27,6 +27,8 @@ final class SocialMessageCenter {
     /// Posts the first-ever-share notification (username, friend UUID for the
     /// settings deep link); injectable for tests.
     private let notifyFirstShare: (String, UUID) -> Void
+    /// Posts the "X added you as a friend" notification (username); injectable for tests.
+    private let notifyFriendAdded: (String) -> Void
 
     /// Prevents overlapping inbox drains (launch + push can race).
     private let drainLock = NSLock()
@@ -46,7 +48,8 @@ final class SocialMessageCenter {
          readingListStore: ReadingListStore = .shared,
          startIngest: ((ReadingListItem) -> Void)? = nil,
          notifyArticleShared: ((String, String?) -> Void)? = nil,
-         notifyFirstShare: ((String, UUID) -> Void)? = nil) {
+         notifyFirstShare: ((String, UUID) -> Void)? = nil,
+         notifyFriendAdded: ((String) -> Void)? = nil) {
         self.identityStore = identityStore
         self.friendsStore = friendsStore
         self.transport = transport
@@ -59,6 +62,9 @@ final class SocialMessageCenter {
         }
         self.notifyFirstShare = notifyFirstShare ?? { username, friendUUID in
             NotificationManager.postFirstShare(fromUsername: username, friendUUID: friendUUID)
+        }
+        self.notifyFriendAdded = notifyFriendAdded ?? { username in
+            NotificationManager.postFriendAdded(fromUsername: username)
         }
     }
 
@@ -321,8 +327,12 @@ final class SocialMessageCenter {
                 logger.info("dropping inconsistent friendAdd from \(record.senderUUID, privacy: .public)")
                 return
             }
+            // Only notify when this is a genuinely new friend (not a re-add of one we
+            // already have), so a re-sent friendAdd can't spam the notification.
+            let alreadyFriend = friendsStore.friend(withUUID: card.uuid) != nil
             friendsStore.add(card)
             logger.info("added friend \(card.username, privacy: .public) via message")
+            if !alreadyFriend { notifyFriendAdded(card.username) }
 
         case .readingListItem(let urlString, let title):
             // Only friends may push links, and the signature must match the

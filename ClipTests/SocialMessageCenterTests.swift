@@ -17,6 +17,7 @@ final class SocialMessageCenterTests: XCTestCase {
     private var ingestedItemURLs: [String] = []
     private var notifiedShares: [(username: String, title: String?)] = []
     private var firstShareNotifications: [String] = []
+    private var friendAddedNotifications: [String] = []
     private var center: SocialMessageCenter!
     private var me: UserIdentity!
 
@@ -36,6 +37,7 @@ final class SocialMessageCenterTests: XCTestCase {
         ingestedItemURLs = []
         notifiedShares = []
         firstShareNotifications = []
+        friendAddedNotifications = []
         center = SocialMessageCenter(
             identityStore: identityStore,
             friendsStore: friendsStore,
@@ -47,6 +49,9 @@ final class SocialMessageCenterTests: XCTestCase {
             },
             notifyFirstShare: { [weak self] username, _ in
                 self?.firstShareNotifications.append(username)
+            },
+            notifyFriendAdded: { [weak self] username in
+                self?.friendAddedNotifications.append(username)
             })
     }
 
@@ -82,6 +87,18 @@ final class SocialMessageCenterTests: XCTestCase {
         XCTAssertEqual(friendsStore.friend(withUUID: alice.uuid)?.card, alice.card)
         XCTAssertTrue(transport.messages.isEmpty)
         XCTAssertEqual(transport.deletedRecordIDs.count, 1)
+        // A new friend triggers the "added you as a friend" notification.
+        XCTAssertEqual(friendAddedNotifications, ["alice"])
+    }
+
+    /// A re-sent friendAdd for a friend we already have must NOT notify again.
+    func testRepeatFriendAddDoesNotNotifyAgain() async throws {
+        let alice = makeSender()
+        try await inject(body: .friendAdd(alice.card), from: alice)
+        await center.processInbox()
+        try await inject(body: .friendAdd(alice.card), from: alice)
+        await center.processInbox()
+        XCTAssertEqual(friendAddedNotifications, ["alice"])
     }
 
     func testInconsistentFriendAddRejectedButDeleted() async throws {

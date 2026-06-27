@@ -25,6 +25,8 @@ enum NotificationManager {
     /// A follow-up (not first) friend share — tapping it just opens the app;
     /// these are cleared when the user reaches the reading list.
     static let typeShareFollowup = "friendShareFollowup"
+    /// Someone added you as a friend — tapping it opens the in-app friends list.
+    static let typeFriendAdded = "friendAdded"
     /// Identifier prefix for follow-up share notifications, so they can be
     /// removed in bulk without disturbing first-share (or other) notifications.
     private static let followupIdentifierPrefix = "friendShareFollowup-"
@@ -67,6 +69,16 @@ enum NotificationManager {
         // One first-share prompt per friend (a later first-share, e.g. after the
         // friend was re-added, replaces the prior one rather than stacking).
         post(content, identifier: "friendFirstShare-\(friendUUID.uuidString)")
+    }
+
+    /// Posts "X added you as a friend" when someone adds us back (a new friend
+    /// appears in our inbox). Tapping it opens the in-app friends list.
+    static func postFriendAdded(fromUsername username: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "\(username) added you as a friend"
+        content.sound = .default
+        content.userInfo = [typeKey: typeFriendAdded]
+        post(content)
     }
 
     /// Removes any delivered follow-up share notifications (called when the user

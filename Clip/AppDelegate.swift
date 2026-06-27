@@ -340,7 +340,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         didReceive response: UNNotificationResponse
     ) async {
         let userInfo = response.notification.request.content.userInfo
-        guard userInfo[NotificationManager.typeKey] as? String == NotificationManager.typeFirstShare,
+        let type = userInfo[NotificationManager.typeKey] as? String
+        if type == NotificationManager.typeFriendAdded {
+            await MainActor.run { SceneDelegate.routeToFriends() }
+            return
+        }
+        guard type == NotificationManager.typeFirstShare,
               let uuidString = userInfo[NotificationManager.friendUUIDKey] as? String,
               let friendUUID = UUID(uuidString: uuidString) else { return }
         await MainActor.run { SceneDelegate.routeToFriendSettings(friendUUID: friendUUID) }

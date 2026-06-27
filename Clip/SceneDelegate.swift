@@ -24,6 +24,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// the notification tap is delivered to the AppDelegate, before any scene may
     /// have connected.
     private static var pendingFriendSettingsUUID: UUID?
+    /// Set when a tapped friend-added notification asks to open the friends list.
+    private static var pendingFriendsList = false
 
     /// Entry point for a tapped first-share notification (called from
     /// `AppDelegate.userNotificationCenter(_:didReceive:)`). Routes to the
@@ -31,9 +33,33 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// is (scene connect / onboarding finish / foreground).
     static func routeToFriendSettings(friendUUID: UUID) {
         pendingFriendSettingsUUID = friendUUID
-        let scene = UIApplication.shared.connectedScenes
-            .compactMap { $0.delegate as? SceneDelegate }.first
-        scene?.applyPendingFriendSettings()
+        activeSceneDelegate()?.applyPendingNotificationRoute()
+    }
+
+    /// Entry point for a tapped friend-added notification — opens the friends list.
+    static func routeToFriends() {
+        pendingFriendsList = true
+        activeSceneDelegate()?.applyPendingNotificationRoute()
+    }
+
+    private static func activeSceneDelegate() -> SceneDelegate? {
+        UIApplication.shared.connectedScenes.compactMap { $0.delegate as? SceneDelegate }.first
+    }
+
+    /// Applies whichever notification-tap route is pending, once the main UI exists.
+    private func applyPendingNotificationRoute() {
+        applyPendingFriendSettings()
+        applyPendingFriendsList()
+    }
+
+    /// Pushes the friends list onto the reading-list nav (friend-added tap).
+    private func applyPendingFriendsList() {
+        guard Self.pendingFriendsList,
+              let nav = window?.rootViewController as? UINavigationController else { return }
+        Self.pendingFriendsList = false
+        nav.dismiss(animated: false)
+        nav.popToRootViewController(animated: false)
+        nav.pushViewController(FriendsViewController(), animated: true)
     }
 
     /// Pushes the pending friend's settings page onto the reading-list nav, if the
@@ -107,7 +133,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     self?.pendingReadURL = nil
                     self?.openReader(articleURL: articleURL)
                 }
-                self?.applyPendingFriendSettings()
+                self?.applyPendingNotificationRoute()
             }
         } else {
             window.rootViewController = UINavigationController(
@@ -119,9 +145,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let url = connectionOptions.urlContexts.first?.url {
             route(url)
         }
-        // A first-share notification tapped from a cold launch may have set the
-        // pending route before this scene connected.
-        applyPendingFriendSettings()
+        // A notification tapped from a cold launch may have set a pending route
+        // before this scene connected.
+        applyPendingNotificationRoute()
     }
 
     #if DEBUG
@@ -184,8 +210,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         Task { await IncomingMailImporter.shared.importNewMail() }
         SemanticIndexer.shared.scheduleRun()
-        // A first-share notification tapped while the app was backgrounded.
-        applyPendingFriendSettings()
+        // A notification tapped while the app was backgrounded.
+        applyPendingNotificationRoute()
     }
 
     /// The forced root view controller for a UI-test launch, or nil when not in a

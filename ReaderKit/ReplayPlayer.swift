@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipHTMLClassification
 import ClipModels
 import Foundation
 

@@ -10,9 +10,11 @@ import SwiftSoup
 /// Pulls formatted article text out of raw HTML — a small readability heuristic:
 /// strip chrome elements, find the container with the most paragraph text, and
 /// emit its block elements in order, preserving inline links.
-struct ArticleExtractor {
+public struct ArticleExtractor {
 
-    enum ExtractError: Error {
+    public init() {}
+
+    public enum ExtractError: Error {
         case noContent
     }
 
@@ -23,7 +25,7 @@ struct ArticleExtractor {
     /// The refined result is used only when it's substantial AND didn't eat
     /// most of what the basic pass found (junk classes sometimes match the
     /// main content container on real sites).
-    func extract(html: String, baseURL: URL) throws -> ArticleContent {
+    public func extract(html: String, baseURL: URL) throws -> ArticleContent {
         let document = try SwiftSoup.parse(html, baseURL.absoluteString)
         let title = extractTitle(from: document)
         let author = extractAuthor(from: document)
@@ -85,7 +87,7 @@ struct ArticleExtractor {
     /// Pure (parse only, no network). Returns nil when no `articleBody` is present.
     /// Truncated bodies are still returned — the caller's `hasReadableBody` length
     /// gate is the final arbiter, so a teaser-only body is rejected downstream.
-    func extractFromJSONLD(html: String, baseURL: URL) -> ArticleContent? {
+    public func extractFromJSONLD(html: String, baseURL: URL) -> ArticleContent? {
         guard let document = try? SwiftSoup.parse(html, baseURL.absoluteString),
               let body = firstArticleBody(in: document)
         else { return nil }

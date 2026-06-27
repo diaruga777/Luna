@@ -3,6 +3,7 @@
 //  ClipShare
 //
 
+import ClipHTMLClassification
 import ClipModels
 import UIKit
 

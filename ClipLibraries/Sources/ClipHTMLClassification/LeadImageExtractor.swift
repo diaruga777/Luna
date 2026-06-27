@@ -8,8 +8,8 @@ import Foundation
 /// Pulls a representative cover/banner image URL out of an article's HTML —
 /// `og:image`, then `twitter:image`, then a `<link rel="image_src">`. Best-effort
 /// and pure; the reading-list row falls back to no thumbnail when nothing matches.
-enum LeadImageExtractor {
-    static func imageURL(in html: String, baseURL: URL) -> URL? {
+public enum LeadImageExtractor {
+    public static func imageURL(in html: String, baseURL: URL) -> URL? {
         let patterns = [
             "<meta[^>]+property=[\"']og:image(?::url)?[\"'][^>]+content=[\"']([^\"']+)[\"']",
             "<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+property=[\"']og:image(?::url)?[\"']",
@@ -29,7 +29,7 @@ enum LeadImageExtractor {
 
     /// The `content` of a `<meta>` tag for an `og:`/`twitter:` style property or
     /// name (attribute order-independent), with common HTML entities decoded.
-    static func metaContent(property: String, in html: String) -> String? {
+    public static func metaContent(property: String, in html: String) -> String? {
         let escaped = NSRegularExpression.escapedPattern(for: property)
         let patterns = [
             "<meta[^>]+property=[\"']\(escaped)[\"'][^>]+content=[\"']([^\"']+)[\"']",

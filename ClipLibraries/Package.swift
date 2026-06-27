@@ -14,10 +14,16 @@ let package = Package(
         .library(name: "ClipPriceMetadata", targets: ["ClipPriceMetadata"]),
         .library(name: "ClipContentRendering", targets: ["ClipContentRendering"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
+    ],
     targets: [
         .target(name: "ClipModels"),
         .target(name: "ClipURLClassification", dependencies: ["ClipModels"]),
-        .target(name: "ClipHTMLClassification"),
+        .target(name: "ClipHTMLClassification", dependencies: [
+            "ClipModels", "ClipURLClassification", "ClipPriceMetadata",
+            .product(name: "SwiftSoup", package: "SwiftSoup"),
+        ]),
         .target(name: "ClipPaywallBypass"),
         .target(name: "ClipPriceMetadata"),
         .target(name: "ClipContentRendering"),

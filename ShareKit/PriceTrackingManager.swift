@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipHTMLClassification
 import Foundation
 
 /// Resolves the current price for a store URL the user adds to an existing

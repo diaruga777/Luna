@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipHTMLClassification
 import ClipURLClassification
 import UIKit
 import WebKit

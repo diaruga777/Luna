@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipHTMLClassification
 import Foundation
 
 /// Runs a single SILENT `BypassStrategy` (a URLSession request transform) and returns

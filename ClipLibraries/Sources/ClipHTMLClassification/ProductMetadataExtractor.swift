@@ -11,20 +11,28 @@ import SwiftSoup
 /// NON-OPTIONAL by construction: a `ProductMetadata` only exists once a real price
 /// (with a known currency) was found, so a tracker can never be created without one
 /// (the mandatory-price invariant lives in the type).
-struct ProductMetadata: Equatable {
-    let name: String
+public struct ProductMetadata: Equatable {
+    public let name: String
     /// The resolved price — always a real amount + currency.
-    let price: ProductPrice
-    let imageURL: URL?
-    let brand: String?
-    let productID: String?
+    public let price: ProductPrice
+    public let imageURL: URL?
+    public let brand: String?
+    public let productID: String?
+
+    public init(name: String, price: ProductPrice, imageURL: URL?, brand: String?, productID: String?) {
+        self.name = name
+        self.price = price
+        self.imageURL = imageURL
+        self.brand = brand
+        self.productID = productID
+    }
 }
 
 /// A single site's price-extraction strategy. Pure, deterministic, currency-complete:
 /// the currency MUST be resolved inside the rule (a declared code, else a host/TLD
 /// map) — never a blind USD default. Register a new retailer by adding one conformer
 /// to `ProductMetadataExtractor.hostRules`; the extractor itself never changes.
-protocol ProductPriceRule {
+public protocol ProductPriceRule {
     /// Whether this rule handles `host` (already lowercased, trailing dot stripped).
     func matches(host: String) -> Bool
     /// Extract `(amount, currency)` from this site's markup, or nil. `html` is the raw
@@ -42,7 +50,7 @@ protocol ProductPriceRule {
 /// ONLY when `render != nil`; extensions pass `render: nil`, making the render tier
 /// structurally unreachable there (the action-extension "spins forever" fix). It is
 /// also hard-bounded wherever it runs.
-struct ProductMetadataExtractor {
+public struct ProductMetadataExtractor {
 
     /// Ordered, extensible per-host rules consulted before the generic fallback. First
     /// rule whose `matches(host:)` is true wins; its price is used if found.
@@ -52,7 +60,7 @@ struct ProductMetadataExtractor {
     /// the existing pure detector, reused so there's one source of those fields.
     private let detector: ProductPageDetector
 
-    init(
+    public init(
         hostRules: [ProductPriceRule] = [AmazonPriceRule(), TargetPriceRule(), WalmartPriceRule()],
         detector: ProductPageDetector = ProductPageDetector()
     ) {
@@ -68,7 +76,7 @@ struct ProductMetadataExtractor {
     ///   Pass `nil` in app extensions and tests — the render tier is then structurally
     ///   unreachable, so a JS-only price resolves to nil (→ article) instead of spinning
     ///   up a `WKWebView` in the memory-limited extension host.
-    func extract(
+    public func extract(
         url: URL, html: String, render: ((URL) async -> String?)? = nil
     ) async -> ProductMetadata? {
         // ONE parse of the static markup; ONE price source (host rule, else generic).
@@ -117,12 +125,13 @@ struct ProductMetadataExtractor {
 /// amazon.com.au resolves to AUD), never a blind USD default. Host matching uses the
 /// complete current Amazon retail-storefront catalog, so `amazon.scam.com` can't
 /// match and newly supported regional URLs stay consistent across the app.
-struct AmazonPriceRule: ProductPriceRule {
+public struct AmazonPriceRule: ProductPriceRule {
+    public init() {}
 
     /// Every current Amazon retail storefront and its local transaction currency.
     /// The hostname registry is deliberately explicit (rather than accepting any
     /// `amazon.*` domain) to prevent lookalike hosts from becoming price sources.
-    static let storefronts: [(host: String, currency: String)] = [
+    public static let storefronts: [(host: String, currency: String)] = [
         ("amazon.com", "USD"), ("amazon.ca", "CAD"), ("amazon.com.mx", "MXN"),
         ("amazon.com.br", "BRL"), ("amazon.co.uk", "GBP"), ("amazon.de", "EUR"),
         ("amazon.fr", "EUR"), ("amazon.it", "EUR"), ("amazon.es", "EUR"),
@@ -133,13 +142,13 @@ struct AmazonPriceRule: ProductPriceRule {
         ("amazon.eg", "EGP"), ("amazon.co.za", "ZAR"),
     ]
 
-    static let storefrontHosts = storefronts.map(\.host)
+    public static let storefrontHosts = storefronts.map(\.host)
 
-    func matches(host: String) -> Bool {
+    public func matches(host: String) -> Bool {
         Self.storefront(for: host) != nil
     }
 
-    func price(html: String, document: Document, host: String) -> ProductPrice? {
+    public func price(html: String, document: Document, host: String) -> ProductPrice? {
         let currency = declaredCurrency(html)
             ?? Self.storefront(for: host)?.currency
         guard let currency else { return nil }   // no silent USD default
@@ -155,7 +164,7 @@ struct AmazonPriceRule: ProductPriceRule {
         return ProductPrice(amount: value, currency: currency)
     }
 
-    static func storefront(for host: String?) -> (host: String, currency: String)? {
+    public static func storefront(for host: String?) -> (host: String, currency: String)? {
         guard var normalized = host?.lowercased() else { return nil }
         if normalized.hasSuffix(".") { normalized.removeLast() }
         return storefronts.first { storefront in
@@ -205,12 +214,13 @@ struct AmazonPriceRule: ProductPriceRule {
 /// Target: the current price from the `__NEXT_DATA__` app state
 /// (`price.current_retail`). Currency is USD (Target is a US-only storefront), resolved
 /// here rather than defaulted globally.
-struct TargetPriceRule: ProductPriceRule {
-    func matches(host: String) -> Bool {
+public struct TargetPriceRule: ProductPriceRule {
+    public init() {}
+    public func matches(host: String) -> Bool {
         host == "target.com" || host.hasSuffix(".target.com")
     }
 
-    func price(html: String, document: Document, host: String) -> ProductPrice? {
+    public func price(html: String, document: Document, host: String) -> ProductPrice? {
         // Target renders the price client-side but ships it in `__NEXT_DATA__` as
         // `price.current_retail` (a bare number). Recover it from the embedded JSON.
         guard let amount = NextDataPrice.amount(
@@ -223,12 +233,13 @@ struct TargetPriceRule: ProductPriceRule {
 
 /// Walmart: the current price from the `__NEXT_DATA__` app state
 /// (`priceInfo.currentPrice.price`). Currency is USD (Walmart US), resolved here.
-struct WalmartPriceRule: ProductPriceRule {
-    func matches(host: String) -> Bool {
+public struct WalmartPriceRule: ProductPriceRule {
+    public init() {}
+    public func matches(host: String) -> Bool {
         host == "walmart.com" || host.hasSuffix(".walmart.com")
     }
 
-    func price(html: String, document: Document, host: String) -> ProductPrice? {
+    public func price(html: String, document: Document, host: String) -> ProductPrice? {
         guard let amount = NextDataPrice.amount(
             in: document, keys: ["currentPrice", "price", "current_retail"])
         else { return nil }
@@ -240,12 +251,12 @@ struct WalmartPriceRule: ProductPriceRule {
 /// Shared `__NEXT_DATA__` price recovery for the Next.js retailers (Target/Walmart).
 /// Reuses `ProductPageDetector.firstPrice` where a price node carries its own currency,
 /// and a keyed-scan fallback for the bare-number shapes those sites use.
-enum NextDataPrice {
+public enum NextDataPrice {
 
     /// The first numeric value found under any of `keys`, scanning the page's
     /// `__NEXT_DATA__` (and other `application/json`) blobs in a deterministic,
     /// depth-first, sorted-key order.
-    static func amount(in document: Document, keys: [String]) -> Decimal? {
+    public static func amount(in document: Document, keys: [String]) -> Decimal? {
         let wanted = Set(keys.map { $0.lowercased() })
         for blob in jsonBlobs(in: document) {
             guard let data = blob.data(using: .utf8),
@@ -258,7 +269,7 @@ enum NextDataPrice {
 
     /// The first currency code declared anywhere in the page's JSON blobs (a price node
     /// found by `ProductPageDetector.firstPrice` carries it), else nil.
-    static func currency(in document: Document) -> String? {
+    public static func currency(in document: Document) -> String? {
         for blob in jsonBlobs(in: document) {
             guard let data = blob.data(using: .utf8),
                   let parsed = try? JSONSerialization.jsonObject(with: data) else { continue }

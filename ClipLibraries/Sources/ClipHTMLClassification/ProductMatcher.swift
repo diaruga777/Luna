@@ -13,9 +13,9 @@ import Foundation
 /// 1. `productID` (GTIN/SKU/…) equality — identical ids are the same product.
 /// 2. Fuzzy name+brand similarity above `nameThreshold` — normalized token
 ///    Jaccard, requiring a compatible brand (same brand, or one side unbranded).
-enum ProductMatcher {
+public enum ProductMatcher {
     /// Token-overlap fraction at/above which two product names are "the same".
-    static let nameThreshold = 0.6
+    public static let nameThreshold = 0.6
 
     /// Finds the best existing tracker that matches `candidate`, if any.
     /// `existing` pairs each tracker's stable id with its product info.
@@ -25,7 +25,7 @@ enum ProductMatcher {
     /// ties broken by the lowest id. Resolving ties by id (rather than by the order
     /// `existing` happens to be in) keeps a re-save from matching a different tracker
     /// run to run.
-    static func bestMatch(
+    public static func bestMatch(
         for candidate: ProductInfo,
         among existing: [(id: UUID, tracker: PriceTracker)]
     ) -> UUID? {
@@ -56,7 +56,7 @@ enum ProductMatcher {
 
     /// A product id reduced for comparison (uppercased alphanumerics) so cosmetic
     /// punctuation/casing differences (`SKU-1` vs `sku1`) don't defeat a match.
-    static func normalizedID(_ raw: String?) -> String? {
+    public static func normalizedID(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let cleaned = raw.uppercased().filter { $0.isLetter || $0.isNumber }
         return cleaned.isEmpty ? nil : cleaned
@@ -64,7 +64,7 @@ enum ProductMatcher {
 
     /// Brands match when they're equal (case-insensitive) OR at least one side is
     /// unknown — an unbranded listing shouldn't block an otherwise strong name match.
-    static func brandsCompatible(_ lhs: String?, _ rhs: String?) -> Bool {
+    public static func brandsCompatible(_ lhs: String?, _ rhs: String?) -> Bool {
         guard let lhs = lhs?.normalizedForMatching, !lhs.isEmpty,
               let rhs = rhs?.normalizedForMatching, !rhs.isEmpty else { return true }
         return lhs == rhs
@@ -72,7 +72,7 @@ enum ProductMatcher {
 
     /// Jaccard token overlap of two normalized product names (0…1). Tokens are
     /// lowercased alphanumeric words with stop-words removed.
-    static func nameSimilarity(_ lhs: String, _ rhs: String) -> Double {
+    public static func nameSimilarity(_ lhs: String, _ rhs: String) -> Double {
         let lhsTokens = tokens(lhs)
         let rhsTokens = tokens(rhs)
         guard !lhsTokens.isEmpty, !rhsTokens.isEmpty else { return 0 }
@@ -96,7 +96,7 @@ enum ProductMatcher {
 
 private extension String {
     /// Lowercased alphanumerics only — for brand equality comparisons.
-    var normalizedForMatching: String {
+    public var normalizedForMatching: String {
         lowercased().filter { $0.isLetter || $0.isNumber }
     }
 }

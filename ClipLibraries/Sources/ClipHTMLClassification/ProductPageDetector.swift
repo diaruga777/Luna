@@ -10,34 +10,39 @@ import SwiftSoup
 /// A numeric price + its ISO 4217 currency. The price is the load-bearing value
 /// of the whole price-tracking feature, so it is always a real, non-negative
 /// amount with a known currency — never nil/pending.
-struct ProductPrice: Equatable {
+public struct ProductPrice: Equatable {
     /// The numeric price. Always non-negative.
-    let amount: Decimal
+    public let amount: Decimal
     /// ISO 4217 currency code, uppercased (e.g. "USD", "GBP").
-    let currency: String
+    public let currency: String
+
+    public init(amount: Decimal, currency: String) {
+        self.amount = amount
+        self.currency = currency
+    }
 }
 
 /// A purchasable product detected on a saved web page, paired with a price that
 /// was successfully fetched up front. The price is REQUIRED: a `ProductInfo` only
 /// exists once a real price is in hand (see `PriceFetcher`), so a price tracker
 /// can never be created without one.
-struct ProductInfo: Equatable {
+public struct ProductInfo: Equatable {
     /// Product display name (the page's product title).
-    let name: String
+    public let name: String
     /// The numeric price. Always non-negative.
-    let priceAmount: Decimal
+    public let priceAmount: Decimal
     /// ISO 4217 currency code, uppercased (e.g. "USD", "GBP").
-    let priceCurrency: String
+    public let priceCurrency: String
     /// Best product image, if one was found.
-    let imageURL: URL?
+    public let imageURL: URL?
     /// Brand / manufacturer, if declared.
-    let brand: String?
+    public let brand: String?
     /// A stable product identifier (GTIN/UPC/EAN/ISBN/MPN/SKU), if declared —
     /// the strongest signal for matching two store pages to the same product.
-    let productID: String?
+    public let productID: String?
 
     /// Builds the priced product from a detected candidate and a fetched price.
-    init(candidate: ProductCandidate, price: ProductPrice) {
+    public init(candidate: ProductCandidate, price: ProductPrice) {
         self.name = candidate.name
         self.priceAmount = price.amount
         self.priceCurrency = price.currency
@@ -48,7 +53,7 @@ struct ProductInfo: Equatable {
 
     /// Direct initializer (used by the structured-data path that already has all
     /// fields, and by tests).
-    init(
+    public init(
         name: String, priceAmount: Decimal, priceCurrency: String,
         imageURL: URL?, brand: String?, productID: String?
     ) {
@@ -70,14 +75,14 @@ struct ProductInfo: Equatable {
 /// heuristic candidate (Tier 2) may have a `staticPrice` recovered from embedded
 /// app-state JSON, or none (the price is only in the rendered DOM and must be
 /// fetched via the WKWebView fallback).
-struct ProductCandidate: Equatable {
-    let name: String
+public struct ProductCandidate: Equatable {
+    public let name: String
     /// The price found in the static markup (structured data or embedded JSON), if
     /// any. Nil ⇒ the price is rendered client-side and needs the WebView fallback.
-    let staticPrice: ProductPrice?
-    let imageURL: URL?
-    let brand: String?
-    let productID: String?
+    public let staticPrice: ProductPrice?
+    public let imageURL: URL?
+    public let brand: String?
+    public let productID: String?
 }
 
 /// Pure detection of whether a saved page is a purchasable *product page*. Given a
@@ -107,10 +112,11 @@ struct ProductCandidate: Equatable {
 /// from embedded app-state JSON (`__NEXT_DATA__` / `<script type=application/json>`
 /// / `window.__…` blobs); if none is parseable the candidate's `staticPrice` is nil
 /// and the price must be fetched from the rendered DOM (WKWebView fallback).
-struct ProductPageDetector {
+public struct ProductPageDetector {
+    public init() {}
 
     /// Returns a product candidate if `html` describes a product page.
-    func detect(urlString: String, html: String) -> ProductCandidate? {
+    public func detect(urlString: String, html: String) -> ProductCandidate? {
         let baseURL = URL(string: urlString)
         guard let document = try? SwiftSoup.parse(html, urlString) else { return nil }
         return detect(document: document, baseURL: baseURL)
@@ -121,7 +127,7 @@ struct ProductPageDetector {
     /// product" signal. Used by `Classifier` to tell a trusted structured hit apart
     /// from a fuzzy Tier-2 heuristic hit (so a news page with a stray affordance is
     /// never misclassified). Pure.
-    func hasStructuredProductData(document: Document, baseURL: URL?) -> Bool {
+    public func hasStructuredProductData(document: Document, baseURL: URL?) -> Bool {
         if candidateFromJSONLD(document: document, baseURL: baseURL) != nil { return true }
         return priceFromMetaOrMicrodata(document: document) != nil
     }
@@ -129,7 +135,7 @@ struct ProductPageDetector {
     /// The descriptive metadata fields (name/image/brand/id) for a parsed product
     /// page — the single place those fields come from, reused by
     /// `ProductMetadataExtractor` so detection and extraction agree on them.
-    func metadataFields(
+    public func metadataFields(
         document: Document, baseURL: URL?
     ) -> (name: String, imageURL: URL?, brand: String?, productID: String?) {
         (name: productName(document: document, baseURL: baseURL),
@@ -142,7 +148,7 @@ struct ProductPageDetector {
     /// schema.org microdata, then embedded app-state JSON — with NO retailer-specific
     /// logic. The fallback `ProductMetadataExtractor` consults when no per-host rule
     /// matches. Pure.
-    func genericStructuredPrice(document: Document, baseURL: URL?) -> ProductPrice? {
+    public func genericStructuredPrice(document: Document, baseURL: URL?) -> ProductPrice? {
         if let price = priceFromMetaOrMicrodata(document: document) { return price }
         if let candidate = candidateFromJSONLD(document: document, baseURL: baseURL),
            let price = candidate.staticPrice {
@@ -153,7 +159,7 @@ struct ProductPageDetector {
 
     /// Detection over an already-parsed document (lets the article pipeline reuse
     /// a parse it already has).
-    func detect(document: Document, baseURL: URL?) -> ProductCandidate? {
+    public func detect(document: Document, baseURL: URL?) -> ProductCandidate? {
         // Tier 1: structured price data — the richest, most reliable source.
         if let candidate = candidateFromJSONLD(document: document, baseURL: baseURL) {
             return candidate
@@ -182,7 +188,7 @@ struct ProductPageDetector {
     /// then Tier 2 embedded app-state JSON), independent of whether the page is a
     /// product. The `PriceFetcher` calls this for its fast, no-WebView paths; a nil
     /// result means the price (if any) is only in the rendered DOM.
-    func staticPrice(urlString: String, html: String) -> ProductPrice? {
+    public func staticPrice(urlString: String, html: String) -> ProductPrice? {
         guard let document = try? SwiftSoup.parse(html, urlString) else { return nil }
         if let price = priceFromMetaOrMicrodata(document: document) { return price }
         if let candidate = candidateFromJSONLD(document: document, baseURL: URL(string: urlString)),
@@ -205,7 +211,7 @@ struct ProductPageDetector {
     /// from those shapes and resolve the currency from a declared
     /// `currencyCode`/`priceCurrency`, else from the Amazon TLD (so a bare `$`
     /// resolves to e.g. AUD on amazon.com.au rather than defaulting to USD). Pure.
-    static func amazonStaticPrice(html: String, baseURL: URL?) -> ProductPrice? {
+    public static func amazonStaticPrice(html: String, baseURL: URL?) -> ProductPrice? {
         guard isAmazonHost(baseURL?.host) else { return nil }
         let currency = amazonDeclaredCurrency(html: html)
             ?? amazonCurrency(forHost: baseURL?.host)
@@ -251,7 +257,7 @@ struct ProductPageDetector {
     /// Maps an Amazon storefront TLD to its currency, the fallback when the markup
     /// declares no currency code (a bare `$`/`£`/… symbol can't disambiguate AUD vs
     /// USD vs CAD). Deterministic.
-    static func amazonCurrency(forHost host: String?) -> String? {
+    public static func amazonCurrency(forHost host: String?) -> String? {
         AmazonPriceRule.storefront(for: host)?.currency
     }
 
@@ -261,7 +267,7 @@ struct ProductPageDetector {
     /// signals. Two is deliberate: any single signal (a stray "add to cart" link in
     /// a nav, a `/p/` path) is too weak to reclassify an article, but two
     /// independent retail signals together reliably mean a product page.
-    static let minimumHeuristicScore = 2
+    public static let minimumHeuristicScore = 2
 
     /// Scores the combinable retail signals on a page that has no structured price,
     /// and (as a side effect, since it must scan the page's scripts anyway) returns
@@ -275,7 +281,7 @@ struct ProductPageDetector {
     /// - a retail URL pattern (`_p<digits>`, `/dp/<id>`, `/p/<digits>`,
     ///   `/products/<slug>`, `/itm/<id>`)
     /// - a price+currency recovered from embedded app-state JSON
-    func heuristicProductScore(document: Document, baseURL: URL?) -> (score: Int, embeddedPrice: ProductPrice?) {
+    public func heuristicProductScore(document: Document, baseURL: URL?) -> (score: Int, embeddedPrice: ProductPrice?) {
         var score = 0
 
         let ogType = metaContent(document, names: ["og:type"])?.lowercased()
@@ -324,7 +330,7 @@ struct ProductPageDetector {
     }
 
     /// Whether the URL path matches a common retail product-page shape.
-    static func urlLooksLikeProduct(_ url: URL?) -> Bool {
+    public static func urlLooksLikeProduct(_ url: URL?) -> Bool {
         guard let path = url?.path, !path.isEmpty else { return false }
         // `_p0208315` (Bunnings/SAP Hybris), `/dp/B09…` (Amazon), `/p/123` (Target/
         // Best Buy), `/products/slug` (Shopify), `/itm/123` (eBay).
@@ -361,7 +367,7 @@ struct ProductPageDetector {
     /// `<script type="application/json">`, and inline `window.__…={…}` assignments)
     /// for a price anchored to a price-context key, plus its currency. Returns the
     /// first plausible hit. Pure.
-    func priceFromEmbeddedJSON(document: Document) -> ProductPrice? {
+    public func priceFromEmbeddedJSON(document: Document) -> ProductPrice? {
         for blob in embeddedJSONBlobs(document: document) {
             guard let data = blob.data(using: .utf8),
                   let parsed = try? JSONSerialization.jsonObject(with: data) else { continue }
@@ -399,7 +405,7 @@ struct ProductPageDetector {
     /// Extracts the first balanced `{ … }` object literal from a JS source string
     /// (an inline `window.__STATE__ = { … }` assignment). Returns nil if no balanced
     /// object is found.
-    static func firstJSONObjectLiteral(in source: String) -> String? {
+    public static func firstJSONObjectLiteral(in source: String) -> String? {
         guard let start = source.firstIndex(of: "{") else { return nil }
         var depth = 0
         var inString = false
@@ -438,7 +444,7 @@ struct ProductPageDetector {
     /// prices on different app launches — the exact non-determinism the price-tracking
     /// feature must not have. Sorted traversal makes the recovered price a pure
     /// function of the JSON content.
-    static func firstPrice(in object: Any) -> ProductPrice? {
+    public static func firstPrice(in object: Any) -> ProductPrice? {
         if let dictionary = object as? [String: Any] {
             if let price = price(inDictionary: dictionary) { return price }
             for key in dictionary.keys.sorted() {
@@ -554,7 +560,7 @@ struct ProductPageDetector {
     /// Internal (not private) so it's directly unit-testable on a dictionary. A
     /// JSON-LD product always carries a structured price, so the candidate's
     /// `staticPrice` is non-nil.
-    static func candidate(
+    public static func candidate(
         fromProductNode node: [String: Any], document: Document?, baseURL: URL?
     ) -> ProductCandidate? {
         guard let offer = firstOffer(in: node),
@@ -735,7 +741,7 @@ struct ProductPageDetector {
     /// separators, and surrounding text. Handles both `1,234.56` (US) and
     /// `1.234,56` (EU) by treating the LAST separator as the decimal point when it
     /// is followed by 1–2 digits.
-    static func parsePrice(_ raw: String) -> Decimal? { PriceParsing.parsePrice(raw) }
+    public static func parsePrice(_ raw: String) -> Decimal? { PriceParsing.parsePrice(raw) }
 
     /// First capture group of `pattern` in `text`, or nil. Used by the Amazon static
     /// extractor to read price fragments out of the raw markup.
@@ -749,11 +755,11 @@ struct ProductPageDetector {
 
     /// Validates/uppercases a currency. Accepts a 3-letter ISO code; maps common
     /// symbols ($, £, €, ¥) to a code; returns nil for anything else.
-    static func normalizeCurrency(_ raw: String?) -> String? { PriceParsing.normalizeCurrency(raw)
+    public static func normalizeCurrency(_ raw: String?) -> String? { PriceParsing.normalizeCurrency(raw)
     }
 
     /// Resolves a possibly-relative URL string against `baseURL`.
-    static func resolveURL(_ string: String, baseURL: URL?) -> URL? {
+    public static func resolveURL(_ string: String, baseURL: URL?) -> URL? {
         if let absolute = URL(string: string), absolute.scheme != nil { return absolute }
         return URL(string: string, relativeTo: baseURL)?.absoluteURL
     }
@@ -761,7 +767,7 @@ struct ProductPageDetector {
 
 private extension String {
     /// The trimmed string, or nil if it's empty after trimming.
-    var trimmedNonEmpty: String? {
+    public var trimmedNonEmpty: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }

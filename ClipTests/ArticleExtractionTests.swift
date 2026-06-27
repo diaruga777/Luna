@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipHTMLClassification
 import ClipModels
 import XCTest
 @testable import Clip

@@ -20,14 +20,14 @@ import SwiftSoup
 /// 2. **HTML heuristics**, run ONLY when the table is `.undetermined` — reusing the
 ///    logic of `ProductPageDetector` / `PaywallDetector` / `ArticleContent`'s
 ///    readable check, as pure functions.
-enum Classifier {
+public enum Classifier {
 
     /// Classifies `url`. An explicit `documentType` (a save-time flag) always wins.
     /// With `html == nil` only the deterministic table runs (URL-only classification
     /// for a first-glance routing before any fetch); a table miss returns
     /// `.undetermined`. With `html` present, a table miss falls through to the HTML
     /// heuristic phase.
-    static func classify(url: URL, html: String? = nil, documentType: String? = nil) -> ContentKind {
+    public static func classify(url: URL, html: String? = nil, documentType: String? = nil) -> ContentKind {
         if let documentType, !documentType.isEmpty { return .document(type: documentType) }
         if let hit = knownSites.first(where: { $0.matches(url) }) {
             return hit.kind(url)
@@ -40,7 +40,7 @@ enum Classifier {
     /// new site. Ordered most-specific first: platform/video/audio (so a platform
     /// URL is recognized before anything else), then shops, then news — so overlaps
     /// resolve deterministically.
-    static let knownSites: [KnownSite] = platformSites + shopSites + newsSites
+    public static let knownSites: [KnownSite] = platformSites + shopSites + newsSites
 
     // MARK: - Phase 1a: platform / video / social / audio rows
 
@@ -48,7 +48,7 @@ enum Classifier {
     /// place URL→platform rules live), mapping its `RecognizedPlatform` to the
     /// matching `ContentKind` branch. Recognition is FIRST so a video/social/audio
     /// URL is never text-extracted or treated as a product.
-    static let platformSites: [KnownSite] = [
+    public static let platformSites: [KnownSite] = [
         KnownSite(
             hosts: platformHosts,
             path: nil,
@@ -63,7 +63,7 @@ enum Classifier {
     ]
 
     /// Maps a recognized platform to the `ContentKind` branch for its category.
-    static func contentKind(for recognized: RecognizedPlatform) -> ContentKind {
+    public static func contentKind(for recognized: RecognizedPlatform) -> ContentKind {
         switch recognized.kind {
         case .video: return .video(recognized.platform, itemID: recognized.itemID)
         case .social: return .social(recognized.platform, itemID: recognized.itemID)
@@ -75,13 +75,13 @@ enum Classifier {
     /// (so the row only `matches` when a platform host is involved; the closure then
     /// asks the recognizer for the precise platform + id). Derived from the rule
     /// table so adding a platform rule extends this automatically.
-    static let platformHosts: [String] = Array(Set(PlatformRecognizer.rules.flatMap { $0.hosts })).sorted()
+    public static let platformHosts: [String] = Array(Set(PlatformRecognizer.rules.flatMap { $0.hosts })).sorted()
 
     // MARK: - Phase 1b: shop rows
 
     /// Known shops → `.product(.knownShopHost)`. A deterministic hit lets real shops
     /// skip the fuzzy heuristic scorer entirely (fewer false positives). APPEND here.
-    static let shopSites: [KnownSite] = [
+    public static let shopSites: [KnownSite] = [
         // Amazon — every regional storefront. Amazon share domains are unwrapped
         // before classification, so they never bypass the storefront price rules.
         KnownSite(hosts: AmazonPriceRule.storefrontHosts,
@@ -96,25 +96,25 @@ enum Classifier {
     /// Hard-paywall news hosts → `.paywalledArticle(hardHost: true)` (only the
     /// archive-CAPTCHA route can read them). The worldwide list lives in
     /// `NewsSites.hardPaywall`.
-    static let hardPaywallNewsSites = KnownSite(
+    public static let hardPaywallNewsSites = KnownSite(
         hosts: NewsSites.hardPaywall,
         kind: { _ in .paywalledArticle(hardHost: true) })
 
     /// Free-news hosts → `.article` (fast-path: skip the heuristic phase for a host
     /// we already know is a readable article site). The worldwide list lives in
     /// `NewsSites.free`.
-    static let freeNewsSites = KnownSite(
+    public static let freeNewsSites = KnownSite(
         hosts: NewsSites.free,
         kind: { _ in .article })
 
-    static let newsSites: [KnownSite] = [hardPaywallNewsSites, freeNewsSites]
+    public static let newsSites: [KnownSite] = [hardPaywallNewsSites, freeNewsSites]
 
     /// Whether `url` is a known hard-paywall news host — the SINGLE determination
     /// source shared by classification (`.paywalledArticle(hardHost: true)`) and the
     /// "unreadable → park for the archive reader" routing in `IngestPipeline` /
     /// `ArticleFetcher.isHardPaywallHost`. Derives straight from
     /// `hardPaywallNewsSites`, so the two can never drift apart.
-    static func isHardPaywallHost(_ url: URL) -> Bool {
+    public static func isHardPaywallHost(_ url: URL) -> Bool {
         hardPaywallNewsSites.matches(url)
     }
 
@@ -123,7 +123,7 @@ enum Classifier {
     /// The heuristic phase, run only when the deterministic table is undetermined.
     /// Order mirrors the table: product (structured/strong-heuristic) → paywall →
     /// readable article → undetermined. Reuses the existing pure detectors.
-    static func heuristicKind(url: URL, html: String) -> ContentKind {
+    public static func heuristicKind(url: URL, html: String) -> ContentKind {
         if let signal = productSignal(url: url, html: html) { return .product(signal) }
         if PaywallDetector.htmlDeclaresLocked(html) { return .paywalledArticle(hardHost: false) }
         if let document = try? SwiftSoup.parse(html, url.absoluteString),
@@ -141,7 +141,7 @@ enum Classifier {
     /// - a structured-data candidate (JSON-LD / OG / microdata price), OR
     /// - a Tier-2 candidate that carries an actual recovered price (`staticPrice`)
     ///   or declares `og:type == product`.
-    static func productSignal(url: URL, html: String) -> ProductSignal? {
+    public static func productSignal(url: URL, html: String) -> ProductSignal? {
         let detector = ProductPageDetector()
         guard let document = try? SwiftSoup.parse(html, url.absoluteString) else { return nil }
         let baseURL = URL(string: url.absoluteString)

@@ -216,6 +216,7 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
         guard let content = articleContent else { return }
         // Original/Web mode: show the live page in a web view instead of the reader.
         if mode == .original {
+            guard readerMode != .original else { return }   // self-defend re-entry
             removeReaderChild()
             spinner.stopAnimating()
             installWebView()

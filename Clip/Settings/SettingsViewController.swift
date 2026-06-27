@@ -297,9 +297,15 @@ final class ReadingListSettingsScreen: UITableViewController {
 
     @objc private func preloadDepthChanged(_ stepper: UIStepper) {
         ReaderSettings.preloadDepth = Int(stepper.value)
-        // Refresh the detail number.
-        tableView.reloadRows(
-            at: [IndexPath(row: 0, section: Section.preload.rawValue)], with: .none)
+        // Refresh the detail number in place — reloadRows would rebuild the stepper
+        // mid-touch and break press-and-hold autorepeat.
+        let ip = IndexPath(row: 0, section: Section.preload.rawValue)
+        if let cell = tableView.cellForRow(at: ip) {
+            var content = cell.contentConfiguration as? UIListContentConfiguration
+                ?? cell.defaultContentConfiguration()
+            content.secondaryText = "\(ReaderSettings.preloadDepth)"
+            cell.contentConfiguration = content
+        }
         // Picking up a higher depth resumes preloading for existing saves.
         PreloadCoordinator.shared.resumeIncomplete()
     }

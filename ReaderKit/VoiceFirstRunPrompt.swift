@@ -5,9 +5,9 @@
 
 import UIKit
 
-/// The one-time "choose a voice" nudge shown the FIRST time the user starts
-/// read-aloud in the app. It never blocks playback — read-aloud proceeds with
-/// the current (default `basic`) engine while the alert is up.
+/// The one-time "better voices available" nudge shown the FIRST time the user
+/// starts read-aloud in the app. It never blocks playback — read-aloud proceeds
+/// with the standard system voice while the alert is up.
 ///
 /// Navigation to the Voice settings screen lives in the main app, so the app
 /// wires `openVoiceSettings` at launch. The reader (shared with the extensions)
@@ -26,9 +26,9 @@ enum VoiceFirstRunPrompt {
         VoiceModelStore.hasSeenVoicePrompt = true
 
         let alert = UIAlertController(
-            title: "Choose a Voice",
-            message: "Reading aloud now with the standard voice. Open Settings to "
-                + "download a higher-quality voice for read-aloud.",
+            title: "Better Voices Available",
+            message: "Reading aloud with the standard voice. You can install "
+                + "higher-quality Apple voices for read-aloud in Settings.",
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Open Settings", style: .default) { _ in
             openVoiceSettings(presenter)

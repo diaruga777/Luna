@@ -36,11 +36,18 @@ for the pills.
 
 ## `Clip/CatchUp/`
 
-- **`CatchUpViewController.swift`** — orchestrator. Phases: `.cards` → (`.deletePrompt`
-  if any read items) → `.done`.
+- **`CatchUpViewController.swift`** — orchestrator. Phases: `.cards` → (`.voicePrompt`
+  when no enhanced voice is installed and the user hasn't dismissed it —
+  `!VoiceModelStore.isAppleEnhancedInstalled && !hasDismissedVoiceCatchUp`) →
+  (`.deletePrompt` if any read items) → `.done`. After the cards, `advanceToEndScreens()`
+  shows the voice card (a `messageView` with "Install Voices"/"Not Now"); both buttons
+  set `hasDismissedVoiceCatchUp` and hand off to `showDeleteOrDoneScreens()` ("Install
+  Voices" also opens iOS Settings via `VoiceInstallLink.open()`). The voice card also
+  appears when the catch-up queue is empty (the empty-queue `viewDidLoad` path calls
+  `advanceToEndScreens()` directly).
   - Top bar: left (chevron on cards / `xmark` on end screens → commit + close),
     center title ("N left"), right (share current card / **Undo** on done / none on
-    delete prompt).
+    the voice + delete prompts).
   - Card gestures (`CatchUpCardView`, action `.keep/.bump/.archive`): swipe RIGHT =
     **Archive** (mark read); swipe LEFT = **Keep** (no-op, advance); swipe LEFT then UP
     = **Bump**. Left-then-up is used for Bump so a plain vertical drag still scrolls the

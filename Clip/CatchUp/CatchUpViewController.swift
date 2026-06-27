@@ -13,7 +13,7 @@ import UIKit
 /// optional "Delete all archived?" screen, then an "All done!" screen with Undo.
 final class CatchUpViewController: UIViewController {
 
-    private enum Phase { case cards, deletePrompt, done }
+    private enum Phase { case cards, voicePrompt, deletePrompt, done }
 
     private let store = ReadingListStore.shared
     private weak var router: ReadingListViewController?
@@ -398,8 +398,26 @@ final class CatchUpViewController: UIViewController {
 
     private func advanceToEndScreens() {
         tearDownCurrentCard()
+        // Just finished the cards (not re-entering from the voice prompt): if the
+        // user has no enhanced voice and hasn't dismissed the nudge, show the
+        // voice-install card first, ahead of the delete/done screens.
+        if phase == .cards,
+           !VoiceModelStore.isAppleEnhancedInstalled, !VoiceModelStore.hasDismissedVoiceCatchUp {
+            phase = .voicePrompt
+            messageView.show(
+                symbol: "speaker.wave.2.fill", tint: GlassStyle.readingAccent,
+                text: "Want better read-aloud?\nInstall enhanced Apple voices in Settings.")
+            messageView.isHidden = false
+            updateChrome()
+            return
+        }
+        showDeleteOrDoneScreens()
+    }
+
+    private func showDeleteOrDoneScreens() {
+        messageView.isHidden = true
         let readItems = store.items().filter { $0.readState == .read }
-        if phase == .cards, !readItems.isEmpty {
+        if phase != .deletePrompt, phase != .done, !readItems.isEmpty {
             phase = .deletePrompt
             let prompt = CatchUpDeleteReadView(items: readItems, store: store)
             prompt.updateTitle(allSelected: true)
@@ -450,6 +468,15 @@ final class CatchUpViewController: UIViewController {
             styleButton(secondaryButton, title: "Archive", filled: true)
             simBumpButton?.isEnabled = !locked
             setBottomButtons(hidden: false, singleFullWidth: false)
+        case .voicePrompt:
+            titleLabel.text = nil
+            leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+            rightButton.setImage(nil, for: .normal)
+            rightButton.setTitle(nil, for: .normal)
+            rightButton.isHidden = true
+            styleButton(primaryButton, title: "Not Now", filled: false)
+            styleButton(secondaryButton, title: "Install Voices", filled: true)
+            setBottomButtons(hidden: false, singleFullWidth: false)
         case .deletePrompt:
             titleLabel.text = nil   // the prompt view carries its own title
             leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
@@ -498,6 +525,10 @@ final class CatchUpViewController: UIViewController {
         switch phase {
         case .cards:
             currentCard?.performAction(currentItem?.state == .needsCaptcha ? .unlock : .keep)
+        case .voicePrompt:
+            // "Not Now": dismiss the nudge and hand off to the delete/done screens.
+            VoiceModelStore.hasDismissedVoiceCatchUp = true
+            showDeleteOrDoneScreens()
         case .deletePrompt: pendingDeleteIDs = []; transitionToDone()  // Keep
         case .done: break
         }
@@ -506,6 +537,12 @@ final class CatchUpViewController: UIViewController {
     @objc private func secondaryTapped() {
         switch phase {
         case .cards: currentCard?.performAction(.archive)
+        case .voicePrompt:
+            // "Install Voices": deep-link to iOS Settings, dismiss the nudge, and
+            // hand off to the delete/done screens.
+            VoiceInstallLink.open()
+            VoiceModelStore.hasDismissedVoiceCatchUp = true
+            showDeleteOrDoneScreens()
         case .deletePrompt: pendingDeleteIDs = deleteReadView?.selectedItemIDs ?? []; transitionToDone()
         case .done: commitAndClose()
         }
@@ -534,8 +571,8 @@ final class CatchUpViewController: UIViewController {
         case .done:
             store.restore(snapshot)
             dismiss(animated: true)
-        case .deletePrompt:
-            break
+        case .voicePrompt, .deletePrompt:
+            break   // the right button is hidden in these phases
         }
     }
 

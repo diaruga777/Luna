@@ -187,10 +187,13 @@ enum ReadingListSectioning {
 
     /// Whether the red "action needed" dot should show: once there are 10+
     /// unread items, OR whenever there's an unarchived LOCKED (paywalled,
-    /// awaiting unlock) save — regardless of count.
+    /// awaiting unlock) save — regardless of count — OR when the catch-up voice
+    /// card is still pending (no enhanced voice installed and not yet dismissed),
+    /// so the nudge surfaces even with an empty reading list.
     static func shouldShowCatchUpDot(items: [ReadingListItem]) -> Bool {
         let unread = items.filter { $0.readState != .read }
         let hasLockedSave = unread.contains { $0.state == .needsCaptcha }
         return unread.count >= catchUpDotUnreadThreshold || hasLockedSave
+            || (!VoiceModelStore.isAppleEnhancedInstalled && !VoiceModelStore.hasDismissedVoiceCatchUp)
     }
 }

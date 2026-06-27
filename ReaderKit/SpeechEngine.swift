@@ -7,17 +7,12 @@ import AVFoundation
 
 /// Abstraction over a text-to-speech backend.
 ///
-/// All of Clip's current engines ultimately drive an `AVSpeechSynthesizer`
-/// (basic & appleEnhanced directly; piper & kokoro fall back to one until a
-/// neural runtime is vendored — see `// TODO(neural-tts)`). An engine therefore
-/// expresses itself by CONFIGURING the utterance the caller will speak: choosing
-/// the voice and adjusting the rate. Keeping synthesis on `AVSpeechSynthesizer`
-/// preserves `willSpeakRangeOfSpeechString` callbacks, so the reader's
-/// word-by-word highlighting keeps working unchanged for every engine.
-///
-/// When a real neural runtime arrives, an engine can instead override
-/// `synthesize(text:)` to return rendered audio; until then that entry point is
-/// optional and the AVSpeech path is used.
+/// Both of Clip's engines drive an `AVSpeechSynthesizer` (basic &
+/// appleEnhanced). An engine therefore expresses itself by CONFIGURING the
+/// utterance the caller will speak: choosing the voice and adjusting the rate.
+/// Keeping synthesis on `AVSpeechSynthesizer` preserves
+/// `willSpeakRangeOfSpeechString` callbacks, so the reader's word-by-word
+/// highlighting keeps working unchanged for every engine.
 protocol SpeechEngine {
     /// Which kind this engine implements.
     var kind: VoiceEngineKind { get }
@@ -49,35 +44,16 @@ enum SpeechEngineFactory {
         switch kind {
         case .basic: return BasicSpeechEngine()
         case .appleEnhanced: return AppleEnhancedEngine()
-        case .piper: return PiperEngine()
-        case .kokoro: return KokoroEngine()
         }
     }
 
-    /// Resolves the engine the user selected, falling back to a usable one if
-    /// the selection isn't currently available. The result is always usable.
-    ///
-    /// EXTENSION POLICY: inside an app extension (share / action extension) we
-    /// NEVER run a neural engine (piper/kokoro) — even once a real ONNX runtime
-    /// is vendored, loading a ~60–90 MB model would blow the extension's tight
-    /// memory budget and get the extension jetsam-killed mid-read. Extensions
-    /// always speak with appleEnhanced (if installed) or basic. (Today neural
-    /// engines fall back to Apple voices anyway, so this only bites once real
-    /// neural inference lands — hence enforcing it here, not later.)
+    /// Resolves the engine to read aloud with: the enhanced Apple voice when the
+    /// user has installed one, otherwise the always-available basic system voice.
+    /// The result is always usable. Behaves identically in the app and its
+    /// extensions.
     static func resolveSelected() -> SpeechEngine {
-        if isAppExtension {
-            let enhanced = AppleEnhancedEngine()
-            return enhanced.isAvailable ? enhanced : BasicSpeechEngine()
-        }
-        let selected = make(VoiceModelStore.selectedEngine)
-        if selected.isAvailable { return selected }
         let enhanced = AppleEnhancedEngine()
         return enhanced.isAvailable ? enhanced : BasicSpeechEngine()
-    }
-
-    /// True when running inside an app extension (its bundle is an `.appex`).
-    private static var isAppExtension: Bool {
-        Bundle.main.bundleURL.pathExtension == "appex"
     }
 }
 

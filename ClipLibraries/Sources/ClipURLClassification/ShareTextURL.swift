@@ -9,11 +9,11 @@ import Foundation
 /// "just a link" — either the whole thing is one URL plus whitespace/punctuation,
 /// or it's short and starts with a URL. In those cases the URL is what should be
 /// imported and the rest dropped. Pure, so it's testable.
-enum ShareTextURL {
+public enum ShareTextURL {
     /// Text no longer than this still counts as "short" for the starts-with-URL rule.
-    static let shortTextLimit = 200
+    public static let shortTextLimit = 200
 
-    static func extract(from text: String) -> URL? {
+    public static func extract(from text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               let detector = try? NSDataDetector(

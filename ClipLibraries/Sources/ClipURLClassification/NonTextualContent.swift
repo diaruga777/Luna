@@ -11,14 +11,14 @@ import Foundation
 /// content rather than running the text extractor (which would fail or produce
 /// junk). Lives in ReaderKit so both the app and the extensions can classify a
 /// URL the same way.
-enum NonTextualContent: Equatable {
+public enum NonTextualContent: Equatable {
     case youTube(videoID: String)
     /// Any recognized non-YouTube platform (X, Bluesky, Reddit, music, …).
     case platform(ContentPlatform, itemID: String?)
 
     /// Classifies a URL via the shared `PlatformRecognizer`, or nil when it's a
     /// readable article/document.
-    static func detect(urlString: String) -> NonTextualContent? {
+    public static func detect(urlString: String) -> NonTextualContent? {
         guard let recognized = PlatformRecognizer.recognize(urlString) else { return nil }
         if recognized.platform == .youtube, let videoID = recognized.itemID {
             return .youTube(videoID: videoID)
@@ -27,7 +27,7 @@ enum NonTextualContent: Equatable {
     }
 
     /// The classified platform.
-    var platform: ContentPlatform {
+    public var platform: ContentPlatform {
         switch self {
         case .youTube: return .youtube
         case .platform(let platform, _): return platform
@@ -35,14 +35,14 @@ enum NonTextualContent: Equatable {
     }
 
     /// A short human label for the kind of content.
-    var kindLabel: String { platform.displayName }
+    public var kindLabel: String { platform.displayName }
 
     /// The page to load in a webview for in-app playback. For YouTube this is
     /// the `/embed/` URL loaded directly — `loadHTMLString` origins and
     /// youtube.com referers are rejected with errors 152/153, so the embed page
     /// must be loaded as a real request (with a non-empty Referer; see
     /// `embedReferer`).
-    var embedURL: URL? {
+    public var embedURL: URL? {
         switch self {
         case .youTube(let videoID):
             var components = URLComponents(string: "https://www.youtube.com/embed/\(videoID)")
@@ -58,11 +58,11 @@ enum NonTextualContent: Equatable {
     }
 
     /// Referer required by the embed (YouTube rejects embeds without one, error 153).
-    var embedReferer: String { "https://clip-reader.app/" }
+    public var embedReferer: String { "https://clip-reader.app/" }
 
     /// A static poster image for the content, when one is cheaply derivable from the
     /// URL alone (YouTube's thumbnail). Used to preview without spinning up a player.
-    var staticPreviewImageURL: URL? {
+    public var staticPreviewImageURL: URL? {
         switch self {
         case .youTube(let videoID):
             return URL(string: "https://img.youtube.com/vi/\(videoID)/hqdefault.jpg")

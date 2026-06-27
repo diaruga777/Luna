@@ -14,8 +14,8 @@ import Foundation
 /// one base domain covers all subdomains but NOT sibling TLDs, so each
 /// regional storefront (`ebay.de`, `mediamarkt.es`, `flipkart.com`) is listed
 /// explicitly.
-enum ShoppingSites {
-    static let retailers: [String] = [
+public enum ShoppingSites {
+    public static let retailers: [String] = [
         // ── US big-box & general merchandise ─────────────────────────────
         "target.com", "walmart.com", "bestbuy.com", "costco.com",
         "samsclub.com", "bjs.com", "kohls.com", "macys.com",

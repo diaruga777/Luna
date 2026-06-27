@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipURLClassification
 import ClipModels
 import Foundation
 import os

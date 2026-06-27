@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipURLClassification
 import Foundation
 
 /// A known paywall host. The table remains the source of host knowledge for

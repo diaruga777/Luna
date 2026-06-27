@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipURLClassification
 import AppIntents
 import Foundation
 

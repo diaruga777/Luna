@@ -6,6 +6,7 @@
 //  the app target via the ShareKit synchronized folder).
 //
 
+import ClipURLClassification
 import UIKit
 import XCTest
 @testable import Clip

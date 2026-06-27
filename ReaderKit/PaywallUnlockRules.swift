@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipURLClassification
 import Foundation
 import WebKit
 

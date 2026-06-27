@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipURLClassification
 import Foundation
 
 /// The HTML-fetching surface the resolver and `BypassRunner` depend on, so both are
@@ -37,12 +38,11 @@ protocol HTMLFetching {
 /// so the direct read is reproducible and the paywall judgment isn't computed over
 /// crawler-served HTML.
 struct ArticleFetcher: HTMLFetching {
-    static let safariUserAgent =
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1"
+    static let safariUserAgent = WebFetchConstants.safariUserAgent
     /// Cap on the HTML we hold in memory. Real article pages are far smaller;
     /// this keeps a mis-served large file or huge page from pushing the
     /// memory-limited share/action extension into jetsam.
-    static let maxBytes = 8 * 1024 * 1024
+    static let maxBytes = WebFetchConstants.maxBytes
 
     enum FetchError: Error {
         case badResponse

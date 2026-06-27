@@ -4,10 +4,9 @@
 //
 
 import Foundation
-import ClipURLClassification
 
 /// Recognizes YouTube video links and extracts the video ID.
-enum YouTubeURL {
+public enum YouTubeURL {
 
     private static let youtubeHosts: Set<String> = [
         "youtube.com", "www.youtube.com", "m.youtube.com",
@@ -15,23 +14,23 @@ enum YouTubeURL {
     ]
 
     /// The video ID, or nil when the URL isn't a YouTube video link.
-    static func videoID(from urlString: String) -> String? {
+    public static func videoID(from urlString: String) -> String? {
         guard let url = URL(string: urlString) else { return nil }
         return URLClassification.youTubeVideoID(in: url)
     }
 
     /// Standard watch URL for a video ID.
-    static func watchURLString(videoID: String) -> String {
+    public static func watchURLString(videoID: String) -> String {
         "https://www.youtube.com/watch?v=\(videoID)"
     }
 
     /// Deep link into the YouTube app.
-    static func appURL(videoID: String) -> URL? {
+    public static func appURL(videoID: String) -> URL? {
         URL(string: "youtube://watch?v=\(videoID)")
     }
 
     /// Highest-availability thumbnail (exists for every video).
-    static func thumbnailURL(videoID: String) -> URL? {
+    public static func thumbnailURL(videoID: String) -> URL? {
         URL(string: "https://img.youtube.com/vi/\(videoID)/hqdefault.jpg")
     }
 

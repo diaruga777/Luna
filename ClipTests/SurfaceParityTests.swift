@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipURLClassification
 import ClipModels
 import UIKit
 import XCTest

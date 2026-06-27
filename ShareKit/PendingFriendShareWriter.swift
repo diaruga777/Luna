@@ -3,6 +3,7 @@
 //  ClipShare
 //
 
+import ClipURLClassification
 import Foundation
 
 /// Writes outgoing friend-shares to the App Group queue the main app drains

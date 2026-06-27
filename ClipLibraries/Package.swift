@@ -26,5 +26,9 @@ let package = Package(
         .testTarget(name: "ClipHTMLClassificationTests", dependencies: ["ClipHTMLClassification"]),
         .testTarget(name: "ClipPaywallBypassTests", dependencies: ["ClipPaywallBypass"]),
         .testTarget(name: "ClipPriceMetadataTests", dependencies: ["ClipPriceMetadata"]),
-    ]
+    ],
+    // Swift 5 language mode to match the app target — this is a structural
+    // extraction, not a Swift 6 strict-concurrency migration (a separate effort).
+    // Keeps behavior identical to the pre-extraction app module.
+    swiftLanguageModes: [.v5]
 )

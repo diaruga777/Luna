@@ -21,19 +21,19 @@ import Foundation
 /// `URLUnwrapper` (offline-first, tracking-stripped). The old async `unwrap` /
 /// `normalizedIncomingURL*` shims were deleted once the last callers moved to
 /// `URLUnwrapper.unwrap` / `unwrapOffline`.
-enum NewsAggregatorUnwrapper {
+public enum NewsAggregatorUnwrapper {
 
     // MARK: - Host classification
 
     /// Apple News articles are shared from both `apple.news` and the Stocks app's
     /// web landing host. Both return the publisher URL in their HTML's delayed
     /// redirect call; the delay is only for browsers and is never needed here.
-    static func isAppleNews(_ host: String) -> Bool {
+    public static func isAppleNews(_ host: String) -> Bool {
         host == "apple.news" || host.hasSuffix(".apple.news")
             || host == "stocks.apple.com"
     }
 
-    static func isGoogleNews(_ host: String) -> Bool {
+    public static func isGoogleNews(_ host: String) -> Bool {
         host == "news.google.com" || host == "news.url.google.com"
     }
 
@@ -43,7 +43,7 @@ enum NewsAggregatorUnwrapper {
     /// publisher via a `redirectToUrlAfterTimeout("<publisher url>")` JS call — the
     /// one reliable place the original URL appears (its `og:url`/canonical point at
     /// apple.news itself). Returns nil for News+ exclusives, which carry no such URL.
-    static func appleNewsPublisherURL(inHTML html: String) -> URL? {
+    public static func appleNewsPublisherURL(inHTML html: String) -> URL? {
         guard let match = firstMatch(in: html, pattern: #"redirectToUrlAfterTimeout\(\s*["']([^"']+)["']"#),
               let url = URL(string: match.removingPercentEncoding ?? match),
               let host = url.host?.lowercased(), !isAppleNews(host), url.scheme?.hasPrefix("http") == true
@@ -56,7 +56,7 @@ enum NewsAggregatorUnwrapper {
     /// The opaque article id from a Google News URL: the path segment after
     /// `articles`/`read` (handles `/rss/articles/<id>`, `/articles/<id>`,
     /// `/read/<id>`). Pure.
-    static func googleNewsArticleID(from url: URL) -> String? {
+    public static func googleNewsArticleID(from url: URL) -> String? {
         let parts = url.pathComponents
         guard let marker = parts.lastIndex(where: { $0 == "articles" || $0 == "read" }),
               marker + 1 < parts.count else { return nil }
@@ -68,7 +68,7 @@ enum NewsAggregatorUnwrapper {
     /// of a protobuf blob that embeds the publisher URL as a plain substring
     /// (between a short length prefix and a `0xd2 0x01 0x00` suffix). New-style ids
     /// (the blob holds only an internal id + signature) return nil. Pure.
-    static func googleNewsURL(fromArticleID id: String) -> URL? {
+    public static func googleNewsURL(fromArticleID id: String) -> URL? {
         guard let data = base64URLDecode(id) else { return nil }
         return firstEmbeddedHTTPURL(in: data)
     }
@@ -78,7 +78,7 @@ enum NewsAggregatorUnwrapper {
     /// then POST them back to get the real URL. Fragile by nature (undocumented
     /// internal API) — any deviation returns nil and the caller falls back. Internal
     /// (not private) so `URLUnwrapper`'s Google News handler reuses it.
-    static func googleNewsBatchExecute(articleID: String, session: URLSession) async -> URL? {
+    public static func googleNewsBatchExecute(articleID: String, session: URLSession) async -> URL? {
         guard let pageURL = URL(string: "https://news.google.com/rss/articles/\(articleID)"),
               let html = await fetchText(pageURL, session: session),
               let signature = firstMatch(in: html, pattern: #"data-n-a-sg="([^"]+)""#),
@@ -97,7 +97,7 @@ enum NewsAggregatorUnwrapper {
         var request = URLRequest(url: endpoint, timeoutInterval: 12)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded;charset=utf-8", forHTTPHeaderField: "Content-Type")
-        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(WebFetchConstants.safariUserAgent, forHTTPHeaderField: "User-Agent")
         var body = URLComponents()
         body.queryItems = [URLQueryItem(name: "f.req", value: fReqString)]
         request.httpBody = body.percentEncodedQuery?.data(using: .utf8)
@@ -114,7 +114,7 @@ enum NewsAggregatorUnwrapper {
     /// payload `["garturlres","<url>",…]` as an escaped JSON string. Rather than
     /// slice the fragile chunk framing, grab the URL right after the `garturlres`
     /// marker (quotes optionally backslash-escaped). Pure, so it's testable.
-    static func googleBatchExecuteURL(fromResponse text: String) -> URL? {
+    public static func googleBatchExecuteURL(fromResponse text: String) -> URL? {
         guard let urlString = firstMatch(
                 in: text, pattern: #"garturlres\\?",\\?"(https?:[^"\\]+)"#),
               let url = URL(string: urlString)
@@ -130,10 +130,10 @@ enum NewsAggregatorUnwrapper {
     /// `amzn.asia` links are one such service: a HEAD returns 404 while a GET returns
     /// the real regional storefront redirect. Internal (not private) so
     /// `URLUnwrapper`'s shortener handler reuses it.
-    static func resolveFinalRedirect(_ url: URL, session: URLSession) async -> URL? {
+    public static func resolveFinalRedirect(_ url: URL, session: URLSession) async -> URL? {
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.httpMethod = "HEAD"
-        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(WebFetchConstants.safariUserAgent, forHTTPHeaderField: "User-Agent")
         if let final = await finalRedirect(for: request, originalHost: url.host, session: session) { return final }
 
         request.httpMethod = "GET"
@@ -165,7 +165,7 @@ enum NewsAggregatorUnwrapper {
     /// The embedded value is percent-decoded once (URLComponents already decodes
     /// query values), and the result is returned only if it is an http(s) URL on
     /// a non-Facebook host. Returns nil for anything else. Pure.
-    static func facebookRedirectTarget(_ url: URL) -> URL? {
+    public static func facebookRedirectTarget(_ url: URL) -> URL? {
         let scheme = url.scheme?.lowercased()
         let host = url.host?.lowercased()
 
@@ -203,7 +203,7 @@ enum NewsAggregatorUnwrapper {
     // MARK: - Helpers
 
     /// First capture group of `pattern` in `text`, or nil.
-    static func firstMatch(in text: String, pattern: String) -> String? {
+    public static func firstMatch(in text: String, pattern: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let ns = text as NSString
         guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
@@ -212,7 +212,7 @@ enum NewsAggregatorUnwrapper {
     }
 
     /// URL-safe base64 decode (restores `+`/`/` and pads to a multiple of 4).
-    static func base64URLDecode(_ string: String) -> Data? {
+    public static func base64URLDecode(_ string: String) -> Data? {
         var normalized = string
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
@@ -224,7 +224,7 @@ enum NewsAggregatorUnwrapper {
     /// Scans decoded bytes for the first embedded `http(s)://…` URL, reading up to
     /// the first byte that can't belong to a URL (control char, the protobuf field
     /// separators, quotes, whitespace). The blob stores the URL as a raw substring.
-    static func firstEmbeddedHTTPURL(in data: Data) -> URL? {
+    public static func firstEmbeddedHTTPURL(in data: Data) -> URL? {
         // ISO-Latin-1 maps every byte to a scalar (never fails), so high bytes from
         // the surrounding protobuf framing become >0x7F scalars that end the scan.
         guard let ascii = String(data: data, encoding: .isoLatin1),
@@ -243,13 +243,13 @@ enum NewsAggregatorUnwrapper {
     /// GETs `url` and returns its decoded HTML text (capped at `maxBytes`), or nil
     /// on a non-2xx / oversized / undecodable response. Internal (not private) so
     /// `URLUnwrapper`'s Apple News handler reuses it.
-    static func fetchText(_ url: URL, session: URLSession) async -> String? {
+    public static func fetchText(_ url: URL, session: URLSession) async -> String? {
         var request = URLRequest(url: url, timeoutInterval: 12)
-        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(WebFetchConstants.safariUserAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         guard let (data, response) = try? await session.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              data.count <= ArticleFetcher.maxBytes
+              data.count <= WebFetchConstants.maxBytes
         else { return nil }
         return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
     }

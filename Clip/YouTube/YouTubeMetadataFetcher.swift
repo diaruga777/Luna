@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipURLClassification
 import Foundation
 
 /// Title/channel/thumbnail for a YouTube video, fetched without any API key

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipURLClassification
 import Foundation
 
 /// Saves a just-ingested social post's media to Photos when the user has enabled

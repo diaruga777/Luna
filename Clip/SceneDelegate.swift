@@ -8,6 +8,7 @@
 //  messages) and sent to a Kindle.
 //
 
+import ClipURLClassification
 import UIKit
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {

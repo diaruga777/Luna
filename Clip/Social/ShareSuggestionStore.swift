@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipURLClassification
 import Foundation
 
 /// Tracks who gets which links so saves can suggest (or automate) re-sharing:

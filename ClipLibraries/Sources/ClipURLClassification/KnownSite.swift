@@ -14,16 +14,16 @@ import Foundation
 /// and any subdomain). An optional `path` predicate narrows the match to specific
 /// path shapes (`/products/<slug>`, `/r/<sub>/comments/`). `kind` is a closure of
 /// the URL so a row can pull an itemID (e.g. a platform row reuses the recognizer).
-struct KnownSite {
+public struct KnownSite {
     /// Hosts matched exactly OR as a subdomain. Lowercased.
-    let hosts: [String]
+    public let hosts: [String]
     /// Optional path predicate over the path segments (leading "/" dropped). Nil ⇒
     /// the host alone decides.
-    let path: (([String]) -> Bool)?
+    public let path: (([String]) -> Bool)?
     /// The kind a matching URL is, computed from the URL so the row can read an id.
-    let kind: (URL) -> ContentKind
+    public let kind: (URL) -> ContentKind
 
-    init(hosts: [String], path: (([String]) -> Bool)? = nil, kind: @escaping (URL) -> ContentKind) {
+    public init(hosts: [String], path: (([String]) -> Bool)? = nil, kind: @escaping (URL) -> ContentKind) {
         self.hosts = hosts
         self.path = path
         self.kind = kind
@@ -31,7 +31,7 @@ struct KnownSite {
 
     /// Whether `url` matches this row: a host-suffix hit AND (if present) the path
     /// predicate.
-    func matches(_ url: URL) -> Bool {
+    public func matches(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased(),
               hosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") }) else { return false }
         guard let path else { return true }

@@ -7,7 +7,7 @@ import Foundation
 
 /// Pure builders for the web searches used by the price-tracker's "Search" /
 /// browse-to-add-a-seller flow. No I/O, no UIKit — fully unit-testable.
-enum ProductSearchURL {
+public enum ProductSearchURL {
 
     /// The base used for the Google Shopping search (the "Shopping" tab).
     private static let googleShoppingBase = "https://www.google.com/search"
@@ -20,7 +20,7 @@ enum ProductSearchURL {
     /// other reserved characters are escaped, so a name like `Sony WH-1000XM5` or one
     /// with `&`/spaces produces a valid, single-result URL. Returns nil only when the
     /// name is empty/whitespace (nothing to search for).
-    static func googleShoppingURL(forProductName productName: String) -> URL? {
+    public static func googleShoppingURL(forProductName productName: String) -> URL? {
         let trimmed = productName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -36,7 +36,7 @@ enum ProductSearchURL {
     /// the text already looks like one (has a scheme, or a `host.tld[/…]` shape), else
     /// a plain Google web search for the typed text (so typing a product name and
     /// hitting Go searches rather than failing). Returns nil only for empty input.
-    static func navigationURL(fromBarText text: String) -> URL? {
+    public static func navigationURL(fromBarText text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -55,7 +55,7 @@ enum ProductSearchURL {
 
     /// A plain Google **web** search (not the Shopping tab) for free-text typed into
     /// the URL bar.
-    static func googleWebSearchURL(forQuery query: String) -> URL? {
+    public static func googleWebSearchURL(forQuery query: String) -> URL? {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: queryValueAllowed)

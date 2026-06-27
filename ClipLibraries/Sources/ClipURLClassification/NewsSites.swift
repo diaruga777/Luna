@@ -22,11 +22,11 @@ import Foundation
 ///   broadcasters, wire services, and open outlets belong here.
 /// - When a site's posture is uncertain, it is in NEITHER list — default
 ///   heuristic handling is the safe fallback.
-enum NewsSites {
+public enum NewsSites {
 
     /// Genuinely subscription/metered outlets worldwide. Routed to
     /// `.paywalledArticle(hardHost: true)` (archive reader only).
-    static let hardPaywall: [String] = [
+    public static let hardPaywall: [String] = [
         // ── United States ────────────────────────────────────────────────
         "nytimes.com", "wsj.com", "washingtonpost.com", "bloomberg.com",
         "barrons.com", "theatlantic.com",
@@ -154,7 +154,7 @@ enum NewsSites {
 
     /// Public broadcasters, wire services, and free/open outlets worldwide.
     /// Routed to `.article` (fast-path, skip the heuristic phase).
-    static let free: [String] = [
+    public static let free: [String] = [
         // ── Mostly-free / metered (must NOT be forced to the archive reader) ──
         "businessinsider.com", "insider.com", "marketwatch.com", "fortune.com",
         // ── Wire services & global broadcasters ──────────────────────────

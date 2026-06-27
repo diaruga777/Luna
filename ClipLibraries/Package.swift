@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "ClipPaywallBypass", targets: ["ClipPaywallBypass"]),
         .library(name: "ClipPriceMetadata", targets: ["ClipPriceMetadata"]),
         .library(name: "ClipContentRendering", targets: ["ClipContentRendering"]),
+        .library(name: "ClipFetch", targets: ["ClipFetch"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
@@ -27,6 +28,7 @@ let package = Package(
         .target(name: "ClipPaywallBypass"),
         .target(name: "ClipPriceMetadata"),
         .target(name: "ClipContentRendering"),
+        .target(name: "ClipFetch", dependencies: ["ClipModels", "ClipURLClassification", "ClipHTMLClassification"]),
         .testTarget(name: "ClipModelsTests", dependencies: ["ClipModels"]),
         .testTarget(name: "ClipURLClassificationTests", dependencies: ["ClipURLClassification"]),
         .testTarget(name: "ClipHTMLClassificationTests", dependencies: ["ClipHTMLClassification"]),

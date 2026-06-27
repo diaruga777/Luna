@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipFetch
 import ClipHTMLClassification
 import ClipModels
 import UIKit

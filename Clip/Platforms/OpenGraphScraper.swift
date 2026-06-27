@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipFetch
 import Foundation
 
 /// Best-effort Open Graph metadata scrape (`og:title`, `og:image`,

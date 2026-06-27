@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipFetch
 import ClipHTMLClassification
 import ClipURLClassification
 import Foundation
@@ -11,7 +12,7 @@ import Foundation
 /// unit-testable against a mock without touching the network. `ArticleFetcher` is the
 /// live implementation; `MockArticleFetcher` (tests) records calls and returns canned
 /// HTML.
-protocol HTMLFetching {
+public protocol HTMLFetching {
     /// Fetches HTML for `url` with a single, deterministic Safari UA — the bytes a
     /// normal reader sees, so the paywall judgment is computed over reader-served HTML
     /// and re-runs are reproducible. The Googlebot crawler trick is NOT the default; it
@@ -38,20 +39,22 @@ protocol HTMLFetching {
 /// `.userAgent(.googlebotDesktop)` bypass strategy (`CrawlerAgent.googlebotDesktop`),
 /// so the direct read is reproducible and the paywall judgment isn't computed over
 /// crawler-served HTML.
-struct ArticleFetcher: HTMLFetching {
-    static let safariUserAgent = WebFetchConstants.safariUserAgent
+public struct ArticleFetcher: HTMLFetching {
+    public init() {}
+
+    public static let safariUserAgent = WebFetchConstants.safariUserAgent
     /// Cap on the HTML we hold in memory. Real article pages are far smaller;
     /// this keeps a mis-served large file or huge page from pushing the
     /// memory-limited share/action extension into jetsam.
-    static let maxBytes = WebFetchConstants.maxBytes
+    public static let maxBytes = WebFetchConstants.maxBytes
 
-    enum FetchError: Error {
+    public enum FetchError: Error {
         case badResponse
         case notHTML
         case tooLarge
     }
 
-    func fetchHTML(from url: URL) async throws -> String {
+    public func fetchHTML(from url: URL) async throws -> String {
         // ONE UA, no fallback chain: deterministic + reproducible. A bot-blocked soft
         // paywall is recovered by the explicit `.userAgent(.googlebotDesktop)` bypass
         // strategy, not by silently swapping the UA on the direct read.
@@ -62,7 +65,7 @@ struct ArticleFetcher: HTMLFetching {
     /// unwrapped to the original article (so we archive the real page rather than
     /// double-wrapping a snapshot), then tracking-stripped via the single
     /// `URLCanonicalizer.strip` shared with the unwrap path.
-    static func canonicalForArchiving(_ url: URL) -> URL {
+    public static func canonicalForArchiving(_ url: URL) -> URL {
         URLCanonicalizer.strip(originalURL(fromArchiveURL: url) ?? url)
     }
 
@@ -74,7 +77,7 @@ struct ArticleFetcher: HTMLFetching {
     ]
 
     /// Whether `url` is an archive.today snapshot (any of its rotating domains).
-    static func isArchiveTodayURL(_ url: URL) -> Bool {
+    public static func isArchiveTodayURL(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
         return archiveTodayHosts.contains(host)
     }
@@ -82,7 +85,7 @@ struct ArticleFetcher: HTMLFetching {
     /// The original article URL embedded in an archive.today snapshot URL
     /// (`archive.is/<id|timestamp|newest>/<original>`), or nil when the snapshot
     /// carries no embedded URL (e.g. a bare `archive.is/<id>`).
-    static func originalURL(fromArchiveURL url: URL) -> URL? {
+    public static func originalURL(fromArchiveURL url: URL) -> URL? {
         guard isArchiveTodayURL(url) else { return nil }
         let full = url.absoluteString
         // The embedded original begins at the inner http(s):// after the host/path.
@@ -98,7 +101,7 @@ struct ArticleFetcher: HTMLFetching {
     /// the `/newest/<url>` redirect (which triggers archive.today's self-reloading
     /// challenge). Loading the resolved *specific* snapshot is the reliable way in;
     /// returns nil when the TimeMap is unreachable/gated/empty (caller falls back).
-    func resolveNewestArchiveSnapshot(for url: URL) async -> URL? {
+    public func resolveNewestArchiveSnapshot(for url: URL) async -> URL? {
         let target = Self.canonicalForArchiving(url).absoluteString
         guard let timeMapURL = URL(string: "https://archive.is/timemap/\(target)") else { return nil }
         var request = URLRequest(url: timeMapURL, timeoutInterval: 10)
@@ -115,7 +118,7 @@ struct ArticleFetcher: HTMLFetching {
     /// snapshot — the `rel="last memento"` entry, else the last memento listed.
     /// Pure (no I/O) so the parsing is unit-testable. Handles the commas inside
     /// `datetime="…, …"` by capturing each `<url>` and the params up to the next `<`.
-    static func newestMemento(fromTimeMap text: String) -> URL? {
+    public static func newestMemento(fromTimeMap text: String) -> URL? {
         guard let regex = try? NSRegularExpression(pattern: "<([^>]+)>([^<]*)") else { return nil }
         let ns = text as NSString
         var lastMemento: URL?
@@ -145,7 +148,7 @@ struct ArticleFetcher: HTMLFetching {
     /// "unreadable → park for archive" routing can never drift. (`BypassRuleTable`
     /// only refines the per-host bypass STRATEGY ordering; a hard-paywall host with no
     /// bespoke rule still routes to the archive reader via the generic plan.)
-    static func isHardPaywallHost(_ url: URL) -> Bool {
+    public static func isHardPaywallHost(_ url: URL) -> Bool {
         Classifier.isHardPaywallHost(url)
     }
 
@@ -153,7 +156,7 @@ struct ArticleFetcher: HTMLFetching {
     /// (parked for a CAPTCHA), so the list row isn't a bare URL. Derived from the
     /// article slug (the archive URL is unwrapped to the original first); falls back
     /// to the publication/host name. Replaced by the real title once extracted.
-    static func articleTitleGuess(from url: URL) -> String {
+    public static func articleTitleGuess(from url: URL) -> String {
         let article = originalURL(fromArchiveURL: url) ?? url
         let slug = article.pathComponents.last { !$0.isEmpty && $0 != "/" } ?? ""
         let words = slug
@@ -193,7 +196,7 @@ struct ArticleFetcher: HTMLFetching {
 
     // MARK: - Bypass-strategy fetches (HTMLFetching)
 
-    func fetchHTML(from url: URL, userAgent: String, xForwardedFor: String?) async throws -> String {
+    public func fetchHTML(from url: URL, userAgent: String, xForwardedFor: String?) async throws -> String {
         // Crawler reads go over a cookieless (ephemeral) session: a real Googlebot
         // presents no cookies, and clearing them means a stale "non-subscriber"
         // cookie can't tag us as gated — exactly what browser paywall extensions do
@@ -205,11 +208,11 @@ struct ArticleFetcher: HTMLFetching {
                                timeout: 12, session: session)
     }
 
-    func fetchHTML(from url: URL, referer: String) async throws -> String {
+    public func fetchHTML(from url: URL, referer: String) async throws -> String {
         try await fetch(url: url, userAgent: Self.safariUserAgent, referer: referer, timeout: 12)
     }
 
-    func fetchHTMLWithoutCookies(from url: URL) async throws -> String {
+    public func fetchHTMLWithoutCookies(from url: URL) async throws -> String {
         // An ephemeral session has no cookie store, so a client-side cookie meter sees
         // a brand-new visitor. The session is local to this call and discarded after.
         let configuration = URLSessionConfiguration.ephemeral
@@ -218,7 +221,7 @@ struct ArticleFetcher: HTMLFetching {
         return try await fetch(url: url, userAgent: Self.safariUserAgent, timeout: 12, session: session)
     }
 
-    func fetchJinaReader(for url: URL) async throws -> String {
+    public func fetchJinaReader(for url: URL) async throws -> String {
         let target = Self.canonicalForArchiving(url).absoluteString
         guard let jinaURL = URL(string: "https://r.jina.ai/" + target) else { throw FetchError.badResponse }
         return try await fetch(url: jinaURL, userAgent: Self.safariUserAgent, timeout: 20)
@@ -228,7 +231,7 @@ struct ArticleFetcher: HTMLFetching {
     /// tiny/non-200), then fetches the raw `…/web/<ts>id_/<url>` replay (the `id_`
     /// suffix strips IA's banner/asset rewriting). Falls back to the rewritten
     /// Availability-API replay when CDX returns nothing.
-    func fetchWaybackRawHTML(for url: URL) async throws -> String {
+    public func fetchWaybackRawHTML(for url: URL) async throws -> String {
         let canonical = Self.canonicalForArchiving(url).absoluteString
         if let timestamp = try? await waybackNewestTimestamp(forCanonical: canonical),
            let rawURL = URL(string: "https://web.archive.org/web/\(timestamp)id_/\(canonical)") {
@@ -264,7 +267,7 @@ struct ArticleFetcher: HTMLFetching {
     /// the parsing is unit-testable. Rows are returned oldest→newest; with
     /// `filter=statuscode:200` they're all 200s, so we take the last row whose body
     /// `length` isn't trivially small (a tiny capture is a stub, not the article).
-    static func newestSnapshotTimestamp(fromCDXJSON data: Data) -> String? {
+    public static func newestSnapshotTimestamp(fromCDXJSON data: Data) -> String? {
         guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[Any]],
               rows.count > 1 else { return nil }
 

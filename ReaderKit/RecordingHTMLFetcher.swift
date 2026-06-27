@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipFetch
 import Foundation
 
 /// A `HTMLFetching` decorator that records every fetch as a request/response pair

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipFetch
 import Foundation
 
 /// Finds a specific social post's URL for platforms with no public search API

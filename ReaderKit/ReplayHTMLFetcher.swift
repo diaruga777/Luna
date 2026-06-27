@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipFetch
 import Foundation
 
 /// A deterministic `HTMLFetching` that answers every fetch from a `Replay`'s

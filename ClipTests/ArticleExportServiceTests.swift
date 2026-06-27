@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipModels
 import XCTest
 import UniformTypeIdentifiers
 @testable import Clip

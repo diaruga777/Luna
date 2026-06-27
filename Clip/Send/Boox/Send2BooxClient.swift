@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Uploads an article EPUB to a Boox device via Onyx's (unofficial) Send2Boox

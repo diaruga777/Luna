@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Searches the saved reading list two ways in parallel:

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import CryptoKit
 import Foundation
 import ImageIO

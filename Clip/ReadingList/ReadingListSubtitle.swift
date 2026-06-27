@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Pure assembly of a reading-list row's grey metadata line. Produces the

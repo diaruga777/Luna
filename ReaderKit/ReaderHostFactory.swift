@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// Single decision point for which reader hosts a save when opened full-screen: the

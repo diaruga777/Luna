@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Maps between the article's word stream (the same indices RSVPEngine uses)

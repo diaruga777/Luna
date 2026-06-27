@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Builds the semantic index and computes content-similarity sharing

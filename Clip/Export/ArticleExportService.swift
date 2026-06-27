@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 import UniformTypeIdentifiers
 

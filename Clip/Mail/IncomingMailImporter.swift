@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Fetches new mail from allowed senders (via IMAP) and turns the first URL in

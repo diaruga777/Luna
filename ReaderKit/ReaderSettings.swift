@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// RSVP speed-reader display granularity: one word at a time, or whole phrases.

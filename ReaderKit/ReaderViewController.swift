@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// Hosts the reader modes — scrolling text, the RSVP speed reader (with its own

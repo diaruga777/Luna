@@ -3,6 +3,7 @@
 //  ClipShare
 //
 
+import ClipModels
 import Intents
 import UIKit
 import UniformTypeIdentifiers

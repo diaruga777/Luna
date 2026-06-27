@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// The inline reader shown when a link is tapped in the scroll reader.

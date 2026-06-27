@@ -7,6 +7,7 @@
 //  real layout pass, and basic layout sanity assertions.
 //
 
+import ClipModels
 import UIKit
 import XCTest
 @testable import Clip

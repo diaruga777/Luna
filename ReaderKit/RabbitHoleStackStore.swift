@@ -5,6 +5,7 @@
 //  Forked, experimental "RabbitHole" reader — see RabbitHoleReaderViewController.
 //
 
+import ClipModels
 import Foundation
 
 /// Persists each save's RabbitHole breadcrumb trail (the stack of layers the user dove

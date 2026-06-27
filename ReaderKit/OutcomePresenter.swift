@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// A thin per-surface presenter over the unified `Outcome`. Each surface (main app

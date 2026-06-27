@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Decides what a save press means. Pure logic so the full matrix is testable:

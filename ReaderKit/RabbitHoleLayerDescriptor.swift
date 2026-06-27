@@ -5,6 +5,7 @@
 //  Forked, experimental "RabbitHole" reader — see RabbitHoleReaderViewController.
 //
 
+import ClipModels
 import Foundation
 
 /// One layer of a persisted RabbitHole breadcrumb trail. The root layer (index 0) is

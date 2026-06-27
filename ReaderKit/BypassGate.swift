@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// The single hard GATE that decides whether a paywall bypass (any silent strategy

@@ -3,6 +3,7 @@
 //  ClipShare
 //
 
+import ClipModels
 import AVKit
 import CoreMedia
 import ImageIO

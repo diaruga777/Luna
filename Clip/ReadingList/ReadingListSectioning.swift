@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Pure, UIKit-free decision logic for how the reading list is sliced into

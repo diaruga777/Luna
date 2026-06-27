@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Builds a minimal EPUB 3 from extracted article content — the format Amazon

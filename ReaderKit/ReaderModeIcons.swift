@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// Programmatic glyphs for the reader's mode switcher. Scroll uses an SF Symbol;

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// A Slack-style "catch up" experience over the reading list's UNREAD items. Each

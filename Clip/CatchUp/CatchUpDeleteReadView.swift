@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// The end-of-catch-up "delete read items?" screen: a prompt near the top and,

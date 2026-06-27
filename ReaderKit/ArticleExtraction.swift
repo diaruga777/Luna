@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// Extracted content paired with the source HTML it came from — always present

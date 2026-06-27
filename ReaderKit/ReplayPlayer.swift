@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// Replays a `Replay` through the REAL article pipeline (unwrap → resolve →

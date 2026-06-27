@@ -3,13 +3,12 @@
 //  Clip
 //
 
-import ClipModels
 import Foundation
 
 /// One saved weblink in the reading list.
-struct ReadingListItem: Codable, Identifiable {
+public struct ReadingListItem: Codable, Identifiable {
     /// Lifecycle of the item's downloaded content.
-    enum State: String, Codable {
+    public enum State: String, Codable {
         /// Saved but content not yet downloaded/extracted.
         case pending
         /// Content downloaded and extracted; ready to read.
@@ -27,7 +26,7 @@ struct ReadingListItem: Codable, Identifiable {
     }
 
     /// How far the user has gotten with the article.
-    enum ReadState: String, Codable {
+    public enum ReadState: String, Codable {
         /// Never opened — bright in the list.
         case unopened
         /// Opened at least once — dimmed in the list.
@@ -37,7 +36,7 @@ struct ReadingListItem: Codable, Identifiable {
     }
 
     /// Which reader the user last used for this article.
-    enum ReaderMode: String, Codable {
+    public enum ReaderMode: String, Codable {
         /// Plain scrolling text.
         case scroll
         /// Auto-advancing chunk highlight over the scrolling text.
@@ -49,7 +48,7 @@ struct ReadingListItem: Codable, Identifiable {
     }
 
     /// Send-to-Kindle delivery status. Absent means never requested.
-    enum SendState: String, Codable {
+    public enum SendState: String, Codable {
         /// Send requested but not yet delivered (e.g. article still ingesting,
         /// or the app died mid-send). Retried on pull-to-refresh.
         case queued
@@ -59,107 +58,107 @@ struct ReadingListItem: Codable, Identifiable {
         case failed
     }
 
-    let id: UUID
-    var urlString: String
-    var title: String?
-    var dateAdded: Date
+    public let id: UUID
+    public var urlString: String
+    public var title: String?
+    public var dateAdded: Date
     /// When the user last "bumped" this item in catch-up — re-sorts it to the top of
     /// the reading list and is shown (instead of the save date) on its catch-up card.
-    var bumpDate: Date?
-    var state: State
+    public var bumpDate: Date?
+    public var state: State
     /// File name (inside the Articles directory) of the extracted `ArticleContent` JSON.
-    var contentFileName: String?
+    public var contentFileName: String?
     /// A preserved `.webarchive` in OriginalArchives, captured from the source page
     /// before parsing. The Original reader loads this artifact directly; it never
     /// rebuilds a page from parsed reader blocks.
-    var originalArchiveFileName: String?
+    public var originalArchiveFileName: String?
     /// RSVP resume position (word index).
-    var lastWordIndex: Int?
-    var readState: ReadState
-    var lastReaderMode: ReaderMode?
+    public var lastWordIndex: Int?
+    public var readState: ReadState
+    public var lastReaderMode: ReaderMode?
     /// Scroll reader resume position (content offset).
-    var lastScrollOffset: Double?
+    public var lastScrollOffset: Double?
     /// Read-aloud resume position (word index); non-nil once audio has played.
-    var lastSpokenWordIndex: Int?
+    public var lastSpokenWordIndex: Int?
     /// Eye-tracking estimate of the last word read (word index); nil when the
     /// feature is disabled or unavailable.
-    var eyeTrackedWordIndex: Int?
+    public var eyeTrackedWordIndex: Int?
     /// Total words in the extracted article (for reading-time estimates).
-    var wordCount: Int?
+    public var wordCount: Int?
     /// 0…1 how far the user has gotten (scroll depth or RSVP position).
-    var readingProgress: Double?
+    public var readingProgress: Double?
     /// YouTube video ID when this item is a video link rather than an article.
-    var youtubeVideoID: String?
+    public var youtubeVideoID: String?
     /// YouTube channel name (from oEmbed), shown in the list subtitle.
-    var channelName: String?
+    public var channelName: String?
     /// Downloaded video thumbnail (inside the Articles directory).
-    var thumbnailFileName: String?
+    public var thumbnailFileName: String?
     /// Username of the friend who shared this item to us, when it arrived via
     /// a social message (display only).
-    var sharedByUsername: String?
+    public var sharedByUsername: String?
     /// File extension (e.g. "pdf", "txt", "md") when this item is an imported
     /// document with no web URL. The raw file lives at
     /// `Articles/<id>-source.<documentType>`.
-    var documentType: String?
+    public var documentType: String?
     /// Per-destination send status (e.g. "kindle", "boox"), keyed by destination
     /// id. Absent = never requested for that destination.
-    var sendStates: [String: SendState]
+    public var sendStates: [String: SendState]
     /// When the article was last delivered to each destination (the once-per-day
     /// resend guard), keyed by destination id.
-    var datesSent: [String: Date]
+    public var datesSent: [String: Date]
     /// When the user last pressed save for this URL while it was already in the
     /// list (the double-save-to-send detection window).
-    var lastSaveAttemptDate: Date?
+    public var lastSaveAttemptDate: Date?
 
     /// The content platform this item belongs to (nil = a plain article/document).
-    var platform: ContentPlatform?
+    public var platform: ContentPlatform?
     /// Platform item id (tweet id, post shortcode, etc.) — generalizes `youtubeVideoID`.
-    var platformItemID: String?
+    public var platformItemID: String?
     /// Artist (music) or show (podcast).
-    var mediaCreatorName: String?
+    public var mediaCreatorName: String?
     /// Track (music) or episode (podcast) title.
-    var mediaItemTitle: String?
+    public var mediaItemTitle: String?
     /// Which service the original URL came from (music/podcast), if any.
-    var mediaSourceService: MusicProvider?
+    public var mediaSourceService: MusicProvider?
     /// Where this item was captured from — drives per-source auto-send. Absent
     /// on legacy items (treated as `.manual`).
-    var captureSource: CaptureSource?
+    public var captureSource: CaptureSource?
 
     /// When this save is a price tracker (a product page with a price), this
     /// payload carries the watched store URLs, prices, and alert config. Absent
     /// for ordinary articles/media. Its presence is what makes the item render in
     /// the price-tracking section instead of the reader.
-    var priceTracker: PriceTracker?
+    public var priceTracker: PriceTracker?
 
-    var url: URL? { URL(string: urlString) }
+    public var url: URL? { URL(string: urlString) }
 
     /// Whether this save is a price tracker rather than an article/media item.
-    var isPriceTracker: Bool { priceTracker != nil }
+    public var isPriceTracker: Bool { priceTracker != nil }
 
     /// Capture source for routing/auto-send, defaulting legacy items to `.manual`.
-    var effectiveCaptureSource: CaptureSource { captureSource ?? .manual }
+    public var effectiveCaptureSource: CaptureSource { captureSource ?? .manual }
 
-    var isYouTubeVideo: Bool { youtubeVideoID != nil || platform == .youtube }
+    public var isYouTubeVideo: Bool { youtubeVideoID != nil || platform == .youtube }
 
     /// The platform for rendering/routing — falls back to `.youtube` for legacy
     /// items saved before `platform` existed.
-    var contentPlatform: ContentPlatform? {
+    public var contentPlatform: ContentPlatform? {
         platform ?? (youtubeVideoID != nil ? .youtube : nil)
     }
 
     /// A recognized platform item (vs. a plain article/document).
-    var isPlatformItem: Bool { contentPlatform != nil }
+    public var isPlatformItem: Bool { contentPlatform != nil }
 
     /// A provider-agnostic media item with no shareable http URL.
-    var isURLlessMedia: Bool { contentPlatform?.isURLless ?? false }
+    public var isURLlessMedia: Bool { contentPlatform?.isURLless ?? false }
 
     /// An imported document (PDF/text/etc.) rather than a web link or video.
-    var isDocument: Bool { documentType != nil }
+    public var isDocument: Bool { documentType != nil }
 
     /// `documentType` reduced to a safe file extension — lowercased alphanumerics,
     /// capped — so a crafted value (the field is decoded from App-Group JSON any
     /// process can write) can't smuggle path separators into a file path.
-    var sanitizedDocumentType: String? {
+    public var sanitizedDocumentType: String? {
         guard let documentType else { return nil }
         let cleaned = documentType.lowercased().filter { $0.isLetter || $0.isNumber }
         return cleaned.isEmpty ? nil : String(cleaned.prefix(8))
@@ -167,20 +166,20 @@ struct ReadingListItem: Codable, Identifiable {
 
     /// Whether this item has a real web URL that can be shared (false for
     /// documents and imported emails, whose URLs are synthetic `clip…://` ones).
-    var isShareable: Bool {
+    public var isShareable: Bool {
         guard let scheme = url?.scheme?.lowercased() else { return false }
         return scheme == "http" || scheme == "https"
     }
 
     /// Only items with a real web URL can be sent to other users.
-    var canShareToFriends: Bool { isShareable }
+    public var canShareToFriends: Bool { isShareable }
 
     /// Send status for one destination (e.g. "kindle", "boox").
-    func sendState(for destinationID: String) -> SendState? { sendStates[destinationID] }
+    public func sendState(for destinationID: String) -> SendState? { sendStates[destinationID] }
     /// Last delivery time for one destination.
-    func dateSent(for destinationID: String) -> Date? { datesSent[destinationID] }
+    public func dateSent(for destinationID: String) -> Date? { datesSent[destinationID] }
 
-    init(urlString: String) {
+    public init(urlString: String) {
         self.id = UUID()
         self.urlString = urlString
         self.title = nil
@@ -219,7 +218,7 @@ struct ReadingListItem: Codable, Identifiable {
     /// `seed` derives a stable UUID (so the same fixture round-trips to the same id
     /// across runs), and every field is set explicitly so a fixture is fully
     /// reproducible. DEBUG-only — never reachable in a release build.
-    init(
+    public init(
         seed: String,
         urlString: String,
         title: String?,
@@ -276,7 +275,7 @@ struct ReadingListItem: Codable, Identifiable {
     }
 
     /// A stable UUID derived from a seed string (so fixtures get reproducible ids).
-    static func deterministicUUID(from seed: String) -> UUID {
+    public static func deterministicUUID(from seed: String) -> UUID {
         var hash: UInt64 = 0xcbf29ce484222325
         for byte in seed.utf8 {
             hash ^= UInt64(byte)
@@ -303,7 +302,7 @@ struct ReadingListItem: Codable, Identifiable {
     }
 
     // Manual decoding so items saved before readState existed still decode.
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         urlString = try container.decode(String.self, forKey: .urlString)

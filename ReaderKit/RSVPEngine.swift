@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// One word in the RSVP stream with everything needed to display and time it.

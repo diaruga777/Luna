@@ -9,6 +9,7 @@
 //  is untouched.
 //
 
+import ClipModels
 import UIKit
 import WebKit
 

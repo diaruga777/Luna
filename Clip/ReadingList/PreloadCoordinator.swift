@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// Background engine that preloads the links on a saved article (recursively to

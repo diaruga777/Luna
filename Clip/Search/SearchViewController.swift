@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// Lets `SearchViewController` reuse the reading list's cell rendering, open

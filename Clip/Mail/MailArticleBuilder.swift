@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Turns an incoming email into a readable `ArticleContent`: subject → title,

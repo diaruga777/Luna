@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// Records a `Replay` for one save: started with `begin`, fed events as the

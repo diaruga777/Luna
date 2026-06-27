@@ -48,7 +48,8 @@ enum ArticleResolver {
         fetcher: HTMLFetching = ArticleFetcher(),
         extractor: ArticleExtractor = ArticleExtractor(),
         runner: BypassRunning? = nil,
-        replayLog: ((EventKind) async -> Void)? = nil
+        replayLog: ((EventKind) async -> Void)? = nil,
+        nonArchiveBypass: Bool = ReaderSettings.nonArchiveBypassEnabled
     ) async -> ArticleResolution {
         let extraction = ArticleExtraction(extractor: extractor)
         // Reuse the caller's already-fetched direct HTML when supplied (the shared
@@ -69,7 +70,8 @@ enum ArticleResolver {
         // archive reader. A bounded aggregate deadline keeps the ingest path from
         // serially burning a minute of silent fetches before parking.
         let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
-        let plan = BypassPlan.make(for: url, directHTML: direct?.sourceHTML)
+        let plan = BypassPlan.make(
+            for: url, directHTML: direct?.sourceHTML, nonArchiveBypass: nonArchiveBypass)
         let silentDeadline = Date().addingTimeInterval(BypassPlan.silentChainDeadlineSeconds)
         for strategy in plan.silent {
             let candidate = await bypassRunner.run(strategy.asBypassStrategy, url: url,

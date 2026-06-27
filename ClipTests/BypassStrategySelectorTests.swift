@@ -8,29 +8,47 @@ import XCTest
 
 final class BypassStrategySelectorTests: XCTestCase {
     private func url(_ string: String) -> URL { URL(string: string)! }
+    private let firstParty: [BypassStrategy] = BypassStrategySelector.firstPartySilent
+    private let locked = "<html><body>subscribe to continue reading</body></html>"
 
     func testNotPaywalledReturnsEmpty() {
         let html = "<html><body><article>" + String(repeating: "Free article. ", count: 100)
             + "</article></body></html>"
-        XCTAssertEqual(BypassStrategySelector.strategies(for: url("https://example.com/x"), directHTML: html), [])
-    }
-
-    private let firstParty: [BypassStrategy] = BypassStrategySelector.firstPartySilent
-
-    func testPaywalledHostRunsFirstPartySilentChainThenArchive() {
-        let locked = "<html><body>subscribe to continue reading</body></html>"
-        // WSJ (and any non-NYT hard paywall): first-party silent reads, then archive.
-        for article in ["https://www.wsj.com/articles/x", "https://unknown.example/story"] {
-            XCTAssertEqual(BypassStrategySelector.strategies(for: url(article), directHTML: locked),
-                           firstParty + [.archiveToday], article)
+        // Regardless of the toggle, a non-paywall is never bypassed.
+        for on in [true, false] {
+            XCTAssertEqual(BypassStrategySelector.strategies(
+                for: url("https://example.com/x"), directHTML: html, nonArchiveBypass: on), [])
         }
     }
 
-    func testGooglebotIsTriedBeforeArchiveForWSJ() {
-        // The crux WSJ fix: a Googlebot read happens before the (failing) archiver.
-        let locked = "<html><body>subscribe to continue reading</body></html>"
+    // MARK: - Toggle OFF (default) = long-standing archive-only behavior
+
+    func testDefaultOffGoesStraightToArchive() {
+        for article in ["https://www.wsj.com/articles/x", "https://unknown.example/story"] {
+            XCTAssertEqual(
+                BypassStrategySelector.strategies(for: url(article), directHTML: locked, nonArchiveBypass: false),
+                [.archiveToday], article)
+        }
+        // NYT still gets only its trailing-dot pre-stage before archive.
+        XCTAssertEqual(
+            BypassStrategySelector.strategies(
+                for: url("https://www.nytimes.com/story"), directHTML: locked, nonArchiveBypass: false),
+            [.trailingDotHost, .archiveToday])
+    }
+
+    // MARK: - Toggle ON = first-party silent chain before archive
+
+    func testOnRunsFirstPartySilentChainThenArchive() {
+        for article in ["https://www.wsj.com/articles/x", "https://unknown.example/story"] {
+            XCTAssertEqual(
+                BypassStrategySelector.strategies(for: url(article), directHTML: locked, nonArchiveBypass: true),
+                firstParty + [.archiveToday], article)
+        }
+    }
+
+    func testOnTriesGooglebotBeforeArchiveForWSJ() {
         let strategies = BypassStrategySelector.strategies(
-            for: url("https://www.wsj.com/articles/x"), directHTML: locked)
+            for: url("https://www.wsj.com/articles/x"), directHTML: locked, nonArchiveBypass: true)
         let gbIndex = strategies.firstIndex(of: .userAgent(.googlebotDesktop))
         let archiveIndex = strategies.firstIndex(of: .archiveToday)
         XCTAssertNotNil(gbIndex)
@@ -38,11 +56,10 @@ final class BypassStrategySelectorTests: XCTestCase {
         XCTAssertLessThan(gbIndex!, archiveIndex!)
     }
 
-    func testNYTAlsoTriesTrailingDotBeforeArchive() {
-        let locked = "<html><body>subscribe to continue reading</body></html>"
+    func testOnNYTAlsoTriesTrailingDotBeforeArchive() {
         XCTAssertEqual(
             BypassStrategySelector.strategies(
-                for: url("https://www.nytimes.com/story"), directHTML: locked),
+                for: url("https://www.nytimes.com/story"), directHTML: locked, nonArchiveBypass: true),
             firstParty + [.trailingDotHost, .archiveToday])
     }
 }

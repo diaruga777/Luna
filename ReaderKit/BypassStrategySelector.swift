@@ -41,14 +41,22 @@ enum BypassStrategySelector {
     /// Ordered strategies to try for `url`, given the direct page's HTML (nil if the
     /// direct fetch failed). Pure — no I/O.
     ///
-    /// Reasoning order:
+    /// `nonArchiveBypass` defaults to the user's `ReaderSettings.nonArchiveBypassEnabled`
+    /// (OFF by default). When OFF, the result is the long-standing behavior — a
+    /// detected paywall goes STRAIGHT to archive.today (NYT also gets its
+    /// trailing-dot pre-stage). When ON, the first-party silent chain runs first.
+    ///
+    /// Reasoning order (when the chain is enabled):
     /// 1. The hard `BypassGate` blocks a bypass (product/platform/free page) → `[]`.
     /// 2. The first-party silent chain (cheapest/highest-yield first), each tried
     ///    from the device's own IP and stopping at the first readable result.
     /// 3. NYT's trailing-dot host variant (a client-side origin trick that needs a
     ///    real browser — kept here so it's also retried as a WKWebView pre-stage).
     /// 4. archive.today as the terminal interactive fallback.
-    static func strategies(for url: URL, directHTML: String?) -> [BypassStrategy] {
+    static func strategies(
+        for url: URL, directHTML: String?,
+        nonArchiveBypass: Bool = ReaderSettings.nonArchiveBypassEnabled
+    ) -> [BypassStrategy] {
         // The single gate decides whether ANY bypass may run. It blocks
         // product/platform pages and pages with no paywall evidence; `extracted` is
         // nil here because the resolver already returned early when the direct read
@@ -57,7 +65,9 @@ enum BypassStrategySelector {
             return []
         }
 
-        var strategies = firstPartySilent
+        // Off (default): no silent reads — straight to the archive flow (+NYT
+        // trailing-dot), exactly as before the non-archive strategies existed.
+        var strategies: [BypassStrategy] = nonArchiveBypass ? firstPartySilent : []
         // NYT's trailing-dot origin variant often clears the metered overlay, but
         // only in a real browser — kept after the silent reads so it's emitted as a
         // WKWebView pre-stage before archive.today.

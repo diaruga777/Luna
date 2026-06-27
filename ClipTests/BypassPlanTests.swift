@@ -7,9 +7,20 @@ import XCTest
 @testable import Clip
 
 final class BypassPlanTests: XCTestCase {
-    func testWSJRunsFirstPartySilentChainThenArchive() {
+    func testWSJDefaultOffGoesStraightToArchive() {
         let url = URL(string: "https://www.wsj.com/articles/x")!
-        let plan = BypassPlan.make(for: url, directHTML: "<html>subscribe to continue</html>")
+        // Default (toggle off): no silent reads, no pre-stages — archive only.
+        let plan = BypassPlan.make(
+            for: url, directHTML: "<html>subscribe to continue</html>", nonArchiveBypass: false)
+        XCTAssertTrue(plan.silent.isEmpty)
+        XCTAssertTrue(plan.webPreStages.isEmpty)
+        XCTAssertTrue(plan.allowsArchiveToday)
+    }
+
+    func testWSJWithToggleOnRunsFirstPartySilentChainThenArchive() {
+        let url = URL(string: "https://www.wsj.com/articles/x")!
+        let plan = BypassPlan.make(
+            for: url, directHTML: "<html>subscribe to continue</html>", nonArchiveBypass: true)
         // The first-party silent reads run before parking for archive.today; WSJ is
         // not an NYT-family host, so there's no trailing-dot web pre-stage.
         XCTAssertEqual(plan.silent, [

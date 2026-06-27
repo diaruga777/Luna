@@ -115,7 +115,8 @@ final class ArticleResolverTests: XCTestCase {
                 .init(kind: .paragraph, text: String(repeating: "a", count: 2000), links: []),
             ]), html: readableHTML("googlebot"))
 
-        let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher, runner: runner)
+        let result = await ArticleResolver.resolve(
+            url: articleURL, fetcher: fetcher, runner: runner, nonArchiveBypass: true)
         if case .readable = result {} else { XCTFail("expected readable, got \(result)") }
         // jsonLDBody first (failed), then the Googlebot read (succeeded) — and stop.
         XCTAssertEqual(runner.attempted, [.jsonLDBody, .userAgent(.googlebotDesktop)])
@@ -152,7 +153,8 @@ final class ArticleResolverTests: XCTestCase {
         ]), sourceHTML: readableHTML("ok"))
         let runner = LockedThenReadableRunner(lockedHTML: lockedHTML, readable: readable)
 
-        let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher, runner: runner)
+        let result = await ArticleResolver.resolve(
+            url: articleURL, fetcher: fetcher, runner: runner, nonArchiveBypass: true)
         // First silent attempt = long-but-locked (rejected); second = readable (taken).
         XCTAssertEqual(result, .readable(readable.content, html: readable.sourceHTML))
         XCTAssertEqual(runner.attempts, 2)
@@ -167,7 +169,8 @@ final class ArticleResolverTests: XCTestCase {
         // Direct returns a titled locked teaser; every silent strategy + archive fail.
         fetcher.htmlByURL[articleURL.absoluteString] =
             "<html><head><title>WSJ Story</title></head><body><p>Lede only. Subscribe to read.</p></body></html>"
-        let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
+        let result = await ArticleResolver.resolve(
+            url: articleURL, fetcher: fetcher, nonArchiveBypass: true)
         // WSJ's title survives; the body never became readable.
         XCTAssertEqual(result, .paywalled(title: "WSJ Story"))
     }

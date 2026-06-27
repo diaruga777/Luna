@@ -11,7 +11,7 @@ import ClipContentRendering
 final class ExperimentalSettingsScreen: UITableViewController {
 
     private enum Section: Int, CaseIterable {
-        case semantic, archiveOverlay, halftone, frostedGlass, jellystone, quartz, youtube
+        case semantic, paywallStrategies, archiveOverlay, halftone, frostedGlass, jellystone, quartz, youtube
     }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
 
@@ -43,6 +43,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
         case .semantic: return 1
+        case .paywallStrategies: return 1
         case .archiveOverlay: return 1
         case .halftone: return 1
         case .frostedGlass: return 1
@@ -55,6 +56,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .semantic: return "Suggest Shares Based on Content"
+        case .paywallStrategies: return "Extra Paywall Unlock Strategies"
         case .archiveOverlay: return "Archive Reader Cover"
         case .halftone: return "Halftone Effect"
         case .frostedGlass: return "Frosted Neon Effect"
@@ -68,6 +70,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
         switch Section(rawValue: section)! {
         case .semantic:
             return "When you save something that resembles things you've shared with a friend before, Queue can suggest sharing it with them. Slide all the way left to turn this off."
+        case .paywallStrategies:
+            return "Off by default. When on, Queue first tries to unlock a paywalled article directly on your device (search-engine reads, a fresh session, AMP, and web archives) before falling back to the archive reader. This can unlock some hard paywalls the archive can't, but adds a few seconds before the fallback. Turn it off to go straight to the archive reader."
         case .archiveOverlay:
             return "Opacity of overlay while we work to unlock web articles"
         case .halftone:
@@ -93,6 +97,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
         switch Section(rawValue: indexPath.section)! {
         case .semantic:
             return semanticSensitivityCell()
+        case .paywallStrategies:
+            return paywallStrategiesCell()
         case .archiveOverlay:
             return overlayAlphaCell()
         case .halftone:
@@ -106,6 +112,23 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .youtube:
             return youTubeCell(for: YouTubeRow(rawValue: indexPath.row)!)
         }
+    }
+
+    /// A toggle that enables the on-device (non-archive) paywall-bypass strategies.
+    private func paywallStrategiesCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = "Try Direct Unlock First"
+        cell.contentConfiguration = content
+        cell.accessoryView = makeToggle(
+            isOn: ReaderSettings.nonArchiveBypassEnabled,
+            action: #selector(nonArchiveBypassToggled(_:)))
+        return cell
+    }
+
+    @objc private func nonArchiveBypassToggled(_ toggle: UISwitch) {
+        ReaderSettings.nonArchiveBypassEnabled = toggle.isOn
     }
 
     /// A slider for the archive-reader cover opacity (20%–99%, default 99%).
@@ -230,7 +253,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
             case .playlist: choosePlaylistTapped()
             case .autoAdd: break
             }
-        case .semantic, .archiveOverlay:
+        case .semantic, .paywallStrategies, .archiveOverlay:
             break
         }
     }

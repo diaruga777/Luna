@@ -84,8 +84,12 @@ struct BypassPlan: Equatable {
     ///   here even if it ran silently, because the trick only takes effect in a real
     ///   browser (the silent fetch sees the same wall).
     /// - `allowsArchiveToday` = whether `.archiveToday` is in the selected list.
-    static func make(for url: URL, directHTML: String?) -> BypassPlan {
-        let strategies = BypassStrategySelector.strategies(for: url, directHTML: directHTML)
+    static func make(
+        for url: URL, directHTML: String?,
+        nonArchiveBypass: Bool = ReaderSettings.nonArchiveBypassEnabled
+    ) -> BypassPlan {
+        let strategies = BypassStrategySelector.strategies(
+            for: url, directHTML: directHTML, nonArchiveBypass: nonArchiveBypass)
 
         let silent: [SilentStrategy] = strategies.compactMap(Self.silentStrategy)
 

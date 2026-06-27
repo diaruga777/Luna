@@ -26,6 +26,7 @@ enum ReaderSettings {
     private static let progressKey = "showReadingProgress"
     private static let lastReaderModeKey = "lastReaderMode"
     private static let rsvpModeKey = "rsvpDisplayMode"
+    private static let nonArchiveBypassKey = "nonArchiveBypassEnabled"
     private static let accentKey = "readerAccentColor"
     private static let archiveOverlayAlphaKey = "archiveOverlayAlpha"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
@@ -93,6 +94,18 @@ enum ReaderSettings {
     static var rsvpMode: RSVPDisplayMode {
         get { RSVPDisplayMode(rawValue: defaults.string(forKey: rsvpModeKey) ?? "") ?? .words }
         set { defaults.set(newValue.rawValue, forKey: rsvpModeKey) }
+    }
+
+    /// Whether to try non-archive paywall-bypass strategies (Googlebot/first-party
+    /// reads, fresh session, AMP, Wayback) over URLSession BEFORE falling back to
+    /// the archive.today reader. **Off by default** — when off, a detected paywall
+    /// goes straight to archive.today (the long-standing behavior). On, the silent
+    /// chain runs first, which can unlock some hard paywalls (e.g. WSJ via
+    /// Googlebot from the device's own IP) at the cost of a few seconds' wait
+    /// before the archive fallback. App Group so the extensions honor it too.
+    static var nonArchiveBypassEnabled: Bool {
+        get { defaults.bool(forKey: nonArchiveBypassKey) }
+        set { defaults.set(newValue, forKey: nonArchiveBypassKey) }
     }
 
     /// Reader text size multiplier (Safari-Reader-style Aa control).

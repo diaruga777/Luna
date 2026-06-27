@@ -37,15 +37,22 @@ enum BypassStrategy: Equatable {
     /// A server-rendering proxy (1ft.io) whose response is plain HTML a URLSession
     /// can extract. Silent.
     case ladderProxy(LadderProxy)
+    /// Load the ORIGINAL article URL in the WKWebView with the paywall/meter
+    /// vendor scripts blocked (a compiled `WKContentRuleList`) and a DOM-cleanup
+    /// userscript injected (remove overlays, unhide the clamped body, restore
+    /// scroll). The site's own JS renders the article while the meter can't run, so
+    /// the rendered DOM is extractable. WKWebView-only — the Bypass-Paywalls-Clean
+    /// core technique. Tried before archive.today (only when the user opts in).
+    case directUnlock
     /// archive.is snapshot via the interactive WKWebView reader. WKWebView-only,
     /// always the terminal (most expensive/hostile) strategy.
     case archiveToday
 
     /// Whether this strategy can run in the background URLSession path. The
-    /// archive.is is not silent.
+    /// WKWebView strategies (`directUnlock`, `archiveToday`) are not silent.
     var runsSilently: Bool {
         switch self {
-        case .archiveToday:
+        case .archiveToday, .directUnlock:
             return false
         default:
             return true
@@ -65,6 +72,7 @@ enum BypassStrategy: Equatable {
         case .waybackRaw: return "waybackRaw"
         case .jinaReader: return "jinaReader"
         case let .ladderProxy(proxy): return "ladderProxy(\(proxy))"
+        case .directUnlock: return "directUnlock"
         case .archiveToday: return "archiveToday"
         }
     }

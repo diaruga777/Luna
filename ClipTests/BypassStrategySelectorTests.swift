@@ -38,11 +38,11 @@ final class BypassStrategySelectorTests: XCTestCase {
 
     // MARK: - Toggle ON = first-party silent chain before archive
 
-    func testOnRunsFirstPartySilentChainThenArchive() {
+    func testOnRunsFirstPartySilentChainThenDirectUnlockThenArchive() {
         for article in ["https://www.wsj.com/articles/x", "https://unknown.example/story"] {
             XCTAssertEqual(
                 BypassStrategySelector.strategies(for: url(article), directHTML: locked, nonArchiveBypass: true),
-                firstParty + [.archiveToday], article)
+                firstParty + [.directUnlock, .archiveToday], article)
         }
     }
 
@@ -60,6 +60,32 @@ final class BypassStrategySelectorTests: XCTestCase {
         XCTAssertEqual(
             BypassStrategySelector.strategies(
                 for: url("https://www.nytimes.com/story"), directHTML: locked, nonArchiveBypass: true),
-            firstParty + [.trailingDotHost, .archiveToday])
+            firstParty + [.directUnlock, .trailingDotHost, .archiveToday])
+    }
+
+    /// Toggle ON: a BPC-known paywall host with NO generic paywall evidence (a page
+    /// that fetched fine but shows no markers) is still routed through the unlock
+    /// flow. Toggle OFF: the same page is left alone (no regression).
+    func testOnKnownPaywallHostWithoutMarkersStillBypasses() {
+        // delish.com is in the BPC list but NOT our hard-paywall list, so a no-marker
+        // page yields a `.notPaywalled` gate decision — the exact case the toggle-on
+        // override flips (a hard-paywall host would bypass regardless of the toggle).
+        let noEvidence = "<html><body><p>" + String(repeating: "short. ", count: 5) + "</p></body></html>"
+        let known = url("https://www.delish.com/story")
+        XCTAssertEqual(
+            BypassStrategySelector.strategies(for: known, directHTML: noEvidence, nonArchiveBypass: true),
+            firstParty + [.directUnlock, .archiveToday])
+        XCTAssertEqual(
+            BypassStrategySelector.strategies(for: known, directHTML: noEvidence, nonArchiveBypass: false),
+            [])
+    }
+
+    /// Even toggle ON must never bypass a non-paywall unknown host with no evidence.
+    func testOnUnknownHostWithoutMarkersIsNotBypassed() {
+        let noEvidence = "<html><body><p>" + String(repeating: "short. ", count: 5) + "</p></body></html>"
+        XCTAssertEqual(
+            BypassStrategySelector.strategies(
+                for: url("https://randomblog.example/post"), directHTML: noEvidence, nonArchiveBypass: true),
+            [])
     }
 }

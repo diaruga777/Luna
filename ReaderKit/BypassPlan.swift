@@ -41,6 +41,10 @@ enum SilentStrategy: Equatable {
 /// is modeled separately as the terminal flow (`BypassPlan.allowsArchiveToday`), so a
 /// `WebStrategy` is always a non-terminal pre-stage.
 enum WebStrategy: Equatable {
+    /// Load the ORIGINAL URL in the WKWebView with paywall scripts blocked + a
+    /// DOM-cleanup userscript (the Bypass-Paywalls-Clean technique). The reader's
+    /// pre-stage flow installs the content rules + cleanup before loading it.
+    case directUnlock
     /// The trailing-dot FQDN variant, loaded in a real browser. Emitted whenever the
     /// selector chose trailing-dot, INCLUDING when the silent fetch already tried it:
     /// the trick is a client-side origin behaviour that only takes effect in a browser,
@@ -48,6 +52,7 @@ enum WebStrategy: Equatable {
     case trailingDotHost
     var asBypassStrategy: BypassStrategy {
         switch self {
+        case .directUnlock: return .directUnlock
         case .trailingDotHost: return .trailingDotHost
         }
     }
@@ -95,6 +100,8 @@ struct BypassPlan: Equatable {
 
         let webPreStages: [WebStrategy] = strategies.compactMap { strategy -> WebStrategy? in
             switch strategy {
+            case .directUnlock:
+                return .directUnlock
             case .trailingDotHost:
                 // The trailing-dot trick is a CLIENT-SIDE origin behaviour, not a server
                 // one: a real browser scopes the meter's host-keyed cookies/JS to
@@ -129,7 +136,7 @@ struct BypassPlan: Equatable {
         case .waybackRaw: return .waybackRaw
         case .jinaReader: return .jinaReader
         case let .ladderProxy(proxy): return .ladderProxy(proxy)
-        case .archiveToday: return nil
+        case .directUnlock, .archiveToday: return nil
         }
     }
 }
@@ -159,6 +166,10 @@ enum BypassURLs {
     /// The URL a WKWebView pre-stage loads, or nil when it can't be formed.
     static func loadURL(for strategy: WebStrategy, article: URL) -> URL? {
         switch strategy {
+        case .directUnlock:
+            // The original article URL — the reader applies the content rules +
+            // cleanup before loading it.
+            return article
         case .trailingDotHost:
             return TrailingDotBypass.trailingDotURL(for: article)
         }

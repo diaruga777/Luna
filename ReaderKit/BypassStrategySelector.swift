@@ -61,13 +61,27 @@ enum BypassStrategySelector {
         // product/platform pages and pages with no paywall evidence; `extracted` is
         // nil here because the resolver already returned early when the direct read
         // was readable, so the selector only sees non-readable pages.
-        guard BypassGate.decision(for: url, html: directHTML, extracted: nil).allowsBypass else {
+        let decision = BypassGate.decision(for: url, html: directHTML, extracted: nil)
+        // When the user has opted in, a Bypass-Paywalls-Clean-known paywall host may
+        // bypass even if the gate found no generic paywall evidence — but ONLY for the
+        // "no evidence" block, never overriding a readable article / product page /
+        // platform link.
+        let bpcKnownPaywall = nonArchiveBypass
+            && decision == .block(.notPaywalled)
+            && PaywallUnlockRules.isKnownPaywallHost(url)
+        guard decision.allowsBypass || bpcKnownPaywall else {
             return []
         }
 
         // Off (default): no silent reads — straight to the archive flow (+NYT
         // trailing-dot), exactly as before the non-archive strategies existed.
         var strategies: [BypassStrategy] = nonArchiveBypass ? firstPartySilent : []
+        // The Bypass-Paywalls-Clean WKWebView technique: render the original URL with
+        // the meter/vendor scripts blocked + a DOM-cleanup userscript, then extract.
+        // Tried before the trailing-dot variant and archive.today.
+        if nonArchiveBypass {
+            strategies.append(.directUnlock)
+        }
         // NYT's trailing-dot origin variant often clears the metered overlay, but
         // only in a real browser — kept after the silent reads so it's emitted as a
         // WKWebView pre-stage before archive.today.

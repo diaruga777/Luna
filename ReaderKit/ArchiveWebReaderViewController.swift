@@ -83,6 +83,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// browser. The archive-only policy leaves this empty, taking every detected
     /// paywall straight to archive.is with no proxy or reader-service pre-stage.
     private let webPreStageURLs: [URL]
+    /// True when the plan includes the `.directUnlock` WKWebView technique (toggle
+    /// on): the paywall-vendor content-blocker + DOM cleanup are installed.
+    private let usesDirectUnlock: Bool
     /// Index of the pre-stage currently loaded; advances as each one times out.
     private var currentPreStageIndex = 0
     /// True while loading/extracting a pre-stage page (before any archive.today
@@ -149,7 +152,14 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         self.itemID = itemID
         self.store = store
         self.recorder = recorder
-        self.webPreStageURLs = Self.webPreStageURLs(for: articleURL)
+        // Build the plan once so we know both the pre-stage URLs and whether the
+        // Bypass-Paywalls-Clean `.directUnlock` WKWebView technique is in play (only
+        // when the experimental toggle is on).
+        let plan = BypassPlan.make(for: articleURL, directHTML: nil)
+        self.usesDirectUnlock = plan.webPreStages.contains(.directUnlock)
+        self.webPreStageURLs = plan.webPreStages.compactMap {
+            BypassURLs.loadURL(for: $0, article: articleURL)
+        }
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
         // archive.today refuses clients it thinks have JS off; make it explicit (and
@@ -166,6 +176,12 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         // is registered, so `window.webkit.messageHandlers` also stays absent.
         let contentController = WKUserContentController()
         contentController.addUserScript(Self.safariImpersonationScript())
+        // The Bypass-Paywalls-Clean DOM cleanup (overlay removal / unhide / scroll
+        // restore). It self-guards off archive.today hosts, so it only acts on the
+        // `.directUnlock` (and trailing-dot) pages, never the CAPTCHA flow.
+        if usesDirectUnlock {
+            contentController.addUserScript(PaywallUnlockRules.cleanupUserScript())
+        }
         configuration.userContentController = contentController
         self.webView = WKWebView(frame: .zero, configuration: configuration)
         // Present as real mobile Safari MATCHING THIS DEVICE's iOS version. A
@@ -246,11 +262,20 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         beginReplay()
         startPolling()
         if !webPreStageURLs.isEmpty {
-            // Walk the WKWebView pre-stage list (trailing-dot, then any third-party
-            // reader pages) before the archive.today flow; a readable extraction from
-            // any of them finishes via the normal `onExtracted` path.
+            // Walk the WKWebView pre-stage list (directUnlock, trailing-dot) before the
+            // archive.today flow; a readable extraction from any of them finishes via
+            // the normal `onExtracted` path. For `.directUnlock`, first install the
+            // paywall-vendor content-blocker so the meter scripts can't run.
             isAttemptingDirectBypass = true
-            loadCurrentPreStage()
+            if usesDirectUnlock {
+                PaywallUnlockRules.compiledRuleList { [weak self] list in
+                    guard let self else { return }
+                    if let list { self.webView.configuration.userContentController.add(list) }
+                    self.loadCurrentPreStage()
+                }
+            } else {
+                loadCurrentPreStage()
+            }
         } else {
             loadArchive()
             resolveSnapshotInParallel()
@@ -741,6 +766,11 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private func fallBackToArchiveFromBypass() {
         guard isAttemptingDirectBypass else { return }
         isAttemptingDirectBypass = false
+        // Drop the paywall content-blocker before the archive.today flow so it can't
+        // interfere with archive.today / the CAPTCHA assets.
+        if usesDirectUnlock {
+            webView.configuration.userContentController.removeAllContentRuleLists()
+        }
         SharedDiagnosticLog.record(
             "archive: pre-stages didn't yield a readable article → archive.today flow", category: "archive")
         didLeaveHomepage = false

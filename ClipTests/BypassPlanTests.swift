@@ -22,12 +22,12 @@ final class BypassPlanTests: XCTestCase {
         let plan = BypassPlan.make(
             for: url, directHTML: "<html>subscribe to continue</html>", nonArchiveBypass: true)
         // The first-party silent reads run before parking for archive.today; WSJ is
-        // not an NYT-family host, so there's no trailing-dot web pre-stage.
+        // not an NYT-family host, so the only web pre-stage is `.directUnlock`.
         XCTAssertEqual(plan.silent, [
             .jsonLDBody, .userAgent(.googlebotDesktop), .userAgent(.googlebotMobile),
             .freshSession, .amp, .waybackRaw,
         ])
-        XCTAssertTrue(plan.webPreStages.isEmpty)
+        XCTAssertEqual(plan.webPreStages, [.directUnlock])
         XCTAssertTrue(plan.allowsArchiveToday)
     }
 

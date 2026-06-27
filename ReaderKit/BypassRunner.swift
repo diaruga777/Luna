@@ -93,8 +93,8 @@ struct BypassRunner: BypassRunning {
                 try await fetcher.fetchHTML(from: proxyURL)
             }
 
-        case .archiveToday:
-            // Interactive-only — handled by ArchiveWebReaderViewController, not here.
+        case .directUnlock, .archiveToday:
+            // WKWebView-only — handled by ArchiveWebReaderViewController, not here.
             return nil
         }
     }

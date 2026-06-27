@@ -228,7 +228,10 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         didDismiss = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         onClose?()
-        UIView.animate(withDuration: 0.3, delay: 0, options: .curveEaseIn) {
+        // A high-damping spring (matching the open) reads smoother than the old
+        // ease-in, which accelerated abruptly into the close.
+        UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.9,
+                       initialSpringVelocity: 0.85, options: [.beginFromCurrentState]) {
             self.apply(progress: 1)
             self.dimView.alpha = 0
         } completion: { _ in

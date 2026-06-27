@@ -58,6 +58,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             }
         }
 
+        // Sweep any downloaded-but-never-saved media preview files orphaned by a
+        // previous run that was killed before its preview screen could clean up.
+        // Safe at launch (no preview is open yet); off the main thread to not
+        // block startup.
+        DispatchQueue.global(qos: .utility).async { MediaDownloadStorage.purgeAll() }
+
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
         ReadingListIngestor.shared.ingestAllPending()

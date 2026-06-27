@@ -49,6 +49,13 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
     private var mediaState: MediaState = .pending
     private let downloadService = MediaDownloadService()
 
+    /// The on-disk preview file that still needs cleanup: set when media becomes
+    /// `.ready`, cleared once it's saved to Photos (PhotoKit moves/consumes the
+    /// file). Deleted in `deinit` so a downloaded-but-never-saved preview doesn't
+    /// linger in the temp dir after the screen closes. (A startup sweep,
+    /// `MediaDownloadStorage.purgeAll()`, catches files orphaned by a kill.)
+    private var unsavedPreviewFileURL: URL?
+
     // A fixed-height media preview area. Reserves space from load so the layout
     // never shifts as the media state resolves: it hosts the spinner, the still
     // image / video poster, the play overlay, the pending media icon, and any
@@ -80,6 +87,14 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    deinit {
+        // Delete a downloaded-but-never-saved preview file when the screen closes
+        // (any dismissal path), so previews don't accumulate in the temp dir.
+        if let url = unsavedPreviewFileURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -274,6 +289,12 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
     /// shows, so transitions stay consistent.
     private func applyMediaState(_ state: MediaState) {
         mediaState = state
+        // Track the live preview file for teardown cleanup (only `.ready` has one).
+        if case .ready(let media) = state {
+            unsavedPreviewFileURL = media.fileURL
+        } else {
+            unsavedPreviewFileURL = nil
+        }
         switch state {
         case .pending:
             previewSpinner.stopAnimating()
@@ -400,6 +421,8 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
             guard let self else { return }
             do {
                 try await downloadService.saveDownloadedMediaToPhotos(media)
+                // PhotoKit moved the file into the library — no temp file to clean up.
+                await MainActor.run { self.unsavedPreviewFileURL = nil }
                 AutoDownloadSettings.markDownloaded(articleURLString)
                 markItemRead()
                 await MainActor.run { self.finishSave(message: "Saved to Photos", success: true) }

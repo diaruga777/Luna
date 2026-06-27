@@ -138,8 +138,7 @@ final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
             return
         }
         let ext = MediaFileDownloader.fileExtension(for: asset, mimeType: http?.mimeType)
-        let destination = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
+        let destination = MediaDownloadStorage.newFileURL(extension: ext)
         do {
             try? FileManager.default.removeItem(at: destination)
             try FileManager.default.moveItem(at: location, to: destination)

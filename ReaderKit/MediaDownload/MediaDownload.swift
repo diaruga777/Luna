@@ -73,6 +73,36 @@ struct DownloadedMedia: Equatable {
     let kind: MediaAsset.Kind
 }
 
+/// Disk location for downloaded media files. Everything lands in a DEDICATED
+/// subdirectory of the temp dir so orphans (left when a preview is downloaded but
+/// never saved, then the process is killed before its view controller can clean
+/// up) can be swept wholesale on launch without touching unrelated temp files.
+enum MediaDownloadStorage {
+
+    /// The dedicated media-downloads directory, created on demand.
+    static var directory: URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MediaDownloads", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// A fresh unique file URL inside `directory` with the given extension.
+    static func newFileURL(extension ext: String) -> URL {
+        directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
+    }
+
+    /// Deletes every file in the media-downloads directory. Called once at app
+    /// launch to reclaim orphans from a previous run that was terminated before its
+    /// preview view controller could delete its own file.
+    static func purgeAll() {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil) else { return }
+        for item in items { try? fm.removeItem(at: item) }
+    }
+}
+
 /// Orchestrates resolve → download → save for a social post's first media item.
 protocol MediaDownloading {
     /// Resolves the post's media, downloads the FIRST item, and saves it to Photos.

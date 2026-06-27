@@ -32,6 +32,26 @@ enum GlassStyle {
         return mark
     }
 
+    /// A subtle rounded glass panel sitting BEHIND the phrase reticule's two
+    /// lines of text — a quiet focus frame, accent-tinted very lightly so the
+    /// words on top stay crisp (unlike the single-word reticule marks, this sits
+    /// under multi-word text, so the tint must be gentle).
+    static func focusPanel() -> UIVisualEffectView {
+        let panel: UIVisualEffectView
+        if #available(iOS 26.0, *) {
+            let glass = UIGlassEffect()
+            glass.tintColor = readingAccent.withAlphaComponent(0.12)
+            panel = UIVisualEffectView(effect: glass)
+        } else {
+            panel = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+            panel.contentView.backgroundColor = readingAccent.withAlphaComponent(0.08)
+        }
+        panel.layer.cornerRadius = 18
+        panel.layer.cornerCurve = .continuous
+        panel.clipsToBounds = true
+        return panel
+    }
+
     /// A capsule glass configuration for circular floating buttons.
     static func circularButtonConfiguration(symbol: String, padding: CGFloat = 10) -> UIButton.Configuration {
         var config: UIButton.Configuration

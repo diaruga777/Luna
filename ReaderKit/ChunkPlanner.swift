@@ -5,98 +5,139 @@
 
 import Foundation
 
-/// One highlighted group of words for the chunk-highlight reader.
+/// One phrase ("chunk") for the RSVP reader's phrase sub-mode: a small group of
+/// words shown together so the eye takes them in as a single fixation.
 struct TextChunk: Equatable {
-    /// Half-open word-index range `[start, end)` in the shared word space.
+    /// Half-open word-index range `[start, end)` in the RSVPEngine word space.
     let wordRange: Range<Int>
-    /// Character range in the rendered attributed string (union of the words).
-    let characterRange: NSRange
-    /// Pause weight of the last word (sentence/clause/paragraph end).
+    /// The chunk's word texts, in order (what gets displayed, space-joined).
+    let words: [String]
+    /// Pause weight of the last word.
     let endsSentence: Bool
     let endsClause: Bool
     let endsParagraph: Bool
-    /// Total characters across the chunk's words (for length-aware timing).
-    let characterCount: Int
+
+    /// The space-joined display string for the phrase.
+    var displayText: String { words.joined(separator: " ") }
 }
 
-/// Groups an article's words into chunks for "chunk reading" (highlighting a
-/// few words at a time) and times each chunk. Follows speed-reading practice:
-/// 3–4 words per fixation, broken at punctuation/phrase boundaries, with the
-/// per-word pace honoring the WPM setting plus pauses at sentence/clause ends.
-/// Pure logic, unit-tested.
+/// Groups an article's words into phrases for the RSVP "Phrases" sub-mode and
+/// times each one. Follows speed-reading practice: a phrase is ~1–2 fixations
+/// (a handful of words), broken at sentence/clause boundaries and at natural
+/// phrase starts (prepositions/conjunctions), with function words kept bound to
+/// the content word they modify (a chunk never ends on "the"/"a"/"in"). Timing
+/// dwells longer on heavy words and at punctuation. Pure, unit-tested.
+///
+/// Works purely from the `RSVPEngine` word stream — no rendered attributed
+/// string is needed, so the silent RSVP reader can drive it directly.
 enum ChunkPlanner {
 
-    static let maxWordsPerChunk = 4
-    static let maxCharactersPerChunk = 24
+    /// Soft ceilings so a phrase comfortably fits two short lines in the reticule.
+    static let maxWordsPerChunk = 5
+    static let maxCharactersPerChunk = 30
+    /// A chunk may overrun the ceilings by this much to avoid stranding a bound
+    /// word (e.g. pulling "house" in so the chunk doesn't end on "the").
+    private static let overrunSlack = 6
 
-    /// `words` and `wordRanges` share one index space (RSVPEngine / WordMap).
-    static func chunks(words: [RSVPWord], wordRanges: [NSRange]) -> [TextChunk] {
+    static func chunks(words: [RSVPWord]) -> [TextChunk] {
         var chunks: [TextChunk] = []
         var start = 0
-        let count = min(words.count, wordRanges.count)
-
+        let count = words.count
         while start < count {
-            var end = start
-            var characters = 0
-            while end < count {
-                let wordLength = words[end].text.count
-                let wouldBeWords = end - start + 1
-                let wouldBeChars = characters + wordLength + (end > start ? 1 : 0)
-                // Always take at least one word; otherwise stop before
-                // exceeding the word or character budget.
-                if end > start && (wouldBeWords > maxWordsPerChunk || wouldBeChars > maxCharactersPerChunk) {
-                    break
-                }
-                characters = wouldBeChars
-                // Close the chunk after a sentence/paragraph end, and after a
-                // clause end once the chunk already holds a couple of words
-                // (keeps short phrases together).
-                let word = words[end]
-                end += 1
-                if word.endsSentence || word.endsParagraph { break }
-                if word.endsClause && (end - start) >= 2 { break }
-            }
-
-            let last = words[end - 1]
-            let first = wordRanges[start]
-            let lastRange = wordRanges[end - 1]
-            let characterRange = NSRange(
-                location: first.location,
-                length: lastRange.location + lastRange.length - first.location)
+            let end = chunkEnd(words: words, start: start)
+            let slice = words[start..<end]
+            let last = slice.last!
             chunks.append(TextChunk(
                 wordRange: start..<end,
-                characterRange: characterRange,
+                words: slice.map(\.text),
                 endsSentence: last.endsSentence,
                 endsClause: last.endsClause,
-                endsParagraph: last.endsParagraph,
-                characterCount: characters))
+                endsParagraph: last.endsParagraph))
             start = end
         }
         return chunks
     }
 
-    /// Display duration for a chunk at the given base words-per-minute. The
-    /// per-word time matches the WPM; long chunks get a small length bump and
-    /// punctuation boundaries pause longer (mirrors the RSVP timing curve).
+    /// Exclusive end index of the phrase that starts at `start`. Always returns
+    /// at least `start + 1` (every word lands in exactly one chunk).
+    private static func chunkEnd(words: [RSVPWord], start: Int) -> Int {
+        let count = words.count
+        let first = words[start]
+        if first.endsSentence || first.endsParagraph { return start + 1 }
+
+        var end = start + 1
+        var characters = first.text.count
+
+        while end < count {
+            let word = words[end]
+            let previous = words[end - 1]
+            let prospectiveWords = end - start + 1
+            let prospectiveChars = characters + 1 + word.text.count
+
+            // Budget: stop before exceeding the word/char ceilings.
+            if prospectiveWords > maxWordsPerChunk || prospectiveChars > maxCharactersPerChunk {
+                break
+            }
+            // Hard boundary: the previous word closed a sentence/paragraph.
+            if previous.endsSentence || previous.endsParagraph { break }
+
+            let chunkHasBody = (end - start) >= 2
+            let prevBinds = ReadingHeuristics.isLeadingBinder(previous.text)
+            // Natural phrase start: break BEFORE a preposition/conjunction so the
+            // phrase it introduces stays together as the next chunk.
+            if chunkHasBody, !prevBinds, ReadingHeuristics.isPhraseStarter(word.text) { break }
+            // Soft boundary: a clause mark (, ; :) once the chunk has some body.
+            if chunkHasBody, !prevBinds, previous.endsClause { break }
+
+            characters = prospectiveChars
+            end += 1
+            if word.endsSentence || word.endsParagraph { break }
+        }
+
+        // Never end a chunk on a binder ("in"/"the"/"to"): pull the next word in,
+        // tolerating a small overrun so the bound word isn't stranded alone.
+        while end < count,
+              ReadingHeuristics.isLeadingBinder(words[end - 1].text),
+              !words[end - 1].endsSentence, !words[end - 1].endsParagraph {
+            let word = words[end]
+            let prospectiveChars = characters + 1 + word.text.count
+            if (end - start + 1) > maxWordsPerChunk + 1
+                || prospectiveChars > maxCharactersPerChunk + overrunSlack { break }
+            characters = prospectiveChars
+            end += 1
+            if word.endsSentence || word.endsParagraph { break }
+        }
+
+        return end
+    }
+
+    // MARK: - Timing
+
+    /// Minimum on-screen time for a phrase regardless of WPM — two lines need a
+    /// real (if quick) fixation, so high speeds don't flash them illegibly.
+    static let minimumDisplay: TimeInterval = 0.28
+
+    /// Display duration for a chunk at the given base words-per-minute. Per-word
+    /// time honors the WPM but is weighted by each word's difficulty (common
+    /// function words skim, long/complex/numeric words dwell), plus a pause at
+    /// sentence/clause/paragraph boundaries.
     static func duration(for chunk: TextChunk, wpm: Double) -> TimeInterval {
         guard wpm > 0 else { return 0 }
-        let wordCount = Double(chunk.wordRange.count)
-        let base = wordCount * 60.0 / wpm
+        let perWord = 60.0 / wpm
+        let weight = chunk.words.reduce(0.0) { $0 + ReadingHeuristics.difficultyFactor($1) }
 
-        // Slightly longer for dense chunks (more characters than ~5/word).
-        let averageWordLength = Double(chunk.characterCount) / max(1, wordCount)
-        let lengthFactor = averageWordLength > 7 ? 1.2 : 1.0
-
-        let pauseFactor: Double
+        let pauseWords: Double
         if chunk.endsParagraph {
-            pauseFactor = 2.0
+            pauseWords = 1.6
         } else if chunk.endsSentence {
-            pauseFactor = 1.6
+            pauseWords = 0.9
         } else if chunk.endsClause {
-            pauseFactor = 1.2
+            pauseWords = 0.4
         } else {
-            pauseFactor = 1.0
+            pauseWords = 0
         }
-        return base * lengthFactor * pauseFactor
+
+        let interval = perWord * (weight + pauseWords)
+        return max(minimumDisplay, interval)
     }
 }

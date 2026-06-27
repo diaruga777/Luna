@@ -5,6 +5,12 @@
 
 import Foundation
 
+/// RSVP speed-reader display granularity: one word at a time, or whole phrases.
+enum RSVPDisplayMode: String {
+    case words
+    case phrases
+}
+
 /// User-adjustable reading preferences, persisted in the App Group so the
 /// share-extension reader honors the same settings as the main app.
 enum ReaderSettings {
@@ -19,6 +25,7 @@ enum ReaderSettings {
     private static let readingTimeKey = "showReadingTime"
     private static let progressKey = "showReadingProgress"
     private static let lastReaderModeKey = "lastReaderMode"
+    private static let rsvpModeKey = "rsvpDisplayMode"
     private static let accentKey = "readerAccentColor"
     private static let archiveOverlayAlphaKey = "archiveOverlayAlpha"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
@@ -68,13 +75,24 @@ enum ReaderSettings {
     }
 
     /// The reader mode the user last used — the default for new articles that
-    /// don't yet have a per-article preference.
+    /// don't yet have a per-article preference. The retired standalone
+    /// "highlight" (chunking) mode now lives as the RSVP "Phrases" sub-mode, so a
+    /// persisted `highlight` resolves to `rsvp` (the reader opens it in Phrases).
     static var lastReaderMode: ReadingListItem.ReaderMode {
         get {
-            ReadingListItem.ReaderMode(
+            let stored = ReadingListItem.ReaderMode(
                 rawValue: defaults.string(forKey: lastReaderModeKey) ?? "") ?? .scroll
+            return stored == .highlight ? .rsvp : stored
         }
         set { defaults.set(newValue.rawValue, forKey: lastReaderModeKey) }
+    }
+
+    /// Whether the RSVP reader shows one word at a time ("Words") or whole
+    /// phrases ("Phrases", the former chunk-highlight mode's engine). Persisted
+    /// so the choice sticks across articles, like the base WPM.
+    static var rsvpMode: RSVPDisplayMode {
+        get { RSVPDisplayMode(rawValue: defaults.string(forKey: rsvpModeKey) ?? "") ?? .words }
+        set { defaults.set(newValue.rawValue, forKey: rsvpModeKey) }
     }
 
     /// Reader text size multiplier (Safari-Reader-style Aa control).

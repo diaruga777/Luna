@@ -3,8 +3,8 @@
 //  ClipTests
 //
 //  Snapshot + navigation/layout coverage for the readers: the standard scroll
-//  reader, the auto-highlight reader, the RSVP speed reader, the mode switcher, and
-//  the inline split-web overlay.
+//  reader, the RSVP speed reader (Words + Phrases sub-modes), the mode switcher,
+//  and the inline split-web overlay.
 //
 
 import UIKit
@@ -23,6 +23,9 @@ final class ReaderScreenTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UIView.setAnimationsEnabled(false)
+        // The RSVP sub-mode is persisted; pin it so snapshots are deterministic
+        // regardless of any value left behind by other runs.
+        ReaderSettings.rsvpMode = .words
     }
 
     // MARK: - Snapshots per reader mode
@@ -33,16 +36,19 @@ final class ReaderScreenTests: XCTestCase {
                                        named: "reader-scroll")
     }
 
-    func testHighlightReaderSnapshot() {
-        let reader = makeReader(forceMode: .highlight)
-        SnapshotTesting.assertSnapshot(of: UINavigationController(rootViewController: reader),
-                                       named: "reader-highlight")
-    }
-
     func testRSVPReaderSnapshot() {
+        ReaderSettings.rsvpMode = .words
         let reader = makeReader(forceMode: .rsvp)
         SnapshotTesting.assertSnapshot(of: UINavigationController(rootViewController: reader),
                                        named: "reader-rsvp")
+    }
+
+    /// The former standalone "highlight" (chunking) view now lives as RSVP's
+    /// Phrases sub-mode; `forceMode: .highlight` resolves there.
+    func testPhraseReaderSnapshot() {
+        let reader = makeReader(forceMode: .highlight)
+        SnapshotTesting.assertSnapshot(of: UINavigationController(rootViewController: reader),
+                                       named: "reader-rsvp-phrases")
     }
 
     func testInlineHeaderReaderSnapshot() {
@@ -87,13 +93,14 @@ final class ReaderScreenTests: XCTestCase {
         guard let control = findSegmentedControl(in: reader.view) else {
             XCTFail("reader mode switcher not found"); return
         }
-        XCTAssertEqual(control.numberOfSegments, 3, "Original is hidden when no source archive exists")
+        XCTAssertEqual(control.numberOfSegments, 2,
+                       "Scroll + RSVP; Original hidden when no source archive exists")
 
-        // Segment 0 = scroll, 2 = rsvp (per ReaderViewController.orderedModes).
+        // Segment 0 = scroll, 1 = rsvp (per ReaderViewController.baseModes).
         XCTAssertTrue(reader.children.first is ScrollReaderViewController,
                       "scroll mode should host the scroll reader")
 
-        control.selectedSegmentIndex = 2
+        control.selectedSegmentIndex = 1
         control.sendActions(for: .valueChanged)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertTrue(reader.children.contains { $0 is RSVPViewController },

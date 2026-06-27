@@ -64,7 +64,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     private static let buttonSize: CGFloat = 40
     private static let headerHeight: CGFloat = 68
     private static let buttonInset: CGFloat = 16
-    private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
+    private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp]
 
     private var didLayoutInitial = false
     private var didAnimateIn = false

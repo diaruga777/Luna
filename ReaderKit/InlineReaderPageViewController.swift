@@ -177,24 +177,19 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
 
         let child: UIViewController
         switch mode {
-        case .scroll:
-            let scroll = ScrollReaderViewController(item: transient, content: content, autoHighlight: false)
+        case .scroll, .original:
+            // Inline browsing has no durable page archive, so .original keeps the
+            // transient reader on its normal locally extracted page.
+            let scroll = ScrollReaderViewController(item: transient, content: content)
             scroll.onLinkActivated = { [weak self] in self?.onLinkActivated?($0) }
             child = scroll
-        case .highlight:
-            let scroll = ScrollReaderViewController(item: transient, content: content, autoHighlight: true)
-            scroll.onLinkActivated = { [weak self] in self?.onLinkActivated?($0) }
-            child = scroll
-        case .rsvp:
-            let rsvp = RSVPViewController(item: transient, content: content)
+        case .rsvp, .highlight:
+            // The retired .highlight (chunking) view now lives as RSVP → Phrases.
+            let rsvp = RSVPViewController(
+                item: transient, content: content,
+                initialDisplayMode: mode == .highlight ? .phrases : nil)
             rsvp.onLinkActivated = { [weak self] in self?.onLinkActivated?($0) }
             child = rsvp
-        case .original:
-            // Inline browsing has no durable page archive. Keep this transient
-            // reader on its normal locally extracted page instead.
-            let scroll = ScrollReaderViewController(item: transient, content: content, autoHighlight: false)
-            scroll.onLinkActivated = { [weak self] in self?.onLinkActivated?($0) }
-            child = scroll
         }
         addChild(child)
         child.view.translatesAutoresizingMaskIntoConstraints = false

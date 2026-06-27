@@ -6,11 +6,20 @@
 import AVFoundation
 import UIKit
 
-/// RSVP (one-word-at-a-time) speed reader, ReadMaxx-style: a liquid-glass focus
-/// capsule behind the focal word, the ORP letter tinted in the reading accent,
-/// word-length-aware timing with sentence/paragraph pauses, scrubbing, live
-/// speed adjustment, and an optional read-aloud mode where speech paces the
-/// display instead of the WPM timer.
+/// RSVP speed reader, ReadMaxx-style, with two sub-modes selectable from a
+/// segmented control below the top-level reader switcher:
+///
+/// - **Words**: one word at a time on a fixed focal column, the ORP letter tinted
+///   in the reading accent, word-length-aware timing — the classic RSVP view.
+/// - **Phrases**: a whole phrase (the former chunk-highlight engine) shown over
+///   two lines in a glass reticule, with the surrounding prose always visible
+///   above and below and updating as the phrase advances. The phrase boundaries
+///   and per-phrase timing follow speed-reading practice (`ChunkPlanner`).
+///
+/// Both sub-modes share the focal-word index (so switching keeps your place),
+/// the scrubber / ±25-word skip / ±25 wpm controls, and an optional read-aloud
+/// mode where speech paces the display (and, in Phrases, highlights the spoken
+/// word within the phrase) instead of the WPM timer.
 final class RSVPViewController: UIViewController, ReaderPositionTracking {
 
     /// Fired once when playback reaches the last word.
@@ -23,9 +32,17 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
 
     private let item: ReadingListItem
     private let engine: RSVPEngine
+    /// Phrase groupings over the same word space, built once (lazily) when the
+    /// reader first needs the Phrases sub-mode.
+    private lazy var chunks: [TextChunk] = ChunkPlanner.chunks(words: engine.words)
     private let store = ReadingListStore.shared
 
+    /// Words vs Phrases. Persisted in `ReaderSettings.rsvpMode`.
+    private var displayMode: RSVPDisplayMode
+
     private var currentIndex = 0
+    /// Index into `chunks` of the phrase currently shown (Phrases mode only).
+    private var currentChunkIndex = 0
     private var isPlaying = false
     private var timer: Timer?
     private var wpm: Double = ReaderSettings.baseWPM
@@ -48,16 +65,23 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     /// UTF-16 offset of each word within the current utterance string.
     private var speechWordOffsets: [Int] = []
 
+    /// Switches between the Words and Phrases sub-modes.
+    private let subModeControl = UISegmentedControl(items: ["Words", "Phrases"])
+
     private let wordLabel = UILabel()
-    /// Nearby prose is only visible while paused, so the reader can regain their
-    /// place without diluting RSVP's single-word focus during playback.
+    /// Multi-line phrase text shown in the reticule in Phrases mode.
+    private let phraseLabel = UILabel()
+    /// Surrounding prose. In Words mode this is only visible while paused (so the
+    /// single-word focus isn't diluted during playback); in Phrases mode it's
+    /// ALWAYS visible and updates as the phrase advances, so the reader keeps the
+    /// thread of the sentence.
     private let previousContextLabel = UILabel()
     private let nextContextLabel = UILabel()
-    /// Liquid-glass capsule behind the focal word, replacing the old red
-    /// guideline notches.
-    /// Glass reticule marks above and below the ORP letter (replaces the pill).
+    /// Glass reticule marks above and below the ORP letter (Words mode).
     private let reticuleTop = GlassStyle.reticuleMark()
     private let reticuleBottom = GlassStyle.reticuleMark()
+    /// Glass panel behind the two-line phrase (Phrases mode).
+    private let phrasePanel = GlassStyle.focusPanel()
     private let playPauseButton = UIButton(type: .system)
     private let scrubber = UISlider()
     private let controlsStack = UIStackView()
@@ -91,19 +115,27 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     /// long fits, and longer words split (`WordSplitter`).
     private static let targetCharactersAcross = 15
     private static let contextWordCount = 20
+    /// Vertical center of the focal word / phrase reticule (above the controls).
+    private var focalCenterY: CGFloat { view.bounds.midY - 40 }
 
     /// Sized at init from the device width so `targetCharactersAcross`
     /// characters fit beside the focal column without running off-screen.
     private let wordFont: UIFont
+    /// Smaller, proportional font for the two-line phrase display.
+    private let phraseFont: UIFont
 
     init(item: ReadingListItem, content: ArticleContent, audioEnabled: Bool = false,
-         shareProvider: ReaderShareProviding? = nil, resumeWordIndex: Int? = nil) {
+         shareProvider: ReaderShareProviding? = nil, resumeWordIndex: Int? = nil,
+         initialDisplayMode: RSVPDisplayMode? = nil) {
         self.item = item
         self.isSpeechMode = audioEnabled
         self.shareProvider = shareProvider
+        self.displayMode = initialDisplayMode ?? ReaderSettings.rsvpMode
         // Cap the sizing width so the word/font stays readable on wide screens
         // (iPad / landscape) rather than scaling up to the full display width.
-        self.wordFont = Self.makeWordFont(forWidth: min(UIScreen.main.bounds.width, 600))
+        let sizingWidth = min(UIScreen.main.bounds.width, 600)
+        self.wordFont = Self.makeWordFont(forWidth: sizingWidth)
+        self.phraseFont = Self.makePhraseFont(from: wordFont)
         self.engine = RSVPEngine(
             content: content, maxCharactersPerWord: Self.targetCharactersAcross)
         super.init(nibName: nil, bundle: nil)
@@ -145,13 +177,22 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         return UIFont.monospacedSystemFont(ofSize: size, weight: .medium)
     }
 
+    /// A noticeably smaller proportional font than the single-word display, so a
+    /// multi-word phrase fits comfortably across two lines.
+    private static func makePhraseFont(from wordFont: UIFont) -> UIFont {
+        let size = min(30, max(18, (wordFont.pointSize * 0.72).rounded()))
+        return .systemFont(ofSize: size, weight: .semibold)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
+        configureSubModeControl()
         configureFocusPill()
         configureWordLabel()
-        configurePausedContext()
+        configurePhraseLabel()
+        configureContext()
         configureLinkPill()
         configureControls()
 
@@ -163,16 +204,19 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         playPauseTap.delegate = self
         view.addGestureRecognizer(playPauseTap)
 
-        showWord(at: currentIndex)
+        applyDisplayMode()
+        if displayMode == .phrases { currentChunkIndex = chunkIndex(forWord: currentIndex) }
+        refreshDisplay()
         updateStatus()
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutFocusPill()
-        layoutPausedContext()
+        layoutPhrasePanel()
+        layoutContext()
         layoutLinkPill()
-        showWord(at: currentIndex)
+        refreshDisplay()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -189,6 +233,18 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
 
     // MARK: - Setup
 
+    private func configureSubModeControl() {
+        subModeControl.selectedSegmentIndex = displayMode == .phrases ? 1 : 0
+        subModeControl.addTarget(self, action: #selector(subModeChanged), for: .valueChanged)
+        subModeControl.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(subModeControl)
+        NSLayoutConstraint.activate([
+            subModeControl.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            subModeControl.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            subModeControl.widthAnchor.constraint(equalToConstant: 220),
+        ])
+    }
+
     private func configureFocusPill() {
         view.addSubview(reticuleTop)
         view.addSubview(reticuleBottom)
@@ -199,7 +255,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     /// letter.
     private func layoutFocusPill() {
         let focalX = view.bounds.width * Self.focalFraction
-        let centerY = view.bounds.midY - 40
+        let centerY = focalCenterY
         let wordHalfHeight: CGFloat = 30
         let markWidth: CGFloat = 7
         let markHeight: CGFloat = 20
@@ -222,7 +278,38 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         view.addSubview(wordLabel)
     }
 
-    private func configurePausedContext() {
+    private func configurePhraseLabel() {
+        view.addSubview(phrasePanel)
+        phraseLabel.font = phraseFont
+        phraseLabel.textColor = .label
+        phraseLabel.numberOfLines = 2
+        phraseLabel.textAlignment = .center
+        phraseLabel.lineBreakMode = .byWordWrapping
+        // Shrink a rare over-long phrase rather than truncate it.
+        phraseLabel.adjustsFontSizeToFitWidth = true
+        phraseLabel.minimumScaleFactor = 0.7
+        view.addSubview(phraseLabel)
+    }
+
+    /// Sizes the glass phrase panel around the two-line label, centered on the
+    /// focal band.
+    private func layoutPhrasePanel() {
+        let horizontalMargin: CGFloat = 24
+        let maxWidth = max(160, min(view.bounds.width, 600) - horizontalMargin * 2)
+        let lineHeight = ceil(phraseFont.lineHeight)
+        let labelHeight = lineHeight * 2
+        let panelHeight = labelHeight + 28
+        let panelWidth = maxWidth
+        let centerY = focalCenterY
+        phrasePanel.frame = CGRect(
+            x: (view.bounds.width - panelWidth) / 2, y: centerY - panelHeight / 2,
+            width: panelWidth, height: panelHeight)
+        phraseLabel.frame = CGRect(
+            x: phrasePanel.frame.minX + 16, y: centerY - labelHeight / 2,
+            width: panelWidth - 32, height: labelHeight)
+    }
+
+    private func configureContext() {
         for label in [previousContextLabel, nextContextLabel] {
             label.font = .systemFont(ofSize: 15, weight: .regular)
             label.textColor = .tertiaryLabel
@@ -235,25 +322,30 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         nextContextLabel.textAlignment = .natural
     }
 
-    /// Uses the otherwise-empty space immediately above and below the focal word
-    /// when paused. The lower paragraph deliberately clears the link pill and the
-    /// persistent playback controls.
-    private func layoutPausedContext() {
-        let focalCenterY = view.bounds.midY - 40
+    /// Lays out the surrounding-prose labels above and below the focal band. In
+    /// Phrases mode they hug the phrase panel (and are always shown); in Words
+    /// mode they fill the space above/below the single word (shown when paused).
+    private func layoutContext() {
+        let centerY = focalCenterY
         let horizontalMargin: CGFloat = 28
         let width = max(0, view.bounds.width - horizontalMargin * 2)
-        let upperHeight: CGFloat = 104
-        let lowerHeight: CGFloat = 96
+        let topLimit = max(view.safeAreaInsets.top + 20, subModeControl.frame.maxY + 16)
+
+        let bandHalf: CGFloat = displayMode == .phrases
+            ? phrasePanel.bounds.height / 2 + 14 : 84
+        let upperHeight: CGFloat = displayMode == .phrases ? 120 : 104
+        let upperBottom = centerY - bandHalf
         previousContextLabel.frame = CGRect(
             x: horizontalMargin,
-            y: max(view.safeAreaInsets.top + 20, focalCenterY - 178),
+            y: max(topLimit, upperBottom - upperHeight),
             width: width,
-            height: upperHeight)
+            height: max(0, min(upperHeight, upperBottom - topLimit)))
 
         let controlsTop = controlsStack.frame.minY > 0
             ? controlsStack.frame.minY
             : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
-        let lowerY = focalCenterY + 116
+        let lowerY = centerY + bandHalf + (displayMode == .phrases ? 18 : 116 - 84)
+        let lowerHeight: CGFloat = displayMode == .phrases ? 120 : 96
         nextContextLabel.frame = CGRect(
             x: horizontalMargin,
             y: lowerY,
@@ -277,9 +369,10 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         view.addSubview(linkPill)
     }
 
-    /// Centers the link pill below the focal word band.
+    /// Centers the link pill below the focal word / phrase band.
     private func layoutLinkPill() {
-        let centerY = view.bounds.midY - 40
+        let centerY = focalCenterY
+        let bandHalf: CGFloat = displayMode == .phrases ? phrasePanel.bounds.height / 2 : 0
         let maxWidth = view.bounds.width - 64
         let fitted = linkPill.systemLayoutSizeFitting(
             CGSize(width: maxWidth, height: 40),
@@ -287,7 +380,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
             verticalFittingPriority: .required)
         let width = min(max(fitted.width, 80), maxWidth)
         linkPill.frame = CGRect(
-            x: (view.bounds.width - width) / 2, y: centerY + 84, width: width, height: 36)
+            x: (view.bounds.width - width) / 2, y: centerY + bandHalf + 84, width: width, height: 36)
     }
 
     /// Shows/refreshes the pill for a linkified word, or starts the post-link
@@ -428,34 +521,65 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         ])
     }
 
-    // MARK: - End-of-article share
+    // MARK: - Sub-mode
 
-    private func makeShareView() -> ArticleShareView {
-        let suggestionName = shareProvider?.suggestedFriendName(forURLString: item.urlString)
-        return ArticleShareView(
-            suggestionName: suggestionName,
-            onShare: { [weak self] in
-                guard let self else { return }
-                self.shareProvider?.presentShareSheet(
-                    urlString: self.item.urlString, title: self.item.title,
-                    from: self, sourceView: self.shareView)
-            },
-            onSendSuggested: { [weak self] in
-                guard let self else { return }
-                self.shareProvider?.sendToSuggestedFriend(
-                    urlString: self.item.urlString, title: self.item.title, from: self)
-            })
+    @objc private func subModeChanged() {
+        let newMode: RSVPDisplayMode = subModeControl.selectedSegmentIndex == 1 ? .phrases : .words
+        guard newMode != displayMode else { return }
+        let wasPlaying = isPlaying
+        pause()
+        displayMode = newMode
+        ReaderSettings.rsvpMode = newMode
+        if newMode == .phrases {
+            // Snap to the phrase containing the current focal word.
+            currentChunkIndex = chunkIndex(forWord: currentIndex)
+            currentIndex = chunks.indices.contains(currentChunkIndex)
+                ? chunks[currentChunkIndex].wordRange.lowerBound : currentIndex
+        }
+        applyDisplayMode()
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        refreshDisplay()
+        updateStatus()
+        if wasPlaying { play() }
     }
 
-    private func revealShareView() {
-        // No share affordance in the share sheet or for non-shareable items.
-        guard shareProvider != nil, item.isShareable, !didRevealShare else { return }
-        didRevealShare = true
-        shareView.isHidden = false
-        UIView.animate(withDuration: 0.3) { self.shareView.alpha = 1 }
+    /// Shows the view set for the active sub-mode and hides the other's.
+    private func applyDisplayMode() {
+        let phrases = displayMode == .phrases
+        wordLabel.isHidden = phrases
+        reticuleTop.isHidden = phrases
+        reticuleBottom.isHidden = phrases
+        phraseLabel.isHidden = !phrases
+        phrasePanel.isHidden = !phrases
+        // Context is always shown in Phrases; in Words it follows play/pause.
+        let contextVisible = phrases || !isPlaying
+        previousContextLabel.alpha = contextVisible ? 1 : 0
+        nextContextLabel.alpha = contextVisible ? 1 : 0
     }
 
-    // MARK: - Word display
+    // MARK: - Phrase helpers
+
+    /// Index of the chunk containing `wordIndex`. Chunks tile the whole word
+    /// space contiguously, so any in-range word resolves; a past-the-end index
+    /// clamps to the last chunk.
+    private func chunkIndex(forWord wordIndex: Int) -> Int {
+        guard !chunks.isEmpty else { return 0 }
+        if let index = chunks.firstIndex(where: { $0.wordRange.contains(wordIndex) }) {
+            return index
+        }
+        return wordIndex <= 0 ? 0 : chunks.count - 1
+    }
+
+    // MARK: - Display
+
+    private func refreshDisplay() {
+        if displayMode == .phrases {
+            showChunk(at: currentChunkIndex, highlightWord: isSpeechMode && isPlaying ? currentIndex : nil)
+        } else {
+            showWord(at: currentIndex)
+        }
+    }
 
     /// Positions the word so the ORP letter sits exactly on the focal column,
     /// with the ORP letter tinted in the reading accent.
@@ -484,33 +608,83 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
             attributes: [.font: wordFont]).size().width
 
         let focalX = view.bounds.width * Self.focalFraction
-        let centerY = view.bounds.midY - 40
+        let centerY = focalCenterY
         wordLabel.frame.origin = CGPoint(
             x: focalX - prefixWidth - orpWidth / 2,
             y: centerY - wordLabel.bounds.height / 2)
 
         updateLinkPill(for: word.url)
-        if !isPlaying { updatePausedContext(animated: false) }
+        if !isPlaying { updateContextText() }
     }
 
-    private func updatePausedContext(animated: Bool, duration: TimeInterval = 0) {
+    /// Shows the phrase at `index`, optionally tinting the word at
+    /// `highlightWord` (used while read-aloud voices each word).
+    private func showChunk(at index: Int, highlightWord: Int?) {
+        guard chunks.indices.contains(index) else {
+            phraseLabel.text = nil
+            return
+        }
+        let chunk = chunks[index]
+        let attributed = NSMutableAttributedString(
+            string: chunk.displayText,
+            attributes: [.font: phraseFont, .foregroundColor: UIColor.label])
+
+        if let highlightWord, chunk.wordRange.contains(highlightWord) {
+            // Locate the highlighted word's range within the joined phrase string.
+            let wordOffset = highlightWord - chunk.wordRange.lowerBound
+            var location = 0
+            for index in 0..<wordOffset { location += (chunk.words[index] as NSString).length + 1 }
+            let length = (chunk.words[wordOffset] as NSString).length
+            if location + length <= attributed.length {
+                attributed.addAttribute(
+                    .foregroundColor, value: GlassStyle.readingAccent,
+                    range: NSRange(location: location, length: length))
+            }
+        }
+        phraseLabel.attributedText = attributed
+
+        // First link found in the phrase, if any.
+        let url = chunk.wordRange.compactMap { engine.words[safe: $0]?.url }.first
+        updateLinkPill(for: url)
+        updateContextText()
+    }
+
+    /// Fills the surrounding-prose labels for the current position. In Phrases
+    /// mode the context excludes the words currently in the reticule; in Words
+    /// mode it surrounds the single focal word.
+    private func updateContextText() {
         let words = engine.words
-        if words.indices.contains(currentIndex) {
-            let precedingStart = max(0, currentIndex - Self.contextWordCount)
-            let followingEnd = min(words.count, currentIndex + Self.contextWordCount + 1)
-            previousContextLabel.text = words[precedingStart..<currentIndex].map(\.text).joined(separator: " ")
-            nextContextLabel.text = words[(currentIndex + 1)..<followingEnd].map(\.text).joined(separator: " ")
+        let (lower, upper): (Int, Int)
+        if displayMode == .phrases, chunks.indices.contains(currentChunkIndex) {
+            let range = chunks[currentChunkIndex].wordRange
+            lower = range.lowerBound
+            upper = range.upperBound
         } else {
+            lower = currentIndex
+            upper = currentIndex + 1
+        }
+        guard words.indices.contains(lower) else {
             previousContextLabel.text = nil
             nextContextLabel.text = nil
+            return
         }
+        let precedingStart = max(0, lower - Self.contextWordCount)
+        let followingEnd = min(words.count, upper + Self.contextWordCount)
+        previousContextLabel.text = words[precedingStart..<lower].map(\.text).joined(separator: " ")
+        nextContextLabel.text = words[upper..<followingEnd].map(\.text).joined(separator: " ")
+    }
 
+    /// Animates the Words-mode context in/out on play/pause (Phrases keeps it on).
+    private func updateContextVisibility(animated: Bool, duration: TimeInterval = 0) {
+        updateContextText()
+        let visible = displayMode == .phrases || !isPlaying
         let update = {
-            self.previousContextLabel.alpha = self.isPlaying ? 0 : 1
-            self.nextContextLabel.alpha = self.isPlaying ? 0 : 1
+            self.previousContextLabel.alpha = visible ? 1 : 0
+            self.nextContextLabel.alpha = visible ? 1 : 0
         }
         guard animated else { update(); return }
-        UIView.animate(withDuration: duration, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: update)
+        UIView.animate(withDuration: duration, delay: 0,
+                       options: [.beginFromCurrentState, .curveEaseOut], animations: update)
     }
 
     // MARK: - Playback
@@ -519,14 +693,17 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         guard !engine.words.isEmpty else { return }
         if currentIndex >= engine.words.count - 1 {
             currentIndex = 0
+            currentChunkIndex = 0
         }
         isPlaying = true
         playPauseButton.configuration?.image = UIImage(systemName: "pause.fill")
         playPauseButton.accessibilityLabel = "Pause"
-        updatePausedContext(animated: true, duration: 0.05)
+        updateContextVisibility(animated: true, duration: 0.05)
         if isSpeechMode {
             activateAudioSession()
             speakCurrentSentence()
+        } else if displayMode == .phrases {
+            scheduleNextChunk()
         } else {
             scheduleNext()
         }
@@ -544,7 +721,8 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         }
         playPauseButton.configuration?.image = UIImage(systemName: "play.fill")
         playPauseButton.accessibilityLabel = "Play"
-        updatePausedContext(animated: true, duration: 0.2)
+        updateContextVisibility(animated: true, duration: 0.2)
+        refreshDisplay()
         saveProgress()
     }
 
@@ -586,6 +764,8 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         isPlaying ? pause() : play()
     }
 
+    // MARK: Words-mode timer
+
     private func scheduleNext() {
         timer?.invalidate()
         let interval = engine.duration(at: currentIndex, wpm: wpm)
@@ -601,9 +781,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
             sentenceHaptic.impactOccurred()
         }
         guard currentIndex < engine.words.count - 1 else {
-            pause()
-            revealShareView()
-            onFinishedReading?()
+            finish()
             return
         }
         currentIndex += 1
@@ -613,13 +791,48 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         scheduleNext()
     }
 
+    // MARK: Phrases-mode timer
+
+    private func scheduleNextChunk() {
+        timer?.invalidate()
+        guard chunks.indices.contains(currentChunkIndex) else { return }
+        let interval = ChunkPlanner.duration(for: chunks[currentChunkIndex], wpm: wpm)
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.advanceChunk()
+        }
+    }
+
+    private func advanceChunk() {
+        guard isPlaying, chunks.indices.contains(currentChunkIndex) else { return }
+        let chunk = chunks[currentChunkIndex]
+        if chunk.endsSentence || chunk.endsParagraph {
+            sentenceHaptic.impactOccurred()
+        }
+        guard currentChunkIndex < chunks.count - 1 else {
+            currentIndex = max(0, engine.words.count - 1)
+            finish()
+            return
+        }
+        currentChunkIndex += 1
+        currentIndex = chunks[currentChunkIndex].wordRange.lowerBound
+        showChunk(at: currentChunkIndex, highlightWord: nil)
+        scrubber.value = Float(currentIndex)
+        updateStatus()
+        scheduleNextChunk()
+    }
+
+    /// Common end-of-article handling for both sub-modes.
+    private func finish() {
+        pause()
+        revealShareView()
+        onFinishedReading?()
+    }
+
     // MARK: - Controls
 
     @objc private func scrubbed() {
         pause()
-        currentIndex = Int(scrubber.value)
-        showWord(at: currentIndex)
-        updateStatus()
+        seek(toWord: Int(scrubber.value))
     }
 
     @objc private func skipBack() { skip(by: -Self.skipWordCount) }
@@ -627,20 +840,19 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
 
     /// Jumps the reading position by `delta` words (clamped to the document) and
     /// PRESERVES the playback state: if RSVP was playing it resumes from the new
-    /// word, if it was paused it stays paused there. Works in both audio modes —
-    /// the WPM timer and the sentence-TTS path are torn down and (only if we were
-    /// playing) restarted from the new index, so skipping never toggles
-    /// play/pause, never restarts from the beginning, and never desyncs the
-    /// displayed word from the engine position.
+    /// position, if it was paused it stays paused there. Works in both sub-modes
+    /// and both audio modes — the active engine (WPM/chunk timer or sentence-TTS)
+    /// is torn down and (only if we were playing) restarted from the new index,
+    /// so skipping never toggles play/pause, never restarts from the beginning,
+    /// and never desyncs the display from the engine position.
     private func skip(by delta: Int) {
         let target = RSVPEngine.skipTarget(
             currentIndex: currentIndex, by: delta, wordCount: engine.words.count)
         guard target != currentIndex else { return }
 
         let wasPlaying = isPlaying
-        // Tear down whichever engine is running (timer in silent mode, synthesizer
-        // in read-aloud mode) without flipping the play/pause glyph or saving — we
-        // restore the exact state below.
+        // Tear down whichever engine is running without flipping the play/pause
+        // glyph or saving — we restore the exact state below.
         if isSpeechMode {
             synthesizer.stopSpeaking(at: .immediate)
         } else {
@@ -648,10 +860,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
             timer = nil
         }
 
-        currentIndex = target
-        showWord(at: currentIndex)
-        scrubber.value = Float(currentIndex)
-        updateStatus()
+        seek(toWord: target)
 
         guard wasPlaying else {
             saveProgress()
@@ -660,9 +869,26 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         // Resume from the new position in the same mode we were playing in.
         if isSpeechMode {
             speakCurrentSentence()
+        } else if displayMode == .phrases {
+            scheduleNextChunk()
         } else {
             scheduleNext()
         }
+    }
+
+    /// Moves the focal position to `wordIndex` (clamped), snapping to the
+    /// containing phrase in Phrases mode, and refreshes the display + controls.
+    private func seek(toWord wordIndex: Int) {
+        let clamped = min(max(0, wordIndex), max(0, engine.words.count - 1))
+        currentIndex = clamped
+        if displayMode == .phrases {
+            currentChunkIndex = chunkIndex(forWord: clamped)
+            currentIndex = chunks.indices.contains(currentChunkIndex)
+                ? chunks[currentChunkIndex].wordRange.lowerBound : clamped
+        }
+        refreshDisplay()
+        scrubber.value = Float(currentIndex)
+        updateStatus()
     }
 
     @objc private func wpmDown() { adjustWPM(by: -25) }
@@ -687,6 +913,33 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
                 Double(currentIndex) / Double(engine.words.count - 1), for: item.id)
         }
     }
+
+    // MARK: - End-of-article share
+
+    private func makeShareView() -> ArticleShareView {
+        let suggestionName = shareProvider?.suggestedFriendName(forURLString: item.urlString)
+        return ArticleShareView(
+            suggestionName: suggestionName,
+            onShare: { [weak self] in
+                guard let self else { return }
+                self.shareProvider?.presentShareSheet(
+                    urlString: self.item.urlString, title: self.item.title,
+                    from: self, sourceView: self.shareView)
+            },
+            onSendSuggested: { [weak self] in
+                guard let self else { return }
+                self.shareProvider?.sendToSuggestedFriend(
+                    urlString: self.item.urlString, title: self.item.title, from: self)
+            })
+    }
+
+    private func revealShareView() {
+        // No share affordance in the share sheet or for non-shareable items.
+        guard shareProvider != nil, item.isShareable, !didRevealShare else { return }
+        didRevealShare = true
+        shareView.isHidden = false
+        UIView.animate(withDuration: 0.3) { self.shareView.alpha = 1 }
+    }
 }
 
 extension RSVPViewController: AVSpeechSynthesizerDelegate {
@@ -704,7 +957,13 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
         let wordIndex = speechSentenceBase + wordOffset
         guard wordIndex != currentIndex, engine.words.indices.contains(wordIndex) else { return }
         currentIndex = wordIndex
-        showWord(at: currentIndex)
+        if displayMode == .phrases {
+            // Follow the spoken word with the phrase that contains it, tinting it.
+            currentChunkIndex = chunkIndex(forWord: wordIndex)
+            showChunk(at: currentChunkIndex, highlightWord: wordIndex)
+        } else {
+            showWord(at: currentIndex)
+        }
         scrubber.value = Float(currentIndex)
         updateStatus()
     }
@@ -717,13 +976,16 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
         sentenceHaptic.impactOccurred()
         guard sentenceEnd < engine.words.count - 1 else {
             currentIndex = engine.words.count - 1
-            pause()
-            revealShareView()
-            onFinishedReading?()
+            finish()
             return
         }
         currentIndex = sentenceEnd + 1
-        showWord(at: currentIndex)
+        if displayMode == .phrases {
+            currentChunkIndex = chunkIndex(forWord: currentIndex)
+            showChunk(at: currentChunkIndex, highlightWord: currentIndex)
+        } else {
+            showWord(at: currentIndex)
+        }
         scrubber.value = Float(currentIndex)
         updateStatus()
         speakCurrentSentence()
@@ -732,10 +994,10 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
 
 extension RSVPViewController: UIGestureRecognizerDelegate {
     /// The full-screen play/pause tap must ignore touches that land on any
-    /// interactive control — the skip ±25-word buttons, the ±25 speed buttons,
-    /// the play/pause button, the scrubber, and the link pill — so those taps
-    /// reach the control instead of being cancelled by the full-screen tap
-    /// (which `cancelsTouchesInView`).
+    /// interactive control — the sub-mode switcher, the skip ±25-word buttons,
+    /// the ±25 speed buttons, the play/pause button, the scrubber, and the link
+    /// pill — so those taps reach the control instead of being cancelled by the
+    /// full-screen tap (which `cancelsTouchesInView`).
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
     ) -> Bool {

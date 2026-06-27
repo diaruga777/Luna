@@ -5,10 +5,11 @@
 
 import UIKit
 
-/// Hosts the reader modes — scrolling text, chunk-highlight, RSVP, and the
-/// locally saved original-page snapshot — swapping them via the mode switcher,
-/// with a separate audio (read-aloud)
-/// toggle that applies to whichever mode is showing. Remembers the last used
+/// Hosts the reader modes — scrolling text, the RSVP speed reader (with its own
+/// Words/Phrases sub-modes), and the locally saved original-page snapshot —
+/// swapping them via the mode switcher, with a separate audio (read-aloud)
+/// toggle that applies to whichever mode is showing. The retired standalone
+/// "highlight" (chunk) mode now opens as RSVP → Phrases. Remembers the last used
 /// mode per article and globally (the default for new articles), and tracks
 /// opened/read state.
 final class ReaderViewController: UIViewController {
@@ -60,8 +61,13 @@ final class ReaderViewController: UIViewController {
     private let inlineHeaderSubtitle: String?
     private let inlineHeader = UIVisualEffectView(effect: GlassStyle.barEffect())
 
-    private static let baseModes: [ReadingListItem.ReaderMode] = [.scroll, .highlight, .rsvp]
+    private static let baseModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp]
     private let availableModes: [ReadingListItem.ReaderMode]
+    /// When the requested mode was the retired standalone "highlight" (chunking)
+    /// view, the FIRST RSVP open lands directly in its Phrases sub-mode (where
+    /// that engine now lives). One-shot — later RSVP entries honor the user's
+    /// persisted sub-mode choice.
+    private var opensRSVPInPhrases: Bool
 
     init(item: ReadingListItem, content: ArticleContent,
          forceMode: ReadingListItem.ReaderMode? = nil,
@@ -84,7 +90,10 @@ final class ReaderViewController: UIViewController {
         self.availableModes = Self.baseModes + (ReadingListStore.shared.hasOriginalSource(for: item) ? [.original] : [])
         // First time on this article, fall back to the global last-used mode.
         let requestedMode = forceMode ?? item.lastReaderMode ?? ReaderSettings.lastReaderMode
-        self.mode = self.availableModes.contains(requestedMode) ? requestedMode : .scroll
+        // The retired "highlight" mode is now RSVP → Phrases.
+        self.opensRSVPInPhrases = (requestedMode == .highlight)
+        let resolvedMode: ReadingListItem.ReaderMode = requestedMode == .highlight ? .rsvp : requestedMode
+        self.mode = self.availableModes.contains(resolvedMode) ? resolvedMode : .scroll
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -212,9 +221,8 @@ final class ReaderViewController: UIViewController {
         for mode: ReadingListItem.ReaderMode, audioOn: Bool) -> CGFloat {
         switch mode {
         case .scroll: return audioOn ? -92 : -24   // lift to clear the read-aloud footer
-        case .highlight: return -92                 // clear the chunk-navigation footer
         case .rsvp: return -168                     // clear the scrubber + playback controls
-        case .original: return -24
+        case .highlight, .original: return -24      // .highlight retired (never selectable)
         }
     }
 
@@ -288,14 +296,16 @@ final class ReaderViewController: UIViewController {
 
         let child: UIViewController
         switch mode {
-        case .scroll:
-            child = makeScrollReader(autoHighlight: false)
-        case .highlight:
-            child = makeScrollReader(autoHighlight: true)
+        case .scroll, .highlight:
+            // .highlight is retired and mapped to .rsvp in init, so it can't be
+            // the active mode here; treat any stray value as plain scroll.
+            child = makeScrollReader()
         case .rsvp:
             let rsvp = RSVPViewController(
                 item: item, content: content, audioEnabled: audioOn,
-                shareProvider: shareProvider, resumeWordIndex: resumeWordIndex)
+                shareProvider: shareProvider, resumeWordIndex: resumeWordIndex,
+                initialDisplayMode: opensRSVPInPhrases ? .phrases : nil)
+            opensRSVPInPhrases = false
             rsvp.onFinishedReading = { [weak self] in self?.markRead() }
             child = rsvp
         case .original:
@@ -321,9 +331,9 @@ final class ReaderViewController: UIViewController {
         view.bringSubviewToFront(floatingShareButton)
     }
 
-    private func makeScrollReader(autoHighlight: Bool) -> ScrollReaderViewController {
+    private func makeScrollReader() -> ScrollReaderViewController {
         let scroll = ScrollReaderViewController(
-            item: item, content: content, autoHighlight: autoHighlight, audioEnabled: audioOn,
+            item: item, content: content, audioEnabled: audioOn,
             shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory,
             resumeWordIndex: resumeWordIndex)
         scroll.onFinishedReading = { [weak self] in self?.markRead() }

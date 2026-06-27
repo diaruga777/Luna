@@ -50,16 +50,12 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     private var didFinishReading = false
     private var didRestoreScroll = false
 
-    /// Auto-advancing chunk highlight (the "highlight" reader mode).
-    private let autoHighlight: Bool
-    /// Read aloud while highlighting (the shared audio toggle).
+    /// Read aloud (the shared audio toggle).
     private let audioEnabled: Bool
     private var didStartPlayback = false
 
-    // Read-aloud (audio) and chunk-highlight (silent) playback — at most one is
-    // active per instance, selected by audioEnabled / autoHighlight.
+    // Read-aloud (audio) playback, present only when audio is enabled.
     private var speech: SpeechController?
-    private var chunk: ChunkHighlightController?
     private let footer = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let footerPlayButton = UIButton(type: .system)
     private let footerRateButton = UIButton(type: .system)
@@ -83,13 +79,12 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     private let highlightColor = GlassStyle.readingAccent.withAlphaComponent(0.28)
 
     init(item: ReadingListItem, content: ArticleContent,
-         autoHighlight: Bool = false, audioEnabled: Bool = false,
+         audioEnabled: Bool = false,
          shareProvider: ReaderShareProviding? = nil,
          gazeTrackerFactory: GazeTrackerFactory? = nil,
          resumeWordIndex: Int? = nil) {
         self.item = item
         self.content = content
-        self.autoHighlight = autoHighlight
         self.audioEnabled = audioEnabled
         self.shareProvider = shareProvider
         self.gazeTrackerFactory = gazeTrackerFactory
@@ -101,7 +96,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
 
     /// The word currently being read, carried to other modes on a switch.
     ///
-    /// During active playback this is the read-aloud / chunk position. In plain
+    /// During active playback this is the read-aloud position. In plain
     /// scroll, when a position was carried IN from another mode
     /// (`explicitResumeWordIndex`), it must NOT drift just from opening/closing:
     /// it only moves off that carried index when the user scrolled past a
@@ -115,7 +110,6 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     /// fully-visible word.
     var currentReadingWordIndex: Int? {
         if let speech, let word = speech.currentWordIndex { return word }
-        if let chunk, let word = chunk.currentWordIndex { return word }
 
         guard let resumeIndex = explicitResumeWordIndex else {
             return gazeLockGate.confirmedIndex ?? firstFullyVisibleWordIndex()
@@ -140,7 +134,6 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     deinit {
         imageDownloadTask?.cancel()
         speech?.stop()
-        chunk?.stop()
         gazeTracker?.stop()
         contentSizeObservation?.invalidate()
     }
@@ -255,7 +248,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
 
     /// Whether there's a saved/carried position to restore before revealing.
     private var hasInitialScrollPosition: Bool {
-        if let resume = explicitResumeWordIndex, !autoHighlight, !audioEnabled,
+        if let resume = explicitResumeWordIndex, !audioEnabled,
            wordMap.attributedRange(forWord: resume) != nil { return true }
         return item.lastScrollOffset != nil
     }
@@ -359,9 +352,9 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
 
     private func applyInitialScrollPosition() {
         // Carried in from another mode (plain scroll only): place that word 25%
-        // from the top. Highlight/audio modes start playback at the carried word
-        // and follow-scroll centers it.
-        if let resume = explicitResumeWordIndex, !autoHighlight, !audioEnabled,
+        // from the top. Audio mode starts playback at the carried word and
+        // follow-scroll centers it.
+        if let resume = explicitResumeWordIndex, !audioEnabled,
            wordMap.attributedRange(forWord: resume) != nil {
             scrollWord(resume, toFractionFromTop: 0.25)
         } else if let saved = item.lastScrollOffset {
@@ -389,15 +382,12 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         // all means it's been read.
         checkFinishedReading()
 
-        // Start playback once: read-aloud when audio is on, otherwise the
-        // chunk-highlight when this is the highlight mode. Plain scroll does
-        // neither.
+        // Start playback once: read-aloud when audio is on; plain scroll
+        // otherwise.
         if !didStartPlayback {
             didStartPlayback = true
             if audioEnabled {
                 startSpeech()
-            } else if autoHighlight {
-                startChunkHighlight()
             } else {
                 // Plain scroll: optionally live-highlight the gaze word.
                 SharedDiagnosticLog.record(
@@ -419,7 +409,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             store.setReadingProgress(
                 Double(visibleBottom / textView.contentSize.height), for: item.id)
         }
-        if let position = speech?.currentWordIndex ?? chunk?.currentWordIndex {
+        if let position = speech?.currentWordIndex {
             store.setLastSpokenWordIndex(position, for: item.id)
         }
         if let gazeIndex = gazeTracker?.estimatedWordIndex {
@@ -554,19 +544,6 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         VoiceFirstRunPrompt.showIfNeeded(from: self)
     }
 
-    private func startChunkHighlight() {
-        if chunk == nil {
-            let controller = ChunkHighlightController(content: content, wordMap: wordMap)
-            controller.delegate = self
-            chunk = controller
-        }
-        followPlayback = true
-        footer.isHidden = false
-        layoutShareView()
-        footerRateButton.setTitle(chunk?.speedLabel, for: .normal)
-        chunk?.play(fromWordIndex: resumeWordIndex)
-    }
-
     /// Observes the gaze tracker while in plain scroll mode: every estimate
     /// feeds the lock gate (so a stable multi-word lock — and only that — may
     /// move the carried reading position), and, when the live-highlight setting
@@ -593,21 +570,21 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
 
     @objc private func togglePlayback() {
         followPlayback = true
-        if let chunk { chunk.togglePlayPause() } else { speech?.togglePlayPause() }
+        speech?.togglePlayPause()
     }
 
     @objc private func skipBack() {
         followPlayback = true
-        if let chunk { chunk.skipBackward() } else { speech?.skipBackward() }
+        speech?.skipBackward()
     }
 
     @objc private func skipForward() {
         followPlayback = true
-        if let chunk { chunk.skipForward() } else { speech?.skipForward() }
+        speech?.skipForward()
     }
 
     @objc private func cycleRate() {
-        if let chunk { chunk.cycleSpeed() } else { speech?.cycleRate() }
+        speech?.cycleRate()
     }
 
     // MARK: - Highlighting
@@ -647,7 +624,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         if scrollView.isTracking || scrollView.isDragging {
             // User-driven scroll: stop auto-follow; drop the resume highlight
             // only when nothing is actively playing.
-            if speech?.isPlaying != true && chunk?.isPlaying != true {
+            if speech?.isPlaying != true {
                 removeHighlight()
             }
             followPlayback = false
@@ -863,35 +840,6 @@ extension ScrollReaderViewController: SpeechControllerDelegate {
     }
 
     func speechDidFinishArticle(_ controller: SpeechController) {
-        didFinishReading = true
-        onFinishedReading?()
-        footerPlayButton.configuration?.image = UIImage(systemName: "play.fill")
-        removeHighlight()
-    }
-}
-
-// MARK: - ChunkHighlightControllerDelegate
-
-extension ScrollReaderViewController: ChunkHighlightControllerDelegate {
-    func chunkHighlight(
-        _ controller: ChunkHighlightController, willHighlight range: NSRange, wordIndex: Int
-    ) {
-        applyHighlight(range)
-        if followPlayback {
-            scrollToCenter(range)
-        }
-    }
-
-    func chunkHighlightStateDidChange(_ controller: ChunkHighlightController) {
-        let icon = controller.isPlaying ? "pause.fill" : "play.fill"
-        footerPlayButton.configuration?.image = UIImage(systemName: icon)
-        footerRateButton.setTitle(controller.speedLabel, for: .normal)
-        if !controller.isPlaying, let word = controller.currentWordIndex {
-            store.setLastSpokenWordIndex(word, for: item.id)
-        }
-    }
-
-    func chunkHighlightDidFinish(_ controller: ChunkHighlightController) {
         didFinishReading = true
         onFinishedReading?()
         footerPlayButton.configuration?.image = UIImage(systemName: "play.fill")

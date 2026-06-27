@@ -116,35 +116,35 @@ final class PriceGraphView: UIView {
         }
     }
 
-    /// A faint, non-real "graph skeleton": baseline + left axis + a dashed sample
-    /// trend line through a few faux points, with a centered caption.
+    /// A clean empty-state skeleton: faint horizontal gridlines, solid x/y axes,
+    /// and "Price"/"Time" axis labels — so it reads as a price-over-time chart that
+    /// just has no data yet (no faux trend line).
     private func drawPlaceholder(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         let plot = rect.inset(by: plotInsets)
-        // Axes.
-        context.setStrokeColor(UIColor.quaternaryLabel.cgColor)
+        // Faint horizontal gridlines (the y-axis levels).
+        context.setStrokeColor(UIColor.quaternaryLabel.withAlphaComponent(0.6).cgColor)
+        context.setLineWidth(1)
+        let rows = 4
+        for i in 1...rows {
+            let y = plot.minY + plot.height * CGFloat(i) / CGFloat(rows)
+            context.move(to: CGPoint(x: plot.minX, y: y))
+            context.addLine(to: CGPoint(x: plot.maxX, y: y))
+        }
+        context.strokePath()
+        // Solid x and y axes.
+        context.setStrokeColor(UIColor.tertiaryLabel.cgColor)
         context.setLineWidth(1)
         context.move(to: CGPoint(x: plot.minX, y: plot.minY))
         context.addLine(to: CGPoint(x: plot.minX, y: plot.maxY))
         context.addLine(to: CGPoint(x: plot.maxX, y: plot.maxY))
         context.strokePath()
-        // Dashed sample trend line through faux points.
-        let fractions: [CGFloat] = [0.85, 0.6, 0.7, 0.4, 0.5, 0.25]
-        let dashed = UIBezierPath()
-        for (i, f) in fractions.enumerated() {
-            let x = plot.minX + plot.width * CGFloat(i) / CGFloat(fractions.count - 1)
-            let y = plot.minY + plot.height * f
-            let p = CGPoint(x: x, y: y)
-            if i == 0 { dashed.move(to: p) } else { dashed.addLine(to: p) }
-        }
-        dashed.lineWidth = 2
-        dashed.setLineDash([5, 4], count: 2, phase: 0)
-        UIColor.tertiaryLabel.withAlphaComponent(0.5).setStroke()
-        dashed.stroke()
-        // Caption.
+        // Axis labels (price on y, time on x) + a faint centered caption.
+        drawAxisLabel("Price", at: CGPoint(x: plot.minX, y: rect.minY + 1), align: .left)
+        drawAxisLabel("Time", at: CGPoint(x: plot.maxX, y: rect.maxY - 14), align: .right)
         let caption = "Awaiting more data"
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 14, weight: .medium),
+            .font: UIFont.systemFont(ofSize: 13, weight: .medium),
             .foregroundColor: UIColor.tertiaryLabel,
         ]
         let size = (caption as NSString).size(withAttributes: attrs)

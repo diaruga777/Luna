@@ -26,6 +26,5 @@ let package = Package(
         .testTarget(name: "ClipHTMLClassificationTests", dependencies: ["ClipHTMLClassification"]),
         .testTarget(name: "ClipPaywallBypassTests", dependencies: ["ClipPaywallBypass"]),
         .testTarget(name: "ClipPriceMetadataTests", dependencies: ["ClipPriceMetadata"]),
-        .testTarget(name: "ClipContentRenderingTests", dependencies: ["ClipContentRendering"]),
     ]
 )

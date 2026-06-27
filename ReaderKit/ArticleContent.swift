@@ -4,7 +4,7 @@
 //
 
 import Foundation
-import ClipContentRendering
+import ClipModels
 
 /// Extracted, formatted article text: an ordered list of text blocks with
 /// inline link ranges (UTF-16 offsets, ready for NSAttributedString).

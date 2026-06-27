@@ -1,5 +1,5 @@
 import Testing
-@testable import ClipContentRendering
+@testable import ClipModels
 
 @Test func joinsNonEmptyBlocksWithParagraphSpacing() {
     #expect(ArticleBlockRendering.plainText(blocks: [" First ", "", "Second"]) == "First\n\nSecond")

@@ -192,28 +192,40 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 "price refresh: no active trackers; cancelled schedule (\(reason))", category: "price")
             return
         }
-        // A new tracker or completed run replaces the old request with a fresh
-        // earliest date. Crucially, this date is derived from the oldest actual
-        // refresh, not from *now*, so opening the app cannot defer an overdue
-        // tracker indefinitely. BGTaskScheduler allows one pending request per id.
-        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.priceRefreshTaskID)
-        let request = BGProcessingTaskRequest(identifier: Self.priceRefreshTaskID)
-        let oldestRefresh = trackers
-            .map { ReadingListStore.stalestRefresh($0.priceTracker) }
-            .min() ?? .distantPast
-        let dueDate = oldestRefresh.addingTimeInterval(Self.priceRefreshInterval)
-        request.earliestBeginDate = max(Date(), dueDate)
-        request.requiresNetworkConnectivity = true
-        request.requiresExternalPower = false
-        do {
-            try BGTaskScheduler.shared.submit(request)
-            DiagnosticLog.shared.record(
-                "price refresh: scheduled \(activeTrackers) active tracker(s), earliest=\(request.earliestBeginDate?.description ?? "unknown") (\(reason))",
-                category: "price")
-        } catch {
-            logger.error("Couldn't schedule price refresh: \(String(describing: error), privacy: .public)")
-            DiagnosticLog.shared.record(
-                "price refresh: schedule FAILED (\(reason)): \(error)", category: "price")
+        // IDEMPOTENT scheduling. We are called on many events (launch, foreground,
+        // EVERY reading-list change, after a run); the old code cancelled and
+        // resubmitted the request each time. Repeatedly cancelling+resubmitting a
+        // BGTask churns it so iOS never lets it mature/run — the "never fires" bug.
+        // So if a request is ALREADY pending, leave it untouched; only submit when
+        // nothing is pending (the first tracker, or after a run/expiration consumed
+        // it). The earliest date is derived from the oldest actual refresh (not now),
+        // so a never-refreshed tracker still fires ASAP. The next run reschedules.
+        BGTaskScheduler.shared.getPendingTaskRequests { [weak self] pending in
+            guard let self else { return }
+            if pending.contains(where: { $0.identifier == Self.priceRefreshTaskID }) {
+                DiagnosticLog.shared.record(
+                    "price refresh: request already pending; left undisturbed (\(reason))",
+                    category: "price")
+                return
+            }
+            let request = BGProcessingTaskRequest(identifier: Self.priceRefreshTaskID)
+            let oldestRefresh = trackers
+                .map { ReadingListStore.stalestRefresh($0.priceTracker) }
+                .min() ?? .distantPast
+            let dueDate = oldestRefresh.addingTimeInterval(Self.priceRefreshInterval)
+            request.earliestBeginDate = max(Date(), dueDate)
+            request.requiresNetworkConnectivity = true
+            request.requiresExternalPower = false
+            do {
+                try BGTaskScheduler.shared.submit(request)
+                DiagnosticLog.shared.record(
+                    "price refresh: scheduled \(activeTrackers) active tracker(s), earliest=\(request.earliestBeginDate?.description ?? "unknown") (\(reason))",
+                    category: "price")
+            } catch {
+                self.logger.error("Couldn't schedule price refresh: \(String(describing: error), privacy: .public)")
+                DiagnosticLog.shared.record(
+                    "price refresh: schedule FAILED (\(reason)): \(error)", category: "price")
+            }
         }
     }
 

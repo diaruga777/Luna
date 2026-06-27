@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipIngest
 import ClipPaywallBypass
 import ClipFetch
 import ClipHTMLClassification

@@ -15,22 +15,22 @@ import Foundation
 /// policy (interactive price UI vs silent save) is data, not branching scattered
 /// across view controllers. The URL is unwrapped + classified identically for
 /// every source — only presentation differs afterward.
-struct IngestInput {
+public struct IngestInput {
     /// The incoming URL, exactly as the surface received it (may still be an
     /// `fbrpc://` deep link or a news-aggregator wrapper — the pipeline unwraps it
     /// once, up front, so every surface gets the same unwrap).
-    let url: URL
+    public let url: URL
     /// Where the save came from. Drives presentation policy, never the decision.
-    let source: CaptureSource
+    public let source: CaptureSource
     /// A save-time document type flag (pdf/epub/…) when the surface imported a file
     /// rather than a web URL — always wins classification (`.document`).
-    let documentType: String?
+    public let documentType: String?
     /// Page HTML the surface already fetched, reused so the pipeline doesn't refetch.
-    let prefetchedHTML: String?
+    public let prefetchedHTML: String?
     /// The "Read instead" override — forces the article path even for a product page.
-    let forceArticle: Bool
+    public let forceArticle: Bool
 
-    init(
+    public init(
         url: URL,
         source: CaptureSource,
         documentType: String? = nil,
@@ -50,7 +50,7 @@ struct IngestInput {
 /// `OutcomePresenter` to handle every case — no surface can "forget" a kind or
 /// leave a spinner. Invalid states are unrepresentable: each case carries exactly
 /// what its presenter needs.
-enum Outcome: Equatable {
+public enum Outcome: Equatable {
     /// A readable article was obtained. Carries the extracted content + the winning
     /// source HTML (for cover-image extraction).
     case article(ArticleContent, html: String)
@@ -74,7 +74,7 @@ enum Outcome: Equatable {
     /// the surface shows an error, never an infinite spinner.
     case failed
 
-    static func == (lhs: Outcome, rhs: Outcome) -> Bool {
+    public static func == (lhs: Outcome, rhs: Outcome) -> Bool {
         switch (lhs, rhs) {
         case let (.article(lc, lh), .article(rc, rh)):
             return lc.title == rc.title && lc.bodyTextLength == rc.bodyTextLength && lh == rh
@@ -94,9 +94,9 @@ enum Outcome: Equatable {
 /// The complete result of URL ingestion. `url` is the exact canonical URL that
 /// was classified and processed, including any async wrapper resolution. Store
 /// writers must use it instead of independently re-unwrapping the input.
-struct IngestResult: Equatable {
-    let url: URL
-    let outcome: Outcome
+public struct IngestResult: Equatable {
+    public let url: URL
+    public let outcome: Outcome
 }
 
 /// THE single shared ingest pipeline every surface calls. It runs the WHOLE
@@ -123,12 +123,12 @@ struct IngestResult: Equatable {
 /// Dependency-free of UIKit/CloudKit so it compiles in the extension targets. Never
 /// writes the store — the surface persists from the `Outcome`. Tested by
 /// `IngestPipelineTests` (parity across sources via a mock fetcher).
-enum IngestPipeline {
+public enum IngestPipeline {
 
     /// The mandatory upper bound on a whole `process` call. Each inner stage is
     /// individually bounded too (the bypass silent chain ~20s, each fetch ~12–30s),
     /// but this is the hard ceiling that guarantees the call always resolves.
-    static let processTimeout: TimeInterval = 28
+    public static let processTimeout: TimeInterval = 28
 
     /// Runs the complete pipeline for `input`, ALWAYS within `timeout`. On timeout
     /// returns `.needsArchive` for a hard-paywall host (the archive reader is its
@@ -136,7 +136,7 @@ enum IngestPipeline {
     ///
     /// - `render`: an optional rendered-HTML test seam for JS-only product prices.
     ///   Production callers leave it nil so every capture surface processes equally.
-    static func process(
+    public static func process(
         _ input: IngestInput,
         timeout: TimeInterval = processTimeout,
         session: URLSession = .shared,
@@ -158,7 +158,7 @@ enum IngestPipeline {
     /// Runs the pipeline and returns both the outcome and the canonical URL it
     /// processed. This is the persistence-facing API used by every surface that
     /// needs to update/dedupe a stored item after an async unwrap.
-    static func processResolved(
+    public static func processResolved(
         _ input: IngestInput,
         timeout: TimeInterval = processTimeout,
         session: URLSession = .shared,

@@ -15,7 +15,7 @@ import Foundation
 ///
 /// The pipeline is called identically everywhere; the ONLY per-surface difference
 /// is the body of `present`. Lives in ReaderKit so the extensions can conform.
-protocol OutcomePresenter {
+public protocol OutcomePresenter {
     /// Present `outcome` for the already-saved `item`. Must handle ALL cases. Never
     /// leaves a spinner: a `.failed`/timeout outcome shows an error or marks the item
     /// failed, it does not hang.

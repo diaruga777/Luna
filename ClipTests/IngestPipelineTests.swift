@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipIngest
 import ClipFetch
 import ClipModels
 import XCTest

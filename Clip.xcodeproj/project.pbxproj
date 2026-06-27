@@ -38,6 +38,10 @@
 		C100000000000000000000047 /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
 		C100000000000000000000056 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 		C100000000000000000000057 /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
+		04325C8AF877D151D2D31605 /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
+		CCEB43D729954FAF19DB73EF /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
+		A6A1E5E7C77D91ED5C367FB7 /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
+		B7EB2775DD38C41CBD105079 /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -151,6 +155,7 @@
 				C100000000000000000000035 /* ClipContentRendering in Frameworks */,
 				C100000000000000000000036 /* ClipModels in Frameworks */,
 				C100000000000000000000037 /* ClipFetch in Frameworks */,
+				CCEB43D729954FAF19DB73EF /* ClipIngest in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -166,6 +171,7 @@
 				C100000000000000000000025 /* ClipContentRendering in Frameworks */,
 				C100000000000000000000026 /* ClipModels in Frameworks */,
 				C100000000000000000000027 /* ClipFetch in Frameworks */,
+				04325C8AF877D151D2D31605 /* ClipIngest in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -182,6 +188,7 @@
 			files = (
 				C100000000000000000000056 /* ClipModels in Frameworks */,
 				C100000000000000000000057 /* ClipFetch in Frameworks */,
+				B7EB2775DD38C41CBD105079 /* ClipIngest in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -198,6 +205,7 @@
 				C100000000000000000000045 /* ClipContentRendering in Frameworks */,
 				C100000000000000000000046 /* ClipModels in Frameworks */,
 				C100000000000000000000047 /* ClipFetch in Frameworks */,
+				A6A1E5E7C77D91ED5C367FB7 /* ClipIngest in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -277,6 +285,7 @@
 				C100000000000000000000015 /* ClipContentRendering */,
 				C100000000000000000000016 /* ClipModels */,
 				C100000000000000000000017 /* ClipFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 			);
 			productName = "Clip Action Extension";
 			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
@@ -313,6 +322,7 @@
 				C100000000000000000000015 /* ClipContentRendering */,
 				C100000000000000000000016 /* ClipModels */,
 				C100000000000000000000017 /* ClipFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -360,6 +370,7 @@
 			packageProductDependencies = (
 				C100000000000000000000016 /* ClipModels */,
 				C100000000000000000000017 /* ClipFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -392,6 +403,7 @@
 				C100000000000000000000015 /* ClipContentRendering */,
 				C100000000000000000000016 /* ClipModels */,
 				C100000000000000000000017 /* ClipFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 			);
 			productName = ClipShare;
 			productReference = AA0200000000000000000004 /* ClipShare.appex */;
@@ -1069,6 +1081,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipFetch;
+		};
+		E656FCBCB33D2B83A5BC2B9D /* ClipIngest */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipIngest;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipIngest
 import ClipFetch
 import ClipHTMLClassification
 import ClipURLClassification

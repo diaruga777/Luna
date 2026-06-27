@@ -315,6 +315,11 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
               let image = UIImage(contentsOfFile: entry.fileURL.path)
         else { return nil }
         let glyphRect = textView.layoutManager.boundingRect(forGlyphRange: entry.range, in: textView.textContainer)
+        // `characterIndex(for:)` snaps to the NEAREST glyph, so a tap on a link near an
+        // image can map to the image's character. Require the tap to land INSIDE the
+        // image's glyph rect, so link/text taps fall through to UITextView's link
+        // handling instead of opening the image fullscreen.
+        guard glyphRect.contains(containerPoint) else { return nil }
         let textRect = CGRect(
             x: glyphRect.minX + textView.textContainerInset.left - textView.contentOffset.x,
             y: glyphRect.minY + textView.textContainerInset.top - textView.contentOffset.y,

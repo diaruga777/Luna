@@ -88,6 +88,13 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
     private func showWebView() {
         guard isViewLoaded, !didDecide else { return }
         didDecide = true
+        installWebView()
+    }
+
+    /// Builds + loads the themed live web view (idempotent). Used both for the
+    /// initial "not an article" decision and the article switcher's Original/Web mode.
+    private func installWebView() {
+        guard webView == nil else { return }
         // Create the (expensive) web view only now that we know we need it.
         let webView = WKWebView(frame: .zero, configuration: WebJunkBlocker.makeConfiguration())
         self.webView = webView
@@ -123,28 +130,31 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
 
     private func probeForArticle() {
         let target = url
-        // INSTANT path: a preloaded article opens with no network fetch. We still
-        // re-fetch in the background to refresh the on-disk cache for next time (the
-        // in-place live re-render is intentionally deferred — see preload-plan.md).
-        if let cached = PreloadStore.shared.articleContent(for: target), Self.isArticleLike(cached) {
-            pendingDecision = .reader(cached)
-            applyDecisionIfPossible()
-            refreshPreloadedCache(target)
-            return
-        }
         articleProbe = Task { [weak self] in
-            let content: ArticleContent? = await Task.detached(priority: .userInitiated) {
-                guard let html = try? await ArticleFetcher().fetchHTML(from: target) else { return nil }
-                return try? ArticleExtractor().extract(html: html, baseURL: target)
-            }.value
+            // Everything off the main thread so the spinner never blocks the UI (the
+            // overlay stays dismissable). A preloaded article opens instantly — its
+            // cache read + JSON decode happen here, not on main.
+            let result: (content: ArticleContent?, fromCache: Bool) =
+                await Task.detached(priority: .userInitiated) {
+                    if let cached = PreloadStore.shared.articleContent(for: target),
+                       Self.isArticleLike(cached) {
+                        return (cached, true)
+                    }
+                    guard let html = try? await ArticleFetcher().fetchHTML(from: target) else {
+                        return (nil, false)
+                    }
+                    return (try? ArticleExtractor().extract(html: html, baseURL: target), false)
+                }.value
             guard let self, !Task.isCancelled else { return }
             await MainActor.run {
-                if let content, Self.isArticleLike(content) {
+                if let content = result.content, Self.isArticleLike(content) {
                     self.pendingDecision = .reader(content)
                 } else {
                     self.pendingDecision = .web   // not article-like → show the page
                 }
                 self.applyDecisionIfPossible()
+                // Refresh the on-disk cache for next time (does not disturb the view).
+                if result.fromCache { self.refreshPreloadedCache(target) }
             }
         }
     }
@@ -185,21 +195,41 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
         onBecameArticle?()
     }
 
-    private func embedReader(mode: ReadingListItem.ReaderMode) {
-        guard let content = articleContent else { return }
+    private func removeReaderChild() {
         if let old = readerChild {
             old.willMove(toParent: nil)
             old.view.removeFromSuperview()
             old.removeFromParent()
+            readerChild = nil
         }
+    }
+
+    /// Tears down the live web view used by the Original/Web mode (not the initial
+    /// non-article web view, which has no reader to switch back to).
+    private func removeLiveWebView() {
+        webView?.stopLoading()
+        webView?.removeFromSuperview()
+        webView = nil
+    }
+
+    private func embedReader(mode: ReadingListItem.ReaderMode) {
+        guard let content = articleContent else { return }
+        // Original/Web mode: show the live page in a web view instead of the reader.
+        if mode == .original {
+            removeReaderChild()
+            spinner.stopAnimating()
+            installWebView()
+            readerMode = mode
+            return
+        }
+        removeLiveWebView()          // switching back from Original to a reader mode
+        removeReaderChild()
         var transient = ReadingListItem(urlString: url.absoluteString)
         transient.state = .ready
 
         let child: UIViewController
         switch mode {
         case .scroll, .original:
-            // Inline browsing has no durable page archive, so .original keeps the
-            // transient reader on its normal locally extracted page.
             let scroll = ScrollReaderViewController(item: transient, content: content)
             scroll.onLinkActivated = { [weak self] in self?.onLinkActivated?($0) }
             child = scroll

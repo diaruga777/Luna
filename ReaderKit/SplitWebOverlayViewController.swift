@@ -64,7 +64,10 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     private static let buttonSize: CGFloat = 40
     private static let headerHeight: CGFloat = 68
     private static let buttonInset: CGFloat = 16
-    private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp]
+    // `.original` here = the live original web page (the inline reader has no saved
+    // archive, so Original loads the URL in a web view) — offered alongside the
+    // reader modes so the user can always see the source page.
+    private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp, .original]
 
     private var didLayoutInitial = false
     private var didAnimateIn = false

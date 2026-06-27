@@ -344,7 +344,11 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         let controlsTop = controlsStack.frame.minY > 0
             ? controlsStack.frame.minY
             : view.safeAreaLayoutGuide.layoutFrame.maxY - 140
-        let lowerY = centerY + bandHalf + (displayMode == .phrases ? 18 : 116 - 84)
+        // In Phrases mode the link pill lives in the gap just below the panel, so the
+        // lower context must start beneath it (panel half + pill gap + pill + 12).
+        let lowerY: CGFloat = displayMode == .phrases
+            ? centerY + phrasePanel.bounds.height / 2 + Self.phrasePillGap + Self.phrasePillHeight + 12
+            : centerY + bandHalf + 32
         let lowerHeight: CGFloat = displayMode == .phrases ? 120 : 96
         nextContextLabel.frame = CGRect(
             x: horizontalMargin,
@@ -369,19 +373,27 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         view.addSubview(linkPill)
     }
 
-    /// Centers the link pill below the focal word / phrase band.
+    /// Centers the link pill below the focal word / phrase band. In Phrases mode it
+    /// tucks into the gap JUST below the reticule panel (above the lower context,
+    /// which is laid out below it) rather than floating down over the context text.
     private func layoutLinkPill() {
         let centerY = focalCenterY
-        let bandHalf: CGFloat = displayMode == .phrases ? phrasePanel.bounds.height / 2 : 0
         let maxWidth = view.bounds.width - 64
         let fitted = linkPill.systemLayoutSizeFitting(
             CGSize(width: maxWidth, height: 40),
             withHorizontalFittingPriority: .fittingSizeLevel,
             verticalFittingPriority: .required)
         let width = min(max(fitted.width, 80), maxWidth)
+        let y = displayMode == .phrases
+            ? centerY + phrasePanel.bounds.height / 2 + Self.phrasePillGap
+            : centerY + 84
         linkPill.frame = CGRect(
-            x: (view.bounds.width - width) / 2, y: centerY + bandHalf + 84, width: width, height: 36)
+            x: (view.bounds.width - width) / 2, y: y, width: width, height: Self.phrasePillHeight)
     }
+
+    /// Link-pill geometry shared with `layoutContext` so the lower context clears it.
+    private static let phrasePillGap: CGFloat = 8
+    private static let phrasePillHeight: CGFloat = 36
 
     /// Shows/refreshes the pill for a linkified word, or starts the post-link
     /// buffer when a non-link word arrives (a new link replaces it immediately).

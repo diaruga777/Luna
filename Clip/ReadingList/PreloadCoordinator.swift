@@ -116,9 +116,14 @@ final class PreloadCoordinator {
             IngestInput(url: url, source: .manual), timeout: Self.perLinkTimeout)
         switch outcome {
         case let .article(content, _):
-            let children = Self.outboundURLs(from: content)
+            // Download the article's images now (into the shared Articles cache, keyed
+            // by image-URL hash) and cache the enriched content, so a preloaded link
+            // opens with its images already local — no spinner-then-image-pop.
+            let enriched = await ArticleImageDownloader.download(
+                content, itemID: rootID, store: readingListStore, refererURL: url)
+            let children = Self.outboundURLs(from: enriched)
             store.record(url: url, rootID: rootID, kind: .article, depthRemaining: levelsLeft,
-                         content: content, children: children)
+                         content: enriched, children: children)
             return children
         case let .social(platform, itemID), let .video(platform, itemID):
             store.record(url: url, rootID: rootID, kind: .platform, depthRemaining: levelsLeft,

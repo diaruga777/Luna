@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import CryptoKit
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -24,7 +25,7 @@ enum ArticleImageDownloader {
         var downloaded = 0
         var blocks: [ArticleContent.Block] = []
 
-        for (index, var block) in content.blocks.enumerated() {
+        for var block in content.blocks {
             guard block.kind == .image else {
                 blocks.append(block)
                 continue
@@ -35,20 +36,30 @@ enum ArticleImageDownloader {
                 blocks.append(block)
                 continue
             }
-            guard downloaded < maxImages,
-                  let rawURL = block.imageURLString,
-                  let imageURL = URL(string: rawURL)
-            else {
+            guard let rawURL = block.imageURLString, let imageURL = URL(string: rawURL) else {
                 blocks.append(block)
                 continue
             }
-            guard let image = await fetch(imageURL, refererURL: refererURL) else {
-                SharedDiagnosticLog.record("image download failed: \(imageURL.absoluteString)", category: "images")
+            // Images are keyed by a stable hash of their URL, NOT the item id, so the
+            // same image reuses one local file across every reader/open (the inline
+            // viewer builds a fresh transient item each time — itemId naming meant it
+            // re-fetched every open). If a local copy already exists, skip the network.
+            let base = Self.stableBase(for: rawURL)
+            if let existing = Self.existingFileName(base: base, in: store.articlesDirectory) {
+                block.imageFileName = existing
+                blocks.append(block)
+                continue
+            }
+            guard downloaded < maxImages,
+                  let image = await fetch(imageURL, refererURL: refererURL) else {
+                if downloaded < maxImages {
+                    SharedDiagnosticLog.record("image download failed: \(imageURL.absoluteString)", category: "images")
+                }
                 blocks.append(block)
                 continue
             }
 
-            let fileName = "\(itemID.uuidString)-img\(index).\(image.fileExtension)"
+            let fileName = "\(base).\(image.fileExtension)"
             let destination = store.articlesDirectory.appendingPathComponent(fileName)
             do {
                 try image.data.write(to: destination, options: .atomic)
@@ -65,6 +76,25 @@ enum ArticleImageDownloader {
         var updated = content
         updated.blocks = blocks
         return updated
+    }
+
+    /// Stable, filesystem-safe filename stem for an image URL (so the same image maps
+    /// to one local file regardless of which item/open requested it).
+    private static func stableBase(for rawURL: String) -> String {
+        let digest = SHA256.hash(data: Data(rawURL.utf8))
+        return "img-" + digest.prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// An already-downloaded file for `base` (any image extension), or nil.
+    private static func existingFileName(base: String, in directory: URL) -> String? {
+        let candidates = ["jpg", "png", "gif", "jpeg", "webp", "heic", "heif", "avif", "img"]
+        for ext in candidates {
+            let name = "\(base).\(ext)"
+            if FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) {
+                return name
+            }
+        }
+        return nil
     }
 
     private static func fetch(_ url: URL, refererURL: URL) async -> (data: Data, fileExtension: String)? {

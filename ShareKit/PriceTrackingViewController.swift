@@ -92,8 +92,8 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
     private let thresholdSlider = AlertThresholdSlider()
     private let productHeader = UIView()
     private let productTitleLabel = UILabel()
-    /// "Add seller" lives in the always-visible header (right), not a scrolling
-    /// table footer, so it's reachable at any scroll position.
+    /// Icon-only "+" that sits inline with the "Sellers" section header (right),
+    /// alongside the list it adds to.
     private let addSellerButton = UIButton(type: .system)
     /// Price-history graph slot, BELOW the table and ABOVE the alert footer, outside
     /// the scroll view. Shows the graph once there are ≥3 days of data, else a
@@ -101,6 +101,26 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
     private let graphContainer = UIView()
     private let graphTitleLabel = UILabel()
     private let graphView = PriceGraphView()
+    /// The "Sellers" section header: a footnote title on the left and the icon-only
+    /// add button on the right, inset to align with the grouped list.
+    private lazy var sellersHeaderView: UIView = {
+        let container = UIView()
+        let label = UILabel()
+        label.text = "Sellers"
+        label.font = .preferredFont(forTextStyle: .footnote)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+        container.addSubview(addSellerButton)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+            addSellerButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+            addSellerButton.centerYAnchor.constraint(equalTo: label.centerYAnchor),
+        ])
+        return container
+    }()
     /// UIKit owns the navigation controller's normal interactive-pop delegate. Keep
     /// it so this screen can temporarily opt in without changing other screens.
     private weak var previousInteractivePopGestureDelegate: UIGestureRecognizerDelegate?
@@ -148,19 +168,16 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
         productTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         productHeader.addSubview(productTitleLabel)
 
-        var addConfig = UIButton.Configuration.tinted()
-        addConfig.image = UIImage(systemName: "plus")
-        addConfig.title = "Seller"
-        addConfig.imagePadding = 4
-        addConfig.cornerStyle = .capsule
-        addConfig.buttonSize = .small
+        var addConfig = UIButton.Configuration.plain()
+        addConfig.image = UIImage(systemName: "plus", withConfiguration:
+            UIImage.SymbolConfiguration(textStyle: .body, scale: .medium))
+        addConfig.contentInsets = .zero
         addSellerButton.configuration = addConfig
         addSellerButton.setContentHuggingPriority(.required, for: .horizontal)
         addSellerButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         addSellerButton.addTarget(self, action: #selector(addSellerTapped), for: .touchUpInside)
         addSellerButton.translatesAutoresizingMaskIntoConstraints = false
         addSellerButton.accessibilityLabel = "Add seller"
-        productHeader.addSubview(addSellerButton)
         view.addSubview(productHeader)
 
         tableView.dataSource = self
@@ -183,12 +200,8 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
             productHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             productTitleLabel.topAnchor.constraint(equalTo: productHeader.topAnchor, constant: 12),
             productTitleLabel.leadingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.leadingAnchor),
+            productTitleLabel.trailingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.trailingAnchor),
             productTitleLabel.bottomAnchor.constraint(equalTo: productHeader.bottomAnchor, constant: -10),
-            // Add-Seller pinned to the header's right, title wraps before it.
-            addSellerButton.trailingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.trailingAnchor),
-            addSellerButton.centerYAnchor.constraint(equalTo: productTitleLabel.centerYAnchor),
-            productTitleLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: addSellerButton.leadingAnchor, constant: -12),
             tableView.topAnchor.constraint(equalTo: productHeader.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -538,8 +551,12 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
         return cell
     }
 
-    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        "Sellers"
+    func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        sellersHeaderView
+    }
+
+    func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        40
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

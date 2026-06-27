@@ -31,6 +31,9 @@ struct PhotoLibrarySaver: PhotoLibrarySaving {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             PHPhotoLibrary.shared().performChanges {
                 let request = PHAssetCreationRequest.forAsset()
+                // Stamp with the current save time (not the post's original/embedded
+                // date) so the saved item always sorts as the newest in Photos.
+                request.creationDate = Date()
                 let options = PHAssetResourceCreationOptions()
                 options.shouldMoveFile = true   // consume the temp file
                 request.addResource(with: resourceType, fileURL: fileURL, options: options)

@@ -44,15 +44,10 @@ enum SendToFriendSheet {
         presenter.present(sheet, animated: true)
     }
 
-    /// Shares the original URL (works for everyone) plus a `clickreader://` deep
-    /// link that opens the article in Queue for people who have it.
+    /// Shares the plain article URL — no Queue deep link, no accessory text — so it
+    /// behaves like any normal link share.
     static func shareLink(urlString: String, from presenter: UIViewController, sourceView: UIView) {
-        let shared: String
-        if let deepLink = ClickDeepLink.readLink(forArticleURL: urlString)?.absoluteString {
-            shared = "\(urlString)\n\nRead on Queue: \(deepLink)"
-        } else {
-            shared = urlString
-        }
+        let shared: Any = URL(string: urlString) ?? urlString
         let activity = UIActivityViewController(
             activityItems: [shared], applicationActivities: nil)
         activity.popoverPresentationController?.sourceView = sourceView

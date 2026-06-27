@@ -184,19 +184,12 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         previewSpinner.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(previewSpinner)
 
-        // A red play badge over the still — revealed only for video media; tapping
-        // the preview then plays it.
-        playOverlay.backgroundColor = UIColor(red: 0.79, green: 0, blue: 0, alpha: 0.95)
-        playOverlay.layer.cornerRadius = 12
+        // A system-style play badge over the still — revealed only for video media;
+        // tapping the preview then plays it.
         playOverlay.isUserInteractionEnabled = false
         playOverlay.isHidden = true
         playOverlay.translatesAutoresizingMaskIntoConstraints = false
-        let triangle = UIImageView(image: UIImage(
-            systemName: "play.fill",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .black)))
-        triangle.tintColor = .white
-        triangle.translatesAutoresizingMaskIntoConstraints = false
-        playOverlay.addSubview(triangle)
+        Self.styleAsSystemPlayButton(playOverlay, diameter: 60)
         previewContainer.addSubview(playOverlay)
 
         previewPlaceholder.text = "Unable to preview media"
@@ -230,10 +223,6 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
             previewSpinner.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
             playOverlay.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
             playOverlay.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
-            playOverlay.widthAnchor.constraint(equalToConstant: 66),
-            playOverlay.heightAnchor.constraint(equalToConstant: 46),
-            triangle.centerXAnchor.constraint(equalTo: playOverlay.centerXAnchor),
-            triangle.centerYAnchor.constraint(equalTo: playOverlay.centerYAnchor),
         ])
 
         var dlConfig = UIButton.Configuration.filled()
@@ -434,6 +423,9 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
             saveButton.configuration = config
             saveButton.isEnabled = false
             UINotificationFeedbackGenerator().notificationOccurred(.success)
+            // Flash the saved checkmark, then dismiss the extension right away.
+            let onDone = self.onDone
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { onDone() }
         } else {
             saveButton.isEnabled = true
         }
@@ -491,8 +483,39 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         }
     }
 
-    /// A static 16:9 video poster (loaded from `thumbnailURL`) with a YouTube-style
-    /// red play button — shown instead of an autoplaying embed.
+    /// Styles `badge` as a system-style play button: a frosted dark circle with a
+    /// white play glyph (like Photos / AVKit), replacing the old YouTube-red badge.
+    private static func styleAsSystemPlayButton(_ badge: UIView, diameter: CGFloat) {
+        badge.layer.cornerRadius = diameter / 2
+        badge.clipsToBounds = true
+
+        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
+        blur.isUserInteractionEnabled = false
+        blur.translatesAutoresizingMaskIntoConstraints = false
+        badge.addSubview(blur)
+
+        let triangle = UIImageView(image: UIImage(
+            systemName: "play.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: diameter * 0.42, weight: .medium)))
+        triangle.tintColor = .white
+        triangle.translatesAutoresizingMaskIntoConstraints = false
+        badge.addSubview(triangle)
+
+        NSLayoutConstraint.activate([
+            badge.widthAnchor.constraint(equalToConstant: diameter),
+            badge.heightAnchor.constraint(equalToConstant: diameter),
+            blur.topAnchor.constraint(equalTo: badge.topAnchor),
+            blur.bottomAnchor.constraint(equalTo: badge.bottomAnchor),
+            blur.leadingAnchor.constraint(equalTo: badge.leadingAnchor),
+            blur.trailingAnchor.constraint(equalTo: badge.trailingAnchor),
+            // Optical-center the triangle (nudge a hair right of geometric center).
+            triangle.centerXAnchor.constraint(equalTo: badge.centerXAnchor, constant: diameter * 0.04),
+            triangle.centerYAnchor.constraint(equalTo: badge.centerYAnchor),
+        ])
+    }
+
+    /// A static 16:9 video poster (loaded from `thumbnailURL`) with a system-style
+    /// play button — shown instead of an autoplaying embed.
     private func makeVideoPoster(thumbnailURL: URL) -> UIView {
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
@@ -506,16 +529,9 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         container.addSubview(imageView)
 
         let playBadge = UIView()
-        playBadge.backgroundColor = UIColor(red: 0.79, green: 0, blue: 0, alpha: 0.95)
-        playBadge.layer.cornerRadius = 12
         playBadge.isUserInteractionEnabled = false
         playBadge.translatesAutoresizingMaskIntoConstraints = false
-        let triangle = UIImageView(image: UIImage(
-            systemName: "play.fill",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .black)))
-        triangle.tintColor = .white
-        triangle.translatesAutoresizingMaskIntoConstraints = false
-        playBadge.addSubview(triangle)
+        Self.styleAsSystemPlayButton(playBadge, diameter: 60)
         container.addSubview(playBadge)
 
         NSLayoutConstraint.activate([
@@ -526,10 +542,6 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
             imageView.heightAnchor.constraint(equalTo: imageView.widthAnchor, multiplier: 9.0 / 16.0),
             playBadge.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             playBadge.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            playBadge.widthAnchor.constraint(equalToConstant: 66),
-            playBadge.heightAnchor.constraint(equalToConstant: 46),
-            triangle.centerXAnchor.constraint(equalTo: playBadge.centerXAnchor),
-            triangle.centerYAnchor.constraint(equalTo: playBadge.centerYAnchor),
         ])
         Task { [weak imageView] in
             let image = await MediaPreviewFetcher.image(from: thumbnailURL, maxPixelSize: 1280)

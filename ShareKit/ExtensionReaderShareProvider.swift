@@ -35,12 +35,8 @@ final class ExtensionReaderShareProvider: ReaderShareProviding {
         }
 
         sheet.addAction(UIAlertAction(title: "Share Link…", style: .default) { _ in
-            let shared: String
-            if let deepLink = ClickDeepLink.readLink(forArticleURL: urlString)?.absoluteString {
-                shared = "\(urlString)\n\nRead on Queue: \(deepLink)"
-            } else {
-                shared = urlString
-            }
+            // Plain URL only — no Queue deep link, no accessory text.
+            let shared: Any = URL(string: urlString) ?? urlString
             let activity = UIActivityViewController(
                 activityItems: [shared], applicationActivities: nil)
             activity.popoverPresentationController?.sourceView = sourceView

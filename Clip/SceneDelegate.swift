@@ -19,6 +19,38 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private var pendingFriendURL: URL?
     /// A `clickreader://read` article URL that arrived before the main UI was up.
     private var pendingReadURL: String?
+    /// A friend whose settings page a tapped first-share notification asked to
+    /// open; applied once the main UI (reading-list nav) exists. Static because
+    /// the notification tap is delivered to the AppDelegate, before any scene may
+    /// have connected.
+    private static var pendingFriendSettingsUUID: UUID?
+
+    /// Entry point for a tapped first-share notification (called from
+    /// `AppDelegate.userNotificationCenter(_:didReceive:)`). Routes to the
+    /// friend's settings page now if the UI is ready, else stashes it for when it
+    /// is (scene connect / onboarding finish / foreground).
+    static func routeToFriendSettings(friendUUID: UUID) {
+        pendingFriendSettingsUUID = friendUUID
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0.delegate as? SceneDelegate }.first
+        scene?.applyPendingFriendSettings()
+    }
+
+    /// Pushes the pending friend's settings page onto the reading-list nav, if the
+    /// main UI is up and the friend still exists. No-op (leaving the request
+    /// pending) during onboarding.
+    private func applyPendingFriendSettings() {
+        guard let uuid = Self.pendingFriendSettingsUUID,
+              let nav = window?.rootViewController as? UINavigationController,
+              let friend = FriendsStore.shared.friend(withUUID: uuid) else { return }
+        Self.pendingFriendSettingsUUID = nil
+        nav.dismiss(animated: false) // clear any presented reader/sheet
+        nav.popToRootViewController(animated: false)
+        let detail = FriendDetailViewController(friend: friend) { [weak nav] in
+            nav?.popViewController(animated: true)
+        }
+        nav.pushViewController(detail, animated: true)
+    }
 
     func scene(
         _ scene: UIScene,
@@ -75,6 +107,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                     self?.pendingReadURL = nil
                     self?.openReader(articleURL: articleURL)
                 }
+                self?.applyPendingFriendSettings()
             }
         } else {
             window.rootViewController = UINavigationController(
@@ -86,6 +119,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let url = connectionOptions.urlContexts.first?.url {
             route(url)
         }
+        // A first-share notification tapped from a cold launch may have set the
+        // pending route before this scene connected.
+        applyPendingFriendSettings()
     }
 
     #if DEBUG
@@ -148,6 +184,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         Task { await IncomingMailImporter.shared.importNewMail() }
         SemanticIndexer.shared.scheduleRun()
+        // A first-share notification tapped while the app was backgrounded.
+        applyPendingFriendSettings()
     }
 
     /// The forced root view controller for a UI-test launch, or nil when not in a

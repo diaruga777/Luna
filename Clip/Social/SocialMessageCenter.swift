@@ -24,8 +24,9 @@ final class SocialMessageCenter {
     /// Posts the "friend shared an article" local notification (username,
     /// title); injectable so tests don't touch UNUserNotificationCenter.
     private let notifyArticleShared: (String, String?) -> Void
-    /// Posts the first-ever-share notification (username); injectable for tests.
-    private let notifyFirstShare: (String) -> Void
+    /// Posts the first-ever-share notification (username, friend UUID for the
+    /// settings deep link); injectable for tests.
+    private let notifyFirstShare: (String, UUID) -> Void
 
     /// Prevents overlapping inbox drains (launch + push can race).
     private let drainLock = NSLock()
@@ -45,7 +46,7 @@ final class SocialMessageCenter {
          readingListStore: ReadingListStore = .shared,
          startIngest: ((ReadingListItem) -> Void)? = nil,
          notifyArticleShared: ((String, String?) -> Void)? = nil,
-         notifyFirstShare: ((String) -> Void)? = nil) {
+         notifyFirstShare: ((String, UUID) -> Void)? = nil) {
         self.identityStore = identityStore
         self.friendsStore = friendsStore
         self.transport = transport
@@ -56,8 +57,8 @@ final class SocialMessageCenter {
         self.notifyArticleShared = notifyArticleShared ?? { username, title in
             NotificationManager.postArticleShared(fromUsername: username, title: title)
         }
-        self.notifyFirstShare = notifyFirstShare ?? { username in
-            NotificationManager.postFirstShare(fromUsername: username)
+        self.notifyFirstShare = notifyFirstShare ?? { username, friendUUID in
+            NotificationManager.postFirstShare(fromUsername: username, friendUUID: friendUUID)
         }
     }
 
@@ -72,7 +73,7 @@ final class SocialMessageCenter {
             }
         } else {
             FriendNotificationSettings.markHasShared(friendUUID: friendUUID)
-            notifyFirstShare(friend.card.username)
+            notifyFirstShare(friend.card.username, friendUUID)
         }
     }
 

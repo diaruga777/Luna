@@ -12,6 +12,23 @@ import UserNotifications
 /// requested once at launch so notifications can actually appear.
 enum NotificationManager {
 
+    // MARK: - userInfo keys / values
+
+    /// `userInfo` key distinguishing a notification's kind (for tap routing and
+    /// bulk dismissal).
+    static let typeKey = "clipNotificationType"
+    /// `userInfo` key carrying the sharing friend's UUID string.
+    static let friendUUIDKey = "clipFriendUUID"
+    /// The first-ever share from a friend — tapping it deep-links to that
+    /// friend's settings page.
+    static let typeFirstShare = "friendFirstShare"
+    /// A follow-up (not first) friend share — tapping it just opens the app;
+    /// these are cleared when the user reaches the reading list.
+    static let typeShareFollowup = "friendShareFollowup"
+    /// Identifier prefix for follow-up share notifications, so they can be
+    /// removed in bulk without disturbing first-share (or other) notifications.
+    private static let followupIdentifierPrefix = "friendShareFollowup-"
+
     /// Requests alert/sound authorization (no-op if already decided).
     static func requestAuthorization() {
         UNUserNotificationCenter.current().requestAuthorization(
@@ -27,23 +44,42 @@ enum NotificationManager {
     }
 
     /// Posts "X shared an article" when a friend with notifications enabled
-    /// sends us a link.
+    /// sends us a link. A follow-up (not first) share: tapping it just opens the
+    /// app, and it auto-dismisses once the user reaches the reading list.
     static func postArticleShared(fromUsername username: String, title: String?) {
         let content = UNMutableNotificationContent()
         content.title = "\(username) shared an article"
         content.body = title ?? "Open Queue to read it."
         content.sound = .default
-        post(content)
+        content.userInfo = [typeKey: typeShareFollowup]
+        post(content, identifier: followupIdentifierPrefix + UUID().uuidString)
     }
 
-    /// Posts the FIRST-ever share from a friend, which always notifies (regardless of
-    /// the per-friend toggle) and points the user at settings to enable future ones.
-    static func postFirstShare(fromUsername username: String) {
+    /// Posts the FIRST-ever share from a friend, which always notifies (regardless
+    /// of the per-friend toggle). Tapping it deep-links to that friend's settings
+    /// page so the user can turn on future-share notifications.
+    static func postFirstShare(fromUsername username: String, friendUUID: UUID) {
         let content = UNMutableNotificationContent()
-        content.title = "\(username) shared with you"
-        content.body = "To get notified of future shares from \(username), go to Queue settings"
+        content.title = "\(username) shared w/ you for the first time!"
+        content.subtitle = "To see future shares from \(username), go to settings"
         content.sound = .default
-        post(content)
+        content.userInfo = [typeKey: typeFirstShare, friendUUIDKey: friendUUID.uuidString]
+        // One first-share prompt per friend (a later first-share, e.g. after the
+        // friend was re-added, replaces the prior one rather than stacking).
+        post(content, identifier: "friendFirstShare-\(friendUUID.uuidString)")
+    }
+
+    /// Removes any delivered follow-up share notifications (called when the user
+    /// reaches the reading list). Leaves first-share prompts intact.
+    static func clearFollowupShareNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { delivered in
+            let ids = delivered
+                .filter { $0.request.content.userInfo[typeKey] as? String == typeShareFollowup }
+                .map(\.request.identifier)
+            guard !ids.isEmpty else { return }
+            center.removeDeliveredNotifications(withIdentifiers: ids)
+        }
     }
 
     /// Posts a price-drop alert when a tracked product first drops past its
@@ -56,9 +92,10 @@ enum NotificationManager {
         post(content)
     }
 
-    private static func post(_ content: UNMutableNotificationContent) {
+    private static func post(
+        _ content: UNMutableNotificationContent, identifier: String = UUID().uuidString) {
         let request = UNNotificationRequest(
-            identifier: UUID().uuidString, content: content, trigger: nil)
+            identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
 }

@@ -319,6 +319,21 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         [.banner, .list, .sound]
     }
 
+    /// Handle a notification tap. A FIRST-share notification deep-links to that
+    /// friend's settings page (to enable future-share notifications); every other
+    /// notification (follow-up shares, price drops) just opens the app with no
+    /// in-app routing.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let userInfo = response.notification.request.content.userInfo
+        guard userInfo[NotificationManager.typeKey] as? String == NotificationManager.typeFirstShare,
+              let uuidString = userInfo[NotificationManager.friendUUIDKey] as? String,
+              let friendUUID = UUID(uuidString: uuidString) else { return }
+        await MainActor.run { SceneDelegate.routeToFriendSettings(friendUUID: friendUUID) }
+    }
+
     func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,

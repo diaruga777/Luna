@@ -45,7 +45,7 @@ final class SocialMessageCenterTests: XCTestCase {
             notifyArticleShared: { [weak self] username, title in
                 self?.notifiedShares.append((username, title))
             },
-            notifyFirstShare: { [weak self] username in
+            notifyFirstShare: { [weak self] username, _ in
                 self?.firstShareNotifications.append(username)
             })
     }

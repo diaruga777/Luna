@@ -104,14 +104,25 @@ always-share set, plus one shared `pendingSuggestion` slot.
   their own).
 - **Local notifications** (`SocialMessageCenter.notifyOfReceivedShare`, both the
   article and media-item branches): the **first share EVER from a friend always
-  notifies**, regardless of the toggle — `NotificationManager.postFirstShare` →
-  "{username} shared with you" / "To get notified of future shares from {username},
-  go to Queue settings". `FriendNotificationSettings.hasSharedBefore`/`markHasShared`
-  track this (separate UserDefaults set). After that first share, it honors the
+  notifies**, regardless of the toggle — `NotificationManager.postFirstShare(fromUsername:friendUUID:)`
+  → title "{username} shared w/ you for the first time!", subtitle "To see future
+  shares from {username}, go to settings". It carries `userInfo[typeKey] =
+  typeFirstShare` + the friend UUID, and **tapping it deep-links to that friend's
+  `FriendDetailViewController`** (the notify toggle) via
+  `SceneDelegate.routeToFriendSettings` (a static pending UUID applied on scene
+  connect / onboarding finish / foreground, so it works from cold and warm
+  launches). `FriendNotificationSettings.hasSharedBefore`/`markHasShared` track
+  first-contact (separate UserDefaults set). After that first share, it honors the
   per-friend "Notify When They Share" toggle → `NotificationManager.postArticleShared`
-  "X shared an article: <title>". Both closures are injected into `SocialMessageCenter`
-  for testing. Force-quit apps won't wake on a silent push (Apple limitation) — the
-  notification then appears the next time the app runs `processInbox`.
+  "X shared an article: <title>" — a **follow-up** notification (`typeShareFollowup`,
+  `friendShareFollowup-` identifier prefix) that just **opens the app, no in-app
+  routing**, and is **auto-dismissed when the user reaches the reading list**
+  (`ReadingListViewController.viewDidAppear` → `NotificationManager.clearFollowupShareNotifications()`,
+  which leaves first-share prompts intact). The notify closures are injected into
+  `SocialMessageCenter` for testing. The tap handler is
+  `AppDelegate.userNotificationCenter(_:didReceive:)`. Force-quit apps won't wake on
+  a silent push (Apple limitation) — the notification then appears the next time the
+  app runs `processInbox`.
 - **Friend detail page** (`FriendDetailViewController`, pushed from a friend
   row): Auto-Send Websites sub-page (`AutoSendWebsitesViewController` —
   per-base-URL toggles over the reading list's hosts, via

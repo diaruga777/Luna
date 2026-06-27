@@ -201,6 +201,14 @@ final class ReadingListViewController: UITableViewController {
         catchUpButton.isHidden = isEditing
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Reaching the reading list (on launch or by navigating back) clears the
+        // "open the app" follow-up share notifications; first-share prompts that
+        // deep-link to settings are left intact.
+        NotificationManager.clearFollowupShareNotifications()
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard let header = filterHeaderView else { return }

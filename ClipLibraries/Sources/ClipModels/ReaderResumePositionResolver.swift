@@ -19,23 +19,23 @@ import CoreGraphics
 /// (did the user scroll past the threshold, did the gaze lock, the freshly
 /// computed visible/gaze indices) and gets back the index to report. Keeping it
 /// pure makes the open/close-is-a-no-op guarantee directly testable.
-enum ReaderResumePositionResolver {
+public enum ReaderResumePositionResolver {
 
     /// How far (in points) the content offset must move from where the reader
     /// was opened before a scroll counts as a deliberate reposition. Smaller
     /// than a screen so a real scroll registers, larger than incidental layout
     /// jitter / rubber-band settle so merely opening the reader never trips it.
-    static let scrolledPastThresholdPoints: CGFloat = 44
+    public static let scrolledPastThresholdPoints: CGFloat = 44
 
     /// How many consecutive distinct word indices the gaze tracker must report
     /// before its estimate is treated as a stable lock allowed to move the
     /// carried position. A single noisy gaze sample (or a couple) never counts;
     /// only a gaze that steadily tracks across several words does.
-    static let consecutiveGazeWordsForLock = 4
+    public static let consecutiveGazeWordsForLock = 4
 
     /// Whether the reader has scrolled far enough from its opening offset to
     /// count as a deliberate reposition.
-    static func scrolledPastThreshold(openOffsetY: CGFloat, currentOffsetY: CGFloat) -> Bool {
+    public static func scrolledPastThreshold(openOffsetY: CGFloat, currentOffsetY: CGFloat) -> Bool {
         abs(currentOffsetY - openOffsetY) >= scrolledPastThresholdPoints
     }
 
@@ -50,7 +50,7 @@ enum ReaderResumePositionResolver {
     ///   gaze index wins.
     /// - Otherwise the reader did nothing meaningful: return the unchanged
     ///   resume index (no update).
-    static func reportedWordIndex(
+    public static func reportedWordIndex(
         resumeIndex: Int?,
         scrolledPastThreshold: Bool,
         confirmedGazeIndex: Int?,
@@ -71,19 +71,19 @@ enum ReaderResumePositionResolver {
 /// gaze sample can't move the carried reading position. Feed it each gaze word
 /// index as it arrives; `confirmedIndex` is non-nil only once the run reaches
 /// `ReaderResumePositionResolver.consecutiveGazeWordsForLock`.
-struct GazeLockGate {
+public struct GazeLockGate {
 
     private let wordsNeeded: Int
     private var lastIndex: Int?
     private var consecutiveDistinctCount = 0
-    private(set) var confirmedIndex: Int?
+    public private(set) var confirmedIndex: Int?
 
-    init(wordsNeeded: Int = ReaderResumePositionResolver.consecutiveGazeWordsForLock) {
+    public init(wordsNeeded: Int = ReaderResumePositionResolver.consecutiveGazeWordsForLock) {
         self.wordsNeeded = wordsNeeded
     }
 
     /// Records one gaze word-index sample, updating the lock state.
-    mutating func record(_ index: Int) {
+    public mutating func record(_ index: Int) {
         if index == lastIndex {
             // The same word repeating doesn't extend the lock — we want the
             // gaze to track ACROSS several words, not dwell on one.

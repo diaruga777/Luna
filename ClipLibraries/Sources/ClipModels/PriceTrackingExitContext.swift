@@ -17,7 +17,7 @@ import Foundation
 /// This is an explicit host flag rather than something inferred from the view
 /// hierarchy, so the correct button is chosen even when the in-app navigation
 /// controller is itself presented modally (which would make a hierarchy guess wrong).
-enum PriceTrackingHost: Equatable {
+public enum PriceTrackingHost: Equatable {
     case inApp
     case `extension`
 }
@@ -29,7 +29,7 @@ enum PriceTrackingHost: Equatable {
 /// as a tracker, and the user can override that decision and read it as a normal
 /// article instead. It must NEVER appear when the user merely returns to an
 /// already-saved tracker from within the app.
-enum PriceTrackingEntry: Equatable {
+public enum PriceTrackingEntry: Equatable {
     /// A brand-new product saved as its OWN new tracker. "Read instead" discards the
     /// whole new tracker and saves the URL as a normal article.
     case creation
@@ -45,7 +45,7 @@ enum PriceTrackingEntry: Equatable {
 }
 
 /// The kind of top-left navigation button the editor should show for a given host.
-enum PriceTrackingLeftButton: Equatable {
+public enum PriceTrackingLeftButton: Equatable {
     /// A chevron that pops back to the reading list (in-app).
     case back
     /// A "Done" button that completes/dismisses the hosting extension.
@@ -53,7 +53,7 @@ enum PriceTrackingLeftButton: Equatable {
 }
 
 /// What the top-right "Read instead" button should do (or that it should be absent).
-enum PriceTrackingReadInsteadAction: Equatable {
+public enum PriceTrackingReadInsteadAction: Equatable {
     /// No "Read instead" button (the `existing` entry — just viewing a saved tracker).
     case hidden
     /// Discard the whole new tracker and save its URL as a normal article.
@@ -69,17 +69,17 @@ enum PriceTrackingReadInsteadAction: Equatable {
 /// The host decides the LEFT button (back in-app vs Done in an extension). The
 /// entry decides the RIGHT "Read instead" button — present only at save time
 /// (creation/merge), absent when returning to an existing tracker.
-struct PriceTrackingExitContext: Equatable {
-    let host: PriceTrackingHost
-    let entry: PriceTrackingEntry
+public struct PriceTrackingExitContext: Equatable {
+    public let host: PriceTrackingHost
+    public let entry: PriceTrackingEntry
 
-    init(host: PriceTrackingHost, entry: PriceTrackingEntry) {
+    public init(host: PriceTrackingHost, entry: PriceTrackingEntry) {
         self.host = host
         self.entry = entry
     }
 
     /// The top-left button: a back chevron in-app, a Done button in an extension.
-    var leftButton: PriceTrackingLeftButton {
+    public var leftButton: PriceTrackingLeftButton {
         switch host {
         case .inApp: return .back
         case .extension: return .done
@@ -89,7 +89,7 @@ struct PriceTrackingExitContext: Equatable {
     /// The top-right "Read instead" behaviour for this entry. Hidden when simply
     /// viewing an existing tracker; otherwise discards (creation) or reverts just the
     /// newly-added seller (merge).
-    var readInsteadAction: PriceTrackingReadInsteadAction {
+    public var readInsteadAction: PriceTrackingReadInsteadAction {
         switch entry {
         case .creation: return .discardTracker
         case .merge(let urlString): return .revertAddedStore(urlString: urlString)

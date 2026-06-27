@@ -3,6 +3,7 @@
 //  ShareKit
 //
 
+import ClipModels
 import UIKit
 
 extension Notification.Name {

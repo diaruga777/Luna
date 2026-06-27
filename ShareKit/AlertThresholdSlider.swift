@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// The shared alert-threshold control for price trackers: a liquid-glass pill

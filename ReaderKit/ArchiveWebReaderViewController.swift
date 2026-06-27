@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import UIKit
 import WebKit
 

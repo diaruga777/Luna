@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// The full-screen end-of-catch-up message (delete prompt / all done): a large

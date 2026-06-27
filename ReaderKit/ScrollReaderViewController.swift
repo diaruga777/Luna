@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// Full-screen scrolling text reader. Tapping an inline link splits the article

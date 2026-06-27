@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// A diagnostic recording of EVERYTHING about ONE save: the initial input + its

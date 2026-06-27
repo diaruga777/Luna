@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Drives a background price refresh and surfaces the results: runs the pure

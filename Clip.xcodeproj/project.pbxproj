@@ -20,18 +20,18 @@
 		C100000000000000000000023 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
 		C100000000000000000000024 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
 		C100000000000000000000025 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
+		C100000000000000000000026 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 		C100000000000000000000031 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
 		C100000000000000000000032 /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
 		C100000000000000000000033 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
 		C100000000000000000000034 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
 		C100000000000000000000035 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
+		C100000000000000000000036 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 		C100000000000000000000041 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
 		C100000000000000000000042 /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
 		C100000000000000000000043 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
 		C100000000000000000000044 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
 		C100000000000000000000045 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
-		C100000000000000000000026 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
-		C100000000000000000000036 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 		C100000000000000000000046 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 		C100000000000000000000056 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 /* End PBXBuildFile section */

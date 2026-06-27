@@ -3,6 +3,7 @@
 //  ClipShare
 //
 
+import ClipModels
 import UIKit
 
 /// Presents the shared article in the EXACT same reader as the main app

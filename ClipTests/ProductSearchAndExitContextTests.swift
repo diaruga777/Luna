@@ -7,6 +7,7 @@
 //  decision.
 //
 
+import ClipModels
 import XCTest
 @testable import Clip
 

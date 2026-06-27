@@ -3,6 +3,7 @@
 //  ShareKit
 //
 
+import ClipModels
 import UIKit
 
 /// A compact price-history line chart with a press-and-drag scrubber. Given the

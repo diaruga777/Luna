@@ -3,6 +3,7 @@
 //  ClipShare
 //
 
+import ClipModels
 import Foundation
 
 /// Appends a pending item to the reading-list JSON in the App Group container.

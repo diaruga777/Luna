@@ -8,9 +8,9 @@ import Foundation
 /// Pure currency + threshold formatting for price trackers, so the display rules
 /// are unit-testable without UIKit. Uses a fixed POSIX locale for currency-symbol
 /// placement determinism in tests, while honoring the currency code.
-enum PriceFormatting {
+public enum PriceFormatting {
     /// A currency-formatted price string (e.g. "$45.99", "€23.50").
-    static func string(amount: Decimal, currency: String) -> String {
+    public static func string(amount: Decimal, currency: String) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = currency
@@ -27,7 +27,7 @@ enum PriceFormatting {
     /// The alert-threshold description shown under the slider, BOTH as a percent
     /// and as the absolute drop (relative to the initial best price), e.g.
     /// "10% off — alert below $90.00".
-    static func thresholdDescription(
+    public static func thresholdDescription(
         fraction: Double, initialPrice: Decimal, currency: String
     ) -> String {
         let percent = Int((fraction * 100).rounded())

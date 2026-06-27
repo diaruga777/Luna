@@ -11,13 +11,43 @@ import Foundation
 /// without touching the network.
 enum BypassStrategySelector {
 
+    /// First-party silent strategies tried (over URLSession, from the user's own
+    /// device IP) BEFORE the interactive archive.today flow. These are the same
+    /// techniques browser paywall extensions use, and they matter because hard
+    /// paywalls (WSJ chief among them) block the datacenter IPs that archive.today
+    /// and Wayback crawl from — so the archiver gets a teaser/401 while a fetch
+    /// from the reader's residential/cellular IP gets the real page:
+    ///   - `.jsonLDBody`: zero-network — pull the article body straight out of the
+    ///     page's JSON-LD if it's there.
+    ///   - `.userAgent(.googlebot*)`: WSJ/NYT and most metered sites serve the full
+    ///     text to Googlebot for SEO; the check is UA-based (an extension can't
+    ///     change IP either), so the device fetch with a Googlebot UA + cookieless
+    ///     session gets the article. Desktop first, mobile as a fallback (WSJ
+    ///     occasionally 500s one).
+    ///   - `.freshSession`: a cookieless visit resets a client-side metered counter.
+    ///   - `.amp`: the AMP page is often served un-gated.
+    ///   - `.waybackRaw`: a public archive snapshot (often captured ungated).
+    /// Third-party reader/proxy services (1ft/smry/removepaywalls/jina) are
+    /// deliberately NOT used — only first-party reads and the public archives.
+    static let firstPartySilent: [BypassStrategy] = [
+        .jsonLDBody,
+        .userAgent(.googlebotDesktop),
+        .userAgent(.googlebotMobile),
+        .freshSession,
+        .amp,
+        .waybackRaw,
+    ]
+
     /// Ordered strategies to try for `url`, given the direct page's HTML (nil if the
     /// direct fetch failed). Pure — no I/O.
     ///
     /// Reasoning order:
     /// 1. The hard `BypassGate` blocks a bypass (product/platform/free page) → `[]`.
-    /// 2. A detected paywall goes straight to archive.is. We deliberately do not
-    ///    route users through third-party reader/proxy services.
+    /// 2. The first-party silent chain (cheapest/highest-yield first), each tried
+    ///    from the device's own IP and stopping at the first readable result.
+    /// 3. NYT's trailing-dot host variant (a client-side origin trick that needs a
+    ///    real browser — kept here so it's also retried as a WKWebView pre-stage).
+    /// 4. archive.today as the terminal interactive fallback.
     static func strategies(for url: URL, directHTML: String?) -> [BypassStrategy] {
         // The single gate decides whether ANY bypass may run. It blocks
         // product/platform pages and pages with no paywall evidence; `extracted` is
@@ -27,12 +57,14 @@ enum BypassStrategySelector {
             return []
         }
 
-        // NYT's trailing-dot host is a cheap, first-party origin variant that often
-        // clears the metered overlay outright. Try it before the interactive archive
-        // flow so `nytimes.com/foo` is not unnecessarily sent to archive.is.
+        var strategies = firstPartySilent
+        // NYT's trailing-dot origin variant often clears the metered overlay, but
+        // only in a real browser — kept after the silent reads so it's emitted as a
+        // WKWebView pre-stage before archive.today.
         if let host = url.host, TrailingDotBypass.isNYTHost(host) {
-            return [.trailingDotHost, .archiveToday]
+            strategies.append(.trailingDotHost)
         }
-        return [.archiveToday]
+        strategies.append(.archiveToday)
+        return strategies
     }
 }

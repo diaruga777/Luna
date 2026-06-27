@@ -20,7 +20,7 @@ final class ArticleResolverTests: XCTestCase {
     }
 
     func testDirectReadableWinsAndSkipsArchive() {
-        let direct = content(title: "Real", bodyLength: 1000)
+        let direct = content(title: "Real", bodyLength: 2000)
         let result = ArticleResolver.resolution(
             direct: ExtractedArticle(content: direct, sourceHTML: "<html>direct</html>"), archived: nil)
         XCTAssertEqual(result, .readable(direct, html: "<html>direct</html>"))
@@ -28,7 +28,7 @@ final class ArticleResolverTests: XCTestCase {
 
     func testArchiveReadableUsedWhenDirectIsStub() {
         let directStub = extracted(title: "Paywalled", bodyLength: 50, html: "<stub>")
-        let archived = content(title: "Paywalled", bodyLength: 1000)
+        let archived = content(title: "Paywalled", bodyLength: 2000)
         let result = ArticleResolver.resolution(
             direct: directStub, archived: ExtractedArticle(content: archived, sourceHTML: "<archive>"))
         XCTAssertEqual(result, .readable(archived, html: "<archive>"))
@@ -102,30 +102,32 @@ final class ArticleResolverTests: XCTestCase {
         }
     }
 
-    /// NYT gets one cheap trailing-dot origin attempt before it parks for the
-    /// interactive archive.is reader; it never runs the old proxy/archive ladder.
-    func testResolverTriesNYTTrailingDotBeforeParking() async {
-        let articleURL = URL(string: "https://www.nytimes.com/2026/06/20/story.html")!
+    /// A paywalled article runs the first-party silent chain IN ORDER and stops at
+    /// the first readable result — here the Googlebot read (the WSJ fix), so the
+    /// later strategies and the archive flow are never reached.
+    func testResolverRunsSilentChainAndStopsAtFirstSuccess() async {
+        let articleURL = URL(string: "https://www.wsj.com/articles/x_199845b1.html")!
         let fetcher = MockArticleFetcher()
         fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML   // direct read = locked
         let runner = StubRunner(
-            succeedOn: .waybackRaw,
+            succeedOn: .userAgent(.googlebotDesktop),
             readable: ArticleContent(title: "Real", blocks: [
-                .init(kind: .paragraph, text: String(repeating: "a", count: 1000), links: []),
-            ]), html: readableHTML("wayback"))
+                .init(kind: .paragraph, text: String(repeating: "a", count: 2000), links: []),
+            ]), html: readableHTML("googlebot"))
 
         let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher, runner: runner)
-        XCTAssertEqual(result, .paywalled(title: "NYT Headline"))
-        XCTAssertEqual(runner.attempted, [.trailingDotHost])
+        if case .readable = result {} else { XCTFail("expected readable, got \(result)") }
+        // jsonLDBody first (failed), then the Googlebot read (succeeded) — and stop.
+        XCTAssertEqual(runner.attempted, [.jsonLDBody, .userAgent(.googlebotDesktop)])
     }
 
-    func testResolverDoesNotAcceptLockedNYTTrailingDotResult() async {
-        let articleURL = URL(string: "https://www.nytimes.com/2026/06/20/story.html")!
+    func testResolverRejectsLockedSilentResultAndAdvances() async {
+        let articleURL = URL(string: "https://www.wsj.com/articles/x_199845b1.html")!
         let fetcher = MockArticleFetcher()
         fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML
 
-        // The trailing-dot attempt itself can still return a long locked page; it
-        // must be rejected before the item parks for archive.is.
+        // A silent strategy can still return a long-but-locked page; it must be
+        // rejected and the loop must advance to the next strategy.
         final class LockedThenReadableRunner: BypassRunning {
             let lockedHTML: String
             let readable: ExtractedArticle
@@ -139,20 +141,21 @@ final class ArticleResolverTests: XCTestCase {
                 // First strategy: a body that's long enough but declares locked → must be rejected.
                 if attempts == 1 {
                     return ExtractedArticle(content: ArticleContent(title: "Locked", blocks: [
-                        .init(kind: .paragraph, text: String(repeating: "a", count: 1000), links: []),
+                        .init(kind: .paragraph, text: String(repeating: "a", count: 2000), links: []),
                     ]), sourceHTML: lockedHTML)
                 }
                 return readable
             }
         }
         let readable = ExtractedArticle(content: ArticleContent(title: "Real", blocks: [
-            .init(kind: .paragraph, text: String(repeating: "a", count: 1000), links: []),
+            .init(kind: .paragraph, text: String(repeating: "a", count: 2000), links: []),
         ]), sourceHTML: readableHTML("ok"))
         let runner = LockedThenReadableRunner(lockedHTML: lockedHTML, readable: readable)
 
         let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher, runner: runner)
-        XCTAssertEqual(result, .paywalled(title: "NYT Headline"))
-        XCTAssertEqual(runner.attempts, 1)
+        // First silent attempt = long-but-locked (rejected); second = readable (taken).
+        XCTAssertEqual(result, .readable(readable.content, html: readable.sourceHTML))
+        XCTAssertEqual(runner.attempts, 2)
     }
 
     /// When EVERY silent strategy fails (no readable result anywhere) on a host that

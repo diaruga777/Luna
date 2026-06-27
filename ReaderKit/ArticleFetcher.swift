@@ -193,7 +193,15 @@ struct ArticleFetcher: HTMLFetching {
     // MARK: - Bypass-strategy fetches (HTMLFetching)
 
     func fetchHTML(from url: URL, userAgent: String, xForwardedFor: String?) async throws -> String {
-        try await fetch(url: url, userAgent: userAgent, xForwardedFor: xForwardedFor, timeout: 12)
+        // Crawler reads go over a cookieless (ephemeral) session: a real Googlebot
+        // presents no cookies, and clearing them means a stale "non-subscriber"
+        // cookie can't tag us as gated — exactly what browser paywall extensions do
+        // for WSJ (googlebot UA + cleared cookies).
+        let configuration = URLSessionConfiguration.ephemeral
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        return try await fetch(url: url, userAgent: userAgent, xForwardedFor: xForwardedFor,
+                               timeout: 12, session: session)
     }
 
     func fetchHTML(from url: URL, referer: String) async throws -> String {

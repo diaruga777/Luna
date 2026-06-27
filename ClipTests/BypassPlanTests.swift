@@ -7,10 +7,15 @@ import XCTest
 @testable import Clip
 
 final class BypassPlanTests: XCTestCase {
-    func testDetectedPaywallHasNoSilentOrPreStageFallbacks() {
+    func testWSJRunsFirstPartySilentChainThenArchive() {
         let url = URL(string: "https://www.wsj.com/articles/x")!
         let plan = BypassPlan.make(for: url, directHTML: "<html>subscribe to continue</html>")
-        XCTAssertTrue(plan.silent.isEmpty)
+        // The first-party silent reads run before parking for archive.today; WSJ is
+        // not an NYT-family host, so there's no trailing-dot web pre-stage.
+        XCTAssertEqual(plan.silent, [
+            .jsonLDBody, .userAgent(.googlebotDesktop), .userAgent(.googlebotMobile),
+            .freshSession, .amp, .waybackRaw,
+        ])
         XCTAssertTrue(plan.webPreStages.isEmpty)
         XCTAssertTrue(plan.allowsArchiveToday)
     }

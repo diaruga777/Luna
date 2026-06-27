@@ -15,6 +15,10 @@ final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate,
     private let imageView = UIImageView()
     private let closeButton = UIButton(type: .system)
     private var restingFrame = CGRect.zero
+    /// Drag-to-dismiss, only while zoomed all the way out: a far-enough or fast-enough
+    /// swipe flings the image away and dismisses; a short drag springs back.
+    private let dismissPan = UIPanGestureRecognizer()
+    private var isDismissing = false
 
     init(image: UIImage, sourceFrame: CGRect) {
         self.image = image
@@ -40,8 +44,16 @@ final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate,
         scrollView.maximumZoomScale = 4
         scrollView.backgroundColor = .clear
         scrollView.clipsToBounds = false
+        // At min zoom the content exactly fits, so the scroll view never bounces or
+        // scrolls — leaving the drag free for our dismiss gesture (which recognizes
+        // simultaneously with the scroll view's own pan, gated to min zoom).
+        scrollView.bounces = false
         scrollView.frame = sourceFrame
         view.addSubview(scrollView)
+
+        dismissPan.addTarget(self, action: #selector(handleDismissPan(_:)))
+        dismissPan.delegate = self
+        scrollView.addGestureRecognizer(dismissPan)
 
         imageView.image = image
         imageView.contentMode = .scaleAspectFit
@@ -94,6 +106,54 @@ final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate,
         }
     }
 
+    @objc private func handleDismissPan(_ gesture: UIPanGestureRecognizer) {
+        let translation = gesture.translation(in: view)
+        switch gesture.state {
+        case .changed:
+            let distance = hypot(translation.x, translation.y)
+            let progress = min(1, distance / 220)
+            // Follow the finger, shrinking and dimming toward the dismiss threshold.
+            scrollView.transform = CGAffineTransform(translationX: translation.x, y: translation.y)
+                .scaledBy(x: 1 - progress * 0.2, y: 1 - progress * 0.2)
+            dimmingView.alpha = 1 - progress * 0.7
+            closeButton.alpha = 1 - progress
+        case .ended, .cancelled:
+            let velocity = gesture.velocity(in: view)
+            let distance = hypot(translation.x, translation.y)
+            let speed = hypot(velocity.x, velocity.y)
+            if gesture.state == .ended, distance > 110 || speed > 900 {
+                flingAway(translation: translation, velocity: velocity)
+            } else {
+                UIView.animate(
+                    withDuration: 0.32, delay: 0, usingSpringWithDamping: 0.85,
+                    initialSpringVelocity: 0.4, options: [.allowUserInteraction]
+                ) {
+                    self.scrollView.transform = .identity
+                    self.dimmingView.alpha = 1
+                    self.closeButton.alpha = 1
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    /// Continues the swipe off-screen and dismisses (no return-to-source — the image
+    /// flies away in the gesture's direction, like Photos/Twitter image viewers).
+    private func flingAway(translation: CGPoint, velocity: CGPoint) {
+        guard !isDismissing else { return }
+        isDismissing = true
+        let target = CGPoint(x: translation.x + velocity.x * 0.16, y: translation.y + velocity.y * 0.16)
+        UIView.animate(withDuration: 0.25, delay: 0, options: [.curveEaseOut]) {
+            self.scrollView.transform = CGAffineTransform(translationX: target.x, y: target.y)
+                .scaledBy(x: 0.8, y: 0.8)
+            self.dimmingView.alpha = 0
+            self.closeButton.alpha = 0
+        } completion: { _ in
+            self.dismiss(animated: false)
+        }
+    }
+
     private func fittedFrame(in bounds: CGRect) -> CGRect {
         guard image.size.width > 0, image.size.height > 0 else { return bounds }
         let scale = min(bounds.width / image.size.width, bounds.height / image.size.height)
@@ -120,5 +180,21 @@ final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate,
 extension ImageLightboxViewController: UIGestureRecognizerDelegate {
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         touch.view !== closeButton
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        // The dismiss drag is only available zoomed all the way out; while zoomed in,
+        // a pan should scroll the image instead.
+        if gestureRecognizer === dismissPan {
+            return scrollView.zoomScale <= scrollView.minimumZoomScale + 0.01 && !isDismissing
+        }
+        return true
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+        gestureRecognizer === dismissPan || other === dismissPan
     }
 }

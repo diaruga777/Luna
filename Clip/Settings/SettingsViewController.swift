@@ -233,8 +233,6 @@ final class ReadingListSettingsScreen: UITableViewController {
 
     private enum Section: Int, CaseIterable { case display, preload }
 
-    private let preloadValueLabel = UILabel()
-
     override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -273,21 +271,15 @@ final class ReadingListSettingsScreen: UITableViewController {
                 isOn: ReaderSettings.showReadingProgress, action: #selector(progressToggled(_:)))
         case .preload:
             content.text = "Preload Depth"
+            // The current depth shows as the value1 detail text (left of the stepper),
+            // so it's always visible; the stepper is the tappable accessory.
+            content.secondaryText = "\(ReaderSettings.preloadDepth)"
             let stepper = UIStepper()
             stepper.minimumValue = Double(ReaderSettings.preloadDepthRange.lowerBound)
             stepper.maximumValue = Double(ReaderSettings.preloadDepthRange.upperBound)
             stepper.value = Double(ReaderSettings.preloadDepth)
             stepper.addTarget(self, action: #selector(preloadDepthChanged(_:)), for: .valueChanged)
-            preloadValueLabel.text = "\(ReaderSettings.preloadDepth)"
-            preloadValueLabel.textColor = .secondaryLabel
-            preloadValueLabel.font = .monospacedDigitSystemFont(ofSize: 17, weight: .regular)
-            preloadValueLabel.sizeToFit()
-            let container = UIStackView(arrangedSubviews: [preloadValueLabel, stepper])
-            container.axis = .horizontal
-            container.spacing = 12
-            container.alignment = .center
-            container.sizeToFit()
-            cell.accessoryView = container
+            cell.accessoryView = stepper
         }
         cell.contentConfiguration = content
         return cell
@@ -305,8 +297,9 @@ final class ReadingListSettingsScreen: UITableViewController {
 
     @objc private func preloadDepthChanged(_ stepper: UIStepper) {
         ReaderSettings.preloadDepth = Int(stepper.value)
-        preloadValueLabel.text = "\(ReaderSettings.preloadDepth)"
-        preloadValueLabel.sizeToFit()
+        // Refresh the detail number.
+        tableView.reloadRows(
+            at: [IndexPath(row: 0, section: Section.preload.rawValue)], with: .none)
         // Picking up a higher depth resumes preloading for existing saves.
         PreloadCoordinator.shared.resumeIncomplete()
     }

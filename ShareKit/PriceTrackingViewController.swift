@@ -92,13 +92,15 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
     private let thresholdSlider = AlertThresholdSlider()
     private let productHeader = UIView()
     private let productTitleLabel = UILabel()
+    /// "Add seller" lives in the always-visible header (right), not a scrolling
+    /// table footer, so it's reachable at any scroll position.
+    private let addSellerButton = UIButton(type: .system)
     /// Price-history graph slot, BELOW the table and ABOVE the alert footer, outside
     /// the scroll view. Shows the graph once there are ≥3 days of data, else a
     /// pending "Awaiting more data" state.
     private let graphContainer = UIView()
     private let graphTitleLabel = UILabel()
     private let graphView = PriceGraphView()
-    private let graphPendingLabel = UILabel()
     /// UIKit owns the navigation controller's normal interactive-pop delegate. Keep
     /// it so this screen can temporarily opt in without changing other screens.
     private weak var previousInteractivePopGestureDelegate: UIGestureRecognizerDelegate?
@@ -145,6 +147,20 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
         productTitleLabel.lineBreakMode = .byWordWrapping
         productTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         productHeader.addSubview(productTitleLabel)
+
+        var addConfig = UIButton.Configuration.tinted()
+        addConfig.image = UIImage(systemName: "plus")
+        addConfig.title = "Seller"
+        addConfig.imagePadding = 4
+        addConfig.cornerStyle = .capsule
+        addConfig.buttonSize = .small
+        addSellerButton.configuration = addConfig
+        addSellerButton.setContentHuggingPriority(.required, for: .horizontal)
+        addSellerButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        addSellerButton.addTarget(self, action: #selector(addSellerTapped), for: .touchUpInside)
+        addSellerButton.translatesAutoresizingMaskIntoConstraints = false
+        addSellerButton.accessibilityLabel = "Add seller"
+        productHeader.addSubview(addSellerButton)
         view.addSubview(productHeader)
 
         tableView.dataSource = self
@@ -152,7 +168,6 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
         tableView.contentInsetAdjustmentBehavior = .never
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "store")
-        tableView.tableFooterView = makeAddSellerFooter()
         view.addSubview(tableView)
 
         configureGraphContainer()
@@ -168,8 +183,12 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
             productHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             productTitleLabel.topAnchor.constraint(equalTo: productHeader.topAnchor, constant: 12),
             productTitleLabel.leadingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.leadingAnchor),
-            productTitleLabel.trailingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.trailingAnchor),
             productTitleLabel.bottomAnchor.constraint(equalTo: productHeader.bottomAnchor, constant: -10),
+            // Add-Seller pinned to the header's right, title wraps before it.
+            addSellerButton.trailingAnchor.constraint(equalTo: productHeader.layoutMarginsGuide.trailingAnchor),
+            addSellerButton.centerYAnchor.constraint(equalTo: productTitleLabel.centerYAnchor),
+            productTitleLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: addSellerButton.leadingAnchor, constant: -12),
             tableView.topAnchor.constraint(equalTo: productHeader.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -177,11 +196,19 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
             graphContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             graphContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             graphContainer.bottomAnchor.constraint(equalTo: footer.topAnchor),
-            graphContainer.heightAnchor.constraint(equalToConstant: 168),
             footer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             footer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             footer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
+
+        // Responsive graph height: ~168pt preferred, but never more than 40% of the
+        // safe area, so on short screens (small phones / landscape) the sellers table
+        // and footer always remain visible. The table fills whatever's left.
+        let graphHeight = graphContainer.heightAnchor.constraint(equalToConstant: 168)
+        graphHeight.priority = .defaultHigh
+        graphHeight.isActive = true
+        graphContainer.heightAnchor.constraint(
+            lessThanOrEqualTo: view.safeAreaLayoutGuide.heightAnchor, multiplier: 0.4).isActive = true
 
         configureNavigationChrome()
         syncThresholdControl()
@@ -258,29 +285,6 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
         syncThresholdControl()
     }
 
-    // MARK: - Add-seller footer
-
-    private func makeAddSellerFooter() -> UIView {
-        var config = UIButton.Configuration.plain()
-        config.title = "Add seller"
-        config.image = UIImage(systemName: "plus")
-        config.imagePadding = 8
-        config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 20)
-        let button = UIButton(configuration: config)
-        button.contentHorizontalAlignment = .leading
-        button.addTarget(self, action: #selector(addSellerTapped), for: .touchUpInside)
-
-        let container = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 52))
-        button.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(button)
-        NSLayoutConstraint.activate([
-            button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            button.topAnchor.constraint(equalTo: container.topAnchor),
-            button.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        return container
-    }
 
     // MARK: - Threshold footer
 
@@ -299,13 +303,6 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
         graphView.translatesAutoresizingMaskIntoConstraints = false
         graphContainer.addSubview(graphView)
 
-        graphPendingLabel.text = "Awaiting more data"
-        graphPendingLabel.font = .systemFont(ofSize: 14, weight: .regular)
-        graphPendingLabel.textColor = .tertiaryLabel
-        graphPendingLabel.textAlignment = .center
-        graphPendingLabel.translatesAutoresizingMaskIntoConstraints = false
-        graphContainer.addSubview(graphPendingLabel)
-
         NSLayoutConstraint.activate([
             graphTitleLabel.topAnchor.constraint(equalTo: graphContainer.topAnchor, constant: 8),
             graphTitleLabel.leadingAnchor.constraint(equalTo: graphContainer.layoutMarginsGuide.leadingAnchor),
@@ -314,21 +311,21 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
             graphView.leadingAnchor.constraint(equalTo: graphContainer.leadingAnchor, constant: 12),
             graphView.trailingAnchor.constraint(equalTo: graphContainer.trailingAnchor, constant: -12),
             graphView.bottomAnchor.constraint(equalTo: graphContainer.bottomAnchor, constant: -8),
-            graphPendingLabel.centerXAnchor.constraint(equalTo: graphView.centerXAnchor),
-            graphPendingLabel.centerYAnchor.constraint(equalTo: graphView.centerYAnchor),
         ])
     }
 
-    /// Shows the graph when there are ≥3 days of data, else the pending state.
+    /// Shows the graph when there are ≥3 days of data, else a graph-shaped placeholder.
     private func refreshGraph() {
         guard let tracker else { graphContainer.isHidden = true; return }
         graphContainer.isHidden = false
         let series = PriceHistory.series(for: tracker)
         let hasEnough = PriceHistory.distinctDayCount(tracker) >= PriceHistory.minimumDaysForGraph
             && series.count >= 2
-        graphView.isHidden = !hasEnough
-        graphPendingLabel.isHidden = hasEnough
-        if hasEnough { graphView.setData(series, currency: tracker.displayCurrency) }
+        if hasEnough {
+            graphView.setData(series, currency: tracker.displayCurrency)
+        } else {
+            graphView.showPlaceholder()
+        }
     }
 
     private func makeThresholdFooter() -> UIView {

@@ -14,6 +14,8 @@ final class PriceGraphView: UIView {
     private var points: [PriceGraphPoint] = []
     private var currency = "USD"
     private var selectedIndex: Int?
+    /// When true, draws a faux "graph-shaped" skeleton + caption instead of real data.
+    private var isPlaceholder = false
 
     private let calloutView = UIView()
     private let calloutLabel = UILabel()
@@ -34,6 +36,17 @@ final class PriceGraphView: UIView {
         self.points = points
         self.currency = currency
         self.selectedIndex = nil
+        self.isPlaceholder = false
+        calloutView.isHidden = true
+        setNeedsDisplay()
+    }
+
+    /// Shows a graph-shaped placeholder (faint axes + a dashed sample line + caption)
+    /// so the empty state reads as "a graph will appear here", not just text.
+    func showPlaceholder() {
+        self.points = []
+        self.selectedIndex = nil
+        self.isPlaceholder = true
         calloutView.isHidden = true
         setNeedsDisplay()
     }
@@ -41,6 +54,7 @@ final class PriceGraphView: UIView {
     // MARK: - Drawing
 
     override func draw(_ rect: CGRect) {
+        if isPlaceholder { drawPlaceholder(rect); return }
         guard points.count >= 2, let context = UIGraphicsGetCurrentContext() else { return }
         let plot = rect.inset(by: plotInsets)
         let prices = points.map { ($0.price as NSDecimalNumber).doubleValue }
@@ -100,6 +114,42 @@ final class PriceGraphView: UIView {
             ring.lineWidth = 1.5
             ring.stroke()
         }
+    }
+
+    /// A faint, non-real "graph skeleton": baseline + left axis + a dashed sample
+    /// trend line through a few faux points, with a centered caption.
+    private func drawPlaceholder(_ rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        let plot = rect.inset(by: plotInsets)
+        // Axes.
+        context.setStrokeColor(UIColor.quaternaryLabel.cgColor)
+        context.setLineWidth(1)
+        context.move(to: CGPoint(x: plot.minX, y: plot.minY))
+        context.addLine(to: CGPoint(x: plot.minX, y: plot.maxY))
+        context.addLine(to: CGPoint(x: plot.maxX, y: plot.maxY))
+        context.strokePath()
+        // Dashed sample trend line through faux points.
+        let fractions: [CGFloat] = [0.85, 0.6, 0.7, 0.4, 0.5, 0.25]
+        let dashed = UIBezierPath()
+        for (i, f) in fractions.enumerated() {
+            let x = plot.minX + plot.width * CGFloat(i) / CGFloat(fractions.count - 1)
+            let y = plot.minY + plot.height * f
+            let p = CGPoint(x: x, y: y)
+            if i == 0 { dashed.move(to: p) } else { dashed.addLine(to: p) }
+        }
+        dashed.lineWidth = 2
+        dashed.setLineDash([5, 4], count: 2, phase: 0)
+        UIColor.tertiaryLabel.withAlphaComponent(0.5).setStroke()
+        dashed.stroke()
+        // Caption.
+        let caption = "Awaiting more data"
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 14, weight: .medium),
+            .foregroundColor: UIColor.tertiaryLabel,
+        ]
+        let size = (caption as NSString).size(withAttributes: attrs)
+        (caption as NSString).draw(
+            at: CGPoint(x: plot.midX - size.width / 2, y: plot.midY - size.height / 2), withAttributes: attrs)
     }
 
     private enum LabelAlign { case left, right }

@@ -15,7 +15,7 @@ import Foundation
 ///
 /// archive.is is not silent;
 /// `run` returns nil for them (they're handled by the archive web reader).
-protocol BypassRunning {
+public protocol BypassRunning {
     /// Runs `strategy` for `url`. `directHTML` is the already-fetched direct page,
     /// reused by zero-network strategies (`.jsonLDBody`) and AMP discovery. Returns
     /// the extracted content + winning source HTML, or nil.
@@ -27,16 +27,16 @@ protocol BypassRunning {
 /// The live `BypassRunning` implementation: maps each silent strategy to the
 /// concrete `HTMLFetching` call via the shared `BypassURLs` mapper, then extracts
 /// through the shared `ArticleExtraction.fetchAndExtract` helper.
-struct BypassRunner: BypassRunning {
-    let fetcher: HTMLFetching
-    let extraction: ArticleExtraction
+public struct BypassRunner: BypassRunning {
+    public let fetcher: HTMLFetching
+    public let extraction: ArticleExtraction
 
-    init(fetcher: HTMLFetching = ArticleFetcher(), extractor: ArticleExtractor = ArticleExtractor()) {
+    public init(fetcher: HTMLFetching = ArticleFetcher(), extractor: ArticleExtractor = ArticleExtractor()) {
         self.fetcher = fetcher
         self.extraction = ArticleExtraction(extractor: extractor)
     }
 
-    func run(
+    public func run(
         _ strategy: BypassStrategy, url: URL, directHTML: String?
     ) async -> ExtractedArticle? {
         switch strategy {

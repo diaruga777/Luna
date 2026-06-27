@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipPaywallBypass
 import XCTest
 @testable import Clip
 

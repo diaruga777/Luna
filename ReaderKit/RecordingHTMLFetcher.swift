@@ -3,6 +3,8 @@
 //  ReaderKit
 //
 
+import ClipModels
+import ClipPaywallBypass
 import ClipFetch
 import Foundation
 

@@ -3,7 +3,6 @@
 //  ReaderKit
 //
 
-import ClipModels
 import Foundation
 
 /// A diagnostic recording of EVERYTHING about ONE save: the initial input + its
@@ -19,23 +18,23 @@ import Foundation
 /// MEDIA BYTES ARE EXCLUDED. Thumbnails, cover images, and video are recorded by
 /// URL/metadata only — never as bytes. Text bodies (HTML, JSON) are stored
 /// verbatim; non-media binary bodies are stored base64-encoded.
-struct Replay: Codable, Equatable {
+public struct Replay: Codable, Equatable {
     /// The schema version of THIS serialized replay. Bump when the shape changes.
     /// Consumers must check this before decoding `events`/`finalContent`.
-    static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 1
 
-    var schemaVersion: Int
-    var metadata: Metadata
-    var input: Input
+    public var schemaVersion: Int
+    public var metadata: Metadata
+    public var input: Input
     /// Every recorded event, in the order it happened. `index` is monotonically
     /// increasing from 0 and is the authoritative ordering (timestamps may collide
     /// at sub-millisecond resolution).
-    var events: [Event]
+    public var events: [Event]
     /// The final representation of the save — the extracted, formatted article
     /// content — present only when the save reached a readable terminal state.
-    var finalContent: ArticleContent?
+    public var finalContent: ArticleContent?
 
-    init(
+    public init(
         schemaVersion: Int = Replay.currentSchemaVersion,
         metadata: Metadata,
         input: Input,
@@ -50,7 +49,7 @@ struct Replay: Codable, Equatable {
     }
 
     /// The terminal disposition of a recorded save.
-    enum ReplayState: String, Codable, Equatable {
+    public enum ReplayState: String, Codable, Equatable {
         /// Recording is still open (the save hasn't reached a terminal state). A
         /// serialized replay should rarely be `inProgress` — only if the process
         /// died mid-save before termination.
@@ -66,36 +65,57 @@ struct Replay: Codable, Equatable {
     }
 
     /// Identity, timing, and disposition of the recording.
-    struct Metadata: Codable, Equatable {
+    public struct Metadata: Codable, Equatable {
         /// Stable id for this replay (also the export file's base name).
-        var id: UUID
+        public var id: UUID
         /// Terminal disposition. `inProgress` until `terminate` is called.
-        var state: ReplayState
+        public var state: ReplayState
         /// When recording began.
-        var createdAt: Date
+        public var createdAt: Date
         /// When recording terminated (nil while `inProgress`).
-        var terminatedAt: Date?
+        public var terminatedAt: Date?
         /// The reading-list item's URL at termination — the headline used to list
         /// and look up replays. Updated if the pipeline repoints the item (unwrap).
-        var itemURLString: String
+        public var itemURLString: String
         /// The reading-list item id this save produced, when known.
-        var itemID: UUID?
+        public var itemID: UUID?
+
+        public init(id: UUID, state: ReplayState, createdAt: Date, terminatedAt: Date? = nil,
+                    itemURLString: String, itemID: UUID? = nil) {
+            self.id = id
+            self.state = state
+            self.createdAt = createdAt
+            self.terminatedAt = terminatedAt
+            self.itemURLString = itemURLString
+            self.itemID = itemID
+        }
     }
 
     /// The save's initial input and where it came from.
-    struct Input: Codable, Equatable {
+    public struct Input: Codable, Equatable {
         /// The URL string exactly as it entered the pipeline (before unwrap).
-        var initialURLString: String
+        public var initialURLString: String
         /// Where this save was captured from. Reuses the app's `CaptureSource`,
         /// extended with reader-internal sources (a link tapped inside a viewer).
-        var source: ReplaySource
+        public var source: ReplaySource
+
+        public init(initialURLString: String, source: ReplaySource) {
+            self.initialURLString = initialURLString
+            self.source = source
+        }
     }
 
     /// One recorded event. `index` is the authoritative order.
-    struct Event: Codable, Equatable {
-        var index: Int
-        var timestamp: Date
-        var kind: EventKind
+    public struct Event: Codable, Equatable {
+        public var index: Int
+        public var timestamp: Date
+        public var kind: EventKind
+
+        public init(index: Int, timestamp: Date, kind: EventKind) {
+            self.index = index
+            self.timestamp = timestamp
+            self.kind = kind
+        }
     }
 }
 
@@ -103,7 +123,7 @@ struct Replay: Codable, Equatable {
 /// that also names reader-internal origins (e.g. a link clicked inside another
 /// save's viewer) and keeps a raw fallback so an unknown future `CaptureSource`
 /// still round-trips.
-enum ReplaySource: Codable, Equatable {
+public enum ReplaySource: Codable, Equatable {
     /// One of the app's standard capture sources (paste, share sheet, app intent,
     /// friend share, email, manual).
     case capture(CaptureSource)
@@ -113,7 +133,7 @@ enum ReplaySource: Codable, Equatable {
 
     /// A flat, contract-friendly label for the source (used by consumers that
     /// don't want to switch on the enum).
-    var label: String {
+    public var label: String {
         switch self {
         case let .capture(source): return source.rawValue
         case .linkInViewer: return "linkInViewer"
@@ -135,7 +155,7 @@ enum ReplaySource: Codable, Equatable {
         var parentURLString: String
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if let raw = try container.decodeIfPresent(String.self, forKey: .capture) {
             guard let source = CaptureSource(rawValue: raw) else {
@@ -154,7 +174,7 @@ enum ReplaySource: Codable, Equatable {
         }
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case let .capture(source):
@@ -169,7 +189,7 @@ enum ReplaySource: Codable, Equatable {
 /// The typed payload of a `Replay.Event`. Encoded with an internal `type`
 /// discriminator (e.g. `{"type":"networkRequest", …}`) so consumers can branch on
 /// `type` without Swift.
-enum EventKind: Codable, Equatable {
+public enum EventKind: Codable, Equatable {
     /// An outgoing HTTP request (full URL/method/headers/body).
     case networkRequest(NetworkRequest)
     /// An HTTP response (full status/headers/body; `error` set on transport failure).
@@ -193,7 +213,7 @@ enum EventKind: Codable, Equatable {
 
     /// The resolver's disposition, mirroring `ArticleResolution` without its
     /// associated content (the content lands in `finalContent`).
-    enum ResolveOutcome: String, Codable, Equatable {
+    public enum ResolveOutcome: String, Codable, Equatable {
         case readable
         case paywalled
         case unreadable
@@ -205,7 +225,7 @@ enum EventKind: Codable, Equatable {
         case blockCount, bodyTextLength, title, hasReadableBody, state, role, text
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(String.self, forKey: .type)
         switch type {
@@ -249,7 +269,7 @@ enum EventKind: Codable, Equatable {
         }
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case let .networkRequest(request):
@@ -297,28 +317,44 @@ enum EventKind: Codable, Equatable {
 
 /// A captured HTTP request. Headers and body are recorded in full; a body's
 /// representation depends on its content (see `HTTPBody`).
-struct NetworkRequest: Codable, Equatable {
-    var urlString: String
-    var method: String
-    var headers: [String: String]
-    var body: HTTPBody?
+public struct NetworkRequest: Codable, Equatable {
+    public var urlString: String
+    public var method: String
+    public var headers: [String: String]
+    public var body: HTTPBody?
+
+    public init(urlString: String, method: String, headers: [String: String], body: HTTPBody?) {
+        self.urlString = urlString
+        self.method = method
+        self.headers = headers
+        self.body = body
+    }
 }
 
 /// A captured HTTP response. `statusCode` is -1 on a transport error (with
 /// `error` set). The body follows the same `HTTPBody` rules as a request.
-struct NetworkResponse: Codable, Equatable {
-    var urlString: String
-    var statusCode: Int
-    var headers: [String: String]
-    var body: HTTPBody?
+public struct NetworkResponse: Codable, Equatable {
+    public var urlString: String
+    public var statusCode: Int
+    public var headers: [String: String]
+    public var body: HTTPBody?
     /// Transport-level error description (DNS, timeout, …), nil on an HTTP response.
-    var error: String?
+    public var error: String?
+
+    public init(urlString: String, statusCode: Int, headers: [String: String],
+                body: HTTPBody?, error: String?) {
+        self.urlString = urlString
+        self.statusCode = statusCode
+        self.headers = headers
+        self.body = body
+        self.error = error
+    }
 }
 
 /// A request/response body. Text bodies (HTML, JSON, …) are stored verbatim;
 /// non-media binary is base64-encoded; media bytes are NEVER stored (only a
 /// reason marker — the media URL itself lives in the request/response `urlString`).
-enum HTTPBody: Codable, Equatable {
+public enum HTTPBody: Codable, Equatable {
     /// A textual body, stored verbatim. `truncatedBytes` > 0 means the original
     /// was longer and was cut to bound memory/disk.
     case text(String, truncatedBytes: Int)
@@ -331,7 +367,7 @@ enum HTTPBody: Codable, Equatable {
         case kind, text, truncatedBytes, base64, reason
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(String.self, forKey: .kind) {
         case "text":
@@ -348,7 +384,7 @@ enum HTTPBody: Codable, Equatable {
         }
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case let .text(value, truncatedBytes):

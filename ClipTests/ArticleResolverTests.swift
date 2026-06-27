@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipPaywallBypass
 import ClipHTMLClassification
 import ClipModels
 import XCTest

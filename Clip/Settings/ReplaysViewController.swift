@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// Diagnostics → Replays: lists every stored `Replay` by its item URL. Tapping a

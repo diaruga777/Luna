@@ -9,7 +9,7 @@ import Foundation
 /// HTML) into the ordered list of `BypassStrategy` to try. This is the heavy
 /// unit-test target: every ordering decision lives here, so it can be asserted
 /// without touching the network.
-enum BypassStrategySelector {
+public enum BypassStrategySelector {
 
     /// First-party silent strategies tried (over URLSession, from the user's own
     /// device IP) BEFORE the interactive archive.today flow. These are the same
@@ -29,7 +29,7 @@ enum BypassStrategySelector {
     ///   - `.waybackRaw`: a public archive snapshot (often captured ungated).
     /// Third-party reader/proxy services (1ft/smry/removepaywalls/jina) are
     /// deliberately NOT used — only first-party reads and the public archives.
-    static let firstPartySilent: [BypassStrategy] = [
+    public static let firstPartySilent: [BypassStrategy] = [
         .jsonLDBody,
         .userAgent(.googlebotDesktop),
         .userAgent(.googlebotMobile),
@@ -41,7 +41,7 @@ enum BypassStrategySelector {
     /// Ordered strategies to try for `url`, given the direct page's HTML (nil if the
     /// direct fetch failed). Pure — no I/O.
     ///
-    /// `nonArchiveBypass` defaults to the user's `ReaderSettings.nonArchiveBypassEnabled`
+    /// `nonArchiveBypass` defaults to the user's `BypassSettings.nonArchiveBypassEnabled`
     /// (OFF by default). When OFF, the result is the long-standing behavior — a
     /// detected paywall goes STRAIGHT to archive.today (NYT also gets its
     /// trailing-dot pre-stage). When ON, the first-party silent chain runs first.
@@ -53,9 +53,9 @@ enum BypassStrategySelector {
     /// 3. NYT's trailing-dot host variant (a client-side origin trick that needs a
     ///    real browser — kept here so it's also retried as a WKWebView pre-stage).
     /// 4. archive.today as the terminal interactive fallback.
-    static func strategies(
+    public static func strategies(
         for url: URL, directHTML: String?,
-        nonArchiveBypass: Bool = ReaderSettings.nonArchiveBypassEnabled
+        nonArchiveBypass: Bool = BypassSettings.nonArchiveBypassEnabled
     ) -> [BypassStrategy] {
         // The single gate decides whether ANY bypass may run. It blocks
         // product/platform pages and pages with no paywall evidence; `extracted` is
@@ -68,7 +68,7 @@ enum BypassStrategySelector {
         // platform link.
         let bpcKnownPaywall = nonArchiveBypass
             && decision == .block(.notPaywalled)
-            && PaywallUnlockRules.isKnownPaywallHost(url)
+            && KnownPaywallHosts.isKnown(url)
         guard decision.allowsBypass || bpcKnownPaywall else {
             return []
         }

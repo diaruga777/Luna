@@ -18,10 +18,10 @@ import Foundation
 /// bypass could start — the resolver's silent strategies, the archive reader's
 /// pre-stages, and both share-sheet extensions all consult it. Tested by
 /// `BypassGateTests`.
-enum BypassGate {
+public enum BypassGate {
 
     /// Why a bypass was allowed (carrying the triggering signal) or blocked.
-    enum Decision: Equatable {
+    public enum Decision: Equatable {
         /// A bypass MAY run. The associated `Signal` records which paywall evidence
         /// justified it (for diagnostics).
         case attempt(Signal)
@@ -29,14 +29,14 @@ enum BypassGate {
         case block(Block)
 
         /// Convenience: whether a bypass is allowed.
-        var allowsBypass: Bool {
+        public var allowsBypass: Bool {
             if case .attempt = self { return true }
             return false
         }
     }
 
     /// The paywall evidence that justified a bypass attempt.
-    enum Signal: Equatable {
+    public enum Signal: Equatable {
         /// A gate marker in the visible text (`PaywallDetector.gateMarkers`).
         case gateMarker
         /// The publisher's machine-readable lock declaration
@@ -54,7 +54,7 @@ enum BypassGate {
     }
 
     /// Why a bypass was suppressed.
-    enum Block: Equatable {
+    public enum Block: Equatable {
         /// The page already has a readable, non-paywalled article body.
         case readableArticle
         /// A product page (`ProductPageDetector` positive) — routed to price
@@ -83,7 +83,7 @@ enum BypassGate {
     /// 7. An archive.today snapshot URL → attempt.
     /// 8. Direct fetch failed on an unknown host → attempt (can't prove it's free).
     /// 9. Otherwise → block (not paywalled).
-    static func decision(for url: URL, html: String?, extracted: ArticleContent?) -> Decision {
+    public static func decision(for url: URL, html: String?, extracted: ArticleContent?) -> Decision {
         // (1) Platform/social links — YouTube, X, Reddit, Spotify, Apple, … — are
         // never paywall-bypassed; they render from a deep link, not extracted text.
         if PlatformRecognizer.recognize(url.absoluteString) != nil {

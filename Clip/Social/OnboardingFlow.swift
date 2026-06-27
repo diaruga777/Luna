@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// Builds the first-launch onboarding: pick a username, then quick steps to

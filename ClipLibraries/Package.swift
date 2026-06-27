@@ -25,7 +25,10 @@ let package = Package(
             "ClipModels", "ClipURLClassification", "ClipPriceMetadata",
             .product(name: "SwiftSoup", package: "SwiftSoup"),
         ]),
-        .target(name: "ClipPaywallBypass"),
+        .target(name: "ClipPaywallBypass", dependencies: [
+            "ClipModels", "ClipURLClassification", "ClipHTMLClassification", "ClipFetch",
+            .product(name: "SwiftSoup", package: "SwiftSoup"),
+        ]),
         .target(name: "ClipPriceMetadata"),
         .target(name: "ClipContentRendering"),
         .target(name: "ClipFetch", dependencies: ["ClipModels", "ClipURLClassification", "ClipHTMLClassification"]),

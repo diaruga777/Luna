@@ -13,7 +13,7 @@ import SwiftSoup
 /// public web archives. Modeled so invalid states can't arise: a readable result
 /// always carries its content AND source HTML, a paywalled result always carries
 /// a real (non-empty) title, and there's a distinct "nothing usable" case.
-enum ArticleResolution: Equatable {
+public enum ArticleResolution: Equatable {
     /// A readable article was obtained (directly or from an archive). `html` is
     /// the winning source HTML, kept for cover-image extraction.
     case readable(ArticleContent, html: String)
@@ -23,7 +23,7 @@ enum ArticleResolution: Equatable {
     /// Nothing usable — not even a title.
     case unreadable
 
-    static func == (lhs: ArticleResolution, rhs: ArticleResolution) -> Bool {
+    public static func == (lhs: ArticleResolution, rhs: ArticleResolution) -> Bool {
         switch (lhs, rhs) {
         case let (.readable(lc, lh), .readable(rc, rh)):
             return lc.title == rc.title && lc.bodyTextLength == rc.bodyTextLength && lh == rh
@@ -38,21 +38,21 @@ enum ArticleResolution: Equatable {
 /// hard-paywalled / bot-blocked pages (WSJ, FT, …). Shared by the main-app
 /// ingestor and both share-sheet extensions so they agree on the strategy and the
 /// "is this a real article vs. a paywall stub" threshold.
-enum ArticleResolver {
+public enum ArticleResolver {
 
     /// Fetches the article directly; if that yields only a paywall stub, tries the
     /// public web archives (Wayback, then archive.today). Returns the readable
     /// content when available, else the best title found (which survives even when
     /// only a stub was reachable — WSJ's title comes from the archive snapshot,
     /// FT's from the direct stub), else `.unreadable`.
-    static func resolve(
+    public static func resolve(
         url: URL,
         prefetchedHTML: String? = nil,
         fetcher: HTMLFetching = ArticleFetcher(),
         extractor: ArticleExtractor = ArticleExtractor(),
         runner: BypassRunning? = nil,
         replayLog: ((EventKind) async -> Void)? = nil,
-        nonArchiveBypass: Bool = ReaderSettings.nonArchiveBypassEnabled
+        nonArchiveBypass: Bool = BypassSettings.nonArchiveBypassEnabled
     ) async -> ArticleResolution {
         let extraction = ArticleExtraction(extractor: extractor)
         // Reuse the caller's already-fetched direct HTML when supplied (the shared
@@ -99,7 +99,7 @@ enum ArticleResolver {
 
     /// The page's advertised AMP URL (`<link rel="amphtml" href="…">`), absolute,
     /// or nil. AMP pages frequently lack the JS paywall overlay.
-    static func ampURL(in html: String, base: URL) -> URL? {
+    public static func ampURL(in html: String, base: URL) -> URL? {
         guard let doc = try? SwiftSoup.parse(html, base.absoluteString),
               let link = try? doc.select("link[rel=amphtml]").first(),
               let href = try? link.attr("abs:href"), !href.isEmpty,
@@ -114,7 +114,7 @@ enum ArticleResolver {
     /// (direct page first — it's canonical — then the archive snapshot), else
     /// `.unreadable`. Judged by the shared `ArticleExtraction.isReadableArticle`
     /// predicate (the only place the readable/locked decision lives).
-    static func resolution(
+    public static func resolution(
         direct: ExtractedArticle?, archived: ExtractedArticle?
     ) -> ArticleResolution {
         if let direct, ArticleExtraction.isReadableArticle(direct) {

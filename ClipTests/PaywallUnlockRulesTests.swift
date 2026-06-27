@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipPaywallBypass
 import WebKit
 import XCTest
 @testable import Clip
@@ -37,12 +38,12 @@ final class PaywallUnlockRulesTests: XCTestCase {
     }
 
     func testKnownPaywallHostMatchesApexAndSubdomains() {
-        XCTAssertTrue(PaywallUnlockRules.isKnownPaywallHost(url("https://www.theatlantic.com/x")))
-        XCTAssertTrue(PaywallUnlockRules.isKnownPaywallHost(url("https://wsj.com/x")))
-        XCTAssertTrue(PaywallUnlockRules.isKnownPaywallHost(url("https://asia.nikkei.com/x")))
-        XCTAssertFalse(PaywallUnlockRules.isKnownPaywallHost(url("https://randomblog.example/x")))
+        XCTAssertTrue(KnownPaywallHosts.isKnown(url("https://www.theatlantic.com/x")))
+        XCTAssertTrue(KnownPaywallHosts.isKnown(url("https://wsj.com/x")))
+        XCTAssertTrue(KnownPaywallHosts.isKnown(url("https://asia.nikkei.com/x")))
+        XCTAssertFalse(KnownPaywallHosts.isKnown(url("https://randomblog.example/x")))
         // Must not match a lookalike suffix.
-        XCTAssertFalse(PaywallUnlockRules.isKnownPaywallHost(url("https://notwsj.com/x")))
+        XCTAssertFalse(KnownPaywallHosts.isKnown(url("https://notwsj.com/x")))
     }
 
     func testCleanupScriptGuardsArchiveHostsAndTargetsPaywalls() {

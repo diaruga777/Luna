@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// Minimal ZIP archive writer: stored (uncompressed) entries only, which is all

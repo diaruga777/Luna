@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import UIKit
 
 /// Shared "Report a bug" handling: marks the most recent terminated replay for an

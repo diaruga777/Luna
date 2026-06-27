@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// Persists terminated `Replay`s as zipped pretty-JSON in the app sandbox

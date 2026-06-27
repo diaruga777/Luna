@@ -9,7 +9,7 @@ import Foundation
 /// (no WKWebView). Split out of `BypassStrategy` so the "skip the non-silent cases"
 /// filter the resolver used to apply is no longer representable: a `SilentStrategy`
 /// is silent by construction.
-enum SilentStrategy: Equatable {
+public enum SilentStrategy: Equatable {
     case jsonLDBody
     case userAgent(CrawlerAgent)
     case referer(RefererOrigin)
@@ -22,7 +22,7 @@ enum SilentStrategy: Equatable {
 
     /// The wider `BypassStrategy` this silent case corresponds to (for the runner and
     /// diagnostics, which still speak `BypassStrategy`).
-    var asBypassStrategy: BypassStrategy {
+    public var asBypassStrategy: BypassStrategy {
         switch self {
         case .jsonLDBody: return .jsonLDBody
         case let .userAgent(agent): return .userAgent(agent)
@@ -40,7 +40,7 @@ enum SilentStrategy: Equatable {
 /// A bypass strategy that needs a real WKWebView (client-side JS render). archive.today
 /// is modeled separately as the terminal flow (`BypassPlan.allowsArchiveToday`), so a
 /// `WebStrategy` is always a non-terminal pre-stage.
-enum WebStrategy: Equatable {
+public enum WebStrategy: Equatable {
     /// Load the ORIGINAL URL in the WKWebView with paywall scripts blocked + a
     /// DOM-cleanup userscript (the Bypass-Paywalls-Clean technique). The reader's
     /// pre-stage flow installs the content rules + cleanup before loading it.
@@ -50,7 +50,7 @@ enum WebStrategy: Equatable {
     /// the trick is a client-side origin behaviour that only takes effect in a browser,
     /// so the WKWebView attempt can succeed where the silent URLSession fetch could not.
     case trailingDotHost
-    var asBypassStrategy: BypassStrategy {
+    public var asBypassStrategy: BypassStrategy {
         switch self {
         case .directUnlock: return .directUnlock
         case .trailingDotHost: return .trailingDotHost
@@ -63,21 +63,21 @@ enum WebStrategy: Equatable {
 /// `webPreStages` leg + `allowsArchiveToday`). Because both paths read the same plan
 /// from the same factory, they can no longer derive divergent orderings (the former
 /// double-compute between `ArticleResolver` and `webPreStageURLs`).
-struct BypassPlan: Equatable {
+public struct BypassPlan: Equatable {
     /// Ordered URLSession strategies for the background path — provably silent.
-    let silent: [SilentStrategy]
+    public let silent: [SilentStrategy]
     /// Ordered WKWebView pre-stage strategies (archive.today excluded) — the
     /// browser-only tricks (currently the trailing-dot origin variant) tried before
     /// the terminal archive flow.
-    let webPreStages: [WebStrategy]
+    public let webPreStages: [WebStrategy]
     /// Whether the archive.today terminal WKWebView flow is permitted at the end.
-    let allowsArchiveToday: Bool
+    public let allowsArchiveToday: Bool
 
     /// Aggregate budget for the resolver's silent chain. Each individual silent fetch
     /// is already capped (~12–30s), but a host with several silent strategies could
     /// serially burn ~a minute before parking; this bounds the whole leg so the ingest
     /// path fails fast to `.needsArchive` instead of blocking.
-    static let silentChainDeadlineSeconds: TimeInterval = 20
+    public static let silentChainDeadlineSeconds: TimeInterval = 20
 
     /// Build the plan for `url` from the existing pure selector. PURE — no I/O. The
     /// selector still owns gate + per-host-rule + generic-fallback + normalization;
@@ -89,9 +89,9 @@ struct BypassPlan: Equatable {
     ///   here even if it ran silently, because the trick only takes effect in a real
     ///   browser (the silent fetch sees the same wall).
     /// - `allowsArchiveToday` = whether `.archiveToday` is in the selected list.
-    static func make(
+    public static func make(
         for url: URL, directHTML: String?,
-        nonArchiveBypass: Bool = ReaderSettings.nonArchiveBypassEnabled
+        nonArchiveBypass: Bool = BypassSettings.nonArchiveBypassEnabled
     ) -> BypassPlan {
         let strategies = BypassStrategySelector.strategies(
             for: url, directHTML: directHTML, nonArchiveBypass: nonArchiveBypass)
@@ -143,14 +143,14 @@ struct BypassPlan: Equatable {
 
 /// The ONE strategy→URL mapper, replacing the duplicated `switch strategy` URL builders
 /// that lived in `BypassRunner.run` and `ArchiveWebReaderViewController.webPreStageURLs`.
-enum BypassURLs {
+public enum BypassURLs {
 
     /// The URL a silent strategy fetches over URLSession, or nil when it can't be
     /// formed / the strategy is zero-network (`.jsonLDBody`) or AMP-discovered (`.amp`,
     /// which needs the direct HTML). `freshSession`/`userAgent`/`referer`/`waybackRaw`/
     /// `jinaReader` fetch the canonical `article` URL itself (the request transform is
     /// the header/session, not the URL), so they return `article`.
-    static func requestURL(for strategy: SilentStrategy, article: URL) -> URL? {
+    public static func requestURL(for strategy: SilentStrategy, article: URL) -> URL? {
         switch strategy {
         case .jsonLDBody, .amp:
             return nil
@@ -164,7 +164,7 @@ enum BypassURLs {
     }
 
     /// The URL a WKWebView pre-stage loads, or nil when it can't be formed.
-    static func loadURL(for strategy: WebStrategy, article: URL) -> URL? {
+    public static func loadURL(for strategy: WebStrategy, article: URL) -> URL? {
         switch strategy {
         case .directUnlock:
             // The original article URL — the reader applies the content rules +

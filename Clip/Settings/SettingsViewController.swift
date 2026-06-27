@@ -231,26 +231,63 @@ final class ReadingListSettingsScreen: UITableViewController {
         navigationItem.largeTitleDisplayMode = .never
     }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 2 }
+    private enum Section: Int, CaseIterable { case display, preload }
+
+    private let preloadValueLabel = UILabel()
+
+    override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        Section(rawValue: section) == .display ? 2 : 1
+    }
+
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        Section(rawValue: section) == .preload ? "Preload Links" : nil
+    }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Show an estimated reading time and your progress on each article."
+        switch Section(rawValue: section)! {
+        case .display:
+            return "Show an estimated reading time and your progress on each article."
+        case .preload:
+            return "Preload the content of links in a saved article (and links on those "
+                + "pages, up to this depth) in the background, so tapping a link opens "
+                + "instantly. 0 turns preloading off."
+        }
     }
 
     override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
         cell.selectionStyle = .none
-        if indexPath.row == 0 {
+        switch Section(rawValue: indexPath.section)! {
+        case .display where indexPath.row == 0:
             content.text = "Reading Time"
             cell.accessoryView = makeToggle(
                 isOn: ReaderSettings.showReadingTime, action: #selector(readingTimeToggled(_:)))
-        } else {
+        case .display:
             content.text = "Reading Progress"
             cell.accessoryView = makeToggle(
                 isOn: ReaderSettings.showReadingProgress, action: #selector(progressToggled(_:)))
+        case .preload:
+            content.text = "Preload Depth"
+            let stepper = UIStepper()
+            stepper.minimumValue = Double(ReaderSettings.preloadDepthRange.lowerBound)
+            stepper.maximumValue = Double(ReaderSettings.preloadDepthRange.upperBound)
+            stepper.value = Double(ReaderSettings.preloadDepth)
+            stepper.addTarget(self, action: #selector(preloadDepthChanged(_:)), for: .valueChanged)
+            preloadValueLabel.text = "\(ReaderSettings.preloadDepth)"
+            preloadValueLabel.textColor = .secondaryLabel
+            preloadValueLabel.font = .monospacedDigitSystemFont(ofSize: 17, weight: .regular)
+            preloadValueLabel.sizeToFit()
+            let container = UIStackView(arrangedSubviews: [preloadValueLabel, stepper])
+            container.axis = .horizontal
+            container.spacing = 12
+            container.alignment = .center
+            container.sizeToFit()
+            cell.accessoryView = container
         }
         cell.contentConfiguration = content
         return cell
@@ -264,6 +301,14 @@ final class ReadingListSettingsScreen: UITableViewController {
     @objc private func progressToggled(_ toggle: UISwitch) {
         ReaderSettings.showReadingProgress = toggle.isOn
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
+    }
+
+    @objc private func preloadDepthChanged(_ stepper: UIStepper) {
+        ReaderSettings.preloadDepth = Int(stepper.value)
+        preloadValueLabel.text = "\(ReaderSettings.preloadDepth)"
+        preloadValueLabel.sizeToFit()
+        // Picking up a higher depth resumes preloading for existing saves.
+        PreloadCoordinator.shared.resumeIncomplete()
     }
 }
 

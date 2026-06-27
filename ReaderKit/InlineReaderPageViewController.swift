@@ -123,6 +123,15 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
 
     private func probeForArticle() {
         let target = url
+        // INSTANT path: a preloaded article opens with no network fetch. We still
+        // re-fetch in the background to refresh the on-disk cache for next time (the
+        // in-place live re-render is intentionally deferred — see preload-plan.md).
+        if let cached = PreloadStore.shared.articleContent(for: target), Self.isArticleLike(cached) {
+            pendingDecision = .reader(cached)
+            applyDecisionIfPossible()
+            refreshPreloadedCache(target)
+            return
+        }
         articleProbe = Task { [weak self] in
             let content: ArticleContent? = await Task.detached(priority: .userInitiated) {
                 guard let html = try? await ArticleFetcher().fetchHTML(from: target) else { return nil }
@@ -137,6 +146,17 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
                 }
                 self.applyDecisionIfPossible()
             }
+        }
+    }
+
+    /// Re-fetches a preloaded article in the background and updates its on-disk cache
+    /// so the NEXT open is fresh. Does not disturb the currently-shown reader.
+    private func refreshPreloadedCache(_ target: URL) {
+        Task.detached(priority: .utility) {
+            guard let html = try? await ArticleFetcher().fetchHTML(from: target),
+                  let fresh = try? ArticleExtractor().extract(html: html, baseURL: target),
+                  Self.isArticleLike(fresh) else { return }
+            PreloadStore.shared.refreshArticle(for: target, content: fresh)
         }
     }
 

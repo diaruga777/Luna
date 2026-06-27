@@ -27,6 +27,7 @@ enum ReaderSettings {
     private static let lastReaderModeKey = "lastReaderMode"
     private static let rsvpModeKey = "rsvpDisplayMode"
     private static let nonArchiveBypassKey = "nonArchiveBypassEnabled"
+    private static let preloadDepthKey = "linkPreloadDepth"
     private static let accentKey = "readerAccentColor"
     private static let archiveOverlayAlphaKey = "archiveOverlayAlpha"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
@@ -106,6 +107,24 @@ enum ReaderSettings {
     static var nonArchiveBypassEnabled: Bool {
         get { defaults.bool(forKey: nonArchiveBypassKey) }
         set { defaults.set(newValue, forKey: nonArchiveBypassKey) }
+    }
+
+    /// How many levels of links to background-preload from a saved article so the
+    /// inline link viewer opens instantly. 0 = off; clamped 0…5; default 1 (preload
+    /// the links on the saved page itself). App Group so the action extension can
+    /// record the intent and the main app resume it.
+    static let preloadDepthRange: ClosedRange<Int> = 0...5
+    static var preloadDepth: Int {
+        get {
+            guard defaults.object(forKey: preloadDepthKey) != nil else { return 1 }
+            let stored = defaults.integer(forKey: preloadDepthKey)
+            return min(max(stored, preloadDepthRange.lowerBound), preloadDepthRange.upperBound)
+        }
+        set {
+            defaults.set(
+                min(max(newValue, preloadDepthRange.lowerBound), preloadDepthRange.upperBound),
+                forKey: preloadDepthKey)
+        }
     }
 
     /// Reader text size multiplier (Safari-Reader-style Aa control).

@@ -721,5 +721,8 @@ final class ReadingListStore {
         if let thumb = item.thumbnailFileName {
             try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(thumb))
         }
+        // Release this save's preload subtree (refcount decrement; only ever deletes
+        // files under Preloads/, never a user save).
+        PreloadStore.shared.releaseTree(rootID: item.id)
     }
 }

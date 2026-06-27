@@ -135,6 +135,9 @@ final class ReadingListIngestor {
         if let coverData { store.setThumbnail(coverData, for: item.id) }
         if updated.state == .ready {
             ArticleSendCoordinator.shared.articleBecameReady(updated)
+            // Background-preload this article's links so the inline link viewer opens
+            // instantly. Non-blocking; no-op when the depth setting is 0.
+            PreloadCoordinator.shared.preload(rootID: updated.id)
         }
         if let replayID {
             await recorder.terminate(replayID, state: .success, finalContent: resolvedContent)

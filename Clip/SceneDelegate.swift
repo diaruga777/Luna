@@ -210,6 +210,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         Task { await IncomingMailImporter.shared.importNewMail() }
         SemanticIndexer.shared.scheduleRun()
+        // Resume any link preloading left incomplete (interrupted save / new depth).
+        PreloadCoordinator.shared.resumeIncomplete()
         // A notification tapped while the app was backgrounded.
         applyPendingNotificationRoute()
     }

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Recognizes Instagram post/reel links: `instagram.com/(p|reel|reels|tv)/<shortcode>`.

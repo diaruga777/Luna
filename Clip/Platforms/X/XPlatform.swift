@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Recognizes X / Twitter status links: `(x|twitter).com/<user>/status/<id>`

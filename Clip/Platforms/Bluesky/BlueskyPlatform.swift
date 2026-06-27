@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Bluesky posts. No reliable app-open deep link (the `bluesky://` scheme is

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// A pasteboard URL that has readable (article) or supported (YouTube) content,

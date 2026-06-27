@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Maps the current-app name (from Shortcuts' "Get Current App") to a content

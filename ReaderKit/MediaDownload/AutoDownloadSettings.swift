@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Per-platform "auto-download media to Photos on save" toggles, stored in the App

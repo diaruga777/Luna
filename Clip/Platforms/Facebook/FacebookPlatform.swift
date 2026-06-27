@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Recognizes Facebook links: `facebook.com/…/videos/<id>`, `/reel/<id>`,

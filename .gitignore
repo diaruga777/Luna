@@ -1,3 +1,10 @@
 
 # Snapshot test diff artifacts
 ClipTests/ReferenceImages/*.actual.png
+
+# SwiftPM build artifacts
+.build/
+ClipLibraries/.build/
+
+# DerivedData
+DerivedData/

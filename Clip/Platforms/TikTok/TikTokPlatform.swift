@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Recognizes TikTok links: `tiktok.com/@<user>/video/<id>` and short

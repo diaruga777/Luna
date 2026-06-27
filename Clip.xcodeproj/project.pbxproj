@@ -30,6 +30,10 @@
 		C100000000000000000000043 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
 		C100000000000000000000044 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
 		C100000000000000000000045 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
+		C100000000000000000000026 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
+		C100000000000000000000036 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
+		C100000000000000000000046 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
+		C100000000000000000000056 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -141,6 +145,7 @@
 				C100000000000000000000033 /* ClipPaywallBypass in Frameworks */,
 				C100000000000000000000034 /* ClipPriceMetadata in Frameworks */,
 				C100000000000000000000035 /* ClipContentRendering in Frameworks */,
+				C100000000000000000000036 /* ClipModels in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,6 +159,7 @@
 				C100000000000000000000023 /* ClipPaywallBypass in Frameworks */,
 				C100000000000000000000024 /* ClipPriceMetadata in Frameworks */,
 				C100000000000000000000025 /* ClipContentRendering in Frameworks */,
+				C100000000000000000000026 /* ClipModels in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -168,6 +174,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C100000000000000000000056 /* ClipModels in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -182,6 +189,7 @@
 				C100000000000000000000043 /* ClipPaywallBypass in Frameworks */,
 				C100000000000000000000044 /* ClipPriceMetadata in Frameworks */,
 				C100000000000000000000045 /* ClipContentRendering in Frameworks */,
+				C100000000000000000000046 /* ClipModels in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -259,6 +267,7 @@
 				C100000000000000000000013 /* ClipPaywallBypass */,
 				C100000000000000000000014 /* ClipPriceMetadata */,
 				C100000000000000000000015 /* ClipContentRendering */,
+				C100000000000000000000016 /* ClipModels */,
 			);
 			productName = "Clip Action Extension";
 			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
@@ -293,6 +302,7 @@
 				C100000000000000000000013 /* ClipPaywallBypass */,
 				C100000000000000000000014 /* ClipPriceMetadata */,
 				C100000000000000000000015 /* ClipContentRendering */,
+				C100000000000000000000016 /* ClipModels */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -338,6 +348,7 @@
 			);
 			name = ClipTests;
 			packageProductDependencies = (
+				C100000000000000000000016 /* ClipModels */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -368,6 +379,7 @@
 				C100000000000000000000013 /* ClipPaywallBypass */,
 				C100000000000000000000014 /* ClipPriceMetadata */,
 				C100000000000000000000015 /* ClipContentRendering */,
+				C100000000000000000000016 /* ClipModels */,
 			);
 			productName = ClipShare;
 			productReference = AA0200000000000000000004 /* ClipShare.appex */;
@@ -1035,6 +1047,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipContentRendering;
+		};
+		C100000000000000000000016 /* ClipModels */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipModels;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

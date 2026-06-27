@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// One row of the deterministic, EXTENSIBLE site table mapping a host (and an

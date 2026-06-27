@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// The home screen. Items are grouped into sections in FIFO (oldest-saved

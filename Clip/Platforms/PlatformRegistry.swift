@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Central list of platform modules. Classification (`detect`) replaces the

@@ -4,6 +4,7 @@
 //
 
 #if DEBUG
+import ClipModels
 import Foundation
 
 /// Named, deterministic reading-list fixtures shared by the in-app UI-test seeding

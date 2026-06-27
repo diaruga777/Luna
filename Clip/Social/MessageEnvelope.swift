@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// What a message says, decoded from its (decrypted) JSON envelope.

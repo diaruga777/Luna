@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Recognizes Reddit post links: `reddit.com/r/<sub>/comments/<id>/<slug>`. Pure.

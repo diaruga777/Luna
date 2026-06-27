@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// A saved URL whose primary content isn't readable article text — a video

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// The user's preferred app for opening music / podcast items (provider-portable

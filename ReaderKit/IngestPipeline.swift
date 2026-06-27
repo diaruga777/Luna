@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// Everything a surface knows about an incoming save, handed to the ONE shared

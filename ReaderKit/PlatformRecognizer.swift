@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipModels
 import Foundation
 
 /// A URL recognized as belonging to a content platform, with the extracted item

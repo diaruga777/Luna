@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Synthetic canonical key for URL-less music/podcast items (so the store, which

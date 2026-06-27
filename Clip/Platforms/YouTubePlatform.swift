@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import UIKit
 
 /// YouTube as a `PlatformModule`, wrapping the existing pure `YouTubeURL`. The

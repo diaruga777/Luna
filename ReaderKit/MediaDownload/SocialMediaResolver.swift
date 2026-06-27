@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Resolves a social post URL to its downloadable media, using keyless,

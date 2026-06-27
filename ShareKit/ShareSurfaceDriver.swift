@@ -3,6 +3,7 @@
 //  ShareKit
 //
 
+import ClipModels
 import UIKit
 
 /// The HOST-AGNOSTIC ingest+present flow for the share/action extension surfaces.

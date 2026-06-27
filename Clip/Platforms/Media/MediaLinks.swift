@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Parses Spotify / Apple Music / Apple Podcasts URLs into a provider-agnostic

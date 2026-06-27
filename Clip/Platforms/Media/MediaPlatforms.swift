@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Music links (Spotify track/album/artist, Apple Music). Provider-portable: the

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// Pure logic for deciding whether a freshly detected product is the SAME

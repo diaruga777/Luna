@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 
 /// The seam the price refresher persists through, so it can be unit-tested

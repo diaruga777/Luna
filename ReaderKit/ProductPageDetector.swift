@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import Foundation
 import SwiftSoup
 
@@ -734,43 +735,7 @@ struct ProductPageDetector {
     /// separators, and surrounding text. Handles both `1,234.56` (US) and
     /// `1.234,56` (EU) by treating the LAST separator as the decimal point when it
     /// is followed by 1–2 digits.
-    static func parsePrice(_ raw: String) -> Decimal? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        // Keep digits and separators only.
-        let allowed = Set("0123456789.,")
-        let filtered = String(trimmed.filter { allowed.contains($0) })
-        guard !filtered.isEmpty, filtered.contains(where: \.isNumber) else { return nil }
-
-        let lastDot = filtered.lastIndex(of: ".")
-        let lastComma = filtered.lastIndex(of: ",")
-        var normalized = filtered
-
-        switch (lastDot, lastComma) {
-        case let (dot?, comma?):
-            // Both present: the later one is the decimal separator.
-            if dot > comma {
-                normalized = filtered.replacingOccurrences(of: ",", with: "")
-            } else {
-                normalized = filtered.replacingOccurrences(of: ".", with: "")
-                    .replacingOccurrences(of: ",", with: ".")
-            }
-        case (_?, nil):
-            normalized = filtered   // dot already the decimal point
-        case let (nil, comma?):
-            // Only a comma: decimal separator if followed by 1–2 digits, else a
-            // thousands grouping (e.g. "1,234").
-            let afterComma = filtered.distance(from: comma, to: filtered.endIndex) - 1
-            if afterComma == 1 || afterComma == 2 {
-                normalized = filtered.replacingOccurrences(of: ",", with: ".")
-            } else {
-                normalized = filtered.replacingOccurrences(of: ",", with: "")
-            }
-        case (nil, nil):
-            break
-        }
-        return Decimal(string: normalized)
-    }
+    static func parsePrice(_ raw: String) -> Decimal? { PriceParsing.parsePrice(raw) }
 
     /// First capture group of `pattern` in `text`, or nil. Used by the Amazon static
     /// extractor to read price fragments out of the raw markup.
@@ -784,19 +749,7 @@ struct ProductPageDetector {
 
     /// Validates/uppercases a currency. Accepts a 3-letter ISO code; maps common
     /// symbols ($, £, €, ¥) to a code; returns nil for anything else.
-    static func normalizeCurrency(_ raw: String?) -> String? {
-        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
-            return nil
-        }
-        let upper = raw.uppercased()
-        if upper.count == 3, upper.allSatisfy(\.isLetter) { return upper }
-        switch raw {
-        case "$": return "USD"
-        case "£": return "GBP"
-        case "€": return "EUR"
-        case "¥": return "JPY"
-        default: return nil
-        }
+    static func normalizeCurrency(_ raw: String?) -> String? { PriceParsing.normalizeCurrency(raw)
     }
 
     /// Resolves a possibly-relative URL string against `baseURL`.

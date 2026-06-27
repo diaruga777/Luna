@@ -6,10 +6,10 @@
 import Foundation
 
 /// Time granularity the graph buckets into as the span grows.
-enum PriceGraphBucket: Equatable {
+public enum PriceGraphBucket: Equatable {
     case day, week, month, year
 
-    var calendarComponent: Calendar.Component {
+    public var calendarComponent: Calendar.Component {
         switch self {
         case .day: return .day
         case .week: return .weekOfYear
@@ -21,11 +21,18 @@ enum PriceGraphBucket: Equatable {
 
 /// One plotted point: the lowest price in its bucket, the bucket's start date, and
 /// which store held that low (for the scrubber popover).
-struct PriceGraphPoint: Equatable {
-    let date: Date
-    let price: Decimal
-    let currency: String
-    let storeURLString: String
+public struct PriceGraphPoint: Equatable {
+    public let date: Date
+    public let price: Decimal
+    public let currency: String
+    public let storeURLString: String
+
+    public init(date: Date, price: Decimal, currency: String, storeURLString: String) {
+        self.date = date
+        self.price = price
+        self.currency = currency
+        self.storeURLString = storeURLString
+    }
 }
 
 /// Pure aggregation of a tracker's per-store day-bucketed history into a single
@@ -36,12 +43,12 @@ struct PriceGraphPoint: Equatable {
 /// Currency: v1 assumes a single display currency (the common case — one product
 /// across stores in one region) and plots `lowestPrice` directly; a snapshot's
 /// `fxRate` is applied when present so a future FX source needs no migration.
-enum PriceHistory {
+public enum PriceHistory {
     /// Below this many distinct days of data the view shows "Awaiting more data".
-    static let minimumDaysForGraph = 3
+    public static let minimumDaysForGraph = 3
 
     /// Number of distinct calendar days that have a sample across all stores.
-    static func distinctDayCount(_ tracker: PriceTracker) -> Int {
+    public static func distinctDayCount(_ tracker: PriceTracker) -> Int {
         var days = Set<Date>()
         for store in tracker.stores {
             for sample in store.priceHistory { days.insert(sample.dayStart) }
@@ -50,7 +57,7 @@ enum PriceHistory {
     }
 
     /// The bucket granularity for a span of `days`.
-    static func bucket(forSpanDays days: Int) -> PriceGraphBucket {
+    public static func bucket(forSpanDays days: Int) -> PriceGraphBucket {
         switch days {
         case ..<61: return .day        // up to ~2 months: every day
         case ..<366: return .week      // up to ~1 year: weekly
@@ -60,7 +67,7 @@ enum PriceHistory {
     }
 
     /// The display series for the tracker's graph (empty if no history).
-    static func series(
+    public static func series(
         for tracker: PriceTracker, now: Date = Date(), calendar: Calendar = .current
     ) -> [PriceGraphPoint] {
         // 1. Per-day lowest across all stores.

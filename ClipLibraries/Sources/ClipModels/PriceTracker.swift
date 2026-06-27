@@ -10,32 +10,39 @@ import Foundation
 /// tracker's display currency at fetch time (nil = unknown / same currency; FX-rate
 /// fetching is deferred — see price-graph-plan.md), so a future FX source slots in
 /// without a migration.
-struct PriceDaySnapshot: Codable, Equatable {
+public struct PriceDaySnapshot: Codable, Equatable {
     /// Local start-of-day for the bucket.
-    var dayStart: Date
-    var lowestPrice: Decimal
-    var currency: String
-    var fxRate: Decimal?
+    public var dayStart: Date
+    public var lowestPrice: Decimal
+    public var currency: String
+    public var fxRate: Decimal?
+
+    public init(dayStart: Date, lowestPrice: Decimal, currency: String, fxRate: Decimal?) {
+        self.dayStart = dayStart
+        self.lowestPrice = lowestPrice
+        self.currency = currency
+        self.fxRate = fxRate
+    }
 }
 
 /// One store's listing of a tracked product: where to fetch it and the last
 /// price seen there. A tracker always has at least one of these.
-struct PriceTrackerStore: Codable, Equatable, Identifiable {
+public struct PriceTrackerStore: Codable, Equatable, Identifiable {
     /// The store page URL (stable identity within a tracker).
-    var urlString: String
+    public var urlString: String
     /// The most recently fetched price at this store, if a refresh has succeeded.
-    var lastPrice: Decimal?
+    public var lastPrice: Decimal?
     /// ISO 4217 currency for `lastPrice`.
-    var currency: String
+    public var currency: String
     /// When this store was last refreshed (nil = never since creation).
-    var lastRefreshed: Date?
+    public var lastRefreshed: Date?
     /// Per-day price history (lowest price each calendar day), oldest-first.
-    var priceHistory: [PriceDaySnapshot]
+    public var priceHistory: [PriceDaySnapshot]
 
-    var id: String { urlString }
-    var url: URL? { URL(string: urlString) }
+    public var id: String { urlString }
+    public var url: URL? { URL(string: urlString) }
 
-    init(urlString: String, lastPrice: Decimal?, currency: String, lastRefreshed: Date? = nil,
+    public init(urlString: String, lastPrice: Decimal?, currency: String, lastRefreshed: Date? = nil,
          priceHistory: [PriceDaySnapshot] = []) {
         self.urlString = urlString
         self.lastPrice = lastPrice
@@ -50,7 +57,7 @@ struct PriceTrackerStore: Codable, Equatable, Identifiable {
 
     // Custom decode so items saved before `priceHistory` existed still load (the
     // synthesized decoder would throw `keyNotFound` for the missing key).
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         urlString = try c.decode(String.self, forKey: .urlString)
         lastPrice = try c.decodeIfPresent(Decimal.self, forKey: .lastPrice)
@@ -61,7 +68,7 @@ struct PriceTrackerStore: Codable, Equatable, Identifiable {
 
     /// Records a successful price fetch into the day buckets: appends a new day or
     /// lowers the existing day's minimum. Pure; unit-tested.
-    mutating func recordSample(price: Decimal, currency: String, at date: Date,
+    public mutating func recordSample(price: Decimal, currency: String, at date: Date,
                                calendar: Calendar = .current) {
         let day = calendar.startOfDay(for: date)
         if let index = priceHistory.firstIndex(where: {
@@ -83,18 +90,18 @@ struct PriceTrackerStore: Codable, Equatable, Identifiable {
 /// everything needed to recreate the tracker on the recipient's device. Prices
 /// are encoded as strings so the Decimal value round-trips exactly across the
 /// JSON wire.
-struct PriceTrackerShare: Codable, Equatable {
-    var productName: String
-    var storeURLStrings: [String]
+public struct PriceTrackerShare: Codable, Equatable {
+    public var productName: String
+    public var storeURLStrings: [String]
     /// The best fetched price at share time (the recipient's baseline).
-    var initialPriceString: String
-    var initialCurrency: String
-    var alertThresholdFraction: Double
-    var brand: String?
-    var productID: String?
+    public var initialPriceString: String
+    public var initialCurrency: String
+    public var alertThresholdFraction: Double
+    public var brand: String?
+    public var productID: String?
 
     /// Builds a share payload from a live tracker.
-    init(tracker: PriceTracker) {
+    public init(tracker: PriceTracker) {
         productName = tracker.productName
         storeURLStrings = tracker.stores.map(\.urlString).filter { !$0.isEmpty }
         initialPriceString = NSDecimalNumber(decimal: tracker.currentBestPrice).stringValue
@@ -107,10 +114,10 @@ struct PriceTrackerShare: Codable, Equatable {
     /// Reconstructs a tracker on the recipient side, seeding each shared URL with
     /// the shared baseline price (a real refresh updates them after). Returns nil
     /// when the payload carries no usable store URL (the ≥1 invariant).
-    func makeTracker(now: Date = Date()) -> PriceTracker? {
+    public func makeTracker(now: Date = Date()) -> PriceTracker? {
         guard let firstURL = storeURLStrings.first,
-              let price = ProductPageDetector.parsePrice(initialPriceString) else { return nil }
-        let currency = ProductPageDetector.normalizeCurrency(initialCurrency) ?? "USD"
+              let price = PriceParsing.parsePrice(initialPriceString) else { return nil }
+        let currency = PriceParsing.normalizeCurrency(initialCurrency) ?? "USD"
         var tracker = PriceTracker(
             productName: productName, firstStoreURL: firstURL, price: price, currency: currency,
             brand: brand, productID: productID,
@@ -129,36 +136,36 @@ struct PriceTrackerShare: Codable, Equatable {
 /// Invariants enforced by construction:
 /// - `stores` is never empty (a tracker always has ≥1 URL).
 /// - every store and `initialPrice` carry a currency.
-struct PriceTracker: Codable, Equatable {
+public struct PriceTracker: Codable, Equatable {
     /// Product display name.
-    var productName: String
+    public var productName: String
     /// The store listings being watched (≥1).
-    private(set) var stores: [PriceTrackerStore]
+    public private(set) var stores: [PriceTrackerStore]
     /// Brand, if known (used for fuzzy product matching).
-    var brand: String?
+    public var brand: String?
     /// Stable product id (GTIN/SKU/…), the strongest matching signal.
-    var productID: String?
+    public var productID: String?
     /// Downloaded product image file name (inside the Articles directory).
-    var imageFileName: String?
+    public var imageFileName: String?
     /// The best (lowest) price across stores at creation time — the baseline the
     /// drop threshold is measured against.
-    var initialPrice: Decimal
+    public var initialPrice: Decimal
     /// Currency of `initialPrice` (also the tracker's display currency).
-    var initialCurrency: String
+    public var initialCurrency: String
     /// Fractional price drop (vs `initialPrice`) that triggers an alert. Default 0.10.
-    var alertThresholdFraction: Double
+    public var alertThresholdFraction: Double
     /// Whether the user archived this tracker (excluded from background refresh).
-    var isArchived: Bool
+    public var isArchived: Bool
     /// When the user last viewed this tracker's alert (opened the tracker while it
     /// was alerting). Nil means the current alert, if any, is still UNVIEWED — which
     /// is what floats the row to the very top of the reading list. Set the moment
     /// the user opens an alerting tracker; cleared on a fresh drop (see
     /// `markAlertViewed`).
-    var alertAcknowledgedAt: Date?
+    public var alertAcknowledgedAt: Date?
 
     /// The current best (lowest) price across all stores that have a fetched price,
     /// falling back to `initialPrice` when none has refreshed yet.
-    var currentBestPrice: Decimal {
+    public var currentBestPrice: Decimal {
         let prices = stores.compactMap { $0.lastPrice }
         return prices.min() ?? initialPrice
     }
@@ -167,7 +174,7 @@ struct PriceTracker: Codable, Equatable {
     /// price — the row a multi-seller display should highlight. Nil when no store has
     /// a fetched price yet (nothing to highlight). Ties are broken by the first such
     /// store in `stores` order, so the highlight is deterministic.
-    var bestPriceStoreID: PriceTrackerStore.ID? {
+    public var bestPriceStoreID: PriceTrackerStore.ID? {
         var best: PriceTrackerStore?
         for store in stores {
             guard let price = store.lastPrice else { continue }
@@ -179,7 +186,7 @@ struct PriceTracker: Codable, Equatable {
 
     /// The currency to display the best price in — the currency of whichever store
     /// holds the current best price, else the initial currency.
-    var displayCurrency: String {
+    public var displayCurrency: String {
         if let cheapest = stores.filter({ $0.lastPrice != nil })
             .min(by: { ($0.lastPrice ?? 0) < ($1.lastPrice ?? 0) }) {
             return cheapest.currency
@@ -189,7 +196,7 @@ struct PriceTracker: Codable, Equatable {
 
     /// The current discount as a fraction of `initialPrice` (0 when not cheaper, or
     /// when the baseline is zero). 0.25 = 25% off.
-    var discountFraction: Double {
+    public var discountFraction: Double {
         guard initialPrice > 0 else { return 0 }
         let best = currentBestPrice
         guard best < initialPrice else { return 0 }
@@ -198,7 +205,7 @@ struct PriceTracker: Codable, Equatable {
     }
 
     /// Whether the current best price has dropped at or past the alert threshold.
-    var isAlerting: Bool {
+    public var isAlerting: Bool {
         !isArchived && discountFraction >= alertThresholdFraction
     }
 
@@ -207,12 +214,12 @@ struct PriceTracker: Codable, Equatable {
     /// floats the row to the very TOP of the whole reading list (badged red). Once
     /// the user opens the alerting tracker (`markAlertViewed`), this becomes false and
     /// the row rejoins the price-tracking section below Reading.
-    var hasUnviewedAlert: Bool {
+    public var hasUnviewedAlert: Bool {
         isAlerting && alertAcknowledgedAt == nil
     }
 
     /// The absolute price drop (in `initialCurrency`) the threshold corresponds to.
-    var thresholdAbsoluteDrop: Decimal {
+    public var thresholdAbsoluteDrop: Decimal {
         let fraction = Decimal(alertThresholdFraction)
         return initialPrice * fraction
     }
@@ -221,7 +228,7 @@ struct PriceTracker: Codable, Equatable {
     /// with the detected price. A tracker cannot exist without a real numeric price:
     /// `price` is required, fetched up front by the `PriceFetcher` before the tracker
     /// is created (see `claudedocs/price-tracking.md`).
-    init(
+    public init(
         productName: String,
         firstStoreURL: String,
         price: Decimal,
@@ -248,20 +255,20 @@ struct PriceTracker: Codable, Equatable {
     /// Marks the current alert as viewed (the user opened the alerting tracker), so
     /// the row stops floating to the top of the list and rejoins the price-tracking
     /// section. No-op when not alerting (nothing to acknowledge).
-    mutating func markAlertViewed(at date: Date = Date()) {
+    public mutating func markAlertViewed(at date: Date = Date()) {
         guard isAlerting else { return }
         alertAcknowledgedAt = date
     }
 
     /// Whether a URL is already one of this tracker's stores.
-    func hasStore(urlString: String) -> Bool {
+    public func hasStore(urlString: String) -> Bool {
         stores.contains { $0.urlString == urlString }
     }
 
     /// Adds (or updates) a store URL. If the new price beats the baseline taken at
     /// creation, the baseline is NOT lowered — `initialPrice` is the reference point
     /// for alerts; merging a cheaper store simply surfaces as a current discount.
-    mutating func upsertStore(_ store: PriceTrackerStore) {
+    public mutating func upsertStore(_ store: PriceTrackerStore) {
         if let index = stores.firstIndex(where: { $0.urlString == store.urlString }) {
             stores[index] = store
         } else {
@@ -271,7 +278,7 @@ struct PriceTracker: Codable, Equatable {
 
     /// Removes a store URL; no-ops if it would empty the tracker (the ≥1 invariant).
     @discardableResult
-    mutating func removeStore(urlString: String) -> Bool {
+    public mutating func removeStore(urlString: String) -> Bool {
         guard stores.count > 1, stores.contains(where: { $0.urlString == urlString }) else {
             return false
         }
@@ -283,7 +290,7 @@ struct PriceTracker: Codable, Equatable {
     /// that drops the store strictly lower than its previously seen value clears any
     /// prior alert acknowledgement, so a genuinely fresh drop re-floats to the top of
     /// the list as an unviewed alert.
-    mutating func setPrice(_ price: Decimal?, currency: String?, urlString: String, at date: Date) {
+    public mutating func setPrice(_ price: Decimal?, currency: String?, urlString: String, at date: Date) {
         guard let index = stores.firstIndex(where: { $0.urlString == urlString }) else { return }
         if let newPrice = price, let oldPrice = stores[index].lastPrice, newPrice < oldPrice {
             alertAcknowledgedAt = nil
@@ -295,7 +302,7 @@ struct PriceTracker: Codable, Equatable {
 
     /// Records a SUCCESSFUL price fetch into the store's day-bucketed history (lowest
     /// price per calendar day). Called only on a real fetch, not on a failed attempt.
-    mutating func recordPriceSample(_ price: Decimal, currency: String, urlString: String, at date: Date) {
+    public mutating func recordPriceSample(_ price: Decimal, currency: String, urlString: String, at date: Date) {
         guard let index = stores.firstIndex(where: { $0.urlString == urlString }) else { return }
         stores[index].recordSample(price: price, currency: currency, at: date)
     }
@@ -308,7 +315,7 @@ struct PriceTracker: Codable, Equatable {
         case alertAcknowledgedAt
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         productName = try container.decodeIfPresent(String.self, forKey: .productName) ?? "Product"
         let decodedStores = try container.decodeIfPresent([PriceTrackerStore].self, forKey: .stores) ?? []

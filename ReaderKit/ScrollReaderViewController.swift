@@ -306,9 +306,14 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     }
 
     private func image(at point: CGPoint) -> (image: UIImage, frame: CGRect)? {
+        // `point` is in the text view's (content) coordinate space — a scroll view's
+        // bounds.origin already IS its contentOffset, so it must NOT be added again.
+        // Only the text container inset separates content space from layoutManager
+        // (glyph) space. (Adding contentOffset here was the bug that made scrolled
+        // taps land a full page-offset too low.)
         let containerPoint = CGPoint(
-            x: point.x - textView.textContainerInset.left + textView.contentOffset.x,
-            y: point.y - textView.textContainerInset.top + textView.contentOffset.y)
+            x: point.x - textView.textContainerInset.left,
+            y: point.y - textView.textContainerInset.top)
         let index = textView.layoutManager.characterIndex(
             for: containerPoint, in: textView.textContainer, fractionOfDistanceBetweenInsertionPoints: nil)
         guard let entry = rendered.imageRanges.first(where: { NSLocationInRange(index, $0.range) }),
@@ -320,12 +325,11 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         // image's glyph rect, so link/text taps fall through to UITextView's link
         // handling instead of opening the image fullscreen.
         guard glyphRect.contains(containerPoint) else { return nil }
-        let textRect = CGRect(
-            x: glyphRect.minX + textView.textContainerInset.left - textView.contentOffset.x,
-            y: glyphRect.minY + textView.textContainerInset.top - textView.contentOffset.y,
-            width: glyphRect.width,
-            height: glyphRect.height)
-        return (image, textView.convert(textRect, to: view))
+        // Glyph rect → content space (add the inset back); textView.convert handles
+        // the scroll offset into view space.
+        let contentRect = glyphRect.offsetBy(
+            dx: textView.textContainerInset.left, dy: textView.textContainerInset.top)
+        return (image, textView.convert(contentRect, to: view))
     }
 
     @objc private func imageTapped(_ gesture: UITapGestureRecognizer) {

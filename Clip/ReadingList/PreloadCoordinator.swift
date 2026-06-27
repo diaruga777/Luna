@@ -129,8 +129,9 @@ final class PreloadCoordinator {
                          platform: PreloadPlatform(platform: platform.rawValue, itemID: itemID))
             return []
         case .product, .needsArchive, .document, .failed:
-            // Paywalled (silent bypass failed) / non-reader / failed: record as
-            // unrepresentable so we don't re-crawl and the viewer falls back to a
+            // No reader content to cache: a product page (live tap handles its UI), a
+            // paywall the silent bypass couldn't crack, a document, or a failure. Record
+            // as unrepresentable so we don't re-crawl and the viewer falls back to a
             // live load. (Web-archive snapshotting is deferred — see preload-plan.md.)
             store.record(url: url, rootID: rootID, kind: .unrepresentable, depthRemaining: levelsLeft)
             return []

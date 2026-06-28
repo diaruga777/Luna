@@ -50,6 +50,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     public static let headerHeight: CGFloat = 64
 
     private let spinner = UIActivityIndicatorView(style: .medium)
+    /// Backstop so a page that never resolves (slow/hung fetch, web view that never
+    /// fires didFinish) can't spin forever — see `armLoadWatchdog`.
+    private var loadWatchdog: DispatchWorkItem?
     private var articleProbe: Task<Void, Never>?
     private var articleContent: ArticleContent?
     private enum ProbeDecision { case reader(ArticleContent); case web }
@@ -65,7 +68,10 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private let backButton = UIButton(type: .system)
     private let modeControl = UISegmentedControl()
     private let audioButton = UIButton(type: .system)
+    /// Trailing header slot: "Save" while the article isn't in the library, "Share"
+    /// once it is (always Share on the root, which is already a saved item).
     private let saveButton = UIButton(type: .system)
+    private let shareButton = UIButton(type: .system)
     private let topLip = UIButton(type: .system)
     private let bottomLip = UIButton(type: .system)
     private let topLipLabel = UILabel()
@@ -97,7 +103,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
-    deinit { articleProbe?.cancel() }
+    deinit { articleProbe?.cancel(); loadWatchdog?.cancel() }
 
     // MARK: - View
 
@@ -118,6 +124,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         ])
 
         configureChrome()
+        applyDecisionIfPossible()
+        armLoadWatchdog()
+    }
+
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Backstop: if a probe decision landed before the view existed, apply it now
+        // (idempotent — guarded by didDecide).
         applyDecisionIfPossible()
     }
 
@@ -166,10 +180,17 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         header.contentView.addSubview(audioButton)
 
         if shareProvider != nil {
-            saveButton.configuration = Self.saveConfiguration(title: "Save")
+            saveButton.configuration = Self.capsuleConfiguration(title: "Save")
             saveButton.tintColor = GlassStyle.readingAccent
             saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
             header.contentView.addSubview(saveButton)
+
+            shareButton.configuration = GlassStyle.circularButtonConfiguration(
+                symbol: "square.and.arrow.up", padding: 8)
+            shareButton.tintColor = GlassStyle.readingAccent
+            shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
+            header.contentView.addSubview(shareButton)
+            updateSaveSlot()
         }
 
         // Lips: opaque bars covering this card's top/bottom edges once it's an ancestor.
@@ -218,11 +239,12 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         backButton.frame = CGRect(x: 12, y: y, width: s, height: s)
         audioButton.frame = CGRect(x: backButton.frame.maxX + 8, y: y, width: s, height: s)
         var trailing = w - 12
-        if saveButton.superview != nil {
-            let fit = saveButton.sizeThatFits(CGSize(width: w, height: s))
+        // The trailing slot holds whichever of Save / Share is currently visible.
+        if let slot = [saveButton, shareButton].first(where: { $0.superview != nil && !$0.isHidden }) {
+            let fit = slot.sizeThatFits(CGSize(width: w, height: s))
             let sw = max(fit.width, s)
-            saveButton.frame = CGRect(x: w - sw - 12, y: y, width: sw, height: s)
-            trailing = saveButton.frame.minX - 8
+            slot.frame = CGRect(x: w - sw - 12, y: y, width: sw, height: s)
+            trailing = slot.frame.minX - 8
         }
         let modeFit = modeControl.sizeThatFits(CGSize(width: w, height: 34))
         let reserve = max(audioButton.frame.maxX, w - trailing) + 8
@@ -261,6 +283,19 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         bottomLip.isUserInteractionEnabled = !focused && role != .tucked
     }
 
+    /// A small settle for the focused layer's header after a transition lands — it
+    /// fades in, slides down from a touch above, and scales up from 0.98.
+    public func playHeaderEntrance() {
+        guard !header.isHidden, header.alpha > 0.01 else { return }
+        header.alpha = 0
+        header.transform = CGAffineTransform(translationX: 0, y: -8).scaledBy(x: 0.98, y: 0.98)
+        UIView.animate(withDuration: 0.28, delay: 0, usingSpringWithDamping: 0.85,
+                       initialSpringVelocity: 0.3, options: [.allowUserInteraction]) {
+            self.header.alpha = 1
+            self.header.transform = .identity
+        }
+    }
+
     private func updateLipTitles() {
         let title = (descriptor.title?.isEmpty == false)
             ? descriptor.title : descriptor.url?.host
@@ -274,7 +309,24 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         bottomLipLabel.text = text
     }
 
-    private static func saveConfiguration(title: String) -> UIButton.Configuration {
+    /// Whether this layer's URL is already in the reading list (always true for the
+    /// root, which IS a saved item). Drives Save-vs-Share in the trailing header slot.
+    private var isAlreadySaved: Bool {
+        guard let urlString = descriptor.url?.absoluteString else { return false }
+        return ReadingListStore.shared.item(forURLString: urlString) != nil
+    }
+
+    /// Show Share when the article is already saved, Save when it isn't. No-op when
+    /// there's no share provider (the slot stays empty).
+    private func updateSaveSlot() {
+        guard shareProvider != nil else { return }
+        let saved = isAlreadySaved
+        saveButton.isHidden = saved
+        shareButton.isHidden = !saved
+        view.setNeedsLayout()
+    }
+
+    private static func capsuleConfiguration(title: String) -> UIButton.Configuration {
         var config: UIButton.Configuration = {
             if #available(iOS 26.0, *) { return .glass() }
             return .tinted()
@@ -307,10 +359,15 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     @objc private func saveTapped() {
         guard let target = descriptor.url else { return }
         shareProvider?.saveLink(urlString: target.absoluteString)
-        saveButton.configuration = Self.saveConfiguration(title: "Saved")
-        saveButton.tintColor = GlassStyle.readingAccent
-        saveButton.isEnabled = false
-        view.setNeedsLayout()
+        // Now saved → the slot becomes Share.
+        updateSaveSlot()
+    }
+
+    @objc private func shareTapped() {
+        guard let target = descriptor.url else { return }
+        shareProvider?.presentShareSheet(
+            urlString: target.absoluteString, title: descriptor.title,
+            from: self, sourceView: shareButton)
     }
 
     // MARK: - Mode switching
@@ -358,6 +415,52 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         }
     }
 
+    /// Stop the loading spinner and cancel the watchdog (any terminal load outcome).
+    private func finishLoading() {
+        spinner.stopAnimating()
+        loadWatchdog?.cancel()
+        loadWatchdog = nil
+    }
+
+    /// A page that never resolves (hung fetch, or a web view that never fires
+    /// didFinish) would otherwise spin forever. After a grace period, force a terminal
+    /// state: take the web fallback if no decision arrived, then stop spinning.
+    private func armLoadWatchdog() {
+        guard spinner.isAnimating else { return }   // already resolved (e.g. preloaded root)
+        let work = DispatchWorkItem { [weak self] in self?.loadWatchdogFired() }
+        loadWatchdog = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: work)
+    }
+
+    private func loadWatchdogFired() {
+        guard isViewLoaded, spinner.isAnimating else { return }
+        if !didDecide {
+            pendingDecision = .web
+            applyDecisionIfPossible()   // → showWebView (or error for a nil URL)
+        }
+        // Whatever loaded, stop spinning; a slow web view stays visible underneath.
+        spinner.stopAnimating()
+        if webView == nil, articleContent == nil { showLoadError() }
+    }
+
+    /// Themed "couldn't load" state for a nil/invalid URL or a dead load.
+    private func showLoadError() {
+        finishLoading()
+        guard view.viewWithTag(0x4C4F4144) == nil else { return }   // "LOAD"
+        let label = UILabel()
+        label.tag = 0x4C4F4144
+        label.text = "Couldn’t load this page."
+        label.textColor = .secondaryLabel
+        label.font = .systemFont(ofSize: 15, weight: .medium)
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+    }
+
     nonisolated private static func isArticleLike(_ content: ArticleContent) -> Bool {
         let blocks = content.blocks.filter { !$0.text.isEmpty }
         let totalText = blocks.reduce(0) { $0 + $1.text.count }
@@ -372,7 +475,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             descriptor.title = content.title
             updateLipTitles()
         }
-        spinner.stopAnimating()
+        finishLoading()
+        // The mode switcher applies only to article-rendered pages — reveal it now, at
+        // every nesting level (not just the root).
+        modeControl.isHidden = false
+        updateSaveSlot()
         embedReader(mode: readerMode)
         onBecameArticle?()
     }
@@ -384,7 +491,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     }
 
     private func installWebView() {
-        guard webView == nil, let url = descriptor.url else { return }
+        guard webView == nil else { return }
+        guard let url = descriptor.url else { showLoadError(); return }
         let web = WKWebView(frame: view.bounds, configuration: WebJunkBlocker.makeConfiguration())
         webView = web
         let themed = view.backgroundColor ?? ReaderDepth.backgroundColor(for: 0)
@@ -533,11 +641,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     // MARK: - WKNavigationDelegate
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if articleContent == nil { spinner.stopAnimating() }
+        if articleContent == nil { finishLoading() }
     }
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        spinner.stopAnimating()
+        finishLoading()
     }
     public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
-                 withError error: Error) { spinner.stopAnimating() }
+                 withError error: Error) { finishLoading() }
 }

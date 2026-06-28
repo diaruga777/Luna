@@ -55,14 +55,28 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     /// Whether this page is rendering as an article (so the mode switcher applies).
     public var isArticle: Bool { articleContent != nil }
 
+    /// A preloaded article resolved synchronously in `init` (no spinner ever shows).
+    /// nil when the page wasn't in the in-memory preload cache.
+    private let preloadedContent: ArticleContent?
+
     public init(url: URL, shareProvider: ReaderShareProviding?, headerHeight: CGFloat) {
         self.url = url
         self.shareProvider = shareProvider
         self.headerHeight = headerHeight
+        // Synchronous in-memory cache check FIRST: if this link was preloaded, we have
+        // its content right now and can render the reader on the first frame with no
+        // spinner. Only a genuine miss kicks off the async fetch+probe (which shows the
+        // spinner). This is the whole point of preloading — an instant open.
+        let cached = PreloadStore.shared.cachedArticleContentInMemory(for: url)
+        self.preloadedContent = (cached?.isArticleLike == true) ? cached : nil
         super.init(nibName: nil, bundle: nil)
-        // Begin fetching immediately so the network round-trip overlaps the host's
-        // open animation rather than starting only once the view has loaded.
-        probeForArticle()
+        if let preloadedContent {
+            articleContent = preloadedContent   // marks isArticle for the host header
+        } else {
+            // Begin fetching immediately so the network round-trip overlaps the host's
+            // open animation rather than starting only once the view has loaded.
+            probeForArticle()
+        }
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
@@ -73,10 +87,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         super.viewDidLoad()
         view.backgroundColor = ReaderDepth.backgroundColor(for: 0)
 
-        // Show ONLY a themed background + spinner until the probe decides reader vs
-        // web view — never flash the raw web view first and then swap to the reader.
         spinner.hidesWhenStopped = true
-        spinner.startAnimating()
         spinner.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(spinner)
         NSLayoutConstraint.activate([
@@ -84,8 +95,27 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: headerHeight / 2),
         ])
 
+        // Preloaded? Render the reader on the first frame — no spinner, no async hop.
+        if let preloadedContent {
+            embedPreloadedReader(preloadedContent)
+            return
+        }
+
+        // Cache miss: show ONLY a themed background + spinner until the probe decides
+        // reader vs web view — never flash the raw web view first then swap to reader.
+        spinner.startAnimating()
         // The probe (kicked off in init) may already have a decision waiting.
         applyDecisionIfPossible()
+    }
+
+    /// Synchronously shows the reader for content already in hand (a preload hit),
+    /// then refreshes the on-disk cache in the background for next time.
+    private func embedPreloadedReader(_ content: ArticleContent) {
+        didDecide = true
+        articleContent = content
+        embedReader(mode: readerMode)
+        onBecameArticle?()
+        refreshPreloadedCache(url)
     }
 
     /// Adds and loads the themed web view (only once the probe rules OUT a reader),
@@ -142,7 +172,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             let result: (content: ArticleContent?, fromCache: Bool) =
                 await Task.detached(priority: .userInitiated) {
                     if let cached = PreloadStore.shared.articleContent(for: target),
-                       Self.isArticleLike(cached) {
+                       cached.isArticleLike {
                         return (cached, true)
                     }
                     guard let html = try? await ArticleFetcher().fetchHTML(from: target) else {
@@ -152,7 +182,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
                 }.value
             guard let self, !Task.isCancelled else { return }
             await MainActor.run {
-                if let content = result.content, Self.isArticleLike(content) {
+                if let content = result.content, content.isArticleLike {
                     self.pendingDecision = .reader(content)
                 } else {
                     self.pendingDecision = .web   // not article-like → show the page
@@ -170,7 +200,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         Task.detached(priority: .utility) {
             guard let html = try? await ArticleFetcher().fetchHTML(from: target),
                   let fresh = try? ArticleExtractor().extract(html: html, baseURL: target),
-                  Self.isArticleLike(fresh) else { return }
+                  fresh.isArticleLike else { return }
             PreloadStore.shared.refreshArticle(for: target, content: fresh)
         }
     }
@@ -183,12 +213,6 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         case .reader(let content): showReader(content)
         case .web: showWebView()
         }
-    }
-
-    private static func isArticleLike(_ content: ArticleContent) -> Bool {
-        let blocks = content.blocks.filter { !$0.text.isEmpty }
-        let totalText = blocks.reduce(0) { $0 + $1.text.count }
-        return totalText >= 600 && blocks.count >= 3
     }
 
     private func showReader(_ content: ArticleContent) {

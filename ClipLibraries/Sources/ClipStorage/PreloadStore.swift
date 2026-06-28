@@ -67,6 +67,19 @@ public final class PreloadStore {
     /// while another page/save still references them). Same container as this store.
     private let imageReferences: ImageReferenceStore
 
+    /// In-memory cache of decoded article content, keyed by URL hash. Lets the inline
+    /// link viewer resolve a preloaded page **synchronously on the main thread** (no
+    /// disk read / JSON decode), so a cache hit renders the reader on the first frame
+    /// with NO spinner. Boxed because `NSCache` requires a class value. Purged on
+    /// memory pressure; a miss just falls back to the on-disk decode.
+    private final class ContentBox { let content: ArticleContent
+        init(_ content: ArticleContent) { self.content = content } }
+    private let memoryCache: NSCache<NSString, ContentBox> = {
+        let cache = NSCache<NSString, ContentBox>()
+        cache.countLimit = 32   // recent reader-reachable pages; bounded for memory
+        return cache
+    }()
+
     public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
         self.imageReferences = ImageReferenceStore(containerURL: containerURL)
@@ -141,13 +154,25 @@ public final class PreloadStore {
         return loadIndex()[Self.key(for: url)]
     }
 
-    /// The cached reader content for a preloaded `.article` URL, or nil.
+    /// The cached reader content for a preloaded `.article` URL already resident in
+    /// memory — a synchronous, I/O-free hit (or nil). The inline link viewer calls
+    /// this on the main thread BEFORE showing any spinner: a hit renders instantly.
+    public func cachedArticleContentInMemory(for url: URL) -> ArticleContent? {
+        memoryCache.object(forKey: Self.key(for: url) as NSString)?.content
+    }
+
+    /// The cached reader content for a preloaded `.article` URL, or nil. Serves an
+    /// in-memory hit immediately; otherwise decodes from disk and warms memory so the
+    /// next open is synchronous. Run off-main for the disk path.
     public func articleContent(for url: URL) -> ArticleContent? {
+        let cacheKey = Self.key(for: url) as NSString
+        if let boxed = memoryCache.object(forKey: cacheKey) { return boxed.content }
         guard let entry = entry(for: url), entry.kind == .article, entry.state == .loaded,
               let file = entry.contentFile,
               let data = try? Data(contentsOf: contentURL(fileName: file)),
               let content = try? JSONDecoder().decode(ArticleContent.self, from: data)
         else { return nil }
+        memoryCache.setObject(ContentBox(content), forKey: cacheKey)
         return content
     }
 
@@ -199,6 +224,9 @@ public final class PreloadStore {
         if kind == .article, let content {
             imageReferences.setReferences(
                 contentKey: key, files: ImageReferenceStore.imageFiles(in: content))
+            // Warm the in-memory cache so the very first tap after a preload is a
+            // synchronous, spinner-free hit (no disk read on the way to the reader).
+            memoryCache.setObject(ContentBox(content), forKey: key as NSString)
         }
         return entry
     }
@@ -231,6 +259,7 @@ public final class PreloadStore {
             entry.updated = Date()
             index[key] = entry
             saveIndex(index)
+            memoryCache.setObject(ContentBox(content), forKey: key as NSString)
         }
         lock.unlock()
     }
@@ -260,9 +289,11 @@ public final class PreloadStore {
         for file in orphanedFiles {
             try? fileManager.removeItem(at: contentURL(fileName: file))
         }
-        // Release each orphaned page's images (deleted only if no other page/save owns them).
+        // Release each orphaned page's images (deleted only if no other page/save owns
+        // them) and drop its decoded copy from the in-memory cache.
         for key in orphanedKeys {
             imageReferences.removeReferences(contentKey: key)
+            memoryCache.removeObject(forKey: key as NSString)
         }
     }
 

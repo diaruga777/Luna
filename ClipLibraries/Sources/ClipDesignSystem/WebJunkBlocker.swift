@@ -70,9 +70,16 @@ public enum WebJunkBlocker {
     })();
     """
 
-    /// A web view configuration with the cleanup script pre-installed.
+    /// One shared web content process pool across every junk-blocking web view, so a
+    /// second web view (e.g. a cache-miss inline link, or the Original mode switch)
+    /// reuses the already-warm web process instead of cold-starting its own.
+    private static let sharedProcessPool = WKProcessPool()
+
+    /// A web view configuration with the cleanup script pre-installed and the shared
+    /// process pool attached.
     public static func makeConfiguration() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
+        configuration.processPool = sharedProcessPool
         let script = WKUserScript(
             source: cleanupJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         configuration.userContentController.addUserScript(script)

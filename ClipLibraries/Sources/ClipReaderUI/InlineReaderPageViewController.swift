@@ -56,18 +56,20 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     public var isArticle: Bool { articleContent != nil }
 
     /// A preloaded article resolved synchronously in `init` (no spinner ever shows).
-    /// nil when the page wasn't in the in-memory preload cache.
+    /// nil when the page wasn't in the preload cache (memory or disk).
     private let preloadedContent: ArticleContent?
 
     public init(url: URL, shareProvider: ReaderShareProviding?, headerHeight: CGFloat) {
         self.url = url
         self.shareProvider = shareProvider
         self.headerHeight = headerHeight
-        // Synchronous in-memory cache check FIRST: if this link was preloaded, we have
-        // its content right now and can render the reader on the first frame with no
-        // spinner. Only a genuine miss kicks off the async fetch+probe (which shows the
-        // spinner). This is the whole point of preloading — an instant open.
-        let cached = PreloadStore.shared.cachedArticleContentInMemory(for: url)
+        // Synchronous preload check FIRST (in-memory hit, else a size-bounded disk
+        // decode): if this link was preloaded, we have its content right now and can
+        // render the reader on the first frame with no spinner — even on the first tap
+        // after a relaunch (cold memory cache, warm disk). Only a genuine miss kicks
+        // off the async fetch+probe (which shows the spinner). This is the whole point
+        // of preloading — an instant open.
+        let cached = PreloadStore.shared.synchronousArticleContent(for: url)
         self.preloadedContent = (cached?.isArticleLike == true) ? cached : nil
         super.init(nibName: nil, bundle: nil)
         if let preloadedContent {

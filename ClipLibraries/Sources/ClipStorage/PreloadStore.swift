@@ -154,11 +154,29 @@ public final class PreloadStore {
         return loadIndex()[Self.key(for: url)]
     }
 
-    /// The cached reader content for a preloaded `.article` URL already resident in
-    /// memory — a synchronous, I/O-free hit (or nil). The inline link viewer calls
-    /// this on the main thread BEFORE showing any spinner: a hit renders instantly.
-    public func cachedArticleContentInMemory(for url: URL) -> ArticleContent? {
-        memoryCache.object(forKey: Self.key(for: url) as NSString)?.content
+    /// Largest preloaded article we'll decode SYNCHRONOUSLY on the main thread (an
+    /// init-time instant open). Comfortably above a normal article's JSON; a rare
+    /// larger page falls back to the async probe rather than risk a main-thread hitch.
+    private static let maxSyncDecodeBytes = 2_000_000
+
+    /// The cached reader content for a preloaded `.article` URL, resolvable WITHOUT a
+    /// thread/await hop so the inline link viewer can render the reader on the first
+    /// frame with no spinner. Serves an in-memory hit immediately; on a memory miss it
+    /// does a size-bounded synchronous disk decode (and warms memory). Returns nil for
+    /// a genuine miss or an oversized file (which defers to the async path).
+    public func synchronousArticleContent(for url: URL) -> ArticleContent? {
+        let cacheKey = Self.key(for: url) as NSString
+        if let boxed = memoryCache.object(forKey: cacheKey) { return boxed.content }
+        guard let entry = entry(for: url), entry.kind == .article, entry.state == .loaded,
+              let file = entry.contentFile else { return nil }
+        let fileURL = contentURL(fileName: file)
+        let size = (try? fileManager.attributesOfItem(atPath: fileURL.path)[.size] as? Int) ?? nil
+        guard (size ?? 0) <= Self.maxSyncDecodeBytes,
+              let data = try? Data(contentsOf: fileURL),
+              let content = try? JSONDecoder().decode(ArticleContent.self, from: data)
+        else { return nil }
+        memoryCache.setObject(ContentBox(content), forKey: cacheKey)
+        return content
     }
 
     /// The cached reader content for a preloaded `.article` URL, or nil. Serves an

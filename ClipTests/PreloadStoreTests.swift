@@ -48,6 +48,42 @@ final class PreloadStoreTests: XCTestCase {
         XCTAssertEqual(store.entry(for: u)?.kind, .article)
     }
 
+    // MARK: - Synchronous / in-memory cache (instant, spinner-free opens)
+
+    /// `record` warms the in-memory cache so the very first tap is a synchronous hit.
+    func testRecordWarmsSynchronousCache() {
+        let u = url("https://example.com/sync")
+        store.record(url: u, rootID: UUID(), kind: .article, depthRemaining: 0, content: article("Sync"))
+        XCTAssertEqual(store.synchronousArticleContent(for: u)?.title, "Sync")
+    }
+
+    /// A fresh store (cold memory, warm disk — i.e. after relaunch) still resolves a
+    /// preloaded article synchronously by decoding from disk and warming memory.
+    func testSynchronousReadFromDiskOnColdMemory() {
+        let u = url("https://example.com/cold")
+        store.record(url: u, rootID: UUID(), kind: .article, depthRemaining: 0, content: article("Cold"))
+        // A new store instance over the same container has an empty in-memory cache.
+        let fresh = PreloadStore(containerURL: dir)
+        XCTAssertEqual(fresh.synchronousArticleContent(for: u)?.title, "Cold")
+        // Second call is now served from the warmed memory cache (same result).
+        XCTAssertEqual(fresh.synchronousArticleContent(for: u)?.title, "Cold")
+    }
+
+    func testSynchronousReadMissReturnsNil() {
+        XCTAssertNil(store.synchronousArticleContent(for: url("https://example.com/never")))
+    }
+
+    /// Releasing the last owner evicts the entry from the in-memory cache too (not just
+    /// disk), so a stale page can't be served synchronously after teardown.
+    func testReleaseEvictsSynchronousCache() {
+        let u = url("https://example.com/evict")
+        let root = UUID()
+        store.record(url: u, rootID: root, kind: .article, depthRemaining: 0, content: article("E"))
+        XCTAssertNotNil(store.synchronousArticleContent(for: u))
+        store.releaseTree(rootID: root)
+        XCTAssertNil(store.synchronousArticleContent(for: u))
+    }
+
     func testRefcountKeepsSharedCopyUntilLastOwnerReleased() {
         let u = url("https://example.com/shared")
         let root1 = UUID(), root2 = UUID()

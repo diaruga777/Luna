@@ -13,7 +13,7 @@ import Foundation
 /// This is independent of Console.app and the unified log's archive format —
 /// which can't be read across macOS/iOS-beta version gaps — and it survives
 /// relaunches and background (push / bg-refresh) wakeups.
-protocol DiagnosticLogging: Sendable {
+public protocol DiagnosticLogging: Sendable {
     /// Appends one timestamped line tagged with `category`.
     func record(_ message: String, category: String)
     /// The full accumulated log text, oldest line first.
@@ -27,9 +27,9 @@ protocol DiagnosticLogging: Sendable {
 /// File-backed `DiagnosticLogging`. Appends are serialized on a private queue;
 /// the file is trimmed to its most recent half once it exceeds `maxBytes` so it
 /// can't grow without bound.
-final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
+public final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
 
-    static let shared = DiagnosticLog()
+    public static let shared = DiagnosticLog()
 
     private let queue = DispatchQueue(label: "com.hpiddy.clip.diagnosticlog")
     private let fileURL: URL
@@ -38,7 +38,7 @@ final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
 
     /// `containerURL` overrides the App Group container (tests); `maxBytes`
     /// caps the on-disk size.
-    init(containerURL: URL? = nil, maxBytes: Int = 1_000_000) {
+    public init(containerURL: URL? = nil, maxBytes: Int = 1_000_000) {
         let directory = containerURL
             ?? FileManager.default.containerURL(
                 forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
@@ -50,7 +50,7 @@ final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
         self.timestampFormatter = formatter
     }
 
-    func record(_ message: String, category: String) {
+    public func record(_ message: String, category: String) {
         let date = Date()
         queue.async { [weak self] in
             guard let self else { return }
@@ -61,13 +61,13 @@ final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
         }
     }
 
-    func contents() -> String {
+    public func contents() -> String {
         queue.sync {
             (try? String(contentsOf: fileURL, encoding: .utf8)) ?? ""
         }
     }
 
-    func exportFile() throws -> URL {
+    public func exportFile() throws -> URL {
         let body = contents()
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent("clip-diagnostics.txt")
@@ -76,7 +76,7 @@ final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
         return destination
     }
 
-    func clear() {
+    public func clear() {
         queue.sync { try? FileManager.default.removeItem(at: fileURL) }
     }
 
@@ -108,19 +108,26 @@ final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
         try? ("…(trimmed)\n" + trimmed).write(to: fileURL, atomically: true, encoding: .utf8)
     }
 
+    /// Messaging-identity + CloudKit-container context for the export header,
+    /// injected by the main app at launch (the social layer lives above storage,
+    /// so it's threaded in rather than referenced directly). Default to placeholders
+    /// in contexts that don't set them (extensions, tests).
+    public static var exportIdentityProvider: () -> String = { "none" }
+    public static var exportCloudKitContainer: () -> String = { "—" }
+
     /// Device, build, and identity context, prepended to exports.
     private func header() -> String {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
-        let identity = KeychainIdentityStore.shared.loadIdentity()?.uuid.uuidString ?? "none"
+        let identity = Self.exportIdentityProvider()
         let exportedAt = ISO8601DateFormatter().string(from: Date())
         return """
         Queue diagnostics
         App: \(version) (\(build))
         OS: \(systemDescription())
         Identity UUID: \(identity)
-        CloudKit container: \(CloudKitMessageTransport.containerID) (public DB)
+        CloudKit container: \(Self.exportCloudKitContainer()) (public DB)
         Exported: \(exportedAt)
         ----------------------------------------
 

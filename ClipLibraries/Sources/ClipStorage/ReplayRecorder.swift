@@ -14,7 +14,7 @@ import Foundation
 ///
 /// A no-op implementation (`NoopReplayRecorder`) lets a save run with no recording
 /// (e.g. unit tests of the pipeline), so recording is never load-bearing.
-protocol ReplayRecording: Sendable {
+public protocol ReplayRecording: Sendable {
     /// Opens a new in-progress replay for `urlString` captured from `source`.
     /// Returns the replay id used to address subsequent events; nil if recording
     /// is disabled (the caller then records nothing).
@@ -50,26 +50,35 @@ protocol ReplayRecording: Sendable {
 
 /// A stored replay's listing metadata + its export location. Lightweight (no
 /// events) so the list screen never loads full replays.
-struct StoredReplay: Equatable, Sendable {
-    var id: UUID
-    var itemURLString: String
-    var state: Replay.ReplayState
-    var createdAt: Date
+public struct StoredReplay: Equatable, Sendable {
+    public var id: UUID
+    public var itemURLString: String
+    public var state: Replay.ReplayState
+    public var createdAt: Date
     /// The export zip in the Documents/Replays folder.
-    var zipURL: URL
+    public var zipURL: URL
+
+    public init(id: UUID, itemURLString: String, state: Replay.ReplayState,
+                createdAt: Date, zipURL: URL) {
+        self.id = id
+        self.itemURLString = itemURLString
+        self.state = state
+        self.createdAt = createdAt
+        self.zipURL = zipURL
+    }
 }
 
 /// A recorder that does nothing — the default for code paths (and tests) that
 /// don't want to record. Every method is a no-op returning empties.
-struct NoopReplayRecorder: ReplayRecording {
-    func begin(urlString: String, source: ReplaySource) async -> UUID? { nil }
-    func record(_ kind: EventKind, for id: UUID) async {}
-    func attachItemID(_ itemID: UUID, to id: UUID) async {}
-    func updateItemURL(_ urlString: String, for id: UUID) async {}
-    func terminate(_ id: UUID, state: Replay.ReplayState, finalContent: ArticleContent?) async {}
-    func terminatedReplay(forItemURLString itemURLString: String) async -> Replay? { nil }
-    func markUserReported(forItemURLString itemURLString: String) async -> URL? { nil }
-    func storedReplays() async -> [StoredReplay] { [] }
+public struct NoopReplayRecorder: ReplayRecording {
+    public func begin(urlString: String, source: ReplaySource) async -> UUID? { nil }
+    public func record(_ kind: EventKind, for id: UUID) async {}
+    public func attachItemID(_ itemID: UUID, to id: UUID) async {}
+    public func updateItemURL(_ urlString: String, for id: UUID) async {}
+    public func terminate(_ id: UUID, state: Replay.ReplayState, finalContent: ArticleContent?) async {}
+    public func terminatedReplay(forItemURLString itemURLString: String) async -> Replay? { nil }
+    public func markUserReported(forItemURLString itemURLString: String) async -> URL? { nil }
+    public func storedReplays() async -> [StoredReplay] { [] }
 }
 
 /// The live recorder: an actor (thread-safe by isolation) holding in-progress
@@ -79,22 +88,22 @@ struct NoopReplayRecorder: ReplayRecording {
 /// the duration of one save. Body text is capped per event by the recorder before
 /// it's stored. On termination the replay is written to disk and dropped from
 /// memory — nothing accumulates across saves.
-actor ReplayRecorder: ReplayRecording {
-    static let shared = ReplayRecorder(store: ReplayDiskStore())
+public actor ReplayRecorder: ReplayRecording {
+    public static let shared = ReplayRecorder(store: ReplayDiskStore())
 
     /// Largest text body retained verbatim per event; longer bodies are truncated
     /// (with the dropped byte count recorded) so a huge page can't bloat the export.
-    static let maxBodyBytes = 2 * 1024 * 1024
+    public static let maxBodyBytes = 2 * 1024 * 1024
 
     private let store: ReplayStoring
     private var inProgress: [UUID: Replay] = [:]
     private var nextIndex: [UUID: Int] = [:]
 
-    init(store: ReplayStoring) {
+    public init(store: ReplayStoring) {
         self.store = store
     }
 
-    func begin(urlString: String, source: ReplaySource) async -> UUID? {
+    public func begin(urlString: String, source: ReplaySource) async -> UUID? {
         let id = UUID()
         let replay = Replay(
             metadata: Replay.Metadata(
@@ -106,7 +115,7 @@ actor ReplayRecorder: ReplayRecording {
         return id
     }
 
-    func record(_ kind: EventKind, for id: UUID) async {
+    public func record(_ kind: EventKind, for id: UUID) async {
         guard var replay = inProgress[id] else { return }
         let index = nextIndex[id] ?? replay.events.count
         replay.events.append(Replay.Event(index: index, timestamp: Date(), kind: capped(kind)))
@@ -114,15 +123,15 @@ actor ReplayRecorder: ReplayRecording {
         inProgress[id] = replay
     }
 
-    func attachItemID(_ itemID: UUID, to id: UUID) async {
+    public func attachItemID(_ itemID: UUID, to id: UUID) async {
         inProgress[id]?.metadata.itemID = itemID
     }
 
-    func updateItemURL(_ urlString: String, for id: UUID) async {
+    public func updateItemURL(_ urlString: String, for id: UUID) async {
         inProgress[id]?.metadata.itemURLString = urlString
     }
 
-    func terminate(_ id: UUID, state: Replay.ReplayState, finalContent: ArticleContent?) async {
+    public func terminate(_ id: UUID, state: Replay.ReplayState, finalContent: ArticleContent?) async {
         guard var replay = inProgress.removeValue(forKey: id) else { return }
         nextIndex[id] = nil
         let index = replay.events.count
@@ -134,11 +143,11 @@ actor ReplayRecorder: ReplayRecording {
         store.write(replay)
     }
 
-    func terminatedReplay(forItemURLString itemURLString: String) async -> Replay? {
+    public func terminatedReplay(forItemURLString itemURLString: String) async -> Replay? {
         store.newestReplay(forItemURLString: itemURLString)
     }
 
-    func markUserReported(forItemURLString itemURLString: String) async -> URL? {
+    public func markUserReported(forItemURLString itemURLString: String) async -> URL? {
         guard var replay = store.newestReplay(forItemURLString: itemURLString) else { return nil }
         let index = replay.events.count
         replay.events.append(
@@ -148,7 +157,7 @@ actor ReplayRecorder: ReplayRecording {
         return store.zipURL(for: replay.metadata.id)
     }
 
-    func storedReplays() async -> [StoredReplay] {
+    public func storedReplays() async -> [StoredReplay] {
         store.storedReplays()
     }
 

@@ -11,7 +11,7 @@ import Foundation
 /// in the SAME format, to the SAME App Group `clip-diagnostics.log` file the
 /// main app reads and exports — so extension activity shows up in Settings →
 /// Diagnostics alongside everything else.
-enum SharedDiagnosticLog {
+public enum SharedDiagnosticLog {
 
     private static let lock = NSLock()
 
@@ -19,7 +19,7 @@ enum SharedDiagnosticLog {
     /// SYNCHRONOUS: an extension can be killed the instant after it logs, so the
     /// write must complete before returning — an async queue would silently lose
     /// the most diagnostic lines (the ones right before the death).
-    static func record(_ message: String, category: String) {
+    public static func record(_ message: String, category: String) {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let line = "\(formatter.string(from: Date())) [\(category)] \(message)\n"

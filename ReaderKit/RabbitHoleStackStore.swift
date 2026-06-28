@@ -5,6 +5,7 @@
 //  Forked, experimental "RabbitHole" reader — see RabbitHoleReaderViewController.
 //
 
+import ClipStorage
 import ClipModels
 import Foundation
 

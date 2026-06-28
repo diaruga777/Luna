@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipStorage
 import ClipModels
 import ImageIO
 import UIKit

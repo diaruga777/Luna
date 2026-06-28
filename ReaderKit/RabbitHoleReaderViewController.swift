@@ -16,6 +16,7 @@
 //  interactive overscroll-pop share one code path and interrupt each other cleanly.
 //
 
+import ClipStorage
 import ClipModels
 import UIKit
 

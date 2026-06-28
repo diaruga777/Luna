@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipStorage
 import UIKit
 
 /// Main-app sharing provider, backed by the social stack (ShareSuggestionStore

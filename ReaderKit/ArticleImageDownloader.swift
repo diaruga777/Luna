@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipStorage
 import ClipFetch
 import ClipModels
 import CryptoKit

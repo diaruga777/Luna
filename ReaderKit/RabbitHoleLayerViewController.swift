@@ -9,6 +9,7 @@
 //  is untouched.
 //
 
+import ClipStorage
 import ClipFetch
 import ClipHTMLClassification
 import ClipModels

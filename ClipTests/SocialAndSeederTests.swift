@@ -6,6 +6,7 @@
 //  (so the screenshot agent can rely on the named states and the seeding API).
 //
 
+import ClipStorage
 import ClipModels
 import UIKit
 import XCTest

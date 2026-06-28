@@ -8,38 +8,43 @@ import CryptoKit
 import Foundation
 
 /// What a preloaded link resolved to (mirrors the on-disk forms a real save can take).
-enum PreloadKind: String, Codable {
+public enum PreloadKind: String, Codable {
     case article          // reader content persisted as <key>.json
     case platform         // a social/video/audio URL — store the descriptor only
     case webArchive       // a non-reader page snapshot persisted as <key>.webarchive
     case unrepresentable  // paywalled (silent bypass failed) / failed — no content
 }
 
-enum PreloadState: String, Codable { case pending, loaded, failed }
+public enum PreloadState: String, Codable { case pending, loaded, failed }
 
 /// The platform descriptor for a `.platform` preload (so the viewer can show it
 /// without re-recognizing).
-struct PreloadPlatform: Codable, Equatable {
-    var platform: String
-    var itemID: String?
+public struct PreloadPlatform: Codable, Equatable {
+    public var platform: String
+    public var itemID: String?
+
+    public init(platform: String, itemID: String?) {
+        self.platform = platform
+        self.itemID = itemID
+    }
 }
 
 /// One entry in the shared preload cache, keyed by the canonical URL's hash.
-struct PreloadEntry: Codable, Equatable {
-    var urlString: String
-    var kind: PreloadKind
-    var contentFile: String?
-    var platform: PreloadPlatform?
+public struct PreloadEntry: Codable, Equatable {
+    public var urlString: String
+    public var kind: PreloadKind
+    public var contentFile: String?
+    public var platform: PreloadPlatform?
     /// Root SAVE item UUID strings whose preload subtree reaches this URL. The
     /// refcount is `owners.count`; the entry's files are deleted when it hits zero.
-    var owners: Set<String>
+    public var owners: Set<String>
     /// Hashed keys of outbound links discovered on this page (for subtree teardown
     /// and resume). Empty for non-article kinds.
-    var children: [String]
+    public var children: [String]
     /// How many more levels we still intend to crawl from here (for resume).
-    var depthRemaining: Int
-    var state: PreloadState
-    var updated: Date
+    public var depthRemaining: Int
+    public var state: PreloadState
+    public var updated: Date
 }
 
 /// The shared, URL-keyed, refcounted cache of preloaded link pages. **Physically
@@ -51,21 +56,21 @@ struct PreloadEntry: Codable, Equatable {
 /// copy; each referencing root save is an "owner". Deleting a save releases its
 /// subtree (removes it from every entry's `owners`); entries with no owners left are
 /// deleted. Pure index logic is unit-tested; file I/O is best-effort (a cache).
-final class PreloadStore {
-    static let shared = PreloadStore()
+public final class PreloadStore {
+    public static let shared = PreloadStore()
 
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
     private let lock = NSLock()
 
-    init(containerURL: URL? = nil) {
+    public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
     }
 
     private var containerURL: URL {
         if let overrideContainerURL { return overrideContainerURL }
         return fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: ReaderSettings.appGroupID)
+            forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
             ?? fileManager.temporaryDirectory
     }
 
@@ -78,7 +83,7 @@ final class PreloadStore {
     private var indexURL: URL { preloadsDirectory.appendingPathComponent("preloads.json") }
 
     /// File URL for a preloaded entry's content (article JSON / webarchive).
-    func contentURL(fileName: String) -> URL {
+    public func contentURL(fileName: String) -> URL {
         preloadsDirectory.appendingPathComponent(fileName)
     }
 
@@ -86,7 +91,7 @@ final class PreloadStore {
 
     /// Canonical URL string used for keying (unwrap-free: callers pass the resolved
     /// URL). Lowercased host, no fragment.
-    static func canonicalString(for url: URL) -> String {
+    public static func canonicalString(for url: URL) -> String {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         components?.fragment = nil
         if let host = components?.host { components?.host = host.lowercased() }
@@ -94,7 +99,7 @@ final class PreloadStore {
     }
 
     /// Stable, filesystem-safe key for a URL (sha256 hex of the canonical string).
-    static func key(for url: URL) -> String {
+    public static func key(for url: URL) -> String {
         let digest = SHA256.hash(data: Data(canonicalString(for: url).utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
@@ -126,13 +131,13 @@ final class PreloadStore {
 
     // MARK: - Reads (safe from any process)
 
-    func entry(for url: URL) -> PreloadEntry? {
+    public func entry(for url: URL) -> PreloadEntry? {
         lock.lock(); defer { lock.unlock() }
         return loadIndex()[Self.key(for: url)]
     }
 
     /// The cached reader content for a preloaded `.article` URL, or nil.
-    func articleContent(for url: URL) -> ArticleContent? {
+    public func articleContent(for url: URL) -> ArticleContent? {
         guard let entry = entry(for: url), entry.kind == .article, entry.state == .loaded,
               let file = entry.contentFile,
               let data = try? Data(contentsOf: contentURL(fileName: file)),
@@ -146,7 +151,7 @@ final class PreloadStore {
     /// Records a loaded/failed preload result for `url`, owned by `rootID`, returning
     /// the stored entry. `content`/`platform`/`archiveData` are persisted per `kind`.
     @discardableResult
-    func record(
+    public func record(
         url: URL, rootID: UUID, kind: PreloadKind, depthRemaining: Int,
         content: ArticleContent? = nil, platform: PreloadPlatform? = nil,
         archiveData: Data? = nil, children: [URL] = []
@@ -190,7 +195,7 @@ final class PreloadStore {
     /// an already-cached URL). Returns the entry's children keys so the caller can
     /// extend ownership down the shared subtree.
     @discardableResult
-    func addOwner(_ rootID: UUID, toKey key: String) -> PreloadEntry? {
+    public func addOwner(_ rootID: UUID, toKey key: String) -> PreloadEntry? {
         mutate { index in
             guard var entry = index[key] else { return nil }
             entry.owners.insert(rootID.uuidString)
@@ -202,7 +207,7 @@ final class PreloadStore {
     /// Overwrites the cached article content for `url` IF an entry already exists
     /// (a viewer background-refresh), preserving owners/kind. No-op otherwise — a
     /// refresh never creates an unowned entry.
-    func refreshArticle(for url: URL, content: ArticleContent) {
+    public func refreshArticle(for url: URL, content: ArticleContent) {
         let key = Self.key(for: url)
         lock.lock()
         var index = loadIndex()
@@ -223,7 +228,7 @@ final class PreloadStore {
     /// Releases the entire preload subtree owned by `rootID`: removes it from every
     /// entry's `owners`; any entry left with no owners has its files deleted and is
     /// dropped. Only ever deletes files under `Preloads/`.
-    func releaseTree(rootID: UUID) {
+    public func releaseTree(rootID: UUID) {
         let id = rootID.uuidString
         let orphanedFiles: [String] = mutate { index in
             var files: [String] = []
@@ -244,7 +249,7 @@ final class PreloadStore {
     }
 
     /// All entries (for resume / diagnostics).
-    func allEntries() -> [PreloadEntry] {
+    public func allEntries() -> [PreloadEntry] {
         lock.lock(); defer { lock.unlock() }
         return Array(loadIndex().values)
     }

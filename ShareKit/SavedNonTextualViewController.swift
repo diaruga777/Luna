@@ -3,6 +3,7 @@
 //  ClipShare
 //
 
+import ClipStorage
 import ClipURLClassification
 import ClipModels
 import AVKit

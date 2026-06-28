@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import ClipStorage
 import AVFoundation
 
 /// The single choke-point for the read-aloud audio session. ONLY read-aloud

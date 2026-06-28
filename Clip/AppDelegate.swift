@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipStorage
 import BackgroundTasks
 import UIKit
 import UserNotifications
@@ -44,6 +45,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         PriceTrackingViewController.defaultSaveAsArticle = { urlString in
             Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
         }
+
+        // Diagnostics export header pulls messaging identity + CloudKit container
+        // from the social layer (which lives above ClipStorage), injected here.
+        DiagnosticLog.exportIdentityProvider = {
+            KeychainIdentityStore.shared.loadIdentity()?.uuid.uuidString ?? "none"
+        }
+        DiagnosticLog.exportCloudKitContainer = { CloudKitMessageTransport.containerID }
 
         // Wire the read-aloud first-run prompt's "Open Settings" to push the
         // Voice settings screen. Setting this hook is what enables the prompt in

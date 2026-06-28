@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipStorage
 import Foundation
 
 /// When the Safari extension shows its "Read in Queue" button. Stored in the App

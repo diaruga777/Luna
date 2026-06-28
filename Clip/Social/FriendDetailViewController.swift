@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipStorage
 import UIKit
 
 /// Per-friend settings: auto-send websites, share notifications, and removal.

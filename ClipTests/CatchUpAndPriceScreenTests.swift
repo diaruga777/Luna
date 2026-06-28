@@ -6,6 +6,7 @@
 //  price-tracking editor.
 //
 
+import ClipStorage
 import ClipModels
 import UIKit
 import XCTest

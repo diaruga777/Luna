@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipStorage
 import Foundation
 
 /// Persistent (App Group JSON) store backing semantic sharing suggestions.

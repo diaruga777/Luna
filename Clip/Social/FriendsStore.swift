@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipStorage
 import Foundation
 
 extension Notification.Name {

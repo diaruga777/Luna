@@ -10,7 +10,7 @@ import Foundation
 /// Documents folder (NOT the App Group — replays are diagnostics local to each
 /// process's sandbox). Protocol-ized so the recorder is testable against an
 /// in-memory/temp store.
-protocol ReplayStoring: Sendable {
+public protocol ReplayStoring: Sendable {
     /// Serializes `replay` to pretty JSON in a `.txt`, zips it, and writes it to the
     /// Replays directory (overwriting any prior export with the same id). Synchronous
     /// so an extension that may be killed right after still completes the write.
@@ -31,13 +31,13 @@ protocol ReplayStoring: Sendable {
 ///   `<uuid>.zip`  — the export (contains a single `<uuid>.txt` of pretty JSON).
 ///   `index.json`  — a lightweight `[StoredReplayRecord]` so listing/lookup never
 ///                    unzips every export.
-struct ReplayDiskStore: ReplayStoring {
+public struct ReplayDiskStore: ReplayStoring {
     private let directory: URL
     private let fileManager = FileManager.default
     private static let lock = NSLock()
 
     /// `directory` defaults to `Documents/Replays`. Tests pass a temp directory.
-    init(directory: URL? = nil) {
+    public init(directory: URL? = nil) {
         if let directory {
             self.directory = directory
         } else {
@@ -57,13 +57,13 @@ struct ReplayDiskStore: ReplayStoring {
         var createdAt: Date
     }
 
-    func zipURL(for id: UUID) -> URL {
+    public func zipURL(for id: UUID) -> URL {
         directory.appendingPathComponent("\(id.uuidString).zip")
     }
 
     private var indexURL: URL { directory.appendingPathComponent("index.json") }
 
-    func write(_ replay: Replay) {
+    public func write(_ replay: Replay) {
         Self.lock.lock()
         defer { Self.lock.unlock() }
         try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -83,7 +83,7 @@ struct ReplayDiskStore: ReplayStoring {
             state: replay.metadata.state, createdAt: replay.metadata.createdAt))
     }
 
-    func storedReplays() -> [StoredReplay] {
+    public func storedReplays() -> [StoredReplay] {
         Self.lock.lock()
         defer { Self.lock.unlock() }
         return loadIndex()
@@ -95,7 +95,7 @@ struct ReplayDiskStore: ReplayStoring {
             }
     }
 
-    func newestReplay(forItemURLString itemURLString: String) -> Replay? {
+    public func newestReplay(forItemURLString itemURLString: String) -> Replay? {
         Self.lock.lock()
         defer { Self.lock.unlock() }
         guard let record = loadIndex()
@@ -142,7 +142,7 @@ struct ReplayDiskStore: ReplayStoring {
     /// Extracts the first local file entry's (uncompressed/stored) payload from a
     /// ZIP produced by `ZipArchiveWriter`. Returns nil if the signature/structure
     /// doesn't match a single stored entry.
-    static func firstStoredEntryData(inZip data: Data) -> Data? {
+    public static func firstStoredEntryData(inZip data: Data) -> Data? {
         let bytes = [UInt8](data)
         // Local file header signature 0x04034b50 (little-endian: 50 4b 03 04).
         guard bytes.count > 30,

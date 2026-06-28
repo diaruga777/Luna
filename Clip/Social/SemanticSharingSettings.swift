@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipStorage
 import Foundation
 
 /// Settings for the experimental on-device semantic sharing suggestions.

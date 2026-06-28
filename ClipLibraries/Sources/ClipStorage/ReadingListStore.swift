@@ -3,21 +3,22 @@
 //  Clip
 //
 
+import ClipURLClassification
 import ClipModels
 import Foundation
 
-extension Notification.Name {
+public extension Notification.Name {
     /// Posted whenever the reading list changes (add/update/delete).
-    static let readingListChanged = Notification.Name("readingListChanged")
+    public static let readingListChanged = Notification.Name("readingListChanged")
 }
 
 /// Persists the reading list as JSON in the shared App Group container so both
 /// the app and the SaveLink intent (which may run while the app is backgrounded)
 /// see the same data. Reads fresh from disk on every operation — simple over fast.
-final class ReadingListStore {
-    static let shared = ReadingListStore()
+public final class ReadingListStore {
+    public static let shared = ReadingListStore()
 
-    static let appGroupID = "group.com.hpiddy.clip"
+    public static let appGroupID = "group.com.hpiddy.clip"
 
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
@@ -33,7 +34,7 @@ final class ReadingListStore {
 
     /// The shared store uses the App Group container; tests pass a scratch
     /// directory so they never touch (or wipe) real user data.
-    init(containerURL: URL? = nil) {
+    public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
     }
 
@@ -49,7 +50,7 @@ final class ReadingListStore {
         containerURL.appendingPathComponent("readingList.json")
     }
 
-    var articlesDirectory: URL {
+    public var articlesDirectory: URL {
         let dir = containerURL.appendingPathComponent("Articles", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
@@ -58,7 +59,7 @@ final class ReadingListStore {
     /// Original page artifacts are deliberately separate from parsed article JSON
     /// and downloaded reader images. A `.webarchive` is immutable source material;
     /// the reader must never regenerate it from `ArticleContent`.
-    var originalArchivesDirectory: URL {
+    public var originalArchivesDirectory: URL {
         let dir = containerURL.appendingPathComponent("OriginalArchives", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
@@ -68,7 +69,7 @@ final class ReadingListStore {
 
     /// All items in saved order — newest first (new items prepend), reorderable
     /// by the user.
-    func items() -> [ReadingListItem] {
+    public func items() -> [ReadingListItem] {
         var result: [ReadingListItem] = []
         var coordError: NSError?
         var ran = false
@@ -82,7 +83,7 @@ final class ReadingListStore {
 
     /// Reorders the stored list to match `orderedIDs` (items not listed keep
     /// their relative order at the end). Backs manual drag-to-reorder.
-    func setOrder(_ orderedIDs: [UUID]) {
+    public func setOrder(_ orderedIDs: [UUID]) {
         coordinatedMutate { all in
             let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             var reordered = orderedIDs.compactMap { byID[$0] }
@@ -93,12 +94,12 @@ final class ReadingListStore {
     }
 
     /// The existing item for a URL, if it's already in the list.
-    func item(forURLString urlString: String) -> ReadingListItem? {
+    public func item(forURLString urlString: String) -> ReadingListItem? {
         items().first { $0.urlString == urlString }
     }
 
     /// A fresh copy of an item by ID (callers' copies go stale across mutations).
-    func item(withID itemID: UUID) -> ReadingListItem? {
+    public func item(withID itemID: UUID) -> ReadingListItem? {
         items().first { $0.id == itemID }
     }
 
@@ -107,7 +108,7 @@ final class ReadingListStore {
     /// If another item already holds that URL, the wrapper is a duplicate — it's
     /// removed (with its files) and nil is returned so the caller stops ingesting it.
     @discardableResult
-    func updateURL(_ urlString: String, for itemID: UUID) -> ReadingListItem? {
+    public func updateURL(_ urlString: String, for itemID: UUID) -> ReadingListItem? {
         coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
             if all.contains(where: { $0.id != itemID && $0.urlString == urlString }) {
@@ -121,7 +122,7 @@ final class ReadingListStore {
     }
 
     @discardableResult
-    func add(urlString: String, source: CaptureSource = .manual) -> ReadingListItem {
+    public func add(urlString: String, source: CaptureSource = .manual) -> ReadingListItem {
         coordinatedMutate { all in
             if let existing = all.first(where: { $0.urlString == urlString }) {
                 return existing
@@ -140,7 +141,7 @@ final class ReadingListStore {
     /// duplicate route through here rather than pre-checking `item(forURLString:)`
     /// then calling `add`. (The ingestor's separate tracker-merge guard is an
     /// orthogonal condition — same URL inside a different item's price tracker.)
-    func addIfAbsent(urlString: String, source: CaptureSource = .manual) -> ReadingListItem? {
+    public func addIfAbsent(urlString: String, source: CaptureSource = .manual) -> ReadingListItem? {
         coordinatedMutate { all in
             guard !all.contains(where: { $0.urlString == urlString }) else { return nil }
             var item = ReadingListItem(urlString: urlString)
@@ -155,7 +156,7 @@ final class ReadingListStore {
     // item silently reverts fields written by other screens in the meantime.
 
     /// Persists the RSVP resume position.
-    func setLastWordIndex(_ wordIndex: Int, for itemID: UUID) {
+    public func setLastWordIndex(_ wordIndex: Int, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].lastWordIndex != wordIndex else { return false }
@@ -165,7 +166,7 @@ final class ReadingListStore {
     }
 
     /// Marks a download/extraction failure.
-    func markFailed(_ itemID: UUID) {
+    public func markFailed(_ itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             all[index].state = .failed
@@ -174,7 +175,7 @@ final class ReadingListStore {
     }
 
     /// Persists the scroll reader's resume position.
-    func setLastScrollOffset(_ offset: Double, for itemID: UUID) {
+    public func setLastScrollOffset(_ offset: Double, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].lastScrollOffset != offset else { return false }
@@ -184,7 +185,7 @@ final class ReadingListStore {
     }
 
     /// Persists the read-aloud resume position (marks audio as having played).
-    func setLastSpokenWordIndex(_ wordIndex: Int, for itemID: UUID) {
+    public func setLastSpokenWordIndex(_ wordIndex: Int, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].lastSpokenWordIndex != wordIndex else { return false }
@@ -195,7 +196,7 @@ final class ReadingListStore {
 
     /// Persists how far through the article the user has gotten (0…1, only
     /// ever increases).
-    func setReadingProgress(_ progress: Double, for itemID: UUID) {
+    public func setReadingProgress(_ progress: Double, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             let clamped = min(max(progress, 0), 1)
@@ -206,7 +207,7 @@ final class ReadingListStore {
     }
 
     /// Persists the eye-tracking estimate (nil clears it).
-    func setEyeTrackedWordIndex(_ wordIndex: Int?, for itemID: UUID) {
+    public func setEyeTrackedWordIndex(_ wordIndex: Int?, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].eyeTrackedWordIndex != wordIndex else { return false }
@@ -216,7 +217,7 @@ final class ReadingListStore {
     }
 
     /// Disabling eye tracking wipes every stored gaze estimate.
-    func clearAllEyeTracking() {
+    public func clearAllEyeTracking() {
         coordinatedUpdate { all in
             var changed = false
             for index in all.indices where all[index].eyeTrackedWordIndex != nil {
@@ -227,7 +228,7 @@ final class ReadingListStore {
         }
     }
 
-    func delete(_ item: ReadingListItem) {
+    public func delete(_ item: ReadingListItem) {
         coordinatedMutate { all in
             if let found = all.first(where: { $0.id == item.id }) { self.removeFiles(for: found) }
             all.removeAll { $0.id == item.id }
@@ -235,7 +236,7 @@ final class ReadingListStore {
     }
 
     /// Removes every finished article (and its cached content) in one pass.
-    func deleteAllRead() {
+    public func deleteAllRead() {
         coordinatedMutate { all in
             for item in all where item.readState == .read { self.removeFiles(for: item) }
             all.removeAll { $0.readState == .read }
@@ -244,7 +245,7 @@ final class ReadingListStore {
 
     /// Removes a set of items (and their cached content) in one pass — used to clear
     /// the whole Archive section at once.
-    func deleteItems(ids: Set<UUID>) {
+    public func deleteItems(ids: Set<UUID>) {
         coordinatedMutate { all in
             for item in all where ids.contains(item.id) { self.removeFiles(for: item) }
             all.removeAll { ids.contains($0.id) }
@@ -252,7 +253,7 @@ final class ReadingListStore {
     }
 
     /// Remembers which reader the user last used for an article.
-    func setReaderMode(_ mode: ReadingListItem.ReaderMode, for itemID: UUID) {
+    public func setReaderMode(_ mode: ReadingListItem.ReaderMode, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].lastReaderMode != mode else { return false }
@@ -263,7 +264,7 @@ final class ReadingListStore {
 
     /// Updates a destination's delivery status; `.sent` also stamps the
     /// destination's `datesSent` (the once-per-day resend guard).
-    func setSendState(
+    public func setSendState(
         _ sendState: ReadingListItem.SendState, for itemID: UUID, destination: String
     ) {
         coordinatedUpdate { all in
@@ -280,7 +281,7 @@ final class ReadingListStore {
     /// press time (the item's save time, if this is the first repeat press) —
     /// the primitive behind double-save-to-send detection.
     @discardableResult
-    func recordSaveAttempt(for itemID: UUID) -> Date? {
+    public func recordSaveAttempt(for itemID: UUID) -> Date? {
         coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
             let previous = all[index].lastSaveAttemptDate ?? all[index].dateAdded
@@ -291,7 +292,7 @@ final class ReadingListStore {
 
     /// Sets the leading-label source (e.g. the email sender for imported mail,
     /// shown where the host would be).
-    func setChannelName(_ name: String, for itemID: UUID) {
+    public func setChannelName(_ name: String, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].channelName != name else { return false }
@@ -301,7 +302,7 @@ final class ReadingListStore {
     }
 
     /// Writes downloaded art bytes to the Articles dir and points the item at it.
-    func setThumbnail(_ data: Data, for itemID: UUID) {
+    public func setThumbnail(_ data: Data, for itemID: UUID) {
         let fileName = "\(itemID.uuidString)-thumb.jpg"
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
@@ -312,7 +313,7 @@ final class ReadingListStore {
     }
 
     /// Records which friend shared this item to us (set once, on acceptance).
-    func setSharedBy(_ username: String, for itemID: UUID) {
+    public func setSharedBy(_ username: String, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].sharedByUsername != username else { return false }
@@ -323,7 +324,7 @@ final class ReadingListStore {
 
     /// Fills in the YouTube metadata produced by ingestion and marks the item
     /// ready (videos have no article content).
-    func saveYouTubeMetadata(
+    public func saveYouTubeMetadata(
         videoID: String, title: String, channelName: String?,
         thumbnailFileName: String?, for itemID: UUID
     ) -> ReadingListItem? {
@@ -344,7 +345,7 @@ final class ReadingListStore {
     /// synthetic `clickmusic://`/`clickpodcast://` key, marked ready. Used by the
     /// media intents and incoming media shares.
     @discardableResult
-    func createURLlessMediaItem(
+    public func createURLlessMediaItem(
         platform: ContentPlatform, creator: String, title: String
     ) -> ReadingListItem {
         let key = MediaItemKey.url(platform: platform, creator: creator, title: title)
@@ -360,7 +361,7 @@ final class ReadingListStore {
     /// (platform items have no `ArticleContent`). Best-effort: any field may be
     /// nil and the item still renders (logo + deep link). Mirrors
     /// `saveYouTubeMetadata` for the generic platform path.
-    func savePlatformMetadata(
+    public func savePlatformMetadata(
         platform: ContentPlatform, platformItemID: String?, title: String?,
         creator: String?, thumbnailFileName: String?,
         mediaCreatorName: String?, mediaItemTitle: String?,
@@ -382,7 +383,7 @@ final class ReadingListStore {
     }
 
     /// Raises the item's read state; never downgrades (read stays read).
-    func markReadState(_ newState: ReadingListItem.ReadState, for itemID: UUID) {
+    public func markReadState(_ newState: ReadingListItem.ReadState, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             let order: [ReadingListItem.ReadState] = [.unopened, .opened, .read]
@@ -397,7 +398,7 @@ final class ReadingListStore {
 
     /// Forces an item back to unread (the Archive-section "Unarchive" action) — a
     /// deliberate downgrade that `markReadState`'s forward-only guard disallows.
-    func markUnread(_ itemID: UUID) {
+    public func markUnread(_ itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].readState != .unopened else { return false }
@@ -411,7 +412,7 @@ final class ReadingListStore {
     /// Attaches a price-tracker payload to an item and marks it ready (a tracker
     /// has no article content to download). Returns the refreshed item.
     @discardableResult
-    func savePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
+    public func savePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
         coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
             all[index].priceTracker = tracker
@@ -424,7 +425,7 @@ final class ReadingListStore {
     /// Replaces the price-tracker payload of an existing tracker (add/remove store,
     /// change threshold, archive). Returns the refreshed item.
     @discardableResult
-    func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
+    public func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
         coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].priceTracker != nil else { return nil }
@@ -439,7 +440,7 @@ final class ReadingListStore {
     /// to the existing tracker instead of re-detecting (and re-merging into a
     /// duplicate). Items are scanned in stable id order so the result is
     /// deterministic when (defensively) more than one tracker holds the URL.
-    func priceTracker(containingStoreURL urlString: String) -> (itemID: UUID, tracker: PriceTracker)? {
+    public func priceTracker(containingStoreURL urlString: String) -> (itemID: UUID, tracker: PriceTracker)? {
         let candidates = items()
             .compactMap { item -> (itemID: UUID, tracker: PriceTracker)? in
                 guard let tracker = item.priceTracker,
@@ -453,7 +454,7 @@ final class ReadingListStore {
     /// All non-archived price trackers, ordered stalest-first (oldest minimum
     /// `lastRefreshed` across their stores) so a killed background refresh makes
     /// progress on the longest-unrefreshed trackers each run.
-    func priceTrackersStalestFirst() -> [ReadingListItem] {
+    public func priceTrackersStalestFirst() -> [ReadingListItem] {
         items()
             .filter { ($0.priceTracker?.isArchived == false) }
             .sorted { lhs, rhs in
@@ -463,7 +464,7 @@ final class ReadingListStore {
 
     /// The oldest `lastRefreshed` across a tracker's stores (a never-refreshed
     /// store sorts first, as `.distantPast`).
-    static func stalestRefresh(_ tracker: PriceTracker?) -> Date {
+    public static func stalestRefresh(_ tracker: PriceTracker?) -> Date {
         guard let tracker else { return .distantPast }
         return tracker.stores.map { $0.lastRefreshed ?? .distantPast }.min() ?? .distantPast
     }
@@ -473,7 +474,7 @@ final class ReadingListStore {
     /// Stamps a new bump date on an item and moves it to the top of the list (it
     /// re-sorts up in the reading list and shows the bump date on future catch-up
     /// cards).
-    func bump(_ itemID: UUID) {
+    public func bump(_ itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             var item = all.remove(at: index)
@@ -485,13 +486,13 @@ final class ReadingListStore {
 
     /// Overwrites the entire list with `items` — used to UNDO a whole catch-up
     /// session (bumps + read marks) in one shot from a pre-session snapshot.
-    func restore(_ items: [ReadingListItem]) {
+    public func restore(_ items: [ReadingListItem]) {
         coordinatedMutate { all in all = items }
     }
 
     // MARK: - Article content
 
-    func saveContent(_ content: ArticleContent, for item: ReadingListItem) -> ReadingListItem {
+    public func saveContent(_ content: ArticleContent, for item: ReadingListItem) -> ReadingListItem {
         let fileName = "\(item.id.uuidString).json"
         return coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == item.id }) else { return item }
@@ -518,7 +519,7 @@ final class ReadingListStore {
     /// with a "tap to unlock" affordance. Tapping opens the archive.today snapshot in
     /// a web view; once the user solves the CAPTCHA the article is extracted and
     /// `saveContent` moves it to `.ready`.
-    func markNeedsCaptcha(_ itemID: UUID, title: String?) {
+    public func markNeedsCaptcha(_ itemID: UUID, title: String?) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             // Never downgrade a readable item (a concurrent app/extension extract,
@@ -540,7 +541,7 @@ final class ReadingListStore {
     /// Used by both the in-app `UITestSeeder` (launch-argument seeding for the
     /// screenshot harness) and unit tests that render real view controllers against
     /// a fixed fixture set.
-    func seedForTesting(items: [ReadingListItem], contents: [UUID: ArticleContent]) {
+    public func seedForTesting(items: [ReadingListItem], contents: [UUID: ArticleContent]) {
         let articlesDir = articlesDirectory
         let originalsDir = originalArchivesDirectory
         coordinatedMutate { all in
@@ -569,7 +570,7 @@ final class ReadingListStore {
     }
 
     /// Empties the reading list and removes all article files. DEBUG-only.
-    func wipeForTesting() {
+    public func wipeForTesting() {
         let articlesDir = articlesDirectory
         let originalsDir = originalArchivesDirectory
         coordinatedMutate { all in
@@ -586,7 +587,7 @@ final class ReadingListStore {
     }
     #endif
 
-    func content(for item: ReadingListItem) -> ArticleContent? {
+    public func content(for item: ReadingListItem) -> ArticleContent? {
         guard let fileName = item.contentFileName else { return nil }
         guard let data = try? Data(contentsOf: articlesDirectory.appendingPathComponent(fileName))
         else { return nil }
@@ -596,7 +597,7 @@ final class ReadingListStore {
     /// Saves an immutable WebKit web archive. The archive is written before its
     /// file name is committed to the list, so the Original mode can never point at
     /// a half-written artifact.
-    func saveWebArchive(_ data: Data, for item: ReadingListItem) {
+    public func saveWebArchive(_ data: Data, for item: ReadingListItem) {
         let fileName = "\(item.id.uuidString).webarchive"
         let url = originalArchivesDirectory.appendingPathComponent(fileName)
         do {
@@ -613,7 +614,7 @@ final class ReadingListStore {
     }
 
     /// The saved web archive, when one was successfully captured for a web page.
-    func webArchiveURL(for item: ReadingListItem) -> URL? {
+    public func webArchiveURL(for item: ReadingListItem) -> URL? {
         guard let fileName = item.originalArchiveFileName,
               fileName.hasSuffix(".webarchive"),
               fileName == URL(fileURLWithPath: fileName).lastPathComponent
@@ -624,13 +625,13 @@ final class ReadingListStore {
 
     /// An imported document is already its own original artifact. Mail imports have
     /// neither a web archive nor a source file, so they intentionally return nil.
-    func originalDocumentURL(for item: ReadingListItem) -> URL? {
+    public func originalDocumentURL(for item: ReadingListItem) -> URL? {
         guard let ext = item.sanitizedDocumentType else { return nil }
         let url = articlesDirectory.appendingPathComponent("\(item.id.uuidString)-source.\(ext)")
         return fileManager.fileExists(atPath: url.path) ? url : nil
     }
 
-    func hasOriginalSource(for item: ReadingListItem) -> Bool {
+    public func hasOriginalSource(for item: ReadingListItem) -> Bool {
         webArchiveURL(for: item) != nil || originalDocumentURL(for: item) != nil
     }
 

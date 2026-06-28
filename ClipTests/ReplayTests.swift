@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipStorage
 import ClipPaywallBypass
 import ClipModels
 import XCTest

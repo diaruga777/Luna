@@ -10,8 +10,8 @@ import Foundation
 /// keys on `urlString`, and local routing work). Shape:
 /// `clickmusic://item?artist=…&title=…` / `clickpodcast://item?show=…&title=…`.
 /// Not a shareable http URL — these share via the CloudKit `mediaItem` case.
-enum MediaItemKey {
-    static func url(platform: ContentPlatform, creator: String, title: String) -> String {
+public enum MediaItemKey {
+    public static func url(platform: ContentPlatform, creator: String, title: String) -> String {
         let scheme = platform == .podcast ? "clickpodcast" : "clickmusic"
         let creatorKey = platform == .podcast ? "show" : "artist"
         var components = URLComponents()

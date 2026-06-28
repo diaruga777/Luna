@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipStorage
 import UIKit
 
 /// Shows the persistent diagnostic log and lets the user share it (as a `.txt`)

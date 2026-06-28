@@ -3,6 +3,7 @@
 //  ShareKit
 //
 
+import ClipStorage
 import ClipHTMLClassification
 import ClipURLClassification
 import ClipModels

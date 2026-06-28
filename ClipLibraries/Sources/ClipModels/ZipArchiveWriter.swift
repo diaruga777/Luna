@@ -3,14 +3,13 @@
 //  ReaderKit
 //
 
-import ClipModels
 import Foundation
 
 /// Minimal ZIP archive writer: stored (uncompressed) entries only, which is all
 /// an EPUB (or a Replay export) needs. Entries appear in the archive in the order
 /// they were added — EPUB requires `mimetype` to be the first, uncompressed entry.
 /// Lives in `ReaderKit` so the share/action extensions can zip Replay exports too.
-struct ZipArchiveWriter {
+public struct ZipArchiveWriter {
 
     private struct Entry {
         let path: String
@@ -22,8 +21,10 @@ struct ZipArchiveWriter {
     private var entries: [Entry] = []
     private var body = Data()
 
+    public init() {}
+
     /// Appends one file to the archive. `path` uses forward slashes.
-    mutating func addEntry(path: String, data: Data) {
+    public mutating func addEntry(path: String, data: Data) {
         let pathBytes = Data(path.utf8)
         let crc = Self.crc32(of: data)
         let offset = UInt32(body.count)
@@ -47,7 +48,7 @@ struct ZipArchiveWriter {
     }
 
     /// The complete archive bytes (central directory built on each call).
-    func archiveData() -> Data {
+    public func archiveData() -> Data {
         var archive = body
         let centralDirectoryOffset = UInt32(archive.count)
 
@@ -98,7 +99,7 @@ struct ZipArchiveWriter {
         return value
     }
 
-    static func crc32(of data: Data) -> UInt32 {
+    public static func crc32(of data: Data) -> UInt32 {
         var crc: UInt32 = 0xFFFFFFFF
         for byte in data {
             crc = crcTable[Int((crc ^ UInt32(byte)) & 0xFF)] ^ (crc >> 8)
@@ -108,7 +109,7 @@ struct ZipArchiveWriter {
 }
 
 private extension Data {
-    mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
+    public mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
         var little = value.littleEndian
         Swift.withUnsafeBytes(of: &little) { append(contentsOf: $0) }
     }

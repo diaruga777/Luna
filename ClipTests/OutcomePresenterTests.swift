@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipShareSurface
 import ClipIngest
 import ClipHTMLClassification
 import ClipModels

@@ -14,10 +14,10 @@ import Foundation
 /// EXISTING item verbatim. (Decoding the whole list into a schema-locked mirror
 /// struct and re-encoding it used to silently drop any field the mirror didn't
 /// know about — e.g. `platform`/`sendStates` — corrupting other items.)
-enum SharedReadingListAppender {
-    static let appGroupID = "group.com.hpiddy.clip"
+public enum SharedReadingListAppender {
+    public static let appGroupID = "group.com.hpiddy.clip"
 
-    static func append(urlString: String) {
+    public static func append(urlString: String) {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
         let urlString = url.absoluteString
         insertIfNew(dedupeURLString: urlString) {
@@ -27,7 +27,7 @@ enum SharedReadingListAppender {
 
     /// Copies an imported document into the App Group and appends a pending item
     /// referencing it (`Articles/<id>-source.<ext>`).
-    static func appendDocument(sourceURL: URL) {
+    public static func appendDocument(sourceURL: URL) {
         let fileManager = FileManager.default
         guard let container = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupID)

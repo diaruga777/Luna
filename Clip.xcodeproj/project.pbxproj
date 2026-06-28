@@ -87,6 +87,10 @@
 		0393CD1C3594607CDD98DE13 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
 		65EBACE869DBDECC866531F6 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
 		BD5B48658A5362866AA5CF57 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		9EAEEFFE364822D5BD7E30AF /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		C891EE202DB65235195020F6 /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		3EB986A4B023ACBE9D376F7B /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		564D3AAC03C7A9A959BB013A /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -209,6 +213,7 @@
 				EE4780B9AFD12FEBC6947099 /* ClipArchiveReader in Frameworks */,
 				79105F98461EAB4D02BB8DD1 /* ClipReaderUI in Frameworks */,
 				0393CD1C3594607CDD98DE13 /* ClipPriceUI in Frameworks */,
+				9EAEEFFE364822D5BD7E30AF /* ClipShareSurface in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -239,6 +244,7 @@
 				6F438E9F1C4DEAAF57A692B8 /* ClipArchiveReader in Frameworks */,
 				4764C751E2AFA2AD7653CB79 /* ClipReaderUI in Frameworks */,
 				049E5C818766CE6BF95D8B7E /* ClipPriceUI in Frameworks */,
+				564D3AAC03C7A9A959BB013A /* ClipShareSurface in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -271,6 +277,7 @@
 				C100000000000000000000053 /* ClipPaywallBypass in Frameworks */,
 				14D2AFFC19A169338A1147DD /* ClipReaderUI in Frameworks */,
 				BD5B48658A5362866AA5CF57 /* ClipPriceUI in Frameworks */,
+				3EB986A4B023ACBE9D376F7B /* ClipShareSurface in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -296,6 +303,7 @@
 				F35941D40835BF7824598AE9 /* ClipArchiveReader in Frameworks */,
 				2B4134FA0043E8CD5CE0CD04 /* ClipReaderUI in Frameworks */,
 				65EBACE869DBDECC866531F6 /* ClipPriceUI in Frameworks */,
+				C891EE202DB65235195020F6 /* ClipShareSurface in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -384,6 +392,7 @@
 				74662FE2996754685063847E /* ClipArchiveReader */,
 				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
 				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
 			);
 			productName = "Clip Action Extension";
 			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
@@ -435,6 +444,7 @@
 				74662FE2996754685063847E /* ClipArchiveReader */,
 				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
 				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -498,6 +508,7 @@
 				C100000000000000000000013 /* ClipPaywallBypass */,
 				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
 				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -539,6 +550,7 @@
 				74662FE2996754685063847E /* ClipArchiveReader */,
 				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
 				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
 			);
 			productName = ClipShare;
 			productReference = AA0200000000000000000004 /* ClipShare.appex */;
@@ -1291,6 +1303,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipPriceUI;
+		};
+		05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipShareSurface;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

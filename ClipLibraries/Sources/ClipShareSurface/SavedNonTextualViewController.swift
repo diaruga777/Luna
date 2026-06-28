@@ -27,7 +27,7 @@ import UIKit
 /// on tap. A video gets a play-button overlay (tap → AVPlayer); an image just
 /// displays. Once downloaded (auto or manual) a "Save to Photos" button enables;
 /// saving writes to the Photos library AND marks the item read in the reading list.
-final class SavedNonTextualViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+public final class SavedNonTextualViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
 
     private let articleURLString: String
     private let content: NonTextualContent
@@ -84,14 +84,14 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
     private let downloadProgress = UIProgressView(progressViewStyle: .default)
     private let downloadStatus = UILabel()
 
-    init(articleURLString: String, content: NonTextualContent, onDone: @escaping () -> Void) {
+    public init(articleURLString: String, content: NonTextualContent, onDone: @escaping () -> Void) {
         self.articleURLString = articleURLString
         self.content = content
         self.onDone = onDone
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     deinit {
         // Delete a downloaded-but-never-saved preview file when the screen closes
@@ -101,7 +101,7 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
         }
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         title = "Saved to Queue"
@@ -580,11 +580,11 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
 
     // MARK: - Friend list
 
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         friends.count
     }
 
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "friend", for: indexPath)
         var config = cell.defaultContentConfiguration()
         config.text = friends[indexPath.row].username
@@ -596,7 +596,7 @@ final class SavedNonTextualViewController: UIViewController, UITableViewDataSour
     }
 
     /// Tapping a friend queues the send instantly, confirms briefly, then dismisses.
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let friend = friends[indexPath.row]
         PendingFriendShareWriter.enqueue(friendUUID: friend.uuid, urlString: articleURLString)

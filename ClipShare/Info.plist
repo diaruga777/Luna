@@ -11,7 +11,7 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.share-services</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
+		<string>ClipShareSurface.ShareViewController</string>
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<key>IntentsSupported</key>

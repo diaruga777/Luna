@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipShareSurface
 import ClipPriceUI
 import ClipStorage
 import ClipIngest

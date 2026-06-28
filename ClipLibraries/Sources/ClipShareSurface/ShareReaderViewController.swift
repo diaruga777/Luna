@@ -17,9 +17,9 @@ import UIKit
 /// article. It fetches + extracts the page, then shows the chosen mode with no
 /// share affordance and no eye tracking (nil providers). Inline link tapping,
 /// mode switching, and audio all work; Done exits the extension.
-final class ShareReaderViewController: UIViewController {
+public final class ShareReaderViewController: UIViewController {
 
-    enum Mode: String {
+    public enum Mode: String {
         case reader, rsvp, chunk
 
         var readerMode: ReadingListItem.ReaderMode {
@@ -50,7 +50,7 @@ final class ShareReaderViewController: UIViewController {
     private let precomputedOutcome: Outcome?
     private let spinner = UIActivityIndicatorView(style: .large)
 
-    init(url: URL, mode: Mode, outcome: Outcome? = nil, onDone: @escaping () -> Void) {
+    public init(url: URL, mode: Mode, outcome: Outcome? = nil, onDone: @escaping () -> Void) {
         self.url = url
         self.mode = mode
         self.precomputedOutcome = outcome
@@ -58,9 +58,9 @@ final class ShareReaderViewController: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 

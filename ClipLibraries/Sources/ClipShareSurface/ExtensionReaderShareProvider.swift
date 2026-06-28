@@ -11,11 +11,11 @@ import UIKit
 /// has no CloudKit/crypto, so a friend send is QUEUED to the App Group
 /// (`PendingFriendShareWriter`) and the main app delivers it on next launch.
 /// There's no suggestion engine in the extension, so no one-tap suggested send.
-final class ExtensionReaderShareProvider: ReaderShareProviding {
+public final class ExtensionReaderShareProvider: ReaderShareProviding {
 
-    func suggestedFriendName(forURLString urlString: String) -> String? { nil }
+    public func suggestedFriendName(forURLString urlString: String) -> String? { nil }
 
-    func presentShareSheet(
+    public func presentShareSheet(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) {
         let friends = ExtensionFriendsReader.friends()
@@ -48,11 +48,11 @@ final class ExtensionReaderShareProvider: ReaderShareProviding {
         presenter.present(sheet, animated: true)
     }
 
-    func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController) {
+    public func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController) {
         // No suggestion engine in the extension — nothing to do.
     }
 
-    func saveLink(urlString: String) {
+    public func saveLink(urlString: String) {
         // No ingestor in the extension — queue the URL; the main app ingests it.
         SharedReadingListAppender.append(urlString: urlString)
     }

@@ -34,7 +34,7 @@ import UIKit
 /// reader/saved UI, while the share extension only presents media, price, and
 /// archive-bypass UI.
 @MainActor
-final class ShareSurfaceDriver {
+public final class ShareSurfaceDriver {
 
     private weak var host: ExtensionHost?
     private let store: ReadingListStore
@@ -42,7 +42,7 @@ final class ShareSurfaceDriver {
     /// a nil render tier (extension-safe). Production uses the live defaults.
     private let process: (IngestInput) async -> IngestResult
 
-    init(
+    public init(
         host: ExtensionHost,
         store: ReadingListStore = .shared,
         process: @escaping (IngestInput) async -> IngestResult = {
@@ -57,7 +57,7 @@ final class ShareSurfaceDriver {
     /// Runs the shared pipeline for the just-appended `originalURL`, repoints the saved
     /// item to the pipeline's resolved URL, then presents + persists the `Outcome` via
     /// this surface's host.
-    func ingestAndPresent(originalURL: URL, prefetchedHTML: String? = nil) async {
+    public func ingestAndPresent(originalURL: URL, prefetchedHTML: String? = nil) async {
         let result = await process(IngestInput(
             url: originalURL, source: .shareSheet, prefetchedHTML: prefetchedHTML))
 
@@ -79,7 +79,7 @@ final class ShareSurfaceDriver {
 
     /// The EXHAUSTIVE per-surface presenter over the unified `Outcome` (no `default`,
     /// compiler-checked). Public so the fixture can drive it directly with any Outcome.
-    func present(_ outcome: Outcome, url: URL) {
+    public func present(_ outcome: Outcome, url: URL) {
         guard let host else { return }
         switch outcome {
         case let .article(content, _):

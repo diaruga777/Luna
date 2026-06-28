@@ -21,7 +21,7 @@ import UIKit
 /// Extension-safe: lives in ShareKit (compiled into both extension targets), depends
 /// only on UIKit + ReaderKit value types.
 @MainActor
-protocol ExtensionHost: AnyObject {
+public protocol ExtensionHost: AnyObject {
     /// The reader mode the in-sheet reader should open in (action extension only);
     /// nil for the zero-UI share extension (no in-sheet UI at all). Drives the
     /// reader-vs-save-silently fork in the unified presenter.

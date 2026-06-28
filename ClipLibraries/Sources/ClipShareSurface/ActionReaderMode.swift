@@ -9,10 +9,10 @@ import Foundation
 /// the extension's OWN `UserDefaults.standard` (its private container — NOT the
 /// App Group, NOT the main app), so the action extension remembers its own
 /// preference independently of the main-app reader.
-enum ActionReaderMode {
+public enum ActionReaderMode {
     private static let key = "actionReaderMode"
 
-    static var last: ShareReaderViewController.Mode {
+    public static var last: ShareReaderViewController.Mode {
         get {
             ShareReaderViewController.Mode(
                 rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .reader

@@ -11,13 +11,13 @@ import Foundation
 /// CloudKit/crypto, so they can't send directly — they queue, and the main app
 /// delivers on next launch/foreground. The JSON shape must match the app's
 /// `PendingFriendShare`.
-enum PendingFriendShareWriter {
+public enum PendingFriendShareWriter {
     private struct Share: Codable {
         let friendUUID: UUID
         let urlString: String
     }
 
-    static func enqueue(friendUUID: UUID, urlString: String) {
+    public static func enqueue(friendUUID: UUID, urlString: String) {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
         guard let fileURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: SharedReadingListAppender.appGroupID)?

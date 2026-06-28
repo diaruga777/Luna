@@ -9,17 +9,17 @@ import Foundation
 /// `IdentityCard` types live in the main app (with crypto keys), so the
 /// extensions decode only these fields from the App Group `friends.json` (whose
 /// shape is `[{ card: { uuid, username, … }, dateAdded }]`).
-struct ExtensionFriend: Equatable {
-    let uuid: UUID
-    let username: String
+public struct ExtensionFriend: Equatable {
+    public let uuid: UUID
+    public let username: String
 }
 
 /// Reads the friends list from the App Group for the extension share flow.
-enum ExtensionFriendsReader {
+public enum ExtensionFriendsReader {
 
     /// Friends newest-first (matching `FriendsStore.items()`). Empty when none
     /// or the file is unreadable.
-    static func friends() -> [ExtensionFriend] {
+    public static func friends() -> [ExtensionFriend] {
         guard let fileURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: SharedReadingListAppender.appGroupID)?
             .appendingPathComponent("friends.json"),

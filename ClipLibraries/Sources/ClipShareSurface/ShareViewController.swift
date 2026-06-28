@@ -20,7 +20,7 @@ import UniformTypeIdentifiers
 /// When launched by tapping a Queue friend in the share sheet's people row, the
 /// shared URL is queued as an outgoing friend-share for the main app to send
 /// (the extension has no crypto/CloudKit access).
-final class ShareViewController: UIViewController {
+public final class ShareViewController: UIViewController {
 
     /// Document file types accepted from the share sheet. `.text` (public.text)
     /// covers .txt, .md/.markdown, and most source/plain formats.
@@ -30,7 +30,7 @@ final class ShareViewController: UIViewController {
     /// (`com.apple.ui-services`) rather than the zero-UI share extension
     /// (`com.apple.share-services`). The action extension always opens the
     /// reader; the share extension only does when the user enabled it.
-    var isActionExtension: Bool {
+    public var isActionExtension: Bool {
         let nsExtension = Bundle.main.infoDictionary?["NSExtension"] as? [String: Any]
         return (nsExtension?["NSExtensionPointIdentifier"] as? String) == "com.apple.ui-services"
     }
@@ -52,7 +52,7 @@ final class ShareViewController: UIViewController {
     private var loadWatchdog: DispatchWorkItem?
     private static let loadTimeout: TimeInterval = 15
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         // Build the loading UI FIRST, before any processing, so the action
         // extension always shows *something* and stays on screen — and so any
@@ -184,7 +184,7 @@ final class ShareViewController: UIViewController {
 
     /// Action extension: surface a failure as visible error text (never a silent
     /// death). Share extension: stay zero-UI and just complete.
-    func failOrComplete(_ message: String) {
+    public func failOrComplete(_ message: String) {
         SharedDiagnosticLog.record("share extension finished: \(message)", category: "share")
         cancelLoadWatchdog()
         guard isActionExtension else { complete(); return }
@@ -269,7 +269,7 @@ final class ShareViewController: UIViewController {
     /// property-list shape or the direct payload shape seen from some extension hosts.
     /// Internal for regression tests; this is deliberately Foundation-only so it is
     /// identical in the app and action-extension processes.
-    nonisolated static func javaScriptResult(from item: Any?) -> [String: Any]? {
+    public nonisolated static func javaScriptResult(from item: Any?) -> [String: Any]? {
         let dictionary: [String: Any]?
         if let payload = item as? [String: Any] {
             dictionary = payload
@@ -287,7 +287,7 @@ final class ShareViewController: UIViewController {
         return dictionary["URL"] is String ? dictionary : nil
     }
 
-    nonisolated static func javaScriptResult(fromPropertyListData data: Data) -> [String: Any]? {
+    public nonisolated static func javaScriptResult(fromPropertyListData data: Data) -> [String: Any]? {
         guard let propertyList = try? PropertyListSerialization.propertyList(
             from: data, options: [], format: nil)
         else { return nil }
@@ -459,7 +459,7 @@ final class ShareViewController: UIViewController {
 
     /// Shows a brief liquid-glass "Saved" checkmark, then completes. Call only
     /// after an actual save (no reader is being presented).
-    func confirmSavedThenComplete() {
+    public func confirmSavedThenComplete() {
         cancelLoadWatchdog()
         DispatchQueue.main.async { [weak self] in
             self?.showSavedBadge()
@@ -467,7 +467,7 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    func completeSilently() {
+    public func completeSilently() {
         cancelLoadWatchdog()
         complete()
     }
@@ -484,7 +484,7 @@ final class ShareViewController: UIViewController {
     /// alive showing a "Saving media…" spinner until the download finishes, then the
     /// "Saved" checkmark, then dismisses — so the download completes before the
     /// process is killed. Otherwise it just saves and dismisses normally.
-    func autoDownloadThenComplete(urlString: String) {
+    public func autoDownloadThenComplete(urlString: String) {
         cancelLoadWatchdog()
         guard MediaAutoDownloader.isEnabled(forURLString: urlString) else {
             confirmSavedThenComplete()
@@ -613,14 +613,14 @@ extension ShareViewController: ExtensionHost {
     /// setting): the share extension always saves and dismisses; the "Read in Queue"
     /// action extension always opens the reader, in whichever mode it was last used in
     /// (state local to the extension).
-    var readerMode: ShareReaderViewController.Mode? {
+    public var readerMode: ShareReaderViewController.Mode? {
         isActionExtension ? ActionReaderMode.last : nil
     }
 
     /// The share extension presents normally. The action extension keeps all of its
     /// screens inside one embedded navigation controller, so archive → reader does
     /// not create a second presentation that can dismiss the extension host.
-    func presentModally(_ viewController: UIViewController) {
+    public func presentModally(_ viewController: UIViewController) {
         if isActionExtension {
             spinner.stopAnimating()
             statusLabel.isHidden = true

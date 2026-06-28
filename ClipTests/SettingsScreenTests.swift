@@ -87,6 +87,7 @@ final class SettingsScreenTests: XCTestCase {
     func testSettingsRowsPushExpectedSubscreens() {
         let expected: [AnyClass] = [
             ReaderSettingsScreen.self,
+            VoiceSettingsScreen.self,
             ReadingListSettingsScreen.self,
             EyeTrackingSettingsScreen.self,
             EmailAndKindleSettingsScreen.self,

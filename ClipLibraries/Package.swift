@@ -69,7 +69,7 @@ let package = Package(
         .target(name: "ClipReaderEngine", dependencies: ["ClipModels"]),
         .target(name: "ClipArchiveReader", dependencies: ["ClipModels", "ClipURLClassification", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass", "ClipStorage", "ClipDesignSystem"]),
         .target(name: "ClipReaderUI", dependencies: ["ClipModels", "ClipReaderEngine", "ClipDesignSystem", "ClipStorage", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass", "ClipArchiveReader", "ClipIngest", "ClipURLClassification", "ClipPlatforms"]),
-        .target(name: "ClipPriceUI", dependencies: ["ClipModels", "ClipDesignSystem", "ClipHTMLClassification", "ClipStorage", "ClipFetch", "ClipURLClassification", "ClipIngest"]),
+        .target(name: "ClipPriceUI", dependencies: ["ClipModels", "ClipDesignSystem", "ClipHTMLClassification", "ClipStorage", "ClipFetch", "ClipURLClassification", "ClipIngest", "ClipReaderUI"]),
         .target(name: "ClipShareSurface", dependencies: ["ClipModels", "ClipStorage", "ClipIngest", "ClipURLClassification", "ClipDesignSystem", "ClipReaderUI", "ClipArchiveReader", "ClipPriceUI", "ClipMediaDownload", "ClipPlatforms"]),
         .target(name: "ClipYouTubeAPI", dependencies: ["ClipModels", "ClipStorage", "ClipURLClassification", "ClipDesignSystem"]),
         .target(name: "ClipSocialUI", dependencies: ["ClipModels", "ClipStorage", "ClipDesignSystem", "ClipReaderUI", "ClipReadingList", "ClipSemantic", "ClipSocial"]),

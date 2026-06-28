@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipArchiveReader
 import ClipPaywallBypass
 import WebKit
 import XCTest

@@ -11,12 +11,12 @@ import WebKit
 /// Displays source material captured at save time: a WebKit `.webarchive` for web
 /// pages, or an imported source document such as a PDF. It never rebuilds a page
 /// from parsed reader content and it never reaches back to the network.
-final class OriginalPageViewController: UIViewController {
+public final class OriginalPageViewController: UIViewController {
     private let item: ReadingListItem
     private let store: ReadingListStore
     private let webView: WKWebView
 
-    init(item: ReadingListItem, store: ReadingListStore) {
+    public init(item: ReadingListItem, store: ReadingListStore) {
         self.item = item
         self.store = store
         let configuration = WKWebViewConfiguration()
@@ -25,9 +25,9 @@ final class OriginalPageViewController: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         webView.translatesAutoresizingMaskIntoConstraints = false

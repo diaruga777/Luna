@@ -14,7 +14,7 @@ import WebKit
 /// real page. `capture(html:baseURL:)` remains as an offline fallback, but a static
 /// HTML string often archives incompletely (lazy/JS-loaded resources are missing).
 @MainActor
-final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
+public final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
     private let html: String?
     private let url: URL?
     private let baseURL: URL
@@ -32,12 +32,12 @@ final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
     }
 
     /// Archive the live page at `url` — the high-fidelity path.
-    static func capture(url: URL) async -> Data? {
+    public static func capture(url: URL) async -> Data? {
         await WebArchiveCapturer(html: nil, url: url, baseURL: url).run()
     }
 
     /// Archive a pre-fetched HTML string (offline fallback; lower fidelity).
-    static func capture(html: String, baseURL: URL) async -> Data? {
+    public static func capture(html: String, baseURL: URL) async -> Data? {
         await WebArchiveCapturer(html: html, url: nil, baseURL: baseURL).run()
     }
 
@@ -59,7 +59,7 @@ final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
         }
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // Let late subresources (lazy images, async CSS) settle before archiving, so
         // the capture isn't an incomplete first-paint snapshot.
         guard !captured else { return }
@@ -75,11 +75,11 @@ final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
         }
     }
 
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         finish(nil)
     }
 
-    func webView(
+    public func webView(
         _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error
     ) { finish(nil) }
 

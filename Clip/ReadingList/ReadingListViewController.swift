@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipArchiveReader
 import ClipSocial
 import ClipMediaDownload
 import ClipPlatforms

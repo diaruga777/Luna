@@ -29,7 +29,7 @@ import WebKit
 /// All of this is inert unless the experimental toggle is on (it only feeds the
 /// `.directUnlock` strategy, which the selector emits only when the toggle is on).
 /// Pure data + a compile helper; the rule JSON / cleanup JS are unit-tested.
-enum PaywallUnlockRules {
+public enum PaywallUnlockRules {
 
     // MARK: - Content-blocker (vendor paywall/meter scripts)
 
@@ -84,11 +84,11 @@ enum PaywallUnlockRules {
         PathBlock(pattern: "-gate-metering"),
     ]
 
-    static let contentRuleListIdentifier = "clip-paywall-vendor-block-v1"
+    public static let contentRuleListIdentifier = "clip-paywall-vendor-block-v1"
 
     /// The `WKContentRuleList` JSON: one block rule per vendor/path. `url-filter`
     /// is anchored to a host boundary so `piano.io` can't match `piano.io.evil.com`.
-    static var contentRuleListJSON: String {
+    public static var contentRuleListJSON: String {
         var rules: [String] = []
         for vendor in vendorBlocks {
             let escapedHost = vendor.host.replacingOccurrences(of: ".", with: "\\\\.")
@@ -120,7 +120,7 @@ enum PaywallUnlockRules {
 
     /// Compiles (and caches) the content rule list. Calls back on the main thread.
     private static var cachedRuleList: WKContentRuleList?
-    static func compiledRuleList(_ completion: @escaping (WKContentRuleList?) -> Void) {
+    public static func compiledRuleList(_ completion: @escaping (WKContentRuleList?) -> Void) {
         if let cachedRuleList {
             completion(cachedRuleList)
             return
@@ -143,7 +143,7 @@ enum PaywallUnlockRules {
     /// Injected at documentStart; re-runs on an interval (covering the reader's poll
     /// window) to strip paywall overlays, unhide the article, and restore scroll.
     /// NEVER runs on the archive.today reader (it would fight the CAPTCHA flow).
-    static let domCleanupScript = """
+    public static let domCleanupScript = """
     (function () {
       try {
         var h = (location.hostname || '').toLowerCase();
@@ -195,7 +195,7 @@ enum PaywallUnlockRules {
     })();
     """
 
-    static func cleanupUserScript() -> WKUserScript {
+    public static func cleanupUserScript() -> WKUserScript {
         WKUserScript(source: domCleanupScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
     }
 }

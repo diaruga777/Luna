@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipArchiveReader
 import ClipStorage
 import ClipIngest
 import ClipURLClassification

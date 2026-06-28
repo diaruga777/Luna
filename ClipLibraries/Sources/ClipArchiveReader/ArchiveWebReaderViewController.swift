@@ -28,7 +28,7 @@ import WebKit
 /// request as a different/automated client and re-challenges), and the persistent
 /// default cookie store (so the clearance survives the reload — and later articles
 /// reuse it without re-solving).
-final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelegate {
+public final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelegate {
 
     private let articleURL: URL
     private let itemID: UUID?
@@ -122,17 +122,17 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// Called when the user dismisses (Done). The main app dismisses the modal;
     /// extensions use this to complete their extension request. Defaults to
     /// dismissing the presentation when nil.
-    var onClose: (() -> Void)?
+    public var onClose: (() -> Void)?
     /// Called once the article has been extracted and saved (the CAPTCHA was
     /// solved and a real snapshot loaded). Extensions use this to show their
     /// success checkmark and finish; the main app leaves it nil and lets the user
     /// keep reading the loaded snapshot.
-    var onExtracted: (() -> Void)?
+    public var onExtracted: (() -> Void)?
     /// Escape hatch for when archive.today keeps CAPTCHA-looping in the embedded
     /// web view: opens the same archive URL in real Safari (which may already hold
     /// a valid `cf_clearance`). Main-app-only — set by the presenter; left nil in
     /// extensions (no `UIApplication` there), where the button is hidden.
-    var onOpenInBrowser: ((URL) -> Void)?
+    public var onOpenInBrowser: ((URL) -> Void)?
 
     /// archive.today rate-limits aggressively (HTTP 429) and, once it does, won't
     /// honor CAPTCHA solves until the throttle clears — so surface actionable
@@ -152,7 +152,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     private static let mayBeStuckMessage =
         "This archive is taking longer than usual. It may be stuck, but we’re still waiting."
 
-    init(articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared,
+    public init(articleURL: URL, itemID: UUID?, store: ReadingListStore = .shared,
          recorder: ReplayRecording = ReplayRecorder.shared) {
         self.articleURL = articleURL
         self.itemID = itemID
@@ -229,9 +229,9 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
             + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(major).0 Mobile/15E148 Safari/604.1"
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         navigationItem.leftBarButtonItem = UIBarButtonItem(
@@ -333,7 +333,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
     deinit { pollTimer?.invalidate() }
 
-    override func viewDidDisappear(_ animated: Bool) {
+    public override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         // Stop polling the web view once we're off-screen — otherwise the timer
         // keeps firing checkStage() (and could load/submit) on a dismissed flow.
@@ -470,7 +470,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// already an archive snapshot, load that exact snapshot; otherwise
     /// `archive.is/newest/<canonical>` (target in the PATH so the user never types
     /// it into a form).
-    static func archiveURL(for articleURL: URL) -> URL? {
+    public static func archiveURL(for articleURL: URL) -> URL? {
         if ArticleFetcher.isArchiveTodayURL(articleURL) { return articleURL }
         let target = ArticleFetcher.canonicalForArchiving(articleURL).absoluteString
         guard let url = URL(string: "https://archive.is/newest/\(target)"),
@@ -486,7 +486,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// that already ran silently is excluded by the plan (it doesn't benefit from a JS
     /// retry, so NYT skips the ~9s redundant pre-stage). Pure + static so the ordering
     /// is unit-testable without a web view.
-    static func webPreStageURLs(for articleURL: URL) -> [URL] {
+    public static func webPreStageURLs(for articleURL: URL) -> [URL] {
         // A URL already on archive.today goes straight to the snapshot flow.
         guard !ArticleFetcher.isArchiveTodayURL(articleURL) else { return [] }
         let plan = BypassPlan.make(for: articleURL, directHTML: nil)
@@ -502,7 +502,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
 
     // MARK: - WKNavigationDelegate
 
-    func webView(
+    public func webView(
         _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
@@ -522,7 +522,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         decisionHandler(.allow)
     }
 
-    func webView(
+    public func webView(
         _ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
@@ -540,12 +540,12 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         decisionHandler(.allow)
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         progress.stopAnimating()
         checkStage()
     }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         // The form stays in archive.is's chrome even on a completed snapshot. A
         // main-frame navigation away from the actual root homepage is the durable
         // signal that the target was submitted; never infer it from page text.
@@ -669,7 +669,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// Crucially, after the homepage has been submitted (`didLeaveHomepage`), a
     /// page that still shows the `input[name=url]` box is NOT treated as the
     /// homepage again — every archive.today page carries that box in its chrome.
-    enum StageDecision: Equatable {
+    public enum StageDecision: Equatable {
         case wait                  // waiting for a semantic page transition/root
         case challenge             // a CAPTCHA gate is up — reveal the page for the user
         case submitHomepage        // on the homepage form, not yet submitted — submit the URL
@@ -678,7 +678,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         case attemptExtract        // page has real text — try extracting the article
     }
 
-    static func decideStage(
+    public static func decideStage(
         _ stage: String,
         didLeaveHomepage: Bool,
         isSubmittingHomepage: Bool,
@@ -745,7 +745,7 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
     /// generalized form of the archive.today "enable JS / disable ad blocker" gate:
     /// the ad-blocker phrase is NOT required, since most JS-required interstitials
     /// only mention JavaScript.
-    static func isJavaScriptRequiredGate(text: String) -> Bool {
+    public static func isJavaScriptRequiredGate(text: String) -> Bool {
         let lowercased = text.lowercased()
         guard lowercased.count < 800 else { return false }
         let mentionsJavaScript = lowercased.contains("enable javascript")
@@ -818,11 +818,11 @@ final class ArchiveWebReaderViewController: UIViewController, WKNavigationDelega
         return String(array.dropFirst().dropLast())   // strip the surrounding [ ]
     }
 
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         progress.stopAnimating()
     }
 
-    func webView(
+    public func webView(
         _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error
     ) { progress.stopAnimating() }
 

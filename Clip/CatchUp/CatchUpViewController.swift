@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipArchiveReader
 import ClipDesignSystem
 import ClipStorage
 import ClipModels

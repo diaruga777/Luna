@@ -7,6 +7,7 @@
 //  correct viewer per item type.
 //
 
+import ClipArchiveReader
 import ClipStorage
 import UIKit
 import XCTest

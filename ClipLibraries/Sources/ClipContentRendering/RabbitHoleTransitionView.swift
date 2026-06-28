@@ -122,6 +122,24 @@ public final class RabbitHoleTransitionView: UIView {
         setProgress(progress)
     }
 
+    /// Load only the `before` snapshot, using it for BOTH textures so the overlay can
+    /// mask the screen at progress 0 (showing exactly the before frame) before the
+    /// `after` image exists. Pair with `setAfterImage` once it's ready.
+    public func configure(before: UIImage) {
+        let tex = makeTexture(before)
+        texA = tex
+        texB = tex
+        setProgress(progress)
+    }
+
+    /// Swap in the `after` snapshot mid-flight (after `configure(before:)`). Cheap
+    /// enough to call a frame or two into the dissolve — at low progress the after
+    /// image is barely mixed in, so the swap is imperceptible.
+    public func setAfterImage(_ after: UIImage) {
+        texB = makeTexture(after)
+        renderFrame()
+    }
+
     /// Release the snapshot textures (call when the overlay is parked offscreen between
     /// transitions, so two full-screen textures aren't held idle).
     public func clearTextures() {

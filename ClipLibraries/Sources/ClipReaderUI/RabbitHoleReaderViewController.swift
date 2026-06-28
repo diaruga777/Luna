@@ -196,18 +196,17 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         // Hand the new layer its already-decoded content (if we preloaded this link) so
         // it renders synchronously — the "after" snapshot then shows the real article.
         let preloaded = preloadedContent[PreloadStore.key(for: url)]
-        _ = addLayer(RabbitHoleLayerDescriptor(urlString: url.absoluteString),
-                     preloadedContent: preloaded)
-        focus = topIndex
-        applyFocus()
-        view.layoutIfNeeded()
-        let after = snapshot(afterScreenUpdates: true)
-
-        runTransition(before: before, after: after) { [weak self] in
+        runTransition(before: before, applyState: { [weak self] in
+            guard let self else { return }
+            self.addLayer(RabbitHoleLayerDescriptor(urlString: url.absoluteString),
+                          preloadedContent: preloaded)
+            self.focus = self.topIndex
+            self.applyFocus()
+        }, completion: { [weak self] in
             self?.playHeaderEntrance()
             self?.persist()
             self?.warmPreloadsForFocusedLayer()
-        }
+        })
     }
 
     /// Header back: pop one layer, or exit the reader entirely at the root.
@@ -222,17 +221,16 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private func popToLayer(_ index: Int) {
         guard !transitionInFlight, index >= 0, index < layers.count, index != topIndex else { return }
         let before = snapshot(afterScreenUpdates: false)
-        trimLayers(above: index)
-        focus = index
-        applyFocus()
-        view.layoutIfNeeded()
-        let after = snapshot(afterScreenUpdates: true)
-
-        runTransition(before: before, after: after) { [weak self] in
+        runTransition(before: before, applyState: { [weak self] in
+            guard let self else { return }
+            self.trimLayers(above: index)
+            self.focus = index
+            self.applyFocus()
+        }, completion: { [weak self] in
             self?.playHeaderEntrance()
             self?.persist()
             self?.warmPreloadsForFocusedLayer()
-        }
+        })
     }
 
     private func trimLayers(above index: Int) {
@@ -244,11 +242,26 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         }
     }
 
-    private func runTransition(before: UIImage, after: UIImage,
+    /// Drive a dive/pop wipe with ZERO perceived tap lag: the transition masks the
+    /// screen with `before` immediately, then — hidden behind that mask, on the next
+    /// runloop — runs `applyState` (the layer rebuild/relayout) and snapshots the
+    /// result, and only then dissolves. So the expensive build never blocks the frame
+    /// the user sees on tap. `afterScreenUpdates: false` keeps the snapshot cheap (the
+    /// focused header is hidden first to avoid the missing-blur artifact, then animated
+    /// back in by `playHeaderEntrance`).
+    private func runTransition(before: UIImage, applyState: @escaping () -> Void,
                                completion: @escaping () -> Void) {
-        guard let transition else { completion(); return }   // instant cut
+        guard let transition else {   // no Metal → instant cut
+            applyState(); view.layoutIfNeeded(); completion(); return
+        }
         transitionInFlight = true
-        transition.play(before: before, after: after, in: view) { [weak self] in
+        transition.play(before: before, buildAfter: { [weak self] in
+            applyState()
+            guard let self else { return before }
+            self.layers[safe: self.focus]?.prepareForTransitionSnapshot()
+            self.view.layoutIfNeeded()
+            return self.snapshot(afterScreenUpdates: false)
+        }, in: view) { [weak self] in
             self?.transitionInFlight = false
             completion()
         }
@@ -321,8 +334,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         // Compose the after state (parent focused, top layer gone) hidden under the overlay.
         let dying = layers[topIndex]
         applyFocus(focusedIndex: topIndex - 1, hiding: dying)
+        // Hide the parent's header for the snapshot (animated back in on commit), so the
+        // capture is cheap (afterScreenUpdates: false) and free of the glass-blur artifact.
+        layers[safe: topIndex - 1]?.prepareForTransitionSnapshot()
         view.layoutIfNeeded()
-        let after = snapshot(afterScreenUpdates: true)
+        let after = snapshot(afterScreenUpdates: false)
         applyFocus()                     // restore the live before state
         interactive = transition.begin(before: before, after: after, in: view)
     }

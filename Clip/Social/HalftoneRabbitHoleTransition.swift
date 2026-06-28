@@ -24,23 +24,51 @@ final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
 
     func prewarm(in container: UIView) { _ = ensureOverlay(in: container) }
 
-    func play(before: UIImage, after: UIImage,
+    func play(before: UIImage, buildAfter: @escaping () -> UIImage,
               in container: UIView, completion: @escaping () -> Void) {
-        guard let view = present(before: before, after: after, in: container) else {
-            completion(); return   // Metal unavailable → instant cut
+        guard let view = ensureOverlay(in: container) else {
+            _ = buildAfter()   // Metal unavailable → apply the state change, instant cut
+            completion(); return
         }
-        view.animateProgress(to: 1, duration: RabbitHoleTransitionSettings.totalDuration) {
-            Self.park(view)
-            completion()
+        // 1) Mask the screen with the before frame THIS runloop. The overlay is opaque
+        //    and at progress 0 shows exactly `before`, so the screen is visually frozen
+        //    on identical pixels — no flash, no jank, zero perceived lag on tap.
+        applyStyle(to: view)
+        view.configure(before: before)
+        view.setProgress(0)
+        view.isHidden = false
+        container.layoutIfNeeded()
+        // 2) Once that mask has been committed, do the heavy build + relayout + after
+        //    snapshot UNDER the mask (the user keeps seeing the frozen frame), then run
+        //    the dissolve to the real destination.
+        DispatchQueue.main.async {
+            let after = buildAfter()
+            view.setAfterImage(after)
+            view.animateProgress(to: 1, duration: RabbitHoleTransitionSettings.totalDuration) {
+                Self.park(view)
+                completion()
+            }
         }
     }
 
     func begin(before: UIImage, after: UIImage,
                in container: UIView) -> RabbitHoleInteractiveTransition {
-        guard let view = present(before: before, after: after, in: container) else {
+        guard let view = ensureOverlay(in: container) else {
             return NullInteractiveTransition()
         }
+        applyStyle(to: view)
+        view.configure(before: before, after: after)
+        view.setProgress(0)
+        view.isHidden = false
         return InteractiveHandle(view: view, settleDuration: RabbitHoleTransitionSettings.totalDuration)
+    }
+
+    private func applyStyle(to view: RabbitHoleTransitionView) {
+        view.style = RabbitHoleTransitionStyle(
+            pixelSize: RabbitHoleTransitionSettings.pixelSize,
+            stagger: RabbitHoleTransitionSettings.stagger,
+            monochrome: RabbitHoleTransitionSettings.monochrome)
+        view.phaseSplit = RabbitHoleTransitionSettings.phaseSplit
     }
 
     /// Lazily build the overlay and (re)attach it on top of `container`, hidden.
@@ -60,22 +88,6 @@ final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
         container.bringSubviewToFront(view)
         view.frame = container.bounds
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        return view
-    }
-
-    /// Style + load the overlay for a transition and reveal it at progress 0.
-    private func present(before: UIImage, after: UIImage,
-                         in container: UIView) -> RabbitHoleTransitionView? {
-        guard let view = ensureOverlay(in: container) else { return nil }
-        view.style = RabbitHoleTransitionStyle(
-            pixelSize: RabbitHoleTransitionSettings.pixelSize,
-            stagger: RabbitHoleTransitionSettings.stagger,
-            monochrome: RabbitHoleTransitionSettings.monochrome)
-        view.phaseSplit = RabbitHoleTransitionSettings.phaseSplit
-        container.layoutIfNeeded()   // give the metal layer its drawableSize first
-        view.configure(before: before, after: after)
-        view.setProgress(0)
-        view.isHidden = false
         return view
     }
 

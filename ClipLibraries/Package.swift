@@ -17,6 +17,7 @@ let package = Package(
         .library(name: "ClipIngest", targets: ["ClipIngest"]),
         .library(name: "ClipStorage", targets: ["ClipStorage"]),
         .library(name: "ClipDocuments", targets: ["ClipDocuments"]),
+        .library(name: "ClipEpub", targets: ["ClipEpub"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
@@ -40,6 +41,7 @@ let package = Package(
         ]),
         .target(name: "ClipStorage", dependencies: ["ClipModels", "ClipURLClassification"]),
         .target(name: "ClipDocuments", dependencies: ["ClipModels"]),
+        .target(name: "ClipEpub", dependencies: ["ClipModels"]),
         .testTarget(name: "ClipModelsTests", dependencies: ["ClipModels"]),
         .testTarget(name: "ClipURLClassificationTests", dependencies: ["ClipURLClassification"]),
         .testTarget(name: "ClipHTMLClassificationTests", dependencies: ["ClipHTMLClassification"]),

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipEpub
 import Foundation
 import Network
 import os

@@ -9,7 +9,9 @@ import Foundation
 /// Builds a minimal EPUB 3 from extracted article content — the format Amazon
 /// recommends for Send to Kindle (converted to AZW3 on their side). One chapter,
 /// downloaded article images embedded.
-struct EpubBuilder {
+public struct EpubBuilder {
+
+    public init() {}
 
     /// Maps an image file extension to its EPUB media type; nil means the
     /// format isn't worth embedding (Kindle conversion may reject it).
@@ -23,7 +25,7 @@ struct EpubBuilder {
 
     /// Builds the EPUB and returns the bytes. `imagesDirectory` is where the
     /// ingestor saved the blocks' `imageFileName` files.
-    func build(content: ArticleContent, sourceURLString: String,
+    public func build(content: ArticleContent, sourceURLString: String,
                imagesDirectory: URL) -> Data {
         var zip = ZipArchiveWriter()
         zip.addEntry(path: "mimetype", data: Data("application/epub+zip".utf8))
@@ -176,7 +178,7 @@ struct EpubBuilder {
             """
     }
 
-    static func escapeXML(_ text: String) -> String {
+    public static func escapeXML(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")

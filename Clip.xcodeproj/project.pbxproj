@@ -48,6 +48,8 @@
 		FF5DFE4CF92F033FB81C7A5B /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
 		C75DD0FABB085716259EAC0D /* ClipDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */; };
 		DE66DCA327DA9E81723DC210 /* ClipDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */; };
+		535077B96135F4456ADF0386 /* ClipEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* ClipEpub */; };
+		2F22403ECDD962D932AA6BD3 /* ClipEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* ClipEpub */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -181,6 +183,7 @@
 				04325C8AF877D151D2D31605 /* ClipIngest in Frameworks */,
 				C2651D3DB2A545CDDEA3C458 /* ClipStorage in Frameworks */,
 				C75DD0FABB085716259EAC0D /* ClipDocuments in Frameworks */,
+				535077B96135F4456ADF0386 /* ClipEpub in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -200,6 +203,7 @@
 				B7EB2775DD38C41CBD105079 /* ClipIngest in Frameworks */,
 				C7F110C64D19ADC2D98C4712 /* ClipStorage in Frameworks */,
 				DE66DCA327DA9E81723DC210 /* ClipDocuments in Frameworks */,
+				2F22403ECDD962D932AA6BD3 /* ClipEpub in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -338,6 +342,7 @@
 				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
 				EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */,
+				AA824D3974D944B8BC077857 /* ClipEpub */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -388,6 +393,7 @@
 				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
 				EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */,
+				AA824D3974D944B8BC077857 /* ClipEpub */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -1114,6 +1120,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipDocuments;
+		};
+		AA824D3974D944B8BC077857 /* ClipEpub */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipEpub;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

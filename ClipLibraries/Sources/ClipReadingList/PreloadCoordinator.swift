@@ -223,17 +223,6 @@ public final class PreloadCoordinator {
     /// The de-duplicated set of absolute http(s) outbound links on an article, in
     /// document order.
     public static func outboundURLs(from content: ArticleContent) -> [URL] {
-        var seen = Set<String>()
-        var result: [URL] = []
-        for block in content.blocks {
-            for link in block.links {
-                guard seen.insert(link.urlString).inserted,
-                      let url = URL(string: link.urlString),
-                      let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
-                else { continue }
-                result.append(url)
-            }
-        }
-        return result
+        content.outboundURLs
     }
 }

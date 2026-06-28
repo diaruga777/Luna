@@ -39,7 +39,7 @@ enum RabbitHolePreloader {
 
         guard let html = try? await ArticleFetcher().fetchHTML(from: url),
               let content = try? ArticleExtractor().extract(html: html, baseURL: url),
-              isArticleLike(content)
+              content.isArticleLike
         else { return nil }
 
         // Download every image to the shared, URL-hash-keyed Articles cache — the SAME
@@ -49,30 +49,7 @@ enum RabbitHolePreloader {
             content, itemID: owner, store: .shared, refererURL: url)
         PreloadStore.shared.record(
             url: url, rootID: owner, kind: .article, depthRemaining: 0,
-            content: enriched, children: outboundURLs(from: enriched))
+            content: enriched, children: enriched.outboundURLs)
         return enriched
-    }
-
-    /// Same heuristic the layer's probe uses to decide a page is worth the reader.
-    static func isArticleLike(_ content: ArticleContent) -> Bool {
-        let blocks = content.blocks.filter { !$0.text.isEmpty }
-        let totalText = blocks.reduce(0) { $0 + $1.text.count }
-        return totalText >= 600 && blocks.count >= 3
-    }
-
-    /// De-duplicated absolute http(s) links on a page, in document order.
-    static func outboundURLs(from content: ArticleContent) -> [URL] {
-        var seen = Set<String>()
-        var result: [URL] = []
-        for block in content.blocks {
-            for link in block.links {
-                guard seen.insert(link.urlString).inserted,
-                      let url = URL(string: link.urlString),
-                      let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
-                else { continue }
-                result.append(url)
-            }
-        }
-        return result
     }
 }

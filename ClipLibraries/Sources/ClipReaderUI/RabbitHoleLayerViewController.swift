@@ -445,7 +445,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         articleProbe = Task { [weak self] in
             let content: ArticleContent? = await Task.detached(priority: .userInitiated) {
                 if let cached = PreloadStore.shared.articleContent(for: target),
-                   Self.isArticleLike(cached) {
+                   cached.isArticleLike {
                     return cached
                 }
                 guard let html = try? await ArticleFetcher().fetchHTML(from: target) else { return nil }
@@ -453,7 +453,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             }.value
             guard let self, !Task.isCancelled else { return }
             await MainActor.run {
-                if let content, Self.isArticleLike(content) {
+                if let content, content.isArticleLike {
                     self.pendingDecision = .reader(content)
                 } else {
                     self.pendingDecision = .web
@@ -514,12 +514,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         label.textAlignment = .center
         view.addSubview(label)   // centred manually in viewDidLayoutSubviews
         view.setNeedsLayout()
-    }
-
-    nonisolated private static func isArticleLike(_ content: ArticleContent) -> Bool {
-        let blocks = content.blocks.filter { !$0.text.isEmpty }
-        let totalText = blocks.reduce(0) { $0 + $1.text.count }
-        return totalText >= 600 && blocks.count >= 3
     }
 
     private func showReader(_ content: ArticleContent) {

@@ -72,4 +72,32 @@ public struct ArticleContent: Codable, Equatable {
 
     /// Minimum block-text length for `hasReadableBody`.
     public static let readableBodyThreshold = 1200
+
+    // MARK: - Preload heuristics (single source of truth)
+
+    /// Whether this page is worth rendering with the reader (the heuristic shared by
+    /// the preloader, the inline link viewer, and the RabbitHole probe). A page needs
+    /// enough non-empty text spread across enough blocks to read like an article.
+    public var isArticleLike: Bool {
+        let nonEmpty = blocks.filter { !$0.text.isEmpty }
+        let totalText = nonEmpty.reduce(0) { $0 + $1.text.count }
+        return totalText >= 600 && nonEmpty.count >= 3
+    }
+
+    /// De-duplicated absolute http(s) outbound links on this page, in document order
+    /// (the set the preloader crawls and the link viewer keys its cache by).
+    public var outboundURLs: [URL] {
+        var seen = Set<String>()
+        var result: [URL] = []
+        for block in blocks {
+            for link in block.links {
+                guard seen.insert(link.urlString).inserted,
+                      let url = URL(string: link.urlString),
+                      let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
+                else { continue }
+                result.append(url)
+            }
+        }
+        return result
+    }
 }

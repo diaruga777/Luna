@@ -46,14 +46,18 @@ xcodebuild test -scheme Clip -destination "platform=iOS Simulator,id=$SIM" \
   app-group entitlement, so the test host crashes at launch (early-exit, "external
   symbol") on app-group container access. Default ad-hoc signing applies the
   entitlement and the app group works on the simulator.
-- **Known pre-existing failures (NOT regressions; verified identical on baseline):**
-  snapshot tests (`*ScreenTests`, `CatchUpAndPriceScreenTests`, `OnboardingScreenTests`)
-  fail unless run on the exact device the reference PNGs were recorded on; `ReplayPlayerTests`
-  need network/live fetch; `ReadingListSectioningTests.testDot*` need enhanced voices
-  installed (absent on a clean sim); and two extraction tests
-  (`ArticleExtractionTests.testExtractFromJSONLDRecoversArticleBody`,
-  `ArticleContentPaywallTests.testOrdinaryArticleIsReadable`) have a stale
-  `readableBodyThreshold`. ~856/892 pass; the 36 failures are environment/pre-existing.
+- **The full suite is green on the iOS 26.x sim: 892 tests, 2 skipped, 0 failures.**
+  (The 2 skips are intentional `XCTSkip`s — `CatchUpAndPriceScreenTests.testPriceTracking{,Alerting}EditorSnapshot`.)
+  The ~36 failures previously documented here were all stale test data, not the
+  environment, and have been fixed: snapshot reference PNGs are device-specific and
+  were re-recorded on this sim with `RECORD_SNAPSHOTS=1` (re-record after intentional
+  UI changes via `TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test …` — the build-setting
+  form does NOT reach the runner's environment); `ReplayPlayerTests` run offline (their
+  fixtures + `readableArticleHTML` were lengthened to clear the 1200 `readableBodyThreshold`);
+  `ReadingListSectioningTests.testDot*` dismiss the voice-catch-up flag in setUp so the
+  orthogonal "enhanced voices not installed" dot trigger doesn't fire; and the two
+  extraction tests were aligned to the 1200 threshold. If snapshots fail again on a
+  *different* device, re-record there rather than treating it as a regression.
 - For a compile-only check (fast, no run): `xcodebuild build-for-testing -scheme Clip
   -destination 'generic/platform=iOS Simulator'`.
 

@@ -11,16 +11,17 @@ import Foundation
 /// Saves a URL-less music item (artist + track) — the now-playing capture path
 /// for streaming-music apps. Cover art + provider links resolve at render time
 /// from the preferred provider.
-struct SaveMusicItemIntent: AppIntent {
-    static let title: LocalizedStringResource = "Save Song"
-    static let description = IntentDescription(
+public struct SaveMusicItemIntent: AppIntent {
+    public init() {}
+    public static let title: LocalizedStringResource = "Save Song"
+    public static let description = IntentDescription(
         "Saves a song by artist + title to your Queue reading list (no link needed).")
-    static let openAppWhenRun: Bool = false
+    public static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Artist", description: "The artist name (text).") var artist: String
     @Parameter(title: "Title", description: "The song / track title (text).") var title: String
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    public func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let cleanArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let item = ReadingListStore.shared.createURLlessMediaItem(
@@ -34,19 +35,20 @@ struct SaveMusicItemIntent: AppIntent {
 }
 
 /// Saves a URL-less podcast item (show + episode).
-struct SavePodcastItemIntent: AppIntent {
-    static let title: LocalizedStringResource = "Save Podcast Episode"
-    static let description = IntentDescription(
+public struct SavePodcastItemIntent: AppIntent {
+    public init() {}
+    public static let title: LocalizedStringResource = "Save Podcast Episode"
+    public static let description = IntentDescription(
         "Saves a podcast episode by show name + episode title (text) to your Queue reading list (no link needed).")
-    static let openAppWhenRun: Bool = false
+    public static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Show", description: "The podcast show's name (text).") var show: String
     @Parameter(
         title: "Episode Title",
         description: "The episode's title as TEXT — not an episode number.")
-    var episode: String
+    public var episode: String
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    public func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let cleanShow = show.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanEpisode = episode.trimmingCharacters(in: .whitespacesAndNewlines)
         let item = ReadingListStore.shared.createURLlessMediaItem(

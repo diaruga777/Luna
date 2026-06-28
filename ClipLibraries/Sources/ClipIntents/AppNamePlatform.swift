@@ -9,23 +9,23 @@ import Foundation
 /// Maps the current-app name (from Shortcuts' "Get Current App") to a content
 /// platform, and supplies the screen-extraction prompt per platform.
 /// Shared by the generic save intent and the screen-prompt intent.
-enum AppNamePlatform {
+public enum AppNamePlatform {
 
     /// Whether the current app is one Queue knows how to save from — a recognized
     /// content platform, or Safari (whose plain page URL is saved directly). Unknown
     /// apps are unsupported; the screen-prompt intent returns "unsupported" for them.
-    static func isSupported(forAppName app: String) -> Bool {
+    public static func isSupported(forAppName app: String) -> Bool {
         platform(forAppName: app) != nil || isSafari(forAppName: app)
     }
 
     /// Whether the app is Safari (supported, but needs no model prompt — the tracked
     /// page URL is saved instead).
-    static func isSafari(forAppName app: String) -> Bool {
+    public static func isSafari(forAppName app: String) -> Bool {
         app.lowercased().contains("safari")
     }
 
     /// The platform for an app name, or nil (Safari / unknown → plain URL).
-    static func platform(forAppName app: String) -> ContentPlatform? {
+    public static func platform(forAppName app: String) -> ContentPlatform? {
         let name = app.lowercased()
         if name.contains("youtube") { return .youtube }
         if name.contains("bluesky") { return .bluesky }
@@ -49,7 +49,7 @@ enum AppNamePlatform {
     /// `SaveFromAppIntent.parseFields`. "none" means nothing identifiable is on
     /// screen; the save intent treats it (and any error/empty response) as nothing
     /// to save.
-    static func screenPrompt(forAppName app: String) -> String? {
+    public static func screenPrompt(forAppName app: String) -> String? {
         guard let platform = platform(forAppName: app) else { return nil }
         switch platform {
         case .youtube:

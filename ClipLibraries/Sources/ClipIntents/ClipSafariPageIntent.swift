@@ -15,24 +15,25 @@ import Foundation
 /// provided it's a fuzzy prefix cross-check against the tracked URL (guarding
 /// against a stale tracked page); when absent, no check runs. Designed for the
 /// Action Button shortcut.
-struct ClipSafariPageIntent: AppIntent {
-    static let title: LocalizedStringResource = "Save Current Safari Page"
-    static let description = IntentDescription(
+public struct ClipSafariPageIntent: AppIntent {
+    public init() {}
+    public static let title: LocalizedStringResource = "Save Current Safari Page"
+    public static let description = IntentDescription(
         "Saves the page currently open in Safari to your Queue reading list (requires the Queue Safari extension).")
-    static let openAppWhenRun: Bool = false
+    public static let openAppWhenRun: Bool = false
 
     @Parameter(title: "App", description: "The current app, from Get Current App. Used to check you're in Safari.")
-    var app: String?
+    public var app: String?
 
     @Parameter(title: "Verification URL", description: "Optional. If provided, it must be a (fuzzy) prefix match of the tracked Safari page. It never overrides what gets saved.")
-    var url: URL?
+    public var url: URL?
 
-    enum ClipError: Error, CustomLocalizedStringResourceConvertible {
+    public enum ClipError: Error, CustomLocalizedStringResourceConvertible {
         case notInSafari
         case noTrackedURL
         case trackedURLMismatch
 
-        var localizedStringResource: LocalizedStringResource {
+        public var localizedStringResource: LocalizedStringResource {
             switch self {
             case .notInSafari:
                 return "Not in Safari — nothing saved."
@@ -44,7 +45,7 @@ struct ClipSafariPageIntent: AppIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    public func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let isSafari = app?.localizedCaseInsensitiveContains("safari") ?? true
         guard isSafari else { throw ClipError.notInSafari }
 
@@ -63,14 +64,14 @@ struct ClipSafariPageIntent: AppIntent {
 }
 
 /// Shared best-effort inline save handling for background intents.
-enum IntentIngestHelper {
+public enum IntentIngestHelper {
     /// Handles a save press (save+ingest, double-press send, or ignore), giving
     /// up after 12 s so the intent finishes promptly in the background. Work cut
     /// off by the timeout is persisted as pending/queued and retried later.
     /// Returns the URL that ended up saved (also for duplicates, which are
     /// already in the list), or nil when the outcome couldn't be determined
     /// before the timeout.
-    static func handleSavePressWithTimeout(urlString: String) async -> String? {
+    public static func handleSavePressWithTimeout(urlString: String) async -> String? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
         let urlString = url.absoluteString
         return await withTaskGroup(of: String?.self) { group in

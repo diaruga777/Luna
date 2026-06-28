@@ -8,9 +8,9 @@ import Foundation
 /// Fuzzy URL prefix comparison for the Safari intent's optional verification
 /// parameter: scheme, "www.", trailing slash, and case are ignored; the check
 /// passes when either normalized URL is a prefix of the other.
-enum URLPrefixMatch {
+public enum URLPrefixMatch {
 
-    static func fuzzyPrefixMatches(provided: String, tracked: String) -> Bool {
+    public static func fuzzyPrefixMatches(provided: String, tracked: String) -> Bool {
         let normalizedProvided = normalized(provided)
         let normalizedTracked = normalized(tracked)
         guard !normalizedProvided.isEmpty, !normalizedTracked.isEmpty else { return false }
@@ -18,7 +18,7 @@ enum URLPrefixMatch {
             || normalizedProvided.hasPrefix(normalizedTracked)
     }
 
-    static func normalized(_ urlString: String) -> String {
+    public static func normalized(_ urlString: String) -> String {
         var text = urlString.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         for prefix in ["https://", "http://"] where text.hasPrefix(prefix) {
             text = String(text.dropFirst(prefix.count))

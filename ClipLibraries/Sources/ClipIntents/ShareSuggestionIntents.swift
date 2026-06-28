@@ -16,21 +16,22 @@ import Foundation
 /// Applies the user's answer to a share suggestion: "Don't Share" suppresses
 /// it, "Share Once" sends now and keeps suggesting, "Always Share" sends now
 /// and auto-shares that site to that friend from then on.
-struct SetShareChoiceIntent: AppIntent {
-    static let title: LocalizedStringResource = "Apply Share Choice"
-    static let description = IntentDescription(
+public struct SetShareChoiceIntent: AppIntent {
+    public init() {}
+    public static let title: LocalizedStringResource = "Apply Share Choice"
+    public static let description = IntentDescription(
         "Responds to the share suggestion returned when you save a page or video.")
-    static let openAppWhenRun: Bool = false
+    public static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Choice",
                description: "Don't Share, Share Once, Always Share, No, or Yes.")
-    var choice: String
+    public var choice: String
 
-    enum ChoiceError: Error, CustomLocalizedStringResourceConvertible {
+    public enum ChoiceError: Error, CustomLocalizedStringResourceConvertible {
         case unknownChoice
         case sendFailed
 
-        var localizedStringResource: LocalizedStringResource {
+        public var localizedStringResource: LocalizedStringResource {
             switch self {
             case .unknownChoice:
                 return "Choice must be Don't Share, Share Once, Always Share, No, or Yes."
@@ -40,7 +41,7 @@ struct SetShareChoiceIntent: AppIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult {
+    public func perform() async throws -> some IntentResult {
         // "No"/"Yes" are the two-option replies for a content recommendation;
         // map them onto the underlying choices (Yes = share once).
         let parsed: ShareSuggestionStore.Choice

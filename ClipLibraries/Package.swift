@@ -33,6 +33,7 @@ let package = Package(
         .library(name: "ClipYouTubeAPI", targets: ["ClipYouTubeAPI"]),
         .library(name: "ClipReadingList", targets: ["ClipReadingList"]),
         .library(name: "ClipSocialUI", targets: ["ClipSocialUI"]),
+        .library(name: "ClipIntents", targets: ["ClipIntents"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
@@ -71,6 +72,7 @@ let package = Package(
         .target(name: "ClipShareSurface", dependencies: ["ClipModels", "ClipStorage", "ClipIngest", "ClipURLClassification", "ClipDesignSystem", "ClipReaderUI", "ClipArchiveReader", "ClipPriceUI", "ClipMediaDownload", "ClipPlatforms"]),
         .target(name: "ClipYouTubeAPI", dependencies: ["ClipModels", "ClipStorage", "ClipURLClassification", "ClipDesignSystem"]),
         .target(name: "ClipSocialUI", dependencies: ["ClipModels", "ClipStorage", "ClipDesignSystem", "ClipReaderUI", "ClipReadingList", "ClipSemantic", "ClipSocial"]),
+        .target(name: "ClipIntents", dependencies: ["ClipModels", "ClipStorage", "ClipURLClassification", "ClipPlatforms", "ClipReadingList", "ClipSocial", "ClipYouTubeAPI"]),
         .target(name: "ClipReadingList", dependencies: ["ClipModels", "ClipStorage", "ClipIngest", "ClipURLClassification", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass", "ClipDesignSystem", "ClipDocuments", "ClipEpub", "ClipSend", "ClipMail", "ClipMediaDownload", "ClipPlatforms", "ClipPriceUI", "ClipReaderUI", "ClipArchiveReader", "ClipSemantic", "ClipSocial", "ClipYouTubeAPI"]),
         .testTarget(name: "ClipModelsTests", dependencies: ["ClipModels"]),
         .testTarget(name: "ClipURLClassificationTests", dependencies: ["ClipURLClassification"]),

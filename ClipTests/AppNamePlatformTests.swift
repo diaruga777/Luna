@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipIntents
 import XCTest
 @testable import Clip
 

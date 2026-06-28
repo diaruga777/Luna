@@ -12,9 +12,10 @@ import AppIntents
 /// supported app that needs no prompt (Safari — the tracked page URL is saved), and
 /// the exact string "unsupported" when the current app isn't one Queue can save from
 /// (the shortcut branches on that).
-struct ScreenAnalysisPromptIntent: AppIntent {
-    static let title: LocalizedStringResource = "Screen Analysis Prompt"
-    static let description = IntentDescription("""
+public struct ScreenAnalysisPromptIntent: AppIntent {
+    public init() {}
+    public static let title: LocalizedStringResource = "Screen Analysis Prompt"
+    public static let description = IntentDescription("""
         Returns a prompt to extract identifying metadata from the current app's \
         screen. Pass the current app. If the result is non-empty, attach a \
         screenshot of the screen and run the prompt and image through an \
@@ -22,12 +23,12 @@ struct ScreenAnalysisPromptIntent: AppIntent {
         "unsupported" when the current app can't be saved from, and empty when it \
         needs no prompt.
         """)
-    static let openAppWhenRun: Bool = false
+    public static let openAppWhenRun: Bool = false
 
     @Parameter(title: "App", description: "The current app, from Get Current App.")
-    var app: String?
+    public var app: String?
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    public func perform() async throws -> some IntentResult & ReturnsValue<String> {
         guard let app else { return .result(value: "unsupported") }
         if let prompt = AppNamePlatform.screenPrompt(forAppName: app) {
             return .result(value: prompt)

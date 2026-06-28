@@ -10,37 +10,38 @@ import Foundation
 
 /// Finds a specific Reddit post from precise fields — subreddit, optional author,
 /// and the post title — via public search (no sign-in) and saves the top match.
-struct FindRedditPostIntent: AppIntent {
-    static let title: LocalizedStringResource = "Save Reddit Post"
-    static let description = IntentDescription(
+public struct FindRedditPostIntent: AppIntent {
+    public init() {}
+    public static let title: LocalizedStringResource = "Save Reddit Post"
+    public static let description = IntentDescription(
         "Finds a Reddit post by subreddit + title (and optional author) and saves it to your Queue reading list.")
-    static let openAppWhenRun: Bool = false
+    public static let openAppWhenRun: Bool = false
 
     @Parameter(
         title: "Subreddit",
         description: "The community, with or without \"r/\" — e.g. \"r/swift\" or \"swift\".")
-    var subreddit: String
+    public var subreddit: String
 
     @Parameter(
         title: "Title",
         description: "The post's title (or a distinctive phrase from it).")
-    var title: String
+    public var title: String
 
     @Parameter(
         title: "Author",
         description: "Optional poster username, with or without \"u/\".")
-    var author: String?
+    public var author: String?
 
-    enum FindError: Error, CustomLocalizedStringResourceConvertible {
+    public enum FindError: Error, CustomLocalizedStringResourceConvertible {
         case notFound
-        var localizedStringResource: LocalizedStringResource {
+        public var localizedStringResource: LocalizedStringResource {
             switch self {
             case .notFound: return "Couldn't find a matching Reddit post."
             }
         }
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    public func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let query = RedditPostQuery.searchQuery(subreddit: subreddit, title: title, author: author)
         guard !query.isEmpty, let url = try? await RedditSearchClient().topPostURL(query: query)
         else { throw FindError.notFound }
@@ -52,8 +53,8 @@ struct FindRedditPostIntent: AppIntent {
 
 /// Builds a Reddit search query from precise fields using Reddit's `subreddit:`
 /// and `author:` operators. Pure, so the formatting is testable.
-enum RedditPostQuery {
-    static func searchQuery(subreddit: String, title: String, author: String?) -> String {
+public enum RedditPostQuery {
+    public static func searchQuery(subreddit: String, title: String, author: String?) -> String {
         let sub = subreddit.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "r/", with: "", options: [.anchored, .caseInsensitive])
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)

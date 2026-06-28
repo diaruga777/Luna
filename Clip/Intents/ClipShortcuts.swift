@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipIntents
 import AppIntents
 
 /// Surfaces the intents in the Shortcuts app and Spotlight so they're easy to

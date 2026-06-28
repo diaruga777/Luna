@@ -21,28 +21,29 @@ import Foundation
 /// back to the tracked page URL. If the model errors or finds nothing it returns an
 /// empty/"none" string, which is treated as "nothing to save".
 /// Returns the share-suggestion token (see ClipSafariPageIntent).
-struct SaveFromAppIntent: AppIntent {
-    static let title: LocalizedStringResource = "Save from App"
-    static let description = IntentDescription("""
+public struct SaveFromAppIntent: AppIntent {
+    public init() {}
+    public static let title: LocalizedStringResource = "Save from App"
+    public static let description = IntentDescription("""
         Saves content based on the current app. Pass the current app and the single \
         response string the model produced for that app's screen (fields joined by \
         " ; "). Safari and unknown apps may pass an empty string — the tracked page \
         URL is saved instead.
         """)
-    static let openAppWhenRun: Bool = false
+    public static let openAppWhenRun: Bool = false
 
     @Parameter(title: "App", description: "The current app, from Get Current App.")
-    var app: String?
+    public var app: String?
 
     @Parameter(title: "Details", description: "The model's response string for the current app, or empty.")
-    var details: String?
+    public var details: String?
 
-    enum SaveError: Error, CustomLocalizedStringResourceConvertible {
+    public enum SaveError: Error, CustomLocalizedStringResourceConvertible {
         case missingValues
         case notFound
         case youTubeNotSignedIn
 
-        var localizedStringResource: LocalizedStringResource {
+        public var localizedStringResource: LocalizedStringResource {
             switch self {
             case .missingValues: return "Nothing to save was provided."
             case .notFound: return "Couldn't find a matching item."
@@ -51,7 +52,7 @@ struct SaveFromAppIntent: AppIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    public func perform() async throws -> some IntentResult & ReturnsValue<String> {
         guard let app else { throw SaveError.missingValues }
         let fields = Self.parseFields(from: details)
         let platform = AppNamePlatform.platform(forAppName: app)
@@ -92,7 +93,7 @@ struct SaveFromAppIntent: AppIntent {
     /// Splits the model's single response string into its " ; "-joined fields,
     /// trimming each and dropping empties. A "none" response (the model's
     /// "nothing identifiable" / error sentinel) yields no fields.
-    static func parseFields(from response: String?) -> [String] {
+    public static func parseFields(from response: String?) -> [String] {
         let trimmed = (response ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.lowercased() != "none" else { return [] }
         return trimmed.components(separatedBy: " ; ")

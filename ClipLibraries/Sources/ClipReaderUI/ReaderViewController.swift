@@ -7,6 +7,7 @@ import ClipArchiveReader
 import ClipDesignSystem
 import ClipStorage
 import ClipModels
+import ClipTransitions
 import UIKit
 
 /// Hosts the reader modes — scrolling text, the RSVP speed reader (with its own
@@ -264,7 +265,11 @@ public final class ReaderViewController: UIViewController {
             ReaderSettings.lastReaderMode = newMode
         }
         onModeChange?(newMode)
-        showCurrentMode()
+        // Dissolve the whole content area dot-by-dot from the old mode to the new one
+        // (falls back to a plain crossfade when the pixel-wipe is off / unavailable).
+        HalftoneCrossfade.run(in: contentContainer, direction: .random) { [weak self] in
+            self?.showCurrentMode()
+        }
     }
 
     @objc private func audioToggled() {

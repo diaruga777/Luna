@@ -14,6 +14,7 @@ import ClipStorage
 import ClipFetch
 import ClipHTMLClassification
 import ClipModels
+import ClipTransitions
 import UIKit
 import WebKit
 
@@ -78,7 +79,16 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private let bottomLipLabel = UILabel()
     private let indentView = UIView()
 
-    private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp, .original]
+    /// Reading modes offered for this layer. `.original` (loading the live web page)
+    /// is only shown when this layer actually points at a web page — saves with no real
+    /// http(s) URL (e.g. mail imports) have nothing to load, so they never get it.
+    private var orderedModes: [ReadingListItem.ReaderMode] {
+        var modes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp]
+        if let scheme = descriptor.url?.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            modes.append(.original)
+        }
+        return modes
+    }
 
     public var isArticle: Bool { articleContent != nil }
 
@@ -136,7 +146,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             probeForArticle()
         }
         guard isViewLoaded else { return }   // viewDidLoad will start loading
-        modeControl.selectedSegmentIndex = Self.orderedModes.firstIndex(of: readerMode) ?? 0
+        modeControl.selectedSegmentIndex = orderedModes.firstIndex(of: readerMode) ?? 0
         updateLipTitles()
         updateSaveSlot()
         beginLoading()
@@ -212,10 +222,10 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
         header.contentView.addSubview(backButton)
 
-        for (index, mode) in Self.orderedModes.enumerated() {
+        for (index, mode) in orderedModes.enumerated() {
             modeControl.insertSegment(with: ReaderModeIcons.image(for: mode), at: index, animated: false)
         }
-        modeControl.selectedSegmentIndex = Self.orderedModes.firstIndex(of: readerMode) ?? 0
+        modeControl.selectedSegmentIndex = orderedModes.firstIndex(of: readerMode) ?? 0
         modeControl.isHidden = true
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
         header.contentView.addSubview(modeControl)
@@ -399,8 +409,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     @objc private func backTapped() { onBack?() }
 
     @objc private func modeChanged() {
-        let mode = Self.orderedModes[
-            max(0, min(modeControl.selectedSegmentIndex, Self.orderedModes.count - 1))]
+        let mode = orderedModes[
+            max(0, min(modeControl.selectedSegmentIndex, orderedModes.count - 1))]
         setMode(mode)
     }
 
@@ -430,9 +440,13 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     public func setMode(_ mode: ReadingListItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }
-        embedReader(mode: mode)
+        // Dissolve the card's content dot-by-dot from the old mode to the new one
+        // (falls back to a plain crossfade when the pixel-wipe is off / unavailable).
+        HalftoneCrossfade.run(in: view, direction: .random) { [weak self] in
+            self?.embedReader(mode: mode)
+        }
         descriptor.readerMode = mode
-        if let index = Self.orderedModes.firstIndex(of: mode) {
+        if let index = orderedModes.firstIndex(of: mode) {
             modeControl.selectedSegmentIndex = index
         }
         onModeChanged?(mode)

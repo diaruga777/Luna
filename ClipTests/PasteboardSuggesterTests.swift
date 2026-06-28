@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipReadingList
 import ClipYouTubeAPI
 import ClipStorage
 import XCTest

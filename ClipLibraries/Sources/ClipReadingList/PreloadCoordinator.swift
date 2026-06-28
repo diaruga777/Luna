@@ -16,8 +16,8 @@ import UIKit
 /// `IngestPipeline` (no WKWebView / CAPTCHA), dedupes by URL across trees, and never
 /// blocks a save's completion. Main-app only; the action extension just saves, and
 /// the main app resumes preloading on foreground / background-refresh.
-final class PreloadCoordinator {
-    static let shared = PreloadCoordinator()
+public final class PreloadCoordinator {
+    public static let shared = PreloadCoordinator()
 
     private let store: PreloadStore
     private let readingListStore: ReadingListStore
@@ -32,7 +32,7 @@ final class PreloadCoordinator {
     /// doesn't stall the whole crawl.
     private static let perLinkTimeout: TimeInterval = 15
 
-    init(store: PreloadStore = .shared, readingListStore: ReadingListStore = .shared) {
+    public init(store: PreloadStore = .shared, readingListStore: ReadingListStore = .shared) {
         self.store = store
         self.readingListStore = readingListStore
     }
@@ -41,7 +41,7 @@ final class PreloadCoordinator {
 
     /// Preload the links of one freshly-saved (or to-be-resumed) root article. Returns
     /// immediately; the crawl runs detached.
-    func preload(rootID: UUID) {
+    public func preload(rootID: UUID) {
         guard ReaderSettings.preloadDepth > 0 else { return }
         Task.detached(priority: .utility) { [weak self] in
             await self?.run(rootID: rootID)
@@ -51,7 +51,7 @@ final class PreloadCoordinator {
     /// Resume preloading for every ready article whose tree may be incomplete. Called
     /// on foreground and from the background-refresh task. Cheap when everything is
     /// already cached (each URL short-circuits on the loaded entry).
-    func resumeIncomplete() {
+    public func resumeIncomplete() {
         guard ReaderSettings.preloadDepth > 0 else { return }
         Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
@@ -166,7 +166,7 @@ final class PreloadCoordinator {
 
     /// The de-duplicated set of absolute http(s) outbound links on an article, in
     /// document order.
-    static func outboundURLs(from content: ArticleContent) -> [URL] {
+    public static func outboundURLs(from content: ArticleContent) -> [URL] {
         var seen = Set<String>()
         var result: [URL] = []
         for block in content.blocks {

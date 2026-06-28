@@ -93,6 +93,8 @@
 		564D3AAC03C7A9A959BB013A /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
 		AF875A2EB193F3644FC2FF89 /* ClipYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */; };
 		80D1546C306DE0208046F4A7 /* ClipYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */; };
+		E5EA91F4EF26613A941C56F6 /* ClipReadingList in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */; };
+		53FBAD67762D020D14FCEB00 /* ClipReadingList in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -246,6 +248,7 @@
 				049E5C818766CE6BF95D8B7E /* ClipPriceUI in Frameworks */,
 				564D3AAC03C7A9A959BB013A /* ClipShareSurface in Frameworks */,
 				AF875A2EB193F3644FC2FF89 /* ClipYouTubeAPI in Frameworks */,
+				E5EA91F4EF26613A941C56F6 /* ClipReadingList in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -280,6 +283,7 @@
 				BD5B48658A5362866AA5CF57 /* ClipPriceUI in Frameworks */,
 				3EB986A4B023ACBE9D376F7B /* ClipShareSurface in Frameworks */,
 				80D1546C306DE0208046F4A7 /* ClipYouTubeAPI in Frameworks */,
+				53FBAD67762D020D14FCEB00 /* ClipReadingList in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -442,6 +446,7 @@
 				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
 				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
 				EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */,
+				6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -507,6 +512,7 @@
 				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
 				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
 				EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */,
+				6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -1309,6 +1315,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipYouTubeAPI;
+		};
+		6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipReadingList;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

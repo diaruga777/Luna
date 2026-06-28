@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipReadingList
 import ClipMail
 import ClipSend
 import ClipStorage

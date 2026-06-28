@@ -16,20 +16,20 @@ import UIKit
 /// surfaced as a one-tap "From Pasteboard" suggestion at the top of the reading
 /// list. Not persisted until the user taps Save. The preview also resolves a
 /// thumbnail so the row looks like a normal saved row before it's saved.
-struct PasteboardCandidate {
-    let urlString: String
-    let title: String
-    let channelName: String?
-    let videoID: String?
+public struct PasteboardCandidate {
+    public let urlString: String
+    public let title: String
+    public let channelName: String?
+    public let videoID: String?
     /// Article content already extracted during the preview, so tapping can open
     /// the reader instantly without re-fetching. nil for videos/platform items.
-    let content: ArticleContent?
+    public let content: ArticleContent?
     /// Set for a recognized non-YouTube platform URL (X, Bluesky, …).
-    let platform: ContentPlatform?
+    public let platform: ContentPlatform?
     /// Best-effort preview thumbnail (cover art / video still / platform art).
-    let thumbnail: UIImage?
+    public let thumbnail: UIImage?
 
-    init(urlString: String, title: String, channelName: String?, videoID: String?,
+    public init(urlString: String, title: String, channelName: String?, videoID: String?,
          content: ArticleContent?, platform: ContentPlatform? = nil, thumbnail: UIImage? = nil) {
         self.urlString = urlString
         self.title = title
@@ -40,10 +40,10 @@ struct PasteboardCandidate {
         self.thumbnail = thumbnail
     }
 
-    var isVideo: Bool { videoID != nil }
+    public var isVideo: Bool { videoID != nil }
 }
 
-protocol PasteboardSuggesting {
+public protocol PasteboardSuggesting {
     /// Evaluates a pasteboard URL string: returns a candidate when it isn't
     /// already saved and something readable (an article) or supported (a
     /// YouTube video) can be extracted from it; nil otherwise.
@@ -53,21 +53,21 @@ protocol PasteboardSuggesting {
 /// Default implementation: dedupes against the reading list, detects YouTube
 /// links via oEmbed, and otherwise fetches + extracts the article to confirm
 /// there's readable content.
-final class PasteboardSuggester: PasteboardSuggesting {
-    static let shared = PasteboardSuggester()
+public final class PasteboardSuggester: PasteboardSuggesting {
+    public static let shared = PasteboardSuggester()
 
     private let store: ReadingListStore
     private let fetcher = ArticleFetcher()
     private let extractor = ArticleExtractor()
     private let youTubeMetadataFetcher: YouTubeMetadataFetching
 
-    init(store: ReadingListStore = .shared,
+    public init(store: ReadingListStore = .shared,
          youTubeMetadataFetcher: YouTubeMetadataFetching = YouTubeOEmbedFetcher()) {
         self.store = store
         self.youTubeMetadataFetcher = youTubeMetadataFetcher
     }
 
-    func evaluate(urlString: String) async -> PasteboardCandidate? {
+    public func evaluate(urlString: String) async -> PasteboardCandidate? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
         let normalizedURLString = url.absoluteString
         // Already saved → nothing to suggest. Match loosely (tracking params, www,

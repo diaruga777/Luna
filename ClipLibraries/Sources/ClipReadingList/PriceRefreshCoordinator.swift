@@ -15,19 +15,19 @@ import Foundation
 ///
 /// The refresh logic itself lives in the dep-free `PriceRefresher`; this thin
 /// main-app coordinator owns only the side effects (notifications, logging).
-final class PriceRefreshCoordinator {
-    static let shared = PriceRefreshCoordinator()
+public final class PriceRefreshCoordinator {
+    public static let shared = PriceRefreshCoordinator()
 
     private let refresher: PriceRefresher
 
-    init(refresher: PriceRefresher = PriceRefresher(
+    public init(refresher: PriceRefresher = PriceRefresher(
         store: ReadingListStore.shared, priceFetcher: PriceFetcher())) {
         self.refresher = refresher
     }
 
     /// Refreshes all non-archived trackers and notifies on first threshold crossings.
     @discardableResult
-    func refreshAndNotify() async -> [PriceRefreshOutcome] {
+    public func refreshAndNotify() async -> [PriceRefreshOutcome] {
         DiagnosticLog.shared.record("price refresh: runner started", category: "price")
         let outcomes = await refresher.refreshAll()
         let dropped = outcomes.filter { $0.newlyAlerting }

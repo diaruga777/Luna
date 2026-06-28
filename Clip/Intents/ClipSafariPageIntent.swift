@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipReadingList
 import ClipSocial
 import ClipStorage
 import ClipURLClassification

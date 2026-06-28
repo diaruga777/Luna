@@ -22,8 +22,8 @@ import Foundation
 
 /// Downloads and extracts content for reading-list items: the immediate step
 /// after a link is saved, plus a retry pass for anything still pending.
-final class ReadingListIngestor {
-    static let shared = ReadingListIngestor()
+public final class ReadingListIngestor {
+    public static let shared = ReadingListIngestor()
 
     private let store = ReadingListStore.shared
     private let fetcher = ArticleFetcher()
@@ -33,7 +33,7 @@ final class ReadingListIngestor {
     /// recording off the hot path optional — a save runs identically without it.
     private let recorder: ReplayRecording
 
-    init(recorder: ReplayRecording = ReplayRecorder.shared) {
+    public init(recorder: ReplayRecording = ReplayRecorder.shared) {
         self.recorder = recorder
     }
 
@@ -46,7 +46,7 @@ final class ReadingListIngestor {
     /// `forceArticle` skips product-page detection entirely, so the URL is ingested
     /// as a normal article even if its page would otherwise be classified as a price
     /// tracker. Used by the "Read instead" override on the price-tracking editor.
-    func ingest(_ item: ReadingListItem, forceArticle: Bool = false) async {
+    public func ingest(_ item: ReadingListItem, forceArticle: Bool = false) async {
         guard item.state != .ready, let initialURL = item.url else { return }
 
         lock.lock()
@@ -434,7 +434,7 @@ final class ReadingListIngestor {
     }
 
     /// Kicks off ingestion for everything not yet ready (app launch / foreground).
-    func ingestAllPending() {
+    public func ingestAllPending() {
         // `.needsCaptcha` items can only advance when the user solves the archive
         // CAPTCHA, so a background re-fetch can't help them — retry only the states
         // that an automated pass can actually move forward.
@@ -456,7 +456,7 @@ final class ReadingListIngestor {
     /// surfaces (extensions, paste, friend-share) don't capture inline. This repairs
     /// every ready web page that lacks an archive — one WebKit capture at a time so we
     /// never run a fleet of web views — which is also how those surfaces get covered.
-    func backfillMissingWebArchives() {
+    public func backfillMissingWebArchives() {
         Task { @MainActor in
             guard !isBackfillingArchives else { return }
             isBackfillingArchives = true
@@ -489,7 +489,7 @@ final class ReadingListIngestor {
     }
 
     /// What a save press did, so intents can wait on the right work.
-    enum SavePressResult {
+    public enum SavePressResult {
         /// New URL — saved; ingestion may still be running.
         case saved(ReadingListItem)
         /// Double press — the article was (re)sent to one or more ereaders.
@@ -503,7 +503,7 @@ final class ReadingListIngestor {
     /// the article to Kindle (when configured); any other press on an existing
     /// URL is ignored. Awaits the resulting work (callers bound it with a timeout).
     @discardableResult
-    func handleSavePress(urlString: String, source: CaptureSource = .manual) async -> SavePressResult {
+    public func handleSavePress(urlString: String, source: CaptureSource = .manual) async -> SavePressResult {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }
         let urlString = url.absoluteString
         let existing = store.item(forURLString: urlString)
@@ -541,7 +541,7 @@ final class ReadingListIngestor {
     /// classified as a tracker is re-saved here as a plain article (it must not be
     /// re-detected back into a tracker). Adds a fresh item when none exists, then
     /// ingests it with detection forced off.
-    func saveAsArticle(urlString: String, source: CaptureSource = .manual) async {
+    public func saveAsArticle(urlString: String, source: CaptureSource = .manual) async {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }
         let urlString = url.absoluteString
         let item = store.item(forURLString: urlString) ?? store.add(urlString: urlString, source: source)
@@ -552,7 +552,7 @@ final class ReadingListIngestor {
     /// preview), persisting it directly so we skip a redundant network fetch.
     /// Runs the same new-save automation as a fresh save press.
     @discardableResult
-    func saveNewWithContent(
+    public func saveNewWithContent(
         urlString: String, content: ArticleContent, source: CaptureSource = .manual
     ) async -> ReadingListItem? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
@@ -605,12 +605,12 @@ final class ReadingListIngestor {
 /// presenter shared by interactive saves (paste/manual), app intents, and incoming
 /// friend shares; the foreground list opens the saved item via
 /// `ReadingListViewController.open(_:presenter:)` when tapped.
-struct IngestorOutcomePresenter: OutcomePresenter {
-    let ingestor: ReadingListIngestor
-    let url: URL
-    let replayID: UUID?
+public struct IngestorOutcomePresenter: OutcomePresenter {
+    public let ingestor: ReadingListIngestor
+    public let url: URL
+    public let replayID: UUID?
 
-    func present(_ outcome: Outcome, for item: ReadingListItem) async {
+    public func present(_ outcome: Outcome, for item: ReadingListItem) async {
         switch outcome {
         case let .article(content, html):
             await ingestor.persistArticle(content, html: html, for: item, url: url, replayID: replayID)

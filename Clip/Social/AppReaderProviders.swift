@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipReadingList
 import ClipReaderUI
 import ClipSemantic
 import ClipSocial

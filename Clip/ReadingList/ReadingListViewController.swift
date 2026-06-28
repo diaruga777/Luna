@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipReadingList
 import ClipYouTubeAPI
 import ClipPriceUI
 import ClipReaderUI

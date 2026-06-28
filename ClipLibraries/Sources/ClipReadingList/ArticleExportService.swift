@@ -21,23 +21,23 @@ import UniformTypeIdentifiers
 /// representations on one `NSItemProvider` so the receiving app auto-selects the
 /// format it supports — see `itemProvider(for:)`. Today only EPUB is produced;
 /// a future PDF representation would register alongside it.
-struct ArticleExportService {
+public struct ArticleExportService {
 
-    enum ExportError: Error, Equatable {
+    public enum ExportError: Error, Equatable {
         /// The item has no readable article content (e.g. a video).
         case noContent
     }
 
     private let store: ReadingListStore
 
-    init(store: ReadingListStore = .shared) {
+    public init(store: ReadingListStore = .shared) {
         self.store = store
     }
 
     /// Builds the EPUB and writes it to a temp file, returning its URL. Throws
     /// `ExportError.noContent` when the item has no extracted content. Heavy
     /// (zips content + images) — call off the main thread.
-    func writeEPUB(for item: ReadingListItem) throws -> URL {
+    public func writeEPUB(for item: ReadingListItem) throws -> URL {
         guard let content = store.content(for: item) else { throw ExportError.noContent }
         let data = EpubBuilder().build(
             content: content,
@@ -53,7 +53,7 @@ struct ArticleExportService {
     /// An item provider advertising the article as an EPUB file, for the share
     /// sheet. Built from the temp file so its UTType (`org.idpf.epub-container`)
     /// is inferred from the `.epub` extension.
-    func itemProvider(for item: ReadingListItem) throws -> NSItemProvider {
+    public func itemProvider(for item: ReadingListItem) throws -> NSItemProvider {
         let fileURL = try writeEPUB(for: item)
         guard let provider = NSItemProvider(contentsOf: fileURL) else {
             throw ExportError.noContent
@@ -64,7 +64,7 @@ struct ArticleExportService {
     /// Builds the EPUB off the main thread and presents the system share sheet
     /// anchored to `sourceView`, or an alert if the article has no content.
     /// Call on the main thread; it hops to a background queue to build, then back.
-    func presentShareSheet(
+    public func presentShareSheet(
         for item: ReadingListItem, from presenter: UIViewController, sourceView: UIView
     ) {
         DispatchQueue.global(qos: .userInitiated).async {

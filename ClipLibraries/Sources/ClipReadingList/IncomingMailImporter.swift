@@ -12,9 +12,9 @@ import Foundation
 /// Fetches new mail from allowed senders (via IMAP) and turns the first URL in
 /// each message into a reading-list item. Runs on launch/foreground — no
 /// background fetch. Reuses the send-to-Kindle Gmail account + app password.
-final class IncomingMailImporter {
+public final class IncomingMailImporter {
 
-    static let shared = IncomingMailImporter()
+    public static let shared = IncomingMailImporter()
 
     private let makeClient: () -> IMAPFetching
     private let credentials: SendCredentialsStoring
@@ -23,7 +23,7 @@ final class IncomingMailImporter {
     private let ingest: (ReadingListItem) -> Void
     private var isRunning = false
 
-    init(makeClient: @escaping () -> IMAPFetching = { GmailIMAPClient() },
+    public init(makeClient: @escaping () -> IMAPFetching = { GmailIMAPClient() },
          credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared,
          store: ReadingListStore = .shared,
          ingest: ((ReadingListItem) -> Void)? = nil) {
@@ -47,7 +47,7 @@ final class IncomingMailImporter {
 
     /// Whether incoming import can run (enabled, has at least one sender or
     /// subject filter, has a Gmail account + password).
-    var isConfigured: Bool {
+    public var isConfigured: Bool {
         IncomingMailSettings.isEnabled
             && !(IncomingMailSettings.allowedSenders.isEmpty
                  && IncomingMailSettings.subjectFilters.isEmpty)
@@ -56,7 +56,7 @@ final class IncomingMailImporter {
     }
 
     /// Fetches and imports. Safe to call repeatedly; coalesces overlaps.
-    func importNewMail() async {
+    public func importNewMail() async {
         guard isConfigured, !isRunning else { return }
         isRunning = true
         defer { isRunning = false }

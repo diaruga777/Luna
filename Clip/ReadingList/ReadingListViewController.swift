@@ -11,6 +11,7 @@ import ClipPriceUI
 import ClipReaderUI
 import ClipArchiveReader
 import ClipSocial
+import ClipTransitions
 import ClipMediaDownload
 import ClipPlatforms
 import ClipDesignSystem
@@ -1116,6 +1117,7 @@ final class ReadingListViewController: UITableViewController {
     ) {
         let reader = ArchiveWebReaderViewController(articleURL: articleURL, itemID: item.id, store: store)
         let nav = UINavigationController(rootViewController: reader)
+        nav.installHalftoneTransitions()
         reader.onClose = { [weak nav] in nav?.dismiss(animated: true) }
         reader.onOpenInBrowser = { [weak nav] archiveURL in
             // This is an escape from archive.is's WKWebView-specific bot gate, so

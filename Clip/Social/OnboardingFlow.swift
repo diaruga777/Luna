@@ -6,6 +6,7 @@
 import ClipSocialUI
 import ClipSocial
 import ClipModels
+import ClipTransitions
 import UIKit
 
 /// Builds the first-launch onboarding: pick a username, then quick steps to
@@ -18,6 +19,7 @@ public enum OnboardingFlow {
     public static func make(onFinished: @escaping () -> Void) -> UIViewController {
         let nav = UINavigationController()
         nav.setNavigationBarHidden(true, animated: false)
+        nav.installHalftoneTransitions()
 
         let username = OnboardingViewController { [weak nav] in
             guard let nav else { return }
@@ -34,6 +36,7 @@ public enum OnboardingFlow {
     public static func makeSetupOnly(onFinished: @escaping () -> Void) -> UIViewController {
         let nav = UINavigationController()
         nav.setNavigationBarHidden(true, animated: false)
+        nav.installHalftoneTransitions()
         nav.viewControllers = [notificationsStep(nav: nav, onFinished: onFinished)]
         return nav
     }

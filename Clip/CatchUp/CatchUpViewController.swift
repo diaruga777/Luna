@@ -9,6 +9,7 @@ import ClipReaderUI
 import ClipArchiveReader
 import ClipDesignSystem
 import ClipStorage
+import ClipTransitions
 import ClipModels
 import UIKit
 
@@ -294,6 +295,7 @@ final class CatchUpViewController: UIViewController {
     private func openPriceTracker(_ item: ReadingListItem) {
         let editor = PriceTrackingViewController(itemID: item.id)
         let nav = UINavigationController(rootViewController: editor)
+        nav.installHalftoneTransitions()
         // The editor's built-in back/Done button dismisses correctly when it's a
         // modal nav root (`dismissOrPop`). It dismisses programmatically (not via the
         // adaptive-presentation delegate), so we rebuild THIS card on our next
@@ -347,6 +349,7 @@ final class CatchUpViewController: UIViewController {
         guard item.state == .needsCaptcha, let url = item.url else { return }
         let reader = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
         let nav = UINavigationController(rootViewController: reader)
+        nav.installHalftoneTransitions()
         nav.modalPresentationStyle = .fullScreen
         reader.onClose = { [weak nav] in nav?.dismiss(animated: true) }
         // Escape hatch when the embedded web view can't clear archive.today's gate.

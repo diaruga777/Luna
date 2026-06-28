@@ -14,6 +14,7 @@ import ClipArchiveReader
 import ClipSemantic
 import ClipSocial
 import ClipStorage
+import ClipTransitions
 import ClipURLClassification
 import UIKit
 
@@ -148,6 +149,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         self.window = window
         window.makeKeyAndVisible()
+        installHalftoneTransitions()
 
         if let url = connectionOptions.urlContexts.first?.url {
             route(url)
@@ -245,6 +247,17 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func showMainUI() {
         window?.rootViewController = UINavigationController(
             rootViewController: ReadingListViewController())
+        installHalftoneTransitions()
+    }
+
+    /// Prewarm the GPU overlay for this window and route the root navigation
+    /// controller's push/pop through the halftone pixel-wipe (a no-op when the toggle
+    /// is off or Metal is unavailable). Covers every screen pushed onto the root nav —
+    /// Settings, Friends, Price tracking, the reader, etc.
+    private func installHalftoneTransitions() {
+        guard let window else { return }
+        HalftoneTransitionCenter.shared.prewarm(in: window)
+        (window.rootViewController as? UINavigationController)?.installHalftoneTransitions()
     }
 
     /// Parses a `clipreader://friend` URL and runs the confirm-add flow.

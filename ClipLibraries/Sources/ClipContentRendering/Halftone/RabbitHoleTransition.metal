@@ -2,18 +2,19 @@
 //  RabbitHoleTransition.metal
 //  ClipContentRendering
 //
-//  A self-contained, GPU pixel-mosaic transition between two screen snapshots
-//  (A = before, B = after) for the RabbitHole reader. Each cell ("pixel") runs an
-//  independent 4-stage path on a staggered, per-cell random schedule, so the screen
-//  dissolves cell-by-cell in random order:
+//  A self-contained, GPU two-phase transition between two screen snapshots
+//  (A = the existing view, B = the final view) for the RabbitHole reader:
 //
-//    raw A  →  pixelated A  →  pixelated B  →  raw B
+//    Phase 1 (progress 0 → phaseSplit): the existing view dissolves into a
+//      PIXELATED version of the final view, one mosaic cell at a time, in random
+//      order — each cell crosses from raw A straight to the pixelated B on its own
+//      staggered schedule.
+//    Phase 2 (progress phaseSplit → 1): that fully-pixelated final image sharpens
+//      back to the un-pixelated final view (a global pixelated B → raw B mix).
 //
-//  Driven by one global `progress` (0 = all raw-A, 1 = all raw-B). A cell with random
-//  key r starts at `r * (1 - window)` and animates over `window`, so at any moment some
-//  cells are untouched, some mid-pixelation, some finished. Pure GPU; the only inputs
-//  are the two snapshot textures + a small uniform struct. Deliberately separate from
-//  the shipping HalftoneEffect shader so that effect can't regress.
+//  Driven by one global `progress`. Pure GPU; the only inputs are the two snapshot
+//  textures + a small uniform struct. Deliberately separate from the shipping
+//  HalftoneEffect shader so that effect can't regress.
 //
 
 #include <metal_stdlib>
@@ -24,10 +25,10 @@ struct RHTransitionUniforms {
     float2 resolution;   // drawable size in px
     float  cellSize;     // px size of one mosaic "pixel"
     float  progress;     // 0..1 global
-    float  window;       // per-cell animation length as a fraction of total
+    float  phaseSplit;   // progress value where phase 1 ends / phase 2 begins
+    float  stagger;      // phase-1 per-cell start spread (0 = all together, 1 = fully sequential)
     float  flipV;        // 0/1 sample with vertical flip (texture origin fix)
     float  monochrome;   // 0 colour, 1 greyscale
-    float  _pad;
 };
 
 struct RHVSOut {
@@ -57,7 +58,6 @@ fragment float4 rh_transition_fragment(RHVSOut in [[stage_in]],
                                        constant RHTransitionUniforms& U [[buffer(0)]]) {
     constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
 
-    // Vertical flip applied to the sampled v so the texture's origin matches the screen.
     float2 uv = in.uv;
     float2 sampleUV = float2(uv.x, U.flipV > 0.5 ? 1.0 - uv.y : uv.y);
 
@@ -68,29 +68,29 @@ fragment float4 rh_transition_fragment(RHVSOut in [[stage_in]],
     float2 cellCenter = (cell * pitch + pitch * 0.5) / U.resolution;
     float2 cellSampleUV = float2(cellCenter.x, U.flipV > 0.5 ? 1.0 - cellCenter.y : cellCenter.y);
 
-    float4 rawA = texA.sample(s, sampleUV);
-    float4 rawB = texB.sample(s, sampleUV);
-    float4 pixA = texA.sample(s, cellSampleUV);
-    float4 pixB = texB.sample(s, cellSampleUV);
-    if (U.monochrome > 0.5) {
-        rawA.rgb = rh_mono(rawA.rgb); rawB.rgb = rh_mono(rawB.rgb);
-        pixA.rgb = rh_mono(pixA.rgb); pixB.rgb = rh_mono(pixB.rgb);
-    }
+    float split = clamp(U.phaseSplit, 0.01, 0.99);
 
-    // Per-cell staggered local progress.
-    float r = rh_hash(cell);
-    float window = max(U.window, 0.001);
-    float start = r * (1.0 - window);
-    float local = clamp((U.progress - start) / window, 0.0, 1.0);
-
-    // 4-stage path: raw A → pixelated A → pixelated B → raw B.
     float4 c;
-    if (local < 1.0 / 3.0) {
-        c = mix(rawA, pixA, local * 3.0);
-    } else if (local < 2.0 / 3.0) {
-        c = mix(pixA, pixB, (local - 1.0 / 3.0) * 3.0);
+    if (U.progress < split) {
+        // Phase 1: per-cell staggered crossfade from the raw existing view to the
+        // pixelated final view (one random "pixel" at a time).
+        float4 rawA = texA.sample(s, sampleUV);
+        float4 pixB = texB.sample(s, cellSampleUV);
+        if (U.monochrome > 0.5) { rawA.rgb = rh_mono(rawA.rgb); pixB.rgb = rh_mono(pixB.rgb); }
+
+        float p1 = U.progress / split;                    // 0..1 within phase 1
+        float window = clamp(1.0 - U.stagger, 0.001, 1.0); // each cell animates over this fraction
+        float start = rh_hash(cell) * (1.0 - window);      // random per-cell start offset
+        float local = clamp((p1 - start) / window, 0.0, 1.0);
+        c = mix(rawA, pixB, local);
     } else {
-        c = mix(pixB, rawB, (local - 2.0 / 3.0) * 3.0);
+        // Phase 2: globally sharpen the pixelated final image into the real final view.
+        float4 pixB = texB.sample(s, cellSampleUV);
+        float4 rawB = texB.sample(s, sampleUV);
+        if (U.monochrome > 0.5) { pixB.rgb = rh_mono(pixB.rgb); rawB.rgb = rh_mono(rawB.rgb); }
+
+        float p2 = (U.progress - split) / (1.0 - split);  // 0..1 within phase 2
+        c = mix(pixB, rawB, p2);
     }
     c.a = 1.0;
     return c;

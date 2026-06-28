@@ -51,6 +51,10 @@ public typealias GazeTrackerFactory = (_ textView: UITextView, _ wordMap: WordMa
 /// Both calls take a `before` and `after` snapshot of the whole reader. The impl owns
 /// its overlay: it adds it to `container` on top, animates, and removes it when done.
 public protocol RabbitHoleTransitioning: AnyObject {
+    /// Optionally build the overlay now and park it (hidden) in `container`, so the
+    /// first transition doesn't pay the Metal setup cost mid-tap. Safe to call more
+    /// than once; a no-op when Metal is unavailable.
+    func prewarm(in container: UIView)
     /// Non-interactive wipe from `before` to `after`; `completion` fires once the
     /// overlay has animated through and been removed.
     func play(before: UIImage, after: UIImage,

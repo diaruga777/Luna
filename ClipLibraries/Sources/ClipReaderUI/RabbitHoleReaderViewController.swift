@@ -48,6 +48,15 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private var overscrollPan: UIPanGestureRecognizer?
     private var didMarkOpened = false
 
+    /// In-memory article content for the focused layer's outbound links, keyed by the
+    /// PreloadStore canonical key. Warmed (off-main, from the on-disk preload cache)
+    /// whenever the focus settles, so tapping a link renders the new layer synchronously
+    /// — the dive's "after" snapshot already shows the real article, and the wipe starts
+    /// immediately. Trimmed to the current focus's links to stay bounded.
+    private var preloadedContent: [String: ArticleContent] = [:]
+    /// Cap on how many of a page's links we hold in memory at once.
+    private static let maxPreloadedLinks = 40
+
     public init(item: ReadingListItem, content: ArticleContent,
                 shareProvider: ReaderShareProviding? = nil,
                 gazeTrackerFactory: GazeTrackerFactory? = nil,
@@ -71,6 +80,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         navigationController?.setNavigationBarHidden(true, animated: false)
 
         buildInitialStack()
+        // Park the Metal overlay now so the first dive doesn't pay its setup cost mid-tap.
+        transition?.prewarm(in: view)
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handleOverscrollPan(_:)))
         pan.delegate = self
@@ -114,6 +125,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         focus = topIndex
         applyFocus()
         markOpenedIfNeeded()
+        warmPreloadsForFocusedLayer()
     }
 
     private func rootDescriptor() -> RabbitHoleLayerDescriptor {
@@ -143,6 +155,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         }
         layer.onModeChanged = { [weak self] _ in self?.persist() }
         layer.onBack = { [weak self] in self?.handleBack() }
+        // Once a (focused) layer resolves to an article, preload its links into memory.
+        layer.onBecameArticle = { [weak self, weak layer] in
+            guard let self, let layer, layer === self.layers[safe: self.focus] else { return }
+            self.warmPreloadsForFocusedLayer()
+        }
         addChild(layer)
         view.addSubview(layer.view)
         layer.didMove(toParent: self)
@@ -176,7 +193,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         focused.setBottomLipText(lineText)
 
         let before = snapshot(afterScreenUpdates: false)
-        _ = addLayer(RabbitHoleLayerDescriptor(urlString: url.absoluteString))
+        // Hand the new layer its already-decoded content (if we preloaded this link) so
+        // it renders synchronously — the "after" snapshot then shows the real article.
+        let preloaded = preloadedContent[PreloadStore.key(for: url)]
+        _ = addLayer(RabbitHoleLayerDescriptor(urlString: url.absoluteString),
+                     preloadedContent: preloaded)
         focus = topIndex
         applyFocus()
         view.layoutIfNeeded()
@@ -185,6 +206,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         runTransition(before: before, after: after) { [weak self] in
             self?.playHeaderEntrance()
             self?.persist()
+            self?.warmPreloadsForFocusedLayer()
         }
     }
 
@@ -209,6 +231,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         runTransition(before: before, after: after) { [weak self] in
             self?.playHeaderEntrance()
             self?.persist()
+            self?.warmPreloadsForFocusedLayer()
         }
     }
 
@@ -277,7 +300,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             transitionInFlight = true
             handle.finish(committed: committed) { [weak self] in
                 self?.transitionInFlight = false
-                if committed { self?.playHeaderEntrance() }
+                if committed {
+                    self?.playHeaderEntrance()
+                    self?.warmPreloadsForFocusedLayer()
+                }
             }
         default:
             break
@@ -309,6 +335,35 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                   shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         true
+    }
+
+    // MARK: - Link preloading (in-memory)
+
+    /// Decode the focused layer's outbound links from the on-disk preload cache into
+    /// memory (off-main), so a dive into one is instant. Trims the in-memory set to the
+    /// current focus's links first to stay bounded; only the not-yet-cached links are
+    /// read. No-op until the focused layer has resolved to an article.
+    private func warmPreloadsForFocusedLayer() {
+        guard let focused = layers[safe: focus], focused.isArticle else { return }
+        let urls = Array(focused.outboundLinkURLs.prefix(Self.maxPreloadedLinks))
+        let wanted = urls.map { PreloadStore.key(for: $0) }
+        let wantedSet = Set(wanted)
+        preloadedContent = preloadedContent.filter { wantedSet.contains($0.key) }
+
+        let missing = zip(urls, wanted).filter { preloadedContent[$0.1] == nil }
+        guard !missing.isEmpty else { return }
+        Task.detached(priority: .utility) { [weak self] in
+            var loaded: [String: ArticleContent] = [:]
+            for (url, key) in missing {
+                if let content = PreloadStore.shared.articleContent(for: url) { loaded[key] = content }
+            }
+            guard !loaded.isEmpty else { return }
+            await MainActor.run { [weak self] in
+                // Only keep keys still wanted by the (possibly changed) focus, so a
+                // task superseded by a focus change can't re-add a stale link.
+                self?.preloadedContent.merge(loaded.filter { wantedSet.contains($0.key) }) { _, new in new }
+            }
+        }
     }
 
     // MARK: - Persistence

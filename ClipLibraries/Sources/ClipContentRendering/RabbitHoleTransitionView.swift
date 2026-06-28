@@ -2,13 +2,15 @@
 //  RabbitHoleTransitionView.swift
 //  ClipContentRendering
 //
-//  A self-contained, GPU pixel-mosaic transition between two screen snapshots, used by
+//  A self-contained, GPU two-phase transition between two screen snapshots, used by
 //  the RabbitHole reader for dive / pop / overscroll. Driven by a single `progress`
-//  (0 = before, 1 = after); each mosaic cell runs an independent, staggered 4-stage
-//  path (raw A → pixelated A → pixelated B → raw B) so the screen dissolves cell-by-cell
-//  in random order — see RabbitHoleTransition.metal. All per-frame work is the GPU
-//  draw; only the one-time snapshots happen on the main thread. The shipping
-//  HalftoneEffectView is untouched.
+//  (0 = the existing view, 1 = the final view): phase 1 dissolves the existing view
+//  into a pixelated version of the final view one mosaic cell at a time, phase 2
+//  sharpens that back to the final view — see RabbitHoleTransition.metal. All per-frame
+//  work is the GPU draw; only the one-time snapshots happen on the main thread. The
+//  expensive Metal device/queue/pipeline are built once and shared, so a transition
+//  view can be made (and the overlay prewarmed) without recompiling the shader. The
+//  shipping HalftoneEffectView is untouched.
 //
 
 import Metal
@@ -18,28 +20,40 @@ import simd
 /// Visual parameters for the transition's mosaic.
 public struct RabbitHoleTransitionStyle {
     public var pixelSize: CGFloat   // points — size of one mosaic block
+    /// Phase-1 per-cell start spread: 0 = all cells flip together, 1 = fully sequential.
+    public var stagger: CGFloat
     public var monochrome: Bool
 
-    public init(pixelSize: CGFloat = 22, monochrome: Bool = false) {
+    public init(pixelSize: CGFloat = 24, stagger: CGFloat = 0.6, monochrome: Bool = false) {
         self.pixelSize = pixelSize
+        self.stagger = stagger
         self.monochrome = monochrome
     }
 }
 
 public final class RabbitHoleTransitionView: UIView {
 
-    // Must match RHTransitionUniforms in RabbitHoleTransition.metal exactly.
+    // Must match RHTransitionUniforms in RabbitHoleTransition.metal exactly
+    // (float2 + 6 floats = 32 bytes).
     private struct Uniforms {
         var resolution = SIMD2<Float>(0, 0)
-        var cellSize: Float = 22
+        var cellSize: Float = 24
         var progress: Float = 0
-        var window: Float = 0.55
-        var flipV: Float = 1
+        var phaseSplit: Float = 0.5
+        var stagger: Float = 0.6
+        var flipV: Float = 0
         var monochrome: Float = 0
-        var pad: Float = 0
     }
 
+    /// The shared, lazily-built Metal context. Compiling the pipeline is the costly
+    /// part of `make()`; doing it once means prewarming/reusing overlay views is cheap.
+    private struct GPU { let device: MTLDevice; let queue: MTLCommandQueue; let pipeline: MTLRenderPipelineState }
+    private static let gpu: GPU? = makeGPU()
+
     public var style = RabbitHoleTransitionStyle() { didSet { renderFrame() } }
+    /// Progress value where phase 1 (dissolve to pixels) ends and phase 2 (sharpen)
+    /// begins. Set from the relative phase durations before animating.
+    public var phaseSplit: CGFloat = 0.5 { didSet { renderFrame() } }
 
     private let device: MTLDevice
     private let queue: MTLCommandQueue
@@ -61,8 +75,13 @@ public final class RabbitHoleTransitionView: UIView {
     private var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
 
     /// Returns nil when Metal or the shader library is unavailable (caller falls back
-    /// to an instant cut).
+    /// to an instant cut). Cheap after the first call — the GPU context is shared.
     public static func make() -> RabbitHoleTransitionView? {
+        guard let gpu else { return nil }
+        return RabbitHoleTransitionView(device: gpu.device, queue: gpu.queue, pipeline: gpu.pipeline)
+    }
+
+    private static func makeGPU() -> GPU? {
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue() else { return nil }
         let library = (try? device.makeDefaultLibrary(bundle: .module))
@@ -75,7 +94,7 @@ public final class RabbitHoleTransitionView: UIView {
         desc.fragmentFunction = ffn
         desc.colorAttachments[0].pixelFormat = .bgra8Unorm
         guard let pipeline = try? device.makeRenderPipelineState(descriptor: desc) else { return nil }
-        return RabbitHoleTransitionView(device: device, queue: queue, pipeline: pipeline)
+        return GPU(device: device, queue: queue, pipeline: pipeline)
     }
 
     private init(device: MTLDevice, queue: MTLCommandQueue, pipeline: MTLRenderPipelineState) {
@@ -101,6 +120,13 @@ public final class RabbitHoleTransitionView: UIView {
         texA = makeTexture(before)
         texB = makeTexture(after)
         setProgress(progress)
+    }
+
+    /// Release the snapshot textures (call when the overlay is parked offscreen between
+    /// transitions, so two full-screen textures aren't held idle).
+    public func clearTextures() {
+        texA = nil
+        texB = nil
     }
 
     /// 0 = before, 1 = after.
@@ -175,7 +201,8 @@ public final class RabbitHoleTransitionView: UIView {
         u.resolution = SIMD2(Float(metalLayer.drawableSize.width), Float(metalLayer.drawableSize.height))
         u.cellSize = Float(max(style.pixelSize * drawableScale, 1))
         u.progress = Float(progress)
-        u.window = 0.55
+        u.phaseSplit = Float(min(max(phaseSplit, 0.01), 0.99))
+        u.stagger = Float(min(max(style.stagger, 0), 1))
         u.flipV = 0   // CGContext-drawn texture is already top-left origin
         u.monochrome = style.monochrome ? 1 : 0
 

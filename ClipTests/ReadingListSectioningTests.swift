@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipReaderUI
 import ClipReadingListUI
 import ClipModels
 import XCTest
@@ -11,6 +12,24 @@ import XCTest
 final class ReadingListSectioningTests: XCTestCase {
 
     private let now = Date(timeIntervalSince1970: 1_000_000_000)
+
+    // `shouldShowCatchUpDot` also lights the dot when enhanced voices aren't
+    // installed and the voice catch-up card hasn't been dismissed — an orthogonal
+    // trigger that, on a clean simulator, would force the dot on regardless of the
+    // unread-count / locked-save logic these tests exercise. Dismiss it so the dot
+    // tests are deterministic; restore the prior value afterward.
+    private var priorDismissedVoiceCatchUp = false
+
+    override func setUp() {
+        super.setUp()
+        priorDismissedVoiceCatchUp = VoiceModelStore.hasDismissedVoiceCatchUp
+        VoiceModelStore.hasDismissedVoiceCatchUp = true
+    }
+
+    override func tearDown() {
+        VoiceModelStore.hasDismissedVoiceCatchUp = priorDismissedVoiceCatchUp
+        super.tearDown()
+    }
 
     /// Builds an article item (renders as reader) with controllable state/age.
     private func article(

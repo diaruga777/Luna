@@ -185,6 +185,8 @@ final class ReplayPlayerTests: XCTestCase {
     <p>Researchers who study behavior have found that the size of a habit matters far less than its consistency. A two-minute version of a routine, repeated daily, reshapes identity more reliably than an ambitious plan abandoned after a week of enthusiasm.</p>
     <p>The practical lesson is to make the desired behavior so small that refusing it feels absurd. Read one page. Write one sentence. Stretch for sixty seconds. The point is not the page or the sentence; it is the vote you cast for the kind of person you are becoming.</p>
     <p>Over months these votes compound. The reader becomes a person who reads, the writer a person who writes, and the change feels, in retrospect, both inevitable and effortless even though each individual step was almost nothing at all.</p>
+    <p>It helps to design the environment so the small action is the path of least resistance. Lay the book on the pillow, leave the running shoes by the door, keep the journal open on the desk. When the cue is obvious and the friction is low, willpower stops being the bottleneck and the routine begins to run almost on its own.</p>
+    <p>Setbacks are not failures of character but data about the system. A missed day reveals a cue that was too weak or a step that was still too large, and the remedy is to shrink the behavior again rather than to summon more discipline. Consistency, not intensity, is the variable that quietly compounds into a transformed life.</p>
     </article>
     <footer><p>Copyright footer boilerplate the extractor should discard.</p></footer>
     </body></html>

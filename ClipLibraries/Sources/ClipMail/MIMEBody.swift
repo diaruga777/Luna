@@ -10,19 +10,24 @@ import Foundation
 /// quoted-printable-encoded `text/html` part — a raw `BODY[TEXT]` fetch returns
 /// that whole MIME blob, which must be walked to find and decode the real
 /// content. For a single-part message it just applies the transfer-encoding.
-enum MIMEBody {
+public enum MIMEBody {
 
     /// The decoded body and whether it is HTML.
-    struct Extracted: Equatable {
-        let text: String
-        let isHTML: Bool
+    public struct Extracted: Equatable {
+        public let text: String
+        public let isHTML: Bool
+
+        public init(text: String, isHTML: Bool) {
+            self.text = text
+            self.isHTML = isHTML
+        }
     }
 
     /// Walks `rawBody` using the top-level `contentType` / `transferEncoding`
     /// headers and returns the richest part (prefers `text/html`, then
     /// `text/plain`). Falls back to the decoded raw body when there's no usable
     /// MIME structure.
-    static func extract(rawBody: String, contentType: String, transferEncoding: String) -> Extracted {
+    public static func extract(rawBody: String, contentType: String, transferEncoding: String) -> Extracted {
         let parsed = parse(rawBody: rawBody, contentType: contentType, transferEncoding: transferEncoding)
         if let parsed { return parsed }
         // No MIME structure recognized: decode by the top-level encoding and
@@ -109,7 +114,7 @@ enum MIMEBody {
     }
 
     /// The `boundary=` parameter from a Content-Type header (quoted or bare).
-    static func boundary(in contentType: String) -> String? {
+    public static func boundary(in contentType: String) -> String? {
         guard let range = contentType.range(of: "boundary=", options: .caseInsensitive) else { return nil }
         var value = String(contentType[range.upperBound...]).trimmingCharacters(in: .whitespaces)
         if value.hasPrefix("\"") {
@@ -123,7 +128,7 @@ enum MIMEBody {
 
     /// Decodes a part body by its Content-Transfer-Encoding (base64 /
     /// quoted-printable; otherwise returned as-is).
-    static func decode(_ body: String, transferEncoding: String) -> String {
+    public static func decode(_ body: String, transferEncoding: String) -> String {
         switch transferEncoding.lowercased().trimmingCharacters(in: .whitespaces) {
         case "base64":
             let stripped = body.components(separatedBy: .whitespacesAndNewlines).joined()

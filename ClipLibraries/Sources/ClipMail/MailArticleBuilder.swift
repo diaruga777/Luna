@@ -11,7 +11,7 @@ import Foundation
 /// sender → author, and the body parsed to blocks (HTML via the readability
 /// extractor, else plain-text paragraphs), with common newsletter footers
 /// (unsubscribe, view-in-browser, address blocks) trimmed off.
-enum MailArticleBuilder {
+public enum MailArticleBuilder {
 
     /// Lower-cased markers that indicate the start of footer/boilerplate junk.
     private static let footerMarkers = [
@@ -23,7 +23,7 @@ enum MailArticleBuilder {
     ]
 
     /// Builds an article from the message, or nil if there's no usable body.
-    static func article(from message: IncomingMessage) -> ArticleContent? {
+    public static func article(from message: IncomingMessage) -> ArticleContent? {
         let title = decodeEncodedWords(message.subject).trimmingCharacters(in: .whitespacesAndNewlines)
         let author = senderName(from: message.from)
 
@@ -57,7 +57,7 @@ enum MailArticleBuilder {
 
     /// Display name from a `From` header (`"Name" <addr>` → `Name`; else the
     /// address local part).
-    static func senderName(from rawFrom: String) -> String? {
+    public static func senderName(from rawFrom: String) -> String? {
         let from = decodeEncodedWords(rawFrom).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !from.isEmpty else { return nil }
         if let lt = from.firstIndex(of: "<") {
@@ -72,7 +72,7 @@ enum MailArticleBuilder {
     }
 
     /// Heuristic: does this body contain HTML markup (vs. plain text)?
-    static func looksLikeHTML(_ s: String) -> Bool {
+    public static func looksLikeHTML(_ s: String) -> Bool {
         let lower = s.lowercased()
         return lower.contains("<html") || lower.contains("<body") || lower.contains("<div")
             || lower.contains("<table") || lower.contains("<p>") || lower.contains("<p ")
@@ -80,7 +80,7 @@ enum MailArticleBuilder {
 
     /// Splits plain text into paragraph blocks, dropping everything from the
     /// first footer marker onward and any signature (`-- ` line).
-    static func paragraphBlocks(from text: String) -> [ArticleContent.Block] {
+    public static func paragraphBlocks(from text: String) -> [ArticleContent.Block] {
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
         var lines = normalized.components(separatedBy: "\n")
         if let cut = lines.firstIndex(where: { line in
@@ -110,7 +110,7 @@ enum MailArticleBuilder {
     /// latter part of the article, so an early "©"/"unsubscribe" (e.g. in a
     /// masthead) doesn't nuke the whole body. Keeps everything if the only
     /// markers are near the top, or if trimming would drop most of the content.
-    static func trimFooterBlocks(_ blocks: [ArticleContent.Block]) -> [ArticleContent.Block] {
+    public static func trimFooterBlocks(_ blocks: [ArticleContent.Block]) -> [ArticleContent.Block] {
         guard blocks.count > 4 else { return blocks }
         let earliestTrimmable = blocks.count / 2
         if let cut = blocks.indices.first(where: { index in
@@ -124,7 +124,7 @@ enum MailArticleBuilder {
     }
 
     /// Very small tag stripper for the HTML-extractor fallback path.
-    static func strippedTags(_ html: String) -> String {
+    public static func strippedTags(_ html: String) -> String {
         var result = ""
         var insideTag = false
         for char in html {
@@ -136,7 +136,7 @@ enum MailArticleBuilder {
     }
 
     /// Decodes RFC 2047 encoded-words (`=?charset?B/Q?text?=`) in a header value.
-    static func decodeEncodedWords(_ value: String) -> String {
+    public static func decodeEncodedWords(_ value: String) -> String {
         guard value.contains("=?") else { return value }
         var result = value
         while let start = result.range(of: "=?"),

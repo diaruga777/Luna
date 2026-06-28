@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipMail
 import ClipSend
 import UIKit
 

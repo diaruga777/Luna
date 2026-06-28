@@ -9,31 +9,49 @@ import Network
 import os
 
 /// One incoming message fetched from IMAP.
-struct IncomingMessage: Equatable {
-    let uid: Int
-    let from: String
-    let subject: String
-    let date: String
+public struct IncomingMessage: Equatable {
+    public let uid: Int
+    public let from: String
+    public let subject: String
+    public let date: String
     /// Top-level `Content-Type` (carries the multipart boundary, if any).
-    let contentType: String
+    public let contentType: String
     /// Top-level `Content-Transfer-Encoding` (base64 / quoted-printable / …).
-    let transferEncoding: String
-    let body: String
+    public let transferEncoding: String
+    public let body: String
     /// URLs detected in the body (plain text + any HTML hrefs).
-    let urls: [URL]
+    public let urls: [URL]
+
+    public init(uid: Int, from: String, subject: String, date: String, contentType: String,
+                transferEncoding: String, body: String, urls: [URL]) {
+        self.uid = uid
+        self.from = from
+        self.subject = subject
+        self.date = date
+        self.contentType = contentType
+        self.transferEncoding = transferEncoding
+        self.body = body
+        self.urls = urls
+    }
 }
 
 /// Result of a fetch pass: the mailbox's UIDVALIDITY (so callers can detect a
 /// mailbox reset), the new messages, and the highest UID seen.
-struct IMAPFetchOutcome: Equatable {
-    let uidValidity: Int
-    let highestUID: Int
-    let messages: [IncomingMessage]
+public struct IMAPFetchOutcome: Equatable {
+    public let uidValidity: Int
+    public let highestUID: Int
+    public let messages: [IncomingMessage]
+
+    public init(uidValidity: Int, highestUID: Int, messages: [IncomingMessage]) {
+        self.uidValidity = uidValidity
+        self.highestUID = highestUID
+        self.messages = messages
+    }
 }
 
 /// Reads new messages from allowed senders. The concrete client speaks IMAP
 /// over TLS; tests use a mock.
-protocol IMAPFetching {
+public protocol IMAPFetching {
     /// Connects, logs in, and returns messages with UID greater than `afterUID`
     /// that match any allowed `senders` (FROM) OR any `subjectFilters` (SUBJECT,
     /// case-insensitive substring). `knownUIDValidity` lets the client reset
@@ -47,22 +65,27 @@ protocol IMAPFetching {
 /// A hand-rolled minimal IMAP4rev1 client for Gmail (`imap.gmail.com:993`,
 /// implicit TLS), authenticating with the same address + app password used for
 /// send-to-Kindle. Speaks just enough: LOGIN → SELECT → UID SEARCH → UID FETCH.
-final class GmailIMAPClient: IMAPFetching {
+public final class GmailIMAPClient: IMAPFetching {
 
-    static let host = "imap.gmail.com"
-    static let port: UInt16 = 993
+    public static let host = "imap.gmail.com"
+    public static let port: UInt16 = 993
     /// Cap on the raw bytes fetched per message — enough for an article's text,
     /// bounded so a huge newsletter can't blow up memory.
-    static let maxFetchBytes = 512 * 1024
+    public static let maxFetchBytes = 512 * 1024
     /// Hard ceiling on the whole exchange. A stalled socket can't be interrupted
     /// by `Task.cancel` alone (an `NWConnection` receive continuation just parks),
     /// so we cap it and cancel the connection to unblock.
-    static let timeoutSeconds: UInt64 = 30
+    public static let timeoutSeconds: UInt64 = 30
 
-    struct IMAPError: Error, CustomStringConvertible {
-        let step: String
-        let detail: String
-        var description: String { "IMAP \(step) failed: \(detail)" }
+    public struct IMAPError: Error, CustomStringConvertible {
+        public let step: String
+        public let detail: String
+        public var description: String { "IMAP \(step) failed: \(detail)" }
+
+        public init(step: String, detail: String) {
+            self.step = step
+            self.detail = detail
+        }
     }
 
     private let connection: NWConnection
@@ -70,12 +93,12 @@ final class GmailIMAPClient: IMAPFetching {
     private var receiveBuffer = Data()
     private var tagCounter = 0
 
-    init() {
+    public init() {
         let nwPort = NWEndpoint.Port(rawValue: Self.port) ?? .init(integerLiteral: 993)
         connection = NWConnection(host: NWEndpoint.Host(Self.host), port: nwPort, using: .tls)
     }
 
-    func fetchNewMessages(
+    public func fetchNewMessages(
         account: String, password: String, senders: [String], subjectFilters: [String],
         afterUID: Int, knownUIDValidity: Int?
     ) async throws -> IMAPFetchOutcome {
@@ -211,7 +234,7 @@ final class GmailIMAPClient: IMAPFetching {
     // MARK: - Pure parsing (unit-tested)
 
     /// IMAP quoted string (wraps in quotes, escapes `\` and `"`).
-    static func quoted(_ value: String) -> String {
+    public static func quoted(_ value: String) -> String {
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -219,14 +242,14 @@ final class GmailIMAPClient: IMAPFetching {
     }
 
     /// Trailing `{123}` literal byte count at the end of a line, if present.
-    static func trailingLiteralCount(_ line: String) -> Int? {
+    public static func trailingLiteralCount(_ line: String) -> Int? {
         guard line.hasSuffix("}"), let open = line.lastIndex(of: "{") else { return nil }
         let digits = line[line.index(after: open)..<line.index(before: line.endIndex)]
         return Int(digits)
     }
 
     /// Extracts a `[KEY value]` integer from SELECT response lines.
-    static func parseBracketValue(_ key: String, in lines: [String]) -> Int? {
+    public static func parseBracketValue(_ key: String, in lines: [String]) -> Int? {
         for line in lines {
             guard let range = line.range(of: "[\(key) ") else { continue }
             let rest = line[range.upperBound...]
@@ -237,7 +260,7 @@ final class GmailIMAPClient: IMAPFetching {
     }
 
     /// UIDs from an untagged `* SEARCH 1 2 3` line.
-    static func parseSearchUIDs(_ lines: [String]) -> [Int] {
+    public static func parseSearchUIDs(_ lines: [String]) -> [Int] {
         for line in lines {
             let upper = line.uppercased()
             guard upper.hasPrefix("* SEARCH") else { continue }
@@ -251,13 +274,13 @@ final class GmailIMAPClient: IMAPFetching {
     /// UID even when it's below N — the range `N:*` is order-independent and `*`
     /// is the last message — so without this filter the newest message would
     /// re-import on every poll.
-    static func newSearchUIDs(_ lines: [String], afterUID: Int) -> [Int] {
+    public static func newSearchUIDs(_ lines: [String], afterUID: Int) -> [Int] {
         parseSearchUIDs(lines).filter { $0 > afterUID }
     }
 
     /// Splits a raw RFC822 message into its top-level header block and body at
     /// the first blank line (CRLFCRLF, or LFLF as a fallback).
-    static func splitMessage(_ raw: String) -> (headers: String, body: String) {
+    public static func splitMessage(_ raw: String) -> (headers: String, body: String) {
         if let range = raw.range(of: "\r\n\r\n") {
             return (String(raw[..<range.lowerBound]), String(raw[range.upperBound...]))
         }
@@ -268,7 +291,7 @@ final class GmailIMAPClient: IMAPFetching {
     }
 
     /// Parses `Key: value` headers (lowercased keys; unfolds simple folds).
-    static func parseHeaders(_ raw: String) -> [String: String] {
+    public static func parseHeaders(_ raw: String) -> [String: String] {
         var headers: [String: String] = [:]
         var currentKey: String?
         for rawLine in raw.replacingOccurrences(of: "\r\n", with: "\n").split(
@@ -291,7 +314,7 @@ final class GmailIMAPClient: IMAPFetching {
     /// soft line breaks (`=\r\n`) split long URLs and `=XX` escapes hide chars;
     /// when we detect QP we decode the whole body first (in a true QP body any
     /// literal `=` is itself encoded, so a full decode is safe).
-    static func extractURLs(from body: String) -> [URL] {
+    public static func extractURLs(from body: String) -> [URL] {
         let text = (body.contains("=\r\n") || body.contains("=\n") || body.contains("=3D"))
             ? decodeQuotedPrintable(body) : body
 
@@ -330,7 +353,7 @@ final class GmailIMAPClient: IMAPFetching {
     /// hex escapes back into bytes (decoded as UTF-8). Iterates Unicode scalars,
     /// not Characters — Swift clusters `\r\n` into one Character, which would
     /// hide the soft break.
-    static func decodeQuotedPrintable(_ s: String) -> String {
+    public static func decodeQuotedPrintable(_ s: String) -> String {
         var bytes: [UInt8] = []
         let scalars = Array(s.unicodeScalars)
         let cr = Unicode.Scalar(13), lf = Unicode.Scalar(10), eq = Unicode.Scalar(61)

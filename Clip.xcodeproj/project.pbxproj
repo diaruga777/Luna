@@ -52,6 +52,8 @@
 		2F22403ECDD962D932AA6BD3 /* ClipEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* ClipEpub */; };
 		0C5EEFE7889EB736FFF2CCDD /* ClipSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* ClipSend */; };
 		3F984499DD8FB375FDE9BB96 /* ClipSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* ClipSend */; };
+		483B2A559218C68EC599D979 /* ClipMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* ClipMail */; };
+		EF6B3AC95FDA89E16A1F2698 /* ClipMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* ClipMail */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -187,6 +189,7 @@
 				C75DD0FABB085716259EAC0D /* ClipDocuments in Frameworks */,
 				535077B96135F4456ADF0386 /* ClipEpub in Frameworks */,
 				0C5EEFE7889EB736FFF2CCDD /* ClipSend in Frameworks */,
+				483B2A559218C68EC599D979 /* ClipMail in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -208,6 +211,7 @@
 				DE66DCA327DA9E81723DC210 /* ClipDocuments in Frameworks */,
 				2F22403ECDD962D932AA6BD3 /* ClipEpub in Frameworks */,
 				3F984499DD8FB375FDE9BB96 /* ClipSend in Frameworks */,
+				EF6B3AC95FDA89E16A1F2698 /* ClipMail in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -348,6 +352,7 @@
 				EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */,
 				AA824D3974D944B8BC077857 /* ClipEpub */,
 				A1AC9F7C74411AF59CC240DB /* ClipSend */,
+				6733C497754C454FAA262597 /* ClipMail */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -400,6 +405,7 @@
 				EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */,
 				AA824D3974D944B8BC077857 /* ClipEpub */,
 				A1AC9F7C74411AF59CC240DB /* ClipSend */,
+				6733C497754C454FAA262597 /* ClipMail */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -1136,6 +1142,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipSend;
+		};
+		6733C497754C454FAA262597 /* ClipMail */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipMail;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

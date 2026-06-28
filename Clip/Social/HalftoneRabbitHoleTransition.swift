@@ -14,7 +14,9 @@
 //
 
 import ClipContentRendering
+import ClipDesignSystem
 import ClipReaderUI
+import ClipTransitions
 import UIKit
 
 final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
@@ -44,7 +46,7 @@ final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
             view.isHidden = false
             container.bringSubviewToFront(view)
             container.layoutIfNeeded()
-            view.animateProgress(to: 1, duration: RabbitHoleTransitionSettings.totalDuration) {
+            view.animateProgress(to: 1, duration: HalftoneTransitionSettings.totalDuration) {
                 Self.park(view)
                 completion()
             }
@@ -60,15 +62,14 @@ final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
         view.configure(before: before, after: after)
         view.setProgress(0)
         view.isHidden = false
-        return InteractiveHandle(view: view, settleDuration: RabbitHoleTransitionSettings.totalDuration)
+        return InteractiveHandle(view: view, settleDuration: HalftoneTransitionSettings.totalDuration)
     }
 
     private func applyStyle(to view: RabbitHoleTransitionView) {
-        view.style = RabbitHoleTransitionStyle(
-            pixelSize: RabbitHoleTransitionSettings.pixelSize,
-            stagger: RabbitHoleTransitionSettings.stagger,
-            monochrome: RabbitHoleTransitionSettings.monochrome)
-        view.phaseSplit = RabbitHoleTransitionSettings.phaseSplit
+        view.style = HalftoneTransitionStyleProvider.style(for: view.traitCollection)
+        // The reader's dive/pop/overscroll is a stacked-layer reveal, not a strongly
+        // directional motion, so it uses the random (fade-order) wavefront.
+        view.direction = .random
     }
 
     /// Lazily build the overlay and (re)attach it on top of `container`, hidden.

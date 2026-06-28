@@ -62,7 +62,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .rabbitHole: return "RabbitHole Reader"
+        case .rabbitHole: return "Pixel Wipe Transitions"
         case .semantic: return "Suggest Shares Based on Content"
         case .paywallStrategies: return "Extra Paywall Unlock Strategies"
         case .archiveOverlay: return "Archive Reader Cover"
@@ -77,7 +77,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .rabbitHole:
-            return "Off by default. An experimental inline reader: tap a link to dive into it as a stacked layer, then keep diving — each layer leaves a tappable \"lip\" above and below so you never lose your place. Overscroll the top layer to pull the previous one back. Your trail is remembered across app launches. The standard reader is unchanged; flip this off to go back to it."
+            return "Off by default. Replaces every transition in the app — screen pushes, modals, and list changes — with a halftone \"pixel wipe\": the screen dissolves into spaced, rounded dots of where you're going, then sharpens into it, with the wave sweeping the way the motion would. It also opens saves in the experimental RabbitHole inline reader (dive into a link as a stacked layer; overscroll to pull the previous one back). One switch for both; flip it off to return to the standard animations and reader."
         case .semantic:
             return "When you save something that resembles things you've shared with a friend before, Queue can suggest sharing it with them. Slide all the way left to turn this off."
         case .paywallStrategies:
@@ -130,21 +130,21 @@ final class ExperimentalSettingsScreen: UITableViewController {
         }
     }
 
-    /// A toggle that swaps the standard reader for the experimental RabbitHole reader.
+    /// The master toggle: global halftone pixel-wipe transitions + RabbitHole reader.
     private func rabbitHoleCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         var content = cell.defaultContentConfiguration()
-        content.text = "Use RabbitHole Reader"
+        content.text = "Pixel Wipe Transitions"
         cell.contentConfiguration = content
         cell.accessoryView = makeToggle(
-            isOn: ReaderSettings.rabbitHoleReaderEnabled,
+            isOn: ReaderSettings.pixelWipeTransitionsEnabled,
             action: #selector(rabbitHoleToggled(_:)))
         return cell
     }
 
     @objc private func rabbitHoleToggled(_ toggle: UISwitch) {
-        ReaderSettings.rabbitHoleReaderEnabled = toggle.isOn
+        ReaderSettings.pixelWipeTransitionsEnabled = toggle.isOn
     }
 
     /// A toggle that enables the on-device (non-archive) paywall-bypass strategies.

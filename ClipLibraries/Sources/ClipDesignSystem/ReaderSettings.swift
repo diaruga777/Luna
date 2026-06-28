@@ -31,16 +31,20 @@ public enum ReaderSettings {
     private static let preloadDepthKey = "linkPreloadDepth"
     private static let accentKey = "readerAccentColor"
     private static let archiveOverlayAlphaKey = "archiveOverlayAlpha"
-    private static let rabbitHoleReaderKey = "rabbitHoleReaderEnabled"
+    // Stored key kept as "rabbitHoleReaderEnabled" so existing opt-ins survive the
+    // rename of the Swift property to `pixelWipeTransitionsEnabled`.
+    private static let pixelWipeTransitionsKey = "rabbitHoleReaderEnabled"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
 
-    /// Experimental: when on, opening a save loads the forked "RabbitHole" reader
-    /// (breadcrumb / rabbit-hole stacked-layer inline reading) instead of the
-    /// standard `ReaderViewController`. **Off by default.** Purely a host-selection
-    /// switch — the standard reader is untouched and remains the default.
-    public static var rabbitHoleReaderEnabled: Bool {
-        get { defaults.bool(forKey: rabbitHoleReaderKey) }
-        set { defaults.set(newValue, forKey: rabbitHoleReaderKey) }
+    /// Experimental "Pixel Wipe Transitions". When on, this single switch (a) makes
+    /// every view-controller transition, view appear/disappear, and table animation —
+    /// in the app and the action extension — play as a halftone pixel-wipe wavefront,
+    /// and (b) opens saves in the forked "RabbitHole" stacked-layer inline reader
+    /// instead of the standard `ReaderViewController`. **Off by default**; when off,
+    /// the stock UIKit animations and the standard reader are used unchanged.
+    public static var pixelWipeTransitionsEnabled: Bool {
+        get { defaults.bool(forKey: pixelWipeTransitionsKey) }
+        set { defaults.set(newValue, forKey: pixelWipeTransitionsKey) }
     }
 
     /// Opacity of the cover over the archive web view (experimental/diagnostic):

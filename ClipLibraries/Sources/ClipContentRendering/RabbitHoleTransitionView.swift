@@ -17,30 +17,67 @@ import Metal
 import UIKit
 import simd
 
-/// Visual parameters for the transition's mosaic.
+/// Which way the two wavefronts sweep across the screen. Random reveals cells in a
+/// hashed order (a fade); the directional cases mirror the base UIKit motion (e.g. a
+/// nav push sweeps right-to-left). Both waves travel the same way for directional modes.
+public enum HalftoneWavefrontDirection: Int {
+    case random = 0
+    case leftToRight = 1
+    case rightToLeft = 2
+    case topToBottom = 3
+    case bottomToTop = 4
+}
+
+/// Visual parameters for the transition's mosaic. Defaults match the global "pixel
+/// wipe" look: 6 pt rounded dots with a 2 pt gap.
 public struct RabbitHoleTransitionStyle {
-    public var pixelSize: CGFloat   // points — size of one mosaic block
-    /// Phase-1 per-cell start spread: 0 = all cells flip together, 1 = fully sequential.
-    public var stagger: CGFloat
+    public var pixelSize: CGFloat      // points — pitch of one mosaic cell
+    public var cornerRadius: CGFloat   // points — dot corner radius
+    public var spacing: CGFloat        // points — gap between dots
+    /// Pixelated-state gap fill (opaque). White in light mode, black in dark mode;
+    /// resolved from the trait collection by the caller.
+    public var gapColor: SIMD4<Float>
+    /// Normalized delay (0..1) before wave 2 (sharpen) starts trailing wave 1.
+    /// Smaller = the two fronts overlap more.
+    public var lag: CGFloat
+    /// Per-wave per-cell crossfade window (0..1). Smaller = a tighter, more sequential
+    /// front; larger = cells animate more together.
+    public var window: CGFloat
     public var monochrome: Bool
 
-    public init(pixelSize: CGFloat = 24, stagger: CGFloat = 0.6, monochrome: Bool = false) {
+    public init(pixelSize: CGFloat = 6,
+                cornerRadius: CGFloat = 2,
+                spacing: CGFloat = 2,
+                gapColor: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 1),
+                lag: CGFloat = 0.35,
+                window: CGFloat = 0.18,
+                monochrome: Bool = false) {
         self.pixelSize = pixelSize
-        self.stagger = stagger
+        self.cornerRadius = cornerRadius
+        self.spacing = spacing
+        self.gapColor = gapColor
+        self.lag = lag
+        self.window = window
         self.monochrome = monochrome
     }
 }
 
 public final class RabbitHoleTransitionView: UIView {
 
-    // Must match RHTransitionUniforms in RabbitHoleTransition.metal exactly
-    // (float2 + 6 floats = 32 bytes).
+    // Must match RHTransitionUniforms in RabbitHoleTransition.metal exactly — keep
+    // field order identical. `gapColor` (SIMD4) is first so its 16-byte alignment
+    // can't introduce hidden padding before a leading SIMD2.
     private struct Uniforms {
+        var gapColor = SIMD4<Float>(1, 1, 1, 1)
         var resolution = SIMD2<Float>(0, 0)
-        var cellSize: Float = 24
+        var cellSize: Float = 12
+        var cornerRadius: Float = 4
+        var spacing: Float = 4
         var progress: Float = 0
-        var phaseSplit: Float = 0.5
-        var stagger: Float = 0.6
+        var lag: Float = 0.35
+        var win1: Float = 0.18
+        var win2: Float = 0.18
+        var direction: Float = 0
         var flipV: Float = 0
         var monochrome: Float = 0
     }
@@ -51,9 +88,8 @@ public final class RabbitHoleTransitionView: UIView {
     private static let gpu: GPU? = makeGPU()
 
     public var style = RabbitHoleTransitionStyle() { didSet { renderFrame() } }
-    /// Progress value where phase 1 (dissolve to pixels) ends and phase 2 (sharpen)
-    /// begins. Set from the relative phase durations before animating.
-    public var phaseSplit: CGFloat = 0.5 { didSet { renderFrame() } }
+    /// Which way the wavefronts sweep. Set per call (push, pop, fade…) before animating.
+    public var direction: HalftoneWavefrontDirection = .random { didSet { renderFrame() } }
 
     private let device: MTLDevice
     private let queue: MTLCommandQueue
@@ -73,6 +109,10 @@ public final class RabbitHoleTransitionView: UIView {
 
     public override class var layerClass: AnyClass { CAMetalLayer.self }
     private var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
+
+    /// Whether the GPU context (device + shader pipeline) is available. Cheap — the
+    /// context is built once and shared; this just checks it succeeded.
+    public static var isSupported: Bool { gpu != nil }
 
     /// Returns nil when Metal or the shader library is unavailable (caller falls back
     /// to an instant cut). Cheap after the first call — the GPU context is shared.
@@ -198,11 +238,16 @@ public final class RabbitHoleTransitionView: UIView {
               let drawable = metalLayer.nextDrawable() else { return }
 
         var u = Uniforms()
+        u.gapColor = style.gapColor
         u.resolution = SIMD2(Float(metalLayer.drawableSize.width), Float(metalLayer.drawableSize.height))
         u.cellSize = Float(max(style.pixelSize * drawableScale, 1))
+        u.cornerRadius = Float(max(style.cornerRadius * drawableScale, 0))
+        u.spacing = Float(max(style.spacing * drawableScale, 0))
         u.progress = Float(progress)
-        u.phaseSplit = Float(min(max(phaseSplit, 0.01), 0.99))
-        u.stagger = Float(min(max(style.stagger, 0), 1))
+        u.lag = Float(min(max(style.lag, 0), 0.99))
+        u.win1 = Float(min(max(style.window, 0.001), 1))
+        u.win2 = u.win1
+        u.direction = Float(direction.rawValue)
         u.flipV = 0   // CGContext-drawn texture is already top-left origin
         u.monochrome = style.monochrome ? 1 : 0
 

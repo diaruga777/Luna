@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "ClipPaywallBypass", targets: ["ClipPaywallBypass"]),
         .library(name: "ClipPriceMetadata", targets: ["ClipPriceMetadata"]),
         .library(name: "ClipContentRendering", targets: ["ClipContentRendering"]),
+        .library(name: "ClipTransitions", targets: ["ClipTransitions"]),
         .library(name: "ClipFetch", targets: ["ClipFetch"]),
         .library(name: "ClipIngest", targets: ["ClipIngest"]),
         .library(name: "ClipStorage", targets: ["ClipStorage"]),
@@ -52,6 +53,11 @@ let package = Package(
         ]),
         .target(name: "ClipPriceMetadata"),
         .target(name: "ClipContentRendering"),
+        // Shared UIKit transition facade: wraps the ClipContentRendering Metal engine
+        // (halftone pixel-wipe) behind UIViewControllerAnimatedTransitioning, nav/modal
+        // delegates, an in-place crossfade, and a table batch helper. Linked by the app
+        // and the action extension so both get the same global transitions.
+        .target(name: "ClipTransitions", dependencies: ["ClipContentRendering", "ClipDesignSystem"]),
         .target(name: "ClipFetch", dependencies: ["ClipModels", "ClipURLClassification", "ClipHTMLClassification"]),
         .target(name: "ClipIngest", dependencies: [
             "ClipModels", "ClipURLClassification", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass",
@@ -68,10 +74,10 @@ let package = Package(
         .target(name: "ClipSemantic", dependencies: ["ClipModels", "ClipStorage", "ClipSocial"]),
         .target(name: "ClipReaderEngine", dependencies: ["ClipModels"]),
         .target(name: "ClipArchiveReader", dependencies: ["ClipModels", "ClipURLClassification", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass", "ClipStorage", "ClipDesignSystem"]),
-        .target(name: "ClipReaderUI", dependencies: ["ClipModels", "ClipReaderEngine", "ClipDesignSystem", "ClipStorage", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass", "ClipArchiveReader", "ClipIngest", "ClipURLClassification", "ClipPlatforms"]),
-        .target(name: "ClipPriceUI", dependencies: ["ClipModels", "ClipDesignSystem", "ClipHTMLClassification", "ClipStorage", "ClipFetch", "ClipURLClassification", "ClipIngest", "ClipReaderUI"]),
-        .target(name: "ClipShareSurface", dependencies: ["ClipModels", "ClipStorage", "ClipIngest", "ClipURLClassification", "ClipDesignSystem", "ClipReaderUI", "ClipArchiveReader", "ClipPriceUI", "ClipMediaDownload", "ClipPlatforms"]),
-        .target(name: "ClipYouTubeAPI", dependencies: ["ClipModels", "ClipStorage", "ClipURLClassification", "ClipDesignSystem"]),
+        .target(name: "ClipReaderUI", dependencies: ["ClipModels", "ClipReaderEngine", "ClipDesignSystem", "ClipStorage", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass", "ClipArchiveReader", "ClipIngest", "ClipURLClassification", "ClipPlatforms", "ClipTransitions"]),
+        .target(name: "ClipPriceUI", dependencies: ["ClipModels", "ClipDesignSystem", "ClipHTMLClassification", "ClipStorage", "ClipFetch", "ClipURLClassification", "ClipIngest", "ClipReaderUI", "ClipTransitions"]),
+        .target(name: "ClipShareSurface", dependencies: ["ClipModels", "ClipStorage", "ClipIngest", "ClipURLClassification", "ClipDesignSystem", "ClipReaderUI", "ClipArchiveReader", "ClipPriceUI", "ClipMediaDownload", "ClipPlatforms", "ClipTransitions"]),
+        .target(name: "ClipYouTubeAPI", dependencies: ["ClipModels", "ClipStorage", "ClipURLClassification", "ClipDesignSystem", "ClipTransitions"]),
         .target(name: "ClipSocialUI", dependencies: ["ClipModels", "ClipStorage", "ClipDesignSystem", "ClipReaderUI", "ClipReadingList", "ClipSemantic", "ClipSocial"]),
         .target(name: "ClipIntents", dependencies: ["ClipModels", "ClipStorage", "ClipURLClassification", "ClipPlatforms", "ClipReadingList", "ClipSocial", "ClipYouTubeAPI"]),
         .target(name: "ClipReadingListUI", dependencies: ["ClipModels", "ClipStorage", "ClipDesignSystem", "ClipPlatforms", "ClipMediaDownload", "ClipSemantic", "ClipReaderUI", "ClipSend"]),

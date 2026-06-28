@@ -60,6 +60,7 @@
 		C100000000000000000000025 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
 		C100000000000000000000026 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 		C100000000000000000000027 /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
+		C100000000000000000000028 /* ClipTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* ClipTransitions */; };
 		C100000000000000000000031 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
 		C100000000000000000000032 /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
 		C100000000000000000000033 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
@@ -150,24 +151,6 @@
 		};
 /* End PBXCopyFilesBuildPhase section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		AA9000000000000000000001 /* Re-sign embedded extensions (debug) */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Re-sign embedded extensions (debug)";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
-		};
-/* End PBXShellScriptBuildPhase section */
-
 /* Begin PBXFileReference section */
 		79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Clip Action Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
@@ -253,6 +236,7 @@
 				C100000000000000000000023 /* ClipPaywallBypass in Frameworks */,
 				C100000000000000000000024 /* ClipPriceMetadata in Frameworks */,
 				C100000000000000000000025 /* ClipContentRendering in Frameworks */,
+				C100000000000000000000028 /* ClipTransitions in Frameworks */,
 				C100000000000000000000026 /* ClipModels in Frameworks */,
 				C100000000000000000000027 /* ClipFetch in Frameworks */,
 				04325C8AF877D151D2D31605 /* ClipIngest in Frameworks */,
@@ -458,6 +442,7 @@
 				C100000000000000000000013 /* ClipPaywallBypass */,
 				C100000000000000000000014 /* ClipPriceMetadata */,
 				C100000000000000000000015 /* ClipContentRendering */,
+				C100000000000000000000018 /* ClipTransitions */,
 				C100000000000000000000016 /* ClipModels */,
 				C100000000000000000000017 /* ClipFetch */,
 				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
@@ -694,6 +679,24 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AA9000000000000000000001 /* Re-sign embedded extensions (debug) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Re-sign embedded extensions (debug)";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		79583DF82FE0BAD100C775CA /* Sources */ = {
@@ -1337,6 +1340,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipContentRendering;
+		};
+		C100000000000000000000018 /* ClipTransitions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipTransitions;
 		};
 		C100000000000000000000016 /* ClipModels */ = {
 			isa = XCSwiftPackageProductDependency;

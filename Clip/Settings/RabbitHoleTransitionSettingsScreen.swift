@@ -2,17 +2,18 @@
 //  RabbitHoleTransitionSettingsScreen.swift
 //  Clip
 //
-//  Tuning UI for the RabbitHole reader's two-phase pixel-mosaic transition. Each row
-//  edits one `RabbitHoleTransitionSettings` value live; the changes take effect on the
-//  next dive / pop / overscroll.
+//  Tuning UI for the halftone pixel-wipe transition (used everywhere — nav, modals,
+//  in-place changes, table updates, and the RabbitHole reader). Each row edits one
+//  `HalftoneTransitionSettings` value live; changes take effect on the next transition.
 //
 
+import ClipDesignSystem
 import UIKit
 
 final class RabbitHoleTransitionSettingsScreen: UITableViewController {
 
     private enum Section: Int, CaseIterable {
-        case cellSize, phase1, phase2, stagger, color, reset
+        case cellSize, cornerRadius, spacing, phase1, phase2, stagger, color, reset
     }
 
     init() { super.init(style: .insetGrouped) }
@@ -31,8 +32,10 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .cellSize: return "Pixel Size"
-        case .phase1: return "Phase 1 · Dissolve to Pixels"
-        case .phase2: return "Phase 2 · Sharpen to Final"
+        case .cornerRadius: return "Dot Corner Radius"
+        case .spacing: return "Dot Spacing"
+        case .phase1: return "Wave 1 · Dissolve to Pixels"
+        case .phase2: return "Wave 2 · Sharpen to Final"
         case .stagger: return "Pixel Stagger"
         case .color: return "Color"
         case .reset: return nil
@@ -41,10 +44,12 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .cellSize: return "Size of one mosaic block. Bigger = chunkier pixels."
-        case .phase1: return "How long the existing view takes to dissolve, one random pixel at a time, into a pixelated version of the page you tapped."
-        case .phase2: return "How long the pixelated page takes to sharpen into the final, readable view."
-        case .stagger: return "How spread out the per-pixel reveal is. Left: every pixel flips at once. Right: strictly one pixel at a time."
+        case .cellSize: return "Size of one mosaic dot. Bigger = chunkier pixels."
+        case .cornerRadius: return "How rounded each dot's corners are."
+        case .spacing: return "Gap between dots, filled with the background colour (white in light mode, black in dark mode)."
+        case .phase1: return "How long wave 1 takes to dissolve the existing view into spaced, rounded dots of the destination."
+        case .phase2: return "How long wave 2 takes to sharpen the dots into the final, readable view. It starts while wave 1 is still sweeping."
+        case .stagger: return "How spread out the per-pixel reveal is within each wave. Left: every pixel flips at once. Right: strictly one pixel at a time."
         case .color: return "Render the dissolve in greyscale instead of full colour."
         case .reset: return nil
         }
@@ -54,32 +59,46 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
         switch Section(rawValue: indexPath.section)! {
         case .cellSize:
             return sliderCell(
-                value: Double(RabbitHoleTransitionSettings.pixelSize),
-                range: RabbitHoleTransitionSettings.pixelSizeRange,
+                value: Double(HalftoneTransitionSettings.pixelSize),
+                range: HalftoneTransitionSettings.pixelSizeRange,
                 minCaption: "6 pt", maxCaption: "64 pt",
                 format: { String(format: "%.0f pt", $0) },
-                onChange: { RabbitHoleTransitionSettings.pixelSize = CGFloat($0) })
+                onChange: { HalftoneTransitionSettings.pixelSize = CGFloat($0) })
+        case .cornerRadius:
+            return sliderCell(
+                value: Double(HalftoneTransitionSettings.cornerRadius),
+                range: HalftoneTransitionSettings.cornerRadiusRange,
+                minCaption: "0 pt", maxCaption: "8 pt",
+                format: { String(format: "%.0f pt", $0) },
+                onChange: { HalftoneTransitionSettings.cornerRadius = CGFloat($0) })
+        case .spacing:
+            return sliderCell(
+                value: Double(HalftoneTransitionSettings.spacing),
+                range: HalftoneTransitionSettings.spacingRange,
+                minCaption: "0 pt", maxCaption: "8 pt",
+                format: { String(format: "%.0f pt", $0) },
+                onChange: { HalftoneTransitionSettings.spacing = CGFloat($0) })
         case .phase1:
             return sliderCell(
-                value: RabbitHoleTransitionSettings.phase1Duration,
-                range: RabbitHoleTransitionSettings.phase1DurationRange,
+                value: HalftoneTransitionSettings.phase1Duration,
+                range: HalftoneTransitionSettings.phase1DurationRange,
                 minCaption: "0.1 s", maxCaption: "2.0 s",
                 format: { String(format: "%.2f s", $0) },
-                onChange: { RabbitHoleTransitionSettings.phase1Duration = $0 })
+                onChange: { HalftoneTransitionSettings.phase1Duration = $0 })
         case .phase2:
             return sliderCell(
-                value: RabbitHoleTransitionSettings.phase2Duration,
-                range: RabbitHoleTransitionSettings.phase2DurationRange,
+                value: HalftoneTransitionSettings.phase2Duration,
+                range: HalftoneTransitionSettings.phase2DurationRange,
                 minCaption: "0.05 s", maxCaption: "1.5 s",
                 format: { String(format: "%.2f s", $0) },
-                onChange: { RabbitHoleTransitionSettings.phase2Duration = $0 })
+                onChange: { HalftoneTransitionSettings.phase2Duration = $0 })
         case .stagger:
             return sliderCell(
-                value: Double(RabbitHoleTransitionSettings.stagger),
-                range: RabbitHoleTransitionSettings.staggerRange,
+                value: Double(HalftoneTransitionSettings.stagger),
+                range: HalftoneTransitionSettings.staggerRange,
                 minCaption: "Together", maxCaption: "Sequential",
                 format: { String(format: "%.0f%%", $0 * 100) },
-                onChange: { RabbitHoleTransitionSettings.stagger = CGFloat($0) })
+                onChange: { HalftoneTransitionSettings.stagger = CGFloat($0) })
         case .color:
             return monochromeCell()
         case .reset:
@@ -138,12 +157,12 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
         content.text = "Monochrome"
         cell.contentConfiguration = content
         cell.accessoryView = makeToggle(
-            isOn: RabbitHoleTransitionSettings.monochrome, action: #selector(monochromeToggled(_:)))
+            isOn: HalftoneTransitionSettings.monochrome, action: #selector(monochromeToggled(_:)))
         return cell
     }
 
     @objc private func monochromeToggled(_ toggle: UISwitch) {
-        RabbitHoleTransitionSettings.monochrome = toggle.isOn
+        HalftoneTransitionSettings.monochrome = toggle.isOn
     }
 
     private func resetCell() -> UITableViewCell {
@@ -159,7 +178,7 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard Section(rawValue: indexPath.section) == .reset else { return }
-        RabbitHoleTransitionSettings.resetToDefaults()
+        HalftoneTransitionSettings.resetToDefaults()
         tableView.reloadData()
     }
 

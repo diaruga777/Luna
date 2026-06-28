@@ -17,7 +17,7 @@ public enum ReaderHostFactory {
                      shareProvider: ReaderShareProviding? = nil,
                      gazeTrackerFactory: GazeTrackerFactory? = nil,
                      transition: RabbitHoleTransitioning? = nil) -> UIViewController {
-        if ReaderSettings.rabbitHoleReaderEnabled {
+        if ReaderSettings.pixelWipeTransitionsEnabled {
             return RabbitHoleReaderViewController(
                 item: item, content: content,
                 shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory,

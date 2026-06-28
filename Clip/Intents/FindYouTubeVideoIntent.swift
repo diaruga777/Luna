@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipIntents
 import ClipYouTubeAPI
 import ClipSocial
 import ClipURLClassification

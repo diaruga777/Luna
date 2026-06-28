@@ -41,6 +41,7 @@
 		7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
 		79583DFF2FE0BAD100C775CA /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */; };
 		79583E0B2FE0BAD200C775CA /* Clip Action Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		80CE7CB338F6866D7AA929AC /* ClipReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* ClipReadingListUI */; };
 		80D1546C306DE0208046F4A7 /* ClipYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */; };
 		9EAEEFFE364822D5BD7E30AF /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
 		A6A1E5E7C77D91ED5C367FB7 /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
@@ -79,6 +80,7 @@
 		C1666BA7FC1EAE467E0165F4 /* ClipSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* ClipSocialUI */; };
 		C2651D3DB2A545CDDEA3C458 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
 		C577C66921234C2F66BFD088 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
+		C586707358D74315870A9DF6 /* ClipReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* ClipReadingListUI */; };
 		C75DD0FABB085716259EAC0D /* ClipDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */; };
 		C7F110C64D19ADC2D98C4712 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
 		C85B86A55DAD524B8438CA85 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
@@ -99,8 +101,6 @@
 		FC3B05B51F7C576146ECF6CD /* ClipSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* ClipSocial */; };
 		FF5DFE4CF92F033FB81C7A5B /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
 		FF6630FB61B598C594FCDE61 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
-		80CE7CB338F6866D7AA929AC /* ClipReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* ClipReadingListUI */; };
-		C586707358D74315870A9DF6 /* ClipReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* ClipReadingListUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1209,6 +1209,11 @@
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipDesignSystem;
 		};
+		3933ED17E10DC2C0C55B129C /* ClipReadingListUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipReadingListUI;
+		};
 		436F1044DB2553FED3D9DB4C /* ClipReaderUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
@@ -1348,11 +1353,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipIntents;
-		};
-		3933ED17E10DC2C0C55B129C /* ClipReadingListUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
-			productName = ClipReadingListUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

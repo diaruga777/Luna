@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipIntents
 import AppIntents
 
 /// Returns the screen-analysis prompt for extracting user-visible identifying

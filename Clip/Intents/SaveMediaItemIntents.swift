@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipIntents
 import ClipPlatforms
 import ClipStorage
 import AppIntents

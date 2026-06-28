@@ -11,10 +11,10 @@ import UIKit
 /// extension can show what the download will grab. Confirms (via the same resolver
 /// the download uses) that downloadable media actually exists, so the caller can
 /// gate the download button on a real result.
-enum MediaPreviewFetcher {
+public enum MediaPreviewFetcher {
 
     /// The outcome of a preview fetch.
-    enum Result {
+    public enum Result {
         /// The post exposes no downloadable media — don't offer a download.
         case noMedia
         /// Media exists; `image` is its static preview (nil only if media was found
@@ -23,7 +23,7 @@ enum MediaPreviewFetcher {
     }
 
     /// Resolves the post's media, then loads a downsampled static preview for it.
-    static func fetchPreview(
+    public static func fetchPreview(
         for url: URL, maxPixelSize: CGFloat,
         resolver: SocialMediaResolving = SocialMediaResolver()
     ) async -> Result {
@@ -38,7 +38,7 @@ enum MediaPreviewFetcher {
     /// Downloads and downsamples an image (ImageIO) so a full-resolution poster never
     /// sits fully decoded in the memory-constrained extension. Public so callers with
     /// a known image URL (e.g. a YouTube thumbnail) can reuse it.
-    static func image(from url: URL, maxPixelSize: CGFloat) async -> UIImage? {
+    public static func image(from url: URL, maxPixelSize: CGFloat) async -> UIImage? {
         var request = URLRequest(url: url, timeoutInterval: 20)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),

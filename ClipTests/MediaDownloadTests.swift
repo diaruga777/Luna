@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipMediaDownload
 import XCTest
 @testable import Clip
 

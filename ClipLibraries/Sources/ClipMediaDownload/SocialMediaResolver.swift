@@ -15,16 +15,15 @@ import Foundation
 ///   • Instagram — the post/embed HTML (`video_url` / `display_url` / og tags).
 /// Network fetching is injectable so the per-platform PARSERS can be unit-tested
 /// against fixtures without hitting the network.
-struct SocialMediaResolver: SocialMediaResolving {
-
-    typealias Fetch = (URLRequest) async -> Data?
+public struct SocialMediaResolver: SocialMediaResolving {
+    public typealias Fetch = (URLRequest) async -> Data?
     private let fetch: Fetch
 
-    init(fetch: @escaping Fetch = SocialMediaResolver.defaultFetch) {
+    public init(fetch: @escaping Fetch = SocialMediaResolver.defaultFetch) {
         self.fetch = fetch
     }
 
-    func resolveAssets(for url: URL) async -> [MediaAsset] {
+    public func resolveAssets(for url: URL) async -> [MediaAsset] {
         guard let recognized = PlatformRecognizer.recognize(url.absoluteString) else { return [] }
         switch recognized.platform {
         case .x:
@@ -125,7 +124,7 @@ struct SocialMediaResolver: SocialMediaResolving {
         return request
     }
 
-    static let defaultFetch: Fetch = { request in
+    public static let defaultFetch: Fetch = { request in
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
         else { return nil }
@@ -134,9 +133,9 @@ struct SocialMediaResolver: SocialMediaResolving {
 }
 
 /// Shared HTTP constants for media resolution/download.
-enum MediaDownloadHTTP {
+public enum MediaDownloadHTTP {
     /// A desktop Safari UA — social pages serve richer/less-walled markup to it.
-    static let browserUserAgent =
+    public static let browserUserAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
         "(KHTML, like Gecko) Version/17.4 Safari/605.1.15"
 }
@@ -144,7 +143,7 @@ enum MediaDownloadHTTP {
 /// Small, dependency-free Open Graph parser for social pages. Attribute order in
 /// `<meta>` tags is not stable, so inspect each tag rather than matching one order.
 private enum OpenGraphMediaParser {
-    static func content(named name: String, in html: String) -> String? {
+    public static func content(named name: String, in html: String) -> String? {
         let tags = html.components(separatedBy: "<meta")
         for tag in tags {
             let lowercased = tag.lowercased()
@@ -164,8 +163,8 @@ private enum OpenGraphMediaParser {
 // MARK: - Pure parsers (unit-tested against fixtures)
 
 /// Parses fxtwitter's JSON into ordered media assets.
-enum XMediaParser {
-    static func assets(fromFxJSON data: Data) -> [MediaAsset] {
+public enum XMediaParser {
+    public static func assets(fromFxJSON data: Data) -> [MediaAsset] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tweet = root["tweet"] as? [String: Any],
               let media = tweet["media"] as? [String: Any] else { return [] }
@@ -197,8 +196,8 @@ enum XMediaParser {
 }
 
 /// Parses TikTok's rehydration JSON into media assets (photo carousel or video).
-enum TikTokMediaParser {
-    static func assets(fromHTML html: String) -> [MediaAsset] {
+public enum TikTokMediaParser {
+    public static func assets(fromHTML html: String) -> [MediaAsset] {
         guard let item = videoItemStruct(in: html) else { return [] }
 
         // Photo ("slides") posts: a carousel of images.
@@ -239,12 +238,12 @@ enum TikTokMediaParser {
 }
 
 /// Parses Instagram post/embed HTML into a single media asset (video preferred).
-enum InstagramMediaParser {
+public enum InstagramMediaParser {
     /// Parses the embed page's `contextJSON` blob — a JSON-encoded string holding
     /// `gql_data.shortcode_media` — into ordered assets. This is the reliable source
     /// for a reel/video's real `video_url` (carousels and stills too). Empty if the
     /// blob is absent or has no recognizable media.
-    static func assetsFromEmbedContextJSON(_ html: String) -> [MediaAsset] {
+    public static func assetsFromEmbedContextJSON(_ html: String) -> [MediaAsset] {
         guard let media = shortcodeMedia(fromEmbedHTML: html) else { return [] }
         // Carousel (mixed photos/videos) → one asset per child, in order.
         if let sidecar = media["edge_sidecar_to_children"] as? [String: Any],
@@ -303,7 +302,7 @@ enum InstagramMediaParser {
         return media
     }
 
-    static func assets(fromHTML html: String) -> [MediaAsset] {
+    public static func assets(fromHTML html: String) -> [MediaAsset] {
         // Videos / reels first.
         for pattern in [#""video_url":"(.*?)""#,
                         #"property="og:video" content="(.*?)""#,
@@ -326,7 +325,7 @@ enum InstagramMediaParser {
     }
 
     /// Unescapes the JSON/HTML-encoded URLs Instagram embeds in markup.
-    static func unescape(_ string: String) -> String {
+    public static func unescape(_ string: String) -> String {
         string
             .replacingOccurrences(of: "\\u0026", with: "&")
             .replacingOccurrences(of: "\\/", with: "/")

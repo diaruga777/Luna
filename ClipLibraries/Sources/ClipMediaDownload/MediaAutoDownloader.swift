@@ -11,10 +11,10 @@ import Foundation
 /// (`ReadingListIngestor.ingestPlatformItem`) so EVERY save method flows through it
 /// — including share-sheet saves, which the main app re-ingests from the pending
 /// queue, so the download runs in the app where Photos access was granted.
-enum MediaAutoDownloader {
+public enum MediaAutoDownloader {
     /// Whether a saved URL is a platform whose media should auto-download (enabled +
     /// supported). Used by the share extension to decide whether to stay alive.
-    static func isEnabled(forURLString urlString: String) -> Bool {
+    public static func isEnabled(forURLString urlString: String) -> Bool {
         guard let platform = PlatformRecognizer.recognize(urlString)?.platform else { return false }
         return MediaDownloadablePlatform.supported.contains(platform)
             && AutoDownloadSettings.isEnabled(for: platform)
@@ -25,7 +25,7 @@ enum MediaAutoDownloader {
     /// the app intent finishes the download before returning) and marks the URL so
     /// the main-app ingest fallback won't download it again. Returns true if it saved.
     @discardableResult
-    static func runIfEnabledAwaiting(
+    public static func runIfEnabledAwaiting(
         forURLString urlString: String, service: MediaDownloading = MediaDownloadService()
     ) async -> Bool {
         guard isEnabled(forURLString: urlString),

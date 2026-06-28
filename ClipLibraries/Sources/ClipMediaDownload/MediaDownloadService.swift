@@ -9,18 +9,18 @@ import Foundation
 /// Used by both entry points (the action extension button + the reading list
 /// long-press menu). Streams the file to disk so a large video never sits in
 /// memory, and reports progress for the action extension's progress bar.
-struct MediaDownloadService: MediaDownloading {
+public struct MediaDownloadService: MediaDownloading {
 
     private let resolver: SocialMediaResolving
     private let saver: PhotoLibrarySaving
 
-    init(resolver: SocialMediaResolving = SocialMediaResolver(),
+    public init(resolver: SocialMediaResolving = SocialMediaResolver(),
          saver: PhotoLibrarySaving = PhotoLibrarySaver()) {
         self.resolver = resolver
         self.saver = saver
     }
 
-    func downloadFirstMediaToPhotos(
+    public func downloadFirstMediaToPhotos(
         from url: URL, onProgress: @escaping (Double) -> Void
     ) async throws -> MediaAsset.Kind {
         guard MediaDownloadablePlatform.supports(url.absoluteString) else {
@@ -51,7 +51,7 @@ struct MediaDownloadService: MediaDownloading {
         return asset.kind
     }
 
-    func downloadFirstMediaToFile(
+    public func downloadFirstMediaToFile(
         from url: URL, onProgress: @escaping (Double) -> Void
     ) async throws -> DownloadedMedia {
         guard MediaDownloadablePlatform.supports(url.absoluteString) else {
@@ -72,7 +72,7 @@ struct MediaDownloadService: MediaDownloading {
         }
     }
 
-    func saveDownloadedMediaToPhotos(_ media: DownloadedMedia) async throws {
+    public func saveDownloadedMediaToPhotos(_ media: DownloadedMedia) async throws {
         guard await saver.requestAddAuthorization() else {
             throw MediaDownloadError.permissionDenied
         }
@@ -92,9 +92,9 @@ struct MediaDownloadService: MediaDownloading {
 /// Streams a remote media file to a temp file (memory-efficient) with progress,
 /// via a download-task delegate. Picks the file extension from the asset kind and
 /// the response's MIME type.
-final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
+public final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
 
-    static func download(
+    public static func download(
         _ asset: MediaAsset, referer: String?, onProgress: @escaping (Double) -> Void
     ) async throws -> URL {
         let downloader = MediaFileDownloader(asset: asset, onProgress: onProgress)
@@ -121,7 +121,7 @@ final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
         }
     }
 
-    func urlSession(
+    public func urlSession(
         _ session: URLSession, downloadTask: URLSessionDownloadTask,
         didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
     ) {
@@ -129,7 +129,7 @@ final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
         onProgress(min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)))
     }
 
-    func urlSession(
+    public func urlSession(
         _ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL
     ) {
         let http = downloadTask.response as? HTTPURLResponse
@@ -149,7 +149,7 @@ final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
         }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error { finish(.failure(error)) }
     }
 
@@ -162,7 +162,7 @@ final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
 
     /// The file extension to save under — preserve png/gif/mp4 when known, else a
     /// sensible default per kind (jpg for stills, mp4 for video).
-    static func fileExtension(for asset: MediaAsset, mimeType: String?) -> String {
+    public static func fileExtension(for asset: MediaAsset, mimeType: String?) -> String {
         switch asset.kind {
         case .video:
             return "mp4"

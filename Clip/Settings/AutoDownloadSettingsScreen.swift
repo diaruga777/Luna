@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipMediaDownload
 import UIKit
 
 /// Per-platform toggles to auto-save a saved post's media to the photo library.

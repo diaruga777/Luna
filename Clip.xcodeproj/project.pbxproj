@@ -62,6 +62,10 @@
 		F9B0746CEE264B742FEFA170 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 		C577C66921234C2F66BFD088 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 		670A781911DA94A8B457F826 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
+		FF6630FB61B598C594FCDE61 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		E69342FE12CC67327392E2D2 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		E4985943E018E5FE92C11606 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		42F0FDA59D82F9D669F258D6 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -179,6 +183,7 @@
 				FF5DFE4CF92F033FB81C7A5B /* ClipStorage in Frameworks */,
 				3EE5E285E488168AC19BECB2 /* ClipDesignSystem in Frameworks */,
 				F9B0746CEE264B742FEFA170 /* ClipPlatforms in Frameworks */,
+				E69342FE12CC67327392E2D2 /* ClipMediaDownload in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -202,6 +207,7 @@
 				483B2A559218C68EC599D979 /* ClipMail in Frameworks */,
 				D42B57E8D2EC0818A73B6FD4 /* ClipDesignSystem in Frameworks */,
 				031FF107DF1A6AF0F5958C46 /* ClipPlatforms in Frameworks */,
+				FF6630FB61B598C594FCDE61 /* ClipMediaDownload in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -226,6 +232,7 @@
 				EF6B3AC95FDA89E16A1F2698 /* ClipMail in Frameworks */,
 				408BAA99D147B5FF19864BCC /* ClipDesignSystem in Frameworks */,
 				670A781911DA94A8B457F826 /* ClipPlatforms in Frameworks */,
+				42F0FDA59D82F9D669F258D6 /* ClipMediaDownload in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -246,6 +253,7 @@
 				35721F092939636390C38BE3 /* ClipStorage in Frameworks */,
 				C85B86A55DAD524B8438CA85 /* ClipDesignSystem in Frameworks */,
 				C577C66921234C2F66BFD088 /* ClipPlatforms in Frameworks */,
+				E4985943E018E5FE92C11606 /* ClipMediaDownload in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -329,6 +337,7 @@
 				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
 				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
 				72398B0845A005923290AE55 /* ClipPlatforms */,
+				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
 			);
 			productName = "Clip Action Extension";
 			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
@@ -373,6 +382,7 @@
 				6733C497754C454FAA262597 /* ClipMail */,
 				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
 				72398B0845A005923290AE55 /* ClipPlatforms */,
+				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -428,6 +438,7 @@
 				6733C497754C454FAA262597 /* ClipMail */,
 				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
 				72398B0845A005923290AE55 /* ClipPlatforms */,
+				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -464,6 +475,7 @@
 				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
 				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
 				72398B0845A005923290AE55 /* ClipPlatforms */,
+				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
 			);
 			productName = ClipShare;
 			productReference = AA0200000000000000000004 /* ClipShare.appex */;
@@ -1181,6 +1193,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipPlatforms;
+		};
+		4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipMediaDownload;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

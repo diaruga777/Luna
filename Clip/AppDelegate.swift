@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipMediaDownload
 import ClipDesignSystem
 import ClipStorage
 import BackgroundTasks

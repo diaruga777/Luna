@@ -9,12 +9,12 @@ import Foundation
 /// Per-platform "auto-download media to Photos on save" toggles, stored in the App
 /// Group so every save path (app, intents, extensions) reads the same values.
 /// Enabling a toggle requires Photos add permission (the settings screen prompts).
-enum AutoDownloadSettings {
+public enum AutoDownloadSettings {
     private static let appGroupID = "group.com.hpiddy.clip"
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
     /// Platforms that support auto-download, in display order.
-    static let platforms: [ContentPlatform] = [.x, .instagram, .tiktok, .facebook]
+    public static let platforms: [ContentPlatform] = [.x, .instagram, .tiktok, .facebook]
 
     // Master switch for the action extension's media preview: when ON (default),
     // the preview auto-downloads the media inline; when OFF it starts in a pending
@@ -26,7 +26,7 @@ enum AutoDownloadSettings {
 
     /// Whether the action extension's media preview should auto-download inline.
     /// Defaults to ON (no stored value reads as enabled).
-    static var autoDownloadMediaInPreview: Bool {
+    public static var autoDownloadMediaInPreview: Bool {
         get { (defaults.object(forKey: autoDownloadMediaKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: autoDownloadMediaKey) }
     }
@@ -35,11 +35,11 @@ enum AutoDownloadSettings {
         "autoDownloadMedia.\(platform.rawValue)"
     }
 
-    static func isEnabled(for platform: ContentPlatform) -> Bool {
+    public static func isEnabled(for platform: ContentPlatform) -> Bool {
         defaults.bool(forKey: key(for: platform))
     }
 
-    static func setEnabled(_ enabled: Bool, for platform: ContentPlatform) {
+    public static func setEnabled(_ enabled: Bool, for platform: ContentPlatform) {
         defaults.set(enabled, forKey: key(for: platform))
     }
 
@@ -49,11 +49,11 @@ enum AutoDownloadSettings {
     private static let downloadedKey = "autoDownloadedURLs"
     private static let downloadedCap = 300
 
-    static func wasDownloaded(_ urlString: String) -> Bool {
+    public static func wasDownloaded(_ urlString: String) -> Bool {
         (defaults.array(forKey: downloadedKey) as? [String])?.contains(urlString) ?? false
     }
 
-    static func markDownloaded(_ urlString: String) {
+    public static func markDownloaded(_ urlString: String) {
         var list = (defaults.array(forKey: downloadedKey) as? [String]) ?? []
         guard !list.contains(urlString) else { return }
         list.append(urlString)

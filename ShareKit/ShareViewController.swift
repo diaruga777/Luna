@@ -3,6 +3,7 @@
 //  ClipShare
 //
 
+import ClipMediaDownload
 import ClipDesignSystem
 import ClipStorage
 import ClipIngest

@@ -8,6 +8,55 @@ Targets: Clip (app), ClipSafari (Safari web extension), ClipShare (share extensi
 
 - Commit completed work in small, logical chunks as it is verified. Do not bundle unrelated changes into the same commit.
 
+## Module structure
+
+Almost all code lives in the local SwiftPM package `ClipLibraries/` (28 library
+products, layered: models → URL/HTML parsing → fetch/bypass/ingest → services →
+UIKit feature libs → orchestration/intents). The Xcode targets are thin shells:
+the app (`Clip/`) holds scaffolding (AppDelegate/SceneDelegate), per-app Settings,
+its main-screen composition (ReadingListViewController/CatchUp/Search), composition
+wiring (AppReaderProviders/OnboardingFlow), the App Intent **definitions**
+(`Clip/Intents/*` — their business logic is in the `ClipIntents` library), and the
+ARKit gaze tracker; the Share/Action extensions link only `ClipShareSurface`
+(+ transitive), `ClipSafari` links nothing. Cross-tier wiring uses injected
+closures/protocols installed at launch in AppDelegate (e.g.
+`SocialMessageCenter.ingestHandler`/`shareRecorder`, `DiagnosticLog.export*`,
+`PriceTrackingViewController.defaultSaveAsArticle`). The package is pinned to Swift
+5 language mode. Reusable modules need `public` API + explicit `public init`s.
+
+## Running the unit tests (CLI — works headless, no Blitz needed)
+
+The full `ClipTests` suite runs from the command line on an **iOS 26.x simulator**
+(deployment target is iOS 26). Recipe:
+
+```sh
+DD=<a derivedDataPath>
+SIM=<a booted iOS 26.x simulator UDID>   # e.g. xcrun simctl list devices | grep -A8 'iOS 26'
+# REQUIRED before each test/build run — see note:
+rm -rf "$DD/Build/Products/Debug-iphonesimulator"/*.app "$DD/Build/Products/Debug-iphonesimulator"/*.appex
+xcodebuild test -scheme Clip -destination "platform=iOS Simulator,id=$SIM" \
+  -configuration Debug -derivedDataPath "$DD"
+```
+
+- **Delete the built `.app`/`.appex` products before each run.** Xcode re-signs the
+  embedded extensions inconsistently across incremental builds, producing
+  `error: Embedded binary is not signed with the same certificate as the parent app`
+  and cancelling the test build. Removing the stale products fixes it deterministically.
+- **Do NOT pass `CODE_SIGNING_ALLOWED=NO`** — it strips the `group.com.hpiddy.clip`
+  app-group entitlement, so the test host crashes at launch (early-exit, "external
+  symbol") on app-group container access. Default ad-hoc signing applies the
+  entitlement and the app group works on the simulator.
+- **Known pre-existing failures (NOT regressions; verified identical on baseline):**
+  snapshot tests (`*ScreenTests`, `CatchUpAndPriceScreenTests`, `OnboardingScreenTests`)
+  fail unless run on the exact device the reference PNGs were recorded on; `ReplayPlayerTests`
+  need network/live fetch; `ReadingListSectioningTests.testDot*` need enhanced voices
+  installed (absent on a clean sim); and two extraction tests
+  (`ArticleExtractionTests.testExtractFromJSONLDRecoversArticleBody`,
+  `ArticleContentPaywallTests.testOrdinaryArticleIsReadable`) have a stale
+  `readableBodyThreshold`. ~856/892 pass; the 36 failures are environment/pre-existing.
+- For a compile-only check (fast, no run): `xcodebuild build-for-testing -scheme Clip
+  -destination 'generic/platform=iOS Simulator'`.
+
 # Swift Project — Blitz AI Agent Guide
 
 ## blitz-macos

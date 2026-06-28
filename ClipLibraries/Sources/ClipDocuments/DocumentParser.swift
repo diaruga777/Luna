@@ -10,9 +10,9 @@ import PDFKit
 /// Turns an imported document file into `ArticleContent`. PDF text via PDFKit,
 /// RTF via attributed string, plain text and Markdown via the pure parsers
 /// below. Returns nil when nothing readable can be extracted.
-enum DocumentParser {
+public enum DocumentParser {
 
-    static func parse(fileURL: URL, type: String, title: String) -> ArticleContent? {
+    public static func parse(fileURL: URL, type: String, title: String) -> ArticleContent? {
         let lowercased = type.lowercased()
         let blocks: [ArticleContent.Block]?
         switch lowercased {
@@ -55,8 +55,8 @@ enum DocumentParser {
 }
 
 /// Splits plain text into paragraph blocks on blank lines. Pure, tested.
-enum PlainTextParser {
-    static func blocks(from text: String) -> [ArticleContent.Block] {
+public enum PlainTextParser {
+    public static func blocks(from text: String) -> [ArticleContent.Block] {
         text.replacingOccurrences(of: "\r\n", with: "\n")
             .components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -75,8 +75,8 @@ enum PlainTextParser {
 /// Minimal Markdown → blocks: ATX headings (#), block quotes (>), unordered
 /// (-, *, +) and ordered (1.) list items, everything else paragraphs. Inline
 /// emphasis markers are left as-is. Pure, tested.
-enum MarkdownParser {
-    static func blocks(from markdown: String) -> [ArticleContent.Block] {
+public enum MarkdownParser {
+    public static func blocks(from markdown: String) -> [ArticleContent.Block] {
         let lines = markdown.replacingOccurrences(of: "\r\n", with: "\n")
             .components(separatedBy: "\n")
 

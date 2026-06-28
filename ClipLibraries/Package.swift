@@ -16,6 +16,7 @@ let package = Package(
         .library(name: "ClipFetch", targets: ["ClipFetch"]),
         .library(name: "ClipIngest", targets: ["ClipIngest"]),
         .library(name: "ClipStorage", targets: ["ClipStorage"]),
+        .library(name: "ClipDocuments", targets: ["ClipDocuments"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
@@ -38,6 +39,7 @@ let package = Package(
             "ClipModels", "ClipURLClassification", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass",
         ]),
         .target(name: "ClipStorage", dependencies: ["ClipModels", "ClipURLClassification"]),
+        .target(name: "ClipDocuments", dependencies: ["ClipModels"]),
         .testTarget(name: "ClipModelsTests", dependencies: ["ClipModels"]),
         .testTarget(name: "ClipURLClassificationTests", dependencies: ["ClipURLClassification"]),
         .testTarget(name: "ClipHTMLClassificationTests", dependencies: ["ClipHTMLClassification"]),

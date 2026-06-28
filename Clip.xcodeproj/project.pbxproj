@@ -46,6 +46,8 @@
 		C7F110C64D19ADC2D98C4712 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
 		CCEB43D729954FAF19DB73EF /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
 		FF5DFE4CF92F033FB81C7A5B /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
+		C75DD0FABB085716259EAC0D /* ClipDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */; };
+		DE66DCA327DA9E81723DC210 /* ClipDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -178,6 +180,7 @@
 				C100000000000000000000027 /* ClipFetch in Frameworks */,
 				04325C8AF877D151D2D31605 /* ClipIngest in Frameworks */,
 				C2651D3DB2A545CDDEA3C458 /* ClipStorage in Frameworks */,
+				C75DD0FABB085716259EAC0D /* ClipDocuments in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -196,6 +199,7 @@
 				C100000000000000000000057 /* ClipFetch in Frameworks */,
 				B7EB2775DD38C41CBD105079 /* ClipIngest in Frameworks */,
 				C7F110C64D19ADC2D98C4712 /* ClipStorage in Frameworks */,
+				DE66DCA327DA9E81723DC210 /* ClipDocuments in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -333,6 +337,7 @@
 				C100000000000000000000017 /* ClipFetch */,
 				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
+				EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -382,6 +387,7 @@
 				C100000000000000000000017 /* ClipFetch */,
 				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
+				EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -1103,6 +1109,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipIngest;
+		};
+		EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipDocuments;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

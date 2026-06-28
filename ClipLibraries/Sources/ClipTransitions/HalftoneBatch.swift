@@ -12,7 +12,6 @@ import ClipContentRendering
 import ClipDesignSystem
 import UIKit
 
-@MainActor
 public enum HalftoneBatch {
     /// Run `updates` (a `performBatchUpdates` body) under a halftone wipe. `direction`
     /// defaults to top-to-bottom, mirroring a list filling in.

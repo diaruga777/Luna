@@ -14,7 +14,6 @@ enum HalftoneSnapshot {
     /// true flushes pending layout first (use for the post-change "after" image);
     /// false captures the already-committed state (use for the "before" image, with
     /// no forced commit). Returns nil for degenerate sizes / failed renders.
-    @MainActor
     static func image(of view: UIView, afterScreenUpdates: Bool) -> UIImage? {
         let bounds = view.bounds
         guard bounds.width > 1, bounds.height > 1 else { return nil }

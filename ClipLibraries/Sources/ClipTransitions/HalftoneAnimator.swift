@@ -14,7 +14,6 @@ import ClipContentRendering
 import ClipDesignSystem
 import UIKit
 
-@MainActor
 public final class HalftoneAnimator: NSObject, UIViewControllerAnimatedTransitioning {
 
     private let direction: HalftoneWavefrontDirection

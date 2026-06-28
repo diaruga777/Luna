@@ -16,7 +16,6 @@ import ClipContentRendering
 import ClipDesignSystem
 import UIKit
 
-@MainActor
 public enum HalftoneCrossfade {
     /// Apply `changes` to `view` behind a halftone wipe. `direction` defaults to a
     /// random (fade-order) reveal. `duration` nil ⇒ the configured total duration.

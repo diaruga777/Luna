@@ -13,7 +13,6 @@ import ClipContentRendering
 import ObjectiveC
 import UIKit
 
-@MainActor
 public final class HalftoneModalTransitioningDelegate: NSObject, UIViewControllerTransitioningDelegate {
 
     private let presentDirection: HalftoneWavefrontDirection
@@ -61,7 +60,6 @@ public enum HalftoneModal {
     /// Present `vc` from `presenter` with a halftone wipe whose direction mirrors
     /// `vc.modalTransitionStyle`. Falls through to the stock animation when the
     /// pixel-wipe is disabled (the delegate just returns nil animators).
-    @MainActor
     public static func present(_ vc: UIViewController,
                                from presenter: UIViewController,
                                animated: Bool = true,

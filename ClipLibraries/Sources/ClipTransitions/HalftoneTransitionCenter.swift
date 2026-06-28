@@ -14,7 +14,6 @@ import ClipContentRendering
 import ClipDesignSystem
 import UIKit
 
-@MainActor
 public final class HalftoneTransitionCenter {
     public static let shared = HalftoneTransitionCenter()
     private init() {}

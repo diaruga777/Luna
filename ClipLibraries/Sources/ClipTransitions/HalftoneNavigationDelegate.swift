@@ -11,7 +11,6 @@
 import ClipContentRendering
 import UIKit
 
-@MainActor
 public final class HalftoneNavigationDelegate: NSObject, UINavigationControllerDelegate {
     public static let shared = HalftoneNavigationDelegate()
 
@@ -33,7 +32,6 @@ public extension UINavigationController {
     /// Route this nav controller's push/pop through the halftone pixel-wipe. Only takes
     /// effect when the toggle is on; no-op if the controller already has its own
     /// delegate (so bespoke nav delegates aren't clobbered).
-    @MainActor
     func installHalftoneTransitions() {
         if delegate == nil { delegate = HalftoneNavigationDelegate.shared }
     }

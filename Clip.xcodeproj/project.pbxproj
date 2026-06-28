@@ -58,6 +58,10 @@
 		3EE5E285E488168AC19BECB2 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
 		C85B86A55DAD524B8438CA85 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
 		408BAA99D147B5FF19864BCC /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		031FF107DF1A6AF0F5958C46 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
+		F9B0746CEE264B742FEFA170 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
+		C577C66921234C2F66BFD088 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
+		670A781911DA94A8B457F826 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -174,6 +178,7 @@
 				CCEB43D729954FAF19DB73EF /* ClipIngest in Frameworks */,
 				FF5DFE4CF92F033FB81C7A5B /* ClipStorage in Frameworks */,
 				3EE5E285E488168AC19BECB2 /* ClipDesignSystem in Frameworks */,
+				F9B0746CEE264B742FEFA170 /* ClipPlatforms in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -196,6 +201,7 @@
 				0C5EEFE7889EB736FFF2CCDD /* ClipSend in Frameworks */,
 				483B2A559218C68EC599D979 /* ClipMail in Frameworks */,
 				D42B57E8D2EC0818A73B6FD4 /* ClipDesignSystem in Frameworks */,
+				031FF107DF1A6AF0F5958C46 /* ClipPlatforms in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -219,6 +225,7 @@
 				3F984499DD8FB375FDE9BB96 /* ClipSend in Frameworks */,
 				EF6B3AC95FDA89E16A1F2698 /* ClipMail in Frameworks */,
 				408BAA99D147B5FF19864BCC /* ClipDesignSystem in Frameworks */,
+				670A781911DA94A8B457F826 /* ClipPlatforms in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -238,6 +245,7 @@
 				A6A1E5E7C77D91ED5C367FB7 /* ClipIngest in Frameworks */,
 				35721F092939636390C38BE3 /* ClipStorage in Frameworks */,
 				C85B86A55DAD524B8438CA85 /* ClipDesignSystem in Frameworks */,
+				C577C66921234C2F66BFD088 /* ClipPlatforms in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -320,6 +328,7 @@
 				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
 				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
+				72398B0845A005923290AE55 /* ClipPlatforms */,
 			);
 			productName = "Clip Action Extension";
 			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
@@ -363,6 +372,7 @@
 				A1AC9F7C74411AF59CC240DB /* ClipSend */,
 				6733C497754C454FAA262597 /* ClipMail */,
 				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
+				72398B0845A005923290AE55 /* ClipPlatforms */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -417,6 +427,7 @@
 				A1AC9F7C74411AF59CC240DB /* ClipSend */,
 				6733C497754C454FAA262597 /* ClipMail */,
 				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
+				72398B0845A005923290AE55 /* ClipPlatforms */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -452,6 +463,7 @@
 				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
 				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
+				72398B0845A005923290AE55 /* ClipPlatforms */,
 			);
 			productName = ClipShare;
 			productReference = AA0200000000000000000004 /* ClipShare.appex */;
@@ -1164,6 +1176,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipDesignSystem;
+		};
+		72398B0845A005923290AE55 /* ClipPlatforms */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipPlatforms;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

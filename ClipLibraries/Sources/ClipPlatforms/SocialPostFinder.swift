@@ -10,9 +10,9 @@ import Foundation
 /// (X, TikTok, Instagram, Facebook), from the author handle plus a content
 /// snippet and/or timestamp, via a keyless DuckDuckGo HTML search. Best-effort:
 /// returns nil when nothing convincingly matches.
-enum SocialPostFinder {
+public enum SocialPostFinder {
 
-    enum Platform {
+    public enum Platform {
         case x, tiktok, instagram, facebook
 
         /// Hosts that count as this platform.
@@ -50,7 +50,7 @@ enum SocialPostFinder {
     ///   - handle: author handle (with or without a leading @).
     ///   - content: a phrase / prefix from the post (optional).
     ///   - timestamp: a date/time string shown on the post (optional).
-    static func findPostURL(
+    public static func findPostURL(
         platform: Platform, handle: String, content: String?, timestamp: String?
     ) async -> URL? {
         let cleanHandle = handle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -95,7 +95,7 @@ enum SocialPostFinder {
     /// Picks the best post URL from search results: it must be on the platform and
     /// look like a post (not a profile/home). A result whose path contains the
     /// author handle wins over one that merely matches the host + post marker.
-    static func bestMatch(in urls: [URL], platform: Platform, handle: String) -> URL? {
+    public static func bestMatch(in urls: [URL], platform: Platform, handle: String) -> URL? {
         let needle = handle.lowercased()
         let posts = urls.filter { url in
             guard let host = url.host?.lowercased() else { return false }
@@ -133,7 +133,7 @@ enum SocialPostFinder {
 
     /// Extracts the real result URLs from DuckDuckGo HTML, which wraps them as
     /// `…/l/?uddg=<percent-encoded-url>`. Pure, so it's testable.
-    static func resultURLs(inHTML html: String) -> [URL] {
+    public static func resultURLs(inHTML html: String) -> [URL] {
         guard let regex = try? NSRegularExpression(pattern: "uddg=([^&\"']+)") else { return [] }
         let range = NSRange(html.startIndex..., in: html)
         return regex.matches(in: html, range: range).compactMap { match -> URL? in
@@ -147,12 +147,12 @@ enum SocialPostFinder {
 
 private extension String {
     /// nil when the string is empty (after no further trimming).
-    var nilIfEmpty: String? { isEmpty ? nil : self }
+    public var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 private extension Array where Element == String {
     /// Drops empty strings and later duplicates, preserving order.
-    func removingDuplicatesAndEmpties() -> [String] {
+    public func removingDuplicatesAndEmpties() -> [String] {
         var seen = Set<String>()
         return filter { !$0.isEmpty && seen.insert($0).inserted }
     }

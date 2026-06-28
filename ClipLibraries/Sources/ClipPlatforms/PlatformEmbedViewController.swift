@@ -11,27 +11,27 @@ import WebKit
 /// 16:9, with a close button). Optional `Referer` and an "ended" user-script
 /// that marks the item read + dismisses. Generalizes the old
 /// `YouTubePlayerViewController`.
-final class PlatformEmbedViewController: UIViewController, WKScriptMessageHandler {
+public final class PlatformEmbedViewController: UIViewController, WKScriptMessageHandler {
 
     private let embed: PlatformEmbed
     private let itemID: UUID
     private var webView: WKWebView?
 
-    init(embed: PlatformEmbed, itemID: UUID) {
+    public init(embed: PlatformEmbed, itemID: UUID) {
         self.embed = embed
         self.itemID = itemID
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     deinit {
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "player")
         webView?.stopLoading()
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
 
@@ -78,7 +78,7 @@ final class PlatformEmbedViewController: UIViewController, WKScriptMessageHandle
         webView.load(request)
     }
 
-    func userContentController(
+    public func userContentController(
         _ userContentController: WKUserContentController, didReceive message: WKScriptMessage
     ) {
         guard message.name == "player", message.body as? String == "ended" else { return }
@@ -87,7 +87,7 @@ final class PlatformEmbedViewController: UIViewController, WKScriptMessageHandle
     }
 
     /// Watches the embed page's `<video>` element and posts "ended" natively.
-    static let endedWatcherJS = """
+    public static let endedWatcherJS = """
         (function() {
           function attach() {
             var video = document.querySelector('video');

@@ -9,7 +9,7 @@ import Foundation
 /// artist+title — works regardless of the source service (the user asked for
 /// "any online database"). Used for URL-less media items (the OCR intents) and
 /// received media shares, which have no source URL to oEmbed.
-enum MediaArtFetcher {
+public enum MediaArtFetcher {
 
     private struct SearchResult: Decodable {
         let results: [Entry]
@@ -17,7 +17,7 @@ enum MediaArtFetcher {
     }
 
     /// Best-effort 600px artwork bytes for a creator + title, or nil.
-    static func fetchArtwork(creator: String, title: String, isPodcast: Bool) async -> Data? {
+    public static func fetchArtwork(creator: String, title: String, isPodcast: Bool) async -> Data? {
         let term = "\(creator) \(title)".trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty,
               var components = URLComponents(string: "https://itunes.apple.com/search") else { return nil }

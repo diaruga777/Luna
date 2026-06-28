@@ -9,14 +9,20 @@ import Foundation
 /// Parses Spotify / Apple Music / Apple Podcasts URLs into a provider-agnostic
 /// `(platform, service, itemID)`, and converts a web URL to the matching app
 /// scheme. Pure.
-enum MediaLink {
-    struct Match: Equatable {
-        let platform: ContentPlatform // .music or .podcast
-        let service: MusicProvider
-        let itemID: String?
+public enum MediaLink {
+    public struct Match: Equatable {
+        public let platform: ContentPlatform // .music or .podcast
+        public let service: MusicProvider
+        public let itemID: String?
+
+        public init(platform: ContentPlatform, service: MusicProvider, itemID: String?) {
+            self.platform = platform
+            self.service = service
+            self.itemID = itemID
+        }
     }
 
-    static func classify(_ urlString: String) -> Match? {
+    public static func classify(_ urlString: String) -> Match? {
         guard let url = URL(string: urlString), let host = url.host?.lowercased() else { return nil }
         let segments = Array(url.pathComponents.dropFirst())
         let queryID = URLComponents(url: url, resolvingAgainstBaseURL: false)?
@@ -41,7 +47,7 @@ enum MediaLink {
     }
 
     /// Converts a web media URL to its app-scheme equivalent for exact opening.
-    static func appSchemeURL(forWebURL urlString: String) -> URL? {
+    public static func appSchemeURL(forWebURL urlString: String) -> URL? {
         guard let url = URL(string: urlString), let host = url.host?.lowercased() else { return nil }
         if host == "open.spotify.com" {
             // open.spotify.com/track/ID → spotify:track:ID
@@ -59,11 +65,11 @@ enum MediaLink {
     }
 }
 
-extension MusicProvider {
+public extension MusicProvider {
     /// App-scheme search deep link for "artist track" (provider-portable open).
     /// `platform` routes Apple podcasts to the Podcasts app rather than Music (which
     /// can't play them); Spotify searches songs and podcasts in one app/scheme.
-    func appSearchURL(query: String, platform: ContentPlatform) -> URL? {
+    public func appSearchURL(query: String, platform: ContentPlatform) -> URL? {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         switch self {
         case .apple:
@@ -76,7 +82,7 @@ extension MusicProvider {
     }
 
     /// Web search URL (Safari fallback when the app isn't installed).
-    func webSearchURL(query: String, platform: ContentPlatform) -> URL? {
+    public func webSearchURL(query: String, platform: ContentPlatform) -> URL? {
         let queryEncoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         switch self {
         case .apple:

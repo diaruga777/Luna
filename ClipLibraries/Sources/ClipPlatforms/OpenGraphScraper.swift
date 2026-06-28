@@ -10,15 +10,15 @@ import Foundation
 /// `og:description`) over `URLSession`. Used for platforms with no free API
 /// (Instagram, Facebook). Often blocked by login walls → returns nil, and the
 /// caller falls back to the platform logo.
-enum OpenGraphScraper {
+public enum OpenGraphScraper {
 
-    struct Metadata {
+    public struct Metadata {
         var title: String?
         var imageURL: URL?
         var description: String?
     }
 
-    static func fetch(urlString: String, session: URLSession = .shared) async -> Metadata? {
+    public static func fetch(urlString: String, session: URLSession = .shared) async -> Metadata? {
         guard let url = URL(string: urlString) else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 12)
         // A desktop UA gets fuller og: tags from some sites.
@@ -36,7 +36,7 @@ enum OpenGraphScraper {
     }
 
     /// Extracts the `content` of a `<meta property="og:…">` tag (order-tolerant).
-    static func ogContent(property: String, in html: String) -> String? {
+    public static func ogContent(property: String, in html: String) -> String? {
         // Match a <meta …> tag mentioning the property, then pull its content="…".
         let pattern = "<meta[^>]*property=[\"']\(NSRegularExpression.escapedPattern(for: property))[\"'][^>]*>"
         guard let tagRange = html.range(of: pattern, options: [.regularExpression, .caseInsensitive]) else {

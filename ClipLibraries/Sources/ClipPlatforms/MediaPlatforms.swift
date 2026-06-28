@@ -11,32 +11,32 @@ import Foundation
 /// Music links (Spotify track/album/artist, Apple Music). Provider-portable: the
 /// reading list opens these in the user's preferred app (`openMediaItem`), so
 /// `appDeepLink`/`embed` here are nil — routing is handled specially.
-struct MusicPlatform: PlatformModule {
-    let platform: ContentPlatform = .music
-    let glyphSymbolName = "music.note"
+public struct MusicPlatform: PlatformModule {
+    public let platform: ContentPlatform = .music
+    public let glyphSymbolName = "music.note"
 
-    func subtitle(for item: ReadingListItem) -> String? { item.mediaCreatorName ?? item.channelName }
-    func appDeepLink(for item: ReadingListItem) -> URL? { nil }
-    func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
-    var metadataFetcher: PlatformMetadataFetching? { MediaMetadataFetcher() }
+    public func subtitle(for item: ReadingListItem) -> String? { item.mediaCreatorName ?? item.channelName }
+    public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
+    public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
+    public var metadataFetcher: PlatformMetadataFetching? { MediaMetadataFetcher() }
 }
 
 /// Podcast links (Spotify episode/show, Apple Podcasts). Same provider-portable
 /// handling as music.
-struct PodcastPlatform: PlatformModule {
-    let platform: ContentPlatform = .podcast
-    let glyphSymbolName = "mic.fill"
+public struct PodcastPlatform: PlatformModule {
+    public let platform: ContentPlatform = .podcast
+    public let glyphSymbolName = "mic.fill"
 
-    func subtitle(for item: ReadingListItem) -> String? { item.mediaCreatorName ?? item.channelName }
-    func appDeepLink(for item: ReadingListItem) -> URL? { nil }
-    func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
-    var metadataFetcher: PlatformMetadataFetching? { MediaMetadataFetcher() }
+    public func subtitle(for item: ReadingListItem) -> String? { item.mediaCreatorName ?? item.channelName }
+    public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
+    public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
+    public var metadataFetcher: PlatformMetadataFetching? { MediaMetadataFetcher() }
 }
 
 /// Best-effort cover art + artist/track: iTunes Lookup (Apple, keyless) or
 /// Spotify oEmbed (keyless).
-struct MediaMetadataFetcher: PlatformMetadataFetching {
-    func fetchMetadata(for match: PlatformMatch, urlString: String) async -> PlatformMetadata? {
+public struct MediaMetadataFetcher: PlatformMetadataFetching {
+    public func fetchMetadata(for match: PlatformMatch, urlString: String) async -> PlatformMetadata? {
         switch (match.platform, match.sourceService) {
         // Podcast episodes aren't lookup-able by their episode id, so scrape the
         // page (og:title episode + og:image art) and look up the show for its name.

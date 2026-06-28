@@ -8,14 +8,14 @@ import ClipModels
 import Foundation
 
 /// Recognizes Reddit post links: `reddit.com/r/<sub>/comments/<id>/<slug>`. Pure.
-enum RedditLink {
-    static func isReddit(_ urlString: String) -> Bool {
+public enum RedditLink {
+    public static func isReddit(_ urlString: String) -> Bool {
         guard let host = URL(string: urlString)?.host?.lowercased() else { return false }
         return host == "reddit.com" || host.hasSuffix(".reddit.com") || host == "redd.it"
     }
 
     /// The subreddit ("r/<name>") from a permalink path, if present.
-    static func subreddit(from urlString: String) -> String? {
+    public static func subreddit(from urlString: String) -> String? {
         guard let url = URL(string: urlString) else { return nil }
         let segments = Array(url.pathComponents.dropFirst())
         guard let index = segments.firstIndex(where: { $0.lowercased() == "r" }),
@@ -24,7 +24,7 @@ enum RedditLink {
     }
 
     /// The base-36 post id from a `/comments/<id>/…` permalink.
-    static func postID(from urlString: String) -> String? {
+    public static func postID(from urlString: String) -> String? {
         guard let url = URL(string: urlString), isReddit(urlString) else { return nil }
         let segments = Array(url.pathComponents.dropFirst())
         guard let commentsIndex = segments.firstIndex(of: "comments"),
@@ -34,7 +34,7 @@ enum RedditLink {
     }
 
     /// The public JSON metadata URL for a permalink.
-    static func jsonURL(for urlString: String) -> URL? {
+    public static func jsonURL(for urlString: String) -> URL? {
         guard var components = URLComponents(string: urlString) else { return nil }
         // Strip any trailing slash, append .json.
         var path = components.path
@@ -47,22 +47,22 @@ enum RedditLink {
 
 /// Reddit posts. Opens in Safari (Reddit's universal links hand off to the app
 /// when installed); public `.json` supplies title + subreddit.
-struct RedditPlatform: PlatformModule {
-    let platform: ContentPlatform = .reddit
-    let glyphSymbolName = "bubble.left.and.text.bubble.right.fill"
+public struct RedditPlatform: PlatformModule {
+    public let platform: ContentPlatform = .reddit
+    public let glyphSymbolName = "bubble.left.and.text.bubble.right.fill"
 
-    func subtitle(for item: ReadingListItem) -> String? {
+    public func subtitle(for item: ReadingListItem) -> String? {
         item.channelName ?? RedditLink.subreddit(from: item.urlString)
     }
-    func appDeepLink(for item: ReadingListItem) -> URL? { nil }
-    func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
+    public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
+    public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
 
-    var metadataFetcher: PlatformMetadataFetching? { RedditMetadataFetcher() }
+    public var metadataFetcher: PlatformMetadataFetching? { RedditMetadataFetcher() }
 }
 
 /// Public Reddit listing JSON (`<permalink>.json`) → title + subreddit.
-struct RedditMetadataFetcher: PlatformMetadataFetching {
-    func fetchMetadata(for match: PlatformMatch, urlString: String) async -> PlatformMetadata? {
+public struct RedditMetadataFetcher: PlatformMetadataFetching {
+    public func fetchMetadata(for match: PlatformMatch, urlString: String) async -> PlatformMetadata? {
         guard let url = RedditLink.jsonURL(for: urlString) else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 12)
         request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")

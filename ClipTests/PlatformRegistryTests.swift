@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipPlatforms
 import ClipStorage
 import ClipURLClassification
 import ClipModels

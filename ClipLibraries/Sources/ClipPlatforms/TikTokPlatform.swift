@@ -9,14 +9,14 @@ import Foundation
 /// Recognizes TikTok links: `tiktok.com/@<user>/video/<id>` and short
 /// `vm.tiktok.com/<code>` / `vt.tiktok.com/<code>` (kept opaque — id unknown
 /// until resolved). Pure.
-enum TikTokLink {
-    static func isTikTok(_ urlString: String) -> Bool {
+public enum TikTokLink {
+    public static func isTikTok(_ urlString: String) -> Bool {
         guard let host = URL(string: urlString)?.host?.lowercased() else { return false }
         return host == "tiktok.com" || host.hasSuffix(".tiktok.com")
     }
 
     /// The numeric video id from a full `/@user/video/<id>` URL, if present.
-    static func videoID(from urlString: String) -> String? {
+    public static func videoID(from urlString: String) -> String? {
         guard let url = URL(string: urlString), isTikTok(urlString) else { return nil }
         let segments = Array(url.pathComponents.dropFirst())
         guard let videoIndex = segments.firstIndex(of: "video"), videoIndex + 1 < segments.count else {
@@ -27,7 +27,7 @@ enum TikTokLink {
     }
 
     /// The creator handle ("@user") from `/@user/video/<id>`, if present.
-    static func handle(from urlString: String) -> String? {
+    public static func handle(from urlString: String) -> String? {
         guard let url = URL(string: urlString), isTikTok(urlString) else { return nil }
         return url.pathComponents.dropFirst().first { $0.hasPrefix("@") && $0.count > 1 }
     }
@@ -35,28 +35,28 @@ enum TikTokLink {
 
 /// TikTok videos. Opens in Safari (no reliable per-video app scheme); oEmbed
 /// supplies author/title/thumbnail.
-struct TikTokPlatform: PlatformModule {
-    let platform: ContentPlatform = .tiktok
-    let glyphSymbolName = "music.note"
+public struct TikTokPlatform: PlatformModule {
+    public let platform: ContentPlatform = .tiktok
+    public let glyphSymbolName = "music.note"
 
-    func subtitle(for item: ReadingListItem) -> String? {
+    public func subtitle(for item: ReadingListItem) -> String? {
         item.channelName ?? TikTokLink.handle(from: item.urlString)
     }
-    func appDeepLink(for item: ReadingListItem) -> URL? { nil }
-    func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
+    public func appDeepLink(for item: ReadingListItem) -> URL? { nil }
+    public func embed(for item: ReadingListItem) -> PlatformEmbed? { nil }
 
-    var metadataFetcher: PlatformMetadataFetching? { TikTokMetadataFetcher() }
+    public var metadataFetcher: PlatformMetadataFetching? { TikTokMetadataFetcher() }
 }
 
 /// Keyless TikTok oEmbed: author, title, thumbnail.
-struct TikTokMetadataFetcher: PlatformMetadataFetching {
+public struct TikTokMetadataFetcher: PlatformMetadataFetching {
     private struct OEmbed: Decodable {
         let title: String?
         let author_name: String?
         let thumbnail_url: String?
     }
 
-    func fetchMetadata(for match: PlatformMatch, urlString: String) async -> PlatformMetadata? {
+    public func fetchMetadata(for match: PlatformMatch, urlString: String) async -> PlatformMetadata? {
         guard var components = URLComponents(string: "https://www.tiktok.com/oembed") else { return nil }
         components.queryItems = [URLQueryItem(name: "url", value: urlString)]
         guard let url = components.url,

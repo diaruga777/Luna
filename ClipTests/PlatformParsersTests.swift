@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipPlatforms
 import XCTest
 @testable import Clip
 

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipPlatforms
 import ClipSend
 import ClipDocuments
 import ClipStorage

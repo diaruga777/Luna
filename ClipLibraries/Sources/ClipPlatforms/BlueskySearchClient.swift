@@ -7,15 +7,15 @@ import Foundation
 
 /// Searches Bluesky posts (keyless public API) and returns the top match's web
 /// URL. Used by `FindBlueskyPostIntent`.
-protocol BlueskySearching {
+public protocol BlueskySearching {
     func topPostURL(query: String) async throws -> URL
 }
 
-struct BlueskySearchClient: BlueskySearching {
-    struct NoResultError: Error {}
+public struct BlueskySearchClient: BlueskySearching {
+    public struct NoResultError: Error {}
 
     private let session: URLSession
-    init(session: URLSession = .shared) { self.session = session }
+    public init(session: URLSession = .shared) { self.session = session }
 
     private struct SearchResponse: Decodable {
         let posts: [Post]
@@ -26,7 +26,7 @@ struct BlueskySearchClient: BlueskySearching {
         struct Author: Decodable { let handle: String }
     }
 
-    func topPostURL(query: String) async throws -> URL {
+    public func topPostURL(query: String) async throws -> URL {
         guard var components = URLComponents(
             string: "https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts") else {
             throw NoResultError()

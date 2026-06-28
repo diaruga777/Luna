@@ -10,7 +10,7 @@
 //      order — each cell crosses from raw A straight to the pixelated B on its own
 //      staggered schedule.
 //    Phase 2 (progress phaseSplit → 1): that fully-pixelated final image sharpens
-//      back to the un-pixelated final view, one rounded dot at a time in random order.
+//      back to the un-pixelated final view (a global pixelated B → raw B mix).
 //
 //  Driven by one global `progress`. Pure GPU; the only inputs are the two snapshot
 //  textures + a small uniform struct. Deliberately separate from the shipping
@@ -52,12 +52,6 @@ static inline float rh_hash(float2 p) {
 
 static inline float3 rh_mono(float3 c) { return float3(dot(c, float3(0.299, 0.587, 0.114))); }
 
-// Rounded square SDF (rounded rect with corner radius)
-static inline float roundedRect(float2 pos, float2 size, float radius) {
-    float2 q = abs(pos) - size + radius;
-    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
-}
-
 fragment float4 rh_transition_fragment(RHVSOut in [[stage_in]],
                                        texture2d<float, access::sample> texA [[texture(0)]],
                                        texture2d<float, access::sample> texB [[texture(1)]],
@@ -73,12 +67,6 @@ fragment float4 rh_transition_fragment(RHVSOut in [[stage_in]],
     float2 cell = floor(fragPx / pitch);
     float2 cellCenter = (cell * pitch + pitch * 0.5) / U.resolution;
     float2 cellSampleUV = float2(cellCenter.x, U.flipV > 0.5 ? 1.0 - cellCenter.y : cellCenter.y);
-
-    // Position within the cell (for drawing rounded dot)
-    float2 posInCell = fmod(fragPx, pitch) - pitch * 0.5;
-    float dotRadius = pitch * 0.35;  // 70% of cell size, with 2pt spacing margin
-    float distToCenter = length(posInCell);
-    bool inDot = distToCenter < dotRadius;
 
     float split = clamp(U.phaseSplit, 0.01, 0.99);
 
@@ -96,26 +84,13 @@ fragment float4 rh_transition_fragment(RHVSOut in [[stage_in]],
         float local = clamp((p1 - start) / window, 0.0, 1.0);
         c = mix(rawA, pixB, local);
     } else {
-        // Phase 2: globally sharpen the pixelated final image into the real final view,
-        // one random dot at a time (sequential reveal per cell).
+        // Phase 2: globally sharpen the pixelated final image into the real final view.
         float4 pixB = texB.sample(s, cellSampleUV);
         float4 rawB = texB.sample(s, sampleUV);
         if (U.monochrome > 0.5) { pixB.rgb = rh_mono(pixB.rgb); rawB.rgb = rh_mono(rawB.rgb); }
 
         float p2 = (U.progress - split) / (1.0 - split);  // 0..1 within phase 2
-        
-        // Sequential per-dot reveal: each dot animates from pixB to rawB on its own schedule
-        float dotWindow = 0.1;  // Each dot animates over 10% of phase 2 duration
-        float dotStart = rh_hash(cell) * (1.0 - dotWindow);  // Random per-cell start
-        float dotLocal = clamp((p2 - dotStart) / dotWindow, 0.0, 1.0);
-        
-        // Only reveal the dot if it's in its animation window
-        if (inDot) {
-            c = mix(pixB, rawB, dotLocal);
-        } else {
-            // Outside dot area stays pixelated
-            c = pixB;
-        }
+        c = mix(pixB, rawB, p2);
     }
     c.a = 1.0;
     return c;

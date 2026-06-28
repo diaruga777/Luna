@@ -27,10 +27,10 @@ enum RabbitHoleTransitionSettings {
 
     // MARK: Defaults
 
-    private static let defaultPixelSize: Double = 6
-    private static let defaultPhase1: Double = 0.3
-    private static let defaultPhase2: Double = 0.3
-    private static let defaultStagger: Double = 1.0
+    private static let defaultPixelSize: Double = 24
+    private static let defaultPhase1: Double = 0.55
+    private static let defaultPhase2: Double = 0.35
+    private static let defaultStagger: Double = 0.6
     private static let defaultMonochrome = false
 
     // MARK: Storage

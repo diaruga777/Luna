@@ -73,10 +73,6 @@ public enum ArticleTextRenderer {
                     let attachmentRange = NSRange(location: result.length, length: 1)
                     result.append(imageString)
                     imageRanges.append((attachmentRange, imagesDirectory.appendingPathComponent(fileName)))
-                } else {
-                    // Missing image: add a placeholder to preserve layout during async download
-                    let placeholderString = placeholderImage(maxWidth: maxImageWidth)
-                    result.append(placeholderString)
                 }
                 blockTextRanges.append(nil)
                 continue
@@ -112,29 +108,6 @@ public enum ArticleTextRenderer {
             range: NSRange(location: 0, length: result.length))
         return result
     }
-    /// Placeholder image for missing downloads (preserves layout while image loads async).
-    private static func placeholderImage(maxWidth: CGFloat) -> NSAttributedString {
-        let attachment = NSTextAttachment()
-        // Gray placeholder with aspect ratio ~1.5:1 (typical article header images)
-        let displayWidth = maxWidth
-        let displayHeight = displayWidth / 1.5
-        let placeholderImage = UIImage(color: UIColor.secondarySystemBackground, size: CGSize(width: displayWidth, height: displayHeight))
-        attachment.image = placeholderImage
-        attachment.bounds = CGRect(x: 0, y: 0, width: displayWidth, height: displayHeight)
-        
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.paragraphSpacing = 14
-        paragraph.paragraphSpacingBefore = 6
-        paragraph.alignment = .center
-        
-        let result = NSMutableAttributedString(attachment: attachment)
-        result.append(NSAttributedString(string: "\n"))
-        result.addAttribute(
-            .paragraphStyle, value: paragraph,
-            range: NSRange(location: 0, length: result.length))
-        return result
-    }
-
 
     /// In-memory cache of already-decoded, downsampled images. The bytes are on
     /// disk (downloaded once at ingest), but decoding them is a synchronous, costly
@@ -230,18 +203,5 @@ public enum ArticleTextRenderer {
               let descriptor = UIFont.systemFont(ofSize: scaled).fontDescriptor
                   .withDesign(.serif)?.withSymbolicTraits(.traitItalic) else { return base }
         return UIFont(descriptor: descriptor, size: scaled)
-    }
-}
-
-// MARK: - UIImage extension for placeholder creation
-extension UIImage {
-    convenience init(color: UIColor, size: CGSize) {
-        let rect = CGRect(x: 0, y: 0, width: size.width, height: size.height)
-        UIGraphicsBeginImageContextWithOptions(rect.size, false, 0)
-        color.setFill()
-        UIRectFill(rect)
-        let image = UIGraphicsGetImageFromCurrentImageContext()!
-        UIGraphicsEndImageContext()
-        self.init(cgImage: image.cgImage!)
     }
 }

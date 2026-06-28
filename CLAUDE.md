@@ -32,16 +32,19 @@ The full `ClipTests` suite runs from the command line on an **iOS 26.x simulator
 ```sh
 DD=<a derivedDataPath>
 SIM=<a booted iOS 26.x simulator UDID>   # e.g. xcrun simctl list devices | grep -A8 'iOS 26'
-# REQUIRED before each test/build run — see note:
-rm -rf "$DD/Build/Products/Debug-iphonesimulator"/*.app "$DD/Build/Products/Debug-iphonesimulator"/*.appex
 xcodebuild test -scheme Clip -destination "platform=iOS Simulator,id=$SIM" \
   -configuration Debug -derivedDataPath "$DD"
 ```
 
-- **Delete the built `.app`/`.appex` products before each run.** Xcode re-signs the
-  embedded extensions inconsistently across incremental builds, producing
-  `error: Embedded binary is not signed with the same certificate as the parent app`
-  and cancelling the test build. Removing the stale products fixes it deterministically.
+- **The `Embedded binary is not signed with the same certificate as the parent app`
+  error is permanently fixed.** The Clip app target has a simulator-only **"Re-sign
+  embedded extensions"** build phase (after Embed Foundation Extensions) that re-signs
+  each `PlugIns/*.appex` ad-hoc (`codesign --force --sign -`) so they always match the
+  ad-hoc-signed app on incremental builds. It's scoped to `PLATFORM_NAME ==
+  iphonesimulator` (no-op on device/archive, so distribution signing is untouched). You
+  no longer need to delete the built `.app`/`.appex` products before each run. (If the
+  error ever resurfaces despite this, the old escape hatch was
+  `rm -rf "$DD/Build/Products/Debug-iphonesimulator"/*.app …/*.appex`.)
 - **Do NOT pass `CODE_SIGNING_ALLOWED=NO`** — it strips the `group.com.hpiddy.clip`
   app-group entitlement, so the test host crashes at launch (early-exit, "external
   symbol") on app-group container access. Default ad-hoc signing applies the

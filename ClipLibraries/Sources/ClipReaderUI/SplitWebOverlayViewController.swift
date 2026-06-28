@@ -26,15 +26,15 @@ import UIKit
 /// cut line). The peeks are derived FROM the interpolating card frame so they stay
 /// flush with it. Dismiss via the ✕ (at the stack root), the bottom chevron, or an
 /// interactive drag on either peek — each dismisses the WHOLE stack.
-final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizerDelegate,
+public final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizerDelegate,
                                            UINavigationControllerDelegate {
 
     /// Called once on dismissal (the reader never moved — the overlay covered it).
-    var onDismiss: (() -> Void)?
+    public var onDismiss: (() -> Void)?
     /// Called as the card opens / closes, so the presenter can tuck the outer
     /// reader's header out of sight while the inline reader is up (animated in sync).
-    var onOpen: (() -> Void)?
-    var onClose: (() -> Void)?
+    public var onOpen: (() -> Void)?
+    public var onClose: (() -> Void)?
 
     private let url: URL
     private let shareProvider: ReaderShareProviding?
@@ -78,7 +78,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     /// dragging back must not re-grow it.
     private var isClosing = false
 
-    init(url: URL, shareProvider: ReaderShareProviding?, lineHeight: CGFloat,
+    public init(url: URL, shareProvider: ReaderShareProviding?, lineHeight: CGFloat,
          cutY: CGFloat, topHalf: UIView?, bottomHalf: UIView?) {
         self.url = url
         self.shareProvider = shareProvider
@@ -89,11 +89,11 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     // MARK: - Lifecycle
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
 
@@ -149,7 +149,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
     /// Lay out collapsed AND kick off the open animation in the same pass. Doing both
     /// here (rather than waiting for `viewDidAppear`) removes the one-runloop gap that
     /// otherwise showed the collapsed sliver as a brief stall before the card grew.
-    override func viewIsAppearing(_ animated: Bool) {
+    public override func viewIsAppearing(_ animated: Bool) {
         super.viewIsAppearing(animated)
         guard !didLayoutInitial else { return }
         didLayoutInitial = true
@@ -302,7 +302,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         innerNav.topViewController as? InlineReaderPageViewController
     }
 
-    func navigationController(
+    public func navigationController(
         _ navigationController: UINavigationController,
         didShow viewController: UIViewController, animated: Bool
     ) {
@@ -436,7 +436,7 @@ final class SplitWebOverlayViewController: UIViewController, UIGestureRecognizer
         layoutHeader()
     }
 
-    func gestureRecognizer(
+    public func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
     ) -> Bool { false }

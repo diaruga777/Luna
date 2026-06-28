@@ -10,7 +10,7 @@ import WebKit
 /// usual consent/ad scripts, and an injected script removes anything
 /// fixed-position covering a large share of the viewport and re-enables body
 /// scrolling (sites lock it while a modal is up).
-enum WebJunkBlocker {
+public enum WebJunkBlocker {
 
     private static let ruleListIdentifier = "clip-web-junk-v1"
 
@@ -71,7 +71,7 @@ enum WebJunkBlocker {
     """
 
     /// A web view configuration with the cleanup script pre-installed.
-    static func makeConfiguration() -> WKWebViewConfiguration {
+    public static func makeConfiguration() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         let script = WKUserScript(
             source: cleanupJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
@@ -82,7 +82,7 @@ enum WebJunkBlocker {
     /// Compiles (or fetches the cached) rule list and attaches it. Async — the
     /// page may start loading before rules attach; the cleanup script covers
     /// the gap.
-    static func applyRuleList(to controller: WKUserContentController) {
+    public static func applyRuleList(to controller: WKUserContentController) {
         let store = WKContentRuleListStore.default()
         store?.lookUpContentRuleList(forIdentifier: ruleListIdentifier) { cached, _ in
             if let cached {

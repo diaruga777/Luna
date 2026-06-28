@@ -14,12 +14,12 @@ import Foundation
 ///   *enhanced/premium* voice for the locale. "Availability" here means the user
 ///   has installed such a voice in iOS Settings (apps can't download Apple
 ///   voices programmatically).
-enum VoiceEngineKind: String, CaseIterable, Codable, Sendable {
+public enum VoiceEngineKind: String, CaseIterable, Codable, Sendable {
     case basic
     case appleEnhanced
 
     /// User-facing name shown in the Voice settings screen.
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .basic: return "Standard"
         case .appleEnhanced: return "Enhanced (Apple)"
@@ -27,7 +27,7 @@ enum VoiceEngineKind: String, CaseIterable, Codable, Sendable {
     }
 
     /// A one-line description of the engine for the settings subtitle.
-    var summary: String {
+    public var summary: String {
         switch self {
         case .basic:
             return "The built-in system voice. Always available."

@@ -11,12 +11,12 @@ import UIKit
 /// item URL as `.userReported`, then presents a share sheet for its export zip.
 /// Used by both the reading-list row context menu (main app) and the reader's
 /// bug-report popover (reader stack, shared with the extensions).
-enum ReplayBugReporter {
+public enum ReplayBugReporter {
 
     /// Marks the item's replay user-reported and shares its export zip from
     /// `presenter`. If no replay exists for the URL, shows a brief explanatory alert.
     /// `sourceView` anchors the popover on iPad. Safe to call from the main thread.
-    static func report(
+    public static func report(
         itemURLString: String,
         from presenter: UIViewController,
         sourceView: UIView,

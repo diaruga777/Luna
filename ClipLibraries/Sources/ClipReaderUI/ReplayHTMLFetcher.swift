@@ -23,10 +23,10 @@ import Foundation
 /// `RecordingHTMLFetcher` records every `HTMLFetching` variant as a plain `GET`
 /// with the response HTML as a verbatim text body, so this player matches on URL
 /// alone and decodes the recorded body (text verbatim, base64 decoded to UTF-8).
-actor ReplayHTMLFetcher: HTMLFetching {
+public actor ReplayHTMLFetcher: HTMLFetching {
 
     /// Why a recorded fetch could not be replayed as a successful HTML body.
-    enum ReplayFetchError: Error, Equatable {
+    public enum ReplayFetchError: Error, Equatable {
         /// No recorded response remained for this URL (an un-recorded request).
         case noRecordedResponse(urlString: String)
         /// The recording captured a transport error (statusCode -1) for this URL.
@@ -49,7 +49,7 @@ actor ReplayHTMLFetcher: HTMLFetching {
 
     /// Builds a player from a replay's events. Only `networkResponse` events are
     /// used; requests are informational. Responses keep their recorded order per URL.
-    init(replay: Replay) {
+    public init(replay: Replay) {
         var grouped: [String: [RecordedResponse]] = [:]
         for event in replay.events {
             guard case let .networkResponse(response) = event.kind else { continue }
@@ -61,27 +61,27 @@ actor ReplayHTMLFetcher: HTMLFetching {
 
     // MARK: - HTMLFetching
 
-    func fetchHTML(from url: URL) async throws -> String {
+    public func fetchHTML(from url: URL) async throws -> String {
         try answer(for: url)
     }
 
-    func fetchHTML(from url: URL, userAgent: String, xForwardedFor: String?) async throws -> String {
+    public func fetchHTML(from url: URL, userAgent: String, xForwardedFor: String?) async throws -> String {
         try answer(for: url)
     }
 
-    func fetchHTML(from url: URL, referer: String) async throws -> String {
+    public func fetchHTML(from url: URL, referer: String) async throws -> String {
         try answer(for: url)
     }
 
-    func fetchHTMLWithoutCookies(from url: URL) async throws -> String {
+    public func fetchHTMLWithoutCookies(from url: URL) async throws -> String {
         try answer(for: url)
     }
 
-    func fetchWaybackRawHTML(for url: URL) async throws -> String {
+    public func fetchWaybackRawHTML(for url: URL) async throws -> String {
         try answer(for: url)
     }
 
-    func fetchJinaReader(for url: URL) async throws -> String {
+    public func fetchJinaReader(for url: URL) async throws -> String {
         try answer(for: url)
     }
 

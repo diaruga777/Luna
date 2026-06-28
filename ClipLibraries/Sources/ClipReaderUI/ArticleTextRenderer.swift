@@ -12,13 +12,13 @@ import UIKit
 /// The rendered article plus a map from each block's text to its range in the
 /// attributed string (nil for image/skipped blocks) — used by read-aloud
 /// highlighting and eye tracking to translate between text spaces.
-struct RenderedArticle {
-    let text: NSAttributedString
-    let blockTextRanges: [NSRange?]
+public struct RenderedArticle {
+    public let text: NSAttributedString
+    public let blockTextRanges: [NSRange?]
     /// Attachment ranges and their local source files, for inline-image gestures.
-    let imageRanges: [(range: NSRange, fileURL: URL)]
+    public let imageRanges: [(range: NSRange, fileURL: URL)]
 
-    init(
+    public init(
         text: NSAttributedString,
         blockTextRanges: [NSRange?],
         imageRanges: [(range: NSRange, fileURL: URL)] = []
@@ -32,9 +32,9 @@ struct RenderedArticle {
 /// Builds the attributed string for the scrolling reader from extracted blocks,
 /// styling headings/quotes/lists, attaching tappable link attributes, and
 /// inlining downloaded article images as text attachments.
-enum ArticleTextRenderer {
+public enum ArticleTextRenderer {
 
-    static func render(_ content: ArticleContent) -> RenderedArticle {
+    public static func render(_ content: ArticleContent) -> RenderedArticle {
         let result = NSMutableAttributedString()
         var blockTextRanges: [NSRange?] = []
         var imageRanges: [(NSRange, URL)] = []

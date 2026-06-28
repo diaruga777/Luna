@@ -9,11 +9,11 @@ import Foundation
 /// Maps between the article's word stream (the same indices RSVPEngine uses)
 /// and character ranges in the rendered attributed string. Lets read-aloud,
 /// eye tracking, RSVP, and the scroll reader share one "word index" space.
-struct WordMap {
+public struct WordMap {
     /// Attributed-string range for each word, indexed by word index.
-    let wordRanges: [NSRange]
+    public let wordRanges: [NSRange]
 
-    init(content: ArticleContent, rendered: RenderedArticle) {
+    public init(content: ArticleContent, rendered: RenderedArticle) {
         var ranges: [NSRange] = []
         for (blockIndex, block) in content.blocks.enumerated() {
             let blockText = block.text as NSString
@@ -39,14 +39,14 @@ struct WordMap {
         self.wordRanges = ranges
     }
 
-    var wordCount: Int { wordRanges.count }
+    public var wordCount: Int { wordRanges.count }
 
-    func attributedRange(forWord index: Int) -> NSRange? {
+    public func attributedRange(forWord index: Int) -> NSRange? {
         wordRanges[safe: index]
     }
 
     /// The word whose range contains (or is nearest after) the character index.
-    func wordIndex(nearCharacterIndex characterIndex: Int) -> Int? {
+    public func wordIndex(nearCharacterIndex characterIndex: Int) -> Int? {
         guard !wordRanges.isEmpty else { return nil }
         var low = 0
         var high = wordRanges.count - 1
@@ -62,8 +62,8 @@ struct WordMap {
     }
 }
 
-extension Array {
-    subscript(safe index: Int) -> Element? {
+public extension Array {
+    public subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
 }

@@ -14,7 +14,7 @@ import UniformTypeIdentifiers
 /// Fetches article images once at ingest time, leaving every reader surface with
 /// durable local files. Header-image CDNs are often stricter than the HTML host,
 /// so image requests deliberately look like the page's own browser subresources.
-enum ArticleImageDownloader {
+public enum ArticleImageDownloader {
     private static let maxImages = 10
     private static let maxBytes = 12 * 1024 * 1024
     /// Downloaded images are transcoded to a downsampled JPEG/PNG so the reader can
@@ -22,7 +22,7 @@ enum ArticleImageDownloader {
     /// "images flash in late" delay). Sized generously for a 3x retina content column.
     private static let maxStoredPixelSize = 2048
 
-    static func download(
+    public static func download(
         _ content: ArticleContent, itemID: UUID, store: ReadingListStore, refererURL: URL
     ) async -> ArticleContent {
         var downloaded = 0

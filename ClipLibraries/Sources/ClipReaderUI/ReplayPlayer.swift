@@ -21,32 +21,32 @@ import Foundation
 /// reproduce its `finalContent`; a failed replay must reproduce a non-readable
 /// terminal outcome. The producer of the comparison is the same `ArticleResolver`
 /// the ingestor/extensions use, so a passing replay exercises the real code path.
-enum ReplayPlayer {
+public enum ReplayPlayer {
 
     /// The outcome of replaying one `Replay` through the pipeline.
-    struct Outcome: Equatable {
+    public struct Outcome: Equatable {
         /// Whether the pipeline reproduced the replay's recorded terminal state.
-        var matchedExpectedState: Bool
+        public var matchedExpectedState: Bool
         /// The terminal `ReplayState` the pipeline reproduced.
-        var reproducedState: Replay.ReplayState
+        public var reproducedState: Replay.ReplayState
         /// The terminal `ReplayState` the replay recorded as its expectation.
-        var expectedState: Replay.ReplayState
+        public var expectedState: Replay.ReplayState
         /// The article content the pipeline produced (nil for a non-readable outcome).
-        var reproducedContent: ArticleContent?
+        public var reproducedContent: ArticleContent?
         /// Per-field differences between the recorded `finalContent` and the
         /// reproduced content (empty when they match or neither expects content).
-        var contentDiffs: [String]
+        public var contentDiffs: [String]
 
         /// Whether the replay was reproduced faithfully: the terminal state matched
         /// and (for a success replay) the content matched field-for-field.
-        var passed: Bool {
+        public var passed: Bool {
             matchedExpectedState && contentDiffs.isEmpty
         }
     }
 
     /// Why a replay could not be run at all (a malformed replay, not a pipeline
     /// mismatch — those are reported in `Outcome`).
-    enum PlaybackError: Error, Equatable {
+    public enum PlaybackError: Error, Equatable {
         /// The replay's schema version isn't one this player understands.
         case unsupportedSchemaVersion(Int)
         /// The replay's effective URL string couldn't be parsed into a `URL`.
@@ -59,7 +59,7 @@ enum ReplayPlayer {
 
     /// Decodes a `Replay` from its serialized JSON (the export's `.txt` payload),
     /// using the same ISO-8601 date strategy `ReplayDiskStore` writes with.
-    static func decode(json: Data) throws -> Replay {
+    public static func decode(json: Data) throws -> Replay {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(Replay.self, from: json)
@@ -69,7 +69,7 @@ enum ReplayPlayer {
     /// pipeline reproduced it. Throws `PlaybackError` only when the replay itself
     /// can't be driven (bad schema/URL/source); a pipeline mismatch is a non-passing
     /// `Outcome`, not a throw, so a regression replay surfaces as a failed assertion.
-    static func play(
+    public static func play(
         _ replay: Replay,
         extractor: ArticleExtractor = ArticleExtractor()
     ) async throws -> Outcome {

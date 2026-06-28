@@ -13,15 +13,15 @@ import UIKit
 /// wires `openVoiceSettings` at launch. The reader (shared with the extensions)
 /// only calls `showIfNeeded`; when the hook is unset (i.e. inside an extension,
 /// which has no in-app Settings) the prompt is skipped entirely.
-enum VoiceFirstRunPrompt {
+public enum VoiceFirstRunPrompt {
 
     /// Set by the main app at launch: pushes/presents the Voice settings screen
     /// from `presenter`. Left `nil` in extensions, which disables the prompt.
-    static var openVoiceSettings: ((_ presenter: UIViewController) -> Void)?
+    public static var openVoiceSettings: ((_ presenter: UIViewController) -> Void)?
 
     /// Shows the prompt once, if it hasn't been shown and the app wired a
     /// settings hook. Safe to call on every read-aloud start.
-    static func showIfNeeded(from presenter: UIViewController) {
+    public static func showIfNeeded(from presenter: UIViewController) {
         guard let openVoiceSettings, !VoiceModelStore.hasSeenVoicePrompt else { return }
         VoiceModelStore.hasSeenVoicePrompt = true
 

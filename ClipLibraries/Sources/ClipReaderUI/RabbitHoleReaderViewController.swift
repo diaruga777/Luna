@@ -21,7 +21,7 @@ import ClipStorage
 import ClipModels
 import UIKit
 
-final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognizerDelegate {
+public final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognizerDelegate {
 
     private let rootItem: ReadingListItem
     private let rootContent: ArticleContent
@@ -56,7 +56,7 @@ final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognize
     private var overscrollBaseline: CGFloat = 0
     private weak var overscrollScroll: UIScrollView?
 
-    init(item: ReadingListItem, content: ArticleContent,
+    public init(item: ReadingListItem, content: ArticleContent,
          shareProvider: ReaderShareProviding? = nil,
          gazeTrackerFactory: GazeTrackerFactory? = nil) {
         self.rootItem = item
@@ -66,13 +66,13 @@ final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognize
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     deinit { displayLink?.invalidate() }
 
     // MARK: - Lifecycle
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = ReaderDepth.backgroundColor(for: 0)
         navigationItem.largeTitleDisplayMode = .never
@@ -92,17 +92,17 @@ final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognize
             name: UIApplication.didEnterBackgroundNotification, object: nil)
     }
 
-    override func viewDidLayoutSubviews() {
+    public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         applyFocus()   // re-place for the current bounds / safe area
     }
 
-    override func viewWillDisappear(_ animated: Bool) {
+    public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         persist()
     }
 
-    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+    public override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
         coordinator.animate { _ in self.applyFocus() }
     }
@@ -341,7 +341,7 @@ final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognize
     }
 
     /// Run alongside the inner scroll view's own pan so we can read its edge state.
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         true
     }

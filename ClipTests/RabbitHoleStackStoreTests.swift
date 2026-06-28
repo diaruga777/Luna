@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipReaderUI
 import XCTest
 @testable import Clip
 

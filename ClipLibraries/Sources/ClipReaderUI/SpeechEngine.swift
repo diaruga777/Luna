@@ -13,7 +13,7 @@ import AVFoundation
 /// Keeping synthesis on `AVSpeechSynthesizer` preserves
 /// `willSpeakRangeOfSpeechString` callbacks, so the reader's word-by-word
 /// highlighting keeps working unchanged for every engine.
-protocol SpeechEngine {
+public protocol SpeechEngine {
     /// Which kind this engine implements.
     var kind: VoiceEngineKind { get }
 
@@ -28,19 +28,19 @@ protocol SpeechEngine {
     func configure(_ utterance: AVSpeechUtterance, rate: Float)
 }
 
-extension SpeechEngine {
+public extension SpeechEngine {
     /// Default rate handling: apply the caller's rate unchanged. Engines that
     /// need a different default (e.g. a slower neural voice) override `configure`.
-    func applyDefaultRate(_ utterance: AVSpeechUtterance, rate: Float) {
+    public func applyDefaultRate(_ utterance: AVSpeechUtterance, rate: Float) {
         utterance.rate = min(rate, AVSpeechUtteranceMaximumSpeechRate)
     }
 }
 
 /// Builds the concrete engine for a kind, used by `SpeechController` and RSVP.
-enum SpeechEngineFactory {
+public enum SpeechEngineFactory {
     /// Returns an engine for `kind`. The returned engine is NOT guaranteed
     /// available — callers must consult `isAvailable` and fall back.
-    static func make(_ kind: VoiceEngineKind) -> SpeechEngine {
+    public static func make(_ kind: VoiceEngineKind) -> SpeechEngine {
         switch kind {
         case .basic: return BasicSpeechEngine()
         case .appleEnhanced: return AppleEnhancedEngine()
@@ -51,7 +51,7 @@ enum SpeechEngineFactory {
     /// user has installed one, otherwise the always-available basic system voice.
     /// The result is always usable. Behaves identically in the app and its
     /// extensions.
-    static func resolveSelected() -> SpeechEngine {
+    public static func resolveSelected() -> SpeechEngine {
         let enhanced = AppleEnhancedEngine()
         return enhanced.isAvailable ? enhanced : BasicSpeechEngine()
     }
@@ -61,11 +61,11 @@ enum SpeechEngineFactory {
 
 /// The original behavior: the system default voice via `AVSpeechSynthesizer`.
 /// Always available.
-struct BasicSpeechEngine: SpeechEngine {
-    let kind: VoiceEngineKind = .basic
-    var isAvailable: Bool { true }
+public struct BasicSpeechEngine: SpeechEngine {
+    public let kind: VoiceEngineKind = .basic
+    public var isAvailable: Bool { true }
 
-    func configure(_ utterance: AVSpeechUtterance, rate: Float) {
+    public func configure(_ utterance: AVSpeechUtterance, rate: Float) {
         // `nil` voice = the system default voice (and the simulator-safe choice,
         // matching the prior `SpeechVoice.best` behavior on the simulator).
         utterance.voice = SpeechVoice.systemDefault
@@ -79,18 +79,18 @@ struct BasicSpeechEngine: SpeechEngine {
 /// locale. Available only when such a voice has been installed by the user in
 /// iOS Settings → Accessibility → Spoken Content → Voices (apps cannot download
 /// Apple voices programmatically).
-struct AppleEnhancedEngine: SpeechEngine {
-    let kind: VoiceEngineKind = .appleEnhanced
-    var isAvailable: Bool { Self.hasInstalledEnhancedVoice }
+public struct AppleEnhancedEngine: SpeechEngine {
+    public let kind: VoiceEngineKind = .appleEnhanced
+    public var isAvailable: Bool { Self.hasInstalledEnhancedVoice }
 
-    func configure(_ utterance: AVSpeechUtterance, rate: Float) {
+    public func configure(_ utterance: AVSpeechUtterance, rate: Float) {
         utterance.voice = Self.bestEnhancedVoice ?? SpeechVoice.systemDefault
         applyDefaultRate(utterance, rate: rate)
     }
 
     /// The best enhanced/premium voice for the current language, or `nil` if the
     /// user hasn't installed one.
-    static var bestEnhancedVoice: AVSpeechSynthesisVoice? {
+    public static var bestEnhancedVoice: AVSpeechSynthesisVoice? {
         let language = AVSpeechSynthesisVoice.currentLanguageCode()
         let prefix = String(language.prefix(2))
         let candidates = AVSpeechSynthesisVoice.speechVoices()
@@ -104,5 +104,5 @@ struct AppleEnhancedEngine: SpeechEngine {
     }
 
     /// Whether any enhanced/premium voice for the locale is installed.
-    static var hasInstalledEnhancedVoice: Bool { bestEnhancedVoice != nil }
+    public static var hasInstalledEnhancedVoice: Bool { bestEnhancedVoice != nil }
 }

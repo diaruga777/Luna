@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipReaderUI
 import UIKit
 
 /// Deep-links the user to iOS Settings to install enhanced Apple voices. There is

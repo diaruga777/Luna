@@ -8,7 +8,7 @@ import UIKit
 
 /// A frameless, zoomable image viewer. It starts at the inline attachment's frame
 /// and returns there on dismissal, preserving the reader's spatial context.
-final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate, UIContextMenuInteractionDelegate {
+public final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate, UIContextMenuInteractionDelegate {
     private let image: UIImage
     private let sourceFrame: CGRect
     private let dimmingView = UIView()
@@ -21,7 +21,7 @@ final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate,
     private let dismissPan = UIPanGestureRecognizer()
     private var isDismissing = false
 
-    init(image: UIImage, sourceFrame: CGRect) {
+    public init(image: UIImage, sourceFrame: CGRect) {
         self.image = image
         self.sourceFrame = sourceFrame
         super.init(nibName: nil, bundle: nil)
@@ -29,9 +29,9 @@ final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate,
         modalTransitionStyle = .crossDissolve
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
         dimmingView.backgroundColor = UIColor.black.withAlphaComponent(0.88)
@@ -73,7 +73,7 @@ final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate,
         view.addGestureRecognizer(outsideTap)
     }
 
-    override func viewDidAppear(_ animated: Bool) {
+    public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         restingFrame = fittedFrame(in: view.bounds.inset(by: UIEdgeInsets(top: 56, left: 16, bottom: 40, right: 16)))
         UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut]) {
@@ -85,7 +85,7 @@ final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate,
         }
     }
 
-    func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
+    public func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
 
     @objc private func closeTapped() { dismissToSource() }
 
@@ -162,7 +162,7 @@ final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate,
         return CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height)
     }
 
-    func contextMenuInteraction(
+    public func contextMenuInteraction(
         _ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint
     ) -> UIContextMenuConfiguration? {
         UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
@@ -179,11 +179,11 @@ final class ImageLightboxViewController: UIViewController, UIScrollViewDelegate,
 }
 
 extension ImageLightboxViewController: UIGestureRecognizerDelegate {
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         touch.view !== closeButton
     }
 
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         // The dismiss drag is only available zoomed all the way out; while zoomed in,
         // a pan should scroll the image instead.
         if gestureRecognizer === dismissPan {
@@ -192,7 +192,7 @@ extension ImageLightboxViewController: UIGestureRecognizerDelegate {
         return true
     }
 
-    func gestureRecognizer(
+    public func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
     ) -> Bool {

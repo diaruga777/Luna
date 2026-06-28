@@ -10,7 +10,7 @@ import UIKit
 /// protocol — the main app injects an implementation backed by the social
 /// stack (CloudKit), while the share-extension reader passes `nil` (no share
 /// footer, no share button). Keeps the reader free of CloudKit.
-protocol ReaderShareProviding: AnyObject {
+public protocol ReaderShareProviding: AnyObject {
     /// Display name of a friend to suggest sharing this URL with (the
     /// end-of-article one-tap), or nil if there's nothing to suggest.
     func suggestedFriendName(forURLString urlString: String) -> String?
@@ -28,7 +28,7 @@ protocol ReaderShareProviding: AnyObject {
 /// on this protocol; the concrete `EyeGazeWordTracker` (ARKit/camera) is
 /// injected via `GazeTrackerFactory` by the main app and never compiled into
 /// the share extension.
-protocol GazeTracking: AnyObject {
+public protocol GazeTracking: AnyObject {
     /// The most recent word-index estimate, if any.
     var estimatedWordIndex: Int? { get }
     /// Called (on the main thread) whenever the estimate changes — drives the
@@ -40,11 +40,11 @@ protocol GazeTracking: AnyObject {
 
 /// Builds a gaze tracker for a reader's text view, or returns nil when eye
 /// tracking is off/unsupported (or in the share extension).
-typealias GazeTrackerFactory = (_ textView: UITextView, _ wordMap: WordMap, _ seedWordIndex: Int?) -> GazeTracking?
+public typealias GazeTrackerFactory = (_ textView: UITextView, _ wordMap: WordMap, _ seedWordIndex: Int?) -> GazeTracking?
 
 /// A child reader that can report the word it's currently on, so the host can
 /// carry the reading position across a mode switch.
-protocol ReaderPositionTracking: AnyObject {
+public protocol ReaderPositionTracking: AnyObject {
     /// Best estimate of the word index currently being read. For the scrolling
     /// reader with no playback this is the eye-tracked word (when available),
     /// falling back to the first word fully visible on screen.

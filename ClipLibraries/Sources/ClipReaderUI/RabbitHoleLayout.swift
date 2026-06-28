@@ -26,45 +26,58 @@ import UIKit
 ///               at the split line and grows to the focused frame.
 ///
 /// At most two ancestors are ever visible at once: `visibleAncestors = min(2, focus)`.
-struct RabbitHoleLayout {
+public struct RabbitHoleLayout {
+
+    public init() {}
 
     /// Height of a single lip (one comfortable line of text + padding).
-    var lipHeight: CGFloat = 54
+    public var lipHeight: CGFloat = 54
     /// Leading indent contributed by each visible ancestor.
-    var indentWidth: CGFloat = 14
+    public var indentWidth: CGFloat = 14
     /// Max visible ancestors (the spec's "N-1 and N-2").
-    var maxVisibleAncestors: CGFloat = 2
+    public var maxVisibleAncestors: CGFloat = 2
     /// Card corner radius.
-    var cornerRadius: CGFloat = 24
+    public var cornerRadius: CGFloat = 24
 
     /// What a layer is doing right now, for the host to apply chrome/lifecycle.
-    enum Role { case focused, ancestor, tucked, emerging }
+    public enum Role { case focused, ancestor, tucked, emerging }
 
     /// Everything the host needs to place one layer for a given `focus`.
-    struct Placement {
+    public struct Placement {
         /// Card frame in container coordinates.
-        var cardFrame: CGRect
+        public var cardFrame: CGRect
         /// Z-position: higher = closer to the user (focused is frontmost).
-        var z: CGFloat
+        public var z: CGFloat
         /// Colour depth for `ReaderDepth.backgroundColor(for:)`.
-        var depth: Int
-        var role: Role
+        public var depth: Int
+        public var role: Role
         /// 0 (focused, no lips) → 1 (full ancestor lips). Drives lip opacity and the
         /// focused header's inverse opacity.
-        var chromeAlpha: CGFloat
+        public var chromeAlpha: CGFloat
         /// Whole card opacity (fades the card out only once fully tucked offscreen).
-        var cardAlpha: CGFloat
+        public var cardAlpha: CGFloat
         /// True while the layer should accept touches (focused content + visible
         /// ancestor lips). Tucked / fully-emerging layers are inert.
-        var interactive: Bool
+        public var interactive: Bool
+
+        public init(cardFrame: CGRect, z: CGFloat, depth: Int, role: Role,
+                    chromeAlpha: CGFloat, cardAlpha: CGFloat, interactive: Bool) {
+            self.cardFrame = cardFrame
+            self.z = z
+            self.depth = depth
+            self.role = role
+            self.chromeAlpha = chromeAlpha
+            self.cardAlpha = cardAlpha
+            self.interactive = interactive
+        }
     }
 
     /// `visibleAncestors` for a (possibly fractional) focus.
-    func visibleAncestors(focus: CGFloat) -> CGFloat { min(maxVisibleAncestors, max(0, focus)) }
+    public func visibleAncestors(focus: CGFloat) -> CGFloat { min(maxVisibleAncestors, max(0, focus)) }
 
     /// The card frame for an integer-ish inset-step count `s` (0 = backmost/full,
     /// growing inward by one lip/indent step each).
-    func cardFrame(steps s: CGFloat, bounds: CGRect, safeArea: UIEdgeInsets) -> CGRect {
+    public func cardFrame(steps s: CGFloat, bounds: CGRect, safeArea: UIEdgeInsets) -> CGRect {
         let minX = s * indentWidth
         let minY = safeArea.top + s * lipHeight
         let maxY = bounds.height - safeArea.bottom - s * lipHeight
@@ -76,7 +89,7 @@ struct RabbitHoleLayout {
     /// The split-line sliver a layer is born from / dies into. `splitY` is the cut in
     /// container coordinates (top of the tapped link's line); the sliver is a
     /// zero-ish-height slice of the focused frame parked at `splitY`.
-    func sliverFrame(focusedSteps: CGFloat, splitY: CGFloat,
+    public func sliverFrame(focusedSteps: CGFloat, splitY: CGFloat,
                      bounds: CGRect, safeArea: UIEdgeInsets) -> CGRect {
         let focused = cardFrame(steps: focusedSteps, bounds: bounds, safeArea: safeArea)
         return CGRect(x: focused.minX, y: splitY, width: focused.width, height: 0)
@@ -87,7 +100,7 @@ struct RabbitHoleLayout {
     ///   - layerIndex: this layer's index in the stack (0 = root).
     ///   - focus: the focused layer's fractional index.
     ///   - splitY: cut line for the emerging/dying layer (nil → use focused frame).
-    func placement(layerIndex i: Int, focus: CGFloat,
+    public func placement(layerIndex i: Int, focus: CGFloat,
                    bounds: CGRect, safeArea: UIEdgeInsets,
                    splitY: CGFloat? = nil) -> Placement {
         let v = visibleAncestors(focus: focus)

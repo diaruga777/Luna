@@ -10,7 +10,7 @@ import UIKit
 /// (when the site has a sharing history) a one-tap "Send to <friend>"
 /// suggestion. Shown at the bottom of the scroll reader and revealed at the end
 /// of the speed readers. The owning view controller wires the actions.
-final class ArticleShareView: UIView {
+public final class ArticleShareView: UIView {
 
     private let onShare: () -> Void
     private let onSendSuggested: () -> Void
@@ -18,7 +18,7 @@ final class ArticleShareView: UIView {
     /// bug icon shown). Marks the save's replay user-reported and shares its zip.
     private let onReportBug: (() -> Void)?
 
-    init(suggestionName: String?, onShare: @escaping () -> Void,
+    public init(suggestionName: String?, onShare: @escaping () -> Void,
          onSendSuggested: @escaping () -> Void, onReportBug: (() -> Void)? = nil) {
         self.onShare = onShare
         self.onSendSuggested = onSendSuggested
@@ -27,7 +27,7 @@ final class ArticleShareView: UIView {
         build(suggestionName: suggestionName)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     private func build(suggestionName: String?) {
         let separator = UIView()

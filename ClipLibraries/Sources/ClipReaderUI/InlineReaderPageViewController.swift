@@ -22,18 +22,18 @@ import WebKit
 /// The content sits below the host's floating glass header (a top content inset on
 /// the web view; the reader child is pinned below the header), so the header always
 /// reads over the page.
-final class InlineReaderPageViewController: UIViewController, WKNavigationDelegate {
+public final class InlineReaderPageViewController: UIViewController, WKNavigationDelegate {
 
-    let url: URL
+    public let url: URL
     private let shareProvider: ReaderShareProviding?
     private let headerHeight: CGFloat
 
     /// Hands a link tapped inside the embedded reader to the host, which pushes it
     /// as the next page in the stack.
-    var onLinkActivated: ((URL) -> Void)?
+    public var onLinkActivated: ((URL) -> Void)?
     /// Fired once the page is confirmed article-like (so the host can reveal the
     /// mode switcher for this page).
-    var onBecameArticle: (() -> Void)?
+    public var onBecameArticle: (() -> Void)?
 
     private let spinner = UIActivityIndicatorView(style: .medium)
     private var articleProbe: Task<Void, Never>?
@@ -53,9 +53,9 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
     private var didDecide = false
 
     /// Whether this page is rendering as an article (so the mode switcher applies).
-    var isArticle: Bool { articleContent != nil }
+    public var isArticle: Bool { articleContent != nil }
 
-    init(url: URL, shareProvider: ReaderShareProviding?, headerHeight: CGFloat) {
+    public init(url: URL, shareProvider: ReaderShareProviding?, headerHeight: CGFloat) {
         self.url = url
         self.shareProvider = shareProvider
         self.headerHeight = headerHeight
@@ -65,11 +65,11 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
         probeForArticle()
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     deinit { articleProbe?.cancel() }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = ReaderDepth.backgroundColor(for: 0)
 
@@ -126,7 +126,7 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
     }
 
     /// Switches the embedded reader to `mode` (no-op unless this page is an article).
-    func setMode(_ mode: ReadingListItem.ReaderMode) {
+    public func setMode(_ mode: ReadingListItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }
         embedReader(mode: mode)
     }
@@ -263,13 +263,13 @@ final class InlineReaderPageViewController: UIViewController, WKNavigationDelega
 
     // MARK: - WKNavigationDelegate
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if articleContent == nil { spinner.stopAnimating() }
     }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         spinner.stopAnimating()
     }
-    func webView(
+    public func webView(
         _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error
     ) { spinner.stopAnimating() }
 }

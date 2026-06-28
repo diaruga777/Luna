@@ -12,24 +12,24 @@ import Foundation
 /// the save itself; deeper layers are links the user dove into. Stored separately from
 /// `ReadingListItem` (see `RabbitHoleStackStore`) so the conservative cross-process
 /// reading-list JSON is never touched by this experiment.
-struct RabbitHoleLayerDescriptor: Codable, Equatable {
+public struct RabbitHoleLayerDescriptor: Codable, Equatable {
     /// The page this layer shows.
-    var urlString: String
+    public var urlString: String
     /// Saved vertical scroll offset for this layer's scroll reader.
-    var scrollOffset: Double
+    public var scrollOffset: Double
     /// Which reader mode this layer was last shown in.
-    var readerMode: ReadingListItem.ReaderMode
+    public var readerMode: ReadingListItem.ReaderMode
     /// Resolved title (falls back to the URL in the lip when nil/empty).
-    var title: String?
+    public var title: String?
     /// The text of the line the user tapped to descend INTO the next layer — shown in
     /// this layer's bottom lip once it becomes an ancestor. Nil for the focused/leaf
     /// layer (nothing has been tapped from it yet) or when descended from a non-scroll
     /// mode.
-    var bottomLipText: String?
+    public var bottomLipText: String?
 
-    var url: URL? { URL(string: urlString) }
+    public var url: URL? { URL(string: urlString) }
 
-    init(urlString: String,
+    public init(urlString: String,
          scrollOffset: Double = 0,
          readerMode: ReadingListItem.ReaderMode = .scroll,
          title: String? = nil,
@@ -43,6 +43,10 @@ struct RabbitHoleLayerDescriptor: Codable, Equatable {
 }
 
 /// The full persisted trail for one save (keyed by the root reading-list item id).
-struct RabbitHoleStack: Codable, Equatable {
-    var layers: [RabbitHoleLayerDescriptor]
+public struct RabbitHoleStack: Codable, Equatable {
+    public var layers: [RabbitHoleLayerDescriptor]
+
+    public init(layers: [RabbitHoleLayerDescriptor]) {
+        self.layers = layers
+    }
 }

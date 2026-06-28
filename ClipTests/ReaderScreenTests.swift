@@ -7,6 +7,7 @@
 //  and the inline split-web overlay.
 //
 
+import ClipReaderUI
 import ClipDesignSystem
 import ClipModels
 import UIKit

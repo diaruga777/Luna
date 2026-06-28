@@ -23,7 +23,7 @@ import WebKit
 /// opaque lips (title on top, the tapped line on the bottom) and a leading indent
 /// cover its edges; the rest is occluded by the layer in front. Tapping a lip asks the
 /// host to pop back to this layer.
-final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegate {
+public final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegate {
 
     /// Identifies which page/scroll state this layer holds (kept in sync as the user
     /// reads / switches mode so the host can persist it).
@@ -32,22 +32,22 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
     /// A link was tapped inside this layer's reader → host pushes a new layer. Carries
     /// the URL plus the tapped line's text (for this layer's bottom lip) — nil text
     /// when descended from a non-scroll mode.
-    var onLinkActivated: ((_ url: URL, _ lineText: String?) -> Void)?
+    public var onLinkActivated: ((_ url: URL, _ lineText: String?) -> Void)?
     /// The user tapped this layer's lip → host pops back so this layer is focused.
-    var onPopToHere: (() -> Void)?
+    public var onPopToHere: (() -> Void)?
     /// Fired once the page is confirmed article-like (host reveals the mode switcher).
-    var onBecameArticle: (() -> Void)?
+    public var onBecameArticle: (() -> Void)?
     /// Fired when the reader mode changes (host updates the descriptor).
-    var onModeChanged: ((ReadingListItem.ReaderMode) -> Void)?
+    public var onModeChanged: ((ReadingListItem.ReaderMode) -> Void)?
     /// The header back button (focused layer only): pop one layer, or exit the reader
     /// at the root. The host decides which.
-    var onBack: (() -> Void)?
+    public var onBack: (() -> Void)?
 
     private let shareProvider: ReaderShareProviding?
     private let gazeTrackerFactory: GazeTrackerFactory?
     private let layout: RabbitHoleLayout
     /// Height of the floating glass header (focused layer only).
-    static let headerHeight: CGFloat = 64
+    public static let headerHeight: CGFloat = 64
 
     private let spinner = UIActivityIndicatorView(style: .medium)
     private var articleProbe: Task<Void, Never>?
@@ -74,9 +74,9 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
 
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp, .original]
 
-    var isArticle: Bool { articleContent != nil }
+    public var isArticle: Bool { articleContent != nil }
 
-    init(descriptor: RabbitHoleLayerDescriptor,
+    public init(descriptor: RabbitHoleLayerDescriptor,
          preloadedContent: ArticleContent? = nil,
          shareProvider: ReaderShareProviding?,
          gazeTrackerFactory: GazeTrackerFactory?,
@@ -96,12 +96,12 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
         }
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
     deinit { articleProbe?.cancel() }
 
     // MARK: - View
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.clipsToBounds = true
         view.layer.cornerRadius = layout.cornerRadius
@@ -121,7 +121,7 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
         applyDecisionIfPossible()
     }
 
-    override func viewDidLayoutSubviews() {
+    public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutChrome()
         // Content host fills the card, inset below the floating header so text clears it.
@@ -133,7 +133,7 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
     }
 
     /// Set the card's background tint for its stack depth.
-    func applyDepth(_ depth: Int) {
+    public func applyDepth(_ depth: Int) {
         view.backgroundColor = ReaderDepth.backgroundColor(for: depth)
     }
 
@@ -239,7 +239,7 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
 
     /// Show/hide chrome for this layer's role. `alpha` is the layout's `chromeAlpha`
     /// (0 = focused header showing, 1 = full ancestor lips).
-    func setChrome(role: RabbitHoleLayout.Role, alpha: CGFloat) {
+    public func setChrome(role: RabbitHoleLayout.Role, alpha: CGFloat) {
         let lipAlpha = alpha
         topLip.alpha = lipAlpha
         bottomLip.alpha = lipAlpha
@@ -269,7 +269,7 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
     }
 
     /// Update the line shown in the bottom lip (the line tapped to descend from here).
-    func setBottomLipText(_ text: String?) {
+    public func setBottomLipText(_ text: String?) {
         descriptor.bottomLipText = text
         bottomLipLabel.text = text
     }
@@ -315,7 +315,7 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
 
     // MARK: - Mode switching
 
-    func setMode(_ mode: ReadingListItem.ReaderMode) {
+    public func setMode(_ mode: ReadingListItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }
         embedReader(mode: mode)
         descriptor.readerMode = mode
@@ -462,7 +462,7 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
 
     /// The layer's primary scroll view, found by walking the embedded reader's view
     /// tree (UITextView is a UIScrollView). Used for overscroll-pop + offset capture.
-    var contentScrollView: UIScrollView? {
+    public var contentScrollView: UIScrollView? {
         if let web = webView { return web.scrollView }
         guard let root = readerChild?.view else { return nil }
         return Self.firstScrollView(in: root)
@@ -477,20 +477,20 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
     }
 
     /// Current vertical scroll offset, snapshotted for persistence.
-    var currentScrollOffset: Double {
+    public var currentScrollOffset: Double {
         guard let scroll = contentScrollView else { return descriptor.scrollOffset }
         return Double(scroll.contentOffset.y)
     }
 
     /// Capture the current scroll offset into the descriptor (call before persisting).
-    func syncScrollOffset() {
+    public func syncScrollOffset() {
         descriptor.scrollOffset = currentScrollOffset
     }
 
     /// Best-effort text of the line containing the tapped link `url`, for the bottom
     /// lip. Found by locating the link's range in the embedded text view; nil unless
     /// we're in a text (scroll) reader.
-    func lineText(for url: URL) -> String? {
+    public func lineText(for url: URL) -> String? {
         guard let textView = contentScrollView as? UITextView else { return nil }
         let attributed = textView.textStorage
         guard attributed.length > 0 else { return nil }
@@ -512,7 +512,7 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
     }
 
     /// The tapped link's line rect, in this layer's coordinate space, for the morph.
-    func lineRectInLayer(for url: URL) -> CGRect? {
+    public func lineRectInLayer(for url: URL) -> CGRect? {
         guard let textView = contentScrollView as? UITextView else { return nil }
         let attributed = textView.textStorage
         guard attributed.length > 0 else { return nil }
@@ -532,12 +532,12 @@ final class RabbitHoleLayerViewController: UIViewController, WKNavigationDelegat
 
     // MARK: - WKNavigationDelegate
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if articleContent == nil { spinner.stopAnimating() }
     }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         spinner.stopAnimating()
     }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+    public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) { spinner.stopAnimating() }
 }

@@ -13,9 +13,9 @@ import Foundation
 /// Read-aloud uses an enhanced Apple voice when one is installed and the built-in
 /// system voice otherwise; Clip never downloads or stores voice models itself
 /// (enhanced voices are installed by the user in iOS Settings).
-enum VoiceModelStore {
+public enum VoiceModelStore {
 
-    static let appGroupID = "group.com.hpiddy.clip"
+    public static let appGroupID = "group.com.hpiddy.clip"
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
     private static let hasSeenVoicePromptKey = "hasSeenVoicePrompt"
@@ -25,13 +25,13 @@ enum VoiceModelStore {
 
     /// Whether the user has installed an enhanced/premium Apple voice for the
     /// locale (read-aloud uses it automatically when present).
-    static var isAppleEnhancedInstalled: Bool { AppleEnhancedEngine.hasInstalledEnhancedVoice }
+    public static var isAppleEnhancedInstalled: Bool { AppleEnhancedEngine.hasInstalledEnhancedVoice }
 
     // MARK: - First-run prompt
 
     /// Whether the one-time "better voices available" prompt has been shown. Set
     /// the first time the user starts read-aloud.
-    static var hasSeenVoicePrompt: Bool {
+    public static var hasSeenVoicePrompt: Bool {
         get { defaults.bool(forKey: hasSeenVoicePromptKey) }
         set { defaults.set(newValue, forKey: hasSeenVoicePromptKey) }
     }
@@ -41,7 +41,7 @@ enum VoiceModelStore {
     /// Whether the user has dismissed the catch-up "install enhanced voices"
     /// card. Once true, the card (and its contribution to the catch-up dot) is
     /// suppressed. Defaults to `false`.
-    static var hasDismissedVoiceCatchUp: Bool {
+    public static var hasDismissedVoiceCatchUp: Bool {
         get { defaults.bool(forKey: hasDismissedVoiceCatchUpKey) }
         set { defaults.set(newValue, forKey: hasDismissedVoiceCatchUpKey) }
     }

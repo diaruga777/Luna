@@ -16,7 +16,7 @@ import UIKit
 /// "highlight" (chunk) mode now opens as RSVP → Phrases. Remembers the last used
 /// mode per article and globally (the default for new articles), and tracks
 /// opened/read state.
-final class ReaderViewController: UIViewController {
+public final class ReaderViewController: UIViewController {
 
     private let item: ReadingListItem
     private let content: ArticleContent
@@ -73,7 +73,7 @@ final class ReaderViewController: UIViewController {
     /// persisted sub-mode choice.
     private var opensRSVPInPhrases: Bool
 
-    init(item: ReadingListItem, content: ArticleContent,
+    public init(item: ReadingListItem, content: ArticleContent,
          forceMode: ReadingListItem.ReaderMode? = nil,
          shareProvider: ReaderShareProviding? = nil,
          gazeTrackerFactory: GazeTrackerFactory? = nil,
@@ -101,9 +101,9 @@ final class ReaderViewController: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         navigationItem.largeTitleDisplayMode = .never
@@ -233,7 +233,7 @@ final class ReaderViewController: UIViewController {
     /// Tucks the nav bar (with the mode switcher) up off-screen while an inline
     /// reader is open, and slides it back on dismissal. Called by the inline overlay
     /// so the outer header isn't visible behind/around it.
-    func setHeaderTucked(_ tucked: Bool) {
+    public func setHeaderTucked(_ tucked: Bool) {
         guard let bar = navigationController?.navigationBar else { return }
         UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.9,
                        initialSpringVelocity: 0.2) {

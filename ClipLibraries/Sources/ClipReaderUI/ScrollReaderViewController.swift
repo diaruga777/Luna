@@ -14,20 +14,20 @@ import UIKit
 /// offers save/share. Supports read-aloud with
 /// word highlighting + follow-scroll, remembers the scroll position, and
 /// estimates the last-read word via eye tracking on supported devices.
-final class ScrollReaderViewController: UIViewController, UITextViewDelegate, ReaderPositionTracking,
+public final class ScrollReaderViewController: UIViewController, UITextViewDelegate, ReaderPositionTracking,
     UIContextMenuInteractionDelegate, UIGestureRecognizerDelegate {
 
     /// Fired once when the user reaches the end of the article.
-    var onFinishedReading: (() -> Void)?
+    public var onFinishedReading: (() -> Void)?
 
     /// When set, a tapped inline link is handed to this closure instead of opening
     /// a new inline split overlay — used by the inline reader to push the link onto
     /// its own navigation stack rather than nesting another overlay.
-    var onLinkActivated: ((URL) -> Void)?
+    public var onLinkActivated: ((URL) -> Void)?
 
     /// Fired when the end-of-article share footer scrolls into / out of view, so the
     /// host can fade its floating share button (the footer already offers sharing).
-    var onShareFooterVisibilityChanged: ((Bool) -> Void)?
+    public var onShareFooterVisibilityChanged: ((Bool) -> Void)?
     private var shareFooterVisible = false
 
     /// A word index carried in from another reader mode. When set (and this is
@@ -82,7 +82,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     // words being read).
     private let highlightColor = GlassStyle.readingAccent.withAlphaComponent(0.28)
 
-    init(item: ReadingListItem, content: ArticleContent,
+    public init(item: ReadingListItem, content: ArticleContent,
          audioEnabled: Bool = false,
          shareProvider: ReaderShareProviding? = nil,
          gazeTrackerFactory: GazeTrackerFactory? = nil,
@@ -112,7 +112,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     /// there's no position to protect, so the first switch resumes from where
     /// the reader actually is: the gaze lock if confirmed, else the first
     /// fully-visible word.
-    var currentReadingWordIndex: Int? {
+    public var currentReadingWordIndex: Int? {
         if let speech, let word = speech.currentWordIndex { return word }
 
         guard let resumeIndex = explicitResumeWordIndex else {
@@ -133,7 +133,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
             firstFullyVisibleIndex: firstFullyVisibleWordIndex())
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     deinit {
         imageDownloadTask?.cancel()
@@ -182,7 +182,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         textView.contentInset.bottom = height + footerSpace + view.safeAreaInsets.bottom + 16
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
@@ -257,7 +257,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         return item.lastScrollOffset != nil
     }
 
-    override func viewDidLayoutSubviews() {
+    public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // Keep the text in a readable column on wide screens (iPad / landscape).
         let horizontal = max(20, (view.bounds.width - 680) / 2)
@@ -343,11 +343,11 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         present(lightbox, animated: false)
     }
 
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         image(at: touch.location(in: textView)) != nil
     }
 
-    func contextMenuInteraction(
+    public func contextMenuInteraction(
         _ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint
     ) -> UIContextMenuConfiguration? {
         guard let hit = image(at: location) else { return nil }
@@ -383,7 +383,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         UIView.animate(withDuration: 0.15) { self.textView.alpha = 1 }
     }
 
-    override func viewDidAppear(_ animated: Bool) {
+    public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         // Fallback if layout hasn't run yet (shouldn't normally happen).
         if !didRestoreScroll {
@@ -413,7 +413,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         }
     }
 
-    override func viewWillDisappear(_ animated: Bool) {
+    public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         gazeTracker?.onWordIndexChange = nil
         store.setLastScrollOffset(Double(textView.contentOffset.y), for: item.id)
@@ -631,7 +631,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
 
     // MARK: - Read tracking
 
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         checkFinishedReading()
         updateShareFooterVisibility()
         if scrollView.isTracking || scrollView.isDragging {
@@ -666,7 +666,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
 
     // MARK: - Link taps → split
 
-    func textView(
+    public func textView(
         _ textView: UITextView,
         primaryActionFor textItem: UITextItem,
         defaultAction: UIAction
@@ -685,7 +685,7 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
     }
 
     /// Long-press on an inline link → save or share that link.
-    func textView(
+    public func textView(
         _ textView: UITextView,
         menuConfigurationFor textItem: UITextItem,
         defaultMenu: UIMenu
@@ -785,7 +785,10 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
         #if targetEnvironment(simulator)
         // Suppress these debug buttons during deterministic screenshot captures so
         // they don't overlay the article text; interactive automation still gets them.
-        if UITestLaunch.isActive { return }
+        // Suppressed during deterministic UI-test launches (matches UITestLaunch.isActive,
+        // which lives in the app target — inlined here to avoid an upward dependency).
+        let uiTestArgs = ["-uiTestState", "-uiTestScreen", "-uiTestOnboardingStep"]
+        if ProcessInfo.processInfo.arguments.contains(where: uiTestArgs.contains) { return }
         func hookButton(_ title: String, fraction: CGFloat) -> UIButton {
             var config = UIButton.Configuration.filled()
             config.title = title
@@ -834,14 +837,14 @@ final class ScrollReaderViewController: UIViewController, UITextViewDelegate, Re
 // MARK: - SpeechControllerDelegate
 
 extension ScrollReaderViewController: SpeechControllerDelegate {
-    func speech(_ controller: SpeechController, willSpeakAttributedRange range: NSRange, wordIndex: Int?) {
+    public func speech(_ controller: SpeechController, willSpeakAttributedRange range: NSRange, wordIndex: Int?) {
         applyHighlight(range)
         if followPlayback {
             scrollToCenter(range)
         }
     }
 
-    func speechPlaybackStateDidChange(_ controller: SpeechController) {
+    public func speechPlaybackStateDidChange(_ controller: SpeechController) {
         let icon = controller.isPlaying ? "pause.fill" : "play.fill"
         footerPlayButton.configuration?.image = UIImage(systemName: icon)
         let factor = controller.rateFactor
@@ -852,7 +855,7 @@ extension ScrollReaderViewController: SpeechControllerDelegate {
         }
     }
 
-    func speechDidFinishArticle(_ controller: SpeechController) {
+    public func speechDidFinishArticle(_ controller: SpeechController) {
         didFinishReading = true
         onFinishedReading?()
         footerPlayButton.configuration?.image = UIImage(systemName: "play.fill")

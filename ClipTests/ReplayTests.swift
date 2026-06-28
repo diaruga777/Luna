@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipReaderUI
 import ClipStorage
 import ClipPaywallBypass
 import ClipModels

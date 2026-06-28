@@ -10,7 +10,7 @@ import MediaPlayer
 import UIKit
 
 /// Receives word-level progress and state changes from read-aloud playback.
-protocol SpeechControllerDelegate: AnyObject {
+public protocol SpeechControllerDelegate: AnyObject {
     /// The synthesizer is about to speak the word at `range` in the rendered
     /// attributed string (`wordIndex` in the shared word-index space).
     func speech(_ controller: SpeechController, willSpeakAttributedRange range: NSRange, wordIndex: Int?)
@@ -23,9 +23,9 @@ protocol SpeechControllerDelegate: AnyObject {
 /// On-device read-aloud for an article using AVSpeechSynthesizer: speaks block
 /// by block, reports word ranges for highlighting, supports skip/rate, keeps
 /// playing in the background, and integrates with system media controls.
-final class SpeechController: NSObject {
+public final class SpeechController: NSObject {
 
-    weak var delegate: SpeechControllerDelegate?
+    public weak var delegate: SpeechControllerDelegate?
 
     private let synthesizer = AVSpeechSynthesizer()
     /// The TTS engine to speak with. Resolved at `play(fromWordIndex:)` time from
@@ -50,7 +50,7 @@ final class SpeechController: NSObject {
     /// Speed multiplier over the default speech rate.
     private(set) var rateFactor: Float = 1.0
 
-    init(content: ArticleContent, rendered: RenderedArticle, wordMap: WordMap, title: String) {
+    public init(content: ArticleContent, rendered: RenderedArticle, wordMap: WordMap, title: String) {
         self.speakable = content.blocks.enumerated()
             .filter { !$0.element.text.isEmpty }
             .map { (blockIndex: $0.offset, text: $0.element.text) }
@@ -67,11 +67,11 @@ final class SpeechController: NSObject {
 
     // MARK: - Public controls
 
-    var currentWordIndex: Int? {
+    public var currentWordIndex: Int? {
         lastSpokenAttributedRange.flatMap { wordMap.wordIndex(nearCharacterIndex: $0.location) }
     }
 
-    func play(fromWordIndex wordIndex: Int?) {
+    public func play(fromWordIndex wordIndex: Int?) {
         // Resolve the engine once per play session (the selection can change in
         // Settings between sessions). `resolveSelected` guarantees a usable
         // engine, falling back from an unavailable selection.
@@ -96,7 +96,7 @@ final class SpeechController: NSObject {
         delegate?.speechPlaybackStateDidChange(self)
     }
 
-    func togglePlayPause() {
+    public func togglePlayPause() {
         if isPlaying {
             pause()
         } else if isPausedMidUtterance {
@@ -106,7 +106,7 @@ final class SpeechController: NSObject {
         }
     }
 
-    func pause() {
+    public func pause() {
         guard isPlaying else { return }
         isPlaying = false
         isPausedMidUtterance = true
@@ -118,7 +118,7 @@ final class SpeechController: NSObject {
         delegate?.speechPlaybackStateDidChange(self)
     }
 
-    func resume() {
+    public func resume() {
         guard !isPlaying, isPausedMidUtterance else { return }
         isPlaying = true
         isPausedMidUtterance = false
@@ -129,14 +129,14 @@ final class SpeechController: NSObject {
     }
 
     /// Jumps to the start of the next paragraph.
-    func skipForward() {
+    public func skipForward() {
         guard speakableIndex + 1 < speakable.count else { return }
         jump(toSpeakableIndex: speakableIndex + 1)
     }
 
     /// Jumps to the start of the current paragraph, or the previous one when
     /// already at its start.
-    func skipBackward() {
+    public func skipBackward() {
         let target = utteranceStartOffset > 0 || lastSpokenAttributedRange != nil
             ? speakableIndex
             : max(0, speakableIndex - 1)
@@ -144,7 +144,7 @@ final class SpeechController: NSObject {
             ? max(0, speakableIndex - 1) : target)
     }
 
-    func cycleRate() {
+    public func cycleRate() {
         let steps: [Float] = [0.8, 1.0, 1.2, 1.5]
         let next = steps[((steps.firstIndex(of: rateFactor) ?? 1) + 1) % steps.count]
         rateFactor = next
@@ -165,7 +165,7 @@ final class SpeechController: NSObject {
         delegate?.speechPlaybackStateDidChange(self)
     }
 
-    func stop() {
+    public func stop() {
         isPlaying = false
         isPausedMidUtterance = false
         synthesizer.stopSpeaking(at: .immediate)
@@ -272,7 +272,7 @@ final class SpeechController: NSObject {
 }
 
 extension SpeechController: AVSpeechSynthesizerDelegate {
-    func speechSynthesizer(
+    public func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         willSpeakRangeOfSpeechString characterRange: NSRange,
         utterance: AVSpeechUtterance
@@ -287,7 +287,7 @@ extension SpeechController: AVSpeechSynthesizerDelegate {
         delegate?.speech(self, willSpeakAttributedRange: attributedRange, wordIndex: wordIndex)
     }
 
-    func speechSynthesizer(
+    public func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance
     ) {
         guard isPlaying else { return }

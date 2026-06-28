@@ -24,15 +24,15 @@ import UIKit
 /// the scrubber / ±25-word skip / ±25 wpm controls, and an optional read-aloud
 /// mode where speech paces the display (and, in Phrases, highlights the spoken
 /// word within the phrase) instead of the WPM timer.
-final class RSVPViewController: UIViewController, ReaderPositionTracking {
+public final class RSVPViewController: UIViewController, ReaderPositionTracking {
 
     /// Fired once when playback reaches the last word.
-    var onFinishedReading: (() -> Void)?
+    public var onFinishedReading: (() -> Void)?
 
     /// When set, the link pill hands the tapped link to this closure instead of
     /// presenting a new inline split overlay — used by the inline reader to push the
     /// link onto its own navigation stack rather than nesting another overlay.
-    var onLinkActivated: ((URL) -> Void)?
+    public var onLinkActivated: ((URL) -> Void)?
 
     private let item: ReadingListItem
     private let engine: RSVPEngine
@@ -128,7 +128,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
     /// Smaller, proportional font for the two-line phrase display.
     private let phraseFont: UIFont
 
-    init(item: ReadingListItem, content: ArticleContent, audioEnabled: Bool = false,
+    public init(item: ReadingListItem, content: ArticleContent, audioEnabled: Bool = false,
          shareProvider: ReaderShareProviding? = nil, resumeWordIndex: Int? = nil,
          initialDisplayMode: RSVPDisplayMode? = nil) {
         self.item = item
@@ -157,10 +157,10 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         }
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     /// The focal word currently displayed — carried to other modes on a switch.
-    var currentReadingWordIndex: Int? { currentIndex }
+    public var currentReadingWordIndex: Int? { currentIndex }
 
     /// Picks the monospaced font size so `targetCharactersAcross` characters
     /// fit beside the focal column. The right side binds: a word that long has
@@ -188,7 +188,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         return .systemFont(ofSize: size, weight: .semibold)
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
@@ -214,7 +214,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         updateStatus()
     }
 
-    override func viewDidLayoutSubviews() {
+    public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutFocusPill()
         layoutPhrasePanel()
@@ -223,7 +223,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
         refreshDisplay()
     }
 
-    override func viewWillDisappear(_ animated: Bool) {
+    public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         pause()
         saveProgress()
@@ -959,7 +959,7 @@ final class RSVPViewController: UIViewController, ReaderPositionTracking {
 }
 
 extension RSVPViewController: AVSpeechSynthesizerDelegate {
-    func speechSynthesizer(
+    public func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         willSpeakRangeOfSpeechString characterRange: NSRange,
         utterance: AVSpeechUtterance
@@ -984,7 +984,7 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
         updateStatus()
     }
 
-    func speechSynthesizer(
+    public func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance
     ) {
         guard isSpeechMode, isPlaying else { return }
@@ -1014,7 +1014,7 @@ extension RSVPViewController: UIGestureRecognizerDelegate {
     /// the ±25 speed buttons, the play/pause button, the scrubber, and the link
     /// pill — so those taps reach the control instead of being cancelled by the
     /// full-screen tap (which `cancelsTouchesInView`).
-    func gestureRecognizer(
+    public func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch
     ) -> Bool {
         var hitView = touch.view

@@ -12,16 +12,16 @@ import AVFoundation
 /// unexpected interruption of other audio (e.g. Picture-in-Picture) is visible
 /// in Settings → Diagnostics. Deactivation always notifies other apps so their
 /// audio RESUMES rather than staying stopped.
-enum ReaderAudioSession {
+public enum ReaderAudioSession {
 
-    static func activate() {
+    public static func activate() {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .spokenAudio)
         try? session.setActive(true)
         SharedDiagnosticLog.record("audio session activated (.playback)", category: "audio")
     }
 
-    static func deactivate() {
+    public static func deactivate() {
         try? AVAudioSession.sharedInstance().setActive(
             false, options: .notifyOthersOnDeactivation)
         SharedDiagnosticLog.record("audio session deactivated", category: "audio")

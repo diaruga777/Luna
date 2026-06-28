@@ -23,6 +23,8 @@
 		535077B96135F4456ADF0386 /* ClipEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* ClipEpub */; };
 		59C336E6E016223659B23C6A /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
 		670A781911DA94A8B457F826 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
+		6F438E9F1C4DEAAF57A692B8 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
+		7524FB14EDBA875CD17CE996 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
 		7958393C2FE0A62700C775CA /* ClipShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* ClipShare.appex */; };
 		7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
 		79583DFF2FE0BAD100C775CA /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */; };
@@ -55,6 +57,7 @@
 		C100000000000000000000045 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
 		C100000000000000000000046 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 		C100000000000000000000047 /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
+		C100000000000000000000053 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
 		C100000000000000000000056 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 		C100000000000000000000057 /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
 		C2651D3DB2A545CDDEA3C458 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
@@ -69,16 +72,17 @@
 		E4985943E018E5FE92C11606 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
 		E54532DF71D52079A8742E8C /* ClipSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* ClipSemantic */; };
 		E69342FE12CC67327392E2D2 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		EE4780B9AFD12FEBC6947099 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
 		EF6B3AC95FDA89E16A1F2698 /* ClipMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* ClipMail */; };
+		F35941D40835BF7824598AE9 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
 		F9B0746CEE264B742FEFA170 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 		FC3B05B51F7C576146ECF6CD /* ClipSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* ClipSocial */; };
 		FF5DFE4CF92F033FB81C7A5B /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
 		FF6630FB61B598C594FCDE61 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
-		6F438E9F1C4DEAAF57A692B8 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
-		EE4780B9AFD12FEBC6947099 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
-		F35941D40835BF7824598AE9 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
-		7524FB14EDBA875CD17CE996 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
-		C100000000000000000000053 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
+		4764C751E2AFA2AD7653CB79 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		79105F98461EAB4D02BB8DD1 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		2B4134FA0043E8CD5CE0CD04 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		14D2AFFC19A169338A1147DD /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -199,6 +203,7 @@
 				E69342FE12CC67327392E2D2 /* ClipMediaDownload in Frameworks */,
 				59C336E6E016223659B23C6A /* ClipReaderEngine in Frameworks */,
 				EE4780B9AFD12FEBC6947099 /* ClipArchiveReader in Frameworks */,
+				79105F98461EAB4D02BB8DD1 /* ClipReaderUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -227,6 +232,7 @@
 				E54532DF71D52079A8742E8C /* ClipSemantic in Frameworks */,
 				B1783409EFF8E80CEA65CB3C /* ClipReaderEngine in Frameworks */,
 				6F438E9F1C4DEAAF57A692B8 /* ClipArchiveReader in Frameworks */,
+				4764C751E2AFA2AD7653CB79 /* ClipReaderUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -257,6 +263,7 @@
 				1A489052B9F7B48762402AE3 /* ClipReaderEngine in Frameworks */,
 				7524FB14EDBA875CD17CE996 /* ClipArchiveReader in Frameworks */,
 				C100000000000000000000053 /* ClipPaywallBypass in Frameworks */,
+				14D2AFFC19A169338A1147DD /* ClipReaderUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -280,6 +287,7 @@
 				E4985943E018E5FE92C11606 /* ClipMediaDownload in Frameworks */,
 				3BF52B30E74A297E08A41982 /* ClipReaderEngine in Frameworks */,
 				F35941D40835BF7824598AE9 /* ClipArchiveReader in Frameworks */,
+				2B4134FA0043E8CD5CE0CD04 /* ClipReaderUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -366,6 +374,7 @@
 				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
 				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
 				74662FE2996754685063847E /* ClipArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
 			);
 			productName = "Clip Action Extension";
 			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
@@ -415,6 +424,7 @@
 				92CAEC0F8C340469B9AB25E3 /* ClipSemantic */,
 				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
 				74662FE2996754685063847E /* ClipArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -476,6 +486,7 @@
 				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
 				74662FE2996754685063847E /* ClipArchiveReader */,
 				C100000000000000000000013 /* ClipPaywallBypass */,
+				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -515,6 +526,7 @@
 				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
 				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
 				74662FE2996754685063847E /* ClipArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
 			);
 			productName = ClipShare;
 			productReference = AA0200000000000000000004 /* ClipShare.appex */;
@@ -1168,6 +1180,11 @@
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipPlatforms;
 		};
+		74662FE2996754685063847E /* ClipArchiveReader */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipArchiveReader;
+		};
 		92CAEC0F8C340469B9AB25E3 /* ClipSemantic */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
@@ -1253,10 +1270,10 @@
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipDocuments;
 		};
-		74662FE2996754685063847E /* ClipArchiveReader */ = {
+		436F1044DB2553FED3D9DB4C /* ClipReaderUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
-			productName = ClipArchiveReader;
+			productName = ClipReaderUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

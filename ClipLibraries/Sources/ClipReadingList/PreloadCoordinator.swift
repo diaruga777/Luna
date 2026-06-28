@@ -23,11 +23,21 @@ public final class PreloadCoordinator {
     private let readingListStore: ReadingListStore
     /// Roots currently being preloaded, so a foreground resume can't double-run one.
     private var runningRoots: Set<UUID> = []
+    /// The canonical key of the pasteboard candidate we last preloaded, so re-evaluating
+    /// the same clipboard URL doesn't tear down and re-crawl its tree.
+    private var lastPasteboardKey: String?
     private let lock = NSLock()
 
-    /// Safety cap on pages crawled per root run, so a hub page with hundreds of
-    /// links can't crawl unbounded.
-    private static let maxPagesPerRun = 80
+    /// A fixed sentinel "owner" for the CURRENT pasteboard candidate's preloads — bounds
+    /// pasteboard preloading to the single clipboard link (its tree is released and
+    /// re-crawled when the candidate changes). A real save claims the same cached subtree
+    /// on actual save, so content survives this owner later being released.
+    public static let pasteboardOwner = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+
+    /// High safety bound on pages crawled per root run so a pathological hub page can't
+    /// crawl truly unbounded — but high enough that a normal article's links are NEVER
+    /// silently dropped (we log if it's ever hit, so a truncation is visible, not silent).
+    private static let maxPagesPerRun = 500
     /// Per-link pipeline budget — shorter than the interactive 28s so a slow link
     /// doesn't stall the whole crawl.
     private static let perLinkTimeout: TimeInterval = 15
@@ -50,7 +60,8 @@ public final class PreloadCoordinator {
 
     /// Resume preloading for every ready article whose tree may be incomplete. Called
     /// on foreground and from the background-refresh task. Cheap when everything is
-    /// already cached (each URL short-circuits on the loaded entry).
+    /// already cached (each URL short-circuits on the loaded entry). Wi-Fi-gated like a
+    /// fresh crawl, so it's also what finishes a crawl that was deferred off cellular.
     public func resumeIncomplete() {
         guard ReaderSettings.preloadDepth > 0 else { return }
         Task.detached(priority: .background) { [weak self] in
@@ -59,6 +70,28 @@ public final class PreloadCoordinator {
             where item.state == .ready && item.contentFileName != nil {
                 await self.run(rootID: item.id)
             }
+        }
+    }
+
+    /// Eagerly preload the CURRENT pasteboard candidate's links (the user chose eager
+    /// pasteboard preloading). Bounded to the single clipboard link via `pasteboardOwner`;
+    /// re-crawls when the candidate URL changes, no-ops when it's unchanged. Returns
+    /// immediately; the crawl runs detached and Wi-Fi-gated.
+    public func preloadPasteboard(content: ArticleContent, sourceURL: URL) {
+        guard ReaderSettings.preloadDepth > 0 else { return }
+        let key = PreloadStore.key(for: sourceURL)
+        lock.lock()
+        let changed = (lastPasteboardKey != key)
+        if changed { lastPasteboardKey = key }
+        lock.unlock()
+        guard changed else { return }
+        let links = Self.outboundURLs(from: content)
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            // Drop the previous clipboard candidate's speculative tree (a real save that
+            // also owns any of it keeps its own ownership).
+            self.store.releaseTree(rootID: Self.pasteboardOwner)
+            await self.performCrawl(rootID: Self.pasteboardOwner, seedLinks: links)
         }
     }
 
@@ -77,20 +110,36 @@ public final class PreloadCoordinator {
     }
 
     private func run(rootID: UUID) async {
-        guard claim(rootID) else { return }
-        defer { unclaim(rootID) }
-
         guard let item = readingListStore.item(withID: rootID),
               let content = readingListStore.content(for: item) else { return }
+        await performCrawl(rootID: rootID, seedLinks: Self.outboundURLs(from: content))
+    }
+
+    /// Wraps `crawl` with the single-run claim, the Wi-Fi gate (background/speculative
+    /// preloads are Wi-Fi-only), and a brief background window so a crawl started on save
+    /// survives a short backgrounding.
+    private func performCrawl(rootID: UUID, seedLinks: [URL]) async {
+        guard claim(rootID) else { return }
+        defer { unclaim(rootID) }
+        guard ReaderSettings.preloadDepth > 0 else { return }
+        guard NetworkReachability.shared.isOnWiFi else {
+            SharedDiagnosticLog.record(
+                "preload deferred (not on Wi-Fi): \(rootID.uuidString)", category: "preload")
+            return
+        }
+        let bgTask = UIApplication.shared.beginBackgroundTask(withName: "preload-\(rootID)")
+        defer { if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) } }
+        await crawl(seedLinks: seedLinks, rootID: rootID)
+    }
+
+    /// BFS over `seedLinks` (recursively to `ReaderSettings.preloadDepth`), in document
+    /// order — top links first — fully materializing each page (text + images) into the
+    /// shared `PreloadStore`/`Articles` cache, owned by `rootID`.
+    private func crawl(seedLinks: [URL], rootID: UUID) async {
         let depth = ReaderSettings.preloadDepth
         guard depth > 0 else { return }
 
-        // A brief background window so a crawl started on save survives a short
-        // backgrounding (e.g. the user leaves right after saving).
-        let bgTask = UIApplication.shared.beginBackgroundTask(withName: "preload-\(rootID)")
-        defer { if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) } }
-
-        var queue: [(url: URL, levelsLeft: Int)] = Self.outboundURLs(from: content).map { ($0, depth) }
+        var queue: [(url: URL, levelsLeft: Int)] = seedLinks.map { ($0, depth) }
         var visitedThisRun = Set<String>()
         var pagesProcessed = 0
 
@@ -111,6 +160,13 @@ public final class PreloadCoordinator {
             if job.levelsLeft > 1 {
                 for child in childURLs { queue.append((child, job.levelsLeft - 1)) }
             }
+        }
+
+        // Never drop links silently: if the safety bound truncated the crawl, say so.
+        if !queue.isEmpty {
+            SharedDiagnosticLog.record(
+                "preload page cap (\(Self.maxPagesPerRun)) hit for \(rootID.uuidString); "
+                + "\(queue.count) link(s) deferred", category: "preload")
         }
     }
 

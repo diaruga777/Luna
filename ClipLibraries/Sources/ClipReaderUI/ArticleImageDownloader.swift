@@ -15,8 +15,15 @@ import UniformTypeIdentifiers
 /// durable local files. Header-image CDNs are often stricter than the HTML host,
 /// so image requests deliberately look like the page's own browser subresources.
 public enum ArticleImageDownloader {
-    private static let maxImages = 10
+    // Sized for a durable OFFLINE reader: store (nearly) all of a page's images so a
+    // preloaded/saved article reads completely with no network. Per-page caps, not global.
+    private static let maxImages = 30
+    /// Per-image cap on the RAW download (before transcode), so one giant original can't
+    /// blow up memory.
     private static let maxBytes = 12 * 1024 * 1024
+    /// Per-article budget on STORED (transcoded) bytes — stop once the page's images add
+    /// up to this, so an image-heavy page can't run away with disk.
+    private static let maxStoredBytesPerArticle = 40 * 1024 * 1024
     /// Downloaded images are transcoded to a downsampled JPEG/PNG so the reader can
     /// decode them near-instantly (slow WebP/AVIF/HEIC decodes were the cause of the
     /// "images flash in late" delay). Sized generously for a 3x retina content column.
@@ -26,6 +33,7 @@ public enum ArticleImageDownloader {
         _ content: ArticleContent, itemID: UUID, store: ReadingListStore, refererURL: URL
     ) async -> ArticleContent {
         var downloaded = 0
+        var storedBytes = 0
         var blocks: [ArticleContent.Block] = []
 
         for var block in content.blocks {
@@ -53,9 +61,9 @@ public enum ArticleImageDownloader {
                 blocks.append(block)
                 continue
             }
-            guard downloaded < maxImages,
+            guard downloaded < maxImages, storedBytes < maxStoredBytesPerArticle,
                   let image = await fetch(imageURL, refererURL: refererURL) else {
-                if downloaded < maxImages {
+                if downloaded < maxImages, storedBytes < maxStoredBytesPerArticle {
                     SharedDiagnosticLog.record("image download failed: \(imageURL.absoluteString)", category: "images")
                 }
                 blocks.append(block)
@@ -69,6 +77,7 @@ public enum ArticleImageDownloader {
                 block.imageFileName = fileName
                 blocks.append(block)
                 downloaded += 1
+                storedBytes += image.data.count
                 SharedDiagnosticLog.record("image downloaded: \(imageURL.absoluteString)", category: "images")
             } catch {
                 blocks.append(block)

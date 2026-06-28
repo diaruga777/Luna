@@ -107,4 +107,76 @@ final class PreloadStoreTests: XCTestCase {
         ReaderSettings.preloadDepth = -2
         XCTAssertEqual(ReaderSettings.preloadDepth, 0)
     }
+
+    // MARK: - Ephemeral (session) ownership — the +1-depth speculative preloads
+
+    func testSessionOnlyOwnedEntryDeletedOnRelease() {
+        let u = url("https://example.com/speculative")
+        let session = UUID()
+        store.record(url: u, rootID: session, kind: .article, depthRemaining: 0, content: article("S"))
+        XCTAssertNotNil(store.articleContent(for: u))
+        // Exiting the reader releases the session → the purely-speculative page is gone.
+        store.releaseTree(rootID: session)
+        XCTAssertNil(store.entry(for: u))
+    }
+
+    func testWithinDepthEntrySurvivesSessionRelease() {
+        let u = url("https://example.com/durable")
+        let root = UUID(), session = UUID()
+        // A within-depth page is owned by BOTH the durable root and the session.
+        store.record(url: u, rootID: root, kind: .article, depthRemaining: 1, content: article("D"))
+        store.record(url: u, rootID: session, kind: .article, depthRemaining: 1, content: article("D"))
+        store.releaseTree(rootID: session)
+        // Session gone, durable root remains → page survives.
+        XCTAssertEqual(store.entry(for: u)?.owners, [root.uuidString])
+        XCTAssertNotNil(store.articleContent(for: u))
+    }
+
+    // MARK: - Image reference counting via the preload lifecycle
+
+    /// `PreloadStore(containerURL:)` builds its `ImageReferenceStore` on the SAME
+    /// container, so a preloaded page's images live in `<dir>/Articles`.
+    private var articlesDir: URL { dir.appendingPathComponent("Articles", isDirectory: true) }
+
+    private func makeImageFile(_ name: String) {
+        try? FileManager.default.createDirectory(at: articlesDir, withIntermediateDirectories: true)
+        try? Data("x".utf8).write(to: articlesDir.appendingPathComponent(name))
+    }
+
+    private func imageExists(_ name: String) -> Bool {
+        FileManager.default.fileExists(atPath: articlesDir.appendingPathComponent(name).path)
+    }
+
+    private func articleWithImage(_ file: String) -> ArticleContent {
+        ArticleContent(title: "A", blocks: [
+            .init(kind: .image, text: "", links: [], imageFileName: file),
+            .init(kind: .paragraph, text: String(repeating: "a", count: 1500), links: []),
+        ])
+    }
+
+    func testReleasingLastOwnerDeletesPreloadImages() {
+        makeImageFile("img-pre.jpg")
+        let u = url("https://example.com/withimage")
+        let root = UUID()
+        store.record(url: u, rootID: root, kind: .article, depthRemaining: 0,
+                     content: articleWithImage("img-pre.jpg"))
+        XCTAssertTrue(imageExists("img-pre.jpg"))
+        store.releaseTree(rootID: root)
+        XCTAssertFalse(imageExists("img-pre.jpg"))
+    }
+
+    func testSharedPreloadImageKeptWhileAnotherPageOwnsIt() {
+        makeImageFile("img-shared.jpg")
+        let a = url("https://example.com/a"), b = url("https://example.com/b")
+        let r1 = UUID(), r2 = UUID()
+        // Two distinct preloaded pages reference the same downloaded image.
+        store.record(url: a, rootID: r1, kind: .article, depthRemaining: 0,
+                     content: articleWithImage("img-shared.jpg"))
+        store.record(url: b, rootID: r2, kind: .article, depthRemaining: 0,
+                     content: articleWithImage("img-shared.jpg"))
+        store.releaseTree(rootID: r1)
+        XCTAssertTrue(imageExists("img-shared.jpg"))   // page B still owns it
+        store.releaseTree(rootID: r2)
+        XCTAssertFalse(imageExists("img-shared.jpg"))  // last page gone → image deleted
+    }
 }

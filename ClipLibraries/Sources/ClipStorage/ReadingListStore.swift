@@ -32,10 +32,16 @@ public final class ReadingListStore {
     /// coordination via `coordinatedMutate`/`coordinatedUpdate`.
     private let fileCoordinator = NSFileCoordinator()
 
+    /// Refcount for downloaded article images (shared `Articles/img-<hash>` files):
+    /// a saved item owns the images its content references, so deleting the item frees
+    /// them — unless another save or preloaded page still references the same image.
+    private let imageReferences: ImageReferenceStore
+
     /// The shared store uses the App Group container; tests pass a scratch
     /// directory so they never touch (or wipe) real user data.
     public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
+        self.imageReferences = ImageReferenceStore(containerURL: containerURL)
     }
 
     private var containerURL: URL {
@@ -501,6 +507,11 @@ public final class ReadingListStore {
                     to: self.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
                 all[index].contentFileName = fileName
                 all[index].title = content.title
+                // This save now owns the images its content references (so they survive
+                // until the item is deleted, and aren't deleted while it still needs them).
+                self.imageReferences.setReferences(
+                    contentKey: ImageReferenceStore.itemKey(item.id),
+                    files: ImageReferenceStore.imageFiles(in: content))
                 // Real content now exists (possibly after the user solved an archive
                 // CAPTCHA), so this is the terminal ready state regardless of how it got here.
                 all[index].state = .ready
@@ -723,6 +734,9 @@ public final class ReadingListStore {
         if let thumb = item.thumbnailFileName {
             try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(thumb))
         }
+        // Release this save's downloaded images (deleted only if no other save/preloaded
+        // page still references the same shared `img-<hash>` file).
+        imageReferences.removeReferences(contentKey: ImageReferenceStore.itemKey(item.id))
         // Release this save's preload subtree (refcount decrement; only ever deletes
         // files under Preloads/, never a user save).
         PreloadStore.shared.releaseTree(rootID: item.id)

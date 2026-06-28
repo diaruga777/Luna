@@ -103,6 +103,10 @@ public final class PasteboardSuggester: PasteboardSuggesting {
               !content.blocks.isEmpty
         else { return nil }
         let cover = await coverImage(html: html, baseURL: url)
+        // Eagerly preload this clipboard candidate's linked pages (text + images) so an
+        // open/save is instant offline. Bounded to the current clipboard link and
+        // Wi-Fi-gated; harmlessly re-triggered (deduped) if the same URL is re-evaluated.
+        PreloadCoordinator.shared.preloadPasteboard(content: content, sourceURL: url)
         return PasteboardCandidate(
             urlString: normalizedURLString, title: content.title,
             channelName: nil, videoID: nil, content: content, thumbnail: cover)

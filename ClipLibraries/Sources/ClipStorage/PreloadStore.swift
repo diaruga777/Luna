@@ -62,9 +62,14 @@ public final class PreloadStore {
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
     private let lock = NSLock()
+    /// Refcount for the images these preloaded pages downloaded into the shared
+    /// `Articles/` cache, so an orphaned page's images are freed too (and never freed
+    /// while another page/save still references them). Same container as this store.
+    private let imageReferences: ImageReferenceStore
 
     public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
+        self.imageReferences = ImageReferenceStore(containerURL: containerURL)
     }
 
     private var containerURL: URL {
@@ -173,7 +178,7 @@ public final class PreloadStore {
             break
         }
         let childKeys = children.map { Self.key(for: $0) }
-        return mutate { index in
+        let entry: PreloadEntry = mutate { index in
             var entry = index[key] ?? PreloadEntry(
                 urlString: Self.canonicalString(for: url), kind: kind, contentFile: contentFile,
                 platform: platform, owners: [], children: childKeys,
@@ -189,6 +194,13 @@ public final class PreloadStore {
             index[key] = entry
             return entry
         }
+        // Tie this page's downloaded images to the page key so they're freed when (and
+        // only when) the page itself is released.
+        if kind == .article, let content {
+            imageReferences.setReferences(
+                contentKey: key, files: ImageReferenceStore.imageFiles(in: content))
+        }
+        return entry
     }
 
     /// Adds `rootID` as an owner of an EXISTING entry (dedup: a second tree reaching
@@ -230,12 +242,14 @@ public final class PreloadStore {
     /// dropped. Only ever deletes files under `Preloads/`.
     public func releaseTree(rootID: UUID) {
         let id = rootID.uuidString
+        var orphanedKeys: [String] = []
         let orphanedFiles: [String] = mutate { index in
             var files: [String] = []
             for (key, var entry) in index where entry.owners.contains(id) {
                 entry.owners.remove(id)
                 if entry.owners.isEmpty {
                     if let file = entry.contentFile { files.append(file) }
+                    orphanedKeys.append(key)
                     index[key] = nil
                 } else {
                     index[key] = entry
@@ -245,6 +259,26 @@ public final class PreloadStore {
         }
         for file in orphanedFiles {
             try? fileManager.removeItem(at: contentURL(fileName: file))
+        }
+        // Release each orphaned page's images (deleted only if no other page/save owns them).
+        for key in orphanedKeys {
+            imageReferences.removeReferences(contentKey: key)
+        }
+    }
+
+    /// Registers the images of every already-loaded `.article` entry with `imageStore`
+    /// (one-time migration backfill — see `ImageReferenceStore.backfillIfNeeded`).
+    public func backfillImageOwnership(into imageStore: ImageReferenceStore) {
+        lock.lock()
+        let index = loadIndex()
+        lock.unlock()
+        for (key, entry) in index where entry.kind == .article {
+            guard let file = entry.contentFile,
+                  let data = try? Data(contentsOf: contentURL(fileName: file)),
+                  let content = try? JSONDecoder().decode(ArticleContent.self, from: data)
+            else { continue }
+            imageStore.setReferences(
+                contentKey: key, files: ImageReferenceStore.imageFiles(in: content))
         }
     }
 

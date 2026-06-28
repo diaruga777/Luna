@@ -91,6 +91,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // block startup.
         DispatchQueue.global(qos: .utility).async { MediaDownloadStorage.purgeAll() }
 
+        // Warm the Wi-Fi reachability monitor (background preloads are Wi-Fi-gated) and
+        // run the one-time image-ownership backfill so images shared with pre-existing
+        // saves/preloads are reference-counted before any preload release could delete one.
+        DispatchQueue.global(qos: .utility).async {
+            _ = NetworkReachability.shared
+            ImageReferenceStore.shared.backfillIfNeeded(readingList: .shared, preloads: .shared)
+        }
+
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
         ReadingListIngestor.shared.ingestAllPending()

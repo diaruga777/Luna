@@ -61,8 +61,18 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// The in-flight background materialization of the focused page's links (cancelled
     /// when the focus changes or the reader closes).
     private var warmTask: Task<Void, Never>?
+    /// The focused page's outbound links in document order — the live, reprioritizable
+    /// warm queue (tapping a link promotes it to the front; see `promote`).
+    private var warmURLs: [URL] = []
     /// Cap on how many of a page's links we hold in memory at once.
     private static let maxPreloadedLinks = 40
+
+    /// Owner id for this reader open's SPECULATIVE preloads — the pages one depth beyond
+    /// `ReaderSettings.preloadDepth` that we materialize while reading. They're owned only
+    /// by this session, so they're deleted when the reader is exited (see
+    /// `viewDidDisappear`). Pages within the durable depth are owned by `rootItem.id` and
+    /// persist.
+    private let sessionID = UUID()
 
     public init(item: ReadingListItem, content: ArticleContent,
                 shareProvider: ReaderShareProviding? = nil,
@@ -78,7 +88,12 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
-    deinit { warmTask?.cancel() }
+    deinit {
+        warmTask?.cancel()
+        // Backstop: ensure this session's speculative (+1 depth) preloads are released even
+        // if `viewDidDisappear` didn't run. Idempotent with the timely release there.
+        PreloadStore.shared.releaseTree(rootID: sessionID)
+    }
 
     // MARK: - Lifecycle
 
@@ -110,6 +125,20 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         persist()
+    }
+
+    public override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Exiting the reader (popped/dismissed back to the reading list): the speculative
+        // pages we materialized one depth beyond the setting are temporary — release this
+        // session's ownership so any page no other save/session still owns is deleted (its
+        // images too, via the image refcount). Within-depth pages keep the durable item id.
+        guard isMovingFromParent || isBeingDismissed else { return }
+        warmTask?.cancel()
+        let session = sessionID
+        Task.detached(priority: .utility) {
+            PreloadStore.shared.releaseTree(rootID: session)
+        }
     }
 
     public override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
@@ -237,6 +266,9 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private func pushLayer(url: URL, lineText: String?, from focused: RabbitHoleLayerViewController) {
         guard !transitionInFlight else { return }
         focused.setBottomLipText(lineText)
+
+        // Tapped link → front of the preload queue, materialized now (req: instant + durable).
+        promote(url)
 
         // Hand the new layer its already-decoded content (if we preloaded this link) so
         // it renders synchronously — the "after" snapshot then shows the real article.
@@ -416,13 +448,28 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// any prior warm is cancelled when the focus changes. No-op until the focused layer
     /// has resolved to an article.
     private func warmPreloadsForFocusedLayer() {
-        guard let focused = layers[safe: focus], focused.isArticle else { return }
-        let urls = Array(focused.outboundLinkURLs.prefix(Self.maxPreloadedLinks))
-        let wantedSet = Set(urls.map { PreloadStore.key(for: $0) })
+        guard let focused = layers[safe: focus], focused.isArticle else {
+            warmURLs = []
+            warmTask?.cancel()
+            return
+        }
+        warmURLs = Array(focused.outboundLinkURLs.prefix(Self.maxPreloadedLinks))
+        let wantedSet = Set(warmURLs.map { PreloadStore.key(for: $0) })
         // Drop in-memory entries no longer reachable from the focused page.
         preloadedContent = preloadedContent.filter { wantedSet.contains($0.key) }
+        runWarm()
+    }
+
+    /// (Re)start the background drain of `warmURLs` in order. Restarting is cheap: an
+    /// already-materialized page short-circuits in `materialize`. The materialized pages
+    /// one level beyond `preloadDepth` are owned by `sessionID` (temporary — cleaned up on
+    /// exit); within-depth pages keep the durable `rootItem.id`.
+    private func runWarm() {
+        let urls = warmURLs
+        guard !urls.isEmpty else { warmTask?.cancel(); return }
+        let wantedSet = Set(urls.map { PreloadStore.key(for: $0) })
         let alreadyLoaded = Set(preloadedContent.keys)
-        let rootID = rootItem.id
+        let owner = preloadOwnerForFocusedLinks()
 
         warmTask?.cancel()
         warmTask = Task.detached(priority: .utility) { [weak self] in
@@ -430,7 +477,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
                 if Task.isCancelled { return }
                 let key = PreloadStore.key(for: url)
                 if alreadyLoaded.contains(key) { continue }
-                guard let content = await RabbitHolePreloader.materialize(url: url, rootID: rootID)
+                guard let content = await RabbitHolePreloader.materialize(url: url, owner: owner)
                 else { continue }
                 if Task.isCancelled { return }
                 await MainActor.run { [weak self] in
@@ -439,6 +486,28 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
                     self.preloadedContent[key] = content
                 }
             }
+        }
+    }
+
+    /// The owner for pages reachable from the focused layer (one level deeper than it):
+    /// durable (`rootItem.id`) when that depth is within the preload-depth setting, else
+    /// the temporary `sessionID`.
+    private func preloadOwnerForFocusedLinks() -> UUID {
+        (focus + 1 <= ReaderSettings.preloadDepth) ? rootItem.id : sessionID
+    }
+
+    /// A tapped link jumps to the front of the preload queue and is materialized
+    /// immediately on an independent high-priority task, so it (and its images) lands on
+    /// disk even though the focus — and the cancellable warm task — is about to move to the
+    /// new layer.
+    private func promote(_ url: URL) {
+        let key = PreloadStore.key(for: url)
+        if let idx = warmURLs.firstIndex(where: { PreloadStore.key(for: $0) == key }), idx != 0 {
+            warmURLs.insert(warmURLs.remove(at: idx), at: 0)
+        }
+        let owner = preloadOwnerForFocusedLinks()
+        Task.detached(priority: .userInitiated) {
+            _ = await RabbitHolePreloader.materialize(url: url, owner: owner)
         }
     }
 

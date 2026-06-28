@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSocial
 import ClipMediaDownload
 import ClipPlatforms
 import ClipSend

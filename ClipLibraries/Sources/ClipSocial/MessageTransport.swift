@@ -6,16 +6,16 @@
 import Foundation
 
 /// One undelivered message sitting in the shared database.
-struct InboxRecord {
+public struct InboxRecord {
     /// Opaque server-side identifier used to delete the record after processing.
-    let recordID: String
-    let senderUUID: UUID
+    public let recordID: String
+    public let senderUUID: UUID
     /// The sealed (encrypted + signed) envelope.
-    let payload: Data
+    public let payload: Data
 }
 
 /// Whether messaging is currently possible (maps CloudKit account status).
-enum MessagingAvailability {
+public enum MessagingAvailability {
     case available
     /// User isn't signed into iCloud (or restricted) — sends/receives fail.
     case unavailable(reason: String)
@@ -23,7 +23,7 @@ enum MessagingAvailability {
 
 /// Moves sealed payloads between users. The production implementation is the
 /// CloudKit public database; tests use an in-memory mock.
-protocol MessageTransport {
+public protocol MessageTransport {
     /// Writes one message addressed to `recipientUUID`.
     func send(payload: Data, to recipientUUID: UUID, from senderUUID: UUID) async throws
     /// All undelivered messages addressed to `recipientUUID`.
@@ -47,35 +47,37 @@ protocol MessageTransport {
 
 /// In-memory transport for tests: records live in an array, sends are
 /// captured, deletes are idempotent.
-final class InMemoryMessageTransport: MessageTransport {
-    struct StoredMessage {
-        let recordID: String
-        let recipientUUID: UUID
-        let senderUUID: UUID
-        let payload: Data
+public final class InMemoryMessageTransport: MessageTransport {
+    public struct StoredMessage {
+        public let recordID: String
+        public let recipientUUID: UUID
+        public let senderUUID: UUID
+        public let payload: Data
     }
 
-    private(set) var messages: [StoredMessage] = []
-    private(set) var deletedRecordIDs: [String] = []
-    private(set) var subscribedUUIDs: [UUID] = []
-    var sendError: Error?
+    public init() {}
+
+    public private(set) var messages: [StoredMessage] = []
+    public private(set) var deletedRecordIDs: [String] = []
+    public private(set) var subscribedUUIDs: [UUID] = []
+    public var sendError: Error?
     /// Simulates the public DB query-index lag a push can outrun: the next
     /// this-many `fetchInbox` calls return empty before stored messages become
     /// visible.
-    var emptyFetchesBeforeVisible = 0
-    private(set) var fetchInboxCallCount = 0
+    public var emptyFetchesBeforeVisible = 0
+    public private(set) var fetchInboxCallCount = 0
     /// `recordID(fromPush:)` returns this; `fetchRecord` returns the matching
     /// stored message (simulating the strongly-consistent fetch-by-ID).
-    var pushRecordID: String?
+    public var pushRecordID: String?
 
-    func send(payload: Data, to recipientUUID: UUID, from senderUUID: UUID) async throws {
+    public func send(payload: Data, to recipientUUID: UUID, from senderUUID: UUID) async throws {
         if let sendError { throw sendError }
         messages.append(StoredMessage(
             recordID: UUID().uuidString, recipientUUID: recipientUUID,
             senderUUID: senderUUID, payload: payload))
     }
 
-    func fetchInbox(for recipientUUID: UUID) async throws -> [InboxRecord] {
+    public func fetchInbox(for recipientUUID: UUID) async throws -> [InboxRecord] {
         fetchInboxCallCount += 1
         if emptyFetchesBeforeVisible > 0 {
             emptyFetchesBeforeVisible -= 1
@@ -86,21 +88,21 @@ final class InMemoryMessageTransport: MessageTransport {
             .map { InboxRecord(recordID: $0.recordID, senderUUID: $0.senderUUID, payload: $0.payload) }
     }
 
-    func delete(recordID: String) async throws {
+    public func delete(recordID: String) async throws {
         deletedRecordIDs.append(recordID)
         messages.removeAll { $0.recordID == recordID }
     }
 
-    func ensureSubscription(for recipientUUID: UUID) async throws {
+    public func ensureSubscription(for recipientUUID: UUID) async throws {
         subscribedUUIDs.append(recipientUUID)
     }
 
-    func recordID(fromPush userInfo: [AnyHashable: Any]) -> String? { pushRecordID }
+    public func recordID(fromPush userInfo: [AnyHashable: Any]) -> String? { pushRecordID }
 
-    func fetchRecord(recordID: String) async throws -> InboxRecord? {
+    public func fetchRecord(recordID: String) async throws -> InboxRecord? {
         messages.first { $0.recordID == recordID }
             .map { InboxRecord(recordID: $0.recordID, senderUUID: $0.senderUUID, payload: $0.payload) }
     }
 
-    func availability() async -> MessagingAvailability { .available }
+    public func availability() async -> MessagingAvailability { .available }
 }

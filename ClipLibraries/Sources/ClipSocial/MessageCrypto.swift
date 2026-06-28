@@ -11,11 +11,12 @@ import Foundation
 /// recipient's X25519 key with HPKE. The signature is verified on open; the
 /// CALLER decides whether the returned signing key is trusted (stored friend
 /// key match, or trust-on-first-use for friend adds).
-enum MessageCrypto {
+public enum MessageCrypto {
 
-    struct CryptoError: Error, CustomStringConvertible {
-        let reason: String
-        var description: String { "MessageCrypto: \(reason)" }
+    public struct CryptoError: Error, CustomStringConvertible {
+        public let reason: String
+        public var description: String { "MessageCrypto: \(reason)" }
+        public init(reason: String) { self.reason = reason }
     }
 
     private static let ciphersuite = HPKE.Ciphersuite.Curve25519_SHA256_ChachaPoly
@@ -36,7 +37,7 @@ enum MessageCrypto {
 
     /// Signs `body` with the sender's key and encrypts everything to the
     /// recipient's X25519 public key. The result is the record payload.
-    static func seal(
+    public static func seal(
         body: MessageBody,
         senderSigningKey: Curve25519.Signing.PrivateKey,
         recipientEncryptionPublicKey: Data
@@ -61,7 +62,7 @@ enum MessageCrypto {
     /// Decrypts a payload with the recipient's private key and verifies the
     /// embedded signature. Returns the body and the sender's signing public
     /// key (raw bytes) for the caller's trust decision.
-    static func open(
+    public static func open(
         payload: Data,
         recipientEncryptionKey: Curve25519.KeyAgreement.PrivateKey
     ) throws -> (body: MessageBody, senderSigningPublicKey: Data) {

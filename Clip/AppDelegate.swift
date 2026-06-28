@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSocial
 import ClipMediaDownload
 import ClipDesignSystem
 import ClipStorage
@@ -54,6 +55,16 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             KeychainIdentityStore.shared.loadIdentity()?.uuid.uuidString ?? "none"
         }
         DiagnosticLog.exportCloudKitContainer = { CloudKitMessageTransport.containerID }
+
+        // A friend-shared article received over CloudKit is ingested via the main-app
+        // ingestor (which lives above the social layer), injected here.
+        SocialMessageCenter.ingestHandler = { item in
+            Task { await ReadingListIngestor.shared.ingest(item) }
+        }
+        SocialMessageCenter.shareRecorder = { itemID, personUUID, username in
+            SemanticIndexStore.shared.recordShare(
+                itemID: itemID, personUUID: personUUID, username: username)
+        }
 
         // Wire the read-aloud first-run prompt's "Open Settings" to push the
         // Voice settings screen. Setting this hook is what enables the prompt in

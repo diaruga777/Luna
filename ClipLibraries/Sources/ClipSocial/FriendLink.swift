@@ -8,12 +8,12 @@ import Foundation
 /// Encodes an identity card as a `clipreader://friend?...` URL (shared as a
 /// link or rendered as a QR code) and parses it back. The same URL is handled
 /// by the in-app scanner, the system camera, and tapped links.
-enum FriendLink {
+public enum FriendLink {
 
-    static let scheme = "clipreader"
-    static let host = "friend"
+    public static let scheme = "clipreader"
+    public static let host = "friend"
 
-    static func url(for card: IdentityCard) -> URL? {
+    public static func url(for card: IdentityCard) -> URL? {
         var components = URLComponents()
         components.scheme = scheme
         components.host = host
@@ -31,7 +31,7 @@ enum FriendLink {
 
     /// Parses a friend URL; nil for anything malformed (wrong scheme/host,
     /// missing or invalid fields, oversized username).
-    static func card(from url: URL) -> IdentityCard? {
+    public static func card(from url: URL) -> IdentityCard? {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               components.scheme?.lowercased() == scheme,
               components.host?.lowercased() == host,

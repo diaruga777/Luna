@@ -8,7 +8,7 @@ import Foundation
 import Security
 
 /// Loads and persists this user's social identity.
-protocol IdentityStoring {
+public protocol IdentityStoring {
     /// The stored identity, or nil before onboarding has run.
     func loadIdentity() -> UserIdentity?
     /// Generates a fresh UUID + key pairs and persists them. Returns nil when
@@ -24,9 +24,9 @@ protocol IdentityStoring {
 /// Keychain-backed identity storage. Items are marked synchronizable so the
 /// identity survives reinstalls and roams to the user's other devices via
 /// iCloud Keychain.
-final class KeychainIdentityStore: IdentityStoring {
+public final class KeychainIdentityStore: IdentityStoring {
 
-    static let shared = KeychainIdentityStore()
+    public static let shared = KeychainIdentityStore()
 
     private let service = "com.hpiddy.clip.identity"
     private let account = "identity"
@@ -41,7 +41,7 @@ final class KeychainIdentityStore: IdentityStoring {
         let signingPrivateKey: Data
     }
 
-    func loadIdentity() -> UserIdentity? {
+    public func loadIdentity() -> UserIdentity? {
         guard let data = readKeychainData(),
               let stored = try? JSONDecoder().decode(StoredIdentity.self, from: data),
               let encryptionKey = try? Curve25519.KeyAgreement.PrivateKey(
@@ -56,7 +56,7 @@ final class KeychainIdentityStore: IdentityStoring {
     }
 
     @discardableResult
-    func createIdentity(username: String, email: String?, phone: String?) -> UserIdentity? {
+    public func createIdentity(username: String, email: String?, phone: String?) -> UserIdentity? {
         guard let validUsername = ProfileValidation.normalizedUsername(username) else { return nil }
         let identity = UserIdentity(
             uuid: UUID(),
@@ -70,7 +70,7 @@ final class KeychainIdentityStore: IdentityStoring {
     }
 
     @discardableResult
-    func updateProfile(username: String, email: String?, phone: String?) -> UserIdentity? {
+    public func updateProfile(username: String, email: String?, phone: String?) -> UserIdentity? {
         guard var identity = loadIdentity(),
               let validUsername = ProfileValidation.normalizedUsername(username)
         else { return nil }
@@ -121,17 +121,17 @@ final class KeychainIdentityStore: IdentityStoring {
 }
 
 /// In-memory stand-in for tests.
-final class InMemoryIdentityStore: IdentityStoring {
+public final class InMemoryIdentityStore: IdentityStoring {
     private var identity: UserIdentity?
 
-    init(identity: UserIdentity? = nil) {
+    public init(identity: UserIdentity? = nil) {
         self.identity = identity
     }
 
-    func loadIdentity() -> UserIdentity? { identity }
+    public func loadIdentity() -> UserIdentity? { identity }
 
     @discardableResult
-    func createIdentity(username: String, email: String?, phone: String?) -> UserIdentity? {
+    public func createIdentity(username: String, email: String?, phone: String?) -> UserIdentity? {
         guard let validUsername = ProfileValidation.normalizedUsername(username) else { return nil }
         let created = UserIdentity(
             uuid: UUID(),
@@ -145,7 +145,7 @@ final class InMemoryIdentityStore: IdentityStoring {
     }
 
     @discardableResult
-    func updateProfile(username: String, email: String?, phone: String?) -> UserIdentity? {
+    public func updateProfile(username: String, email: String?, phone: String?) -> UserIdentity? {
         guard var current = identity,
               let validUsername = ProfileValidation.normalizedUsername(username)
         else { return nil }

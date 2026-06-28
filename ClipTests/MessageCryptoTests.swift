@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipSocial
 import CryptoKit
 import XCTest
 @testable import Clip

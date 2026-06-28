@@ -9,15 +9,15 @@ import Foundation
 /// Off by default; the per-friend toggle stores the friends opted IN. Separately
 /// tracks which friends have EVER shared with us, so the first share from a new
 /// friend can always notify (with a hint to enable future notifications).
-enum FriendNotificationSettings {
+public enum FriendNotificationSettings {
     private static let enabledKey = "notifyOnShareFriendUUIDs"
     private static let everSharedKey = "everSharedFriendUUIDs"
 
-    static func isNotifyEnabled(friendUUID: UUID) -> Bool {
+    public static func isNotifyEnabled(friendUUID: UUID) -> Bool {
         enabledUUIDs().contains(friendUUID.uuidString)
     }
 
-    static func setNotify(_ enabled: Bool, friendUUID: UUID) {
+    public static func setNotify(_ enabled: Bool, friendUUID: UUID) {
         var ids = enabledUUIDs()
         if enabled {
             ids.insert(friendUUID.uuidString)
@@ -28,12 +28,12 @@ enum FriendNotificationSettings {
     }
 
     /// Whether this friend has shared with us before (at all). False the first time.
-    static func hasSharedBefore(friendUUID: UUID) -> Bool {
+    public static func hasSharedBefore(friendUUID: UUID) -> Bool {
         everSharedUUIDs().contains(friendUUID.uuidString)
     }
 
     /// Records that this friend has now shared with us (idempotent).
-    static func markHasShared(friendUUID: UUID) {
+    public static func markHasShared(friendUUID: UUID) {
         var ids = everSharedUUIDs()
         ids.insert(friendUUID.uuidString)
         UserDefaults.standard.set(Array(ids), forKey: everSharedKey)

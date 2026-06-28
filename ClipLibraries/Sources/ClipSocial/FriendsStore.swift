@@ -6,23 +6,23 @@
 import ClipStorage
 import Foundation
 
-extension Notification.Name {
+public extension Notification.Name {
     /// Posted whenever the friends list changes (add/update/delete).
-    static let friendsListChanged = Notification.Name("friendsListChanged")
+    public static let friendsListChanged = Notification.Name("friendsListChanged")
 }
 
 /// A user this user has exchanged identities with.
-struct Friend: Codable, Equatable {
-    var card: IdentityCard
-    var dateAdded: Date
+public struct Friend: Codable, Equatable {
+    public var card: IdentityCard
+    public var dateAdded: Date
 }
 
 /// Persists the friends list as JSON in the App Group container, mirroring
 /// the `ReadingListStore` pattern (fresh disk reads, lock-serialized
 /// mutations, change notification).
-final class FriendsStore {
+public final class FriendsStore {
 
-    static let shared = FriendsStore()
+    public static let shared = FriendsStore()
 
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
@@ -30,7 +30,7 @@ final class FriendsStore {
 
     /// The shared store uses the App Group container; tests pass a scratch
     /// directory so they never touch real data.
-    init(containerURL: URL? = nil) {
+    public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
     }
 
@@ -43,20 +43,20 @@ final class FriendsStore {
     }
 
     /// All friends, newest first.
-    func items() -> [Friend] {
+    public func items() -> [Friend] {
         guard let data = try? Data(contentsOf: fileURL),
               let friends = try? JSONDecoder().decode([Friend].self, from: data)
         else { return [] }
         return friends.sorted { $0.dateAdded > $1.dateAdded }
     }
 
-    func friend(withUUID uuid: UUID) -> Friend? {
+    public func friend(withUUID uuid: UUID) -> Friend? {
         items().first { $0.card.uuid == uuid }
     }
 
     /// Adds (or refreshes) a friend. Re-adding the same UUID updates the
     /// profile fields and keys rather than duplicating.
-    func add(_ card: IdentityCard) {
+    public func add(_ card: IdentityCard) {
         mutationLock.lock()
         defer { mutationLock.unlock() }
         var all = items()
@@ -69,7 +69,7 @@ final class FriendsStore {
         save(all)
     }
 
-    func delete(uuid: UUID) {
+    public func delete(uuid: UUID) {
         mutationLock.lock()
         defer { mutationLock.unlock() }
         var all = items()

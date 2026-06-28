@@ -12,9 +12,17 @@ import os
 /// Orchestrates social messaging: seals and sends friend adds and shared
 /// articles, and drains the inbox (decrypt → verify → route → delete).
 /// Called on launch, foreground, silent push, and pull-to-refresh.
-final class SocialMessageCenter {
+public final class SocialMessageCenter {
 
-    static let shared = SocialMessageCenter()
+    public static let shared = SocialMessageCenter()
+
+    /// How a received friend-shared article is ingested. Injected by the app at
+    /// launch (the ingestor lives above the social layer); nil in extensions/tests.
+    public static var ingestHandler: ((ReadingListItem) -> Void)?
+
+    /// Records (itemID, personUUID, username) of an outgoing share into the semantic
+    /// index. Injected by the app (the semantic layer sits above social); nil otherwise.
+    public static var shareRecorder: ((UUID, UUID, String) -> Void)?
 
     private let logger = Logger(subsystem: "com.hpiddy.clip", category: "social")
     private let identityStore: IdentityStoring
@@ -43,9 +51,9 @@ final class SocialMessageCenter {
     /// index is eventually consistent — the record often isn't returned by a
     /// query until a few seconds later. Retrying closes that gap. Overridable
     /// in tests to avoid real delays.
-    var pushRetryDelaysSeconds: [UInt64] = [2, 4, 8]
+    public var pushRetryDelaysSeconds: [UInt64] = [2, 4, 8]
 
-    init(identityStore: IdentityStoring = KeychainIdentityStore.shared,
+    public init(identityStore: IdentityStoring = KeychainIdentityStore.shared,
          friendsStore: FriendsStore = .shared,
          transport: MessageTransport = CloudKitMessageTransport(),
          readingListStore: ReadingListStore = .shared,
@@ -58,7 +66,7 @@ final class SocialMessageCenter {
         self.transport = transport
         self.readingListStore = readingListStore
         self.startIngest = startIngest ?? { item in
-            Task { await ReadingListIngestor.shared.ingest(item) }
+            SocialMessageCenter.ingestHandler?(item)
         }
         self.notifyArticleShared = notifyArticleShared ?? { username, title in
             NotificationManager.postArticleShared(fromUsername: username, title: title)
@@ -87,7 +95,7 @@ final class SocialMessageCenter {
     }
 
     /// Current messaging availability (iCloud account status).
-    func availability() async -> MessagingAvailability {
+    public func availability() async -> MessagingAvailability {
         await transport.availability()
     }
 
@@ -95,7 +103,7 @@ final class SocialMessageCenter {
 
     /// Tells `card`'s owner to add us back (the second half of a
     /// bi-directional friend add). Failures are logged, not retried.
-    func sendFriendAdd(to card: IdentityCard) async {
+    public func sendFriendAdd(to card: IdentityCard) async {
         guard let identity = identityStore.loadIdentity() else { return }
         do {
             let payload = try MessageCrypto.seal(
@@ -111,7 +119,7 @@ final class SocialMessageCenter {
     /// Sends a reading-list article to a friend. Throws so the UI can show
     /// the failure. User-initiated sends feed the share-suggestion streak;
     /// automated (always-share) sends don't.
-    func sendArticle(
+    public func sendArticle(
         urlString: String, title: String?, to friend: Friend,
         countsAsManualShare: Bool = true
     ) async throws {
@@ -146,14 +154,13 @@ final class SocialMessageCenter {
         // Remember what we shared with this friend, to drive semantic
         // suggestions later (cheap: records the item id, no model loaded here).
         if let itemID = sharedItem?.id {
-            SemanticIndexStore.shared.recordShare(
-                itemID: itemID, personUUID: friend.card.uuid, username: friend.card.username)
+            SocialMessageCenter.shareRecorder?(itemID, friend.card.uuid, friend.card.username)
         }
     }
 
     /// Sends a URL-less music/podcast item to a friend (the new `mediaItem`
     /// case). Used to share songs/episodes that have no shareable http URL.
-    func sendMediaItem(
+    public func sendMediaItem(
         kind: ContentPlatform, creator: String, title: String, to friend: Friend
     ) async throws {
         guard let identity = identityStore.loadIdentity() else {
@@ -172,7 +179,7 @@ final class SocialMessageCenter {
     /// Sends a price tracker to a friend (the `priceTracker` case): all watched
     /// store URLs plus the current best price and alert threshold, so the
     /// recipient recreates the same tracker.
-    func sendPriceTracker(_ tracker: PriceTracker, to friend: Friend) async throws {
+    public func sendPriceTracker(_ tracker: PriceTracker, to friend: Friend) async throws {
         guard let identity = identityStore.loadIdentity() else {
             throw MessageCrypto.CryptoError(reason: "no identity")
         }
@@ -188,7 +195,7 @@ final class SocialMessageCenter {
 
     /// Always-share automation for a newly saved URL: fire-and-forget send
     /// that never feeds the suggestion streak.
-    func autoShare(urlString: String, toFriendUUID uuid: UUID) async {
+    public func autoShare(urlString: String, toFriendUUID uuid: UUID) async {
         guard let friend = friendsStore.friend(withUUID: uuid) else { return }
         do {
             try await sendArticle(
@@ -201,7 +208,7 @@ final class SocialMessageCenter {
 
     /// Sends any friend-shares the share extension queued (it can't send
     /// directly). Call on launch and foreground.
-    func drainPendingFriendShares() async {
+    public func drainPendingFriendShares() async {
         let pending = PendingFriendShareStore.drainAll()
         for share in pending {
             guard let friend = friendsStore.friend(withUUID: share.friendUUID) else {
@@ -223,7 +230,7 @@ final class SocialMessageCenter {
     // MARK: - Incoming
 
     /// Installs the inbox subscription (idempotent; call every launch).
-    func ensureSubscription() async {
+    public func ensureSubscription() async {
         guard let identity = identityStore.loadIdentity() else { return }
         do {
             try await transport.ensureSubscription(for: identity.uuid)
@@ -241,7 +248,7 @@ final class SocialMessageCenter {
     /// fetch THAT record by ID (strongly consistent — no eventually-consistent
     /// query-index lag, no retry). Falls back to a query drain only if the push
     /// carried no ID or the fetch failed (e.g. a coalesced push).
-    func processPush(userInfo: [AnyHashable: Any]) async {
+    public func processPush(userInfo: [AnyHashable: Any]) async {
         guard let identity = identityStore.loadIdentity() else { return }
         if let recordID = transport.recordID(fromPush: userInfo),
            let record = try? await transport.fetchRecord(recordID: recordID) {
@@ -260,7 +267,7 @@ final class SocialMessageCenter {
     /// Fetches everything addressed to us, processes each message, and
     /// deletes it. Undecryptable or unrecognized messages are deleted and
     /// ignored (forward compatibility). Safe to call repeatedly.
-    func processInbox(trigger: String = "manual") async {
+    public func processInbox(trigger: String = "manual") async {
         guard let identity = identityStore.loadIdentity() else { return }
 
         drainLock.lock()

@@ -21,12 +21,12 @@ import Foundation
 ///
 /// Persisted as JSON in the App Group (the intents run in the app process but
 /// may be separated by process death between "save" and "apply choice").
-final class ShareSuggestionStore {
+public final class ShareSuggestionStore {
 
-    static let shared = ShareSuggestionStore()
+    public static let shared = ShareSuggestionStore()
 
     /// Suggestion/automation state for one base URL.
-    struct SiteRule: Codable {
+    public struct SiteRule: Codable {
         var streakFriendUUID: UUID?
         var streakFriendUsername: String?
         var streakCount: Int = 0
@@ -36,15 +36,24 @@ final class ShareSuggestionStore {
     }
 
     /// A suggestion armed by the most recent save, consumed by the intents.
-    struct PendingSuggestion: Codable, Equatable {
-        var baseURL: String
-        var friendUUID: UUID
-        var friendUsername: String
-        var urlString: String
+    public struct PendingSuggestion: Codable, Equatable {
+        public var baseURL: String
+        public var friendUUID: UUID
+        public var friendUsername: String
+        public var urlString: String
         /// Armed by the semantic index (content similarity) rather than a
         /// same-site/-channel streak. Semantic suggestions offer only
         /// share/don't — never "always".
-        var isSemantic: Bool = false
+        public var isSemantic: Bool = false
+
+        public init(baseURL: String, friendUUID: UUID, friendUsername: String,
+                    urlString: String, isSemantic: Bool = false) {
+            self.baseURL = baseURL
+            self.friendUUID = friendUUID
+            self.friendUsername = friendUsername
+            self.urlString = urlString
+            self.isSemantic = isSemantic
+        }
     }
 
     private struct State: Codable {
@@ -53,13 +62,13 @@ final class ShareSuggestionStore {
     }
 
     /// How many consecutive shares arm a suggestion.
-    static let streakThreshold = 2
+    public static let streakThreshold = 2
 
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
     private let mutationLock = NSLock()
 
-    init(containerURL: URL? = nil) {
+    public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
     }
 
@@ -72,7 +81,7 @@ final class ShareSuggestionStore {
     }
 
     /// Base URL for suggestion purposes: host, lowercased, minus "www.".
-    static func baseURL(of urlString: String) -> String? {
+    public static func baseURL(of urlString: String) -> String? {
         guard let host = URL(string: urlString)?.host?.lowercased() else { return nil }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
@@ -81,7 +90,7 @@ final class ShareSuggestionStore {
     /// host is always "youtube.com", so streaks key on the CHANNEL instead
     /// (nil — and thus no streak — until the channel is known post-ingest).
     /// Everything else keys on the base URL (host).
-    static func suggestionKey(urlString: String, channelName: String?) -> String? {
+    public static func suggestionKey(urlString: String, channelName: String?) -> String? {
         if YouTubeURL.videoID(from: urlString) != nil {
             guard let channel = channelName?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !channel.isEmpty
@@ -94,7 +103,7 @@ final class ShareSuggestionStore {
     // MARK: - Events
 
     /// A user-initiated share (in-app sheet, or a Share Once / Always choice).
-    func recordManualShare(
+    public func recordManualShare(
         urlString: String, channelName: String? = nil,
         friendUUID: UUID, friendUsername: String
     ) {
@@ -116,7 +125,7 @@ final class ShareSuggestionStore {
 
     /// A NEW URL was just saved (never called for duplicate presses). Returns
     /// the friends to auto-share to, and arms/clears the pending suggestion.
-    func handleNewSave(
+    public func handleNewSave(
         urlString: String, channelName: String? = nil
     ) -> [(uuid: UUID, username: String)] {
         guard let base = Self.suggestionKey(urlString: urlString, channelName: channelName) else { return [] }
@@ -143,7 +152,7 @@ final class ShareSuggestionStore {
     /// Arms a semantic suggestion (content similarity) for a friend, unless a
     /// suggestion is already pending (an explicit streak suggestion wins). Keyed
     /// by the item's URL so a choice can be applied/suppressed like any other.
-    func armSemanticSuggestion(urlString: String, friendUUID: UUID, friendUsername: String) {
+    public func armSemanticSuggestion(urlString: String, friendUUID: UUID, friendUsername: String) {
         let base = Self.baseURL(of: urlString) ?? "semantic"
         mutate { state in
             guard state.pending == nil else { return }
@@ -156,7 +165,7 @@ final class ShareSuggestionStore {
     }
 
     /// The suggestion armed by the last save, if any.
-    func pendingSuggestion() -> PendingSuggestion? {
+    public func pendingSuggestion() -> PendingSuggestion? {
         loadState().pending
     }
 
@@ -166,14 +175,14 @@ final class ShareSuggestionStore {
     ///   "2:<name>"  — semantic recommendation: offer Yes / No (no "always").
     /// Usernames can't contain ":" (see `ProfileValidation`), so the split is
     /// unambiguous.
-    func pendingSuggestionToken() -> String {
+    public func pendingSuggestionToken() -> String {
         guard let pending = loadState().pending else { return "" }
         let prefix = pending.isSemantic ? "2" : "3"
         return "\(prefix):\(pending.friendUsername)"
     }
 
     /// The user's answer to a surfaced suggestion.
-    enum Choice: String, CaseIterable {
+    public enum Choice: String, CaseIterable {
         case dontShare = "Don't Share"
         case shareOnce = "Share Once"
         case alwaysShare = "Always Share"
@@ -183,7 +192,7 @@ final class ShareSuggestionStore {
     /// suggestion so the caller can perform the actual send for
     /// `.shareOnce`/`.alwaysShare` (sends also count as manual shares).
     @discardableResult
-    func applyChoice(_ choice: Choice) -> PendingSuggestion? {
+    public func applyChoice(_ choice: Choice) -> PendingSuggestion? {
         var consumed: PendingSuggestion?
         mutate { state in
             guard let pending = state.pending else { return }
@@ -212,7 +221,7 @@ final class ShareSuggestionStore {
     /// A friend to suggest sharing a given URL with, based on this site's
     /// history: the current streak friend, else any auto-share friend. Used by
     /// the end-of-article share UI. nil when there's nothing to suggest.
-    func suggestedFriend(
+    public func suggestedFriend(
         forURLString urlString: String, channelName: String? = nil
     ) -> (uuid: UUID, username: String)? {
         guard let base = Self.suggestionKey(urlString: urlString, channelName: channelName),
@@ -229,13 +238,13 @@ final class ShareSuggestionStore {
     }
 
     /// Whether a base URL is auto-shared to a friend.
-    func isAlwaysShared(baseURL: String, friendUUID: UUID) -> Bool {
+    public func isAlwaysShared(baseURL: String, friendUUID: UUID) -> Bool {
         loadState().rules[baseURL]?.alwaysFriends[friendUUID] != nil
     }
 
     /// Directly turns auto-share for a base URL to a friend on or off (the
     /// friend-detail toggle, independent of the suggestion streak).
-    func setAlwaysShare(
+    public func setAlwaysShare(
         baseURL: String, friendUUID: UUID, friendUsername: String, enabled: Bool
     ) {
         mutate { state in
@@ -251,7 +260,7 @@ final class ShareSuggestionStore {
     }
 
     /// Base URLs auto-shared to a friend.
-    func alwaysSharedBaseURLs(friendUUID: UUID) -> [String] {
+    public func alwaysSharedBaseURLs(friendUUID: UUID) -> [String] {
         loadState().rules
             .filter { $0.value.alwaysFriends[friendUUID] != nil }
             .map(\.key)
@@ -259,7 +268,7 @@ final class ShareSuggestionStore {
     }
 
     /// Wipes ALL suggestion/automation state involving a friend.
-    func wipe(friendUUID: UUID) {
+    public func wipe(friendUUID: UUID) {
         mutate { state in
             for (base, var rule) in state.rules {
                 rule.alwaysFriends.removeValue(forKey: friendUUID)

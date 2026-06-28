@@ -14,15 +14,17 @@ import Foundation
 /// granted Create + Write on `Message` in the CloudKit Console (defaults only
 /// let the creator modify). Schema must be deployed to Production before
 /// TestFlight builds can use it.
-final class CloudKitMessageTransport: MessageTransport {
+public final class CloudKitMessageTransport: MessageTransport {
 
-    static let containerID = "iCloud.com.hpiddy.clip"
-    static let recordType = "Message"
+    public static let containerID = "iCloud.com.hpiddy.clip"
+    public static let recordType = "Message"
 
     private let container = CKContainer(identifier: CloudKitMessageTransport.containerID)
     private var database: CKDatabase { container.publicCloudDatabase }
 
-    func send(payload: Data, to recipientUUID: UUID, from senderUUID: UUID) async throws {
+    public init() {}
+
+    public func send(payload: Data, to recipientUUID: UUID, from senderUUID: UUID) async throws {
         let record = CKRecord(
             recordType: Self.recordType,
             recordID: CKRecord.ID(recordName: UUID().uuidString))
@@ -32,7 +34,7 @@ final class CloudKitMessageTransport: MessageTransport {
         _ = try await database.save(record)
     }
 
-    func fetchInbox(for recipientUUID: UUID) async throws -> [InboxRecord] {
+    public func fetchInbox(for recipientUUID: UUID) async throws -> [InboxRecord] {
         let query = CKQuery(
             recordType: Self.recordType,
             predicate: NSPredicate(format: "recipientUUID == %@", recipientUUID.uuidString))
@@ -49,7 +51,7 @@ final class CloudKitMessageTransport: MessageTransport {
         }
     }
 
-    func delete(recordID: String) async throws {
+    public func delete(recordID: String) async throws {
         do {
             _ = try await database.deleteRecord(withID: CKRecord.ID(recordName: recordID))
         } catch let error as CKError where error.code == .unknownItem {
@@ -57,7 +59,7 @@ final class CloudKitMessageTransport: MessageTransport {
         }
     }
 
-    func ensureSubscription(for recipientUUID: UUID) async throws {
+    public func ensureSubscription(for recipientUUID: UUID) async throws {
         let subscriptionID = "inbox-\(recipientUUID.uuidString)"
         // CloudKit's `save` only CREATES — it rejects an existing subscription
         // ID rather than updating it. So delete any prior subscription first,
@@ -84,14 +86,14 @@ final class CloudKitMessageTransport: MessageTransport {
         _ = try await database.save(subscription)
     }
 
-    func recordID(fromPush userInfo: [AnyHashable: Any]) -> String? {
+    public func recordID(fromPush userInfo: [AnyHashable: Any]) -> String? {
         guard let notification = CKNotification(fromRemoteNotificationDictionary: userInfo)
                 as? CKQueryNotification
         else { return nil }
         return notification.recordID?.recordName
     }
 
-    func fetchRecord(recordID: String) async throws -> InboxRecord? {
+    public func fetchRecord(recordID: String) async throws -> InboxRecord? {
         // record(for:) is a strongly-consistent fetch-by-ID — unlike a query
         // (eventually-consistent index), it sees the record the push referenced
         // immediately, so no retry/lag.
@@ -103,7 +105,7 @@ final class CloudKitMessageTransport: MessageTransport {
         return InboxRecord(recordID: recordID, senderUUID: senderUUID, payload: payload)
     }
 
-    func availability() async -> MessagingAvailability {
+    public func availability() async -> MessagingAvailability {
         do {
             let status = try await container.accountStatus()
             switch status {

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSocial
 import CoreImage
 import UIKit
 

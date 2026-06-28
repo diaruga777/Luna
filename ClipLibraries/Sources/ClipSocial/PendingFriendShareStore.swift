@@ -8,15 +8,15 @@ import Foundation
 /// One outgoing friend-share queued by the share extension. The extension can't
 /// do the CloudKit send (no crypto/identity), so it records the intent here and
 /// the main app sends it on next launch/foreground.
-struct PendingFriendShare: Codable, Equatable {
-    let friendUUID: UUID
-    let urlString: String
+public struct PendingFriendShare: Codable, Equatable {
+    public let friendUUID: UUID
+    public let urlString: String
 }
 
 /// App-Group-backed queue of pending outgoing friend shares. The share
 /// extension enqueues (via its own copy of the file shape); the main app drains.
-enum PendingFriendShareStore {
-    static let appGroupID = "group.com.hpiddy.clip"
+public enum PendingFriendShareStore {
+    public static let appGroupID = "group.com.hpiddy.clip"
 
     private static var fileURL: URL? {
         FileManager.default
@@ -24,7 +24,7 @@ enum PendingFriendShareStore {
             .appendingPathComponent("pendingFriendShares.json")
     }
 
-    static func enqueue(_ share: PendingFriendShare) {
+    public static func enqueue(_ share: PendingFriendShare) {
         guard let fileURL else { return }
         var queue = load(fileURL)
         queue.append(share)
@@ -34,7 +34,7 @@ enum PendingFriendShareStore {
     }
 
     /// Returns and clears the queue.
-    static func drainAll() -> [PendingFriendShare] {
+    public static func drainAll() -> [PendingFriendShare] {
         guard let fileURL else { return [] }
         let queue = load(fileURL)
         try? FileManager.default.removeItem(at: fileURL)

@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipSocial
 import Intents
 import XCTest
 @testable import Clip

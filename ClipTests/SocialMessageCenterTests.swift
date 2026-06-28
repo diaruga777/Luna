@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipSocial
 import ClipStorage
 import CryptoKit
 import XCTest

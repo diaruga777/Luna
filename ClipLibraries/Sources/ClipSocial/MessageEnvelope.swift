@@ -9,7 +9,7 @@ import Foundation
 /// What a message says, decoded from its (decrypted) JSON envelope.
 /// The envelope carries a raw `type` string so future clients can introduce
 /// new types: anything unrecognized decodes as `.unknown` and is ignored.
-enum MessageBody: Equatable {
+public enum MessageBody: Equatable {
     /// "Add me back": the sender's identity card (bi-directional friend add).
     case friendAdd(IdentityCard)
     /// A shared reading-list link.
@@ -42,7 +42,7 @@ enum MessageBody: Equatable {
         var priceTracker: PriceTrackerShare?
     }
 
-    func encoded() throws -> Data {
+    public func encoded() throws -> Data {
         let wire: Wire
         switch self {
         case .friendAdd(let card):
@@ -60,7 +60,7 @@ enum MessageBody: Equatable {
         return try JSONEncoder().encode(wire)
     }
 
-    static func decoded(from data: Data) throws -> MessageBody {
+    public static func decoded(from data: Data) throws -> MessageBody {
         let wire = try JSONDecoder().decode(Wire.self, from: data)
         switch wire.type {
         case TypeName.friendAdd:

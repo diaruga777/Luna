@@ -8,6 +8,7 @@
 //  messages) and sent to a Kindle.
 //
 
+import ClipSocial
 import ClipStorage
 import ClipURLClassification
 import UIKit

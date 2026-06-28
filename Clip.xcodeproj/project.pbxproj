@@ -66,6 +66,8 @@
 		E69342FE12CC67327392E2D2 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
 		E4985943E018E5FE92C11606 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
 		42F0FDA59D82F9D669F258D6 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		FC3B05B51F7C576146ECF6CD /* ClipSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* ClipSocial */; };
+		D51185A738D87061659336B0 /* ClipSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* ClipSocial */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -208,6 +210,7 @@
 				D42B57E8D2EC0818A73B6FD4 /* ClipDesignSystem in Frameworks */,
 				031FF107DF1A6AF0F5958C46 /* ClipPlatforms in Frameworks */,
 				FF6630FB61B598C594FCDE61 /* ClipMediaDownload in Frameworks */,
+				FC3B05B51F7C576146ECF6CD /* ClipSocial in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -233,6 +236,7 @@
 				408BAA99D147B5FF19864BCC /* ClipDesignSystem in Frameworks */,
 				670A781911DA94A8B457F826 /* ClipPlatforms in Frameworks */,
 				42F0FDA59D82F9D669F258D6 /* ClipMediaDownload in Frameworks */,
+				D51185A738D87061659336B0 /* ClipSocial in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -383,6 +387,7 @@
 				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
 				72398B0845A005923290AE55 /* ClipPlatforms */,
 				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
+				DE798ED2A5DA5A986EE4B864 /* ClipSocial */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -439,6 +444,7 @@
 				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
 				72398B0845A005923290AE55 /* ClipPlatforms */,
 				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
+				DE798ED2A5DA5A986EE4B864 /* ClipSocial */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -1198,6 +1204,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipMediaDownload;
+		};
+		DE798ED2A5DA5A986EE4B864 /* ClipSocial */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipSocial;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

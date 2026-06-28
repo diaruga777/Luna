@@ -9,17 +9,28 @@ import Foundation
 /// This user's durable social identity: a self-assigned UUID plus an X25519
 /// key pair (message encryption) and an Ed25519 key pair (message signing).
 /// Username/email/phone are purely cosmetic profile fields.
-struct UserIdentity {
-    let uuid: UUID
-    var username: String
-    var email: String?
-    var phone: String?
-    let encryptionKey: Curve25519.KeyAgreement.PrivateKey
-    let signingKey: Curve25519.Signing.PrivateKey
+public struct UserIdentity {
+    public let uuid: UUID
+    public var username: String
+    public var email: String?
+    public var phone: String?
+    public let encryptionKey: Curve25519.KeyAgreement.PrivateKey
+    public let signingKey: Curve25519.Signing.PrivateKey
+
+    public init(uuid: UUID, username: String, email: String?, phone: String?,
+                encryptionKey: Curve25519.KeyAgreement.PrivateKey,
+                signingKey: Curve25519.Signing.PrivateKey) {
+        self.uuid = uuid
+        self.username = username
+        self.email = email
+        self.phone = phone
+        self.encryptionKey = encryptionKey
+        self.signingKey = signingKey
+    }
 
     /// The shareable public half (what goes in QR codes, links, and
     /// friendAdd payloads).
-    var card: IdentityCard {
+    public var card: IdentityCard {
         IdentityCard(
             uuid: uuid,
             username: username,
@@ -32,26 +43,36 @@ struct UserIdentity {
 
 /// The public half of an identity — everything a friend needs to encrypt to,
 /// verify, and display this user.
-struct IdentityCard: Codable, Equatable {
-    let uuid: UUID
-    var username: String
-    var email: String?
-    var phone: String?
+public struct IdentityCard: Codable, Equatable {
+    public let uuid: UUID
+    public var username: String
+    public var email: String?
+    public var phone: String?
     /// Raw X25519 public key bytes.
-    var encryptionPublicKey: Data
+    public var encryptionPublicKey: Data
     /// Raw Ed25519 public key bytes.
-    var signingPublicKey: Data
+    public var signingPublicKey: Data
+
+    public init(uuid: UUID, username: String, email: String?, phone: String?,
+                encryptionPublicKey: Data, signingPublicKey: Data) {
+        self.uuid = uuid
+        self.username = username
+        self.email = email
+        self.phone = phone
+        self.encryptionPublicKey = encryptionPublicKey
+        self.signingPublicKey = signingPublicKey
+    }
 }
 
 /// Profile field validation shared by the identity store and the UI.
-enum ProfileValidation {
-    static let usernameMaxLength = 20
-    static let contactFieldMaxLength = 60
+public enum ProfileValidation {
+    public static let usernameMaxLength = 20
+    public static let contactFieldMaxLength = 60
 
     /// Trims and validates a username: 1–20 characters after trimming, with no
     /// ":" (reserved as the delimiter in the share-suggestion intent token,
     /// e.g. "3:username").
-    static func normalizedUsername(_ raw: String) -> String? {
+    public static func normalizedUsername(_ raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= usernameMaxLength,
               !trimmed.contains(":") else { return nil }
@@ -59,7 +80,7 @@ enum ProfileValidation {
     }
 
     /// Trims an optional cosmetic contact field; empty collapses to nil.
-    static func normalizedContactField(_ raw: String?) -> String? {
+    public static func normalizedContactField(_ raw: String?) -> String? {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty
         else { return nil }

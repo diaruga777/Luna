@@ -11,29 +11,29 @@ import UserNotifications
 /// app to drain the inbox; this surfaces the decrypted result to the user (a
 /// CloudKit push can't carry the encrypted content itself). Authorization is
 /// requested once at launch so notifications can actually appear.
-enum NotificationManager {
+public enum NotificationManager {
 
     // MARK: - userInfo keys / values
 
     /// `userInfo` key distinguishing a notification's kind (for tap routing and
     /// bulk dismissal).
-    static let typeKey = "clipNotificationType"
+    public static let typeKey = "clipNotificationType"
     /// `userInfo` key carrying the sharing friend's UUID string.
-    static let friendUUIDKey = "clipFriendUUID"
+    public static let friendUUIDKey = "clipFriendUUID"
     /// The first-ever share from a friend — tapping it deep-links to that
     /// friend's settings page.
-    static let typeFirstShare = "friendFirstShare"
+    public static let typeFirstShare = "friendFirstShare"
     /// A follow-up (not first) friend share — tapping it just opens the app;
     /// these are cleared when the user reaches the reading list.
-    static let typeShareFollowup = "friendShareFollowup"
+    public static let typeShareFollowup = "friendShareFollowup"
     /// Someone added you as a friend — tapping it opens the in-app friends list.
-    static let typeFriendAdded = "friendAdded"
+    public static let typeFriendAdded = "friendAdded"
     /// Identifier prefix for follow-up share notifications, so they can be
     /// removed in bulk without disturbing first-share (or other) notifications.
     private static let followupIdentifierPrefix = "friendShareFollowup-"
 
     /// Requests alert/sound authorization (no-op if already decided).
-    static func requestAuthorization() {
+    public static func requestAuthorization() {
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound]) { granted, error in
             if let error {
@@ -49,7 +49,7 @@ enum NotificationManager {
     /// Posts "X shared an article" when a friend with notifications enabled
     /// sends us a link. A follow-up (not first) share: tapping it just opens the
     /// app, and it auto-dismisses once the user reaches the reading list.
-    static func postArticleShared(fromUsername username: String, title: String?) {
+    public static func postArticleShared(fromUsername username: String, title: String?) {
         let content = UNMutableNotificationContent()
         content.title = "\(username) shared an article"
         content.body = title ?? "Open Queue to read it."
@@ -61,7 +61,7 @@ enum NotificationManager {
     /// Posts the FIRST-ever share from a friend, which always notifies (regardless
     /// of the per-friend toggle). Tapping it deep-links to that friend's settings
     /// page so the user can turn on future-share notifications.
-    static func postFirstShare(fromUsername username: String, friendUUID: UUID) {
+    public static func postFirstShare(fromUsername username: String, friendUUID: UUID) {
         let content = UNMutableNotificationContent()
         content.title = "\(username) shared w/ you for the first time!"
         content.subtitle = "To see future shares from \(username), go to settings"
@@ -74,7 +74,7 @@ enum NotificationManager {
 
     /// Posts "X added you as a friend" when someone adds us back (a new friend
     /// appears in our inbox). Tapping it opens the in-app friends list.
-    static func postFriendAdded(fromUsername username: String) {
+    public static func postFriendAdded(fromUsername username: String) {
         let content = UNMutableNotificationContent()
         content.title = "\(username) added you as a friend"
         content.sound = .default
@@ -84,7 +84,7 @@ enum NotificationManager {
 
     /// Removes any delivered follow-up share notifications (called when the user
     /// reaches the reading list). Leaves first-share prompts intact.
-    static func clearFollowupShareNotifications() {
+    public static func clearFollowupShareNotifications() {
         let center = UNUserNotificationCenter.current()
         center.getDeliveredNotifications { delivered in
             let ids = delivered
@@ -97,7 +97,7 @@ enum NotificationManager {
 
     /// Posts a price-drop alert when a tracked product first drops past its
     /// threshold during a background refresh.
-    static func postPriceDrop(productName: String, newPrice: String, discountPercent: Int) {
+    public static func postPriceDrop(productName: String, newPrice: String, discountPercent: Int) {
         let content = UNMutableNotificationContent()
         content.title = "Price drop: \(productName)"
         content.body = "Now \(newPrice) — \(discountPercent)% off what you were watching."

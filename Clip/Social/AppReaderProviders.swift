@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSocial
 import ClipDesignSystem
 import ClipStorage
 import UIKit

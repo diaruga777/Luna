@@ -19,6 +19,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case rabbitHole, semantic, paywallStrategies, archiveOverlay, halftone, frostedGlass, jellystone, quartz, youtube
     }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
+    private enum RabbitHoleRow: Int, CaseIterable { case toggle, transition }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -47,7 +48,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
-        case .rabbitHole: return 1
+        case .rabbitHole: return RabbitHoleRow.allCases.count
         case .semantic: return 1
         case .paywallStrategies: return 1
         case .archiveOverlay: return 1
@@ -105,7 +106,11 @@ final class ExperimentalSettingsScreen: UITableViewController {
     ) -> UITableViewCell {
         switch Section(rawValue: indexPath.section)! {
         case .rabbitHole:
-            return rabbitHoleCell()
+            switch RabbitHoleRow(rawValue: indexPath.row)! {
+            case .toggle: return rabbitHoleCell()
+            case .transition:
+                return disclosureCell(title: "Transition Animation", symbol: "square.stack.3d.down.right")
+            }
         case .semantic:
             return semanticSensitivityCell()
         case .paywallStrategies:
@@ -267,6 +272,10 @@ final class ExperimentalSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
+        case .rabbitHole:
+            if RabbitHoleRow(rawValue: indexPath.row) == .transition {
+                navigationController?.pushViewController(RabbitHoleTransitionSettingsScreen(), animated: true)
+            }
         case .halftone:
             navigationController?.pushViewController(HalftoneSettingsScreen(), animated: true)
         case .frostedGlass:
@@ -281,7 +290,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
             case .playlist: choosePlaylistTapped()
             case .autoAdd: break
             }
-        case .rabbitHole, .semantic, .paywallStrategies, .archiveOverlay:
+        case .semantic, .paywallStrategies, .archiveOverlay:
             break
         }
     }

@@ -3,6 +3,7 @@
 //  ShareKit
 //
 
+import ClipPriceUI
 import ClipArchiveReader
 import ClipMediaDownload
 import ClipStorage

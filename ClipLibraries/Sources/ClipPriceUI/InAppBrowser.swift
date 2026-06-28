@@ -8,9 +8,9 @@ import UIKit
 
 /// Ultimate fallback for opening a platform item: an in-app `SFSafariViewController`
 /// on the original URL (used when no native app and no usable embed exist).
-enum InAppBrowser {
+public enum InAppBrowser {
     /// Presents the URL in an in-app Safari view, if it's a web URL.
-    static func present(urlString: String, from presenter: UIViewController) {
+    public static func present(urlString: String, from presenter: UIViewController) {
         guard let url = URL(string: urlString),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https"

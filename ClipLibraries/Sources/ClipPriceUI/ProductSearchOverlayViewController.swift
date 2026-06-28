@@ -14,7 +14,7 @@ import WebKit
 /// as a seller. Drives the overlay's exit behavior: a successful add dismisses the
 /// overlay (returning to the price-tracker page); a failure keeps it open and shows
 /// a clear, visible message — never a silent no-op.
-enum ProductSearchAddOutcome {
+public enum ProductSearchAddOutcome {
     /// The page was added (price resolved + store upserted). The overlay dismisses.
     case added
     /// No price could be extracted from the page. The overlay shows a "couldn't find
@@ -48,7 +48,7 @@ enum ProductSearchAddOutcome {
 /// priority) with a safe-area cap, so it rides up just above the keyboard while the
 /// user types and drops back when the keyboard dismisses — the field stays visible
 /// and usable the whole time (the same pattern as `SearchViewController`).
-final class ProductSearchOverlayViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegate,
+public final class ProductSearchOverlayViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegate,
     WKScriptMessageHandler {
 
     /// Called when the user confirms "Add to tracker" for the current page. `html` is
@@ -56,7 +56,7 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
     /// The host performs the mandatory price fetch + dedupe + add and MUST call
     /// `completion` with the outcome so the overlay can dismiss on success or show a
     /// clear message on failure (never a silent no-op).
-    var onUseThisPage: ((_ urlString: String, _ html: String,
+    public var onUseThisPage: ((_ urlString: String, _ html: String,
                          _ completion: @escaping (ProductSearchAddOutcome) -> Void) -> Void)?
 
     private let initialURL: URL
@@ -104,18 +104,18 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
     private static let buttonSize: CGFloat = 40
     private static let buttonInset: CGFloat = 14
 
-    init(initialURL: URL, trackedProduct: ProductInfo) {
+    public init(initialURL: URL, trackedProduct: ProductInfo) {
         self.initialURL = initialURL
         self.trackedProduct = trackedProduct
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     // MARK: - Lifecycle
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
 
@@ -145,7 +145,7 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
         loadURL(initialURL)
     }
 
-    override func viewDidLayoutSubviews() {
+    public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         let frame = cardFrame
         card.frame = frame
@@ -310,7 +310,7 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
         offerUseThisPage()
     }
 
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+    public func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         guard let url = ProductSearchURL.navigationURL(fromBarText: textField.text ?? "") else {
             return true
@@ -390,26 +390,26 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
 
     // MARK: - WKNavigationDelegate
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         updateNavButtons()
         if let current = webView.url?.absoluteString { urlField.text = current }
         scheduleProductDetection(for: webView, delays: [0, 0.35, 1.1, 2.5, 5])
     }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         cancelProductDetection()
         updateNavButtons()
     }
 
-    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+    public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         scheduleProductDetection(for: webView, delays: [0.15])
     }
 
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         updateNavButtons()
     }
 
-    func webView(
+    public func webView(
         _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error
     ) { updateNavButtons() }
 
@@ -460,7 +460,7 @@ final class ProductSearchOverlayViewController: UIViewController, WKNavigationDe
 
     // MARK: - Google Shopping selected-item popovers
 
-    func userContentController(_ userContentController: WKUserContentController,
+    public func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         guard message.name == Self.googleShoppingSellerMessageName,
               let urlString = message.body as? String,

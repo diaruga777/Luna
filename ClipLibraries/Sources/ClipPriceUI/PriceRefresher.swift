@@ -11,7 +11,7 @@ import Foundation
 
 /// The seam the price refresher persists through, so it can be unit-tested
 /// against an in-memory fake instead of the App Group store.
-protocol PriceTrackerPersisting: AnyObject {
+public protocol PriceTrackerPersisting: AnyObject {
     /// Non-archived trackers, stalest-first (oldest minimum `lastRefreshed`).
     func priceTrackersStalestFirst() -> [ReadingListItem]
     /// Persists an updated tracker payload for an item.
@@ -21,21 +21,21 @@ protocol PriceTrackerPersisting: AnyObject {
 extension ReadingListStore: PriceTrackerPersisting {}
 
 /// Outcome of refreshing one tracker.
-struct PriceRefreshOutcome: Equatable {
-    let itemID: UUID
-    let productName: String
+public struct PriceRefreshOutcome: Equatable {
+    public let itemID: UUID
+    public let productName: String
     /// Best price before this refresh.
-    let previousBest: Decimal
+    public let previousBest: Decimal
     /// Best price after this refresh.
-    let newBest: Decimal
+    public let newBest: Decimal
     /// Whether the tracker is alerting AFTER the refresh.
-    let isAlerting: Bool
+    public let isAlerting: Bool
     /// Whether the tracker crossed its threshold on THIS refresh (was not alerting
     /// before, is alerting now) — the trigger for a one-shot local notification.
-    let newlyAlerting: Bool
-    let displayCurrency: String
+    public let newlyAlerting: Bool
+    public let displayCurrency: String
     /// The post-refresh discount fraction (for tie-breaking notifications).
-    let discountFraction: Double
+    public let discountFraction: Double
 }
 
 /// Re-fetches every non-archived price tracker's store URLs, updates their prices,
@@ -49,12 +49,12 @@ struct PriceRefreshOutcome: Equatable {
 ///
 /// Pure-ish: the price fetcher and clock are injected, so the whole loop runs
 /// deterministically in tests with no network and a fixed time.
-struct PriceRefresher {
+public struct PriceRefresher {
     private let store: PriceTrackerPersisting
     private let priceFetcher: PriceFetching
     private let now: () -> Date
 
-    init(
+    public init(
         store: PriceTrackerPersisting,
         priceFetcher: PriceFetching,
         now: @escaping () -> Date = Date.init
@@ -67,7 +67,7 @@ struct PriceRefresher {
     /// Refreshes all due trackers, returning an outcome per tracker that was
     /// processed (in stalest-first order). A tracker whose every store fetch fails
     /// is still returned (prices unchanged) so the caller can see it ran.
-    func refreshAll() async -> [PriceRefreshOutcome] {
+    public func refreshAll() async -> [PriceRefreshOutcome] {
         var outcomes: [PriceRefreshOutcome] = []
         for item in store.priceTrackersStalestFirst() {
             guard let tracker = item.priceTracker else { continue }

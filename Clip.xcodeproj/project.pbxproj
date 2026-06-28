@@ -83,6 +83,10 @@
 		79105F98461EAB4D02BB8DD1 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
 		2B4134FA0043E8CD5CE0CD04 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
 		14D2AFFC19A169338A1147DD /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		049E5C818766CE6BF95D8B7E /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		0393CD1C3594607CDD98DE13 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		65EBACE869DBDECC866531F6 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		BD5B48658A5362866AA5CF57 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -204,6 +208,7 @@
 				59C336E6E016223659B23C6A /* ClipReaderEngine in Frameworks */,
 				EE4780B9AFD12FEBC6947099 /* ClipArchiveReader in Frameworks */,
 				79105F98461EAB4D02BB8DD1 /* ClipReaderUI in Frameworks */,
+				0393CD1C3594607CDD98DE13 /* ClipPriceUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -233,6 +238,7 @@
 				B1783409EFF8E80CEA65CB3C /* ClipReaderEngine in Frameworks */,
 				6F438E9F1C4DEAAF57A692B8 /* ClipArchiveReader in Frameworks */,
 				4764C751E2AFA2AD7653CB79 /* ClipReaderUI in Frameworks */,
+				049E5C818766CE6BF95D8B7E /* ClipPriceUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -264,6 +270,7 @@
 				7524FB14EDBA875CD17CE996 /* ClipArchiveReader in Frameworks */,
 				C100000000000000000000053 /* ClipPaywallBypass in Frameworks */,
 				14D2AFFC19A169338A1147DD /* ClipReaderUI in Frameworks */,
+				BD5B48658A5362866AA5CF57 /* ClipPriceUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -288,6 +295,7 @@
 				3BF52B30E74A297E08A41982 /* ClipReaderEngine in Frameworks */,
 				F35941D40835BF7824598AE9 /* ClipArchiveReader in Frameworks */,
 				2B4134FA0043E8CD5CE0CD04 /* ClipReaderUI in Frameworks */,
+				65EBACE869DBDECC866531F6 /* ClipPriceUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -375,6 +383,7 @@
 				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
 				74662FE2996754685063847E /* ClipArchiveReader */,
 				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
 			);
 			productName = "Clip Action Extension";
 			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
@@ -425,6 +434,7 @@
 				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
 				74662FE2996754685063847E /* ClipArchiveReader */,
 				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -487,6 +497,7 @@
 				74662FE2996754685063847E /* ClipArchiveReader */,
 				C100000000000000000000013 /* ClipPaywallBypass */,
 				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -527,6 +538,7 @@
 				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
 				74662FE2996754685063847E /* ClipArchiveReader */,
 				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
 			);
 			productName = ClipShare;
 			productReference = AA0200000000000000000004 /* ClipShare.appex */;
@@ -1274,6 +1286,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipReaderUI;
+		};
+		59E17EB39B108E9054CCFBA3 /* ClipPriceUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipPriceUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

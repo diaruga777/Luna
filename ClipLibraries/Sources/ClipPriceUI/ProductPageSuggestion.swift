@@ -9,10 +9,10 @@ import ClipModels
 import Foundation
 
 /// The shared-pipeline result used to offer a product page as a seller.
-struct ProductPageSuggestion: Equatable {
-    let url: URL
-    let html: String
-    let metadata: ProductMetadata
+public struct ProductPageSuggestion: Equatable {
+    public let url: URL
+    public let html: String
+    public let metadata: ProductMetadata
 }
 
 /// The UNIFIED "should this live page be suggested as a seller?" decision.
@@ -27,11 +27,11 @@ struct ProductPageSuggestion: Equatable {
 /// Google Shopping merchant links intentionally omit it: that HTML belongs to
 /// Google, so the pipeline fetches and evaluates the selected seller's own page.
 /// There is no special-case product detection in this type.
-extension ProductPageSuggestion {
+public extension ProductPageSuggestion {
 
     /// Processes `url` through the shared URL pipeline and returns a suggestion only
     /// for a price-tracking-eligible product result.
-    static func resolve(
+    public static func resolve(
         url: URL,
         html: String? = nil
     ) async -> ProductPageSuggestion? {

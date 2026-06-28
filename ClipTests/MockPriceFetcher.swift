@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipPriceUI
 import ClipHTMLClassification
 import Foundation
 @testable import Clip

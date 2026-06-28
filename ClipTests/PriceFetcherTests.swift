@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipPriceUI
 import XCTest
 @testable import Clip
 

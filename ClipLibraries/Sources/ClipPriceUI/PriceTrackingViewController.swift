@@ -9,12 +9,12 @@ import ClipURLClassification
 import ClipModels
 import UIKit
 
-extension Notification.Name {
+public extension Notification.Name {
     /// Posted when an interactive save (paste/manual/app intent) created or merged
     /// a price tracker, so the foreground reading list can present its editor with
     /// a "Read instead" → save-as-article fallback. `userInfo`: `itemID: UUID`,
     /// `isMerge: Bool`, `highlightedURL: String?`.
-    static let priceTrackerSavedInteractively =
+    public static let priceTrackerSavedInteractively =
         Notification.Name("priceTrackerSavedInteractively")
 }
 
@@ -32,10 +32,10 @@ extension Notification.Name {
 ///   whole new tracker and saves the URL as a normal article; **merge** reverts
 ///   ONLY the just-added seller and saves that one URL as an article. **Existing**
 ///   (returning to a saved tracker) shows no "Read instead" button.
-final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDelegate {
+public final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDelegate {
 
     /// How the screen was opened, mapped to a `PriceTrackingExitContext`.
-    enum Mode {
+    public enum Mode {
         /// Viewing/editing an already-saved tracker (in-app). No "Read instead".
         case existing(itemID: UUID)
         /// Save-time, a brand-new product saved as its OWN new tracker. "Read instead"
@@ -85,12 +85,12 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
     /// The main app's "Read instead" save-as-article behavior, installed once at launch
     /// so in-app `PriceTrackingViewController`s need no per-instance handler. Lives as a
     /// static hook (not a hard reference) to keep ShareKit free of main-app deps.
-    static var defaultSaveAsArticle: ((String) -> Void)?
+    public static var defaultSaveAsArticle: ((String) -> Void)?
 
     /// Invoked when the editor is dismissed via the extension **Done** button, so the
     /// host (action extension) can complete its request. nil in-app (the back chevron
     /// just pops). Set by the extension host after construction.
-    var onDone: (() -> Void)?
+    public var onDone: (() -> Void)?
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let thresholdSlider = AlertThresholdSlider()
@@ -134,7 +134,7 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
 
     private var tracker: PriceTracker? { store.item(withID: itemID)?.priceTracker }
 
-    init(itemID: UUID, manager: PriceTrackingManaging = PriceTrackingManager()) {
+    public init(itemID: UUID, manager: PriceTrackingManaging = PriceTrackingManager()) {
         self.mode = .existing(itemID: itemID)
         self.manager = manager
         self.saveAsArticleOverride = nil
@@ -143,7 +143,7 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
 
     /// `onReadInstead` overrides the "Read instead" re-save (extension surfaces inject
     /// their own; in-app callers omit it to use the static `defaultSaveAsArticle`).
-    init(
+    public init(
         mode: Mode, manager: PriceTrackingManaging = PriceTrackingManager(),
         onReadInstead: ((String) -> Void)? = nil
     ) {
@@ -154,9 +154,9 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
         title = "Price Tracker"
@@ -238,12 +238,12 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
     /// suppresses UIKit's interactive-pop recognizer by default. Restore it for the
     /// in-app pushed editor so the root reading list remains reachable by the normal
     /// left-edge swipe; extension-hosted editors still have no navigation stack.
-    override func viewWillAppear(_ animated: Bool) {
+    public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         refreshGraph()
     }
 
-    override func viewDidAppear(_ animated: Bool) {
+    public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         guard exitContext.host == .inApp,
               let popGesture = navigationController?.interactivePopGestureRecognizer else { return }
@@ -254,7 +254,7 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
         popGesture.isEnabled = true
     }
 
-    override func viewWillDisappear(_ animated: Bool) {
+    public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         guard let popGesture = navigationController?.interactivePopGestureRecognizer,
               popGesture.delegate === self else { return }
@@ -262,7 +262,7 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
         popGesture.delegate = previousInteractivePopGestureDelegate
     }
 
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === navigationController?.interactivePopGestureRecognizer else {
             return true
         }
@@ -529,11 +529,11 @@ final class PriceTrackingViewController: UIViewController, UIGestureRecognizerDe
 }
 
 extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegate {
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         tracker?.stores.count ?? 0
     }
 
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "store", for: indexPath)
         guard let storeListing = tracker?.stores[indexPath.row] else { return cell }
         var config = cell.defaultContentConfiguration()
@@ -555,21 +555,21 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
         return cell
     }
 
-    func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+    public func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
         sellersHeaderView
     }
 
-    func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+    public func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         40
     }
 
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard let storeListing = tracker?.stores[indexPath.row] else { return }
         InAppBrowser.present(urlString: storeListing.urlString, from: self)
     }
 
-    func tableView(
+    public func tableView(
         _ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
         guard let tracker, tracker.stores.count > 1 else { return nil }
@@ -585,7 +585,7 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
 }
 
 private extension PriceTrackingViewController {
-    func refreshDescription(for store: PriceTrackerStore) -> String {
+    public func refreshDescription(for store: PriceTrackerStore) -> String {
         guard let refreshed = store.lastRefreshed else { return "Not yet refreshed" }
         let formatter = DateFormatter()
         formatter.locale = .current

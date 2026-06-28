@@ -6,6 +6,7 @@
 //  price-tracking editor.
 //
 
+import ClipPriceUI
 import ClipStorage
 import ClipModels
 import UIKit

@@ -11,7 +11,7 @@ import UIKit
 /// aggregated `PriceGraphPoint` series + display currency, it draws the line, y-axis
 /// min/max, and x-axis endpoint dates; pressing/dragging highlights the nearest
 /// point and shows a callout with its value, date, and store host.
-final class PriceGraphView: UIView {
+public final class PriceGraphView: UIView {
 
     private var points: [PriceGraphPoint] = []
     private var currency = "USD"
@@ -23,7 +23,7 @@ final class PriceGraphView: UIView {
     private let calloutLabel = UILabel()
     private let plotInsets = UIEdgeInsets(top: 16, left: 12, bottom: 22, right: 12)
 
-    override init(frame: CGRect) {
+    public override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
         isAccessibilityElement = false
@@ -32,9 +32,9 @@ final class PriceGraphView: UIView {
         press.minimumPressDuration = 0
         addGestureRecognizer(press)
     }
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    func setData(_ points: [PriceGraphPoint], currency: String) {
+    public func setData(_ points: [PriceGraphPoint], currency: String) {
         self.points = points
         self.currency = currency
         self.selectedIndex = nil
@@ -45,7 +45,7 @@ final class PriceGraphView: UIView {
 
     /// Shows a graph-shaped placeholder (faint axes + a dashed sample line + caption)
     /// so the empty state reads as "a graph will appear here", not just text.
-    func showPlaceholder() {
+    public func showPlaceholder() {
         self.points = []
         self.selectedIndex = nil
         self.isPlaceholder = true
@@ -55,7 +55,7 @@ final class PriceGraphView: UIView {
 
     // MARK: - Drawing
 
-    override func draw(_ rect: CGRect) {
+    public override func draw(_ rect: CGRect) {
         if isPlaceholder { drawPlaceholder(rect); return }
         guard points.count >= 2, let context = UIGraphicsGetCurrentContext() else { return }
         let plot = rect.inset(by: plotInsets)
@@ -165,7 +165,7 @@ final class PriceGraphView: UIView {
         (text as NSString).draw(at: CGPoint(x: x, y: origin.y), withAttributes: attrs)
     }
 
-    static func axisDate(_ date: Date) -> String {
+    public static func axisDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US")
         formatter.dateFormat = "MMM d"
@@ -234,7 +234,7 @@ final class PriceGraphView: UIView {
         calloutView.frame = CGRect(x: originX, y: 2, width: size.width, height: size.height)
     }
 
-    static func calloutDate(_ date: Date) -> String {
+    public static func calloutDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US")
         formatter.dateFormat = "MMM d, yyyy"

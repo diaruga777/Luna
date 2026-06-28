@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipPriceUI
 import ClipReaderUI
 import ClipArchiveReader
 import ClipDesignSystem

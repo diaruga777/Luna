@@ -17,13 +17,13 @@ import UIKit
 /// view is presentation-only: it reports changes via `onChanged` (live, while
 /// dragging) and `onCommitted` (on release, when the host should persist), and never
 /// touches the store itself.
-final class AlertThresholdSlider: UIView {
+public final class AlertThresholdSlider: UIView {
 
     /// Fired continuously as the slider drags, with the live fraction (0.01…0.90).
     /// The host updates any dependent UI but should NOT persist here.
-    var onChanged: ((Double) -> Void)?
+    public var onChanged: ((Double) -> Void)?
     /// Fired once the drag ends, with the final fraction. The host persists here.
-    var onCommitted: ((Double) -> Void)?
+    public var onCommitted: ((Double) -> Void)?
 
     private let slider = UISlider()
     private let readoutLabel = UILabel()
@@ -34,13 +34,13 @@ final class AlertThresholdSlider: UIView {
     private var initialPrice: Decimal = 0
     private var currency: String = "USD"
 
-    init() {
+    public init() {
         super.init(frame: .zero)
         buildLayout()
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    public required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     private func buildLayout() {
         backgroundColor = .clear
@@ -91,7 +91,7 @@ final class AlertThresholdSlider: UIView {
 
     /// Points the control at a tracker: seeds the slider position and the readout's
     /// absolute-drop baseline (the tracker's initial best price + currency).
-    func configure(fraction: Double, initialPrice: Decimal, currency: String) {
+    public func configure(fraction: Double, initialPrice: Decimal, currency: String) {
         self.initialPrice = initialPrice
         self.currency = currency
         slider.value = Float(fraction)

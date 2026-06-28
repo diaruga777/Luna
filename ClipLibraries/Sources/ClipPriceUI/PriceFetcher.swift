@@ -16,7 +16,7 @@ import WebKit
 /// Reused by BOTH save-time (gating tracker creation on a real price) and the
 /// background refresher (re-fetching the live price every cycle), so the exact
 /// same resolution strategy — including the WKWebView fallback — runs in both.
-protocol PriceFetching {
+public protocol PriceFetching {
     /// Resolves the current price for `urlString`, or nil if no price can be found
     /// by any method.
     ///
@@ -34,7 +34,7 @@ protocol PriceFetching {
 
 /// Live `PriceFetching`: static extraction first (via the pure
 /// `ProductPageDetector`), then a WKWebView render fallback for JS-loaded prices.
-final class PriceFetcher: PriceFetching {
+public final class PriceFetcher: PriceFetching {
     private let fetcher: HTMLFetching
     private let detector: ProductPageDetector
     /// Renders a URL in a WKWebView and returns the rendered `outerHTML`. Injected
@@ -46,7 +46,7 @@ final class PriceFetcher: PriceFetching {
     /// falls back to a normal article.
     private let overallTimeoutSeconds: UInt64
 
-    init(
+    public init(
         fetcher: HTMLFetching = ArticleFetcher(),
         detector: ProductPageDetector = ProductPageDetector(),
         renderHTML: ((URL) async -> String?)? = nil,
@@ -58,7 +58,7 @@ final class PriceFetcher: PriceFetching {
         self.overallTimeoutSeconds = overallTimeoutSeconds
     }
 
-    func fetchPrice(forURLString urlString: String, prefetchedHTML: String?) async -> ProductPrice? {
+    public func fetchPrice(forURLString urlString: String, prefetchedHTML: String?) async -> ProductPrice? {
         await withTaskGroup(of: ProductPrice?.self) { group in
             group.addTask { await self.resolvePrice(forURLString: urlString, prefetchedHTML: prefetchedHTML) }
             group.addTask {
@@ -113,7 +113,7 @@ final class PriceFetcher: PriceFetching {
 /// fast the network/JS happened to be. Instead, after the initial navigation we poll
 /// the rendered DOM at a fixed cadence and return as soon as a price is extractable
 /// (or when the hard timeout is hit), so a given page yields the same result every run.
-enum WebViewPriceRenderer {
+public enum WebViewPriceRenderer {
     /// How often the rendered DOM is re-scraped while waiting for the price to hydrate.
     private static let pollIntervalSeconds: Double = 0.5
 
@@ -139,7 +139,7 @@ enum WebViewPriceRenderer {
     /// Loads `url` in a fresh off-screen WebView, lets it render, and returns its
     /// rendered HTML. Returns nil on load failure or timeout.
     @MainActor
-    static func renderedHTML(for url: URL) async -> String? {
+    public static func renderedHTML(for url: URL) async -> String? {
         let renderer = Renderer()
         return await renderer.render(
             url: url, userAgent: deviceSafariUserAgent,

@@ -186,8 +186,6 @@
 		AA0700000000000000000002 /* ClipSafari */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ClipSafari; sourceTree = "<group>"; };
 		AA0700000000000000000003 /* ClipTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ClipTests; sourceTree = "<group>"; };
 		AA0700000000000000000004 /* ClipShare */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ClipShare; sourceTree = "<group>"; };
-		AA0700000000000000000005 /* ReaderKit */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ReaderKit; sourceTree = "<group>"; };
-		AA0700000000000000000006 /* ShareKit */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ShareKit; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -321,7 +319,6 @@
 		795840BB2FE0BD8600C775CA /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
-				AA0700000000000000000006 /* ShareKit */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -330,7 +327,6 @@
 			isa = PBXGroup;
 			children = (
 				AA0700000000000000000001 /* Clip */,
-				AA0700000000000000000005 /* ReaderKit */,
 				AA0700000000000000000002 /* ClipSafari */,
 				AA0700000000000000000004 /* ClipShare */,
 				AA0700000000000000000003 /* ClipTests */,
@@ -370,8 +366,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				79583E002FE0BAD100C775CA /* Clip Action Extension */,
-				AA0700000000000000000005 /* ReaderKit */,
-				AA0700000000000000000006 /* ShareKit */,
 			);
 			name = "Clip Action Extension";
 			packageProductDependencies = (
@@ -416,8 +410,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				AA0700000000000000000001 /* Clip */,
-				AA0700000000000000000005 /* ReaderKit */,
-				AA0700000000000000000006 /* ShareKit */,
 			);
 			name = Clip;
 			packageProductDependencies = (
@@ -528,8 +520,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				AA0700000000000000000004 /* ClipShare */,
-				AA0700000000000000000005 /* ReaderKit */,
-				AA0700000000000000000006 /* ShareKit */,
 			);
 			name = ClipShare;
 			packageProductDependencies = (

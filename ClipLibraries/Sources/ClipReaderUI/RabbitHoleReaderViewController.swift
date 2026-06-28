@@ -101,6 +101,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         persist()
+        navigationController?.setNavigationBarHidden(false, animated: animated)
     }
 
     public override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {

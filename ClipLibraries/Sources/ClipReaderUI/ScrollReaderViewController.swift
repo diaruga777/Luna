@@ -288,7 +288,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             return
         }
         let source = content
-        imageDownloadTask = Task { @MainActor [weak self] in
+        imageDownloadTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             let updated = await ArticleImageDownloader.download(
                 source, itemID: self.item.id, store: self.store,
@@ -297,15 +297,18 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                   updated.blocks.contains(where: { $0.imageFileName != nil }),
                   updated != self.content
             else { return }
-            self.content = updated
-            self.rendered = ArticleTextRenderer.render(updated)
-            self.wordMap = WordMap(content: updated, rendered: self.rendered)
-            let offset = self.textView.contentOffset
-            self.textView.attributedText = self.rendered.text
-            self.textView.setContentOffset(offset, animated: false)
-            self.textView.layoutManager.ensureLayout(for: self.textView.textContainer)
-            self.layoutShareView()
-            SharedDiagnosticLog.record("reader: refreshed inline image attachments", category: "images")
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.content = updated
+                self.rendered = ArticleTextRenderer.render(updated)
+                self.wordMap = WordMap(content: updated, rendered: self.rendered)
+                let offset = self.textView.contentOffset
+                self.textView.attributedText = self.rendered.text
+                self.textView.setContentOffset(offset, animated: false)
+                self.textView.layoutManager.ensureLayout(for: self.textView.textContainer)
+                self.layoutShareView()
+                SharedDiagnosticLog.record("reader: refreshed inline image attachments", category: "images")
+            }
         }
     }
 

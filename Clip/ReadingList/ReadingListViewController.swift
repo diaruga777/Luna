@@ -418,7 +418,9 @@ final class ReadingListViewController: UITableViewController {
         let filters = visibleFilters()
         let index = control.selectedSegmentIndex
         filter = (index >= 0 && index < filters.count) ? filters[index] : .all
-        reload()
+        // A filter switch swaps the whole list at once — pixel-wipe the table between
+        // the old and new contents (a no-op fading reload when the toggle is off).
+        HalftoneCrossfade.run(in: tableView, direction: .random) { [weak self] in self?.reload() }
     }
 
     /// Shows the filter control only when the list has at least two of the three
@@ -838,7 +840,12 @@ final class ReadingListViewController: UITableViewController {
         var collapsed = collapsedSections
         if collapsed.contains(section) { collapsed.remove(section) } else { collapsed.insert(section) }
         collapsedSections = collapsed
-        tableView.reloadSections(IndexSet(integer: index), with: .automatic)
+        // Collapsing/expanding swaps a whole section of rows at once — pixel-wipe the
+        // table between the two layouts (falls back to the stock .automatic row
+        // animation when the toggle is off).
+        HalftoneBatch.update(tableView, direction: .topToBottom) { [weak self] in
+            self?.tableView.reloadSections(IndexSet(integer: index), with: .automatic)
+        }
     }
 
     // MARK: - Table

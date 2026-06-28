@@ -201,7 +201,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
                      preloadedContent: preloaded)
         focus = topIndex
         applyFocus()
-        view.layoutIfNeeded()
+        // Defer layoutIfNeeded to a background task so it doesn't block the transition start.
+        // The snapshot will still see the layout on its own first render pass.
+        Task(priority: .userInitiated) { [weak self] in
+            self?.view.layoutIfNeeded()
+        }
         let after = snapshot(afterScreenUpdates: true)
 
         runTransition(before: before, after: after) { [weak self] in

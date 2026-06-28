@@ -42,6 +42,36 @@ public protocol GazeTracking: AnyObject {
 /// tracking is off/unsupported (or in the share extension).
 public typealias GazeTrackerFactory = (_ textView: UITextView, _ wordMap: WordMap, _ seedWordIndex: Int?) -> GazeTracking?
 
+/// Drives the visual transition between two RabbitHole layer arrangements (a dive,
+/// a pop, or an interactive overscroll). The reader depends only on this protocol;
+/// the app injects a Metal halftone implementation (`ClipContentRendering` can't be
+/// linked into `ClipReaderUI`, which compiles into the extensions). When nil (Metal
+/// unavailable / extension), the host cuts instantly with no animation.
+///
+/// Both calls take a `before` and `after` snapshot of the whole reader and an `origin`
+/// (container coordinates — the tap / finger point the wipe radiates from). The impl
+/// owns its overlay: it adds it to `container` on top, animates, and removes it when
+/// done.
+public protocol RabbitHoleTransitioning: AnyObject {
+    /// Non-interactive wipe from `before` to `after`; `completion` fires once the
+    /// overlay has animated through and been removed.
+    func play(before: UIImage, after: UIImage, origin: CGPoint,
+              in container: UIView, completion: @escaping () -> Void)
+    /// Begin an interactive wipe; drive the returned handle with `update(progress:)`
+    /// (0 = before, 1 = after) and end it with `finish(committed:completion:)`.
+    func begin(before: UIImage, after: UIImage, origin: CGPoint,
+               in container: UIView) -> RabbitHoleInteractiveTransition
+}
+
+/// Handle to an in-flight interactive RabbitHole transition.
+public protocol RabbitHoleInteractiveTransition: AnyObject {
+    /// 0 = fully the before state, 1 = fully the after state.
+    func update(progress: CGFloat)
+    /// Settle to the after state (`committed`) or back to before; `completion` fires
+    /// after the settle animation and overlay removal.
+    func finish(committed: Bool, completion: @escaping () -> Void)
+}
+
 /// A child reader that can report the word it's currently on, so the host can
 /// carry the reading position across a mode switch.
 public protocol ReaderPositionTracking: AnyObject {

@@ -14,8 +14,8 @@ final class RabbitHoleLayoutTests: XCTestCase {
     private let bounds = CGRect(x: 0, y: 0, width: 400, height: 800)
     private let safe = UIEdgeInsets(top: 60, left: 0, bottom: 40, right: 0)
 
-    private func place(_ i: Int, _ focus: CGFloat) -> RabbitHoleLayout.Placement {
-        layout.placement(layerIndex: i, focus: focus, bounds: bounds, safeArea: safe)
+    private func place(_ i: Int, _ focusedIndex: Int) -> RabbitHoleLayout.Placement {
+        layout.placement(layerIndex: i, focusedIndex: focusedIndex, bounds: bounds, safeArea: safe)
     }
 
     func testRootAloneFillsScreen() {
@@ -55,17 +55,14 @@ final class RabbitHoleLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(p.cardFrame.maxX, 0.5)   // entirely past the leading edge
     }
 
-    func testLayoutIsContinuousAcrossIntegerBoundary() {
-        // No jump as focus crosses 2 (where a layer tucks and visibleAncestors saturates).
-        for i in 0...3 {
-            let before = layout.placement(layerIndex: i, focus: 1.999, bounds: bounds,
-                                          safeArea: safe).cardFrame
-            let after = layout.placement(layerIndex: i, focus: 2.001, bounds: bounds,
-                                         safeArea: safe).cardFrame
-            XCTAssertEqual(before.minX, after.minX, accuracy: 1.0, "layer \(i) minX jumped")
-            XCTAssertEqual(before.minY, after.minY, accuracy: 1.0, "layer \(i) minY jumped")
-            XCTAssertEqual(before.height, after.height, accuracy: 1.0, "layer \(i) height jumped")
-        }
+    func testTuckThresholdAtThreeDeep() {
+        // Focus 2: all three (0,1,2) are visible — none tucked.
+        XCTAssertNotEqual(place(0, 2).role, .tucked)
+        // Focus 3: the oldest (layer 0) tucks; layers 1 and 2 remain visible ancestors.
+        XCTAssertEqual(place(0, 3).role, .tucked)
+        XCTAssertEqual(place(1, 3).role, .ancestor)
+        XCTAssertEqual(place(2, 3).role, .ancestor)
+        XCTAssertEqual(place(3, 3).role, .focused)
     }
 
     func testDeeperLayersAreMoreInset() {

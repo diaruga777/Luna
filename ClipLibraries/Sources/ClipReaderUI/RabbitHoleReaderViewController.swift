@@ -3,22 +3,22 @@
 //  Clip
 //
 //  Forked, EXPERIMENTAL reader (opt-in via ReaderSettings.rabbitHoleReaderEnabled).
-//  A hard fork of the inline reader: instead of a modal split overlay, the whole
-//  reader is a persistent stack of "layers". Layer 0 is the save; tapping a link
-//  pushes a new focused layer on top, leaving the previous layers as tappable lips
+//  The whole reader is a persistent stack of "layers": layer 0 is the save; tapping a
+//  link pushes a new focused layer on top, leaving previous layers as tappable lips
 //  (title on top, the tapped line on the bottom) plus a leading indent — so you can
 //  rabbit-hole several links deep without losing your place. The trail is persisted
-//  per save and restored on next launch. The standard ReaderViewController and the
-//  existing SplitWebOverlay inline reader are untouched.
+//  per save and restored on next launch. The standard reader and the existing
+//  SplitWebOverlay inline reader are untouched.
 //
-//  All motion is one continuous `focus` (the focused layer's fractional stack index),
-//  driven by a critically-damped spring on a display link so pushes, pops, and the
-//  interactive overscroll-pop share one code path and interrupt each other cleanly.
+//  Layers rest at integer focus positions (RabbitHoleLayout). Moving between two
+//  positions (dive / pop / interactive overscroll) is rendered by an injected halftone
+//  dot-matrix wipe (`RabbitHoleTransitioning`) over before/after snapshots — never by
+//  moving the live cards, so there's no per-frame relayout.
 //
 
 import ClipDesignSystem
-import ClipStorage
 import ClipModels
+import ClipStorage
 import UIKit
 
 public final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognizerDelegate {
@@ -27,48 +27,40 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private let rootContent: ArticleContent
     private let shareProvider: ReaderShareProviding?
     private let gazeTrackerFactory: GazeTrackerFactory?
+    private let transition: RabbitHoleTransitioning?
     private let store = ReadingListStore.shared
     private let stackStore = RabbitHoleStackStore.shared
     private var layout = RabbitHoleLayout()
 
     private var layers: [RabbitHoleLayerViewController] = []
-    /// Continuous focused-layer index (0 = root). Integer at rest.
-    private var focus: CGFloat = 0
+    /// Focused-layer index (0 = root). Layers always rest at this integer focus.
+    private var focus: Int = 0
     private var topIndex: Int { max(layers.count - 1, 0) }
 
-    /// Split line (container y) the currently-animating top layer emerges from / dies
-    /// into, so push/pop grow from the tapped line rather than the screen edges.
-    private var activeSplitY: CGFloat?
-
-    // Focus spring (display-link integrator).
-    private var displayLink: CADisplayLink?
-    private var targetFocus: CGFloat = 0
-    private var focusVelocity: CGFloat = 0
-    private var lastTimestamp: CFTimeInterval = 0
-    private var onSettle: (() -> Void)?
-
-    private var overscrollPan: UIPanGestureRecognizer?
-    private var didMarkOpened = false
-
-    // Overscroll-pop gesture state.
-    private var overscrollEngaged = false
+    /// Guards against starting a transition while one is already running.
+    private var transitionInFlight = false
+    /// The in-flight interactive overscroll wipe (nil when not dragging).
+    private var interactive: RabbitHoleInteractiveTransition?
     private var overscrollEdge: CGFloat = 1        // +1 = pulling down from the top edge
     private var overscrollBaseline: CGFloat = 0
     private weak var overscrollScroll: UIScrollView?
 
+    private var overscrollPan: UIPanGestureRecognizer?
+    private var didMarkOpened = false
+
     public init(item: ReadingListItem, content: ArticleContent,
-         shareProvider: ReaderShareProviding? = nil,
-         gazeTrackerFactory: GazeTrackerFactory? = nil) {
+                shareProvider: ReaderShareProviding? = nil,
+                gazeTrackerFactory: GazeTrackerFactory? = nil,
+                transition: RabbitHoleTransitioning? = nil) {
         self.rootItem = item
         self.rootContent = content
         self.shareProvider = shareProvider
         self.gazeTrackerFactory = gazeTrackerFactory
+        self.transition = transition
         super.init(nibName: nil, bundle: nil)
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
-
-    deinit { displayLink?.invalidate() }
 
     // MARK: - Lifecycle
 
@@ -76,8 +68,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         super.viewDidLoad()
         view.backgroundColor = ReaderDepth.backgroundColor(for: 0)
         navigationItem.largeTitleDisplayMode = .never
-        // The reader is full-bleed (lips reach the screen edges); the nav bar would
-        // sit over the top lip, so hide it for this experiment.
         navigationController?.setNavigationBarHidden(true, animated: false)
 
         buildInitialStack()
@@ -94,7 +84,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        applyFocus()   // re-place for the current bounds / safe area
+        applyFocus()
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
@@ -111,19 +101,17 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     private func buildInitialStack() {
         var descriptors: [RabbitHoleLayerDescriptor] = []
-        let restored = stackStore.load(forRootID: rootItem.id)
-        if let restored, let first = restored.layers.first,
-           first.urlString == rootItem.urlString, restored.layers.count >= 1 {
+        if let restored = stackStore.load(forRootID: rootItem.id),
+           let first = restored.layers.first,
+           first.urlString == rootItem.urlString, !restored.layers.isEmpty {
             descriptors = restored.layers
         } else {
             descriptors = [rootDescriptor()]
         }
         for (i, descriptor) in descriptors.enumerated() {
-            // The root layer renders the already-loaded content; deeper layers probe.
             _ = addLayer(descriptor, preloadedContent: i == 0 ? rootContent : nil)
         }
-        focus = CGFloat(topIndex)
-        targetFocus = focus
+        focus = topIndex
         applyFocus()
         markOpenedIfNeeded()
     }
@@ -146,12 +134,12 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             gazeTrackerFactory: gazeTrackerFactory, layout: layout)
         layer.onLinkActivated = { [weak self, weak layer] url, lineText in
             guard let self, let layer, layer === self.layers.last else { return }
-            self.pushLayer(url: url, lineText: lineText)
+            self.pushLayer(url: url, lineText: lineText, from: layer)
         }
         layer.onPopToHere = { [weak self, weak layer] in
             guard let self, let layer, let index = self.layers.firstIndex(where: { $0 === layer })
             else { return }
-            self.popToLayer(index)
+            self.popToLayer(index, origin: self.view.center)
         }
         layer.onModeChanged = { [weak self] _ in self?.persist() }
         layer.onBack = { [weak self] in self?.handleBack() }
@@ -162,43 +150,43 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         return layer
     }
 
-    // MARK: - The single layout writer
+    // MARK: - Static placement (the only writer of layer frames)
 
-    /// Place every layer for the current `focus`. The ONLY writer of layer frames.
-    private func applyFocus() {
+    private func applyFocus(focusedIndex: Int? = nil, hiding hidden: RabbitHoleLayerViewController? = nil) {
         guard !layers.isEmpty else { return }
+        let f = focusedIndex ?? focus
         let bounds = view.bounds
         let safe = view.safeAreaInsets
         for (i, layer) in layers.enumerated() {
-            let placement = layout.placement(
-                layerIndex: i, focus: focus, bounds: bounds, safeArea: safe,
-                splitY: i == topIndex ? activeSplitY : nil)
-            layer.view.frame = placement.cardFrame
-            layer.view.layer.zPosition = placement.z
-            layer.view.alpha = placement.cardAlpha
-            layer.view.isHidden = placement.cardAlpha <= 0.001
-            layer.applyDepth(placement.depth)
-            layer.setChrome(role: placement.role, alpha: placement.chromeAlpha)
+            if layer === hidden { layer.view.isHidden = true; continue }
+            let p = layout.placement(layerIndex: i, focusedIndex: f, bounds: bounds, safeArea: safe)
+            layer.view.frame = p.cardFrame
+            layer.view.layer.zPosition = p.z
+            layer.view.alpha = p.cardAlpha
+            layer.view.isHidden = p.cardAlpha <= 0.001
+            layer.applyDepth(p.depth)
+            layer.setChrome(role: p.role, alpha: p.chromeAlpha)
         }
     }
 
-    // MARK: - Push / pop
+    // MARK: - Dive / pop
 
-    private func pushLayer(url: URL, lineText: String?) {
-        guard let focused = layers.last else { return }
-        // Record where the new layer should grow FROM (the tapped line), and the line
-        // text to show in the now-receding layer's bottom lip.
+    private func pushLayer(url: URL, lineText: String?, from focused: RabbitHoleLayerViewController) {
+        guard !transitionInFlight else { return }
         focused.setBottomLipText(lineText)
-        if let rect = focused.lineRectInLayer(for: url) {
-            activeSplitY = focused.view.convert(rect, to: view).minY
-        } else {
-            activeSplitY = view.bounds.midY     // non-scroll mode → grow from centre
-        }
-        let descriptor = RabbitHoleLayerDescriptor(urlString: url.absoluteString)
-        _ = addLayer(descriptor)
-        applyFocus()                            // place the newcomer at its sliver first
-        animateFocus(to: CGFloat(topIndex)) { [weak self] in
-            self?.activeSplitY = nil
+        let origin = focused.lineRectInLayer(for: url)
+            .map { focused.view.convert($0, to: view) }
+            .map { CGPoint(x: $0.midX, y: $0.midY) } ?? view.center
+
+        let before = snapshot(afterScreenUpdates: false)
+        _ = addLayer(RabbitHoleLayerDescriptor(urlString: url.absoluteString))
+        focus = topIndex
+        applyFocus()
+        view.layoutIfNeeded()
+        let after = snapshot(afterScreenUpdates: true)
+
+        runTransition(before: before, after: after, origin: origin) { [weak self] in
+            self?.playHeaderEntrance()
             self?.persist()
         }
     }
@@ -208,141 +196,123 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         if topIndex == 0 {
             navigationController?.popViewController(animated: true)
         } else {
-            popToLayer(topIndex - 1)
+            popToLayer(topIndex - 1, origin: view.center)
         }
     }
 
-    private func popToLayer(_ index: Int) {
-        guard index >= 0, index < layers.count, index != topIndex else { return }
-        // Collapse the dying top layer back to where it grew from (its parent's bottom
-        // lip line); fall back to the screen centre.
-        if activeSplitY == nil {
-            let parent = layers[max(index, 0)]
-            let lipY = parent.view.convert(
-                CGRect(x: 0, y: parent.view.bounds.height - layout.lipHeight,
-                       width: 1, height: 1), to: view).minY
-            activeSplitY = lipY
-        }
-        animateFocus(to: CGFloat(index)) { [weak self] in
-            guard let self else { return }
-            while self.layers.count - 1 > index {
-                let dying = self.layers.removeLast()
-                dying.willMove(toParent: nil)
-                dying.view.removeFromSuperview()
-                dying.removeFromParent()
-            }
-            self.activeSplitY = nil
-            self.focus = CGFloat(self.topIndex)
-            self.targetFocus = self.focus
-            self.applyFocus()
-            self.persist()
-        }
-    }
-
-    // MARK: - Focus spring (display-link)
-
-    private func animateFocus(to target: CGFloat, completion: (() -> Void)? = nil) {
-        targetFocus = target
-        onSettle = completion
-        if displayLink == nil {
-            lastTimestamp = 0
-            let link = CADisplayLink(target: self, selector: #selector(stepFocus(_:)))
-            link.add(to: .main, forMode: .common)
-            displayLink = link
-        }
-    }
-
-    @objc private func stepFocus(_ link: CADisplayLink) {
-        if lastTimestamp == 0 { lastTimestamp = link.timestamp; return }
-        let dt = min(CGFloat(link.timestamp - lastTimestamp), 1.0 / 30.0)
-        lastTimestamp = link.timestamp
-
-        // Critically-damped spring toward targetFocus.
-        let stiffness: CGFloat = 220
-        let damping: CGFloat = 30
-        let accel = -stiffness * (focus - targetFocus) - damping * focusVelocity
-        focusVelocity += accel * dt
-        focus += focusVelocity * dt
-
-        if abs(focus - targetFocus) < 0.001 && abs(focusVelocity) < 0.01 {
-            focus = targetFocus
-            focusVelocity = 0
-            applyFocus()
-            stopSpring()
-            let settle = onSettle
-            onSettle = nil
-            settle?()
-            return
-        }
+    private func popToLayer(_ index: Int, origin: CGPoint) {
+        guard !transitionInFlight, index >= 0, index < layers.count, index != topIndex else { return }
+        let before = snapshot(afterScreenUpdates: false)
+        trimLayers(above: index)
+        focus = index
         applyFocus()
+        view.layoutIfNeeded()
+        let after = snapshot(afterScreenUpdates: true)
+
+        runTransition(before: before, after: after, origin: origin) { [weak self] in
+            self?.playHeaderEntrance()
+            self?.persist()
+        }
     }
 
-    private func stopSpring() {
-        displayLink?.invalidate()
-        displayLink = nil
-        lastTimestamp = 0
+    private func trimLayers(above index: Int) {
+        while layers.count - 1 > index {
+            let dying = layers.removeLast()
+            dying.willMove(toParent: nil)
+            dying.view.removeFromSuperview()
+            dying.removeFromParent()
+        }
     }
 
-    // MARK: - Overscroll-to-pop
+    private func runTransition(before: UIImage, after: UIImage, origin: CGPoint,
+                               completion: @escaping () -> Void) {
+        guard let transition else { completion(); return }   // instant cut
+        transitionInFlight = true
+        transition.play(before: before, after: after, origin: origin, in: view) { [weak self] in
+            self?.transitionInFlight = false
+            completion()
+        }
+    }
+
+    private func playHeaderEntrance() { layers.last?.playHeaderEntrance() }
+
+    private func snapshot(afterScreenUpdates: Bool) -> UIImage {
+        UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
+            view.drawHierarchy(in: view.bounds, afterScreenUpdates: afterScreenUpdates)
+        }
+    }
+
+    // MARK: - Overscroll-to-pop (interactive halftone wipe)
 
     @objc private func handleOverscrollPan(_ pan: UIPanGestureRecognizer) {
-        guard layers.count > 1, let focused = layers.last,
-              let scroll = focused.contentScrollView else { return }
+        guard layers.count > 1, !transitionInFlight,
+              let focused = layers.last, let scroll = focused.contentScrollView else { return }
         let translation = pan.translation(in: view).y
 
         switch pan.state {
         case .began, .changed:
-            if !overscrollEngaged {
-                // Engage only once the inner scroll view is already at an edge and the
-                // drag pushes further past it — otherwise let it scroll normally.
+            if interactive == nil {
                 let atTop = scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 0.5
                 let atBottom = scroll.contentOffset.y >= scroll.contentSize.height
                     - scroll.bounds.height + scroll.adjustedContentInset.bottom - 0.5
-                if atTop, translation > 0 { engageOverscroll(scroll, edge: 1, baseline: translation) }
-                else if atBottom, translation < 0 { engageOverscroll(scroll, edge: -1, baseline: translation) }
+                if atTop, translation > 0 { beginOverscroll(scroll, edge: 1, baseline: translation, pan: pan) }
+                else if atBottom, translation < 0 { beginOverscroll(scroll, edge: -1, baseline: translation, pan: pan) }
             }
-            guard overscrollEngaged else { return }
-            // Rubber-band resistance: a long pull yields only a fraction of a layer.
+            guard interactive != nil else { return }
             let raw = max((translation - overscrollBaseline) * overscrollEdge, 0)
-            let pull = raw / (raw + 240)
-            focus = CGFloat(topIndex) - pull
-            applyFocus()
+            interactive?.update(progress: raw / (raw + 240))   // rubber-band resistance
         case .ended, .cancelled:
-            guard overscrollEngaged else { return }
-            disengageOverscroll()
-            let pulled = CGFloat(topIndex) - focus
-            let velocity = pan.velocity(in: view).y * overscrollEdge   // >0 continues the pull
-            if pulled > 0.32 || velocity > 900 {
-                popToLayer(topIndex - 1)
-            } else {
-                animateFocus(to: CGFloat(topIndex)) { [weak self] in self?.activeSplitY = nil }
+            guard let handle = interactive else { return }
+            interactive = nil
+            let raw = max((pan.translation(in: view).y - overscrollBaseline) * overscrollEdge, 0)
+            let pull = raw / (raw + 240)
+            let velocity = pan.velocity(in: view).y * overscrollEdge
+            let committed = pull > 0.32 || velocity > 900
+            endOverscroll()
+            if committed {
+                // Apply the pop now, hidden under the still-present overlay; the wipe
+                // then settles to the after state and reveals it.
+                trimLayers(above: topIndex - 1)
+                focus = topIndex
+                applyFocus()
+                persist()
+            }
+            transitionInFlight = true
+            handle.finish(committed: committed) { [weak self] in
+                self?.transitionInFlight = false
+                if committed { self?.playHeaderEntrance() }
             }
         default:
             break
         }
     }
 
-    private func engageOverscroll(_ scroll: UIScrollView, edge: CGFloat, baseline: CGFloat) {
-        overscrollEngaged = true
+    private func beginOverscroll(_ scroll: UIScrollView, edge: CGFloat, baseline: CGFloat,
+                                 pan: UIPanGestureRecognizer) {
+        guard let transition, layers.count > 1 else { return }
         overscrollEdge = edge
         overscrollBaseline = baseline
         overscrollScroll = scroll
-        stopSpring()
-        scroll.bounces = false
-        scroll.isScrollEnabled = false          // we own the drag now; no fighting bounce
-        activeSplitY = view.bounds.midY
+        scroll.isScrollEnabled = false   // we own the drag
+
+        let origin = pan.location(in: view)
+        let before = snapshot(afterScreenUpdates: false)
+        // Compose the after state (parent focused, top layer gone) hidden under the overlay.
+        let dying = layers[topIndex]
+        applyFocus(focusedIndex: topIndex - 1, hiding: dying)
+        view.layoutIfNeeded()
+        let after = snapshot(afterScreenUpdates: true)
+        applyFocus()                     // restore the live before state
+        interactive = transition.begin(before: before, after: after, origin: origin, in: view)
     }
 
-    private func disengageOverscroll() {
-        overscrollEngaged = false
-        overscrollScroll?.bounces = true
+    private func endOverscroll() {
         overscrollScroll?.isScrollEnabled = true
         overscrollScroll = nil
     }
 
-    /// Run alongside the inner scroll view's own pan so we can read its edge state.
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+                                  shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         true
     }
 
@@ -351,10 +321,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     @objc private func persist() {
         guard !layers.isEmpty else { return }
         for layer in layers { layer.syncScrollOffset() }
-        let descriptors = layers.map { $0.descriptor }
-        stackStore.save(RabbitHoleStack(layers: descriptors), forRootID: rootItem.id)
-        // Keep the reading list's own resume fields in step for the ROOT layer so the
-        // list/standard reader stay consistent if the user flips the toggle off.
+        stackStore.save(RabbitHoleStack(layers: layers.map { $0.descriptor }), forRootID: rootItem.id)
         if let root = layers.first {
             store.setLastScrollOffset(root.descriptor.scrollOffset, for: rootItem.id)
         }

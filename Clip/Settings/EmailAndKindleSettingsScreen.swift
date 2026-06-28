@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipReadingListUI
 import ClipReadingList
 import ClipMail
 import ClipSend

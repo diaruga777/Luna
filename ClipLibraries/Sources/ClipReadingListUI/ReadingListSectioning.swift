@@ -11,20 +11,20 @@ import Foundation
 /// sections, which items qualify for catch-up, and when the catch-up
 /// "action needed" dot lights up. Extracted from `ReadingListViewController`
 /// so it can be unit-tested without a view controller, store, or simulator.
-enum ReadingListSectioning {
+public enum ReadingListSectioning {
     /// Items older than this (by save date) and still unread fall out of the
     /// active Reading window into the Archive section.
-    static let archiveAge: TimeInterval = 7 * 24 * 60 * 60
+    public static let archiveAge: TimeInterval = 7 * 24 * 60 * 60
 
     /// The unread count at (and above) which the catch-up dot turns on even
     /// without a locked save.
-    static let catchUpDotUnreadThreshold = 10
+    public static let catchUpDotUnreadThreshold = 10
 
     /// Sections the reading list groups items into. Raw values are STABLE
     /// (persisted in the collapsed-sections key), so new cases append at the
     /// end and existing ones keep their numbering; display order is
     /// `displayOrder`, not the declaration order.
-    enum Section: Int, CaseIterable {
+    public enum Section: Int, CaseIterable {
         case reading = 0
         case archive = 2
         case error = 3
@@ -32,7 +32,7 @@ enum ReadingListSectioning {
         case priceTracking = 5
         case priceAlert = 6
 
-        var title: String {
+        public var title: String {
             switch self {
             case .reading: return "Reading"
             case .archive: return "Archive"
@@ -44,7 +44,7 @@ enum ReadingListSectioning {
         }
 
         /// Reading and the pasteboard suggestion are always open; the rest collapse.
-        var isCollapsible: Bool {
+        public var isCollapsible: Bool {
             switch self {
             case .reading, .pasteboard, .priceTracking, .priceAlert: return false
             case .archive, .error: return true
@@ -56,17 +56,17 @@ enum ReadingListSectioning {
     /// active Reading list (a triggered-but-unviewed tracker still floats to the very
     /// top of the whole list, ahead of the pasteboard suggestion — see `assignSections`
     /// / `topUnviewedAlertingPriceTracker`).
-    static let displayOrder: [Section] = [.priceAlert, .pasteboard, .reading, .priceTracking, .archive, .error]
+    public static let displayOrder: [Section] = [.priceAlert, .pasteboard, .reading, .priceTracking, .archive, .error]
 
     /// What the list shows: everything, only articles (anything that opens in
     /// the text reader), or only media & links (everything else).
-    enum ListFilter: Int, CaseIterable {
+    public enum ListFilter: Int, CaseIterable {
         case all = 0
         case articles = 1
         case mediaAndLinks = 2
         case priceTrackers = 3
 
-        var displayName: String {
+        public var displayName: String {
             switch self {
             case .all: return "All"
             case .articles: return "Articles"
@@ -75,7 +75,7 @@ enum ReadingListSectioning {
             }
         }
 
-        func includes(_ item: ReadingListItem) -> Bool {
+        public func includes(_ item: ReadingListItem) -> Bool {
             switch self {
             case .all: return true
             case .articles: return ReadingListSectioning.rendersAsReader(item)
@@ -90,7 +90,7 @@ enum ReadingListSectioning {
     /// as opposed to media & links (YouTube, platform posts, music/podcasts)
     /// which open in a player, embed, or browser. Mirrors the tap routing. Price
     /// trackers are neither — they open the price-tracking screen.
-    static func rendersAsReader(_ item: ReadingListItem) -> Bool {
+    public static func rendersAsReader(_ item: ReadingListItem) -> Bool {
         !item.isPriceTracker && item.contentPlatform == nil && !item.isYouTubeVideo
     }
 
@@ -101,7 +101,7 @@ enum ReadingListSectioning {
     ///
     /// Returns each bucket in input order. The Pasteboard section is injected
     /// by the caller (it's a transient, unsaved suggestion).
-    static func assignSections(
+    public static func assignSections(
         items: [ReadingListItem],
         now: Date
     ) -> (reading: [ReadingListItem], archive: [ReadingListItem], failed: [ReadingListItem],
@@ -137,7 +137,7 @@ enum ReadingListSectioning {
     /// discount then by id for determinism. At most one. Nil when none qualifies —
     /// including when the user has already viewed every alert, in which case the
     /// alerting trackers stay in the price-tracking section below Reading.
-    static func topUnviewedAlertingPriceTracker(items: [ReadingListItem]) -> ReadingListItem? {
+    public static func topUnviewedAlertingPriceTracker(items: [ReadingListItem]) -> ReadingListItem? {
         items
             .filter { $0.priceTracker?.hasUnviewedAlert == true }
             .max { lhs, rhs in
@@ -151,7 +151,7 @@ enum ReadingListSectioning {
     /// The filter segment is meaningful when the list has at least two of the
     /// three kinds (reader, media/link, price tracker); otherwise it's pointless
     /// and hidden.
-    static func shouldShowFilter(items: [ReadingListItem]) -> Bool {
+    public static func shouldShowFilter(items: [ReadingListItem]) -> Bool {
         let nonArchivedTrackers = items.filter { $0.priceTracker?.isArchived == false }
         let hasReaderItem = items.contains(where: rendersAsReader)
         let hasMediaOrLink = items.contains { !rendersAsReader($0) && !$0.isPriceTracker }
@@ -160,7 +160,7 @@ enum ReadingListSectioning {
         return kinds >= 2
     }
 
-    static func hasMediaAndLinks(items: [ReadingListItem]) -> Bool {
+    public static func hasMediaAndLinks(items: [ReadingListItem]) -> Bool {
         items.contains {
             !ReadingListSectioning.rendersAsReader($0)
             && !$0.isPriceTracker
@@ -169,7 +169,7 @@ enum ReadingListSectioning {
 
     /// Whether the price-tracking section/filter segment should appear — i.e. at
     /// least one non-archived tracker exists.
-    static func hasPriceTrackers(items: [ReadingListItem]) -> Bool {
+    public static func hasPriceTrackers(items: [ReadingListItem]) -> Bool {
         items.contains { $0.priceTracker?.isArchived == false }
     }
 
@@ -177,7 +177,7 @@ enum ReadingListSectioning {
     /// renderable (ready articles or locked paywalled articles, or any
     /// platform/media item), oldest first by bump date (falling back to save
     /// date).
-    static func catchUpQueue(items: [ReadingListItem]) -> [ReadingListItem] {
+    public static func catchUpQueue(items: [ReadingListItem]) -> [ReadingListItem] {
         items.filter { item in
             guard item.readState != .read else { return false }
             // Locked (needsCaptcha) articles show as locked cards; other
@@ -192,7 +192,7 @@ enum ReadingListSectioning {
     /// awaiting unlock) save — regardless of count — OR when the catch-up voice
     /// card is still pending (no enhanced voice installed and not yet dismissed),
     /// so the nudge surfaces even with an empty reading list.
-    static func shouldShowCatchUpDot(items: [ReadingListItem]) -> Bool {
+    public static func shouldShowCatchUpDot(items: [ReadingListItem]) -> Bool {
         let unread = items.filter { $0.readState != .read }
         let hasLockedSave = unread.contains { $0.state == .needsCaptcha }
         return unread.count >= catchUpDotUnreadThreshold || hasLockedSave

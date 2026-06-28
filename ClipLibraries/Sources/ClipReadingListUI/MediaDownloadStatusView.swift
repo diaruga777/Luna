@@ -11,7 +11,7 @@ import UIKit
 /// (so the list stays fully interactive), and — because it's a subview of the
 /// reading list view, not the window — it never shows over the reader. Auto-hides
 /// after a result.
-final class MediaDownloadStatusView: UIView {
+public final class MediaDownloadStatusView: UIView {
 
     private let pill = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let icon = UIImageView()
@@ -19,7 +19,7 @@ final class MediaDownloadStatusView: UIView {
     private let progress = UIProgressView(progressViewStyle: .default)
     private var hideWorkItem: DispatchWorkItem?
 
-    init() {
+    public init() {
         super.init(frame: .zero)
         // Pass every touch through to the list — purely informational.
         isUserInteractionEnabled = false
@@ -65,10 +65,10 @@ final class MediaDownloadStatusView: UIView {
         alpha = 0
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     /// Shows the pill with an indeterminate-looking 0 progress and a "saving" label.
-    func startProgress() {
+    public func startProgress() {
         hideWorkItem?.cancel()
         icon.image = UIImage(systemName: "arrow.down.circle")
         icon.tintColor = GlassStyle.readingAccent
@@ -78,12 +78,12 @@ final class MediaDownloadStatusView: UIView {
         reveal()
     }
 
-    func update(progress value: Double) {
+    public func update(progress value: Double) {
         progress.setProgress(Float(value), animated: true)
     }
 
     /// Shows the final result, then auto-hides.
-    func showResult(message: String, success: Bool) {
+    public func showResult(message: String, success: Bool) {
         hideWorkItem?.cancel()
         progress.isHidden = true
         icon.image = UIImage(systemName: success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")

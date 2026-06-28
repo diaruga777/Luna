@@ -5,6 +5,7 @@
 //  Snapshot + navigation coverage for the Settings menu and every subscreen.
 //
 
+import ClipReadingListUI
 import UIKit
 import XCTest
 @testable import Clip

@@ -15,15 +15,15 @@ import Foundation
 /// "from <friend>" attribution that the view renders in the accent color.
 /// Extracted from `ReadingListViewController.secondaryText` so the formatting
 /// rules can be unit-tested without UIKit, `PlatformRegistry`, or defaults.
-enum ReadingListSubtitle {
+public enum ReadingListSubtitle {
     /// Human-readable destination names, keyed by destination id.
-    static let destinationNames: [String: String] = [
+    public static let destinationNames: [String: String] = [
         ArticleDestinationID.kindle: "Kindle",
         ArticleDestinationID.boox: "Boox",
     ]
 
     /// Words read per minute used for the reading-time estimate.
-    static let wordsPerMinute = 220.0
+    public static let wordsPerMinute = 220.0
 
     /// The dot-separated parts of the metadata line, in display order. The view
     /// joins these with " · " and renders them in the base (grey) color.
@@ -37,7 +37,7 @@ enum ReadingListSubtitle {
     ///     `DateFormatter` (locale/timezone dependent, so kept out of here).
     ///   - showReadingTime: the `ReaderSettings.showReadingTime` toggle.
     ///   - showReadingProgress: the `ReaderSettings.showReadingProgress` toggle.
-    static func parts(
+    public static func parts(
         for item: ReadingListItem,
         leadingLabel: String,
         formattedDate: String,
@@ -77,7 +77,7 @@ enum ReadingListSubtitle {
 
     /// Estimated reading time in whole minutes (rounded up, floored at 1), or
     /// nil when there's no positive word count to estimate from.
-    static func readingTimeMinutes(wordCount: Int?) -> Int? {
+    public static func readingTimeMinutes(wordCount: Int?) -> Int? {
         guard let words = wordCount, words > 0 else { return nil }
         return max(1, Int((Double(words) / wordsPerMinute).rounded(.up)))
     }

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipModels
 import ClipDesignSystem
 import UIKit
 
@@ -11,11 +12,11 @@ import UIKit
 /// the fetched art (aspect-fit, ratio-capped), or a platform-logo fallback once
 /// the fetch has finished without an image. Art decodes off the main thread and
 /// is guarded by `reuseKey` so a slow load never lands on a recycled cell.
-final class ReadingListItemCell: UITableViewCell {
-    static let reuseID = "readingListItemCell"
+public final class ReadingListItemCell: UITableViewCell {
+    public static let reuseID = "readingListItemCell"
 
     /// What to show in the thumbnail well.
-    enum Thumbnail {
+    public enum Thumbnail {
         /// No thumbnail well at all (plain article with no art).
         case none
         /// Still fetching — show a spinner.
@@ -50,12 +51,12 @@ final class ReadingListItemCell: UITableViewCell {
     /// Action for the optional trailing button (e.g. the pasteboard row's Save).
     private var onTrailingButton: (() -> Void)?
 
-    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+    public override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         buildLayout()
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     private func buildLayout() {
         titleLabel.font = .preferredFont(forTextStyle: .body)
@@ -122,13 +123,13 @@ final class ReadingListItemCell: UITableViewCell {
     }
 
     /// Simulator-only: install the row's context menu on the bottom-left tap target.
-    func setSimulatorMenu(_ menu: UIMenu?) {
+    public func setSimulatorMenu(_ menu: UIMenu?) {
         guard AppEnvironment.isSimulator else { return }
         simulatorMenuButton.menu = menu
         simulatorMenuButton.isHidden = menu == nil
     }
 
-    override func prepareForReuse() {
+    public override func prepareForReuse() {
         super.prepareForReuse()
         reuseKey = nil
         thumbImageView.image = nil
@@ -137,7 +138,7 @@ final class ReadingListItemCell: UITableViewCell {
         setSimulatorMenu(nil)
     }
 
-    func configure(
+    public func configure(
         title: String, titleColor: UIColor, subtitle: NSAttributedString,
         thumbnail: Thumbnail, showsDisclosure: Bool, reuseKey: String,
         trailingButtonSymbol: String? = nil, onTrailingButton: (() -> Void)? = nil

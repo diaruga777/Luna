@@ -17,7 +17,7 @@ import Foundation
 ///
 /// The haystack is built once per search session (off the main thread) and reused
 /// for every keystroke, so string search is a pure in-memory scan.
-protocol ReadingListSearching: AnyObject {
+public protocol ReadingListSearching: AnyObject {
     /// Builds the in-memory haystack (reads each item's content). Call when search
     /// opens and whenever the list changes mid-session. Off-main.
     func prepare()
@@ -35,20 +35,26 @@ protocol ReadingListSearching: AnyObject {
 
 /// One pre-lowercased searchable record. Split title/metadata vs body so a title
 /// hit can rank above a body-only hit.
-struct SearchEntry {
-    let item: ReadingListItem
+public struct SearchEntry {
+    public let item: ReadingListItem
     /// Lowercased title + channel + creator + media title + host + sharer.
-    let titleText: String
+    public let titleText: String
     /// Lowercased extracted body (+ content title), empty for media/no-content.
-    let bodyText: String
+    public let bodyText: String
+
+    public init(item: ReadingListItem, titleText: String, bodyText: String) {
+        self.item = item
+        self.titleText = titleText
+        self.bodyText = bodyText
+    }
 }
 
-final class ReadingListSearchEngine: ReadingListSearching {
+public final class ReadingListSearchEngine: ReadingListSearching {
 
     /// Query→content cosine runs lower than the item→item sharing threshold, so
     /// search uses its own (tunable) cutoff. Below this is noise.
-    static let semanticThreshold: Float = 0.45
-    static let semanticLimit = 40
+    public static let semanticThreshold: Float = 0.45
+    public static let semanticLimit = 40
 
     private let store: ReadingListStore
     private let index: SemanticIndexStore
@@ -58,17 +64,17 @@ final class ReadingListSearchEngine: ReadingListSearching {
     private var entries: [SearchEntry] = []
     private var ready = false
 
-    init(store: ReadingListStore = .shared, index: SemanticIndexStore = .shared) {
+    public init(store: ReadingListStore = .shared, index: SemanticIndexStore = .shared) {
         self.store = store
         self.index = index
     }
 
-    var isReady: Bool {
+    public var isReady: Bool {
         lock.lock(); defer { lock.unlock() }
         return ready
     }
 
-    func prepare() {
+    public func prepare() {
         let built = store.items().map { item -> SearchEntry in
             let titleText = [
                 item.title, item.channelName, item.mediaCreatorName,
@@ -86,7 +92,7 @@ final class ReadingListSearchEngine: ReadingListSearching {
         lock.unlock()
     }
 
-    func stringMatches(for query: String) -> [ReadingListItem] {
+    public func stringMatches(for query: String) -> [ReadingListItem] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty else { return [] }
         lock.lock(); let snapshot = entries; lock.unlock()
@@ -94,7 +100,7 @@ final class ReadingListSearchEngine: ReadingListSearching {
     }
 
     /// Pure ranking (title/metadata hits first, then body-only hits), unit-tested.
-    static func rank(needle: String, in entries: [SearchEntry]) -> [ReadingListItem] {
+    public static func rank(needle: String, in entries: [SearchEntry]) -> [ReadingListItem] {
         var titleHits: [ReadingListItem] = []
         var bodyHits: [ReadingListItem] = []
         for entry in entries {
@@ -107,7 +113,7 @@ final class ReadingListSearchEngine: ReadingListSearching {
         return titleHits + bodyHits
     }
 
-    func semanticMatches(for query: String, excluding: Set<UUID>) -> [ReadingListItem] {
+    public func semanticMatches(for query: String, excluding: Set<UUID>) -> [ReadingListItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2, let vector = embedder.embed(trimmed) else { return [] }
         let hits = index.nearestItems(
@@ -118,5 +124,5 @@ final class ReadingListSearchEngine: ReadingListSearching {
         return hits.compactMap { byID[$0.itemID] }
     }
 
-    func release() { embedder.release() }
+    public func release() { embedder.release() }
 }

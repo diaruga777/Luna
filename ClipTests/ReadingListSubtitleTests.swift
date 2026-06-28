@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipReadingListUI
 import ClipSend
 import ClipModels
 import XCTest

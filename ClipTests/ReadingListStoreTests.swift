@@ -173,4 +173,20 @@ final class ReadingListStoreTests: XCTestCase {
         store.delete(item)
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourceURL.path))
     }
+
+    /// A mail/email save (no preserved web archive, no imported source document) has
+    /// no original artifact to show — the reader must not offer the Original/web mode.
+    /// `ReaderViewController` keys the Original segment off `hasOriginalSource(for:)`,
+    /// so this is the exact condition that hides it.
+    func testEmailSaveHasNoOriginalSource() throws {
+        // A mail import: no real web URL, no webarchive, no source document.
+        var item = store.add(urlString: "clipmail://message")
+        item.state = .ready
+        store.restore([item])
+
+        XCTAssertNil(store.webArchiveURL(for: item))
+        XCTAssertNil(store.originalDocumentURL(for: item))
+        XCTAssertFalse(store.hasOriginalSource(for: item),
+                       "Email saves have no web archive or source file, so Original mode must be hidden.")
+    }
 }

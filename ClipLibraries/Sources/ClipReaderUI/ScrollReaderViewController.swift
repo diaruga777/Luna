@@ -88,13 +88,18 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
          gazeTrackerFactory: GazeTrackerFactory? = nil,
          resumeWordIndex: Int? = nil) {
         self.item = item
-        self.content = content
+        // Bake in any images already cached on disk (keyed by URL hash) BEFORE the
+        // first render, so they appear in the same frame as the text instead of
+        // popping in later via the async downloader. Cheap (hash + fileExists); only
+        // genuinely-uncached images fall through to `fetchMissingImagesIfNeeded`.
+        let resolved = ArticleImageDownloader.resolveLocalImages(content, store: ReadingListStore.shared)
+        self.content = resolved
         self.audioEnabled = audioEnabled
         self.shareProvider = shareProvider
         self.gazeTrackerFactory = gazeTrackerFactory
         self.explicitResumeWordIndex = resumeWordIndex
-        self.rendered = ArticleTextRenderer.render(content)
-        self.wordMap = WordMap(content: content, rendered: rendered)
+        self.rendered = ArticleTextRenderer.render(resolved)
+        self.wordMap = WordMap(content: resolved, rendered: rendered)
         super.init(nibName: nil, bundle: nil)
     }
 

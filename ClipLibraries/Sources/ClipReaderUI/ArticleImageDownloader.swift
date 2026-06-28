@@ -81,6 +81,33 @@ public enum ArticleImageDownloader {
         return updated
     }
 
+    /// Synchronously fill in `imageFileName` for every image block whose downloaded
+    /// file already exists on disk (keyed by the image URL's stable hash). No network,
+    /// no decoding — just a hash + file-existence check per image, cheap enough to run
+    /// on the main thread right before the first render, so on-disk images bake into
+    /// the article *with the text* instead of popping in later via the async `download`.
+    /// Blocks whose file isn't cached yet are returned unchanged (the async `download`
+    /// fetches those). Returns `content` untouched when no image needs resolving.
+    public static func resolveLocalImages(
+        _ content: ArticleContent, store: ReadingListStore
+    ) -> ArticleContent {
+        guard content.blocks.contains(where: { $0.kind == .image && $0.imageFileName == nil })
+        else { return content }
+        let directory = store.articlesDirectory
+        var blocks: [ArticleContent.Block] = []
+        blocks.reserveCapacity(content.blocks.count)
+        for var block in content.blocks {
+            if block.kind == .image, block.imageFileName == nil, let rawURL = block.imageURLString,
+               let existing = existingFileName(base: stableBase(for: rawURL), in: directory) {
+                block.imageFileName = existing
+            }
+            blocks.append(block)
+        }
+        var updated = content
+        updated.blocks = blocks
+        return updated
+    }
+
     /// Stable, filesystem-safe filename stem for an image URL (so the same image maps
     /// to one local file regardless of which item/open requested it).
     private static func stableBase(for rawURL: String) -> String {

@@ -7,6 +7,7 @@ import ClipMediaDownload
 import ClipDesignSystem
 import ClipStorage
 import ClipIngest
+import ClipTransitions
 import ClipURLClassification
 import ClipModels
 import Intents
@@ -626,10 +627,15 @@ extension ShareViewController: ExtensionHost {
             statusLabel.isHidden = true
             closeButton.isHidden = true
             if let navigationController = actionNavigationController {
-                navigationController.setViewControllers([viewController], animated: false)
+                // Swapping archive → reader inside the one embedded nav: pixel-wipe the
+                // swap (a no-op instant swap when the toggle is off or Metal is absent).
+                HalftoneCrossfade.run(in: navigationController.view) {
+                    navigationController.setViewControllers([viewController], animated: false)
+                }
                 return
             }
             let navigationController = UINavigationController(rootViewController: viewController)
+            navigationController.installHalftoneTransitions()
             navigationController.view.translatesAutoresizingMaskIntoConstraints = false
             addChild(navigationController)
             view.addSubview(navigationController.view)
@@ -644,7 +650,8 @@ extension ShareViewController: ExtensionHost {
             return
         }
         let nav = UINavigationController(rootViewController: viewController)
+        nav.installHalftoneTransitions()
         nav.modalPresentationStyle = .fullScreen
-        present(nav, animated: true)
+        HalftoneModal.present(nav, from: self)
     }
 }

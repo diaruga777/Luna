@@ -138,6 +138,17 @@ public final class HalftoneNavigationDelegate: NSObject, UINavigationControllerD
         // Our edge pan should win over the system back-swipe so they never both fire.
         gestureRecognizer === edgePan && other === navigationController?.interactivePopGestureRecognizer
     }
+
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRequireFailureOf other: UIGestureRecognizer) -> Bool {
+        // Defer our nav edge pan to any edge pan owned by a child screen (e.g. the
+        // RabbitHole reader's pop-one-layer swipe), so a child handles the swipe first and
+        // we only pop the whole stack when it declines (at its root).
+        gestureRecognizer === edgePan
+            && other is UIScreenEdgePanGestureRecognizer
+            && other !== navigationController?.interactivePopGestureRecognizer
+    }
 }
 
 public extension UINavigationController {

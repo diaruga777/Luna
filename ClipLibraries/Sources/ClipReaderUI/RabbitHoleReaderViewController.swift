@@ -46,6 +46,9 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private weak var overscrollScroll: UIScrollView?
 
     private var overscrollPan: UIPanGestureRecognizer?
+    /// Left-edge swipe that pops ONE layer interactively (or, at the root, lets the nav
+    /// controller's own edge pan pop the whole reader).
+    private var edgePopPan: UIScreenEdgePanGestureRecognizer?
     private var didMarkOpened = false
 
     /// In-memory article content for the focused layer's outbound links, keyed by the
@@ -111,6 +114,14 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         pan.delegate = self
         view.addGestureRecognizer(pan)
         overscrollPan = pan
+
+        // Left-edge swipe pops one layer (back to the previous page in the trail). At the
+        // root layer it refuses to begin so the nav controller's edge pan exits the reader.
+        let edge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleEdgePopPan(_:)))
+        edge.edges = .left
+        edge.delegate = self
+        view.addGestureRecognizer(edge)
+        edgePopPan = edge
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(persist),
@@ -432,9 +443,79 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         overscrollScroll = nil
     }
 
+    // MARK: - Left-edge-swipe-to-pop-one-layer (interactive halftone wipe)
+
+    /// Width used to normalise the edge drag into a 0…1 fraction (set on .began).
+    private var edgePopWidth: CGFloat = 1
+
+    @objc private func handleEdgePopPan(_ pan: UIScreenEdgePanGestureRecognizer) {
+        // Only meaningful above the root; at the root the gesture refuses to begin (see
+        // gestureRecognizerShouldBegin) so the nav controller exits the reader instead.
+        guard topIndex > 0 else { return }
+
+        switch pan.state {
+        case .began:
+            guard !transitionInFlight, interactive == nil else { return }
+            edgePopWidth = max(view.bounds.width, 1)
+            beginEdgePop()
+            interactive?.update(progress: 0)
+        case .changed:
+            interactive?.update(progress: max(pan.translation(in: view).x, 0) / edgePopWidth)
+        case .ended, .cancelled, .failed:
+            guard let handle = interactive else { return }
+            interactive = nil
+            let fraction = max(pan.translation(in: view).x, 0) / edgePopWidth
+            let velocity = pan.velocity(in: view).x
+            let committed = pan.state == .ended && (fraction > 0.4 || velocity > 800)
+            if committed {
+                // Apply the one-layer pop now, hidden under the overlay; the wipe then
+                // settles to the after state and reveals it.
+                trimLayers(above: topIndex - 1)
+                focus = topIndex
+                applyFocus()
+                persist()
+            }
+            transitionInFlight = true
+            handle.finish(committed: committed) { [weak self] in
+                self?.transitionInFlight = false
+                if committed {
+                    self?.playHeaderEntrance()
+                    self?.warmPreloadsForFocusedLayer()
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    /// Compose the "pop one layer" before/after snapshots and start the interactive wipe —
+    /// the horizontal-drag analogue of `beginOverscroll`, popping the top layer to its parent.
+    private func beginEdgePop() {
+        guard let transition, layers.count > 1 else { return }
+        let before = snapshot(afterScreenUpdates: false)
+        let dying = layers[topIndex]
+        applyFocus(focusedIndex: topIndex - 1, hiding: dying)
+        layers[safe: topIndex - 1]?.prepareForTransitionSnapshot()
+        view.layoutIfNeeded()
+        let after = snapshot(afterScreenUpdates: true)
+        applyFocus()   // restore the live before state
+        interactive = transition.begin(before: before, after: after, in: view)
+    }
+
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                   shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-        true
+        // The edge-pop pan must NOT run together with the overscroll pan.
+        if gestureRecognizer === edgePopPan || other === edgePopPan { return false }
+        return true
+    }
+
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        // The left-edge pop only owns the swipe when there's a layer to pop to; at the root
+        // it steps aside so the nav controller's edge pan exits the reader.
+        if gestureRecognizer === edgePopPan {
+            return topIndex > 0 && !transitionInFlight && interactive == nil
+        }
+        return true
     }
 
     // MARK: - Link preloading (materialize to disk + in-memory)

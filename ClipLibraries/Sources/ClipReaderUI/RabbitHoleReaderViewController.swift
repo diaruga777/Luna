@@ -54,6 +54,9 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// — the dive's "after" snapshot already shows the real article, and the wipe starts
     /// immediately. Trimmed to the current focus's links to stay bounded.
     private var preloadedContent: [String: ArticleContent] = [:]
+    /// The in-flight background materialization of the focused page's links (cancelled
+    /// when the focus changes or the reader closes).
+    private var warmTask: Task<Void, Never>?
     /// Cap on how many of a page's links we hold in memory at once.
     private static let maxPreloadedLinks = 40
 
@@ -70,6 +73,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
+
+    deinit { warmTask?.cancel() }
 
     // MARK: - Lifecycle
 
@@ -192,11 +197,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         guard !transitionInFlight else { return }
         focused.setBottomLipText(lineText)
 
-        let before = snapshot(afterScreenUpdates: false)
         // Hand the new layer its already-decoded content (if we preloaded this link) so
         // it renders synchronously — the "after" snapshot then shows the real article.
         let preloaded = preloadedContent[PreloadStore.key(for: url)]
-        runTransition(before: before, applyState: { [weak self] in
+        runTransition(applyState: { [weak self] in
             guard let self else { return }
             self.addLayer(RabbitHoleLayerDescriptor(urlString: url.absoluteString),
                           preloadedContent: preloaded)
@@ -220,8 +224,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     private func popToLayer(_ index: Int) {
         guard !transitionInFlight, index >= 0, index < layers.count, index != topIndex else { return }
-        let before = snapshot(afterScreenUpdates: false)
-        runTransition(before: before, applyState: { [weak self] in
+        runTransition(applyState: { [weak self] in
             guard let self else { return }
             self.trimLayers(above: index)
             self.focus = index
@@ -249,18 +252,20 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// the user sees on tap. `afterScreenUpdates: false` keeps the snapshot cheap (the
     /// focused header is hidden first to avoid the missing-blur artifact, then animated
     /// back in by `playHeaderEntrance`).
-    private func runTransition(before: UIImage, applyState: @escaping () -> Void,
+    private func runTransition(applyState: @escaping () -> Void,
                                completion: @escaping () -> Void) {
         guard let transition else {   // no Metal → instant cut
             applyState(); view.layoutIfNeeded(); completion(); return
         }
         transitionInFlight = true
-        transition.play(before: before, buildAfter: { [weak self] in
+        transition.play(prepare: { [weak self] in
+            guard let self else { return (UIImage(), UIImage()) }
+            let before = self.snapshot(afterScreenUpdates: false)
             applyState()
-            guard let self else { return before }
             self.layers[safe: self.focus]?.prepareForTransitionSnapshot()
             self.view.layoutIfNeeded()
-            return self.snapshot(afterScreenUpdates: false)
+            let after = self.snapshot(afterScreenUpdates: false)
+            return (before, after)
         }, in: view) { [weak self] in
             self?.transitionInFlight = false
             completion()
@@ -353,31 +358,39 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         true
     }
 
-    // MARK: - Link preloading (in-memory)
+    // MARK: - Link preloading (materialize to disk + in-memory)
 
-    /// Decode the focused layer's outbound links from the on-disk preload cache into
-    /// memory (off-main), so a dive into one is instant. Trims the in-memory set to the
-    /// current focus's links first to stay bounded; only the not-yet-cached links are
-    /// read. No-op until the focused layer has resolved to an article.
+    /// Fully materialize the focused page's outbound links — text AND every image to
+    /// disk, identical to a root save — and load their content into memory, so a dive
+    /// into any of them is instant with zero fetch (see RabbitHolePreloader). Links are
+    /// processed in document order (the top of the page is the likeliest next tap) at
+    /// background priority; already-cached pages reuse the disk copy without refetching.
+    /// The in-memory set is trimmed to the current focus's links to stay bounded, and
+    /// any prior warm is cancelled when the focus changes. No-op until the focused layer
+    /// has resolved to an article.
     private func warmPreloadsForFocusedLayer() {
         guard let focused = layers[safe: focus], focused.isArticle else { return }
         let urls = Array(focused.outboundLinkURLs.prefix(Self.maxPreloadedLinks))
-        let wanted = urls.map { PreloadStore.key(for: $0) }
-        let wantedSet = Set(wanted)
+        let wantedSet = Set(urls.map { PreloadStore.key(for: $0) })
+        // Drop in-memory entries no longer reachable from the focused page.
         preloadedContent = preloadedContent.filter { wantedSet.contains($0.key) }
+        let alreadyLoaded = Set(preloadedContent.keys)
+        let rootID = rootItem.id
 
-        let missing = zip(urls, wanted).filter { preloadedContent[$0.1] == nil }
-        guard !missing.isEmpty else { return }
-        Task.detached(priority: .utility) { [weak self] in
-            var loaded: [String: ArticleContent] = [:]
-            for (url, key) in missing {
-                if let content = PreloadStore.shared.articleContent(for: url) { loaded[key] = content }
-            }
-            guard !loaded.isEmpty else { return }
-            await MainActor.run { [weak self] in
-                // Only keep keys still wanted by the (possibly changed) focus, so a
-                // task superseded by a focus change can't re-add a stale link.
-                self?.preloadedContent.merge(loaded.filter { wantedSet.contains($0.key) }) { _, new in new }
+        warmTask?.cancel()
+        warmTask = Task.detached(priority: .utility) { [weak self] in
+            for url in urls {
+                if Task.isCancelled { return }
+                let key = PreloadStore.key(for: url)
+                if alreadyLoaded.contains(key) { continue }
+                guard let content = await RabbitHolePreloader.materialize(url: url, rootID: rootID)
+                else { continue }
+                if Task.isCancelled { return }
+                await MainActor.run { [weak self] in
+                    // Only keep it if the focus hasn't moved on to a different page.
+                    guard let self, wantedSet.contains(key) else { return }
+                    self.preloadedContent[key] = content
+                }
             }
         }
     }

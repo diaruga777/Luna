@@ -55,14 +55,14 @@ public protocol RabbitHoleTransitioning: AnyObject {
     /// first transition doesn't pay the Metal setup cost mid-tap. Safe to call more
     /// than once; a no-op when Metal is unavailable.
     func prewarm(in container: UIView)
-    /// Non-interactive wipe from `before` to the state produced by `buildAfter`.
+    /// Non-interactive dive/pop wipe with ZERO visible work on the tap's critical path.
     ///
-    /// The overlay masks the screen with `before` IMMEDIATELY (so the tap has zero
-    /// visible lag), then on the next runloop calls `buildAfter` — which performs the
-    /// (potentially expensive) layer build + relayout and returns the resulting "after"
-    /// snapshot — entirely hidden behind the mask, and only then animates the dissolve.
-    /// `completion` fires once the overlay has animated through and been parked.
-    func play(before: UIImage, buildAfter: @escaping () -> UIImage,
+    /// The impl masks the screen INSTANTLY with a cheap view snapshot (no re-render),
+    /// then on the next runloop calls `prepare` — which performs the (expensive)
+    /// before-snapshot + layer build/relayout + after-snapshot, returning both images —
+    /// entirely hidden behind that mask, hands off to the GPU dissolve, and removes the
+    /// instant mask. `completion` fires once the wipe finishes and the overlay is parked.
+    func play(prepare: @escaping () -> (before: UIImage, after: UIImage),
               in container: UIView, completion: @escaping () -> Void)
     /// Begin an interactive wipe; drive the returned handle with `update(progress:)`
     /// (0 = before, 1 = after) and end it with `finish(committed:completion:)`.

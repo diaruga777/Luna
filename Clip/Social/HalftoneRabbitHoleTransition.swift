@@ -24,26 +24,26 @@ final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
 
     func prewarm(in container: UIView) { _ = ensureOverlay(in: container) }
 
-    func play(before: UIImage, buildAfter: @escaping () -> UIImage,
+    func play(prepare: @escaping () -> (before: UIImage, after: UIImage),
               in container: UIView, completion: @escaping () -> Void) {
         guard let view = ensureOverlay(in: container) else {
-            _ = buildAfter()   // Metal unavailable → apply the state change, instant cut
+            _ = prepare()   // Metal unavailable → apply the state change, instant cut
             completion(); return
         }
-        // 1) Mask the screen with the before frame THIS runloop. The overlay is opaque
-        //    and at progress 0 shows exactly `before`, so the screen is visually frozen
-        //    on identical pixels — no flash, no jank, zero perceived lag on tap.
-        applyStyle(to: view)
-        view.configure(before: before)
-        view.setProgress(0)
-        view.isHidden = false
-        container.layoutIfNeeded()
-        // 2) Once that mask has been committed, do the heavy build + relayout + after
-        //    snapshot UNDER the mask (the user keeps seeing the frozen frame), then run
-        //    the dissolve to the real destination.
+        // The tap handler does NO heavy work — it only schedules this block. Until it
+        // commits, the screen stays on the last-committed (pre-tap) frame, so there's no
+        // visible lag or jank on tap. Here, on the next runloop, we take the before/after
+        // snapshots and build the new layer, then bring up the GPU overlay at progress 0
+        // (== the before frame) and animate — all batched into a single commit with the
+        // overlay on top, so the build is never visible and the dissolve starts cleanly.
         DispatchQueue.main.async {
-            let after = buildAfter()
-            view.setAfterImage(after)
+            let frames = prepare()
+            self.applyStyle(to: view)
+            view.configure(before: frames.before, after: frames.after)
+            view.setProgress(0)
+            view.isHidden = false
+            container.bringSubviewToFront(view)
+            container.layoutIfNeeded()
             view.animateProgress(to: 1, duration: RabbitHoleTransitionSettings.totalDuration) {
                 Self.park(view)
                 completion()

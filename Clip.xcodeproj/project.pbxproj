@@ -151,7 +151,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		AA9000000000000000000001 /* Re-sign embedded extensions (simulator) */ = {
+		AA9000000000000000000001 /* Re-sign embedded extensions (debug) */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -159,12 +159,12 @@
 			);
 			inputPaths = (
 			);
-			name = "Re-sign embedded extensions (simulator)";
+			name = "Re-sign embedded extensions (debug)";
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Simulator only: re-sign each embedded extension ad-hoc so it always matches the\n# ad-hoc-signed app. Stops the recurring incremental-build error \"Embedded binary is\n# not signed with the same certificate as the parent app\". No-op on device/archive\n# builds, so distribution/TestFlight signing is left completely untouched.\nif [ \"${PLATFORM_NAME}\" != \"iphonesimulator\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign - --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -438,7 +438,7 @@
 				AA0800000000000000000001 /* Frameworks */,
 				AA1100000000000000000001 /* Resources */,
 				AA0500000000000000000001 /* Embed Foundation Extensions */,
-				AA9000000000000000000001 /* Re-sign embedded extensions (simulator) */,
+				AA9000000000000000000001 /* Re-sign embedded extensions (debug) */,
 			);
 			buildRules = (
 			);

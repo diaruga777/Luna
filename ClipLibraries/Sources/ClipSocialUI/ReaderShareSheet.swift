@@ -13,20 +13,27 @@ import UIKit
 /// `UIAlertController(.actionSheet)`. The rows' actions are injected so the
 /// sheet stays UI-only; `AppReaderShareProvider` wires them to the social /
 /// export stack.
-final class ReaderShareSheet: UIViewController {
+public final class ReaderShareSheet: UIViewController {
 
     /// One tappable option. `isPrimary` gives the suggested-friend row an accent
     /// fill; the rest are plain.
-    struct Row {
-        let title: String
-        let systemImage: String
-        let isPrimary: Bool
-        let action: () -> Void
+    public struct Row {
+        public let title: String
+        public let systemImage: String
+        public let isPrimary: Bool
+        public let action: () -> Void
+
+        public init(title: String, systemImage: String, isPrimary: Bool, action: @escaping () -> Void) {
+            self.title = title
+            self.systemImage = systemImage
+            self.isPrimary = isPrimary
+            self.action = action
+        }
     }
 
     /// Builds the ordered rows. The suggested-friend row is included only when a
     /// suggestion name is present — pure, so the ordering/visibility is testable.
-    static func rows(
+    public static func rows(
         suggestedFriendName: String?,
         includeEbook: Bool,
         onSendToSuggested: @escaping () -> Void,
@@ -57,7 +64,7 @@ final class ReaderShareSheet: UIViewController {
 
     private let rows: [Row]
 
-    init(rows: [Row]) {
+    public init(rows: [Row]) {
         self.rows = rows
         super.init(nibName: nil, bundle: nil)
         if let sheet = sheetPresentationController {
@@ -76,14 +83,14 @@ final class ReaderShareSheet: UIViewController {
         }
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     /// Convenience: build the sheet and present it from `presenter`.
-    static func present(from presenter: UIViewController, rows: [Row]) {
+    public static func present(from presenter: UIViewController, rows: [Row]) {
         presenter.present(ReaderShareSheet(rows: rows), animated: true)
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 

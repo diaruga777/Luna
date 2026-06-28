@@ -10,7 +10,7 @@ import UIKit
 
 /// Per-friend settings: auto-send websites, share notifications, and removal.
 /// Pushed when a friend row is tapped on the Friends screen.
-final class FriendDetailViewController: UITableViewController {
+public final class FriendDetailViewController: UITableViewController {
 
     private enum Section: Int, CaseIterable {
         case autoSend
@@ -22,33 +22,33 @@ final class FriendDetailViewController: UITableViewController {
     /// Called after the friend is removed so the list can pop back.
     private let onRemoved: () -> Void
 
-    init(friend: Friend, onRemoved: @escaping () -> Void) {
+    public init(friend: Friend, onRemoved: @escaping () -> Void) {
         self.friend = friend
         self.onRemoved = onRemoved
         super.init(style: .insetGrouped)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         title = friend.card.username
         navigationItem.largeTitleDisplayMode = .never
     }
 
-    override func viewWillAppear(_ animated: Bool) {
+    public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // The auto-send count may have changed in the sub-page.
         tableView.reloadData()
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int {
+    public override func numberOfSections(in tableView: UITableView) -> Int {
         Section.allCases.count
     }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 1 }
+    public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 1 }
 
-    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+    public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .autoSend:
             return "Links you save from these websites are sent to \(friend.card.username) automatically."
@@ -59,7 +59,7 @@ final class FriendDetailViewController: UITableViewController {
         }
     }
 
-    override func tableView(
+    public override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
         let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
@@ -91,7 +91,7 @@ final class FriendDetailViewController: UITableViewController {
         return cell
     }
 
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    public override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
         case .autoSend:
@@ -132,19 +132,19 @@ final class FriendDetailViewController: UITableViewController {
 /// The per-friend list of websites (base URLs) to auto-send, each toggleable.
 /// Candidates come from the hosts already in the reading list plus any sites
 /// already enabled for this friend.
-final class AutoSendWebsitesViewController: UITableViewController {
+public final class AutoSendWebsitesViewController: UITableViewController {
 
     private let friend: Friend
     private var baseURLs: [String] = []
 
-    init(friend: Friend) {
+    public init(friend: Friend) {
         self.friend = friend
         super.init(style: .insetGrouped)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         title = "Auto-Send"
         navigationItem.largeTitleDisplayMode = .never
@@ -167,17 +167,17 @@ final class AutoSendWebsitesViewController: UITableViewController {
         baseURLs = hosts.sorted()
     }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         max(baseURLs.count, 1)
     }
 
-    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+    public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         baseURLs.isEmpty
             ? "Save some articles first — the websites you save from show up here to auto-send."
             : "New links from an enabled website are sent to \(friend.card.username) the moment you save them."
     }
 
-    override func tableView(
+    public override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)

@@ -10,11 +10,11 @@ import UIKit
 /// The shared confirm-and-add flow used by tapped links, the in-app scanner,
 /// and the system camera: verify iCloud, confirm with the user, add locally,
 /// then message the new friend so they add us back.
-enum FriendAddFlow {
+public enum FriendAddFlow {
 
     /// Presents "Add <username>?" and on confirmation stores the friend and
     /// sends the bi-directional friendAdd message.
-    static func confirmAndAdd(card: IdentityCard, from presenter: UIViewController) {
+    public static func confirmAndAdd(card: IdentityCard, from presenter: UIViewController) {
         guard let identity = KeychainIdentityStore.shared.loadIdentity() else { return }
         guard card.uuid != identity.uuid || isSelfAddAllowed else {
             // Adding yourself is only useful for testing; allowed in DEBUG.
@@ -52,12 +52,12 @@ enum FriendAddFlow {
 }
 
 /// Confirms to the user that iCloud is required for friend sharing.
-enum ICloudGate {
+public enum ICloudGate {
 
     /// Returns true when messaging is available; otherwise presents the
     /// "iCloud required" alert (with an Open Settings shortcut) and returns false.
     @MainActor
-    static func requireICloud(presenting presenter: UIViewController) async -> Bool {
+    public static func requireICloud(presenting presenter: UIViewController) async -> Bool {
         switch await SocialMessageCenter.shared.availability() {
         case .available:
             return true

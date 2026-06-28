@@ -8,12 +8,17 @@ import UIKit
 
 /// A single onboarding step: an icon, a title, an explanation, an optional
 /// primary action button, and a continue/done button that advances the flow.
-final class OnboardingStepViewController: UIViewController {
+public final class OnboardingStepViewController: UIViewController {
 
     /// A labelled primary action (e.g. "Enable Notifications").
-    struct PrimaryAction {
-        let title: String
-        let handler: (OnboardingStepViewController) -> Void
+    public struct PrimaryAction {
+        public let title: String
+        public let handler: (OnboardingStepViewController) -> Void
+
+        public init(title: String, handler: @escaping (OnboardingStepViewController) -> Void) {
+            self.title = title
+            self.handler = handler
+        }
     }
 
     private let symbolName: String
@@ -30,7 +35,7 @@ final class OnboardingStepViewController: UIViewController {
     private let primaryButton = UIButton(type: .system)
     private let secondaryButton = UIButton(type: .system)
 
-    init(symbol: String, title: String, body: String,
+    public init(symbol: String, title: String, body: String,
          primary: PrimaryAction?, secondary: PrimaryAction? = nil, continueTitle: String,
          animation: OnboardingAnimationView.Kind? = nil,
          onContinue: @escaping () -> Void) {
@@ -45,9 +50,9 @@ final class OnboardingStepViewController: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         navigationItem.hidesBackButton = true
@@ -165,7 +170,7 @@ final class OnboardingStepViewController: UIViewController {
         ])
     }
 
-    override func viewDidAppear(_ animated: Bool) {
+    public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         animationView?.start()
     }

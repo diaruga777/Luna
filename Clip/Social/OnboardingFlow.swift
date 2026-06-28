@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSocialUI
 import ClipSocial
 import ClipModels
 import UIKit
@@ -10,11 +11,11 @@ import UIKit
 /// Builds the first-launch onboarding: pick a username, then quick steps to
 /// enable notifications, install the Safari extension, and set up the
 /// save-page shortcut / Action Button. Each step can be skipped.
-enum OnboardingFlow {
+public enum OnboardingFlow {
 
     /// Returns the onboarding root (a bare navigation controller). `onFinished`
     /// runs after the last step.
-    static func make(onFinished: @escaping () -> Void) -> UIViewController {
+    public static func make(onFinished: @escaping () -> Void) -> UIViewController {
         let nav = UINavigationController()
         nav.setNavigationBarHidden(true, animated: false)
 
@@ -30,7 +31,7 @@ enum OnboardingFlow {
     /// shortcut) — not the username/identity step, which would create a new
     /// identity and orphan existing friends. Used by the Settings "Replay
     /// Setup" button.
-    static func makeSetupOnly(onFinished: @escaping () -> Void) -> UIViewController {
+    public static func makeSetupOnly(onFinished: @escaping () -> Void) -> UIViewController {
         let nav = UINavigationController()
         nav.setNavigationBarHidden(true, animated: false)
         nav.viewControllers = [notificationsStep(nav: nav, onFinished: onFinished)]
@@ -42,7 +43,7 @@ enum OnboardingFlow {
     /// tests. These are the same screens the flow pushes, built without the
     /// inter-step navigation wiring so each can be rendered in isolation. Index 0 is
     /// the username step; the rest are the device-setup steps in flow order.
-    static func stepViewControllersForTesting() -> [UIViewController] {
+    public static func stepViewControllersForTesting() -> [UIViewController] {
         let nav = UINavigationController()
         var steps: [UIViewController] = [OnboardingViewController(onComplete: {})]
         steps.append(notificationsStep(nav: nav, onFinished: {}))

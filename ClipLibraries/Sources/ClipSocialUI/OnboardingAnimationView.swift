@@ -10,9 +10,9 @@ import UIKit
 /// iOS change the step asks the user to make (flip a Settings toggle, press the
 /// Action Button, receive a notification). Purely cosmetic; `start()` kicks the
 /// loop when the step appears.
-final class OnboardingAnimationView: UIView {
+public final class OnboardingAnimationView: UIView {
 
-    enum Kind {
+    public enum Kind {
         case notification     // a banner sliding in
         case settingsToggle   // a Settings row whose switch flips on
         case actionButton     // the Action Button pressed → "Saved" card
@@ -22,7 +22,7 @@ final class OnboardingAnimationView: UIView {
     private let kind: Kind
     private let accent = GlassStyle.readingAccent
 
-    init(kind: Kind) {
+    public init(kind: Kind) {
         self.kind = kind
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
@@ -45,10 +45,10 @@ final class OnboardingAnimationView: UIView {
         }
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     /// Begins (or restarts) the looping animation. Safe to call repeatedly.
-    func start() {
+    public func start() {
         switch kind {
         case .notification: animateNotification()
         case .settingsToggle: animateToggle()

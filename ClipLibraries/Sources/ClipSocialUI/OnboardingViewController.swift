@@ -16,7 +16,7 @@ import UIKit
 /// the keyboard layout guide so it rises just above the keyboard while editing
 /// and returns to the bottom safe area when the keyboard hides. The focused
 /// field is scrolled into the visible region above the keyboard.
-final class OnboardingViewController: UIViewController, UITextFieldDelegate {
+public final class OnboardingViewController: UIViewController, UITextFieldDelegate {
 
     private let identityStore: IdentityStoring
     private let onComplete: () -> Void
@@ -31,16 +31,16 @@ final class OnboardingViewController: UIViewController, UITextFieldDelegate {
     /// Padding kept below the focused field when scrolling it into view.
     private static let focusedFieldPadding: CGFloat = 16
 
-    init(identityStore: IdentityStoring = KeychainIdentityStore.shared,
+    public init(identityStore: IdentityStoring = KeychainIdentityStore.shared,
          onComplete: @escaping () -> Void) {
         self.identityStore = identityStore
         self.onComplete = onComplete
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
@@ -225,7 +225,7 @@ final class OnboardingViewController: UIViewController, UITextFieldDelegate {
     }
 
     /// Hard-caps the username field at the limit while typing.
-    func textField(
+    public func textField(
         _ textField: UITextField, shouldChangeCharactersIn range: NSRange,
         replacementString string: String
     ) -> Bool {
@@ -235,7 +235,7 @@ final class OnboardingViewController: UIViewController, UITextFieldDelegate {
         return proposed.count <= ProfileValidation.usernameMaxLength
     }
 
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+    public func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         if textField === usernameField {
             emailField.becomeFirstResponder()
         } else {

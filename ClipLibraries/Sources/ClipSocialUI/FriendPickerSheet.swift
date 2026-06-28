@@ -10,7 +10,7 @@ import UIKit
 /// A modern bottom sheet for picking a friend to send to: a wide card whose height
 /// adapts to the friend list (a scrollable table when it gets tall), replacing the
 /// old `UIAlertController(.actionSheet)`. Tapping a friend sends and dismisses.
-final class FriendPickerSheet: UIViewController, UITableViewDataSource, UITableViewDelegate {
+public final class FriendPickerSheet: UIViewController, UITableViewDataSource, UITableViewDelegate {
 
     private let friends: [Friend]
     private let onPick: (Friend) -> Void
@@ -19,7 +19,7 @@ final class FriendPickerSheet: UIViewController, UITableViewDataSource, UITableV
     private static let rowHeight: CGFloat = 56
     private static let headerHeight: CGFloat = 60
 
-    init(friends: [Friend], onPick: @escaping (Friend) -> Void) {
+    public init(friends: [Friend], onPick: @escaping (Friend) -> Void) {
         self.friends = friends
         self.onPick = onPick
         super.init(nibName: nil, bundle: nil)
@@ -34,9 +34,9 @@ final class FriendPickerSheet: UIViewController, UITableViewDataSource, UITableV
         }
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
@@ -65,11 +65,11 @@ final class FriendPickerSheet: UIViewController, UITableViewDataSource, UITableV
         ])
     }
 
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         friends.count
     }
 
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "friend", for: indexPath)
         var content = cell.defaultContentConfiguration()
         content.text = friends[indexPath.row].card.username
@@ -80,7 +80,7 @@ final class FriendPickerSheet: UIViewController, UITableViewDataSource, UITableV
         return cell
     }
 
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         let friend = friends[indexPath.row]
         dismiss(animated: true) { [onPick] in onPick(friend) }
     }

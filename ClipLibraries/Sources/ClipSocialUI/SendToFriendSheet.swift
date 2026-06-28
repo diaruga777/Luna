@@ -10,9 +10,9 @@ import UIKit
 /// The shared "share this article" sheet used by the reading list and the
 /// reader: pick a friend to send via Clip messaging, or fall back to the
 /// system share sheet with the plain URL.
-enum SendToFriendSheet {
+public enum SendToFriendSheet {
 
-    static func present(
+    public static func present(
         from presenter: UIViewController,
         sourceView: UIView,
         urlString: String,
@@ -26,7 +26,7 @@ enum SendToFriendSheet {
 
     /// Presents the modern friend-picker sheet; picking one sends the article to
     /// their reading list.
-    static func presentFriendPicker(
+    public static func presentFriendPicker(
         from presenter: UIViewController, sourceView: UIView, urlString: String, title: String?
     ) {
         let friends = FriendsStore.shared.items()
@@ -48,7 +48,7 @@ enum SendToFriendSheet {
 
     /// Shares the plain article URL — no Queue deep link, no accessory text — so it
     /// behaves like any normal link share.
-    static func shareLink(urlString: String, from presenter: UIViewController, sourceView: UIView) {
+    public static func shareLink(urlString: String, from presenter: UIViewController, sourceView: UIView) {
         let shared: Any = URL(string: urlString) ?? urlString
         let activity = UIActivityViewController(
             activityItems: [shared], applicationActivities: nil)
@@ -58,7 +58,7 @@ enum SendToFriendSheet {
 
     /// One-tap send to a specific friend (the end-of-article suggestion),
     /// resolving the friend by UUID. Falls back silently if the friend is gone.
-    static func sendToFriend(
+    public static func sendToFriend(
         uuid: UUID, urlString: String, title: String?, from presenter: UIViewController
     ) {
         guard let friend = FriendsStore.shared.friend(withUUID: uuid) else { return }

@@ -9,7 +9,7 @@ import UIKit
 
 /// Friends home: your shareable QR code + editable cosmetic profile, the
 /// friends list, and entry points for scanning and link-sharing.
-final class FriendsViewController: UITableViewController, UITextFieldDelegate {
+public final class FriendsViewController: UITableViewController, UITextFieldDelegate {
 
     private enum Section: Int, CaseIterable {
         case myCode
@@ -41,13 +41,13 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
         return formatter
     }()
 
-    init() {
+    public init() {
         super.init(style: .insetGrouped)
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         title = "Friends"
         navigationItem.largeTitleDisplayMode = .never
@@ -59,7 +59,7 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
         refreshAvailability()
     }
 
-    override func viewDidAppear(_ animated: Bool) {
+    public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         // Confirm the iCloud requirement once per visit when unavailable.
         guard !hasShownICloudAlert else { return }
@@ -97,7 +97,7 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
     }
 
     /// Renders a crisp (nearest-neighbor upscaled) QR code for a string.
-    static func qrCode(for text: String, sideLength: CGFloat = 220) -> UIImage? {
+    public static func qrCode(for text: String, sideLength: CGFloat = 220) -> UIImage? {
         let filter = CIFilter(name: "CIQRCodeGenerator")
         filter?.setValue(Data(text.utf8), forKey: "inputMessage")
         filter?.setValue("M", forKey: "inputCorrectionLevel")
@@ -110,25 +110,25 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
 
     // MARK: - Table structure
 
-    override func numberOfSections(in tableView: UITableView) -> Int {
+    public override func numberOfSections(in tableView: UITableView) -> Int {
         Section.allCases.count
     }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
         case .myCode: return MyCodeRow.allCases.count
         case .friends: return max(friends.count, 1)
         }
     }
 
-    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+    public override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .myCode: return "My Code"
         case .friends: return "Friends"
         }
     }
 
-    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
+    public override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .myCode:
             var footer = "Friends scan this code (or open your link) to add you. Username, email, and phone are cosmetic and shared with friends."
@@ -143,7 +143,7 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
 
     // MARK: - Cells
 
-    override func tableView(
+    public override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
@@ -215,7 +215,7 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
         return cell
     }
 
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    public override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
         case .myCode:
@@ -246,7 +246,7 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
         }
     }
 
-    override func tableView(
+    public override func tableView(
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
@@ -307,7 +307,7 @@ final class FriendsViewController: UITableViewController, UITextFieldDelegate {
     }
 
     /// Hard-caps the username field while typing.
-    func textField(
+    public func textField(
         _ textField: UITextField, shouldChangeCharactersIn range: NSRange,
         replacementString string: String
     ) -> Bool {

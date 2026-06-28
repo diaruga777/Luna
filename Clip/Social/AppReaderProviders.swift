@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSocialUI
 import ClipReadingList
 import ClipReaderUI
 import ClipSemantic
@@ -15,10 +16,10 @@ import UIKit
 /// + SendToFriendSheet → CloudKit). Injected into readers in the main app; the
 /// share extension passes nil instead, so neither this type nor CloudKit is
 /// compiled into the extension.
-final class AppReaderShareProvider: ReaderShareProviding {
-    static let shared = AppReaderShareProvider()
+public final class AppReaderShareProvider: ReaderShareProviding {
+    public static let shared = AppReaderShareProvider()
 
-    func suggestedFriendName(forURLString urlString: String) -> String? {
+    public func suggestedFriendName(forURLString urlString: String) -> String? {
         bestFriend(forURLString: urlString)?.username
     }
 
@@ -36,7 +37,7 @@ final class AppReaderShareProvider: ReaderShareProviding {
         return nil
     }
 
-    func presentShareSheet(
+    public func presentShareSheet(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) {
         let item = ReadingListStore.shared.item(forURLString: urlString)
@@ -75,21 +76,21 @@ final class AppReaderShareProvider: ReaderShareProviding {
         ReaderShareSheet.present(from: presenter, rows: rows)
     }
 
-    func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController) {
+    public func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController) {
         guard let suggestion = bestFriend(forURLString: urlString) else { return }
         SendToFriendSheet.sendToFriend(
             uuid: suggestion.uuid, urlString: urlString, title: title, from: presenter)
     }
 
-    func saveLink(urlString: String) {
+    public func saveLink(urlString: String) {
         Task { await ReadingListIngestor.shared.handleSavePress(urlString: urlString) }
     }
 }
 
 /// Main-app gaze-tracker factory: a real `EyeGazeWordTracker` when eye tracking
 /// is enabled, else nil. The extension never uses this (no camera/ARKit).
-enum AppGazeTracker {
-    static let factory: GazeTrackerFactory = { textView, wordMap, seed in
+public enum AppGazeTracker {
+    public static let factory: GazeTrackerFactory = { textView, wordMap, seed in
         guard ReaderSettings.eyeTrackingEnabled else { return nil }
         return EyeGazeWordTracker(textView: textView, wordMap: wordMap, seedWordIndex: seed)
     }

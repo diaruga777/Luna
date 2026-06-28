@@ -5,6 +5,7 @@
 //  Snapshot + layout/navigation coverage for every onboarding step.
 //
 
+import ClipSocialUI
 import UIKit
 import XCTest
 @testable import Clip

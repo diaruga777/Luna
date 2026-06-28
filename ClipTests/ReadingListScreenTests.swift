@@ -7,6 +7,7 @@
 //  correct viewer per item type.
 //
 
+import ClipSocialUI
 import ClipPriceUI
 import ClipReaderUI
 import ClipArchiveReader

@@ -10,21 +10,21 @@ import UIKit
 /// Full-screen camera QR scanner for friend codes. Recognizes the same
 /// `clipreader://friend` URLs as tapped links and hands the parsed card to
 /// its completion (the presenter runs the confirm-add flow).
-final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+public final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
 
     private let onCard: (IdentityCard) -> Void
     private let session = AVCaptureSession()
     private var hasDelivered = false
 
-    init(onCard: @escaping (IdentityCard) -> Void) {
+    public init(onCard: @escaping (IdentityCard) -> Void) {
         self.onCard = onCard
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
 
@@ -79,7 +79,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         view.layer.insertSublayer(preview, at: 0)
     }
 
-    override func viewWillAppear(_ animated: Bool) {
+    public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         if !session.isRunning {
             DispatchQueue.global(qos: .userInitiated).async { [session] in
@@ -88,14 +88,14 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         }
     }
 
-    override func viewWillDisappear(_ animated: Bool) {
+    public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         if session.isRunning {
             session.stopRunning()
         }
     }
 
-    func metadataOutput(
+    public func metadataOutput(
         _ output: AVCaptureMetadataOutput,
         didOutput metadataObjects: [AVMetadataObject],
         from connection: AVCaptureConnection

@@ -75,7 +75,7 @@ fragment float4 rh_transition_fragment(RHVSOut in [[stage_in]],
     float2 cellSampleUV = float2(cellCenter.x, U.flipV > 0.5 ? 1.0 - cellCenter.y : cellCenter.y);
 
     // Position within the cell (for drawing rounded dot)
-    float2 posInCell = mod(fragPx, pitch) - pitch * 0.5;
+    float2 posInCell = fmod(fragPx, pitch) - pitch * 0.5;
     float dotRadius = pitch * 0.35;  // 70% of cell size, with 2pt spacing margin
     float distToCenter = length(posInCell);
     bool inDot = distToCenter < dotRadius;

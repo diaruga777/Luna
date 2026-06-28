@@ -139,7 +139,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         layer.onPopToHere = { [weak self, weak layer] in
             guard let self, let layer, let index = self.layers.firstIndex(where: { $0 === layer })
             else { return }
-            self.popToLayer(index, origin: self.view.center)
+            self.popToLayer(index)
         }
         layer.onModeChanged = { [weak self] _ in self?.persist() }
         layer.onBack = { [weak self] in self?.handleBack() }
@@ -174,9 +174,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private func pushLayer(url: URL, lineText: String?, from focused: RabbitHoleLayerViewController) {
         guard !transitionInFlight else { return }
         focused.setBottomLipText(lineText)
-        let origin = focused.lineRectInLayer(for: url)
-            .map { focused.view.convert($0, to: view) }
-            .map { CGPoint(x: $0.midX, y: $0.midY) } ?? view.center
 
         let before = snapshot(afterScreenUpdates: false)
         _ = addLayer(RabbitHoleLayerDescriptor(urlString: url.absoluteString))
@@ -185,7 +182,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         view.layoutIfNeeded()
         let after = snapshot(afterScreenUpdates: true)
 
-        runTransition(before: before, after: after, origin: origin) { [weak self] in
+        runTransition(before: before, after: after) { [weak self] in
             self?.playHeaderEntrance()
             self?.persist()
         }
@@ -196,11 +193,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         if topIndex == 0 {
             navigationController?.popViewController(animated: true)
         } else {
-            popToLayer(topIndex - 1, origin: view.center)
+            popToLayer(topIndex - 1)
         }
     }
 
-    private func popToLayer(_ index: Int, origin: CGPoint) {
+    private func popToLayer(_ index: Int) {
         guard !transitionInFlight, index >= 0, index < layers.count, index != topIndex else { return }
         let before = snapshot(afterScreenUpdates: false)
         trimLayers(above: index)
@@ -209,7 +206,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         view.layoutIfNeeded()
         let after = snapshot(afterScreenUpdates: true)
 
-        runTransition(before: before, after: after, origin: origin) { [weak self] in
+        runTransition(before: before, after: after) { [weak self] in
             self?.playHeaderEntrance()
             self?.persist()
         }
@@ -224,11 +221,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         }
     }
 
-    private func runTransition(before: UIImage, after: UIImage, origin: CGPoint,
+    private func runTransition(before: UIImage, after: UIImage,
                                completion: @escaping () -> Void) {
         guard let transition else { completion(); return }   // instant cut
         transitionInFlight = true
-        transition.play(before: before, after: after, origin: origin, in: view) { [weak self] in
+        transition.play(before: before, after: after, in: view) { [weak self] in
             self?.transitionInFlight = false
             completion()
         }
@@ -255,8 +252,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
                 let atTop = scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 0.5
                 let atBottom = scroll.contentOffset.y >= scroll.contentSize.height
                     - scroll.bounds.height + scroll.adjustedContentInset.bottom - 0.5
-                if atTop, translation > 0 { beginOverscroll(scroll, edge: 1, baseline: translation, pan: pan) }
-                else if atBottom, translation < 0 { beginOverscroll(scroll, edge: -1, baseline: translation, pan: pan) }
+                if atTop, translation > 0 { beginOverscroll(scroll, edge: 1, baseline: translation) }
+                else if atBottom, translation < 0 { beginOverscroll(scroll, edge: -1, baseline: translation) }
             }
             guard interactive != nil else { return }
             let raw = max((translation - overscrollBaseline) * overscrollEdge, 0)
@@ -287,15 +284,13 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         }
     }
 
-    private func beginOverscroll(_ scroll: UIScrollView, edge: CGFloat, baseline: CGFloat,
-                                 pan: UIPanGestureRecognizer) {
+    private func beginOverscroll(_ scroll: UIScrollView, edge: CGFloat, baseline: CGFloat) {
         guard let transition, layers.count > 1 else { return }
         overscrollEdge = edge
         overscrollBaseline = baseline
         overscrollScroll = scroll
         scroll.isScrollEnabled = false   // we own the drag
 
-        let origin = pan.location(in: view)
         let before = snapshot(afterScreenUpdates: false)
         // Compose the after state (parent focused, top layer gone) hidden under the overlay.
         let dying = layers[topIndex]
@@ -303,7 +298,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         view.layoutIfNeeded()
         let after = snapshot(afterScreenUpdates: true)
         applyFocus()                     // restore the live before state
-        interactive = transition.begin(before: before, after: after, origin: origin, in: view)
+        interactive = transition.begin(before: before, after: after, in: view)
     }
 
     private func endOverscroll() {

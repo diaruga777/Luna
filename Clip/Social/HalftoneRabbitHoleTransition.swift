@@ -3,7 +3,7 @@
 //  Clip
 //
 //  App-side implementation of the RabbitHole reader's transition, backed by the
-//  halftone Metal view. Lives in the app target because ClipReaderUI (compiled into
+//  pixel-mosaic Metal view. Lives in the app target because ClipReaderUI (compiled into
 //  the extensions) can't link ClipContentRendering. Injected via ReaderHostFactory.
 //
 
@@ -13,13 +13,15 @@ import UIKit
 
 final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
 
-    /// ~340ms dive/pop wipe — fast, just visibly perceptible.
-    private static let playDuration: TimeInterval = 0.34
-    private static let settleDuration: TimeInterval = 0.2
+    /// Deliberately unhurried so the pixel dissolve reads clearly.
+    private static let playDuration: TimeInterval = 0.9
+    private static let settleDuration: TimeInterval = 0.5
+    /// Mosaic block size in points.
+    private static let pixelSize: CGFloat = 24
 
-    func play(before: UIImage, after: UIImage, origin: CGPoint,
+    func play(before: UIImage, after: UIImage,
               in container: UIView, completion: @escaping () -> Void) {
-        guard let view = makeView(before: before, after: after, origin: origin, in: container) else {
+        guard let view = makeView(before: before, after: after, in: container) else {
             completion(); return   // Metal unavailable → instant cut
         }
         view.setProgress(0)
@@ -29,42 +31,29 @@ final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
         }
     }
 
-    func begin(before: UIImage, after: UIImage, origin: CGPoint,
+    func begin(before: UIImage, after: UIImage,
                in container: UIView) -> RabbitHoleInteractiveTransition {
-        guard let view = makeView(before: before, after: after, origin: origin, in: container) else {
+        guard let view = makeView(before: before, after: after, in: container) else {
             return NullInteractiveTransition()
         }
         view.setProgress(0)
         return InteractiveHandle(view: view, settleDuration: Self.settleDuration)
     }
 
-    private func makeView(before: UIImage, after: UIImage, origin: CGPoint,
+    private func makeView(before: UIImage, after: UIImage,
                           in container: UIView) -> RabbitHoleTransitionView? {
         guard let view = RabbitHoleTransitionView.make() else { return nil }
-        view.style = Self.style()
+        view.style = RabbitHoleTransitionStyle(pixelSize: Self.pixelSize, monochrome: false)
         view.frame = container.bounds
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         container.addSubview(view)
         container.layoutIfNeeded()   // give the metal layer its drawableSize first
-        view.configure(before: before, after: after, origin: origin)
+        view.configure(before: before, after: after)
         return view
-    }
-
-    /// Comic/newsprint dots: circular, well-spaced, using the app's halftone cell size
-    /// and gap colour so it sits in the same visual family as the Halftone effect.
-    private static func style() -> RabbitHoleTransitionStyle {
-        let config = HalftoneSettings.currentConfig
-        return RabbitHoleTransitionStyle(
-            cellSize: min(config.cellSize, 16),
-            dotScale: config.dotScale,
-            cornerRadius: 1.0,           // force circular dots
-            edgeSoftness: config.edgeSoftness,
-            gapColor: config.gapColor,
-            monochrome: false)
     }
 }
 
-/// Drives an in-flight interactive halftone wipe.
+/// Drives an in-flight interactive pixel-mosaic wipe.
 private final class InteractiveHandle: RabbitHoleInteractiveTransition {
     private let view: RabbitHoleTransitionView
     private let settleDuration: TimeInterval

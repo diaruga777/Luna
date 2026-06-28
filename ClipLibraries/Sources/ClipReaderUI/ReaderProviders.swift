@@ -44,22 +44,20 @@ public typealias GazeTrackerFactory = (_ textView: UITextView, _ wordMap: WordMa
 
 /// Drives the visual transition between two RabbitHole layer arrangements (a dive,
 /// a pop, or an interactive overscroll). The reader depends only on this protocol;
-/// the app injects a Metal halftone implementation (`ClipContentRendering` can't be
+/// the app injects a Metal pixel-mosaic implementation (`ClipContentRendering` can't be
 /// linked into `ClipReaderUI`, which compiles into the extensions). When nil (Metal
 /// unavailable / extension), the host cuts instantly with no animation.
 ///
-/// Both calls take a `before` and `after` snapshot of the whole reader and an `origin`
-/// (container coordinates — the tap / finger point the wipe radiates from). The impl
-/// owns its overlay: it adds it to `container` on top, animates, and removes it when
-/// done.
+/// Both calls take a `before` and `after` snapshot of the whole reader. The impl owns
+/// its overlay: it adds it to `container` on top, animates, and removes it when done.
 public protocol RabbitHoleTransitioning: AnyObject {
     /// Non-interactive wipe from `before` to `after`; `completion` fires once the
     /// overlay has animated through and been removed.
-    func play(before: UIImage, after: UIImage, origin: CGPoint,
+    func play(before: UIImage, after: UIImage,
               in container: UIView, completion: @escaping () -> Void)
     /// Begin an interactive wipe; drive the returned handle with `update(progress:)`
     /// (0 = before, 1 = after) and end it with `finish(committed:completion:)`.
-    func begin(before: UIImage, after: UIImage, origin: CGPoint,
+    func begin(before: UIImage, after: UIImage,
                in container: UIView) -> RabbitHoleInteractiveTransition
 }
 

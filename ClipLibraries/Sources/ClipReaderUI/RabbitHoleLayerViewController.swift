@@ -619,25 +619,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         return text.isEmpty ? nil : String(text.prefix(140))
     }
 
-    /// The tapped link's line rect, in this layer's coordinate space, for the morph.
-    public func lineRectInLayer(for url: URL) -> CGRect? {
-        guard let textView = contentScrollView as? UITextView else { return nil }
-        let attributed = textView.textStorage
-        guard attributed.length > 0 else { return nil }
-        var found: NSRange?
-        attributed.enumerateAttribute(.link, in: NSRange(location: 0, length: attributed.length)) {
-            value, range, stop in
-            let matches = (value as? URL == url) || (value as? String == url.absoluteString)
-            if matches { found = range; stop.pointee = true }
-        }
-        guard let linkRange = found else { return nil }
-        let glyphRange = textView.layoutManager.glyphRange(forCharacterRange: linkRange, actualCharacterRange: nil)
-        var rect = textView.layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
-        rect.origin.y += textView.textContainerInset.top
-        // text view → layer coordinates (textView is inset below the header).
-        return textView.convert(rect, to: view)
-    }
-
     // MARK: - WKNavigationDelegate
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

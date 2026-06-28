@@ -2,35 +2,26 @@
 //  RabbitHoleTransitionView.swift
 //  ClipContentRendering
 //
-//  A self-contained, GPU halftone transition between two screen snapshots, used by
+//  A self-contained, GPU pixel-mosaic transition between two screen snapshots, used by
 //  the RabbitHole reader for dive / pop / overscroll. Driven by a single `progress`
-//  (0 = before, 1 = after); see RabbitHoleTransition.metal for the phase mapping.
-//  Knows nothing about the reader — the app wires it to the reader's transition
-//  protocol. The shipping HalftoneEffectView is untouched.
+//  (0 = before, 1 = after); each mosaic cell runs an independent, staggered 4-stage
+//  path (raw A → pixelated A → pixelated B → raw B) so the screen dissolves cell-by-cell
+//  in random order — see RabbitHoleTransition.metal. All per-frame work is the GPU
+//  draw; only the one-time snapshots happen on the main thread. The shipping
+//  HalftoneEffectView is untouched.
 //
 
 import Metal
-import MetalKit
 import UIKit
 import simd
 
-/// Visual parameters for the transition's dots (supplied by the app from the
-/// halftone settings so the look matches the rest of the app).
+/// Visual parameters for the transition's mosaic.
 public struct RabbitHoleTransitionStyle {
-    public var cellSize: CGFloat       // points
-    public var dotScale: CGFloat
-    public var cornerRadius: CGFloat   // 0 square … 1 circle
-    public var edgeSoftness: CGFloat   // px
-    public var gapColor: UIColor
+    public var pixelSize: CGFloat   // points — size of one mosaic block
     public var monochrome: Bool
 
-    public init(cellSize: CGFloat = 14, dotScale: CGFloat = 0.82, cornerRadius: CGFloat = 1.0,
-                edgeSoftness: CGFloat = 1.0, gapColor: UIColor = .black, monochrome: Bool = false) {
-        self.cellSize = cellSize
-        self.dotScale = dotScale
-        self.cornerRadius = cornerRadius
-        self.edgeSoftness = edgeSoftness
-        self.gapColor = gapColor
+    public init(pixelSize: CGFloat = 22, monochrome: Bool = false) {
+        self.pixelSize = pixelSize
         self.monochrome = monochrome
     }
 }
@@ -40,16 +31,12 @@ public final class RabbitHoleTransitionView: UIView {
     // Must match RHTransitionUniforms in RabbitHoleTransition.metal exactly.
     private struct Uniforms {
         var resolution = SIMD2<Float>(0, 0)
-        var revealCenter = SIMD2<Float>(0, 0)
-        var gapColor = SIMD4<Float>(0, 0, 0, 1)
-        var cellSize: Float = 14
-        var dotScale: Float = 0.82
-        var cornerRadius: Float = 1
-        var edgeSoftness: Float = 1
-        var revealRadius: Float = 0
-        var revealEdge: Float = 1
-        var abMix: Float = 0
+        var cellSize: Float = 22
+        var progress: Float = 0
+        var window: Float = 0.55
+        var flipV: Float = 1
         var monochrome: Float = 0
+        var pad: Float = 0
     }
 
     public var style = RabbitHoleTransitionStyle() { didSet { renderFrame() } }
@@ -59,9 +46,7 @@ public final class RabbitHoleTransitionView: UIView {
     private let pipeline: MTLRenderPipelineState
     private var texA: MTLTexture?
     private var texB: MTLTexture?
-    private var uniforms = Uniforms()
 
-    private var origin: CGPoint = .zero      // points, container space
     private var progress: CGFloat = 0
     private let drawableScale: CGFloat
 
@@ -111,9 +96,8 @@ public final class RabbitHoleTransitionView: UIView {
 
     // MARK: - Public driving API
 
-    /// Load the before/after snapshots and the radiating origin (container points).
-    public func configure(before: UIImage, after: UIImage, origin: CGPoint) {
-        self.origin = origin
+    /// Load the before/after snapshots.
+    public func configure(before: UIImage, after: UIImage) {
         texA = makeTexture(before)
         texB = makeTexture(after)
         setProgress(progress)
@@ -141,9 +125,7 @@ public final class RabbitHoleTransitionView: UIView {
 
     @objc private func tick() {
         let t = min((CACurrentMediaTime() - animStart) / animDuration, 1)
-        // Ease-in-out for a smoother settle.
-        let eased = t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
-        setProgress(animFrom + (animTo - animFrom) * CGFloat(eased))
+        setProgress(animFrom + (animTo - animFrom) * CGFloat(t))   // linear; cells self-stagger
         if t >= 1 {
             link?.invalidate(); link = nil
             let done = animCompletion; animCompletion = nil
@@ -162,9 +144,9 @@ public final class RabbitHoleTransitionView: UIView {
         renderFrame()
     }
 
-    /// Rasterise the snapshot into a top-left-origin RGBA8 texture by hand —
-    /// MTKTextureLoader rejects some UIGraphicsImageRenderer color spaces, and this
-    /// path is format-agnostic and orientation-correct for our top-left UVs.
+    /// Rasterise the snapshot into an RGBA8 texture. MTKTextureLoader rejects some
+    /// UIGraphicsImageRenderer color spaces, so do it by hand; the shader's `flipV`
+    /// handles the row-order origin.
     private func makeTexture(_ image: UIImage) -> MTLTexture? {
         guard let cg = image.cgImage else { return nil }
         let w = cg.width, h = cg.height
@@ -174,9 +156,6 @@ public final class RabbitHoleTransitionView: UIView {
         guard let ctx = CGContext(
             data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: bytesPerRow,
             space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        // Flip so memory row 0 is the TOP of the image (matches the shader's UVs).
-        ctx.translateBy(x: 0, y: CGFloat(h))
-        ctx.scaleBy(x: 1, y: -1)
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
         guard let data = ctx.data else { return nil }
         let desc = MTLTextureDescriptor.texture2DDescriptor(
@@ -188,45 +167,17 @@ public final class RabbitHoleTransitionView: UIView {
         return tex
     }
 
-    /// `progress` → (revealRadius, abMix) across the three phases.
-    private func phaseValues() -> (radius: CGFloat, abMix: CGFloat) {
-        let p = progress
-        let maxR = maxRevealRadius()
-        if p < 0.33 {
-            return (maxR * (p / 0.33), 0)
-        } else if p < 0.66 {
-            return (maxR, (p - 0.33) / 0.33)
-        } else {
-            return (maxR * (1 - (p - 0.66) / 0.34), 1)
-        }
-    }
-
-    private func maxRevealRadius() -> CGFloat {
-        let c = CGPoint(x: origin.x * drawableScale, y: origin.y * drawableScale)
-        let w = metalLayer.drawableSize.width, h = metalLayer.drawableSize.height
-        let corners = [CGPoint(x: 0, y: 0), CGPoint(x: w, y: 0),
-                       CGPoint(x: 0, y: h), CGPoint(x: w, y: h)]
-        return corners.map { hypot($0.x - c.x, $0.y - c.y) }.max() ?? max(w, h)
-    }
-
     private func renderFrame() {
         guard let texA, let texB, metalLayer.drawableSize.width > 1,
               let drawable = metalLayer.nextDrawable() else { return }
 
-        let (radius, abMix) = phaseValues()
-        var u = uniforms
+        var u = Uniforms()
         u.resolution = SIMD2(Float(metalLayer.drawableSize.width), Float(metalLayer.drawableSize.height))
-        u.revealCenter = SIMD2(Float(origin.x * drawableScale), Float(origin.y * drawableScale))
-        u.gapColor = colorVector(style.gapColor)
-        u.cellSize = Float(max(style.cellSize * drawableScale, 1))
-        u.dotScale = Float(style.dotScale)
-        u.cornerRadius = Float(style.cornerRadius)
-        u.edgeSoftness = Float(max(style.edgeSoftness, 0.5))
-        u.revealRadius = Float(radius)
-        u.revealEdge = Float(max(style.cellSize * drawableScale * 0.6, 1))
-        u.abMix = Float(abMix)
+        u.cellSize = Float(max(style.pixelSize * drawableScale, 1))
+        u.progress = Float(progress)
+        u.window = 0.55
+        u.flipV = 0   // CGContext-drawn texture is already top-left origin
         u.monochrome = style.monochrome ? 1 : 0
-        uniforms = u
 
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
@@ -246,11 +197,5 @@ public final class RabbitHoleTransitionView: UIView {
         enc.endEncoding()
         cmd.present(drawable)
         cmd.commit()
-    }
-
-    private func colorVector(_ color: UIColor) -> SIMD4<Float> {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
-        color.resolvedColor(with: traitCollection).getRed(&r, green: &g, blue: &b, alpha: &a)
-        return SIMD4(Float(r), Float(g), Float(b), Float(a))
     }
 }

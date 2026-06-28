@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipReaderEngine
 import ClipModels
 import Foundation
 import XCTest

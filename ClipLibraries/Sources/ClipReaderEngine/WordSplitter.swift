@@ -10,10 +10,10 @@ import Foundation
 /// end of the part before the break AND the start of the part after it); any
 /// part still too long is hard-hyphenated into fitting chunks. Words within
 /// the limit are returned unchanged. Pure, tested.
-enum WordSplitter {
+public enum WordSplitter {
 
     /// `maxCharacters` is the widest part (in characters) that fits on screen.
-    static func split(_ token: String, maxCharacters: Int) -> [String] {
+    public static func split(_ token: String, maxCharacters: Int) -> [String] {
         guard maxCharacters > 1, token.count > maxCharacters else { return [token] }
 
         let hyphenParts = hyphenSplit(token)
@@ -25,7 +25,7 @@ enum WordSplitter {
 
     /// "well-being" → ["well-", "-being"]; "a-b-c" → ["a-", "-b-", "-c"].
     /// The hyphen is duplicated across each break so both parts show it.
-    static func hyphenSplit(_ token: String) -> [String] {
+    public static func hyphenSplit(_ token: String) -> [String] {
         let pieces = token.split(separator: "-", omittingEmptySubsequences: true).map(String.init)
         guard pieces.count > 1 else { return [token] }
         return pieces.enumerated().map { index, piece in
@@ -38,7 +38,7 @@ enum WordSplitter {
 
     /// Cuts a too-long part into chunks of `maxCharacters`, each but the last
     /// gaining a trailing hyphen (so the total stays within the limit).
-    static func hardWrap(_ part: String, maxCharacters: Int) -> [String] {
+    public static func hardWrap(_ part: String, maxCharacters: Int) -> [String] {
         guard part.count > maxCharacters else { return [part] }
         var remaining = Array(part)
         var chunks: [String] = []

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipReaderEngine
 import ClipModels
 import AVFoundation
 import MediaPlayer

@@ -7,18 +7,27 @@ import Foundation
 
 /// One phrase ("chunk") for the RSVP reader's phrase sub-mode: a small group of
 /// words shown together so the eye takes them in as a single fixation.
-struct TextChunk: Equatable {
+public struct TextChunk: Equatable {
     /// Half-open word-index range `[start, end)` in the RSVPEngine word space.
-    let wordRange: Range<Int>
+    public let wordRange: Range<Int>
     /// The chunk's word texts, in order (what gets displayed, space-joined).
-    let words: [String]
+    public let words: [String]
     /// Pause weight of the last word.
-    let endsSentence: Bool
-    let endsClause: Bool
-    let endsParagraph: Bool
+    public let endsSentence: Bool
+    public let endsClause: Bool
+    public let endsParagraph: Bool
+
+    public init(wordRange: Range<Int>, words: [String], endsSentence: Bool,
+                endsClause: Bool, endsParagraph: Bool) {
+        self.wordRange = wordRange
+        self.words = words
+        self.endsSentence = endsSentence
+        self.endsClause = endsClause
+        self.endsParagraph = endsParagraph
+    }
 
     /// The space-joined display string for the phrase.
-    var displayText: String { words.joined(separator: " ") }
+    public var displayText: String { words.joined(separator: " ") }
 }
 
 /// Groups an article's words into phrases for the RSVP "Phrases" sub-mode and
@@ -30,16 +39,16 @@ struct TextChunk: Equatable {
 ///
 /// Works purely from the `RSVPEngine` word stream — no rendered attributed
 /// string is needed, so the silent RSVP reader can drive it directly.
-enum ChunkPlanner {
+public enum ChunkPlanner {
 
     /// Soft ceilings so a phrase comfortably fits two short lines in the reticule.
-    static let maxWordsPerChunk = 5
-    static let maxCharactersPerChunk = 30
+    public static let maxWordsPerChunk = 5
+    public static let maxCharactersPerChunk = 30
     /// A chunk may overrun the ceilings by this much to avoid stranding a bound
     /// word (e.g. pulling "house" in so the chunk doesn't end on "the").
     private static let overrunSlack = 6
 
-    static func chunks(words: [RSVPWord]) -> [TextChunk] {
+    public static func chunks(words: [RSVPWord]) -> [TextChunk] {
         var chunks: [TextChunk] = []
         var start = 0
         let count = words.count
@@ -115,13 +124,13 @@ enum ChunkPlanner {
 
     /// Minimum on-screen time for a phrase regardless of WPM — two lines need a
     /// real (if quick) fixation, so high speeds don't flash them illegibly.
-    static let minimumDisplay: TimeInterval = 0.28
+    public static let minimumDisplay: TimeInterval = 0.28
 
     /// Display duration for a chunk at the given base words-per-minute. Per-word
     /// time honors the WPM but is weighted by each word's difficulty (common
     /// function words skim, long/complex/numeric words dwell), plus a pause at
     /// sentence/clause/paragraph boundaries.
-    static func duration(for chunk: TextChunk, wpm: Double) -> TimeInterval {
+    public static func duration(for chunk: TextChunk, wpm: Double) -> TimeInterval {
         guard wpm > 0 else { return 0 }
         let perWord = 60.0 / wpm
         let weight = chunk.words.reduce(0.0) { $0 + ReadingHeuristics.difficultyFactor($1) }

@@ -7,28 +7,28 @@ import ClipModels
 import Foundation
 
 /// One word in the RSVP stream with everything needed to display and time it.
-struct RSVPWord {
-    let text: String
+public struct RSVPWord {
+    public let text: String
     /// Index of the highlighted ORP (optimal recognition point) letter.
-    let orpIndex: Int
+    public let orpIndex: Int
     /// True when the word ends a sentence (. ! ? …) — gets a longer pause.
-    let endsSentence: Bool
+    public let endsSentence: Bool
     /// True for the last word of a block — gets the longest pause.
-    let endsParagraph: Bool
+    public let endsParagraph: Bool
     /// True when the word ends with a minor pause mark (, ; :).
-    let endsClause: Bool
+    public let endsClause: Bool
     /// The link this word belongs to, if it falls inside a block link range.
-    let url: URL?
+    public let url: URL?
 }
 
 /// Turns extracted article blocks into a timed word stream for RSVP reading.
 /// Pure logic, no UI — covered by unit tests.
-struct RSVPEngine {
-    let words: [RSVPWord]
+public struct RSVPEngine {
+    public let words: [RSVPWord]
 
     /// `maxCharactersPerWord` splits over-long words into multiple frames that
     /// fit the focal column (default `.max` = never split; used by tests).
-    init(content: ArticleContent, maxCharactersPerWord: Int = .max) {
+    public init(content: ArticleContent, maxCharactersPerWord: Int = .max) {
         var words: [RSVPWord] = []
         for block in content.blocks {
             let tokens = Self.tokensWithURLs(in: block)
@@ -84,7 +84,7 @@ struct RSVPEngine {
         return result
     }
 
-    static func makeWord(_ token: String, isLastInBlock: Bool, url: URL? = nil) -> RSVPWord {
+    public static func makeWord(_ token: String, isLastInBlock: Bool, url: URL? = nil) -> RSVPWord {
         let trailing = token.last
         let endsSentence = trailing.map { ".!?…".contains($0) } ?? false
         let endsClause = trailing.map { ",;:".contains($0) } ?? false
@@ -98,7 +98,7 @@ struct RSVPEngine {
     }
 
     /// Spritz-style ORP: slightly left of center, drifting right for long words.
-    static func orpIndex(forLength length: Int) -> Int {
+    public static func orpIndex(forLength length: Int) -> Int {
         switch length {
         case ..<2: return 0
         case 2...5: return 1
@@ -110,7 +110,7 @@ struct RSVPEngine {
     /// Index a skip button lands on: `currentIndex + delta`, clamped to a valid
     /// word index. An empty stream (`wordCount == 0`) clamps to 0. Pure so the
     /// skip math is unit-tested independent of the timer/TTS playback paths.
-    static func skipTarget(currentIndex: Int, by delta: Int, wordCount: Int) -> Int {
+    public static func skipTarget(currentIndex: Int, by delta: Int, wordCount: Int) -> Int {
         let lastWord = max(wordCount - 1, 0)
         let target = currentIndex + delta
         return min(max(target, 0), lastWord)
@@ -118,7 +118,7 @@ struct RSVPEngine {
 
     /// Display duration for the word at `index` at the given base speed.
     /// Longer words show longer; sentence and paragraph ends pause.
-    func duration(at index: Int, wpm: Double) -> TimeInterval {
+    public func duration(at index: Int, wpm: Double) -> TimeInterval {
         guard words.indices.contains(index), wpm > 0 else { return 0 }
         let word = words[index]
         let base = 60.0 / wpm

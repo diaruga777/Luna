@@ -25,6 +25,7 @@ let package = Package(
         .library(name: "ClipMediaDownload", targets: ["ClipMediaDownload"]),
         .library(name: "ClipSocial", targets: ["ClipSocial"]),
         .library(name: "ClipSemantic", targets: ["ClipSemantic"]),
+        .library(name: "ClipReaderEngine", targets: ["ClipReaderEngine"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
@@ -56,6 +57,7 @@ let package = Package(
         .target(name: "ClipMediaDownload", dependencies: ["ClipModels", "ClipURLClassification"]),
         .target(name: "ClipSocial", dependencies: ["ClipModels", "ClipStorage"]),
         .target(name: "ClipSemantic", dependencies: ["ClipModels", "ClipStorage", "ClipSocial"]),
+        .target(name: "ClipReaderEngine", dependencies: ["ClipModels"]),
         .testTarget(name: "ClipModelsTests", dependencies: ["ClipModels"]),
         .testTarget(name: "ClipURLClassificationTests", dependencies: ["ClipURLClassification"]),
         .testTarget(name: "ClipHTMLClassificationTests", dependencies: ["ClipHTMLClassification"]),

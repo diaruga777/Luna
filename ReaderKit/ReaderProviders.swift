@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipReaderEngine
 import UIKit
 
 /// Sharing affordances for a reader. The reader code depends only on this

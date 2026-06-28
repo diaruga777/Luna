@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipReaderEngine
 import ARKit
 import UIKit
 

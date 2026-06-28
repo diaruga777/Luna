@@ -68,6 +68,8 @@
 		42F0FDA59D82F9D669F258D6 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
 		FC3B05B51F7C576146ECF6CD /* ClipSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* ClipSocial */; };
 		D51185A738D87061659336B0 /* ClipSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* ClipSocial */; };
+		E54532DF71D52079A8742E8C /* ClipSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* ClipSemantic */; };
+		4B4F339D818E638F4C34B75A /* ClipSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* ClipSemantic */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -211,6 +213,7 @@
 				031FF107DF1A6AF0F5958C46 /* ClipPlatforms in Frameworks */,
 				FF6630FB61B598C594FCDE61 /* ClipMediaDownload in Frameworks */,
 				FC3B05B51F7C576146ECF6CD /* ClipSocial in Frameworks */,
+				E54532DF71D52079A8742E8C /* ClipSemantic in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -237,6 +240,7 @@
 				670A781911DA94A8B457F826 /* ClipPlatforms in Frameworks */,
 				42F0FDA59D82F9D669F258D6 /* ClipMediaDownload in Frameworks */,
 				D51185A738D87061659336B0 /* ClipSocial in Frameworks */,
+				4B4F339D818E638F4C34B75A /* ClipSemantic in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -388,6 +392,7 @@
 				72398B0845A005923290AE55 /* ClipPlatforms */,
 				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
 				DE798ED2A5DA5A986EE4B864 /* ClipSocial */,
+				92CAEC0F8C340469B9AB25E3 /* ClipSemantic */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -445,6 +450,7 @@
 				72398B0845A005923290AE55 /* ClipPlatforms */,
 				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
 				DE798ED2A5DA5A986EE4B864 /* ClipSocial */,
+				92CAEC0F8C340469B9AB25E3 /* ClipSemantic */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -1209,6 +1215,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipSocial;
+		};
+		92CAEC0F8C340469B9AB25E3 /* ClipSemantic */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipSemantic;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

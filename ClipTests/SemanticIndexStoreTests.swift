@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipSemantic
 import ClipSocial
 import XCTest
 @testable import Clip

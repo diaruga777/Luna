@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSemantic
 import ClipStorage
 import ClipModels
 import Foundation

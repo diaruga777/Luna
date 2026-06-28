@@ -21,9 +21,9 @@ import Foundation
 /// and two items match on their closest chunk pair — so "both about Meta"
 /// matches even when the wording differs. Logs copiously to the shared
 /// diagnostic log (category "semantic") so the user can see it run.
-final class SemanticIndexer {
+public final class SemanticIndexer {
 
-    static let shared = SemanticIndexer()
+    public static let shared = SemanticIndexer()
 
     private static let embedLimit = 20
     private static let maxChunks = 8
@@ -42,7 +42,7 @@ final class SemanticIndexer {
     /// powers semantic SEARCH over all saved content. (Only the share *suggestion*
     /// is gated by `SemanticSharingSettings`.) A no-op when nothing needs embedding,
     /// so it doesn't load the model unnecessarily.
-    func scheduleRun() {
+    public func scheduleRun() {
         queue.async { [weak self] in self?.buildMissingVectors() }
     }
 
@@ -82,7 +82,7 @@ final class SemanticIndexer {
     /// The friend to suggest sharing `itemID` with based on content similarity,
     /// or nil. Embeds the item now if needed (one item, chunked). Logs the
     /// nearest neighbor and score regardless of outcome.
-    func immediateSuggestion(forItemID itemID: UUID) -> (uuid: UUID, username: String)? {
+    public func immediateSuggestion(forItemID itemID: UUID) -> (uuid: UUID, username: String)? {
         guard SemanticSharingSettings.isEnabled else {
             log("suggestion skipped — feature disabled")
             return nil
@@ -101,7 +101,7 @@ final class SemanticIndexer {
     }
 
     /// A cached-only match (no embedding) for the end-of-article affordance.
-    func cachedSuggestion(forItemID itemID: UUID) -> (uuid: UUID, username: String)? {
+    public func cachedSuggestion(forItemID itemID: UUID) -> (uuid: UUID, username: String)? {
         guard SemanticSharingSettings.isEnabled, index.hasVectors(forItemID: itemID) else { return nil }
         return evaluate(itemID, context: "reader")
     }

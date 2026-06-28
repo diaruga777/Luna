@@ -12,7 +12,7 @@ import NaturalLanguage
 ///
 /// The model is loaded lazily and can be released between batches (`release()`)
 /// to return its memory to the system.
-final class SemanticEmbedder {
+public final class SemanticEmbedder {
 
     /// Cap the text fed to the model so a long article doesn't blow up memory or
     /// time — the lead is the most topical part anyway.
@@ -20,9 +20,11 @@ final class SemanticEmbedder {
 
     private var embedding: NLEmbedding?
 
+    public init() {}
+
     /// The embedding vector for `text`, or nil if the model is unavailable or
     /// the text is empty. Vector dimension is whatever the model emits.
-    func embed(_ text: String) -> [Float]? {
+    public func embed(_ text: String) -> [Float]? {
         let trimmed = String(text.prefix(Self.maxCharacters))
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -32,5 +34,5 @@ final class SemanticEmbedder {
     }
 
     /// Releases the model's memory; call when a batch of embedding is done.
-    func release() { embedding = nil }
+    public func release() { embedding = nil }
 }

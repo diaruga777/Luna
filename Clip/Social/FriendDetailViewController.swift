@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSemantic
 import ClipSocial
 import ClipStorage
 import UIKit

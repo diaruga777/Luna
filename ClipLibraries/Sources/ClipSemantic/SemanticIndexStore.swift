@@ -14,16 +14,16 @@ import Foundation
 /// (`SemanticIndexer`). Everything here is cheap float/JSON work safe to call
 /// from the App-Intent runner: recording a share appends an id, and `bestMatch`
 /// is cosine comparisons over small vectors. No model is ever loaded.
-final class SemanticIndexStore {
+public final class SemanticIndexStore {
 
-    static let shared = SemanticIndexStore()
+    public static let shared = SemanticIndexStore()
 
     private static let maxItemsPerPerson = 60
     // Holds vectors for the whole saved library (semantic search indexes everything),
     // so this is generous; eviction only kicks in for very large libraries.
     private static let maxIndexedItems = 2000
 
-    struct Person: Codable {
+    public struct Person: Codable {
         var username: String
         var itemIDs: [String] = []
     }
@@ -36,19 +36,26 @@ final class SemanticIndexStore {
     }
 
     /// The best content-similarity hit for a query item.
-    struct Match {
-        let uuid: UUID
-        let username: String
-        let score: Float
+    public struct Match {
+        public let uuid: UUID
+        public let username: String
+        public let score: Float
         /// The friend's previously-shared item that matched (for logging).
-        let matchedItemID: UUID?
+        public let matchedItemID: UUID?
+
+        public init(uuid: UUID, username: String, score: Float, matchedItemID: UUID?) {
+            self.uuid = uuid
+            self.username = username
+            self.score = score
+            self.matchedItemID = matchedItemID
+        }
     }
 
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
     private let lock = NSLock()
 
-    init(containerURL: URL? = nil) { self.overrideContainerURL = containerURL }
+    public init(containerURL: URL? = nil) { self.overrideContainerURL = containerURL }
 
     private var fileURL: URL {
         let container = overrideContainerURL
@@ -60,7 +67,7 @@ final class SemanticIndexStore {
     // MARK: - Cheap operations (runner-safe)
 
     /// Records that `itemID` was shared to a friend (no vector needed now).
-    func recordShare(itemID: UUID, personUUID: UUID, username: String) {
+    public func recordShare(itemID: UUID, personUUID: UUID, username: String) {
         mutate { state in
             var person = state.persons[personUUID.uuidString] ?? Person(username: username)
             person.username = username
@@ -74,12 +81,12 @@ final class SemanticIndexStore {
         }
     }
 
-    func hasVectors(forItemID itemID: UUID) -> Bool {
+    public func hasVectors(forItemID itemID: UUID) -> Bool {
         loadState().itemVectors[itemID.uuidString] != nil
     }
 
     /// How many friends and total shared-item references exist (for logging).
-    func stats() -> (persons: Int, sharedItems: Int, indexedItems: Int) {
+    public func stats() -> (persons: Int, sharedItems: Int, indexedItems: Int) {
         let state = loadState()
         return (state.persons.count,
                 state.persons.values.reduce(0) { $0 + $1.itemIDs.count },
@@ -91,7 +98,7 @@ final class SemanticIndexStore {
     /// not already shared this item. nil when the item isn't indexed or nothing
     /// is close enough — but the best sub-threshold score is still reported via
     /// the `bestScore` out-param for logging.
-    func bestMatch(forItemID itemID: UUID, threshold: Float,
+    public func bestMatch(forItemID itemID: UUID, threshold: Float,
                    bestScore: inout Float, bestUsername: inout String?,
                    bestItemID: inout UUID?) -> Match? {
         let state = loadState()
@@ -119,7 +126,7 @@ final class SemanticIndexStore {
     }
 
     /// Highest cosine over every pair of chunk vectors between two items.
-    static func maxChunkSimilarity(_ a: [[Float]], _ b: [[Float]]) -> Float {
+    public static func maxChunkSimilarity(_ a: [[Float]], _ b: [[Float]]) -> Float {
         var top: Float = 0
         for x in a {
             for y in b { top = max(top, cosine(x, y)) }
@@ -128,7 +135,7 @@ final class SemanticIndexStore {
     }
 
     /// Cosine similarity of two equal-length vectors (0 if degenerate).
-    static func cosine(_ a: [Float], _ b: [Float]) -> Float {
+    public static func cosine(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0, na: Float = 0, nb: Float = 0
         for i in 0..<a.count {
@@ -144,7 +151,7 @@ final class SemanticIndexStore {
 
     /// Item ids shared to someone but lacking vectors — the main-app indexer
     /// embeds these so future matches have the recipient's history to compare to.
-    func itemIDsNeedingVectors(limit: Int) -> [UUID] {
+    public func itemIDsNeedingVectors(limit: Int) -> [UUID] {
         let state = loadState()
         var needed: [String] = []
         var seen = Set<String>()
@@ -156,7 +163,7 @@ final class SemanticIndexStore {
 
     /// Of the given reading-list item ids (in order), those lacking vectors — so
     /// the indexer can embed ALL saved content for search, not just shared items.
-    func itemIDsNeedingVectors(amongAll ids: [UUID], limit: Int) -> [UUID] {
+    public func itemIDsNeedingVectors(amongAll ids: [UUID], limit: Int) -> [UUID] {
         let state = loadState()
         var needed: [UUID] = []
         for id in ids where state.itemVectors[id.uuidString] == nil {
@@ -169,7 +176,7 @@ final class SemanticIndexStore {
     /// Items most similar to the query's chunk vectors — scored by best chunk-pair
     /// cosine, kept at/above `threshold`, `excluded` ids removed, best first. Backs
     /// semantic search; pure float work, no model load.
-    func nearestItems(
+    public func nearestItems(
         toVectors query: [[Float]], threshold: Float, excluding excluded: Set<UUID>, limit: Int
     ) -> [(itemID: UUID, score: Float)] {
         guard !query.isEmpty else { return [] }
@@ -184,7 +191,7 @@ final class SemanticIndexStore {
         return scored.prefix(limit).map { (itemID: $0.0, score: $0.1) }
     }
 
-    func setVectors(_ vectors: [[Float]], forItemID itemID: UUID) {
+    public func setVectors(_ vectors: [[Float]], forItemID itemID: UUID) {
         mutate { state in
             state.itemVectors[itemID.uuidString] = vectors
             if state.itemVectors.count > Self.maxIndexedItems {
@@ -197,7 +204,7 @@ final class SemanticIndexStore {
         }
     }
 
-    func removePerson(_ personUUID: UUID) {
+    public func removePerson(_ personUUID: UUID) {
         mutate { state in state.persons.removeValue(forKey: personUUID.uuidString) }
     }
 

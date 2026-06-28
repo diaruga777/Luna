@@ -11,16 +11,16 @@ import os
 
 /// Stable destination ids, used as keys in `ReadingListItem.sendStates` and to
 /// target explicit sends.
-enum ArticleDestinationID {
-    static let kindle = "kindle"
-    static let boox = "boox"
+public enum ArticleDestinationID {
+    public static let kindle = "kindle"
+    public static let boox = "boox"
 }
 
 /// One ereader an article can be delivered to (Kindle email, Boox cloud, …).
 /// The coordinator's gating/state logic is destination-agnostic; each
 /// destination just knows whether it's configured, when it auto-sends, and how
 /// to deliver an EPUB.
-protocol ArticleDestination {
+public protocol ArticleDestination {
     /// Stable id (see `ArticleDestinationID`), used as the per-item state key.
     var id: String { get }
     /// User-facing name ("Kindle", "Boox").
@@ -38,23 +38,23 @@ protocol ArticleDestination {
 }
 
 /// Emails an article's EPUB to the configured Kindle address.
-protocol ArticleEmailSending {
+public protocol ArticleEmailSending {
     func sendArticle(epubData: Data, fileName: String, title: String) async throws
 }
 
 /// Production sender: MIME message over implicit-TLS SMTP using the settings
 /// and Keychain credentials.
-final class SMTPArticleEmailSender: ArticleEmailSending {
+public final class SMTPArticleEmailSender: ArticleEmailSending {
 
-    struct NotConfiguredError: Error {}
+    public struct NotConfiguredError: Error {}
 
     private let credentials: SendCredentialsStoring
 
-    init(credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared) {
+    public init(credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared) {
         self.credentials = credentials
     }
 
-    func sendArticle(epubData: Data, fileName: String, title: String) async throws {
+    public func sendArticle(epubData: Data, fileName: String, title: String) async throws {
         guard let password = credentials.smtpPassword(),
               KindleSendSettings.isConfigured(credentials: credentials)
         else { throw NotConfiguredError() }
@@ -79,30 +79,30 @@ final class SMTPArticleEmailSender: ArticleEmailSending {
 }
 
 /// The Kindle destination: SMTP email.
-final class KindleDestination: ArticleDestination {
-    let id = ArticleDestinationID.kindle
-    let displayName = "Kindle"
+public final class KindleDestination: ArticleDestination {
+    public let id = ArticleDestinationID.kindle
+    public let displayName = "Kindle"
 
     private let credentials: SendCredentialsStoring
     private let sender: ArticleEmailSending
 
-    init(credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared,
+    public init(credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared,
          sender: ArticleEmailSending? = nil) {
         self.credentials = credentials
         self.sender = sender ?? SMTPArticleEmailSender(credentials: credentials)
     }
 
-    var isConfigured: Bool { KindleSendSettings.isConfigured(credentials: credentials) }
+    public var isConfigured: Bool { KindleSendSettings.isConfigured(credentials: credentials) }
 
-    func sendMode(for item: ReadingListItem) -> ArticleSendMode {
+    public func sendMode(for item: ReadingListItem) -> ArticleSendMode {
         SourceSendSettings.sendMode(
             forDestination: id, source: item.effectiveCaptureSource,
             friendUsername: item.sharedByUsername)
     }
 
-    var appIntentsSendMode: ArticleSendMode { SourceSendSettings.appIntentsMode(forDestination: id) }
+    public var appIntentsSendMode: ArticleSendMode { SourceSendSettings.appIntentsMode(forDestination: id) }
 
-    func send(epubData: Data, fileName: String, title: String) async throws {
+    public func send(epubData: Data, fileName: String, title: String) async throws {
         try await sender.sendArticle(epubData: epubData, fileName: fileName, title: title)
     }
 }
@@ -110,9 +110,9 @@ final class KindleDestination: ArticleDestination {
 /// Orchestrates ereader sends across destinations: gating, queueing while an
 /// article is still ingesting, EPUB generation, delivery, and per-destination
 /// per-item state.
-final class ArticleSendCoordinator {
+public final class ArticleSendCoordinator {
 
-    static let shared = ArticleSendCoordinator()
+    public static let shared = ArticleSendCoordinator()
 
     private let logger = Logger(subsystem: "com.hpiddy.clip", category: "send")
     private let store: ReadingListStore
@@ -123,7 +123,7 @@ final class ArticleSendCoordinator {
     private var inFlight = Set<String>()
     private let lock = NSLock()
 
-    init(store: ReadingListStore = .shared, destinations: [ArticleDestination]? = nil) {
+    public init(store: ReadingListStore = .shared, destinations: [ArticleDestination]? = nil) {
         self.store = store
         self.destinations = destinations ?? [KindleDestination(), BooxDestination()]
     }
@@ -134,22 +134,22 @@ final class ArticleSendCoordinator {
 
     /// Whether ANY destination is configured (gates the long-press menu / "is
     /// send available at all").
-    var isConfigured: Bool { destinations.contains { $0.isConfigured } }
+    public var isConfigured: Bool { destinations.contains { $0.isConfigured } }
 
     /// Whether a specific destination is configured (gates its menu row).
-    func isConfigured(destinationID: String) -> Bool {
+    public func isConfigured(destinationID: String) -> Bool {
         destination(id: destinationID)?.isConfigured ?? false
     }
 
     /// Configured destinations whose App Intents / in-app save mode is
     /// double-save (for `SavePressPolicy` — only active saves are double-pressed).
-    func doubleSaveDestinationIDs() -> [String] {
+    public func doubleSaveDestinationIDs() -> [String] {
         destinations.filter { $0.isConfigured && $0.appIntentsSendMode == .doubleSave }.map(\.id)
     }
 
     /// Explicit send of one article to one destination (the long-press menu).
     /// No-op when that destination isn't configured.
-    func send(_ item: ReadingListItem, toDestinationID id: String) async {
+    public func send(_ item: ReadingListItem, toDestinationID id: String) async {
         guard let destination = destination(id: id) else { return }
         await sendBuildingEPUB(item, to: destination)
     }
@@ -157,7 +157,7 @@ final class ArticleSendCoordinator {
     /// Called by the ingestor when an article becomes ready: per destination,
     /// delivers anything queued by an earlier press, plus everything when that
     /// destination's mode is "all saves".
-    func articleBecameReady(_ item: ReadingListItem) {
+    public func articleBecameReady(_ item: ReadingListItem) {
         guard !item.isPlatformItem else { return }
         for destination in destinations where destination.isConfigured {
             let state = item.sendState(for: destination.id)
@@ -169,7 +169,7 @@ final class ArticleSendCoordinator {
     }
 
     /// Retries queued/failed sends across all destinations (pull-to-refresh).
-    func retryPendingSends() {
+    public func retryPendingSends() {
         for item in store.items() {
             for destination in destinations where destination.isConfigured {
                 let state = item.sendState(for: destination.id)
@@ -241,7 +241,7 @@ final class ArticleSendCoordinator {
 
     /// Sends a minimal test document to one destination so the user can verify
     /// their setup end to end.
-    func sendTestDocument(toDestinationID id: String) async throws {
+    public func sendTestDocument(toDestinationID id: String) async throws {
         guard let destination = destination(id: id) else { return }
         let content = ArticleContent(
             title: "Queue Test Document",
@@ -258,7 +258,7 @@ final class ArticleSendCoordinator {
     }
 
     /// A filesystem- and MIME-safe attachment name derived from the title.
-    static func epubFileName(forTitle title: String) -> String {
+    public static func epubFileName(forTitle title: String) -> String {
         let disallowed = CharacterSet(charactersIn: "/\\:?%*|\"<>\r\n")
         let cleaned = title.components(separatedBy: disallowed).joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)

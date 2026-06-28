@@ -10,9 +10,9 @@ import Foundation
 /// first press saves; a second press within the window sends to every ereader
 /// in double-save mode (skipping any sent in the past day); everything else
 /// about an already-listed URL is ignored until the user deletes and re-saves.
-enum SavePressPolicy {
+public enum SavePressPolicy {
 
-    enum Decision: Equatable {
+    public enum Decision: Equatable {
         /// URL not in the list — save and ingest it.
         case saveNew
         /// Double press detected — send the existing article to these ereader
@@ -23,9 +23,9 @@ enum SavePressPolicy {
     }
 
     /// How close together two presses must be to count as a double save.
-    static let doublePressWindow: TimeInterval = 12
+    public static let doublePressWindow: TimeInterval = 12
     /// Articles sent within this interval aren't re-sent by a double press.
-    static let resendCooldown: TimeInterval = 24 * 60 * 60
+    public static let resendCooldown: TimeInterval = 24 * 60 * 60
 
     /// - Parameters:
     ///   - existingItem: the list item for this URL, nil if not saved yet.
@@ -33,7 +33,7 @@ enum SavePressPolicy {
     ///     `dateAdded` if this is the first repeat press).
     ///   - doubleSaveDestinationIDs: destinations that are configured AND in
     ///     double-save mode right now.
-    static func decide(
+    public static func decide(
         existingItem: ReadingListItem?,
         previousPressDate: Date?,
         now: Date,

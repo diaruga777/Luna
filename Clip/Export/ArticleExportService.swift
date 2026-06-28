@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSend
 import ClipEpub
 import ClipStorage
 import ClipModels

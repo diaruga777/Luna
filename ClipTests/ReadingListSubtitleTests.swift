@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipSend
 import ClipModels
 import XCTest
 @testable import Clip

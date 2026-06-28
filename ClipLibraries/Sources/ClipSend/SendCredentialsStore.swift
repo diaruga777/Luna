@@ -8,7 +8,7 @@ import Security
 
 /// Holds the secrets for the ereader send features: the SMTP app password
 /// (Kindle) and the Send2Boox auth token (Boox).
-protocol SendCredentialsStoring {
+public protocol SendCredentialsStoring {
     /// The stored SMTP password, if any.
     func smtpPassword() -> String?
     /// Stores (or, with nil/empty, deletes) the SMTP password.
@@ -21,22 +21,22 @@ protocol SendCredentialsStoring {
 
 /// Keychain-backed credential storage. Sends always run in the main app
 /// process, so no shared access group is needed.
-final class KeychainSendCredentialsStore: SendCredentialsStoring {
+public final class KeychainSendCredentialsStore: SendCredentialsStoring {
 
-    static let shared = KeychainSendCredentialsStore()
+    public static let shared = KeychainSendCredentialsStore()
 
     private let smtpService = "com.hpiddy.clip.smtp"
     private let smtpAccount = "smtp-password"
     private let booxService = "com.hpiddy.clip.boox"
     private let booxAccount = "boox-token"
 
-    func smtpPassword() -> String? { read(service: smtpService, account: smtpAccount) }
-    func setSMTPPassword(_ password: String?) {
+    public func smtpPassword() -> String? { read(service: smtpService, account: smtpAccount) }
+    public func setSMTPPassword(_ password: String?) {
         write(password, service: smtpService, account: smtpAccount)
     }
 
-    func booxToken() -> String? { read(service: booxService, account: booxAccount) }
-    func setBooxToken(_ token: String?) {
+    public func booxToken() -> String? { read(service: booxService, account: booxAccount) }
+    public func setBooxToken(_ token: String?) {
         write(token, service: booxService, account: booxAccount)
     }
 
@@ -72,17 +72,19 @@ final class KeychainSendCredentialsStore: SendCredentialsStoring {
 }
 
 /// In-memory stand-in for tests.
-final class InMemorySendCredentialsStore: SendCredentialsStoring {
+public final class InMemorySendCredentialsStore: SendCredentialsStoring {
     private var password: String?
     private var token: String?
 
-    func smtpPassword() -> String? { password }
-    func setSMTPPassword(_ newPassword: String?) {
+    public init() {}
+
+    public func smtpPassword() -> String? { password }
+    public func setSMTPPassword(_ newPassword: String?) {
         password = (newPassword?.isEmpty ?? true) ? nil : newPassword
     }
 
-    func booxToken() -> String? { token }
-    func setBooxToken(_ newToken: String?) {
+    public func booxToken() -> String? { token }
+    public func setBooxToken(_ newToken: String?) {
         token = (newToken?.isEmpty ?? true) ? nil : newToken
     }
 }

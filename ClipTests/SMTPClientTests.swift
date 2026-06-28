@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipSend
 import ClipEpub
 import XCTest
 @testable import Clip

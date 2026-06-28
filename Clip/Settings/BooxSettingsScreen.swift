@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSend
 import UIKit
 
 /// Send-to-Boox settings: region, an OTP login that stores the long-lived

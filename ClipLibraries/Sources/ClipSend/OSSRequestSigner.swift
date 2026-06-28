@@ -12,22 +12,33 @@ import CryptoKit
 ///
 /// Reference: OSS "Add a signature to the Authorization header" — StringToSign =
 /// VERB\nContent-MD5\nContent-Type\nDate\nCanonicalizedOSSHeaders + CanonicalizedResource.
-struct OSSRequestSigner {
+public struct OSSRequestSigner {
 
-    let accessKeyId: String
-    let accessKeySecret: String
-    let securityToken: String
+    public let accessKeyId: String
+    public let accessKeySecret: String
+    public let securityToken: String
+
+    public init(accessKeyId: String, accessKeySecret: String, securityToken: String) {
+        self.accessKeyId = accessKeyId
+        self.accessKeySecret = accessKeySecret
+        self.securityToken = securityToken
+    }
 
     /// Everything needed to issue the signed PUT.
-    struct SignedPut {
-        let url: URL
+    public struct SignedPut {
+        public let url: URL
         /// Header name → value (Authorization, Date, Content-Type, x-oss-security-token).
-        let headers: [String: String]
+        public let headers: [String: String]
+
+        public init(url: URL, headers: [String: String]) {
+            self.url = url
+            self.headers = headers
+        }
     }
 
     /// Signs a PUT of `data`-typed `contentType` to `objectKey` in `bucket` on
     /// `endpointHost` (e.g. `oss-eu-central-1.aliyuncs.com`), at `date`.
-    func signPut(
+    public func signPut(
         bucket: String, endpointHost: String, objectKey: String,
         contentType: String, date: Date
     ) -> SignedPut? {
@@ -56,7 +67,7 @@ struct OSSRequestSigner {
     }
 
     /// Assembles the OSS V1 StringToSign. Pure, for testing the canonicalization.
-    static func stringToSign(
+    public static func stringToSign(
         method: String, contentMD5: String, contentType: String, date: String,
         canonicalizedOSSHeaders: String, canonicalizedResource: String
     ) -> String {
@@ -64,7 +75,7 @@ struct OSSRequestSigner {
     }
 
     /// Base64 of HMAC-SHA1(key, message) — OSS V1 uses SHA-1.
-    static func hmacSHA1Base64(key: String, message: String) -> String {
+    public static func hmacSHA1Base64(key: String, message: String) -> String {
         let symmetricKey = SymmetricKey(data: Data(key.utf8))
         let code = HMAC<Insecure.SHA1>.authenticationCode(
             for: Data(message.utf8), using: symmetricKey)
@@ -72,7 +83,7 @@ struct OSSRequestSigner {
     }
 
     /// RFC 1123 / RFC 822 date in GMT, as OSS expects in the `Date` header.
-    static func rfc1123(_ date: Date) -> String {
+    public static func rfc1123(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "GMT")

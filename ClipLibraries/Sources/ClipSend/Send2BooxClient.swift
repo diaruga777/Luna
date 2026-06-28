@@ -9,7 +9,7 @@ import Foundation
 /// Uploads an article EPUB to a Boox device via Onyx's (unofficial) Send2Boox
 /// service. Ported from the `hrw/onyx-send2boox` reference: get STS creds →
 /// signed OSS PUT → register the object so the device pulls it over WiFi.
-protocol Send2BooxUploading {
+public protocol Send2BooxUploading {
     /// Uploads + registers the EPUB. Throws if not logged in or any step fails.
     func upload(epubData: Data, fileName: String, title: String) async throws
 }
@@ -22,15 +22,15 @@ protocol Send2BooxUploading {
 /// user setup with an in-app disclosure. The OSS PUT signs the `Date` header; if
 /// a future iOS strips/overwrites that reserved header the upload would fail and
 /// we'd switch to a presigned-URL scheme.
-final class Send2BooxClient: Send2BooxUploading {
+public final class Send2BooxClient: Send2BooxUploading {
 
-    struct NotConfiguredError: Error {}
+    public struct NotConfiguredError: Error {}
 
     private let credentials: SendCredentialsStoring
     private let api: BooxAPIClient
     private let session: URLSession
 
-    init(host: String,
+    public init(host: String,
          credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared,
          session: URLSession = .shared) {
         self.credentials = credentials
@@ -38,7 +38,7 @@ final class Send2BooxClient: Send2BooxUploading {
         self.session = session
     }
 
-    func upload(epubData: Data, fileName: String, title: String) async throws {
+    public func upload(epubData: Data, fileName: String, title: String) async throws {
         guard let token = credentials.booxToken(), !token.isEmpty else {
             throw NotConfiguredError()
         }
@@ -96,30 +96,30 @@ final class Send2BooxClient: Send2BooxUploading {
 }
 
 /// The Boox destination: Send2Boox upload.
-final class BooxDestination: ArticleDestination {
-    let id = ArticleDestinationID.boox
-    let displayName = "Boox"
+public final class BooxDestination: ArticleDestination {
+    public let id = ArticleDestinationID.boox
+    public let displayName = "Boox"
 
     private let credentials: SendCredentialsStoring
     private let uploaderOverride: Send2BooxUploading?
 
-    init(credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared,
+    public init(credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared,
          uploader: Send2BooxUploading? = nil) {
         self.credentials = credentials
         self.uploaderOverride = uploader
     }
 
-    var isConfigured: Bool { BooxSendSettings.isConfigured(credentials: credentials) }
+    public var isConfigured: Bool { BooxSendSettings.isConfigured(credentials: credentials) }
 
-    func sendMode(for item: ReadingListItem) -> ArticleSendMode {
+    public func sendMode(for item: ReadingListItem) -> ArticleSendMode {
         SourceSendSettings.sendMode(
             forDestination: id, source: item.effectiveCaptureSource,
             friendUsername: item.sharedByUsername)
     }
 
-    var appIntentsSendMode: ArticleSendMode { SourceSendSettings.appIntentsMode(forDestination: id) }
+    public var appIntentsSendMode: ArticleSendMode { SourceSendSettings.appIntentsMode(forDestination: id) }
 
-    func send(epubData: Data, fileName: String, title: String) async throws {
+    public func send(epubData: Data, fileName: String, title: String) async throws {
         // Built with the current region's host so a region change takes effect.
         let uploader = uploaderOverride
             ?? Send2BooxClient(host: BooxSendSettings.host, credentials: credentials)

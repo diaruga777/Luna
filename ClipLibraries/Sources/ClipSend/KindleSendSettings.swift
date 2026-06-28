@@ -7,17 +7,17 @@ import Foundation
 
 /// Send-to-Kindle configuration, persisted in standard defaults (the password
 /// lives in the Keychain via `SendCredentialsStoring`).
-enum KindleSendSettings {
+public enum KindleSendSettings {
 
     /// Send timing is the shared `ArticleSendMode`.
-    typealias SendMode = ArticleSendMode
+    public typealias SendMode = ArticleSendMode
 
     /// SMTP presets; custom exposes the host field.
-    enum Provider: String, CaseIterable {
+    public enum Provider: String, CaseIterable {
         case gmail
         case custom
 
-        var displayName: String {
+        public var displayName: String {
             switch self {
             case .gmail: return "Gmail"
             case .custom: return "Custom"
@@ -31,11 +31,19 @@ enum KindleSendSettings {
     private static let hostKey = "kindleSMTPHost"
     private static let usernameKey = "kindleSMTPUsername"
 
-    static let gmailHost = "smtp.gmail.com"
-    /// Implicit-TLS submission port — the only mode the embedded client speaks.
-    static let port: UInt16 = 465
+    /// The "Also Send to Kindle" toggle. Shared with the mail importer
+    /// (`IncomingMailSettings.autoSendToKindle` reads/writes the same key), so the
+    /// send layer can consult it without depending on the mail layer.
+    public static var autoSendToKindle: Bool {
+        get { UserDefaults.standard.bool(forKey: "incomingMailAutoSendToKindle") }
+        set { UserDefaults.standard.set(newValue, forKey: "incomingMailAutoSendToKindle") }
+    }
 
-    static var sendMode: SendMode {
+    public static let gmailHost = "smtp.gmail.com"
+    /// Implicit-TLS submission port — the only mode the embedded client speaks.
+    public static let port: UInt16 = 465
+
+    public static var sendMode: SendMode {
         get {
             SendMode(rawValue: UserDefaults.standard.string(forKey: modeKey) ?? "") ?? .off
         }
@@ -43,12 +51,12 @@ enum KindleSendSettings {
     }
 
     /// The user's @kindle.com inbox address.
-    static var kindleAddress: String {
+    public static var kindleAddress: String {
         get { UserDefaults.standard.string(forKey: kindleAddressKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: kindleAddressKey) }
     }
 
-    static var provider: Provider {
+    public static var provider: Provider {
         get {
             Provider(rawValue: UserDefaults.standard.string(forKey: providerKey) ?? "") ?? .gmail
         }
@@ -56,24 +64,24 @@ enum KindleSendSettings {
     }
 
     /// SMTP host actually used: the Gmail preset, or the custom host field.
-    static var smtpHost: String {
+    public static var smtpHost: String {
         provider == .gmail ? gmailHost : customHost
     }
 
-    static var customHost: String {
+    public static var customHost: String {
         get { UserDefaults.standard.string(forKey: hostKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: hostKey) }
     }
 
     /// Full email address used both to authenticate and as the From address —
     /// the one the user must put on Amazon's approved-sender list.
-    static var smtpUsername: String {
+    public static var smtpUsername: String {
         get { UserDefaults.standard.string(forKey: usernameKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: usernameKey) }
     }
 
     /// True when everything needed to actually send is present.
-    static func isConfigured(credentials: SendCredentialsStoring) -> Bool {
+    public static func isConfigured(credentials: SendCredentialsStoring) -> Bool {
         !kindleAddress.isEmpty
             && !smtpHost.isEmpty
             && !smtpUsername.isEmpty

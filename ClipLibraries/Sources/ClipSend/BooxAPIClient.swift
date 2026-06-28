@@ -6,26 +6,26 @@
 import Foundation
 
 /// A Send2Boox API failure, with the path + detail for diagnosis.
-struct BooxAPIError: Error, CustomStringConvertible {
-    let path: String
-    let detail: String
-    var description: String { "Boox \(path) failed: \(detail)" }
+public struct BooxAPIError: Error, CustomStringConvertible {
+    public let path: String
+    public let detail: String
+    public var description: String { "Boox \(path) failed: \(detail)" }
 }
 
 /// The Onyx response envelope — useful payload sits under `data`.
-struct BooxEnvelope<T: Decodable>: Decodable {
-    let data: T?
-    let message: String?
+public struct BooxEnvelope<T: Decodable>: Decodable {
+    public let data: T?
+    public let message: String?
 }
 
 // MARK: - Response payloads
 
-struct BooxLoginData: Decodable { let token: String }
+public struct BooxLoginData: Decodable { let token: String }
 
-struct BooxUserData: Decodable {
-    let uid: String
+public struct BooxUserData: Decodable {
+    public let uid: String
     // The API may encode uid as a string or a number — accept both.
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if let string = try? container.decode(String.self, forKey: .uid) {
             uid = string
@@ -36,24 +36,24 @@ struct BooxUserData: Decodable {
                 forKey: .uid, in: container, debugDescription: "uid is neither String nor Int")
         }
     }
-    enum CodingKeys: String, CodingKey { case uid }
+    public enum CodingKeys: String, CodingKey { case uid }
 }
 
-struct BooxBucketsData: Decodable {
-    let onyxCloud: Bucket
-    enum CodingKeys: String, CodingKey { case onyxCloud = "onyx-cloud" }
-    struct Bucket: Decodable {
+public struct BooxBucketsData: Decodable {
+    public let onyxCloud: Bucket
+    public enum CodingKeys: String, CodingKey { case onyxCloud = "onyx-cloud" }
+    public struct Bucket: Decodable {
         let bucket: String
         let aliEndpoint: String
     }
 }
 
 /// Alibaba OSS temporary credentials (note the capitalized JSON keys).
-struct BooxSTSData: Decodable {
-    let accessKeyId: String
-    let accessKeySecret: String
-    let securityToken: String
-    enum CodingKeys: String, CodingKey {
+public struct BooxSTSData: Decodable {
+    public let accessKeyId: String
+    public let accessKeySecret: String
+    public let securityToken: String
+    public enum CodingKeys: String, CodingKey {
         case accessKeyId = "AccessKeyId"
         case accessKeySecret = "AccessKeySecret"
         case securityToken = "SecurityToken"
@@ -63,12 +63,12 @@ struct BooxSTSData: Decodable {
 /// Thin client for the Send2Boox JSON API at `https://{host}/api/1/…`. Mirrors
 /// the reference client's conventions: a Bearer token when present, and a JSON
 /// body implies POST.
-final class BooxAPIClient {
+public final class BooxAPIClient {
 
-    let host: String
+    public let host: String
     private let session: URLSession
 
-    init(host: String, session: URLSession = .shared) {
+    public init(host: String, session: URLSession = .shared) {
         self.host = host
         self.session = session
     }
@@ -94,7 +94,7 @@ final class BooxAPIClient {
 
     /// Issues the request and decodes the envelope's `data` into `T`, throwing
     /// when the HTTP status is non-2xx or `data` is absent.
-    func value<T: Decodable>(
+    public func value<T: Decodable>(
         path: String, method: String = "GET", token: String? = nil,
         body: [String: Any]? = nil, as type: T.Type
     ) async throws -> T {
@@ -109,7 +109,7 @@ final class BooxAPIClient {
     }
 
     /// Issues a request whose response payload is irrelevant (just checks success).
-    func send(
+    public func send(
         path: String, method: String = "POST", token: String? = nil, body: [String: Any]?
     ) async throws {
         let request = try makeRequest(path: path, method: method, token: token, body: body)

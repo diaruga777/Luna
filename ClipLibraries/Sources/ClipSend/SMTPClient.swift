@@ -10,7 +10,7 @@ import os
 
 /// Byte-level connection a SMTP session runs over. The real implementation is
 /// TLS over TCP (implicit TLS, port 465); tests script a mock.
-protocol SMTPTransport {
+public protocol SMTPTransport {
     /// Opens the connection; throws if it can't be established.
     func connect() async throws
     /// Writes raw bytes.
@@ -22,28 +22,33 @@ protocol SMTPTransport {
 }
 
 /// An SMTP failure with the server's reply attached for diagnosis.
-struct SMTPError: Error, CustomStringConvertible {
-    let step: String
-    let reply: String
-    var description: String { "SMTP \(step) failed: \(reply)" }
+public struct SMTPError: Error, CustomStringConvertible {
+    public let step: String
+    public let reply: String
+    public var description: String { "SMTP \(step) failed: \(reply)" }
+
+    public init(step: String, reply: String) {
+        self.step = step
+        self.reply = reply
+    }
 }
 
 /// Speaks just enough ESMTP to submit one message over an authenticated
 /// connection: EHLO → AUTH PLAIN (AUTH LOGIN fallback) → MAIL/RCPT/DATA → QUIT.
-final class SMTPClient {
+public final class SMTPClient {
 
     private let transport: SMTPTransport
     /// Hard ceiling on the whole exchange, so a stalled socket can't park a
     /// receive continuation forever (closing the transport unblocks it).
     private static let timeoutSeconds: UInt64 = 30
 
-    init(transport: SMTPTransport) {
+    public init(transport: SMTPTransport) {
         self.transport = transport
     }
 
     /// Submits one message. `username`/`password` authenticate; the message's
     /// own From/To headers should match `from`/`to`.
-    func submit(message: MIMEMessage, username: String, password: String) async throws {
+    public func submit(message: MIMEMessage, username: String, password: String) async throws {
         let watchdog = Task { [transport] in
             try? await Task.sleep(nanoseconds: Self.timeoutSeconds * 1_000_000_000)
             transport.close()
@@ -130,7 +135,7 @@ final class SMTPClient {
     }
 
     /// RFC 5321 §4.5.2: any data line starting with "." gets a "." prepended.
-    static func dotStuffed(_ data: Data) -> Data {
+    public static func dotStuffed(_ data: Data) -> Data {
         var output = Data(capacity: data.count)
         var atLineStart = true
         for byte in data {
@@ -146,19 +151,19 @@ final class SMTPClient {
 
 /// SMTPTransport over NWConnection with implicit TLS — the port-465 submission
 /// path Gmail and most providers support.
-final class TLSConnectionTransport: SMTPTransport {
+public final class TLSConnectionTransport: SMTPTransport {
 
     private let connection: NWConnection
     private var receiveBuffer = Data()
     private let queue = DispatchQueue(label: "clip.smtp.transport")
 
-    init(host: String, port: UInt16) {
+    public init(host: String, port: UInt16) {
         // Port 465 is never 0; fall back keeps the force-unwrap-free invariant.
         let nwPort = NWEndpoint.Port(rawValue: port) ?? .init(integerLiteral: 465)
         connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tls)
     }
 
-    func connect() async throws {
+    public func connect() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             // The handler runs on the connection's serial queue; the lock just
             // makes the one-shot resume guard Swift-6-clean.
@@ -186,7 +191,7 @@ final class TLSConnectionTransport: SMTPTransport {
         }
     }
 
-    func send(_ data: Data) async throws {
+    public func send(_ data: Data) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: data, completion: .contentProcessed { error in
                 if let error {
@@ -198,7 +203,7 @@ final class TLSConnectionTransport: SMTPTransport {
         }
     }
 
-    func readLine() async throws -> String {
+    public func readLine() async throws -> String {
         while true {
             if let lineEnd = receiveBuffer.firstRange(of: Data("\r\n".utf8)) {
                 let lineData = receiveBuffer.subdata(in: receiveBuffer.startIndex..<lineEnd.lowerBound)
@@ -230,7 +235,7 @@ final class TLSConnectionTransport: SMTPTransport {
         }
     }
 
-    func close() {
+    public func close() {
         connection.cancel()
     }
 }

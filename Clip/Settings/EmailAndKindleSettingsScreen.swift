@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipSend
 import UIKit
 
 /// Combined Email & Kindle settings. One Gmail account (app password) powers

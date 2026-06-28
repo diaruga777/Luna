@@ -18,13 +18,13 @@ import Foundation
 /// Persisted in standard defaults under a per-destination key prefix. Sources
 /// other than App Intents default to the legacy "all saves" behavior so existing
 /// setups are unchanged until the user touches the new controls.
-enum SourceSendSettings {
+public enum SourceSendSettings {
 
     // MARK: Legacy / App-Intents mode (the destination's existing global mode)
 
     /// The send mode governing App Intents (Shortcuts) and in-app saves — backed
     /// by the destination's existing `sendMode` so nothing migrates.
-    static func appIntentsMode(forDestination id: String) -> ArticleSendMode {
+    public static func appIntentsMode(forDestination id: String) -> ArticleSendMode {
         switch id {
         case ArticleDestinationID.kindle: return KindleSendSettings.sendMode
         case ArticleDestinationID.boox: return BooxSendSettings.sendMode
@@ -32,7 +32,7 @@ enum SourceSendSettings {
         }
     }
 
-    static func setAppIntentsMode(_ mode: ArticleSendMode, forDestination id: String) {
+    public static func setAppIntentsMode(_ mode: ArticleSendMode, forDestination id: String) {
         switch id {
         case ArticleDestinationID.kindle: KindleSendSettings.sendMode = mode
         case ArticleDestinationID.boox: BooxSendSettings.sendMode = mode
@@ -42,17 +42,17 @@ enum SourceSendSettings {
 
     // MARK: Email
 
-    static func emailEnabled(forDestination id: String) -> Bool {
+    public static func emailEnabled(forDestination id: String) -> Bool {
         // Kindle reuses the existing "Also Send to Kindle" import toggle so the
         // two surfaces never diverge (email only ever arrives via the importer,
         // which historically sent only to Kindle).
-        if id == ArticleDestinationID.kindle { return IncomingMailSettings.autoSendToKindle }
+        if id == ArticleDestinationID.kindle { return KindleSendSettings.autoSendToKindle }
         return boolWithDefault(key(id, "email"), default: legacyDefault(forDestination: id))
     }
 
-    static func setEmailEnabled(_ on: Bool, forDestination id: String) {
+    public static func setEmailEnabled(_ on: Bool, forDestination id: String) {
         if id == ArticleDestinationID.kindle {
-            IncomingMailSettings.autoSendToKindle = on
+            KindleSendSettings.autoSendToKindle = on
             return
         }
         UserDefaults.standard.set(on, forKey: key(id, "email"))
@@ -60,31 +60,31 @@ enum SourceSendSettings {
 
     // MARK: Share sheet & paste
 
-    static func shareAndPasteEnabled(forDestination id: String) -> Bool {
+    public static func shareAndPasteEnabled(forDestination id: String) -> Bool {
         boolWithDefault(key(id, "sharePaste"), default: legacyDefault(forDestination: id))
     }
 
-    static func setShareAndPasteEnabled(_ on: Bool, forDestination id: String) {
+    public static func setShareAndPasteEnabled(_ on: Bool, forDestination id: String) {
         UserDefaults.standard.set(on, forKey: key(id, "sharePaste"))
     }
 
     // MARK: Friend shares (default + per-friend overrides)
 
     /// The default for friends without an explicit override.
-    static func friendSharesEnabledDefault(forDestination id: String) -> Bool {
+    public static func friendSharesEnabledDefault(forDestination id: String) -> Bool {
         boolWithDefault(key(id, "friendDefault"), default: legacyDefault(forDestination: id))
     }
 
-    static func setFriendSharesEnabledDefault(_ on: Bool, forDestination id: String) {
+    public static func setFriendSharesEnabledDefault(_ on: Bool, forDestination id: String) {
         UserDefaults.standard.set(on, forKey: key(id, "friendDefault"))
     }
 
     /// Per-friend enablement, falling back to the destination's friend default.
-    static func friendShareEnabled(forDestination id: String, username: String) -> Bool {
+    public static func friendShareEnabled(forDestination id: String, username: String) -> Bool {
         friendOverrides(forDestination: id)[username] ?? friendSharesEnabledDefault(forDestination: id)
     }
 
-    static func setFriendShareEnabled(_ on: Bool, forDestination id: String, username: String) {
+    public static func setFriendShareEnabled(_ on: Bool, forDestination id: String, username: String) {
         var overrides = friendOverrides(forDestination: id)
         overrides[username] = on
         if let data = try? JSONEncoder().encode(overrides) {
@@ -103,7 +103,7 @@ enum SourceSendSettings {
 
     /// The effective send mode for an item, given its capture source and (for
     /// friend shares) the sharing friend's username.
-    static func sendMode(
+    public static func sendMode(
         forDestination id: String, source: CaptureSource, friendUsername: String?
     ) -> ArticleSendMode {
         switch source {

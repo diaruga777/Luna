@@ -592,7 +592,7 @@ final class ReadingListViewController: UITableViewController {
 
     @objc private func catchUpTapped() {
         let catchUp = CatchUpViewController(unread: catchUpQueue(), router: self)
-        present(catchUp, animated: true)
+        HalftoneModal.present(catchUp, from: self)
     }
 
     // MARK: - Edit mode
@@ -1292,7 +1292,7 @@ final class ReadingListViewController: UITableViewController {
             }
             return
         }
-        presenter.present(YouTubePlayerViewController(videoID: videoID, itemID: item.id), animated: true)
+        HalftoneModal.present(YouTubePlayerViewController(videoID: videoID, itemID: item.id), from: presenter)
     }
 
     /// The thumbnail state for a row: cached art (aspect-fit) when present, a

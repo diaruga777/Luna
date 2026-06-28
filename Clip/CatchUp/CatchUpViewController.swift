@@ -361,7 +361,7 @@ final class CatchUpViewController: UIViewController {
         reader.onExtracted = { [weak self, weak nav] in
             nav?.dismiss(animated: true) { self?.reloadCurrentCard() }
         }
-        present(nav, animated: true)
+        HalftoneModal.present(nav, from: self)
     }
 
     /// Rebuilds the current card from the freshly-stored item (after an unlock).

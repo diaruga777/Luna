@@ -9,6 +9,7 @@ import ClipReadingList
 import ClipDesignSystem
 import ClipStorage
 import ClipModels
+import ClipTransitions
 import UIKit
 
 /// Shared helpers for the settings subpages.
@@ -95,7 +96,7 @@ final class SettingsViewController: UITableViewController {
                 self?.dismiss(animated: true)
             }
             onboarding.modalPresentationStyle = .fullScreen
-            present(onboarding, animated: true)
+            HalftoneModal.present(onboarding, from: self)
         }
     }
 }

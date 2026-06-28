@@ -134,12 +134,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
         spinner.hidesWhenStopped = true
         spinner.startAnimating()
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(spinner)
-        NSLayoutConstraint.activate([
-            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-        ])
+        view.addSubview(spinner)   // centred manually in viewDidLayoutSubviews
 
         configureChrome()
         applyDecisionIfPossible()
@@ -156,6 +151,15 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutChrome()
+        // Spinner + any error label sit centred in the card (manual frames, no autolayout).
+        spinner.sizeToFit()
+        spinner.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        if let errorLabel = view.viewWithTag(Self.errorLabelTag) {
+            let fit = errorLabel.sizeThatFits(view.bounds.size)
+            errorLabel.frame = CGRect(
+                x: (view.bounds.width - fit.width) / 2, y: (view.bounds.height - fit.height) / 2,
+                width: fit.width, height: fit.height)
+        }
         // Content host fills the card, inset below the floating header so text clears it.
         let top = Self.headerHeight
         readerChild?.view.frame = CGRect(x: 0, y: top,
@@ -221,13 +225,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             label.font = .systemFont(ofSize: 14, weight: .semibold)
             label.textColor = .label
             label.lineBreakMode = .byTruncatingTail
-            label.translatesAutoresizingMaskIntoConstraints = false
-            lip.addSubview(label)
-            NSLayoutConstraint.activate([
-                label.centerYAnchor.constraint(equalTo: lip.centerYAnchor),
-                label.leadingAnchor.constraint(equalTo: lip.leadingAnchor, constant: 4),
-                label.trailingAnchor.constraint(equalTo: lip.trailingAnchor, constant: -16),
-            ])
+            lip.addSubview(label)   // framed manually in layoutChrome
             view.addSubview(lip)
         }
         bottomLipLabel.font = .systemFont(ofSize: 14, weight: .regular)
@@ -275,6 +273,13 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         topLip.frame = CGRect(x: indent, y: 0, width: max(w - indent, 0), height: lip)
         bottomLip.frame = CGRect(x: indent, y: max(h - lip, 0), width: max(w - indent, 0), height: lip)
         indentView.frame = CGRect(x: 0, y: 0, width: indent, height: h)
+
+        // Lip labels: inset 4pt leading / 16pt trailing within their lip, full height
+        // (the label centres its single line of text vertically). Manual frames — no
+        // autolayout in this experimental viewer.
+        let labelWidth = max(topLip.bounds.width - 20, 0)
+        topLipLabel.frame = CGRect(x: 4, y: 0, width: labelWidth, height: topLip.bounds.height)
+        bottomLipLabel.frame = CGRect(x: 4, y: 0, width: labelWidth, height: bottomLip.bounds.height)
     }
 
     /// Show/hide chrome for this layer's role. `alpha` is the layout's `chromeAlpha`
@@ -470,22 +475,21 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         if webView == nil, articleContent == nil { showLoadError() }
     }
 
+    /// Tag identifying the "couldn't load" label (manually centred in viewDidLayoutSubviews).
+    private static let errorLabelTag = 0x4C4F4144   // "LOAD"
+
     /// Themed "couldn't load" state for a nil/invalid URL or a dead load.
     private func showLoadError() {
         finishLoading()
-        guard view.viewWithTag(0x4C4F4144) == nil else { return }   // "LOAD"
+        guard view.viewWithTag(Self.errorLabelTag) == nil else { return }
         let label = UILabel()
-        label.tag = 0x4C4F4144
+        label.tag = Self.errorLabelTag
         label.text = "Couldn’t load this page."
         label.textColor = .secondaryLabel
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.textAlignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-        ])
+        view.addSubview(label)   // centred manually in viewDidLayoutSubviews
+        view.setNeedsLayout()
     }
 
     nonisolated private static func isArticleLike(_ content: ArticleContent) -> Bool {
@@ -556,9 +560,15 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         let child: UIViewController
         switch mode {
         case .scroll, .highlight, .original:
+            // Deliberately NO gaze tracker here: EyeGazeWordTracker.init starts an
+            // ARFaceTracking camera session synchronously, and a dive builds a fresh
+            // ScrollReader every time — so per-layer trackers stalled the main thread
+            // (the on-device dive hang) and stacked a camera session per layer. Eye
+            // tracking stays available in the standard reader; it's off in this
+            // experimental stacked reader by design.
             let scroll = ScrollReaderViewController(
                 item: transient, content: content, audioEnabled: audioOn,
-                gazeTrackerFactory: gazeTrackerFactory)
+                gazeTrackerFactory: nil)
             scroll.onLinkActivated = { [weak self] url in
                 guard let self else { return }
                 self.onLinkActivated?(url, self.lineText(for: url))

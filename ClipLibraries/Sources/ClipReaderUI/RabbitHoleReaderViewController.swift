@@ -260,11 +260,16 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         transitionInFlight = true
         transition.play(prepare: { [weak self] in
             guard let self else { return (UIImage(), UIImage()) }
+            // `before` is already-displayed content → afterScreenUpdates:false is correct
+            // and cheap. `after` is the JUST-built new layer, whose text/images haven't had
+            // a display pass yet — it MUST be captured with afterScreenUpdates:true, or the
+            // snapshot is stale (the dissolve would resolve to the *before* content
+            // pixelated). This runs on the next runloop, off the tap's critical path.
             let before = self.snapshot(afterScreenUpdates: false)
             applyState()
             self.layers[safe: self.focus]?.prepareForTransitionSnapshot()
             self.view.layoutIfNeeded()
-            let after = self.snapshot(afterScreenUpdates: false)
+            let after = self.snapshot(afterScreenUpdates: true)
             return (before, after)
         }, in: view) { [weak self] in
             self?.transitionInFlight = false
@@ -343,7 +348,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         // capture is cheap (afterScreenUpdates: false) and free of the glass-blur artifact.
         layers[safe: topIndex - 1]?.prepareForTransitionSnapshot()
         view.layoutIfNeeded()
-        let after = snapshot(afterScreenUpdates: false)
+        let after = snapshot(afterScreenUpdates: true)   // re-focused parent must render fresh
         applyFocus()                     // restore the live before state
         interactive = transition.begin(before: before, after: after, in: view)
     }

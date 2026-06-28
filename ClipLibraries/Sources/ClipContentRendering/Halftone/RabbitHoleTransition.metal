@@ -10,7 +10,8 @@
 //      order — each cell crosses from raw A straight to the pixelated B on its own
 //      staggered schedule.
 //    Phase 2 (progress phaseSplit → 1): that fully-pixelated final image sharpens
-//      back to the un-pixelated final view (a global pixelated B → raw B mix).
+//      back to the un-pixelated final view, ALSO one cell at a time in random order
+//      (a different random order than phase 1, so the two stages don't line up).
 //
 //  Driven by one global `progress`. Pure GPU; the only inputs are the two snapshot
 //  textures + a small uniform struct. Deliberately separate from the shipping
@@ -84,13 +85,18 @@ fragment float4 rh_transition_fragment(RHVSOut in [[stage_in]],
         float local = clamp((p1 - start) / window, 0.0, 1.0);
         c = mix(rawA, pixB, local);
     } else {
-        // Phase 2: globally sharpen the pixelated final image into the real final view.
+        // Phase 2: per-cell staggered sharpen from the pixelated final image to the real
+        // final view — one random "pixel" at a time, mirroring phase 1 but with its own
+        // random order (seed offset) so the sharpen doesn't reveal in the same sequence.
         float4 pixB = texB.sample(s, cellSampleUV);
         float4 rawB = texB.sample(s, sampleUV);
         if (U.monochrome > 0.5) { pixB.rgb = rh_mono(pixB.rgb); rawB.rgb = rh_mono(rawB.rgb); }
 
-        float p2 = (U.progress - split) / (1.0 - split);  // 0..1 within phase 2
-        c = mix(pixB, rawB, p2);
+        float p2 = (U.progress - split) / (1.0 - split);   // 0..1 within phase 2
+        float window = clamp(1.0 - U.stagger, 0.001, 1.0);
+        float start = rh_hash(cell + 19.7) * (1.0 - window);  // different order than phase 1
+        float local = clamp((p2 - start) / window, 0.0, 1.0);
+        c = mix(pixB, rawB, local);
     }
     c.a = 1.0;
     return c;

@@ -150,6 +150,24 @@
 		};
 /* End PBXCopyFilesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		AA9000000000000000000001 /* Re-sign embedded extensions (simulator) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Re-sign embedded extensions (simulator)";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Simulator only: re-sign each embedded extension ad-hoc so it always matches the\n# ad-hoc-signed app. Stops the recurring incremental-build error \"Embedded binary is\n# not signed with the same certificate as the parent app\". No-op on device/archive\n# builds, so distribution/TestFlight signing is left completely untouched.\nif [ \"${PLATFORM_NAME}\" != \"iphonesimulator\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign - --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXFileReference section */
 		79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Clip Action Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
@@ -420,6 +438,7 @@
 				AA0800000000000000000001 /* Frameworks */,
 				AA1100000000000000000001 /* Resources */,
 				AA0500000000000000000001 /* Embed Foundation Extensions */,
+				AA9000000000000000000001 /* Re-sign embedded extensions (simulator) */,
 			);
 			buildRules = (
 			);

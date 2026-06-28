@@ -55,9 +55,11 @@ final class ArticleContentPaywallTests: XCTestCase {
         XCTAssertTrue(article.hasReadableBody)
     }
 
-    /// A normal short-ish article with no wall language reads fine.
+    /// A normal article with no wall language reads fine. Body clears the
+    /// `readableBodyThreshold` (1200): "Real reporting and analysis here. " is
+    /// 34 chars × 40 = 1360.
     func testOrdinaryArticleIsReadable() {
-        let article = content([String(repeating: "Real reporting and analysis here. ", count: 30)])
+        let article = content([String(repeating: "Real reporting and analysis here. ", count: 40)])
         XCTAssertFalse(article.looksPaywalled)
         XCTAssertTrue(article.hasReadableBody)
     }

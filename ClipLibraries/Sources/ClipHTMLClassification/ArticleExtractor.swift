@@ -46,7 +46,7 @@ public struct ArticleExtractor {
         // applies for a MEDIUM refined result (350–600), where a small refined
         // more likely means refined's junk-class stripping ate the real content.
         var chosen: [ArticleContent.Block]
-        let substantialRefinedLength = ArticleContent.readableBodyThreshold   // 600
+        let substantialRefinedLength = ArticleContent.readableBodyThreshold   // 1200
         if refinedLength >= substantialRefinedLength
             || (refinedLength >= 350 && refinedLength * 3 >= basicLength) {
             chosen = refined

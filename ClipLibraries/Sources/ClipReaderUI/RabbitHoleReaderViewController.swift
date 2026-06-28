@@ -54,6 +54,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// — the dive's "after" snapshot already shows the real article, and the wipe starts
     /// immediately. Trimmed to the current focus's links to stay bounded.
     private var preloadedContent: [String: ArticleContent] = [:]
+    /// A pre-created, blank layer shell parked offscreen (chrome already built), promoted
+    /// on the next dive so tapping a link never builds a view controller — see
+    /// `ensureSpareLayer` / `takeSpareLayer`.
+    private var spareLayer: RabbitHoleLayerViewController?
     /// The in-flight background materialization of the focused page's links (cancelled
     /// when the focus changes or the reader closes).
     private var warmTask: Task<Void, Never>?
@@ -131,6 +135,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         applyFocus()
         markOpenedIfNeeded()
         warmPreloadsForFocusedLayer()
+        ensureSpareLayer()   // pre-build the next layer so the first dive has nothing to build
     }
 
     private func rootDescriptor() -> RabbitHoleLayerDescriptor {
@@ -142,13 +147,23 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             bottomLipText: nil)
     }
 
+    /// Promote a pre-created blank shell into a real, content-loaded layer and append it
+    /// to the stack. The shell already exists in the hierarchy (chrome built) — diving
+    /// only sets its content here and its frame via `applyFocus`, never builds a VC.
     @discardableResult
     private func addLayer(_ descriptor: RabbitHoleLayerDescriptor,
                           preloadedContent: ArticleContent? = nil) -> RabbitHoleLayerViewController {
+        let layer = takeSpareLayer()
+        layer.configure(descriptor: descriptor, preloadedContent: preloadedContent)
+        layers.append(layer)
+        return layer
+    }
+
+    /// Build a BLANK layer shell, wire its callbacks, and add it to the hierarchy so its
+    /// view loads and chrome (incl. the glass header) is built now — off the tap path.
+    private func makeLayerShell() -> RabbitHoleLayerViewController {
         let layer = RabbitHoleLayerViewController(
-            descriptor: descriptor, preloadedContent: preloadedContent,
-            shareProvider: shareProvider,
-            gazeTrackerFactory: gazeTrackerFactory, layout: layout)
+            shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory, layout: layout)
         layer.onLinkActivated = { [weak self, weak layer] url, lineText in
             guard let self, let layer, layer === self.layers.last else { return }
             self.pushLayer(url: url, lineText: lineText, from: layer)
@@ -166,10 +181,36 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             self.warmPreloadsForFocusedLayer()
         }
         addChild(layer)
-        view.addSubview(layer.view)
+        view.addSubview(layer.view)   // loads the view → builds chrome immediately
         layer.didMove(toParent: self)
-        layers.append(layer)
         return layer
+    }
+
+    /// Pre-create the next layer shell offscreen (hidden) so a dive has nothing to build.
+    /// Built on a later runloop so it never hitches a just-finished transition; if a dive
+    /// beats it, `takeSpareLayer` falls back to building one synchronously.
+    private func ensureSpareLayer() {
+        guard spareLayer == nil, isViewLoaded else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.spareLayer == nil, self.isViewLoaded else { return }
+            let layer = self.makeLayerShell()
+            layer.view.isHidden = true
+            layer.view.frame = CGRect(x: -max(self.view.bounds.width, 1), y: 0,
+                                      width: max(self.view.bounds.width, 1),
+                                      height: max(self.view.bounds.height, 1))
+            self.spareLayer = layer
+        }
+    }
+
+    /// The ready-and-waiting blank shell (created offscreen ahead of time), or a fresh
+    /// one if the spare wasn't ready yet.
+    private func takeSpareLayer() -> RabbitHoleLayerViewController {
+        if let spare = spareLayer {
+            spareLayer = nil
+            spare.view.isHidden = false
+            return spare
+        }
+        return makeLayerShell()
     }
 
     // MARK: - Static placement (the only writer of layer frames)
@@ -210,6 +251,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             self?.playHeaderEntrance()
             self?.persist()
             self?.warmPreloadsForFocusedLayer()
+            self?.ensureSpareLayer()   // this dive consumed the spare — rebuild the next one
         })
     }
 

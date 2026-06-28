@@ -100,28 +100,47 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         return result
     }
 
-    public init(descriptor: RabbitHoleLayerDescriptor,
-         preloadedContent: ArticleContent? = nil,
-         shareProvider: ReaderShareProviding?,
+    /// True once `configure(...)` has assigned this shell a real page to load. A freshly
+    /// created shell stays blank (chrome built, nothing loading) so the host can
+    /// pre-create the next layer offscreen and a dive only sets content + frame.
+    private var isConfigured = false
+
+    /// Creates a BLANK layer shell: its view loads and all chrome (the glass header,
+    /// buttons, lips, indent) is built immediately, but nothing is fetched or rendered
+    /// until `configure(descriptor:preloadedContent:)`. The host pre-creates one of
+    /// these offscreen so tapping a link never has to build a view controller.
+    public init(shareProvider: ReaderShareProviding?,
          gazeTrackerFactory: GazeTrackerFactory?,
          layout: RabbitHoleLayout) {
-        self.descriptor = descriptor
+        self.descriptor = RabbitHoleLayerDescriptor(urlString: "")
         self.shareProvider = shareProvider
         self.gazeTrackerFactory = gazeTrackerFactory
         self.layout = layout
-        self.readerMode = descriptor.readerMode == .highlight ? .rsvp : descriptor.readerMode
         super.init(nibName: nil, bundle: nil)
-        // The root layer already has its content (loaded from the store) — render it
-        // directly. Deeper layers only have a URL, so they probe the network off-main.
+    }
+
+    public required init?(coder: NSCoder) { fatalError("not used") }
+    deinit { articleProbe?.cancel(); loadWatchdog?.cancel() }
+
+    /// Assign this shell its page and start loading. Called once on a blank shell — on
+    /// the root/restored layers at build time, and on the pre-created spare when the user
+    /// dives into a link. The root already has its content (render directly); deeper
+    /// layers carry only a URL, so they probe off-main.
+    public func configure(descriptor: RabbitHoleLayerDescriptor, preloadedContent: ArticleContent?) {
+        self.descriptor = descriptor
+        self.readerMode = descriptor.readerMode == .highlight ? .rsvp : descriptor.readerMode
+        self.isConfigured = true
         if let preloadedContent {
             pendingDecision = .reader(preloadedContent)
         } else {
             probeForArticle()
         }
+        guard isViewLoaded else { return }   // viewDidLoad will start loading
+        modeControl.selectedSegmentIndex = Self.orderedModes.firstIndex(of: readerMode) ?? 0
+        updateLipTitles()
+        updateSaveSlot()
+        beginLoading()
     }
-
-    public required init?(coder: NSCoder) { fatalError("not used") }
-    deinit { articleProbe?.cancel(); loadWatchdog?.cancel() }
 
     // MARK: - View
 
@@ -133,10 +152,15 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         view.backgroundColor = ReaderDepth.backgroundColor(for: 0)   // host overrides per depth
 
         spinner.hidesWhenStopped = true
-        spinner.startAnimating()
         view.addSubview(spinner)   // centred manually in viewDidLayoutSubviews
 
         configureChrome()
+        if isConfigured { beginLoading() }
+    }
+
+    /// Begin (or resume) loading once both the view and a `configure(...)` are in place.
+    private func beginLoading() {
+        spinner.startAnimating()
         applyDecisionIfPossible()
         armLoadWatchdog()
     }

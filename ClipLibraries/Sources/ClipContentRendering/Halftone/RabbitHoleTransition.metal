@@ -37,9 +37,9 @@ struct RHTransitionUniforms {
     float  cornerRadius;  // px dot corner radius (cornerRadius_pt * scale)
     float  spacing;       // px total gap between dots (spacing_pt * scale)
     float  progress;      // 0..1 global timeline
-    float  lag;           // 0..1 normalized delay between wave 1 and wave 2 arrival
-    float  win1;          // 0..1 wave-1 per-cell crossfade window width
-    float  win2;          // 0..1 wave-2 per-cell crossfade window width
+    float  sweep;         // spread of the wavefront across cells (first→last arrival)
+    float  lag;           // delay before wave 2 (sharpen) trails wave 1 (pixelate)
+    float  win;           // per-cell crossfade width (one cell's fade duration)
     float  direction;     // 0 random, 1 L→R, 2 R→L, 3 T→B, 4 B→T
     float  flipV;         // 0/1 sample with vertical flip (texture origin fix)
     float  monochrome;    // 0 colour, 1 greyscale
@@ -140,18 +140,24 @@ fragment float4 rh_transition_fragment(RHVSOut in [[stage_in]],
         r2 = r1;
     }
 
-    // Arrival-time timeline, normalized so endpoints stay exact: the slowest cell's
-    // wave 2 still finishes by progress = 1, and no wave starts before progress > 0.
-    float win1 = clamp(U.win1, 0.001, 1.0);
-    float win2 = clamp(U.win2, 0.001, 1.0);
-    float spanEnd = max(1.0 - win2, 0.001);
-    float lag = clamp(U.lag, 0.0, spanEnd - 0.001);
+    // Arrival-time timeline. Each cell pixelates (wave 1) when the front reaches it at
+    // t1 = rank * sweep, then sharpens (wave 2) `lag` later. `sweep` is the real spread
+    // of the wavefront across the screen — it MUST be a large fraction of the timeline
+    // or every cell flips together and the whole thing degenerates into a flat fade.
+    // The active span is sweep + lag + win (first cell's wave-1 start = 0 → last cell's
+    // wave-2 end = sweep+lag+win); divide through by it so progress 0→1 maps exactly to
+    // raw A → raw B for every direction.
+    float win   = clamp(U.win, 0.001, 1.0);
+    float sweep = clamp(U.sweep, 0.0, 1.0);
+    float lag   = clamp(U.lag, 0.0, 1.0);
+    float span  = max(sweep + lag + win, 0.001);
 
-    float t1 = r1 * (spanEnd - lag);            // wave-1 start
-    float t2 = r2 * (spanEnd - lag) + lag;      // wave-2 start (== t1 + lag for directional)
+    float t1 = (r1 * sweep) / span;             // wave-1 (pixelate) start for this cell
+    float t2 = (r2 * sweep + lag) / span;       // wave-2 (sharpen) start; trails by lag/span
+    float winN = win / span;
 
-    float local1 = clamp((U.progress - t1) / win1, 0.0, 1.0);
-    float local2 = clamp((U.progress - t2) / win2, 0.0, 1.0);
+    float local1 = clamp((U.progress - t1) / winN, 0.0, 1.0);
+    float local2 = clamp((U.progress - t2) / winN, 0.0, 1.0);
 
     // Composite: A → pixelated dot → B.
     float4 c = mix(rawA, pix, local1);

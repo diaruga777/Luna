@@ -37,27 +37,33 @@ public struct RabbitHoleTransitionStyle {
     /// Pixelated-state gap fill (opaque). White in light mode, black in dark mode;
     /// resolved from the trait collection by the caller.
     public var gapColor: SIMD4<Float>
-    /// Normalized delay (0..1) before wave 2 (sharpen) starts trailing wave 1.
-    /// Smaller = the two fronts overlap more.
+    /// Spread of the wavefront across the screen (first-cell → last-cell arrival), as a
+    /// fraction of the timeline. MUST be substantial (~0.5+) or every cell flips together
+    /// and the transition degenerates into a flat full-screen fade.
+    public var sweep: CGFloat
+    /// How far wave 2 (sharpen) trails wave 1 (pixelate). Keep `lag` < `sweep` so the
+    /// second front starts while the first is still mid-sweep.
     public var lag: CGFloat
-    /// Per-wave per-cell crossfade window (0..1). Smaller = a tighter, more sequential
-    /// front; larger = cells animate more together.
-    public var window: CGFloat
+    /// Per-cell crossfade width — how long one cell takes to fade. Smaller = a crisper
+    /// front.
+    public var win: CGFloat
     public var monochrome: Bool
 
     public init(pixelSize: CGFloat = 6,
                 cornerRadius: CGFloat = 2,
                 spacing: CGFloat = 2,
                 gapColor: SIMD4<Float> = SIMD4<Float>(1, 1, 1, 1),
-                lag: CGFloat = 0.35,
-                window: CGFloat = 0.18,
+                sweep: CGFloat = 0.6,
+                lag: CGFloat = 0.25,
+                win: CGFloat = 0.18,
                 monochrome: Bool = false) {
         self.pixelSize = pixelSize
         self.cornerRadius = cornerRadius
         self.spacing = spacing
         self.gapColor = gapColor
+        self.sweep = sweep
         self.lag = lag
-        self.window = window
+        self.win = win
         self.monochrome = monochrome
     }
 }
@@ -74,9 +80,9 @@ public final class RabbitHoleTransitionView: UIView {
         var cornerRadius: Float = 4
         var spacing: Float = 4
         var progress: Float = 0
-        var lag: Float = 0.35
-        var win1: Float = 0.18
-        var win2: Float = 0.18
+        var sweep: Float = 0.6
+        var lag: Float = 0.25
+        var win: Float = 0.18
         var direction: Float = 0
         var flipV: Float = 0
         var monochrome: Float = 0
@@ -244,9 +250,9 @@ public final class RabbitHoleTransitionView: UIView {
         u.cornerRadius = Float(max(style.cornerRadius * drawableScale, 0))
         u.spacing = Float(max(style.spacing * drawableScale, 0))
         u.progress = Float(progress)
-        u.lag = Float(min(max(style.lag, 0), 0.99))
-        u.win1 = Float(min(max(style.window, 0.001), 1))
-        u.win2 = u.win1
+        u.sweep = Float(min(max(style.sweep, 0), 1))
+        u.lag = Float(min(max(style.lag, 0), 1))
+        u.win = Float(min(max(style.win, 0.001), 1))
         u.direction = Float(direction.rawValue)
         u.flipV = 0   // CGContext-drawn texture is already top-left origin
         u.monochrome = style.monochrome ? 1 : 0

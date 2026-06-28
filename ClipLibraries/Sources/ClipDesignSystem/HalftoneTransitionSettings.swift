@@ -99,19 +99,27 @@ public enum HalftoneTransitionSettings {
     /// the interactive settle).
     public static var totalDuration: TimeInterval { phase1Duration + phase2Duration }
 
-    /// Normalized delay (0…0.95) before wave 2 starts trailing wave 1 — the fraction of
-    /// the timeline spent on phase 1 maps to how far apart the two fronts run.
-    public static var lag: CGFloat {
-        let total = totalDuration
-        guard total > 0 else { return 0.35 }
-        return CGFloat(min(max(phase1Duration / total, 0), 0.95))
+    /// Spread of the wavefront across the screen (first-cell → last-cell arrival) as a
+    /// fraction of the timeline. The DOMINANT component, so the transition reads as a
+    /// moving front (directional) or scattered dots (random) — not a flat fade. Higher
+    /// stagger = a more spread-out, sequential front.
+    public static var sweep: CGFloat {
+        CGFloat(min(max(0.40 + Double(stagger) * 0.45, 0.20), 0.90))
     }
 
-    /// Per-wave per-cell crossfade window (0.05…1). Mirrors the old `1 - stagger`
-    /// relationship: 0 stagger → window 1 (cells animate together), 1 stagger → a tight,
-    /// near one-at-a-time front.
-    public static var window: CGFloat {
-        CGFloat(min(max(1 - Double(stagger), 0.05), 1))
+    /// Per-cell fade width — how long one cell takes to cross. Higher stagger = crisper
+    /// (narrower) per-cell fade.
+    public static var win: CGFloat {
+        CGFloat(min(max(0.30 - Double(stagger) * 0.20, 0.06), 0.30))
+    }
+
+    /// How far wave 2 (sharpen) trails wave 1 (pixelate), kept below `sweep` so the
+    /// sharpen front starts while the pixelation front is still sweeping. Phase 1's share
+    /// of the total duration biases how far apart the two fronts run.
+    public static var lag: CGFloat {
+        let total = totalDuration
+        let share = total > 0 ? phase1Duration / total : 0.5
+        return sweep * CGFloat(min(max(share, 0.25), 0.70))
     }
 
     /// Reset every parameter to its default.

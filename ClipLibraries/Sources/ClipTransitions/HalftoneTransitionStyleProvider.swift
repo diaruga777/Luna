@@ -21,8 +21,9 @@ public enum HalftoneTransitionStyleProvider {
             cornerRadius: HalftoneTransitionSettings.cornerRadius,
             spacing: HalftoneTransitionSettings.spacing,
             gapColor: SIMD4<Float>(g, g, g, 1),
+            sweep: HalftoneTransitionSettings.sweep,
             lag: HalftoneTransitionSettings.lag,
-            window: HalftoneTransitionSettings.window,
+            win: HalftoneTransitionSettings.win,
             monochrome: HalftoneTransitionSettings.monochrome)
     }
 }

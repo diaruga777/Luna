@@ -843,7 +843,7 @@ final class ReadingListViewController: UITableViewController {
         // Collapsing/expanding swaps a whole section of rows at once — pixel-wipe the
         // table between the two layouts (falls back to the stock .automatic row
         // animation when the toggle is off).
-        HalftoneBatch.update(tableView, direction: .topToBottom) { [weak self] in
+        HalftoneBatch.update(tableView, direction: .random) { [weak self] in
             self?.tableView.reloadSections(IndexSet(integer: index), with: .automatic)
         }
     }

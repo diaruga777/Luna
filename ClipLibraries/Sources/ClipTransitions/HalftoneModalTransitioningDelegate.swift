@@ -24,17 +24,11 @@ public final class HalftoneModalTransitioningDelegate: NSObject, UIViewControlle
         super.init()
     }
 
-    /// Map a modal transition style to wavefront directions that mirror it.
+    /// Modal present/dismiss use the random (scattered dot-by-dot) wavefront — modals
+    /// aren't a left/right navigation, so a directional sweep would read wrong. The
+    /// directional wavefronts are reserved for nav push (R→L) / pop (L→R).
     public static func forStyle(_ style: UIModalTransitionStyle) -> HalftoneModalTransitioningDelegate {
-        switch style {
-        case .crossDissolve:
-            return HalftoneModalTransitioningDelegate(present: .random, dismiss: .random)
-        case .coverVertical:
-            return HalftoneModalTransitioningDelegate(present: .bottomToTop, dismiss: .topToBottom)
-        default:
-            // .flipHorizontal / .partialCurl and anything new — fall back to a fade.
-            return HalftoneModalTransitioningDelegate(present: .random, dismiss: .random)
-        }
+        HalftoneModalTransitioningDelegate(present: .random, dismiss: .random)
     }
 
     public func animationController(

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipYouTubeAPI
 import ClipPlatforms
 import ClipStorage
 import ClipFetch

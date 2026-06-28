@@ -6,19 +6,24 @@
 import Foundation
 
 /// A search hit (video ID + title).
-struct YouTubeSearchResult: Equatable {
-    let videoID: String
-    let title: String
+public struct YouTubeSearchResult: Equatable {
+    public let videoID: String
+    public let title: String
+
+    public init(videoID: String, title: String) {
+        self.videoID = videoID
+        self.title = title
+    }
 }
 
 /// One of the user's playlists.
-struct YouTubePlaylist: Equatable {
-    let id: String
-    let title: String
+public struct YouTubePlaylist: Equatable {
+    public let id: String
+    public let title: String
 }
 
 /// The slice of the YouTube Data API v3 Clip uses, OAuth-authenticated.
-protocol YouTubeAPIProviding {
+public protocol YouTubeAPIProviding {
     /// Top channel matching a free-text name, or nil when none.
     func searchChannelID(name: String) async throws -> String?
     /// Videos on a channel matching a query (relevance order).
@@ -32,21 +37,22 @@ protocol YouTubeAPIProviding {
 }
 
 /// Live client against googleapis.com using `GoogleAuthProviding` tokens.
-final class YouTubeAPIClient: YouTubeAPIProviding {
+public final class YouTubeAPIClient: YouTubeAPIProviding {
 
-    struct APIError: Error, CustomStringConvertible {
-        let reason: String
-        var description: String { reason }
+    public struct APIError: Error, CustomStringConvertible {
+        public let reason: String
+        public var description: String { reason }
+        public init(reason: String) { self.reason = reason }
     }
 
     private let auth: GoogleAuthProviding
     private let baseURL = "https://www.googleapis.com/youtube/v3"
 
-    init(auth: GoogleAuthProviding = GoogleAuthClient.shared) {
+    public init(auth: GoogleAuthProviding = GoogleAuthClient.shared) {
         self.auth = auth
     }
 
-    func searchChannelID(name: String) async throws -> String? {
+    public func searchChannelID(name: String) async throws -> String? {
         let data = try await get("/search", query: [
             "part": "snippet", "type": "channel", "q": name, "maxResults": "1",
         ])
@@ -60,7 +66,7 @@ final class YouTubeAPIClient: YouTubeAPIProviding {
         return try JSONDecoder().decode(Wire.self, from: data).items.first?.id.channelId
     }
 
-    func searchVideos(channelID: String, query: String) async throws -> [YouTubeSearchResult] {
+    public func searchVideos(channelID: String, query: String) async throws -> [YouTubeSearchResult] {
         let data = try await get("/search", query: [
             "part": "snippet", "type": "video", "channelId": channelID,
             "q": query, "maxResults": "25",
@@ -82,7 +88,7 @@ final class YouTubeAPIClient: YouTubeAPIProviding {
         }
     }
 
-    func listMyPlaylists() async throws -> [YouTubePlaylist] {
+    public func listMyPlaylists() async throws -> [YouTubePlaylist] {
         let data = try await get("/playlists", query: [
             "part": "snippet", "mine": "true", "maxResults": "50",
         ])
@@ -98,7 +104,7 @@ final class YouTubeAPIClient: YouTubeAPIProviding {
             .map { YouTubePlaylist(id: $0.id, title: $0.snippet.title) }
     }
 
-    func createPlaylist(title: String) async throws -> YouTubePlaylist {
+    public func createPlaylist(title: String) async throws -> YouTubePlaylist {
         let body: [String: Any] = [
             "snippet": ["title": title],
             "status": ["privacyStatus": "private"],
@@ -113,7 +119,7 @@ final class YouTubeAPIClient: YouTubeAPIProviding {
         return YouTubePlaylist(id: wire.id, title: wire.snippet.title)
     }
 
-    func addToPlaylist(playlistID: String, videoID: String) async throws {
+    public func addToPlaylist(playlistID: String, videoID: String) async throws {
         let body: [String: Any] = [
             "snippet": [
                 "playlistId": playlistID,
@@ -170,8 +176,8 @@ final class YouTubeAPIClient: YouTubeAPIProviding {
 /// either-direction prefix → substring → all-query-words-present → top result.
 /// Normalization lowercases, strips punctuation/ellipsis, and collapses
 /// whitespace so truncated/messy share text still matches. Pure, tested.
-enum VideoMatchSelection {
-    static func bestMatch(
+public enum VideoMatchSelection {
+    public static func bestMatch(
         title: String, candidates: [YouTubeSearchResult]
     ) -> YouTubeSearchResult? {
         guard !candidates.isEmpty else { return nil }
@@ -200,7 +206,7 @@ enum VideoMatchSelection {
         return candidates.first
     }
 
-    static func normalize(_ text: String) -> String {
+    public static func normalize(_ text: String) -> String {
         let stripped = text.lowercased().unicodeScalars.map { scalar -> Character in
             CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : " "
         }

@@ -8,7 +8,7 @@ import Foundation
 
 /// Title/channel/thumbnail for a YouTube video, fetched without any API key
 /// (oEmbed endpoint + the public thumbnail CDN).
-protocol YouTubeMetadataFetching {
+public protocol YouTubeMetadataFetching {
     /// Title and channel name for a video.
     func fetchMetadata(videoID: String) async throws -> (title: String, channelName: String?)
     /// JPEG thumbnail bytes for a video.
@@ -16,9 +16,11 @@ protocol YouTubeMetadataFetching {
 }
 
 /// Live implementation against youtube.com.
-struct YouTubeOEmbedFetcher: YouTubeMetadataFetching {
+public struct YouTubeOEmbedFetcher: YouTubeMetadataFetching {
 
-    struct FetchError: Error {}
+    public init() {}
+
+    public struct FetchError: Error {}
 
     private struct OEmbedResponse: Decodable {
         let title: String
@@ -30,7 +32,7 @@ struct YouTubeOEmbedFetcher: YouTubeMetadataFetching {
         }
     }
 
-    func fetchMetadata(videoID: String) async throws -> (title: String, channelName: String?) {
+    public func fetchMetadata(videoID: String) async throws -> (title: String, channelName: String?) {
         let watchURL = YouTubeURL.watchURLString(videoID: videoID)
         var components = URLComponents(string: "https://www.youtube.com/oembed")
         components?.queryItems = [
@@ -47,7 +49,7 @@ struct YouTubeOEmbedFetcher: YouTubeMetadataFetching {
         return (oembed.title, oembed.authorName)
     }
 
-    func fetchThumbnail(videoID: String) async throws -> Data {
+    public func fetchThumbnail(videoID: String) async throws -> Data {
         guard let url = YouTubeURL.thumbnailURL(videoID: videoID) else { throw FetchError() }
         let (data, response) = try await URLSession.shared.data(
             for: URLRequest(url: url, timeoutInterval: 15))

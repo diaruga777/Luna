@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipYouTubeAPI
 import XCTest
 @testable import Clip
 

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipYouTubeAPI
 import ClipReaderUI
 import ClipArchiveReader
 import ClipSemantic

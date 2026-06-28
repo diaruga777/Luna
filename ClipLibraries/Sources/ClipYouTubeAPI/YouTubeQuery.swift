@@ -8,14 +8,19 @@ import Foundation
 /// Parses the "channel:title" input for the Save YouTube Video intent.
 /// Splits on the FIRST colon (titles may contain colons), drops a leading "@"
 /// from the channel, and strips ellipses from the search terms.
-enum YouTubeQuery {
+public enum YouTubeQuery {
 
-    struct Parsed: Equatable {
-        let channel: String
-        let title: String
+    public struct Parsed: Equatable {
+        public let channel: String
+        public let title: String
+
+        public init(channel: String, title: String) {
+            self.channel = channel
+            self.title = title
+        }
     }
 
-    static func parse(_ raw: String) -> Parsed? {
+    public static func parse(_ raw: String) -> Parsed? {
         guard let colon = raw.firstIndex(of: ":") else { return nil }
         var channel = String(raw[raw.startIndex..<colon])
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -32,7 +37,7 @@ enum YouTubeQuery {
 
     /// Drops ellipses (… or "...") and collapses whitespace, so truncated
     /// share text still searches cleanly.
-    static func cleaned(_ text: String) -> String {
+    public static func cleaned(_ text: String) -> String {
         text.replacingOccurrences(of: "…", with: " ")
             .replacingOccurrences(of: "...", with: " ")
             .split(whereSeparator: { $0.isWhitespace })

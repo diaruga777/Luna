@@ -10,7 +10,7 @@ import Security
 import UIKit
 
 /// Google OAuth for the YouTube Data API: sign-in, token refresh, sign-out.
-protocol GoogleAuthProviding {
+public protocol GoogleAuthProviding {
     /// Whether a refresh token is stored (sign-in completed at some point).
     var isSignedIn: Bool { get }
     /// A currently valid access token, refreshing if needed. Throws when not
@@ -24,14 +24,15 @@ protocol GoogleAuthProviding {
 
 /// PKCE OAuth against accounts.google.com with tokens in the Keychain.
 /// The client ID comes from settings (`YouTubeSettings.googleClientID`).
-final class GoogleAuthClient: NSObject, GoogleAuthProviding,
+public final class GoogleAuthClient: NSObject, GoogleAuthProviding,
     ASWebAuthenticationPresentationContextProviding {
 
-    static let shared = GoogleAuthClient()
+    public static let shared = GoogleAuthClient()
 
-    struct AuthError: Error, CustomStringConvertible {
-        let reason: String
-        var description: String { reason }
+    public struct AuthError: Error, CustomStringConvertible {
+        public let reason: String
+        public var description: String { reason }
+        public init(reason: String) { self.reason = reason }
     }
 
     private let keychainService = "com.hpiddy.clip.google"
@@ -44,9 +45,9 @@ final class GoogleAuthClient: NSObject, GoogleAuthProviding,
         var expiry: Date
     }
 
-    var isSignedIn: Bool { loadTokens() != nil }
+    public var isSignedIn: Bool { loadTokens() != nil }
 
-    func accessToken() async throws -> String {
+    public func accessToken() async throws -> String {
         guard var tokens = loadTokens() else {
             throw AuthError(reason: "Sign in to YouTube in Settings first.")
         }
@@ -65,7 +66,7 @@ final class GoogleAuthClient: NSObject, GoogleAuthProviding,
     }
 
     @MainActor
-    func signIn() async throws {
+    public func signIn() async throws {
         let clientID = YouTubeSettings.googleClientID
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clientID.isEmpty else {
@@ -128,7 +129,7 @@ final class GoogleAuthClient: NSObject, GoogleAuthProviding,
             expiry: response.expiry))
     }
 
-    func signOut() {
+    public func signOut() {
         SecItemDelete(baseQuery as CFDictionary)
     }
 
@@ -181,7 +182,7 @@ final class GoogleAuthClient: NSObject, GoogleAuthProviding,
 
     /// iOS clients redirect to the reversed client ID
     /// ("123-abc.apps.googleusercontent.com" → "com.googleusercontent.apps.123-abc").
-    static func redirectScheme(forClientID clientID: String) -> String? {
+    public static func redirectScheme(forClientID clientID: String) -> String? {
         let suffix = ".apps.googleusercontent.com"
         guard clientID.hasSuffix(suffix) else { return nil }
         let identifier = String(clientID.dropLast(suffix.count))
@@ -234,7 +235,7 @@ final class GoogleAuthClient: NSObject, GoogleAuthProviding,
 
     // MARK: - ASWebAuthenticationPresentationContextProviding
 
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         // The app is single-window; the key window is always the right anchor.
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }

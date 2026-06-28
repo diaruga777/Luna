@@ -11,27 +11,27 @@ import WebKit
 /// the YouTube app isn't installed. Inline playback with the native fullscreen
 /// controls (PiP is available from there on supported devices). When the video
 /// ends, the item is marked read and the player dismisses.
-final class YouTubePlayerViewController: UIViewController, WKScriptMessageHandler {
+public final class YouTubePlayerViewController: UIViewController, WKScriptMessageHandler {
 
     private let videoID: String
     private let itemID: UUID
     private var webView: WKWebView?
 
-    init(videoID: String, itemID: UUID) {
+    public init(videoID: String, itemID: UUID) {
         self.videoID = videoID
         self.itemID = itemID
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
     }
 
-    required init?(coder: NSCoder) { fatalError("not used") }
+    public required init?(coder: NSCoder) { fatalError("not used") }
 
     deinit {
         webView?.configuration.userContentController
             .removeScriptMessageHandler(forName: "player")
     }
 
-    override func viewDidLoad() {
+    public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
 
@@ -103,7 +103,7 @@ final class YouTubePlayerViewController: UIViewController, WKScriptMessageHandle
         })();
         """
 
-    func userContentController(
+    public func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {

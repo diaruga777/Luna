@@ -11,21 +11,21 @@ import os
 /// setting is on. Runs only from first-time video ingestion — repeat save presses
 /// never reach it. Adding to a playlist does NOT mark the item read in our app:
 /// saved inputs always stay unread on insert.
-final class WatchLaterAutoAdder {
+public final class WatchLaterAutoAdder {
 
-    static let shared = WatchLaterAutoAdder()
+    public static let shared = WatchLaterAutoAdder()
 
     private let logger = Logger(subsystem: "com.hpiddy.clip", category: "youtube")
     private let auth: GoogleAuthProviding
     private let api: YouTubeAPIProviding
 
-    init(auth: GoogleAuthProviding = GoogleAuthClient.shared,
+    public init(auth: GoogleAuthProviding = GoogleAuthClient.shared,
          api: YouTubeAPIProviding? = nil) {
         self.auth = auth
         self.api = api ?? YouTubeAPIClient(auth: auth)
     }
 
-    func videoBecameReady(_ item: ReadingListItem) async {
+    public func videoBecameReady(_ item: ReadingListItem) async {
         guard YouTubeSettings.autoAddToPlaylist,
               let playlistID = YouTubeSettings.playlistID,
               auth.isSignedIn,

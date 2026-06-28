@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import UIKit
 
 /// A single onboarding step: an icon, a title, an explanation, an optional

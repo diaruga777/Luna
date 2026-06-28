@@ -7,6 +7,7 @@
 //  and the inline split-web overlay.
 //
 
+import ClipDesignSystem
 import ClipModels
 import UIKit
 import XCTest

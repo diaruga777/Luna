@@ -11,12 +11,12 @@ import UIKit
 /// a highlight behind the letters, one with the RSVP focal reticule above/below —
 /// so each mode reads as what it does. All are template images so the segmented
 /// control tints them.
-enum ReaderModeIcons {
+public enum ReaderModeIcons {
     private static let size = CGSize(width: 30, height: 22)
     private static let font = UIFont.systemFont(ofSize: 13, weight: .bold)
     private static let sample = "Abc" as NSString
 
-    static func image(for mode: ReadingListItem.ReaderMode) -> UIImage {
+    public static func image(for mode: ReadingListItem.ReaderMode) -> UIImage {
         switch mode {
         case .scroll:
             return UIImage(systemName: "text.alignleft")?

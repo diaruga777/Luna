@@ -54,6 +54,10 @@
 		3F984499DD8FB375FDE9BB96 /* ClipSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* ClipSend */; };
 		483B2A559218C68EC599D979 /* ClipMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* ClipMail */; };
 		EF6B3AC95FDA89E16A1F2698 /* ClipMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* ClipMail */; };
+		D42B57E8D2EC0818A73B6FD4 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		3EE5E285E488168AC19BECB2 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		C85B86A55DAD524B8438CA85 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		408BAA99D147B5FF19864BCC /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -169,6 +173,7 @@
 				C100000000000000000000037 /* ClipFetch in Frameworks */,
 				CCEB43D729954FAF19DB73EF /* ClipIngest in Frameworks */,
 				FF5DFE4CF92F033FB81C7A5B /* ClipStorage in Frameworks */,
+				3EE5E285E488168AC19BECB2 /* ClipDesignSystem in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -190,6 +195,7 @@
 				535077B96135F4456ADF0386 /* ClipEpub in Frameworks */,
 				0C5EEFE7889EB736FFF2CCDD /* ClipSend in Frameworks */,
 				483B2A559218C68EC599D979 /* ClipMail in Frameworks */,
+				D42B57E8D2EC0818A73B6FD4 /* ClipDesignSystem in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -212,6 +218,7 @@
 				2F22403ECDD962D932AA6BD3 /* ClipEpub in Frameworks */,
 				3F984499DD8FB375FDE9BB96 /* ClipSend in Frameworks */,
 				EF6B3AC95FDA89E16A1F2698 /* ClipMail in Frameworks */,
+				408BAA99D147B5FF19864BCC /* ClipDesignSystem in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -230,6 +237,7 @@
 				C100000000000000000000047 /* ClipFetch in Frameworks */,
 				A6A1E5E7C77D91ED5C367FB7 /* ClipIngest in Frameworks */,
 				35721F092939636390C38BE3 /* ClipStorage in Frameworks */,
+				C85B86A55DAD524B8438CA85 /* ClipDesignSystem in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -311,6 +319,7 @@
 				C100000000000000000000017 /* ClipFetch */,
 				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
+				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
 			);
 			productName = "Clip Action Extension";
 			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
@@ -353,6 +362,7 @@
 				AA824D3974D944B8BC077857 /* ClipEpub */,
 				A1AC9F7C74411AF59CC240DB /* ClipSend */,
 				6733C497754C454FAA262597 /* ClipMail */,
+				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
 			);
 			productName = Clip;
 			productReference = AA0200000000000000000001 /* Clip.app */;
@@ -406,6 +416,7 @@
 				AA824D3974D944B8BC077857 /* ClipEpub */,
 				A1AC9F7C74411AF59CC240DB /* ClipSend */,
 				6733C497754C454FAA262597 /* ClipMail */,
+				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;
@@ -440,6 +451,7 @@
 				C100000000000000000000017 /* ClipFetch */,
 				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
 				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
+				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
 			);
 			productName = ClipShare;
 			productReference = AA0200000000000000000004 /* ClipShare.appex */;
@@ -1147,6 +1159,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
 			productName = ClipMail;
+		};
+		333A451D2F6E424BF2A01F84 /* ClipDesignSystem */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "ClipLibraries" */;
+			productName = ClipDesignSystem;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

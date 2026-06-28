@@ -3,6 +3,7 @@
 //  ClipTests
 //
 
+import ClipDesignSystem
 import UIKit
 import XCTest
 @testable import Clip

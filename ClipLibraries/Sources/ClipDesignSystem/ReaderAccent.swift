@@ -7,10 +7,10 @@ import UIKit
 
 /// Preset highlight/focus colors for the readers (RSVP reticule + ORP letter,
 /// scroll/chunk highlight). User-selectable in Settings; defaults to blue.
-enum ReaderAccent: String, CaseIterable {
+public enum ReaderAccent: String, CaseIterable {
     case blue, red, green, purple, yellow, orange, teal, pink, indigo
 
-    var color: UIColor {
+    public var color: UIColor {
         switch self {
         case .blue: return .systemBlue
         case .red: return .systemRed
@@ -24,5 +24,5 @@ enum ReaderAccent: String, CaseIterable {
         }
     }
 
-    var displayName: String { rawValue.capitalized }
+    public var displayName: String { rawValue.capitalized }
 }

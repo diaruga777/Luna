@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import UIKit
 
 /// A swipeable catch-up card. A horizontal drag rotates + tints the card and fades

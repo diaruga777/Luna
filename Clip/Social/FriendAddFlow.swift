@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import UIKit
 
 /// The shared confirm-and-add flow used by tapped links, the in-app scanner,

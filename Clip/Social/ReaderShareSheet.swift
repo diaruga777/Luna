@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import UIKit
 
 /// The reader's share affordance: a custom medium-detent bottom sheet offering

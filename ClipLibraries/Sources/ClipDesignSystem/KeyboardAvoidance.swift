@@ -7,14 +7,14 @@ import UIKit
 
 /// Pure geometry helpers for keyboard-avoidance, factored out so the math is
 /// unit-testable without a live keyboard or window.
-enum KeyboardAvoidance {
+public enum KeyboardAvoidance {
 
     /// The bottom content inset a scroll view needs so its content clears the
     /// keyboard. `keyboardFrameInView` is the keyboard's frame converted into the
     /// scroll view's coordinate space; `scrollViewBounds` is the scroll view's own
     /// bounds. Returns the overlap between the keyboard and the scroll view (0 when
     /// the keyboard is fully below the scroll view, e.g. on dismissal).
-    static func bottomInset(
+    public static func bottomInset(
         keyboardFrameInView keyboardFrame: CGRect,
         scrollViewBounds: CGRect
     ) -> CGFloat {
@@ -30,7 +30,7 @@ enum KeyboardAvoidance {
     /// `visibleHeight` is the scroll view's height minus the keyboard overlap (the
     /// region not covered by the keyboard). The result is clamped to the legal
     /// offset range `[0, maxContentOffsetY]`.
-    static func contentOffsetToReveal(
+    public static func contentOffsetToReveal(
         targetFrame: CGRect,
         currentOffsetY: CGFloat,
         visibleHeight: CGFloat,

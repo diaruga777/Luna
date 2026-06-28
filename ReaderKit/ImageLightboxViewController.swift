@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import UIKit
 
 /// A frameless, zoomable image viewer. It starts at the inline attachment's frame

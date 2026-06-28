@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import UIKit
 
 /// A reading-list row with a title, a metadata subtitle, and a thumbnail that

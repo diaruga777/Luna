@@ -7,15 +7,15 @@ import ClipModels
 import Foundation
 
 /// RSVP speed-reader display granularity: one word at a time, or whole phrases.
-enum RSVPDisplayMode: String {
+public enum RSVPDisplayMode: String {
     case words
     case phrases
 }
 
 /// User-adjustable reading preferences, persisted in the App Group so the
 /// share-extension reader honors the same settings as the main app.
-enum ReaderSettings {
-    static let appGroupID = "group.com.hpiddy.clip"
+public enum ReaderSettings {
+    public static let appGroupID = "group.com.hpiddy.clip"
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
     private static let wpmKey = "rsvpBaseWPM"
@@ -38,7 +38,7 @@ enum ReaderSettings {
     /// (breadcrumb / rabbit-hole stacked-layer inline reading) instead of the
     /// standard `ReaderViewController`. **Off by default.** Purely a host-selection
     /// switch — the standard reader is untouched and remains the default.
-    static var rabbitHoleReaderEnabled: Bool {
+    public static var rabbitHoleReaderEnabled: Bool {
         get { defaults.bool(forKey: rabbitHoleReaderKey) }
         set { defaults.set(newValue, forKey: rabbitHoleReaderKey) }
     }
@@ -46,8 +46,8 @@ enum ReaderSettings {
     /// Opacity of the cover over the archive web view (experimental/diagnostic):
     /// 0.99 = effectively hidden (default); lower it to see the archive flow
     /// through the overlay. Clamped to 0.2…0.99.
-    static let archiveOverlayAlphaRange: ClosedRange<Double> = 0.2...0.99
-    static var archiveOverlayAlpha: Double {
+    public static let archiveOverlayAlphaRange: ClosedRange<Double> = 0.2...0.99
+    public static var archiveOverlayAlpha: Double {
         get {
             guard let stored = defaults.object(forKey: archiveOverlayAlphaKey) as? Double else { return 0.99 }
             return min(max(stored, archiveOverlayAlphaRange.lowerBound), archiveOverlayAlphaRange.upperBound)
@@ -61,7 +61,7 @@ enum ReaderSettings {
 
     /// One-time copy of settings previously kept in standard defaults into the
     /// App Group (so the extension sees them). Call once at app launch.
-    static func migrateFromStandardIfNeeded() {
+    public static func migrateFromStandardIfNeeded() {
         guard !defaults.bool(forKey: migratedKey) else { return }
         let standard = UserDefaults.standard
         for key in [wpmKey, eyeTrackingKey, fontScaleKey, serifKey,
@@ -74,7 +74,7 @@ enum ReaderSettings {
     /// Whether gaze tracking may run while reading (and whether stored gaze
     /// estimates may be used). Defaults to on; only takes effect on devices
     /// with TrueDepth face tracking.
-    static var eyeTrackingEnabled: Bool {
+    public static var eyeTrackingEnabled: Bool {
         get { (defaults.object(forKey: eyeTrackingKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: eyeTrackingKey) }
     }
@@ -82,7 +82,7 @@ enum ReaderSettings {
     /// When on (and eye tracking is active), the scrolling reader highlights the
     /// word the gaze tracker currently estimates you're looking at. Off by
     /// default — it's a live, slightly distracting affordance.
-    static var highlightGazeWord: Bool {
+    public static var highlightGazeWord: Bool {
         get { defaults.bool(forKey: highlightGazeWordKey) }
         set { defaults.set(newValue, forKey: highlightGazeWordKey) }
     }
@@ -91,7 +91,7 @@ enum ReaderSettings {
     /// don't yet have a per-article preference. The retired standalone
     /// "highlight" (chunking) mode now lives as the RSVP "Phrases" sub-mode, so a
     /// persisted `highlight` resolves to `rsvp` (the reader opens it in Phrases).
-    static var lastReaderMode: ReadingListItem.ReaderMode {
+    public static var lastReaderMode: ReadingListItem.ReaderMode {
         get {
             let stored = ReadingListItem.ReaderMode(
                 rawValue: defaults.string(forKey: lastReaderModeKey) ?? "") ?? .scroll
@@ -103,7 +103,7 @@ enum ReaderSettings {
     /// Whether the RSVP reader shows one word at a time ("Words") or whole
     /// phrases ("Phrases", the former chunk-highlight mode's engine). Persisted
     /// so the choice sticks across articles, like the base WPM.
-    static var rsvpMode: RSVPDisplayMode {
+    public static var rsvpMode: RSVPDisplayMode {
         get { RSVPDisplayMode(rawValue: defaults.string(forKey: rsvpModeKey) ?? "") ?? .words }
         set { defaults.set(newValue.rawValue, forKey: rsvpModeKey) }
     }
@@ -115,7 +115,7 @@ enum ReaderSettings {
     /// chain runs first, which can unlock some hard paywalls (e.g. WSJ via
     /// Googlebot from the device's own IP) at the cost of a few seconds' wait
     /// before the archive fallback. App Group so the extensions honor it too.
-    static var nonArchiveBypassEnabled: Bool {
+    public static var nonArchiveBypassEnabled: Bool {
         get { defaults.bool(forKey: nonArchiveBypassKey) }
         set { defaults.set(newValue, forKey: nonArchiveBypassKey) }
     }
@@ -124,8 +124,8 @@ enum ReaderSettings {
     /// inline link viewer opens instantly. 0 = off; clamped 0…5; default 1 (preload
     /// the links on the saved page itself). App Group so the action extension can
     /// record the intent and the main app resume it.
-    static let preloadDepthRange: ClosedRange<Int> = 0...5
-    static var preloadDepth: Int {
+    public static let preloadDepthRange: ClosedRange<Int> = 0...5
+    public static var preloadDepth: Int {
         get {
             guard defaults.object(forKey: preloadDepthKey) != nil else { return 1 }
             let stored = defaults.integer(forKey: preloadDepthKey)
@@ -139,7 +139,7 @@ enum ReaderSettings {
     }
 
     /// Reader text size multiplier (Safari-Reader-style Aa control).
-    static var fontScale: Double {
+    public static var fontScale: Double {
         get {
             let value = defaults.double(forKey: fontScaleKey)
             return value == 0 ? 1.0 : value
@@ -148,26 +148,26 @@ enum ReaderSettings {
     }
 
     /// Serif (New York-style) vs sans-serif reader type.
-    static var useSerifFont: Bool {
+    public static var useSerifFont: Bool {
         get { (defaults.object(forKey: serifKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: serifKey) }
     }
 
     /// Show estimated reading time in the list (Pocket-style).
-    static var showReadingTime: Bool {
+    public static var showReadingTime: Bool {
         get { (defaults.object(forKey: readingTimeKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: readingTimeKey) }
     }
 
     /// Show reading progress percentage in the list (Pocket-style).
-    static var showReadingProgress: Bool {
+    public static var showReadingProgress: Bool {
         get { (defaults.object(forKey: progressKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: progressKey) }
     }
 
     /// Base words-per-minute for the RSVP reader. Per-word display time is
     /// computed from this, scaled by word length and punctuation pauses.
-    static var baseWPM: Double {
+    public static var baseWPM: Double {
         get {
             let value = defaults.double(forKey: wpmKey)
             return value == 0 ? 300 : value
@@ -177,7 +177,7 @@ enum ReaderSettings {
 
     /// The reader highlight/focus accent (RSVP reticule + ORP letter + scroll/
     /// chunk highlight). Configurable; defaults to blue.
-    static var accent: ReaderAccent {
+    public static var accent: ReaderAccent {
         get { ReaderAccent(rawValue: defaults.string(forKey: accentKey) ?? "") ?? .blue }
         set { defaults.set(newValue.rawValue, forKey: accentKey) }
     }

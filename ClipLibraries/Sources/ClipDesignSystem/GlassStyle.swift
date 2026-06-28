@@ -7,16 +7,16 @@ import UIKit
 
 /// Liquid Glass styling for floating controls, falling back to material fills
 /// on OS versions without the glass APIs.
-enum GlassStyle {
+public enum GlassStyle {
     /// The reading accent (RSVP reticule + ORP letter, scroll/chunk highlight),
     /// user-configurable via `ReaderSettings.accent`.
-    static var readingAccent: UIColor { ReaderSettings.accent.color }
+    public static var readingAccent: UIColor { ReaderSettings.accent.color }
 
     /// A small liquid-glass mark for the RSVP focal reticule — one sits above
     /// and one below the ORP letter. Glass-tinted with the reading accent
     /// (a glassy tint, not a solid fill). Falls back to a tinted material mark
     /// pre-iOS 26.
-    static func reticuleMark() -> UIVisualEffectView {
+    public static func reticuleMark() -> UIVisualEffectView {
         let mark: UIVisualEffectView
         if #available(iOS 26.0, *) {
             let glass = UIGlassEffect()
@@ -36,7 +36,7 @@ enum GlassStyle {
     /// lines of text — a quiet focus frame, accent-tinted very lightly so the
     /// words on top stay crisp (unlike the single-word reticule marks, this sits
     /// under multi-word text, so the tint must be gentle).
-    static func focusPanel() -> UIVisualEffectView {
+    public static func focusPanel() -> UIVisualEffectView {
         let panel: UIVisualEffectView
         if #available(iOS 26.0, *) {
             let glass = UIGlassEffect()
@@ -53,7 +53,7 @@ enum GlassStyle {
     }
 
     /// A capsule glass configuration for circular floating buttons.
-    static func circularButtonConfiguration(symbol: String, padding: CGFloat = 10) -> UIButton.Configuration {
+    public static func circularButtonConfiguration(symbol: String, padding: CGFloat = 10) -> UIButton.Configuration {
         var config: UIButton.Configuration
         if #available(iOS 26.0, *) {
             config = .glass()
@@ -70,7 +70,7 @@ enum GlassStyle {
     }
 
     /// The effect for floating bars (footer controls).
-    static func barEffect() -> UIVisualEffect {
+    public static func barEffect() -> UIVisualEffect {
         if #available(iOS 26.0, *) {
             return UIGlassEffect()
         }

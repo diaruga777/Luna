@@ -5,6 +5,7 @@
 //  Forked, experimental "RabbitHole" reader — see RabbitHoleReaderViewController.
 //
 
+import ClipDesignSystem
 import UIKit
 
 /// Pure geometry for the RabbitHole stacked-layer reader. Every layer's on-screen

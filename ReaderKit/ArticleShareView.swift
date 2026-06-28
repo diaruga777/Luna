@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import UIKit
 
 /// End-of-article share affordance: a separator, a prompt, a Share button, and

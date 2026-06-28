@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import UIKit
 
 /// First-launch identity setup: pick a username (cosmetic, ≤20 chars) and

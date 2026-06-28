@@ -20,6 +20,7 @@ let package = Package(
         .library(name: "ClipEpub", targets: ["ClipEpub"]),
         .library(name: "ClipSend", targets: ["ClipSend"]),
         .library(name: "ClipMail", targets: ["ClipMail"]),
+        .library(name: "ClipDesignSystem", targets: ["ClipDesignSystem"]),
     ],
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
@@ -46,6 +47,7 @@ let package = Package(
         .target(name: "ClipEpub", dependencies: ["ClipModels"]),
         .target(name: "ClipSend", dependencies: ["ClipModels", "ClipStorage", "ClipEpub"]),
         .target(name: "ClipMail", dependencies: ["ClipModels", "ClipHTMLClassification", "ClipStorage"]),
+        .target(name: "ClipDesignSystem", dependencies: ["ClipModels"]),
         .testTarget(name: "ClipModelsTests", dependencies: ["ClipModels"]),
         .testTarget(name: "ClipURLClassificationTests", dependencies: ["ClipURLClassification"]),
         .testTarget(name: "ClipHTMLClassificationTests", dependencies: ["ClipHTMLClassification"]),

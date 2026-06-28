@@ -8,8 +8,8 @@ import UIKit
 /// Background tinting for nested inline readers: each nesting level gets a
 /// very slightly lighter (dark mode) or darker (light mode) background, with
 /// 3–4 levels still holding good contrast against the label color.
-enum ReaderDepth {
-    static func backgroundColor(for depth: Int) -> UIColor {
+public enum ReaderDepth {
+    public static func backgroundColor(for depth: Int) -> UIColor {
         let level = min(max(depth, 0), 4)
         return UIColor { traits in
             if traits.userInterfaceStyle == .dark {

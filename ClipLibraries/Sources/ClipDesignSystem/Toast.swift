@@ -8,12 +8,12 @@ import UIKit
 /// A brief, non-blocking confirmation shown as a wide, short liquid-glass pill
 /// at the bottom of the screen (replaces center-of-screen confirmation alerts).
 /// Auto-dismisses; tap to dismiss early.
-enum Toast {
+public enum Toast {
 
     /// Shows `message` (with an optional leading SF Symbol) over `presenter`'s
     /// window, sliding up from the bottom and fading out after a moment.
     @MainActor
-    static func show(_ message: String, symbol: String? = "checkmark.circle.fill",
+    public static func show(_ message: String, symbol: String? = "checkmark.circle.fill",
                      from presenter: UIViewController) {
         guard let host = presenter.view.window ?? presenter.view else { return }
 

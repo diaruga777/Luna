@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import ClipSend
 import ClipModels
 import Foundation

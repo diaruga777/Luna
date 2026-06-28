@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import UIKit
 
 /// A small looping illustration shown atop an onboarding step, depicting the

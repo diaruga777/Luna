@@ -1327,7 +1327,7 @@ final class ReadingListViewController: UITableViewController {
                 self.open(fresh, presenter: presenter)   // now .ready → native reader
             }
         }
-        presenter.present(nav, animated: true)
+        DotMatrixModal.present(nav, from: presenter)
     }
 
     /// Opens a non-article item (video / platform post / music / podcast) the way
@@ -1366,7 +1366,7 @@ final class ReadingListViewController: UITableViewController {
             return
         }
         if let embed = module.embed(for: item) {
-            presenter.present(PlatformEmbedViewController(embed: embed, itemID: item.id), animated: true)
+            DotMatrixModal.present(PlatformEmbedViewController(embed: embed, itemID: item.id), from: presenter)
             return
         }
         InAppBrowser.present(urlString: item.urlString, from: presenter)

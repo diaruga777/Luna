@@ -89,7 +89,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             } else {
                 let nav = UINavigationController(rootViewController: voice)
                 nav.installDotMatrixTransitions()
-                presenter.present(nav, animated: true)
+                DotMatrixModal.present(nav, from: presenter)
             }
         }
 

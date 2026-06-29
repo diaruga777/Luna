@@ -40,10 +40,10 @@ public enum ReaderSettings {
     /// every view-controller transition, view appear/disappear, and table animation —
     /// in the app and the action extension — play as a Dot Matrix pixel-wipe wavefront,
     /// and (b) opens saves in the forked "RabbitHole" stacked-layer inline reader
-    /// instead of the standard `ReaderViewController`. **Off by default**; when off,
-    /// the stock UIKit animations and the standard reader are used unchanged.
+    /// instead of the standard `ReaderViewController`. **On by default**; turn it off
+    /// to get the stock UIKit animations and the standard reader unchanged.
     public static var pixelWipeTransitionsEnabled: Bool {
-        get { defaults.bool(forKey: pixelWipeTransitionsKey) }
+        get { (defaults.object(forKey: pixelWipeTransitionsKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: pixelWipeTransitionsKey) }
     }
 
@@ -125,13 +125,13 @@ public enum ReaderSettings {
     }
 
     /// How many levels of links to background-preload from a saved article so the
-    /// inline link viewer opens instantly. 0 = off; clamped 0…5; default 1 (preload
-    /// the links on the saved page itself). App Group so the action extension can
-    /// record the intent and the main app resume it.
+    /// inline link viewer opens instantly. 0 = off; clamped 0…5; default 2 (preload
+    /// the links on the saved page and the links one hop beyond them). App Group so
+    /// the action extension can record the intent and the main app resume it.
     public static let preloadDepthRange: ClosedRange<Int> = 0...5
     public static var preloadDepth: Int {
         get {
-            guard defaults.object(forKey: preloadDepthKey) != nil else { return 1 }
+            guard defaults.object(forKey: preloadDepthKey) != nil else { return 2 }
             let stored = defaults.integer(forKey: preloadDepthKey)
             return min(max(stored, preloadDepthRange.lowerBound), preloadDepthRange.upperBound)
         }

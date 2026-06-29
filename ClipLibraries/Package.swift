@@ -73,7 +73,7 @@ let package = Package(
         .target(name: "ClipSocial", dependencies: ["ClipModels", "ClipStorage"]),
         .target(name: "ClipSemantic", dependencies: ["ClipModels", "ClipStorage", "ClipSocial"]),
         .target(name: "ClipReaderEngine", dependencies: ["ClipModels"]),
-        .target(name: "ClipArchiveReader", dependencies: ["ClipModels", "ClipURLClassification", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass", "ClipStorage", "ClipDesignSystem"]),
+        .target(name: "ClipArchiveReader", dependencies: ["ClipModels", "ClipURLClassification", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass", "ClipStorage", "ClipDesignSystem", "ClipTransitions"]),
         .target(name: "ClipReaderUI", dependencies: ["ClipModels", "ClipReaderEngine", "ClipDesignSystem", "ClipStorage", "ClipHTMLClassification", "ClipFetch", "ClipPaywallBypass", "ClipArchiveReader", "ClipIngest", "ClipURLClassification", "ClipPlatforms", "ClipTransitions"]),
         .target(name: "ClipPriceUI", dependencies: ["ClipModels", "ClipDesignSystem", "ClipHTMLClassification", "ClipStorage", "ClipFetch", "ClipURLClassification", "ClipIngest", "ClipReaderUI", "ClipTransitions"]),
         .target(name: "ClipShareSurface", dependencies: ["ClipModels", "ClipStorage", "ClipIngest", "ClipURLClassification", "ClipDesignSystem", "ClipReaderUI", "ClipArchiveReader", "ClipPriceUI", "ClipMediaDownload", "ClipPlatforms", "ClipTransitions"]),

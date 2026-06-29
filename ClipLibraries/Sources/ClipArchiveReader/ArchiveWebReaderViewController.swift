@@ -9,6 +9,7 @@ import ClipPaywallBypass
 import ClipFetch
 import ClipHTMLClassification
 import ClipModels
+import ClipTransitions
 import UIKit
 import WebKit
 
@@ -895,12 +896,17 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private func showStuckNotice() {
         guard !didShowStuckNotice, !didShowTerminalMessage else { return }
         didShowStuckNotice = true
-        overlayLabel.text = Self.mayBeStuckMessage
-        overlayLabel.textColor = .secondaryLabel
-        overlaySafariButton.isHidden = (onOpenInBrowser == nil)
-        overlaySpinner.startAnimating()
-        loadingOverlay.isHidden = false
+        // Dot-matrix-dissolve the overlay from the bare "Unlocking…" spinner into the
+        // advisory copy + Safari escape; the overlay is already covering the page here
+        // (the stall guard only fires while it's visible), so the wipe reads in place.
         view.bringSubviewToFront(loadingOverlay)
+        loadingOverlay.isHidden = false
+        DotMatrixCrossfade.run(in: loadingOverlay) { [self] in
+            overlayLabel.text = Self.mayBeStuckMessage
+            overlayLabel.textColor = .secondaryLabel
+            overlaySafariButton.isHidden = (onOpenInBrowser == nil)
+            overlaySpinner.startAnimating()
+        }
     }
 
     private static func isArchiveHomepageURL(_ url: URL?) -> Bool {
@@ -918,14 +924,19 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         pollTimer?.invalidate()
         pollTimer = nil
         progress.stopAnimating()
-        overlaySpinner.stopAnimating()
-        overlayLabel.text = message
-        overlayLabel.textColor = .label
-        overlaySafariButton.isHidden = (onOpenInBrowser == nil)
-        // Fully opaque so the message reads clearly regardless of the experimental
-        // overlay-alpha setting, and kept above the (now idle) web view.
-        loadingOverlay.backgroundColor = .systemBackground
-        loadingOverlay.isHidden = false
+        // Dot-matrix-dissolve into the terminal message: bring the overlay forward and
+        // make it visible first so the wipe's "before" is the live page-cover, then
+        // pixelate the swap to the opaque message + Safari escape.
         view.bringSubviewToFront(loadingOverlay)
+        loadingOverlay.isHidden = false
+        DotMatrixCrossfade.run(in: loadingOverlay) { [self] in
+            overlaySpinner.stopAnimating()
+            overlayLabel.text = message
+            overlayLabel.textColor = .label
+            overlaySafariButton.isHidden = (onOpenInBrowser == nil)
+            // Fully opaque so the message reads clearly regardless of the experimental
+            // overlay-alpha setting, and kept above the (now idle) web view.
+            loadingOverlay.backgroundColor = .systemBackground
+        }
     }
 }

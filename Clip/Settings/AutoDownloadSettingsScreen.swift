@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import ClipReadingListUI
 import ClipMediaDownload
 import UIKit
@@ -59,7 +60,7 @@ final class AutoDownloadSettingsScreen: UITableViewController {
         }
         cell.contentConfiguration = content
 
-        let toggle = UISwitch()
+        let toggle = DotMatrixSwitch()
         toggle.isOn = AutoDownloadSettings.isEnabled(for: platform)
         toggle.tag = indexPath.row
         toggle.addTarget(self, action: #selector(toggled(_:)), for: .valueChanged)
@@ -77,18 +78,18 @@ final class AutoDownloadSettingsScreen: UITableViewController {
         content.image = UIImage(systemName: "arrow.down.circle")
         cell.contentConfiguration = content
 
-        let toggle = UISwitch()
+        let toggle = DotMatrixSwitch()
         toggle.isOn = AutoDownloadSettings.autoDownloadMediaInPreview
         toggle.addTarget(self, action: #selector(masterToggled(_:)), for: .valueChanged)
         cell.accessoryView = toggle
         return cell
     }
 
-    @objc private func masterToggled(_ sender: UISwitch) {
+    @objc private func masterToggled(_ sender: DotMatrixSwitch) {
         AutoDownloadSettings.autoDownloadMediaInPreview = sender.isOn
     }
 
-    @objc private func toggled(_ sender: UISwitch) {
+    @objc private func toggled(_ sender: DotMatrixSwitch) {
         let platform = platforms[sender.tag]
         guard sender.isOn else {
             AutoDownloadSettings.setEnabled(false, for: platform)

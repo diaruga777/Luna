@@ -143,7 +143,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         return cell
     }
 
-    @objc private func rabbitHoleToggled(_ toggle: UISwitch) {
+    @objc private func rabbitHoleToggled(_ toggle: DotMatrixSwitch) {
         ReaderSettings.pixelWipeTransitionsEnabled = toggle.isOn
     }
 
@@ -160,7 +160,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         return cell
     }
 
-    @objc private func nonArchiveBypassToggled(_ toggle: UISwitch) {
+    @objc private func nonArchiveBypassToggled(_ toggle: DotMatrixSwitch) {
         ReaderSettings.nonArchiveBypassEnabled = toggle.isOn
     }
 
@@ -332,7 +332,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         return cell
     }
 
-    @objc private func autoAddToggled(_ toggle: UISwitch) {
+    @objc private func autoAddToggled(_ toggle: DotMatrixSwitch) {
         YouTubeSettings.autoAddToPlaylist = toggle.isOn
     }
 

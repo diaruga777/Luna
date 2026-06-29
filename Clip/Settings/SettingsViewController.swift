@@ -14,8 +14,8 @@ import UIKit
 
 /// Shared helpers for the settings subpages.
 extension UITableViewController {
-    func makeToggle(isOn: Bool, action: Selector) -> UISwitch {
-        let toggle = UISwitch()
+    func makeToggle(isOn: Bool, action: Selector) -> DotMatrixSwitch {
+        let toggle = DotMatrixSwitch()
         toggle.isOn = isOn
         toggle.addTarget(self, action: action, for: .valueChanged)
         return toggle
@@ -215,7 +215,7 @@ final class ReaderSettingsScreen: UITableViewController {
         wpmLabel.text = "\(Int(rounded)) wpm"
     }
 
-    @objc private func serifToggled(_ toggle: UISwitch) {
+    @objc private func serifToggled(_ toggle: DotMatrixSwitch) {
         ReaderSettings.useSerifFont = toggle.isOn
     }
 
@@ -292,12 +292,12 @@ final class ReadingListSettingsScreen: UITableViewController {
         return cell
     }
 
-    @objc private func readingTimeToggled(_ toggle: UISwitch) {
+    @objc private func readingTimeToggled(_ toggle: DotMatrixSwitch) {
         ReaderSettings.showReadingTime = toggle.isOn
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
     }
 
-    @objc private func progressToggled(_ toggle: UISwitch) {
+    @objc private func progressToggled(_ toggle: DotMatrixSwitch) {
         ReaderSettings.showReadingProgress = toggle.isOn
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
     }
@@ -360,12 +360,12 @@ final class EyeTrackingSettingsScreen: UITableViewController {
         return cell
     }
 
-    @objc private func eyeTrackingToggled(_ toggle: UISwitch) {
+    @objc private func eyeTrackingToggled(_ toggle: DotMatrixSwitch) {
         ReaderSettings.eyeTrackingEnabled = toggle.isOn
         if !toggle.isOn { ReadingListStore.shared.clearAllEyeTracking() }
     }
 
-    @objc private func highlightToggled(_ toggle: UISwitch) {
+    @objc private func highlightToggled(_ toggle: DotMatrixSwitch) {
         ReaderSettings.highlightGazeWord = toggle.isOn
     }
 }

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipDesignSystem
 import ClipSemantic
 import ClipSocial
 import ClipStorage
@@ -77,7 +78,7 @@ public final class FriendDetailViewController: UITableViewController {
         case .notifications:
             content.text = "Notify When They Share"
             cell.contentConfiguration = content
-            let toggle = UISwitch()
+            let toggle = DotMatrixSwitch()
             toggle.isOn = FriendNotificationSettings.isNotifyEnabled(friendUUID: friend.card.uuid)
             toggle.addTarget(self, action: #selector(notifyToggled(_:)), for: .valueChanged)
             cell.accessoryView = toggle
@@ -104,7 +105,7 @@ public final class FriendDetailViewController: UITableViewController {
         }
     }
 
-    @objc private func notifyToggled(_ toggle: UISwitch) {
+    @objc private func notifyToggled(_ toggle: DotMatrixSwitch) {
         FriendNotificationSettings.setNotify(toggle.isOn, friendUUID: friend.card.uuid)
         if toggle.isOn { NotificationManager.requestAuthorization() }
     }
@@ -194,7 +195,7 @@ public final class AutoSendWebsitesViewController: UITableViewController {
         let base = baseURLs[indexPath.row]
         content.text = base
         cell.contentConfiguration = content
-        let toggle = UISwitch()
+        let toggle = DotMatrixSwitch()
         toggle.isOn = ShareSuggestionStore.shared
             .isAlwaysShared(baseURL: base, friendUUID: friend.card.uuid)
         toggle.tag = indexPath.row
@@ -204,7 +205,7 @@ public final class AutoSendWebsitesViewController: UITableViewController {
         return cell
     }
 
-    @objc private func siteToggled(_ toggle: UISwitch) {
+    @objc private func siteToggled(_ toggle: DotMatrixSwitch) {
         guard baseURLs.indices.contains(toggle.tag) else { return }
         ShareSuggestionStore.shared.setAlwaysShare(
             baseURL: baseURLs[toggle.tag],

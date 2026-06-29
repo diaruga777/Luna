@@ -268,9 +268,19 @@ final class ReadingListViewController: UITableViewController {
     /// below the bar.
     private func updateHeaderInsets() {
         header.setManagedHeight(topSafeAreaInset: view.safeAreaInsets.top)
-        if abs(tableView.contentInset.top - NavHeaderBar.barHeight) > 0.5 {
-            tableView.contentInset.top = NavHeaderBar.barHeight
-            tableView.verticalScrollIndicatorInsets.top = NavHeaderBar.barHeight
+        guard abs(tableView.contentInset.top - NavHeaderBar.barHeight) > 0.5 else { return }
+        // The table establishes its resting contentOffset (= -adjustedContentInset.top)
+        // during its first layout, while contentInset.top is still 0 — so it rests at
+        // just -safeArea. Growing the inset afterward does NOT re-settle that offset, so
+        // the content (incl. the large title) would sit `barHeight` too high and slide
+        // under the pinned bar. If the table is resting at its top, re-pin the offset to
+        // the new adjusted inset so the title starts just below the bar; if the user has
+        // scrolled, leave their position alone.
+        let wasAtTop = tableView.contentOffset.y <= -tableView.adjustedContentInset.top + 0.5
+        tableView.contentInset.top = NavHeaderBar.barHeight
+        tableView.verticalScrollIndicatorInsets.top = NavHeaderBar.barHeight
+        if wasAtTop {
+            tableView.contentOffset.y = -tableView.adjustedContentInset.top
         }
     }
 
@@ -774,8 +784,12 @@ final class ReadingListViewController: UITableViewController {
     /// `tableHeaderView` so it scrolls away under the pinned bar like a system large
     /// title. `showsFilter` includes the filter row.
     private func rebuildTableHeader(showsFilter: Bool) {
+        // A `tableHeaderView` is sized by its FRAME (set explicitly at the bottom of this
+        // method), so the container must keep `translatesAutoresizingMaskIntoConstraints`
+        // = true. With it false, UITableView auto-layouts the header and — lacking a width
+        // constraint — collapses it to its compressed content width (~32pt), clipping the
+        // title + filter. Its internal subview constraints still resolve against the frame.
         let container = UIView()
-        container.translatesAutoresizingMaskIntoConstraints = false
 
         // Large-title row: "Reading List" leading, catch-up button trailing.
         let titleRow = UIView()

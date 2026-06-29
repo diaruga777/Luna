@@ -49,6 +49,58 @@ final class ReadingListScreenTests: XCTestCase {
         SnapshotTesting.assertSnapshot(of: nav, named: "reading-list-price-tracking")
     }
 
+    /// Regression guard for the de-nav-bar header layout on a device with a real top
+    /// safe-area inset (Dynamic Island). Two bugs slipped past the ~0-inset snapshots:
+    /// (1) the table-header container collapsed to its compressed width (~32pt), clipping
+    /// the title + filter, because it was `translatesAutoresizingMaskIntoConstraints=false`
+    /// with no width constraint; (2) the resting contentOffset didn't include the bar inset,
+    /// so the large title hid under the pinned bar. This hosts the list at a realistic
+    /// safe-area inset (set BEFORE first layout, as on device) and asserts the header is
+    /// full-width and the title sits below the bar.
+    func testHeaderLayoutWithRealisticSafeArea() {
+        UITestSupport.seedSharedStore(.mixed)
+        let viewController = ReadingListViewController()
+        let nav = UINavigationController(rootViewController: viewController)
+        let window = SafeAreaWindow(frame: CGRect(origin: .zero, size: SnapshotTesting.phoneSize))
+        window.simulatedSafeAreaInsets = UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+        window.overrideUserInterfaceStyle = .light
+        window.rootViewController = nav
+        window.makeKeyAndVisible()
+        nav.view.frame = window.bounds
+        nav.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        nav.view.layoutIfNeeded()
+
+        let tableView = viewController.tableView!
+        // (1) The table header must span the full table width — not collapse to its
+        // compressed content width.
+        let header = tableView.tableHeaderView
+        XCTAssertNotNil(header, "table header missing")
+        XCTAssertEqual(header?.frame.width ?? 0, tableView.bounds.width, accuracy: 0.5,
+                       "table header collapsed (expected full width \(tableView.bounds.width), got \(header?.frame.width ?? 0))")
+
+        // (2) The large "Reading List" title must render below the pinned bar, not under it.
+        guard let navBar = firstSubview(in: tableView, typeNameContains: "NavHeaderBar") else {
+            XCTFail("pinned NavHeaderBar not found"); _ = window; return
+        }
+        guard let titleLabel = firstLabel(in: tableView, withText: "Reading List") else {
+            XCTFail("large title label not found"); _ = window; return
+        }
+        let barMaxY = navBar.convert(navBar.bounds, to: window).maxY
+        let titleMinY = titleLabel.convert(titleLabel.bounds, to: window).minY
+        XCTAssertGreaterThanOrEqual(titleMinY, barMaxY - 2,
+            "large title (minY \(titleMinY)) is hidden under the pinned bar (maxY \(barMaxY))")
+
+        // The filter control is present and sits below the title.
+        guard let filter = findSegmentedControl(in: nav.view) else {
+            XCTFail("filter segmented control not visible"); _ = window; return
+        }
+        let filterMinY = filter.convert(filter.bounds, to: window).minY
+        XCTAssertGreaterThanOrEqual(filterMinY, titleMinY - 2,
+            "filter (minY \(filterMinY)) should sit below the title (minY \(titleMinY))")
+        _ = window
+    }
+
     // MARK: - Filter segments
 
     /// The mixed list has reader, media, and price-tracker kinds, so the filter
@@ -231,6 +283,22 @@ final class ReadingListScreenTests: XCTestCase {
         XCTFail("no bar button matching \(systemImageHint)")
     }
 
+    private func firstSubview(in view: UIView, typeNameContains name: String) -> UIView? {
+        if String(describing: type(of: view)).contains(name) { return view }
+        for subview in view.subviews {
+            if let found = firstSubview(in: subview, typeNameContains: name) { return found }
+        }
+        return nil
+    }
+
+    private func firstLabel(in view: UIView, withText text: String) -> UILabel? {
+        if let label = view as? UILabel, label.text == text { return label }
+        for subview in view.subviews {
+            if let found = firstLabel(in: subview, withText: text) { return found }
+        }
+        return nil
+    }
+
     private func findSegmentedControl(in view: UIView) -> UISegmentedControl? {
         if let control = view as? UISegmentedControl { return control }
         for subview in view.subviews {
@@ -238,4 +306,14 @@ final class ReadingListScreenTests: XCTestCase {
         }
         return nil
     }
+}
+
+/// A window that reports a fixed safe-area inset (the test host's real window has none),
+/// so a screen can be laid out exactly as it would be on a device with a Dynamic Island —
+/// crucially with the inset known from the FIRST layout pass, matching real launch.
+private final class SafeAreaWindow: UIWindow {
+    var simulatedSafeAreaInsets: UIEdgeInsets = .zero {
+        didSet { rootViewController?.view.setNeedsLayout() }
+    }
+    override var safeAreaInsets: UIEdgeInsets { simulatedSafeAreaInsets }
 }

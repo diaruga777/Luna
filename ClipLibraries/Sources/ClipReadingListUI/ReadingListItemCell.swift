@@ -5,15 +5,33 @@
 
 import ClipModels
 import ClipDesignSystem
+import ImageIO
 import UIKit
 
 /// A reading-list row with a title, a metadata subtitle, and a thumbnail that
 /// has three states: a spinner while the item's image is still being fetched,
 /// the fetched art (aspect-fit, ratio-capped), or a platform-logo fallback once
-/// the fetch has finished without an image. Art decodes off the main thread and
-/// is guarded by `reuseKey` so a slow load never lands on a recycled cell.
+/// the fetch has finished without an image.
+///
+/// Art bytes live on disk, but decoding them is the only slow part. Already-decoded
+/// thumbnails are held in a small in-memory `NSCache` keyed by file path, so a row
+/// that has been seen before (scrolled away and back) renders **synchronously** in
+/// `configure(…)` with no spinner flash. Only a genuine cache miss (first decode of
+/// a file) decodes off the main thread behind a spinner. Async results are guarded
+/// by a per-cell `loadToken` so a slow decode never lands on a recycled cell.
 public final class ReadingListItemCell: UITableViewCell {
     public static let reuseID = "readingListItemCell"
+
+    /// In-memory cache of already-decoded, downsampled thumbnails. The bytes are on
+    /// disk, but decoding is the visible cost — caching the decoded bitmap makes a
+    /// re-seen row appear instantly with no spinner. Keyed by file path. Bounded so a
+    /// long session can't accumulate bitmaps unboundedly (NSCache also evicts under
+    /// memory pressure). Mirrors `ArticleTextRenderer`'s decoded-image cache.
+    nonisolated(unsafe) private static let decodedCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 120
+        return cache
+    }()
 
     /// What to show in the thumbnail well.
     public enum Thumbnail {
@@ -48,6 +66,11 @@ public final class ReadingListItemCell: UITableViewCell {
     /// Identifies the item currently configured, so an async art load that
     /// resolves after the cell is reused is discarded.
     private var reuseKey: String?
+    /// Monotonic token bumped on every (re)configuration and on reuse. An in-flight
+    /// async decode captures the token it was started with and discards its result if
+    /// the token has since moved on — robust even if the same item lands back on the
+    /// same recycled cell instance (where `reuseKey` alone would match).
+    private var loadToken: UInt64 = 0
     /// Action for the optional trailing button (e.g. the pasteboard row's Save).
     private var onTrailingButton: (() -> Void)?
 
@@ -132,6 +155,7 @@ public final class ReadingListItemCell: UITableViewCell {
     public override func prepareForReuse() {
         super.prepareForReuse()
         reuseKey = nil
+        loadToken &+= 1   // invalidate any in-flight async decode
         thumbImageView.image = nil
         spinner.stopAnimating()
         onTrailingButton = nil
@@ -144,6 +168,7 @@ public final class ReadingListItemCell: UITableViewCell {
         trailingButtonSymbol: String? = nil, onTrailingButton: (() -> Void)? = nil
     ) {
         self.reuseKey = reuseKey
+        loadToken &+= 1   // invalidate any decode started for the previous content
         titleLabel.text = title
         titleLabel.textColor = titleColor
         subtitleLabel.attributedText = subtitle
@@ -179,8 +204,16 @@ public final class ReadingListItemCell: UITableViewCell {
             spinner.startAnimating()
         case .art(let path):
             thumbContainer.isHidden = false
-            spinner.startAnimating()
-            loadArt(path: path, expecting: reuseKey)
+            // Cache hit: the bitmap is already decoded — show it synchronously, before
+            // the cell is displayed, with no spinner. Only a true miss spins + decodes.
+            if let cached = Self.decodedCache.object(forKey: path as NSString) {
+                spinner.stopAnimating()
+                applyArt(cached)
+            } else {
+                thumbImageView.image = nil
+                spinner.startAnimating()
+                loadArt(path: path, token: loadToken)
+            }
         case .image(let image):
             thumbContainer.isHidden = false
             spinner.stopAnimating()
@@ -210,18 +243,56 @@ public final class ReadingListItemCell: UITableViewCell {
         }
     }
 
-    private func loadArt(path: String, expecting key: String) {
+    /// Sets `image` as the art (no spinner, correct content mode/tint). Main-thread.
+    private func applyArt(_ image: UIImage) {
+        spinner.stopAnimating()
+        thumbImageView.tintColor = nil
+        thumbImageView.contentMode = Self.contentMode(for: image.size)
+        thumbImageView.image = image
+    }
+
+    /// Cache miss only: decode (downsampled) off the main thread, populate the cache,
+    /// then land the result iff this cell hasn't been reconfigured/recycled since
+    /// (`loadToken` unchanged). Downsampling means we never hold the full-size bitmap.
+    private func loadArt(path: String, token: UInt64) {
+        // Read the screen scale on the main thread; the detached decode must not touch
+        // main-actor UIKit state.
+        let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : 2
         Task.detached(priority: .userInitiated) {
-            let image = UIImage(contentsOfFile: path)
+            // Re-check the cache on the worker: a sibling cell may have decoded the
+            // same file while this task was queued.
+            let image = Self.decodedCache.object(forKey: path as NSString)
+                ?? Self.decodeThumbnail(path: path, scale: scale)
+            if let image { Self.decodedCache.setObject(image, forKey: path as NSString) }
             await MainActor.run { [weak self] in
-                guard let self, self.reuseKey == key else { return }
+                guard let self, self.loadToken == token else { return }
                 self.spinner.stopAnimating()
                 guard let image else { return }
-                self.thumbImageView.tintColor = nil
-                self.thumbImageView.contentMode = Self.contentMode(for: image.size)
-                self.thumbImageView.image = image
+                self.applyArt(image)
             }
         }
+    }
+
+    /// Decodes the file already scaled down to ~thumbnail size (capped at 2× the
+    /// container's longest side, in pixels) so a large cover image isn't held at full
+    /// resolution for a 96×54 well. `nil` if the file is missing/undecodable.
+    nonisolated private static func decodeThumbnail(path: String, scale: CGFloat) -> UIImage? {
+        let url = URL(fileURLWithPath: path)
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else {
+            return nil
+        }
+        let maxPixel = max(thumbSize.width, thumbSize.height) * 2 * scale
+        let thumbnailOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ] as CFDictionary
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage, scale: scale, orientation: .up)
     }
 
     /// Aspect-fit unless the image is more extreme than 2× the container ratio in

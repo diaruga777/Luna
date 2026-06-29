@@ -69,7 +69,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     // so the Dot Matrix pixel-wipe captures it faithfully (a live blur could not be).
     private let header = UIView()
     private let backButton = UIButton(type: .system)
-    private let modeControl = UISegmentedControl()
+    private let modeControl = ClipSegmentedControl()
     private let audioButton = UIButton(type: .system)
     /// Trailing header slot: "Save" while the article isn't in the library, "Share"
     /// once it is (always Share on the root, which is already a saved item).
@@ -113,7 +113,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     #if DEBUG
     /// Test hook: the number of segments actually present in the header mode switcher.
-    /// This reads the live `UISegmentedControl` (not the `orderedModes` it's built from),
+    /// This reads the live mode control (not the `orderedModes` it's built from),
     /// so it catches the regression where `configure(...)` set a new URL but left the
     /// segment set built off the blank shell's placeholder ("", no `.original`).
     public var modeSegmentCountForTesting: Int {

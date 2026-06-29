@@ -109,7 +109,7 @@ final class ReadingListViewController: UITableViewController {
 
     /// The Articles / Media & Links filter — only shown when the list actually has
     /// both a reader item and a media/link item, otherwise it's pointless.
-    private let filterControl = UISegmentedControl()
+    private let filterControl = ClipSegmentedControl()
     /// Holds natural-width segments so "Media & Links" is never silently clipped.
     private let filterScrollView = UIScrollView()
     private var filterWidthConstraint: NSLayoutConstraint?
@@ -465,7 +465,7 @@ final class ReadingListViewController: UITableViewController {
         navigationController?.pushViewController(viewController, animated: true)
     }
 
-    @objc private func filterChanged(_ control: UISegmentedControl) {
+    @objc private func filterChanged(_ control: ClipSegmentedControl) {
         let filters = visibleFilters()
         let index = control.selectedSegmentIndex
         filter = (index >= 0 && index < filters.count) ? filters[index] : .all

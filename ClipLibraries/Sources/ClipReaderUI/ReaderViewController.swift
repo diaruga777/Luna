@@ -54,7 +54,7 @@ public final class ReaderViewController: UIViewController {
     /// previews the article; only an explicit Mark Read changes its state).
     private let marksOpenedOnLoad: Bool
 
-    private let modeControl = UISegmentedControl()
+    private let modeControl = ClipSegmentedControl()
     private let audioButton = UIButton(type: .system)
     /// When true, the mode switcher + audio toggle render in an inline (de-glassed,
     /// Task 3) header embedded DIRECTLY in the view (no UINavigationController). The

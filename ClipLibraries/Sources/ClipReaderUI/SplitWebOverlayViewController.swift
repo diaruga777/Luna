@@ -57,7 +57,7 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
     private let closeButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
     private let bottomChevron = UIButton(type: .system)
-    private let modeControl = UISegmentedControl()
+    private let modeControl = ClipSegmentedControl()
 
     /// Navigation stack of inline pages (root = the tapped link).
     private let innerNav = UINavigationController()

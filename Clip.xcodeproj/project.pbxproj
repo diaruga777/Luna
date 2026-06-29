@@ -36,6 +36,7 @@
 		670A781911DA94A8B457F826 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 		6F438E9F1C4DEAAF57A692B8 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
 		7524FB14EDBA875CD17CE996 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
+		79001DA32FF23BFD001CD5B9 /* ClipTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* ClipTransitions */; };
 		79105F98461EAB4D02BB8DD1 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
 		7958393C2FE0A62700C775CA /* ClipShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* ClipShare.appex */; };
 		7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
@@ -296,6 +297,7 @@
 				14D2AFFC19A169338A1147DD /* ClipReaderUI in Frameworks */,
 				BD5B48658A5362866AA5CF57 /* ClipPriceUI in Frameworks */,
 				3EB986A4B023ACBE9D376F7B /* ClipShareSurface in Frameworks */,
+				79001DA32FF23BFD001CD5B9 /* ClipTransitions in Frameworks */,
 				80D1546C306DE0208046F4A7 /* ClipYouTubeAPI in Frameworks */,
 				53FBAD67762D020D14FCEB00 /* ClipReadingList in Frameworks */,
 				C1666BA7FC1EAE467E0165F4 /* ClipSocialUI in Frameworks */,

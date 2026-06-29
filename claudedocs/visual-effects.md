@@ -80,6 +80,58 @@ live. Images are normalized to `.up` (EXIF baked in) and videos honour their tra
 `preferredTransform`, because the GPU capture ignores `UIImage.imageOrientation`.
 A **fullscreen toggle** expands the preview to fill the screen (aspect-fit) and back.
 
+## Dot Matrix pixel-wipe TRANSITIONS (the facade) — region-confined wipes
+
+Separate from the effects playground above: the **`ClipTransitions`** library wraps the
+`ClipContentRendering` Metal dissolve (`RabbitHoleTransitionView`) into UIKit transition
+helpers, all gated on `DotMatrixTransitionCenter.shared.isEnabled` (user toggle AND Metal
+availability — false ⇒ stock UIKit animation). Surfaces: `DotMatrixCrossfade` (in-place
+view change), `DotMatrixBatch` (table row updates), `DotMatrixSegmentedControl`,
+`DotMatrixAppear`, `DotMatrixTransitionSession` (nav push/pop). The RabbitHole reader's
+dive/pop/overscroll uses the `RabbitHoleTransitioning` protocol (`ClipReaderUI`), with the
+app-side Metal impl `Clip/Social/DotMatrixRabbitHoleTransition.swift`.
+
+### THE RULE: only changed REGIONS animate — UIVIEW-level, never pixel-by-pixel
+
+A wipe must dissolve **only the screen regions that actually change**. Genuinely-unchanged
+chrome must stay perfectly static — it must NOT sit inside a full-screen snapshot and get
+pixelated mid-dissolve. The canonical case: in the RabbitHole stacked reader, pushing/popping
+layer 2 leaves layer-0's top/bottom **lips** unchanged, so they must not animate.
+
+Diffing is at the **UIVIEW level (region/rect-based), not pixel-by-pixel**. The shared
+mechanism is **`DotMatrixRegion`** (`ClipTransitions/DotMatrixRegion.swift`):
+
+- `DotMatrixRegion.Item(id:frame:state:)` — one identified participant: an `id` (ties the
+  same logical view across before/after), a `frame` (host coordinate space), and an opaque
+  `state` token (any non-geometric change that should still wipe, e.g. a layer's role).
+- `DotMatrixRegion.changedRegion(before:after:in:) -> CGRect?` — the union (bounding rect)
+  of every changed sub-rect. An item is *changed* iff (keyed by `id`) it appears on only one
+  side, or its `frame` OR `state` differs; both its before+after frames join the union.
+  Identical items are excluded. `in:` clamps to bounds. nil ⇒ nothing changed.
+- `DotMatrixRegion.isFullScreen(_:bounds:slack:)` — true when the region spans the whole
+  bounds; callers then take the plain full-screen path (confining to the whole screen buys
+  nothing and risks rounding seams).
+
+### Region-confined transition API (reused by filter + mode-switch animations)
+
+All paths take an optional **`region`** (in the host's coordinate space; nil ⇒ full bounds,
+behaviour identical to before). When set, the overlay is framed to that sub-rect and the
+before/after snapshots capture only that rect (via a translated context — see
+`DotMatrixSnapshot.image(of:region:afterScreenUpdates:)`), so everything outside keeps its
+live views and never pixelates.
+
+- `DotMatrixCrossfade.run(in:direction:duration:region:changes:completion:)`
+- `RabbitHoleTransitioning.play(prepare:in:region:completion:)` and
+  `begin(before:after:in:region:)` (full-screen convenience overloads without `region:`
+  forward to these in a protocol extension).
+
+`RabbitHoleReaderViewController` computes the region from a `RabbitHoleLayout`-driven diff
+(`placementItems` → `changedRegion`) before each dive/pop/overscroll: each layer's
+`(cardFrame, role)` becomes an `Item`; unchanged layers (the layer-0 lip) are excluded.
+`runTransition`/`snapshot` then capture only that rect. Full-screen changes (e.g. a
+single-ancestor pop) fall through to the full dissolve unchanged. Metal-unavailable ⇒ instant
+cut, as before. Tests: `DotMatrixRegionTests` (union math + the layer-2 push/pop lip exclusion).
+
 ## Testing notes
 
 - The effect itself can't be exercised in the simulator via UI automation: the

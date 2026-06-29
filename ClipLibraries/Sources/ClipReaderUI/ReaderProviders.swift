@@ -62,12 +62,37 @@ public protocol RabbitHoleTransitioning: AnyObject {
     /// before-snapshot + layer build/relayout + after-snapshot, returning both images —
     /// entirely hidden behind that mask, hands off to the GPU dissolve, and removes the
     /// instant mask. `completion` fires once the wipe finishes and the overlay is parked.
+    ///
+    /// `region` (in `container`'s coordinate space) confines the wipe to just that
+    /// sub-rect: the overlay is framed there and the `before`/`after` images supplied by
+    /// `prepare` are expected to be that-region-sized (the host snapshots only that
+    /// rect), so everything OUTSIDE the region keeps its live views and never pixelates.
+    /// Pass nil ⇒ a full-`container.bounds` wipe (full-`bounds`-sized images), identical
+    /// to before. The host computes the region from a UIView-level changed-region diff so
+    /// genuinely-unchanged chrome (e.g. layer-0 lips) stays perfectly static.
     func play(prepare: @escaping () -> (before: UIImage, after: UIImage),
-              in container: UIView, completion: @escaping () -> Void)
+              in container: UIView, region: CGRect?, completion: @escaping () -> Void)
     /// Begin an interactive wipe; drive the returned handle with `update(progress:)`
     /// (0 = before, 1 = after) and end it with `finish(committed:completion:)`.
+    ///
+    /// `region` confines the wipe exactly as in `play(prepare:in:region:completion:)`:
+    /// the `before`/`after` images are that-region-sized and the overlay is framed to it;
+    /// nil ⇒ a full-`container.bounds` wipe.
     func begin(before: UIImage, after: UIImage,
-               in container: UIView) -> RabbitHoleInteractiveTransition
+               in container: UIView, region: CGRect?) -> RabbitHoleInteractiveTransition
+}
+
+public extension RabbitHoleTransitioning {
+    /// Full-screen convenience: wipe the whole `container.bounds` (the pre-region API).
+    func play(prepare: @escaping () -> (before: UIImage, after: UIImage),
+              in container: UIView, completion: @escaping () -> Void) {
+        play(prepare: prepare, in: container, region: nil, completion: completion)
+    }
+    /// Full-screen convenience: begin a whole-`container.bounds` interactive wipe.
+    func begin(before: UIImage, after: UIImage,
+               in container: UIView) -> RabbitHoleInteractiveTransition {
+        begin(before: before, after: after, in: container, region: nil)
+    }
 }
 
 /// Handle to an in-flight interactive RabbitHole transition.

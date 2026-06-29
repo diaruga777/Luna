@@ -19,14 +19,26 @@ import UIKit
 public enum DotMatrixCrossfade {
     /// Apply `changes` to `view` behind a Dot Matrix wipe. `direction` defaults to a
     /// random (fade-order) reveal. `duration` nil ⇒ the configured total duration.
+    ///
+    /// `region` (in `view`'s own coordinate space) confines the wipe to just that
+    /// sub-rect: the overlay is framed and the before/after snapshots captured only
+    /// there, so everything outside keeps its live views and never pixelates. Pass nil
+    /// (default) to wipe the whole `view.bounds` — behaviour identical to before. Use a
+    /// `DotMatrixRegion.changedRegion(...)` result here to animate only changed areas.
     public static func run(in view: UIView,
                            direction: DotMatrixWavefrontDirection = .random,
                            duration: TimeInterval? = nil,
+                           region: CGRect? = nil,
                            changes: @escaping () -> Void,
                            completion: (() -> Void)? = nil) {
+        // The sub-rect to wipe (and snapshot), clamped to the view. A region collapsing
+        // to nothing means there's nothing to animate — apply the change and bail.
+        let rect = (region ?? view.bounds).intersection(view.bounds)
+
         // Disabled / no usable before-snapshot ⇒ stock animation around the change.
         guard DotMatrixTransitionCenter.shared.isEnabled,
-              let before = DotMatrixSnapshot.image(of: view, afterScreenUpdates: false) else {
+              rect.width > 1, rect.height > 1,
+              let before = DotMatrixSnapshot.image(of: view, region: rect, afterScreenUpdates: false) else {
             UIView.animate(withDuration: duration ?? 0.3, animations: changes) { _ in completion?() }
             return
         }
@@ -34,7 +46,7 @@ public enum DotMatrixCrossfade {
         changes()
         view.layoutIfNeeded()
 
-        guard let after = DotMatrixSnapshot.image(of: view, afterScreenUpdates: true),
+        guard let after = DotMatrixSnapshot.image(of: view, region: rect, afterScreenUpdates: true),
               let overlay = DotMatrixTransitionCenter.shared.borrowOverlay(for: view.window) else {
             // Change is already applied; just finish.
             completion?(); return
@@ -42,8 +54,8 @@ public enum DotMatrixCrossfade {
 
         overlay.style = DotMatrixTransitionStyleProvider.style(for: view.traitCollection)
         overlay.direction = direction
-        overlay.frame = view.bounds
-        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        overlay.frame = rect
+        overlay.autoresizingMask = []
         overlay.configure(before: before, after: after)
         overlay.setProgress(0)
         overlay.isHidden = false

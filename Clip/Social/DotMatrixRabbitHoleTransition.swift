@@ -24,11 +24,11 @@ final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
     /// The reused overlay, parked hidden in the container between transitions.
     private var overlay: RabbitHoleTransitionView?
 
-    func prewarm(in container: UIView) { _ = ensureOverlay(in: container) }
+    func prewarm(in container: UIView) { _ = ensureOverlay(in: container, region: nil) }
 
     func play(prepare: @escaping () -> (before: UIImage, after: UIImage),
-              in container: UIView, completion: @escaping () -> Void) {
-        guard let view = ensureOverlay(in: container) else {
+              in container: UIView, region: CGRect?, completion: @escaping () -> Void) {
+        guard let view = ensureOverlay(in: container, region: region) else {
             _ = prepare()   // Metal unavailable → apply the state change, instant cut
             completion(); return
         }
@@ -38,6 +38,8 @@ final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
         // snapshots and build the new layer, then bring up the GPU overlay at progress 0
         // (== the before frame) and animate — all batched into a single commit with the
         // overlay on top, so the build is never visible and the dissolve starts cleanly.
+        // When `region` is given the overlay (and the host's before/after images) cover
+        // only that sub-rect, so everything outside stays live and never pixelates.
         DispatchQueue.main.async {
             let frames = prepare()
             self.applyStyle(to: view)
@@ -54,8 +56,8 @@ final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
     }
 
     func begin(before: UIImage, after: UIImage,
-               in container: UIView) -> RabbitHoleInteractiveTransition {
-        guard let view = ensureOverlay(in: container) else {
+               in container: UIView, region: CGRect?) -> RabbitHoleInteractiveTransition {
+        guard let view = ensureOverlay(in: container, region: region) else {
             return NullInteractiveTransition()
         }
         applyStyle(to: view)
@@ -72,9 +74,14 @@ final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
         view.direction = .random
     }
 
-    /// Lazily build the overlay and (re)attach it on top of `container`, hidden.
+    /// Lazily build the overlay and (re)attach it on top of `container`, hidden. When
+    /// `region` is given (in `container`'s coordinate space) the overlay is framed to
+    /// just that sub-rect — clamped to `container.bounds` — so the wipe is confined to
+    /// the changed area and everything outside stays live. nil ⇒ the full bounds. The
+    /// overlay carries no autoresizing in the region case: it's reframed each call and
+    /// must not stretch with the container.
     @discardableResult
-    private func ensureOverlay(in container: UIView) -> RabbitHoleTransitionView? {
+    private func ensureOverlay(in container: UIView, region: CGRect?) -> RabbitHoleTransitionView? {
         let view: RabbitHoleTransitionView
         if let overlay {
             view = overlay
@@ -87,8 +94,14 @@ final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
         }
         if view.superview !== container { view.removeFromSuperview(); container.addSubview(view) }
         container.bringSubviewToFront(view)
-        view.frame = container.bounds
-        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        if let region, !region.isNull {
+            let rect = region.intersection(container.bounds)
+            view.frame = rect.isNull ? container.bounds : rect
+            view.autoresizingMask = []
+        } else {
+            view.frame = container.bounds
+            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        }
         return view
     }
 

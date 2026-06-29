@@ -19,6 +19,7 @@
 import ClipDesignSystem
 import ClipModels
 import ClipStorage
+import ClipTransitions
 import UIKit
 
 public final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognizerDelegate {
@@ -296,6 +297,38 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         }
     }
 
+    // MARK: - Changed-region diffing (UIView-level, never pixel-by-pixel)
+
+    /// The layer placements for a hypothetical (focus, layerCount) arrangement, as
+    /// changed-region `Item`s keyed by layer index. The opaque `state` token folds in the
+    /// role and whole-card alpha so a layer that merely changes role (e.g. focused →
+    /// ancestor) is still treated as changed even when its frame is unchanged.
+    private func placementItems(focus f: Int, layerCount n: Int) -> [DotMatrixRegion.Item] {
+        guard n > 0 else { return [] }
+        let bounds = view.bounds
+        let safe = view.safeAreaInsets
+        return (0..<n).map { i in
+            let p = layout.placement(layerIndex: i, focusedIndex: f, bounds: bounds, safeArea: safe)
+            // role + a coarse alpha bucket (hidden vs shown) form the non-geometric token.
+            let token = "\(p.role)|\(p.cardAlpha > 0.001)"
+            return DotMatrixRegion.Item(id: i, frame: p.cardFrame, state: token)
+        }
+    }
+
+    /// The screen region that actually changes moving from one (focus, layerCount) to
+    /// another — the union of the frames of every layer whose frame OR role/visibility
+    /// changed (plus any added/removed layer). Genuinely-unchanged layers (e.g. the
+    /// layer-0 lip on a layer-2 push/pop) are excluded so they never pixelate.
+    /// Returns nil ⇒ wipe the whole screen (full change, or region == full bounds).
+    private func changedRegion(fromFocus: Int, fromCount: Int,
+                               toFocus: Int, toCount: Int) -> CGRect? {
+        let before = placementItems(focus: fromFocus, layerCount: fromCount)
+        let after = placementItems(focus: toFocus, layerCount: toCount)
+        guard let region = DotMatrixRegion.changedRegion(before: before, after: after, in: view.bounds),
+              !DotMatrixRegion.isFullScreen(region, bounds: view.bounds) else { return nil }
+        return region
+    }
+
     // MARK: - Dive / pop
 
     private func pushLayer(url: URL, lineText: String?, from focused: RabbitHoleLayerViewController) {
@@ -308,7 +341,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         // Hand the new layer its already-decoded content (if we preloaded this link) so
         // it renders synchronously — the "after" snapshot then shows the real article.
         let preloaded = preloadedContent[PreloadStore.key(for: url)]
-        runTransition(applyState: { [weak self] in
+        // Diving: focus f→f+1, one layer appended. Unchanged layers (e.g. the layer-0
+        // lip on a depth-2 push) are excluded so they stay perfectly static.
+        let region = changedRegion(fromFocus: focus, fromCount: layers.count,
+                                   toFocus: focus + 1, toCount: layers.count + 1)
+        runTransition(region: region, applyState: { [weak self] in
             guard let self else { return }
             self.addLayer(RabbitHoleLayerDescriptor(urlString: url.absoluteString),
                           preloadedContent: preloaded)
@@ -332,7 +369,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     private func popToLayer(_ index: Int) {
         guard !transitionInFlight, index >= 0, index < layers.count, index != topIndex else { return }
-        runTransition(applyState: { [weak self] in
+        // Popping: focus topIndex→index, layers above `index` removed. Unchanged
+        // ancestor lips are excluded from the wipe.
+        let region = changedRegion(fromFocus: focus, fromCount: layers.count,
+                                   toFocus: index, toCount: index + 1)
+        runTransition(region: region, applyState: { [weak self] in
             guard let self else { return }
             self.trimLayers(above: index)
             self.focus = index
@@ -357,7 +398,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// runloop — runs `applyState` (the layer rebuild/relayout) and snapshots the
     /// result, and only then dissolves. So the expensive build never blocks the frame
     /// the user sees on tap.
-    private func runTransition(applyState: @escaping () -> Void,
+    /// `region` (in `view`'s coordinate space, nil ⇒ full bounds) confines the wipe to
+    /// just the changed area: the overlay and both snapshots cover only that sub-rect, so
+    /// unchanged regions (e.g. the layer-0 lip) keep their live views and never pixelate.
+    private func runTransition(region: CGRect? = nil,
+                               applyState: @escaping () -> Void,
                                completion: @escaping () -> Void) {
         guard let transition else {   // no Metal → instant cut
             applyState(); view.layoutIfNeeded(); completion(); return
@@ -373,19 +418,32 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             // The focused header is left VISIBLE in the after capture (afterScreenUpdates:true
             // renders the glass blur faithfully), so the dissolve resolves straight to the
             // final header — there's no headerless frame to blink before it reappears.
-            let before = self.snapshot(afterScreenUpdates: false)
+            // When `region` is set both snapshots are that-rect-sized so they align to the
+            // region-framed overlay.
+            let before = self.snapshot(region: region, afterScreenUpdates: false)
             applyState()
             self.view.layoutIfNeeded()
-            let after = self.snapshot(afterScreenUpdates: true)
+            let after = self.snapshot(region: region, afterScreenUpdates: true)
             return (before, after)
-        }, in: view) { [weak self] in
+        }, in: view, region: region) { [weak self] in
             self?.transitionInFlight = false
             completion()
         }
     }
 
-    private func snapshot(afterScreenUpdates: Bool) -> UIImage {
-        UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
+    /// Snapshot the whole view (region nil) or just `region` (in `view`'s coordinate
+    /// space). For a region the hierarchy is drawn through a translated context so the
+    /// captured pixels line up exactly with that sub-rect — matching the region-framed
+    /// overlay so the before/after textures register.
+    private func snapshot(region: CGRect? = nil, afterScreenUpdates: Bool) -> UIImage {
+        let rect = (region ?? view.bounds).intersection(view.bounds)
+        guard rect.width > 1, rect.height > 1 else {
+            return UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
+                view.drawHierarchy(in: view.bounds, afterScreenUpdates: afterScreenUpdates)
+            }
+        }
+        return UIGraphicsImageRenderer(bounds: CGRect(origin: .zero, size: rect.size)).image { ctx in
+            ctx.cgContext.translateBy(x: -rect.origin.x, y: -rect.origin.y)
             view.drawHierarchy(in: view.bounds, afterScreenUpdates: afterScreenUpdates)
         }
     }
@@ -444,7 +502,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         overscrollScroll = scroll
         scroll.isScrollEnabled = false   // we own the drag
 
-        let before = snapshot(afterScreenUpdates: false)
+        // Popping one layer: focus topIndex→topIndex-1, top layer removed. Confine the
+        // wipe to the changed area so unchanged ancestor lips never pixelate.
+        let region = changedRegion(fromFocus: topIndex, fromCount: layers.count,
+                                   toFocus: topIndex - 1, toCount: topIndex)
+        let before = snapshot(region: region, afterScreenUpdates: false)
         // Compose the after state (parent focused, top layer gone) hidden under the overlay.
         let dying = layers[topIndex]
         applyFocus(focusedIndex: topIndex - 1, hiding: dying)
@@ -453,9 +515,9 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         // dissolves in proportionally along with the rest of the content — instead of being
         // absent and snapping in only on commit.
         view.layoutIfNeeded()
-        let after = snapshot(afterScreenUpdates: true)   // re-focused parent must render fresh
+        let after = snapshot(region: region, afterScreenUpdates: true)   // re-focused parent must render fresh
         applyFocus()                     // restore the live before state
-        interactive = transition.begin(before: before, after: after, in: view)
+        interactive = transition.begin(before: before, after: after, in: view, region: region)
     }
 
     private func endOverscroll() {
@@ -511,15 +573,19 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// the horizontal-drag analogue of `beginOverscroll`, popping the top layer to its parent.
     private func beginEdgePop() {
         guard let transition, layers.count > 1 else { return }
-        let before = snapshot(afterScreenUpdates: false)
+        // Popping one layer (focus topIndex→topIndex-1) — confine the wipe to the changed
+        // area so unchanged ancestor lips stay static.
+        let region = changedRegion(fromFocus: topIndex, fromCount: layers.count,
+                                   toFocus: topIndex - 1, toCount: topIndex)
+        let before = snapshot(region: region, afterScreenUpdates: false)
         let dying = layers[topIndex]
         applyFocus(focusedIndex: topIndex - 1, hiding: dying)
         // Keep the parent's header in the after capture so it tracks the interactive edge
         // swipe (dissolving in proportionally) rather than snapping in only on commit.
         view.layoutIfNeeded()
-        let after = snapshot(afterScreenUpdates: true)
+        let after = snapshot(region: region, afterScreenUpdates: true)
         applyFocus()   // restore the live before state
-        interactive = transition.begin(before: before, after: after, in: view)
+        interactive = transition.begin(before: before, after: after, in: view, region: region)
     }
 
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,

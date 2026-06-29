@@ -426,10 +426,19 @@ final class ReadingListViewController: UITableViewController {
 
     @objc private func filterChanged(_ control: UISegmentedControl) {
         let filters = visibleFilters()
+        // The previously-selected segment, derived from the still-current filter before we
+        // reassign it — `.valueChanged` fires after the selection has already moved.
+        let previousIndex = filters.firstIndex(of: filter) ?? control.selectedSegmentIndex
         let index = control.selectedSegmentIndex
         filter = (index >= 0 && index < filters.count) ? filters[index] : .all
-        // A filter switch swaps the whole list at once — pixel-wipe the table between
-        // the old and new contents (a no-op fading reload when the toggle is off).
+        // Pixel-wipe the segmented control's OWN selection move (the indicator dissolves
+        // dot-by-dot instead of sliding). Scoped to the control — the large "Reading List"
+        // title lives in the nav bar and is untouched.
+        DotMatrixSegmentedControl.animateSelectionChange(control, from: previousIndex)
+        // A filter switch swaps the list body at once — pixel-wipe the table between the
+        // old and new contents (a no-op fading reload when the toggle is off). The nav bar
+        // (title + buttons) is a sibling of the table and is never snapshotted, so only the
+        // changing rows/section headers pixelate.
         DotMatrixCrossfade.run(in: tableView, direction: .random) { [weak self] in self?.reload() }
     }
 

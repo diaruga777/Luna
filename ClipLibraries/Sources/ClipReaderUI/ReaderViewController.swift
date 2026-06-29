@@ -273,14 +273,22 @@ public final class ReaderViewController: UIViewController {
         let newMode = availableModes[
             max(0, min(modeControl.selectedSegmentIndex, availableModes.count - 1))]
         guard newMode != mode else { return }
+        // The segment that WAS selected (the old mode) — captured before `mode` moves so
+        // the control's own pixel-wipe knows where to dissolve from.
+        let previousIndex = availableModes.firstIndex(of: mode) ?? modeControl.selectedSegmentIndex
         mode = newMode
         if persistsModePreference {
             store.setReaderMode(newMode, for: item.id)
             ReaderSettings.lastReaderMode = newMode
         }
         onModeChange?(newMode)
-        // Dissolve the whole content area dot-by-dot from the old mode to the new one
-        // (falls back to a plain crossfade when the pixel-wipe is off / unavailable).
+        // Pixel-wipe the mode switcher's OWN selection move (the indicator dissolves
+        // dot-by-dot). Scoped to the control — the nav bar / inline glass header that hosts
+        // it is a separate view and is never snapshotted, so the header stays stable.
+        DotMatrixSegmentedControl.animateSelectionChange(modeControl, from: previousIndex)
+        // Dissolve the content area dot-by-dot from the old mode to the new one. Scoped to
+        // `contentContainer`, which sits BELOW the header — the header never pixelates.
+        // (Falls back to a plain crossfade when the pixel-wipe is off / unavailable.)
         DotMatrixCrossfade.run(in: contentContainer, direction: .random) { [weak self] in
             self?.showCurrentMode()
         }

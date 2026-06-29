@@ -7,6 +7,7 @@ import ClipStorage
 import ClipHTMLClassification
 import ClipURLClassification
 import ClipModels
+import ClipDesignSystem
 import UIKit
 
 public extension Notification.Name {
@@ -94,6 +95,9 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let thresholdSlider = AlertThresholdSlider()
+    /// In-content header in place of the nav bar (title + back/done + "Read instead"),
+    /// so it animates as part of the Dot Matrix push/pop wipe.
+    private let navHeader = NavHeaderBar()
     private let productHeader = UIView()
     private let productTitleLabel = UILabel()
     /// Icon-only "+" that sits inline with the "Sellers" section header (right),
@@ -159,8 +163,9 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
-        title = "Price Tracker"
-        navigationItem.largeTitleDisplayMode = .never
+
+        navHeader.title = "Price Tracker"
+        navHeader.mount(in: self)
 
         productHeader.backgroundColor = .systemGroupedBackground
         productHeader.translatesAutoresizingMaskIntoConstraints = false
@@ -199,7 +204,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         view.addSubview(footer)
 
         NSLayoutConstraint.activate([
-            productHeader.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            productHeader.topAnchor.constraint(equalTo: navHeader.bottomAnchor),
             productHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             productHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             productTitleLabel.topAnchor.constraint(equalTo: productHeader.topAnchor, constant: 12),
@@ -240,16 +245,10 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// left-edge swipe; extension-hosted editors still have no navigation stack.
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Authoritatively show the SHARED nav bar (and clear any leftover transform/alpha
-        // a reader left behind) so this screen's header + back button are always present.
-        // Readers tuck/hide the same bar; without re-asserting here, pushing the price
-        // tracker after a reader would inherit a hidden/transparent bar — items set, but
-        // invisible. The custom Dot Matrix push runs viewWillAppear, so this is reliable.
-        if let bar = navigationController?.navigationBar {
-            bar.transform = .identity
-            bar.alpha = 1
-        }
-        navigationController?.setNavigationBarHidden(false, animated: false)
+        // This screen draws its OWN in-content header (so it animates as part of the Dot
+        // Matrix wipe). Keep the shared nav bar hidden while we're visible — the header
+        // bar + back/done control live in our content.
+        navigationController?.setNavigationBarHidden(true, animated: false)
         refreshGraph()
     }
 
@@ -284,26 +283,28 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         return navigationController.transitionCoordinator == nil
     }
 
-    /// Installs the top-left (back/done) and top-right ("Read instead") buttons from
-    /// the pure `PriceTrackingExitContext` decision.
+    /// Installs the top-left (back/done) and top-right ("Read instead") controls from
+    /// the pure `PriceTrackingExitContext` decision, into the in-content header bar
+    /// (so they animate as part of the Dot Matrix wipe rather than via the nav bar).
     private func configureNavigationChrome() {
+        let leftControl: UIView
         switch exitContext.leftButton {
         case .back:
-            navigationItem.leftBarButtonItem = UIBarButtonItem(
-                image: UIImage(systemName: "chevron.backward"),
-                style: .plain, target: self, action: #selector(leftButtonTapped))
+            leftControl = NavHeaderBar.backButton(target: self, action: #selector(leftButtonTapped))
         case .done:
-            navigationItem.leftBarButtonItem = UIBarButtonItem(
-                barButtonSystemItem: .done, target: self, action: #selector(leftButtonTapped))
+            leftControl = NavHeaderBar.textButton(
+                title: "Done", target: self, action: #selector(leftButtonTapped), bold: true)
         }
+        navHeader.setLeadingControls([leftControl])
 
         switch exitContext.readInsteadAction {
         case .hidden:
-            navigationItem.rightBarButtonItem = nil
+            navHeader.setTrailingControls([])
         case .discardTracker, .revertAddedStore:
-            navigationItem.rightBarButtonItem = UIBarButtonItem(
-                title: "Read instead", style: .plain,
-                target: self, action: #selector(readInsteadTapped))
+            navHeader.setTrailingControls([
+                NavHeaderBar.textButton(
+                    title: "Read instead", target: self, action: #selector(readInsteadTapped)),
+            ])
         }
     }
 

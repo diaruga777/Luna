@@ -4,12 +4,13 @@
 //
 
 import ClipSocial
+import ClipDesignSystem
 import CoreImage
 import UIKit
 
 /// Friends home: your shareable QR code + editable cosmetic profile, the
 /// friends list, and entry points for scanning and link-sharing.
-public final class FriendsViewController: UITableViewController, UITextFieldDelegate {
+public final class FriendsViewController: NavHeaderTableController, UITextFieldDelegate {
 
     private enum Section: Int, CaseIterable {
         case myCode
@@ -48,9 +49,8 @@ public final class FriendsViewController: UITableViewController, UITextFieldDele
     public required init?(coder: NSCoder) { fatalError("not used") }
 
     public override func viewDidLoad() {
+        headerTitle = "Friends"
         super.viewDidLoad()
-        title = "Friends"
-        navigationItem.largeTitleDisplayMode = .never
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .friendsListChanged, object: nil)

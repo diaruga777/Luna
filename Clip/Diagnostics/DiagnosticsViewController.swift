@@ -4,6 +4,7 @@
 //
 
 import ClipStorage
+import ClipDesignSystem
 import UIKit
 
 /// Shows the persistent diagnostic log and lets the user share it (as a `.txt`)
@@ -13,6 +14,8 @@ final class DiagnosticsViewController: UIViewController {
 
     private let log: DiagnosticLogging
     private let textView = UITextView()
+    /// In-content header in place of the nav bar, so it's part of the Dot Matrix wipe.
+    private let header = NavHeaderBar()
 
     init(log: DiagnosticLogging = DiagnosticLog.shared) {
         self.log = log
@@ -22,8 +25,6 @@ final class DiagnosticsViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Diagnostics"
-        navigationItem.largeTitleDisplayMode = .never
         view.backgroundColor = .systemBackground
 
         textView.isEditable = false
@@ -32,25 +33,40 @@ final class DiagnosticsViewController: UIViewController {
         textView.alwaysBounceVertical = true
         textView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(textView)
+
+        header.title = "Diagnostics"
+        // The way out: a back chevron when pushed; Done when the root (modal). Mirrors the
+        // old conditional left bar button. The trailing actions (share / clear / replays)
+        // sit on the right, as before.
+        let isRoot = navigationController?.viewControllers.first === self || navigationController == nil
+        if isRoot {
+            header.setLeadingControls([NavHeaderBar.textButton(
+                title: "Done", target: self, action: #selector(done), bold: true)])
+        } else {
+            header.setLeadingControls([NavHeaderBar.backButton(target: self, action: #selector(headerBack))])
+        }
+        header.setTrailingControls([
+            NavHeaderBar.imageButton(
+                systemName: "square.and.arrow.up", target: self, action: #selector(share),
+                accessibilityLabel: "Share"),
+            NavHeaderBar.textButton(title: "Clear", target: self, action: #selector(clear)),
+            NavHeaderBar.textButton(title: "Replays", target: self, action: #selector(openReplays)),
+        ])
+        let headerBottom = header.mount(in: self)
+
         NSLayoutConstraint.activate([
-            textView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            textView.topAnchor.constraint(equalTo: headerBottom),
             textView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             textView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+    }
 
-        // Keep both actions on the right so the navigation back button (the way
-        // out of this screen) stays in place. When presented modally rather than
-        // pushed, add an explicit Done button. "Replays" opens the per-save replay
-        // diagnostics list.
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(barButtonSystemItem: .action, target: self, action: #selector(share)),
-            UIBarButtonItem(title: "Clear", style: .plain, target: self, action: #selector(clear)),
-            UIBarButtonItem(title: "Replays", style: .plain, target: self, action: #selector(openReplays)),
-        ]
-        if navigationController?.viewControllers.first === self || navigationController == nil {
-            navigationItem.leftBarButtonItem = UIBarButtonItem(
-                barButtonSystemItem: .done, target: self, action: #selector(done))
+    @objc private func headerBack() {
+        if let navigationController, navigationController.viewControllers.count > 1 {
+            navigationController.popViewController(animated: true)
+        } else {
+            dismiss(animated: true)
         }
     }
 
@@ -73,6 +89,7 @@ final class DiagnosticsViewController: UIViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: false)
         reload()
     }
 
@@ -91,7 +108,7 @@ final class DiagnosticsViewController: UIViewController {
             return
         }
         let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        activity.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
+        activity.popoverPresentationController?.sourceView = header
         present(activity, animated: true)
     }
 

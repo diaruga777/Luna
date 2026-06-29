@@ -6,11 +6,12 @@
 import ClipSemantic
 import ClipSocial
 import ClipStorage
+import ClipDesignSystem
 import UIKit
 
 /// Per-friend settings: auto-send websites, share notifications, and removal.
 /// Pushed when a friend row is tapped on the Friends screen.
-public final class FriendDetailViewController: UITableViewController {
+public final class FriendDetailViewController: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
         case autoSend
@@ -31,9 +32,8 @@ public final class FriendDetailViewController: UITableViewController {
     public required init?(coder: NSCoder) { fatalError("not used") }
 
     public override func viewDidLoad() {
+        headerTitle = friend.card.username
         super.viewDidLoad()
-        title = friend.card.username
-        navigationItem.largeTitleDisplayMode = .never
     }
 
     public override func viewWillAppear(_ animated: Bool) {

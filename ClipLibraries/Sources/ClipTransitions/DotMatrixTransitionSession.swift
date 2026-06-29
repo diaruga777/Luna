@@ -71,8 +71,17 @@ final class DotMatrixTransitionSession {
         let fromVC = ctx.viewController(forKey: .from)
         let nav = toVC.navigationController ?? fromVC?.navigationController
         let bar = nav?.navigationBar
-        // Bar frame in the snapshot (container) coordinate space, captured up front.
-        let barFrame = bar.flatMap { $0.superview?.convert($0.frame, to: container) }
+        // Bar frame in the snapshot (container) coordinate space. The SOURCE bar's frame is
+        // captured up front (it still reflects the outgoing screen's bar); the DESTINATION
+        // bar's frame is captured AFTER the lifecycle flush below, because a pop to a
+        // large-title screen lays the bar out taller/differently than the compact source —
+        // compositing both at one frame would clip the destination header into the short
+        // source rect and it would only appear when the live bar's alpha is restored at the
+        // very end of the wipe.
+        func barFrameInContainer() -> CGRect? {
+            bar.flatMap { $0.superview?.convert($0.frame, to: container) }
+        }
+        let sourceBarFrame = barFrameInContainer()
         // Snapshot the bar only while it's actually on screen (a bar-hiding destination
         // leaves it nil so we don't fold a ghost header into that side of the wipe).
         func barSnapshot() -> UIImage? {
@@ -101,13 +110,16 @@ final class DotMatrixTransitionSession {
         // destination). Capture the destination bar AFTER that flush.
         guard let afterContent = DotMatrixSnapshot.image(of: toView, afterScreenUpdates: true)
         else { return nil }
+        // The flush above committed the destination bar's layout, so this snapshot + frame
+        // are the FULL destination header at its final (e.g. large-title) bounds.
         let destBarImg = barSnapshot()
+        let destBarFrame = barFrameInContainer()
 
         let window = container.window
         let beforeImg = composite(content: beforeContent, bar: sourceBarImg,
-                                  at: barFrame, size: container.bounds.size)
+                                  at: sourceBarFrame, size: container.bounds.size)
         let afterImg = composite(content: afterContent, bar: destBarImg,
-                                 at: barFrame, size: container.bounds.size)
+                                 at: destBarFrame, size: container.bounds.size)
         guard let overlay = DotMatrixTransitionCenter.shared.borrowOverlay(for: window) else {
             return nil
         }
@@ -141,8 +153,8 @@ final class DotMatrixTransitionSession {
     /// Draw `content` and (if present) the navigation `bar` snapshot at `frame` into one
     /// image, so the header is part of the wipe rather than a live sibling floating above
     /// the overlay. Returns the content unchanged when there's no bar to fold in.
-    private static func composite(content: UIImage, bar: UIImage?,
-                                  at frame: CGRect?, size: CGSize) -> UIImage {
+    static func composite(content: UIImage, bar: UIImage?,
+                          at frame: CGRect?, size: CGSize) -> UIImage {
         guard let bar, let frame, size.width > 1, size.height > 1 else { return content }
         let format = UIGraphicsImageRendererFormat.preferred()
         format.scale = content.scale

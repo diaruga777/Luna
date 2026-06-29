@@ -326,28 +326,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         bottomLip.isUserInteractionEnabled = !focused && role != .tucked
     }
 
-    /// Hide the floating header so it's absent from the transition's "after" snapshot.
-    /// `playHeaderEntrance` animates it back in once the wipe lands — which also lets the
-    /// host snapshot with `afterScreenUpdates: false` (fast) without the missing-blur
-    /// artifact a UIVisualEffectView would otherwise produce in that snapshot.
-    public func prepareForTransitionSnapshot() {
-        header.alpha = 0
-    }
-
-    /// A small settle for the focused layer's header after a transition lands — it
-    /// fades in, slides down from a touch above, and scales up from 0.98. Only ever
-    /// called on the focused layer, whose header is always meant to be visible.
-    public func playHeaderEntrance() {
-        guard !header.isHidden else { return }
-        header.alpha = 0
-        header.transform = CGAffineTransform(translationX: 0, y: -8).scaledBy(x: 0.98, y: 0.98)
-        UIView.animate(withDuration: 0.28, delay: 0, usingSpringWithDamping: 0.85,
-                       initialSpringVelocity: 0.3, options: [.allowUserInteraction]) {
-            self.header.alpha = 1
-            self.header.transform = .identity
-        }
-    }
-
     private func updateLipTitles() {
         let title = (descriptor.title?.isEmpty == false)
             ? descriptor.title : descriptor.url?.host

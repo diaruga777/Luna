@@ -315,7 +315,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             self.focus = self.topIndex
             self.applyFocus()
         }, completion: { [weak self] in
-            self?.playHeaderEntrance()
             self?.persist()
             self?.warmPreloadsForFocusedLayer()
             self?.ensureSpareLayer()   // this dive consumed the spare — rebuild the next one
@@ -339,7 +338,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             self.focus = index
             self.applyFocus()
         }, completion: { [weak self] in
-            self?.playHeaderEntrance()
             self?.persist()
             self?.warmPreloadsForFocusedLayer()
         })
@@ -358,9 +356,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// screen with `before` immediately, then — hidden behind that mask, on the next
     /// runloop — runs `applyState` (the layer rebuild/relayout) and snapshots the
     /// result, and only then dissolves. So the expensive build never blocks the frame
-    /// the user sees on tap. `afterScreenUpdates: false` keeps the snapshot cheap (the
-    /// focused header is hidden first to avoid the missing-blur artifact, then animated
-    /// back in by `playHeaderEntrance`).
+    /// the user sees on tap.
     private func runTransition(applyState: @escaping () -> Void,
                                completion: @escaping () -> Void) {
         guard let transition else {   // no Metal → instant cut
@@ -374,9 +370,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             // a display pass yet — it MUST be captured with afterScreenUpdates:true, or the
             // snapshot is stale (the dissolve would resolve to the *before* content
             // pixelated). This runs on the next runloop, off the tap's critical path.
+            // The focused header is left VISIBLE in the after capture (afterScreenUpdates:true
+            // renders the glass blur faithfully), so the dissolve resolves straight to the
+            // final header — there's no headerless frame to blink before it reappears.
             let before = self.snapshot(afterScreenUpdates: false)
             applyState()
-            self.layers[safe: self.focus]?.prepareForTransitionSnapshot()
             self.view.layoutIfNeeded()
             let after = self.snapshot(afterScreenUpdates: true)
             return (before, after)
@@ -385,8 +383,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             completion()
         }
     }
-
-    private func playHeaderEntrance() { layers.last?.playHeaderEntrance() }
 
     private func snapshot(afterScreenUpdates: Bool) -> UIImage {
         UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
@@ -433,7 +429,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             handle.finish(committed: committed) { [weak self] in
                 self?.transitionInFlight = false
                 if committed {
-                    self?.playHeaderEntrance()
                     self?.warmPreloadsForFocusedLayer()
                 }
             }
@@ -453,9 +448,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         // Compose the after state (parent focused, top layer gone) hidden under the overlay.
         let dying = layers[topIndex]
         applyFocus(focusedIndex: topIndex - 1, hiding: dying)
-        // Hide the parent's header for the snapshot (animated back in on commit), so the
-        // capture is cheap (afterScreenUpdates: false) and free of the glass-blur artifact.
-        layers[safe: topIndex - 1]?.prepareForTransitionSnapshot()
+        // The parent's header stays VISIBLE in the after capture (afterScreenUpdates:true
+        // renders the glass blur faithfully), so as the finger drives the wipe the header
+        // dissolves in proportionally along with the rest of the content — instead of being
+        // absent and snapping in only on commit.
         view.layoutIfNeeded()
         let after = snapshot(afterScreenUpdates: true)   // re-focused parent must render fresh
         applyFocus()                     // restore the live before state
@@ -503,7 +499,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             handle.finish(committed: committed) { [weak self] in
                 self?.transitionInFlight = false
                 if committed {
-                    self?.playHeaderEntrance()
                     self?.warmPreloadsForFocusedLayer()
                 }
             }
@@ -519,7 +514,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         let before = snapshot(afterScreenUpdates: false)
         let dying = layers[topIndex]
         applyFocus(focusedIndex: topIndex - 1, hiding: dying)
-        layers[safe: topIndex - 1]?.prepareForTransitionSnapshot()
+        // Keep the parent's header in the after capture so it tracks the interactive edge
+        // swipe (dissolving in proportionally) rather than snapping in only on commit.
         view.layoutIfNeeded()
         let after = snapshot(afterScreenUpdates: true)
         applyFocus()   // restore the live before state

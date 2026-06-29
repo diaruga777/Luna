@@ -432,16 +432,39 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     public func setMode(_ mode: ReadingListItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }
-        // Dissolve the card's content dot-by-dot from the old mode to the new one
-        // (falls back to a plain crossfade when the pixel-wipe is off / unavailable).
-        DotMatrixCrossfade.run(in: view, direction: .random) { [weak self] in
-            self?.embedReader(mode: mode)
-        }
-        descriptor.readerMode = mode
+        // The segment that WAS selected (the old mode) — captured before `readerMode`
+        // moves so the control's own pixel-wipe knows where to dissolve from.
+        let previousIndex = orderedModes.firstIndex(of: readerMode) ?? modeControl.selectedSegmentIndex
+        // Keep the control's live selection on the new mode (it's already there when this
+        // came from `modeChanged`; a no-op then, but needed for programmatic mode changes).
         if let index = orderedModes.firstIndex(of: mode) {
             modeControl.selectedSegmentIndex = index
         }
+        // Pixel-wipe the mode switcher's OWN selection move (the indicator dissolves
+        // dot-by-dot). Scoped to the control — the floating glass header that hosts it is a
+        // separate view and is never snapshotted, so the header stays stable.
+        DotMatrixSegmentedControl.animateSelectionChange(modeControl, from: previousIndex)
+        // Dissolve ONLY the content region (below the floating glass header) dot-by-dot from
+        // the old mode to the new one. The wipe is confined to the reader-child content rect
+        // via `region:`, so the glass header sitting at y:0..headerHeight never pixelates.
+        // (Falls back to a plain crossfade when the pixel-wipe is off / unavailable.)
+        let contentRegion = Self.contentWipeRegion(in: view.bounds)
+        DotMatrixCrossfade.run(in: view, direction: .random, region: contentRegion) { [weak self] in
+            self?.embedReader(mode: mode)
+        }
+        descriptor.readerMode = mode
         onModeChanged?(mode)
+    }
+
+    /// The sub-rect of the card the mode-switch wipe is confined to: everything BELOW the
+    /// floating glass header (which sits at `y: 0 ..< headerHeight`). Pure + testable so the
+    /// "header never pixelates" contract is pinned — the returned rect must never overlap the
+    /// header band. Mirrors the reader-child content frame in `viewDidLayoutSubviews`.
+    public static func contentWipeRegion(in bounds: CGRect) -> CGRect {
+        let top = headerHeight
+        return CGRect(x: 0, y: top,
+                      width: bounds.width,
+                      height: max(bounds.height - top, 0))
     }
 
     // MARK: - Article probe / embedding (forked from InlineReaderPageViewController)

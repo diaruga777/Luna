@@ -183,7 +183,12 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
             XCTFail("creation mode should have a Read instead button"); return
         }
         _ = target.perform(action)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        // The pop is an animated `popViewController`; under full-suite load it can need
+        // more than one run-loop turn to settle, so poll (bounded) instead of a fixed wait.
+        let popDeadline = Date().addingTimeInterval(2.0)
+        while nav.topViewController !== list && Date() < popDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
         XCTAssertTrue(nav.topViewController === list, "Read instead should pop back to the reading list")
         XCTAssertNil(ReadingListStore.shared.item(withID: tracker.id),
                      "Read instead (creation) should drop the whole tracker save")

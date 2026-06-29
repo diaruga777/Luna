@@ -92,7 +92,33 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         return modes
     }
 
+    /// Rebuild the mode switcher's segments from `orderedModes` and reselect the
+    /// current mode. Needed because the chrome is first built against the blank shell's
+    /// placeholder urlString (no `.original`); once `configure(...)` installs the real
+    /// URL this re-derives the set so web-URL saves regain the Original segment. Layout
+    /// (segment widths) is refreshed by the caller's `updateLipTitles`/layout pass.
+    private func rebuildModeSegments() {
+        let modes = orderedModes
+        modeControl.removeAllSegments()
+        for (index, mode) in modes.enumerated() {
+            modeControl.insertSegment(with: ReaderModeIcons.image(for: mode), at: index, animated: false)
+        }
+        modeControl.selectedSegmentIndex = modes.firstIndex(of: readerMode) ?? 0
+        view.setNeedsLayout()
+    }
+
     public var isArticle: Bool { articleContent != nil }
+
+    #if DEBUG
+    /// Test hook: the number of segments actually present in the header mode switcher.
+    /// This reads the live `UISegmentedControl` (not the `orderedModes` it's built from),
+    /// so it catches the regression where `configure(...)` set a new URL but left the
+    /// segment set built off the blank shell's placeholder ("", no `.original`).
+    public var modeSegmentCountForTesting: Int {
+        loadViewIfNeeded()
+        return modeControl.numberOfSegments
+    }
+    #endif
 
     /// De-duplicated http(s) links this layer's article points at, in document order.
     /// The host preloads these so a dive into one is instant.
@@ -134,7 +160,10 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             probeForArticle()
         }
         guard isViewLoaded else { return }   // viewDidLoad will start loading
-        modeControl.selectedSegmentIndex = orderedModes.firstIndex(of: readerMode) ?? 0
+        // The chrome was built against the blank shell's placeholder urlString (""),
+        // so its segment set excluded `.original`. Now that the real URL is in place,
+        // rebuild the segments from `orderedModes` so a web-URL save regains Original.
+        rebuildModeSegments()
         updateLipTitles()
         updateSaveSlot()
         beginLoading()
@@ -210,10 +239,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
         header.contentView.addSubview(backButton)
 
-        for (index, mode) in orderedModes.enumerated() {
-            modeControl.insertSegment(with: ReaderModeIcons.image(for: mode), at: index, animated: false)
-        }
-        modeControl.selectedSegmentIndex = orderedModes.firstIndex(of: readerMode) ?? 0
+        rebuildModeSegments()
         modeControl.isHidden = true
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
         header.contentView.addSubview(modeControl)

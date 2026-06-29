@@ -3,11 +3,50 @@
 //  ClipTests
 //
 
+import ClipModels
 import ClipReaderUI
 import XCTest
 @testable import Clip
 
 final class RabbitHoleStackStoreTests: XCTestCase {
+
+    // MARK: - Layer mode segments (regression: web-URL saves regain Original mode)
+
+    /// A web-URL save must offer all three reading modes — scroll, RSVP, and the
+    /// original (live/archived) page. The blank layer shell builds its chrome against a
+    /// placeholder empty URL (which excludes `.original`), so `configure(...)` must
+    /// rebuild the segment set off the real URL or the Original mode is permanently lost.
+    @MainActor
+    func testConfigureWithWebURLOffersOriginalSegment() {
+        let layer = RabbitHoleLayerViewController(
+            shareProvider: nil, gazeTrackerFactory: nil, layout: RabbitHoleLayout())
+        // Before configure: chrome built off the blank shell's "" placeholder → no Original.
+        XCTAssertEqual(layer.modeSegmentCountForTesting, 2)
+
+        let content = ArticleContent(title: "T", blocks: [
+            .init(kind: .paragraph, text: "Body text.", links: []),
+        ])
+        layer.configure(
+            descriptor: RabbitHoleLayerDescriptor(urlString: "https://example.com/article"),
+            preloadedContent: content)
+        // After configure with a real web URL: scroll + RSVP + original.
+        XCTAssertEqual(layer.modeSegmentCountForTesting, 3)
+    }
+
+    /// A save with a non-web (synthetic) URL — e.g. an email/document import — has no
+    /// live page to load, so the Original segment stays absent even after configure.
+    @MainActor
+    func testConfigureWithNonWebURLHasNoOriginalSegment() {
+        let layer = RabbitHoleLayerViewController(
+            shareProvider: nil, gazeTrackerFactory: nil, layout: RabbitHoleLayout())
+        let content = ArticleContent(title: "Mail", blocks: [
+            .init(kind: .paragraph, text: "Email body.", links: []),
+        ])
+        layer.configure(
+            descriptor: RabbitHoleLayerDescriptor(urlString: "clipmail://message/123"),
+            preloadedContent: content)
+        XCTAssertEqual(layer.modeSegmentCountForTesting, 2)
+    }
 
     private var tempDir: URL!
     private var store: RabbitHoleStackStore!

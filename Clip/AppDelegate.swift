@@ -61,6 +61,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         }
         DiagnosticLog.exportCloudKitContainer = { CloudKitMessageTransport.containerID }
 
+        // The confirmation toast lives in ClipDesignSystem (below ClipTransitions), so
+        // its Dot Matrix pixelate-in appearance is injected here. The pill assembles
+        // dot-by-dot when the pixel-wipe is enabled, and falls back to its spring slide-up
+        // when it's off / unavailable (the helper handles that gate internally).
+        Toast.appearanceAnimator = { pill in
+            DotMatrixAppear.pixelateIn(pill)
+        }
+
         // A friend-shared article received over CloudKit is ingested via the main-app
         // ingestor (which lives above the social layer), injected here.
         SocialMessageCenter.ingestHandler = { item in

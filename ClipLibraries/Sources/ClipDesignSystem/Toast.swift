@@ -10,6 +10,14 @@ import UIKit
 /// Auto-dismisses; tap to dismiss early.
 public enum Toast {
 
+    /// Optional appearance animator for the pill, injected from a higher layer so the
+    /// toast can use the Dot Matrix pixelate-in without `ClipDesignSystem` depending on
+    /// `ClipTransitions` (which would be a dependency cycle — `ClipTransitions` already
+    /// depends on `ClipDesignSystem`). Installed once at launch; nil ⇒ the built-in
+    /// spring slide-up. The pill is already added to its host and laid out at its final
+    /// frame when this is called.
+    @MainActor public static var appearanceAnimator: ((UIView) -> Void)?
+
     /// Shows `message` (with an optional leading SF Symbol) over `presenter`'s
     /// window, sliding up from the bottom and fading out after a moment.
     @MainActor
@@ -62,12 +70,22 @@ public enum Toast {
         pill.addGestureRecognizer(UITapGestureRecognizer(
             target: pill, action: #selector(UIView.dismissToast)))
 
-        pill.alpha = 0
-        pill.transform = CGAffineTransform(translationX: 0, y: 30)
-        UIView.animate(withDuration: 0.3, delay: 0,
-                       usingSpringWithDamping: 0.8, initialSpringVelocity: 0.4) {
-            pill.alpha = 1
+        // Lay the pill out at its final frame so the appearance animator can snapshot it.
+        host.layoutIfNeeded()
+
+        if let appearanceAnimator {
+            // Dot Matrix pixelate-in (injected at launch): the pill assembles dot-by-dot.
             pill.transform = .identity
+            appearanceAnimator(pill)
+        } else {
+            // Built-in fallback: spring slide-up from the bottom.
+            pill.alpha = 0
+            pill.transform = CGAffineTransform(translationX: 0, y: 30)
+            UIView.animate(withDuration: 0.3, delay: 0,
+                           usingSpringWithDamping: 0.8, initialSpringVelocity: 0.4) {
+                pill.alpha = 1
+                pill.transform = .identity
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) { [weak pill] in
             pill?.dismissToast()

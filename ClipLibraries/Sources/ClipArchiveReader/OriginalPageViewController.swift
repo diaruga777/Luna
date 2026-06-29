@@ -10,7 +10,9 @@ import WebKit
 
 /// Displays source material captured at save time: a WebKit `.webarchive` for web
 /// pages, or an imported source document such as a PDF. It never rebuilds a page
-/// from parsed reader content and it never reaches back to the network.
+/// from parsed reader content. It prefers the locally captured artifact and only
+/// reaches back to the network as a fallback, when a web save's `.webarchive`
+/// capture is missing (so the always-offered Original mode is never blank).
 public final class OriginalPageViewController: UIViewController {
     private let item: ReadingListItem
     private let store: ReadingListStore
@@ -56,6 +58,11 @@ public final class OriginalPageViewController: UIViewController {
                          baseURL: savedItem.url ?? archiveURL)
         } else if let documentURL = store.originalDocumentURL(for: savedItem) {
             webView.loadFileURL(documentURL, allowingReadAccessTo: store.articlesDirectory)
+        } else if savedItem.isShareable, let liveURL = savedItem.url {
+            // The save is a web page but its `.webarchive` capture is missing (still
+            // downloading, or it failed). Fall back to the live page so the Original
+            // mode — which the reader always offers for web saves — is never blank.
+            webView.load(URLRequest(url: liveURL))
         }
     }
 }

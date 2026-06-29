@@ -642,8 +642,16 @@ public final class ReadingListStore {
         return fileManager.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// Whether the reader should offer the Original/archive view mode for this save.
+    ///
+    /// Keyed off the save's *source* (`ReadingListItem.canHaveOriginalArchive`), NOT
+    /// off whether the archive file is on disk yet: every web page and imported
+    /// document owns an original artifact and gets the mode (a web page whose
+    /// `.webarchive` capture is still missing falls back to its live page in
+    /// `OriginalPageViewController`), while email-text imports — the only saves with
+    /// no original artifact — never get it.
     public func hasOriginalSource(for item: ReadingListItem) -> Bool {
-        webArchiveURL(for: item) != nil || originalDocumentURL(for: item) != nil
+        item.canHaveOriginalArchive
     }
 
     // MARK: - Private

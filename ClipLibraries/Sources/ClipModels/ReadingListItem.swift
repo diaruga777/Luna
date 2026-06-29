@@ -164,11 +164,29 @@ public struct ReadingListItem: Codable, Identifiable {
         return cleaned.isEmpty ? nil : String(cleaned.prefix(8))
     }
 
+    /// Whether `urlString` is a real web page URL (http/https) rather than one of
+    /// the synthetic `clipmail://` / `clipdoc://` schemes used for imports.
+    public static func isWebPageURL(_ urlString: String) -> Bool {
+        guard let scheme = URL(string: urlString)?.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
+    }
+
     /// Whether this item has a real web URL that can be shared (false for
     /// documents and imported emails, whose URLs are synthetic `clip…://` ones).
-    public var isShareable: Bool {
-        guard let scheme = url?.scheme?.lowercased() else { return false }
-        return scheme == "http" || scheme == "https"
+    public var isShareable: Bool { Self.isWebPageURL(urlString) }
+
+    /// Whether the reader should offer the original-archive view mode for this save.
+    ///
+    /// EVERY textual save owns an original artifact and should expose it: a
+    /// `.webarchive` (or, as a fallback, the live page) for web pages, and the
+    /// imported source file for PDFs/other documents. The sole exception is an
+    /// EMAIL-text import (`clipmail://`, `captureSource == .email`), which has no
+    /// original artifact at all. This is a *capability* of the save's source, not a
+    /// statement about whether the archive file has finished downloading — so a web
+    /// page never loses the mode just because its `.webarchive` capture is absent.
+    public var canHaveOriginalArchive: Bool {
+        guard effectiveCaptureSource != .email else { return false }
+        return isShareable || isDocument
     }
 
     /// Only items with a real web URL can be sent to other users.

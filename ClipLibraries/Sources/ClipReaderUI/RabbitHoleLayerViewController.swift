@@ -81,10 +81,12 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     /// Reading modes offered for this layer. `.original` (loading the live web page)
     /// is only shown when this layer actually points at a web page — saves with no real
-    /// http(s) URL (e.g. mail imports) have nothing to load, so they never get it.
+    /// http(s) URL (e.g. mail imports) have nothing to load, so they never get it. This
+    /// matches `ReadingListItem.canHaveOriginalArchive` for this reader's web-only domain
+    /// (every layer is a dived-into http(s) link), sharing the same web-page URL test.
     private var orderedModes: [ReadingListItem.ReaderMode] {
         var modes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp]
-        if let scheme = descriptor.url?.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+        if ReadingListItem.isWebPageURL(descriptor.urlString) {
             modes.append(.original)
         }
         return modes

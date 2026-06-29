@@ -442,7 +442,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         guard isArticle, mode != readerMode else { return }
         // Dissolve the card's content dot-by-dot from the old mode to the new one
         // (falls back to a plain crossfade when the pixel-wipe is off / unavailable).
-        HalftoneCrossfade.run(in: view, direction: .random) { [weak self] in
+        DotMatrixCrossfade.run(in: view, direction: .random) { [weak self] in
             self?.embedReader(mode: mode)
         }
         descriptor.readerMode = mode

@@ -54,7 +54,7 @@ let package = Package(
         .target(name: "ClipPriceMetadata"),
         .target(name: "ClipContentRendering"),
         // Shared UIKit transition facade: wraps the ClipContentRendering Metal engine
-        // (halftone pixel-wipe) behind UIViewControllerAnimatedTransitioning, nav/modal
+        // (Dot Matrix pixel-wipe) behind UIViewControllerAnimatedTransitioning, nav/modal
         // delegates, an in-place crossfade, and a table batch helper. Linked by the app
         // and the action extension so both get the same global transitions.
         .target(name: "ClipTransitions", dependencies: ["ClipContentRendering", "ClipDesignSystem"]),

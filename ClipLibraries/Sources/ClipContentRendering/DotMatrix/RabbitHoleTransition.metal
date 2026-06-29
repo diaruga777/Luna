@@ -5,7 +5,7 @@
 //  A self-contained, GPU two-wavefront transition between two screen snapshots
 //  (A = the existing view, B = the final view). Used everywhere the app plays a
 //  "pixel wipe": the RabbitHole reader's dive / pop / overscroll AND the global
-//  halftone transitions (nav push/pop, modal present/dismiss, in-place crossfades,
+//  Dot Matrix transitions (nav push/pop, modal present/dismiss, in-place crossfades,
 //  table batch updates).
 //
 //  Two overlapping wavefronts, both driven by one global `progress` (0 = A, 1 = B):
@@ -21,7 +21,7 @@
 //
 //  Pure GPU: one draw call per frame, all per-fragment. Inputs are the two snapshot
 //  textures + a small uniform struct. Deliberately separate from the shipping
-//  HalftoneEffect shader so that effect can't regress.
+//  DotMatrixEffect shader so that effect can't regress.
 //
 
 #include <metal_stdlib>

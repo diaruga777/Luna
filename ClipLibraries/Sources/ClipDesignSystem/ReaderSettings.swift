@@ -38,7 +38,7 @@ public enum ReaderSettings {
 
     /// Experimental "Pixel Wipe Transitions". When on, this single switch (a) makes
     /// every view-controller transition, view appear/disappear, and table animation —
-    /// in the app and the action extension — play as a halftone pixel-wipe wavefront,
+    /// in the app and the action extension — play as a Dot Matrix pixel-wipe wavefront,
     /// and (b) opens saves in the forked "RabbitHole" stacked-layer inline reader
     /// instead of the standard `ReaderViewController`. **Off by default**; when off,
     /// the stock UIKit animations and the standard reader are used unchanged.

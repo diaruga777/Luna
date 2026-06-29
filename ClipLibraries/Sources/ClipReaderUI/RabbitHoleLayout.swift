@@ -10,7 +10,7 @@ import UIKit
 
 /// Pure geometry for the RabbitHole stacked-layer reader: the static resting frame of
 /// every layer for a given focused index. Transitions between two focus states are
-/// rendered by the halftone wipe (`RabbitHoleTransitioning`), so this only ever needs
+/// rendered by the Dot Matrix wipe (`RabbitHoleTransitioning`), so this only ever needs
 /// the discrete rest states — no fractional interpolation.
 ///
 /// Model (let `δ = focusedIndex - layerIndex`, the layer's distance *behind* the focus):

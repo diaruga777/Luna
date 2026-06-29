@@ -2,7 +2,7 @@
 //  DotMatrixSpinnerView.swift
 //  ClipDesignSystem
 //
-//  A halftone-flavored indeterminate spinner: a small grid of rounded-square
+//  A Dot Matrix-flavored indeterminate spinner: a small grid of rounded-square
 //  "dots" whose opacity + scale ripple in a continuous diagonal wave. It evokes
 //  the app's dot-matrix transition aesthetic (rounded squares, small spacing,
 //  monochrome label tint) and is a mechanical drop-in for `UIActivityIndicatorView`

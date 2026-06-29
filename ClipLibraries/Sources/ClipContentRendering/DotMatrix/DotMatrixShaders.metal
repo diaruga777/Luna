@@ -1,8 +1,8 @@
 //
-//  HalftoneShaders.metal
-//  HalftoneEffect
+//  DotMatrixShaders.metal
+//  DotMatrixEffect
 //
-//  Real-time "dot-matrix / halftone" post-process. Each output pixel figures out
+//  Real-time "dot-matrix" post-process. Each output pixel figures out
 //  which grid cell it belongs to, samples the source content at the CENTER of that
 //  cell (so the whole cell shows one flat color, like an LED panel), then draws a
 //  rounded-rectangle (squircle-ish) "dot" inside the cell. The space between dots
@@ -19,14 +19,14 @@
 //      handful of taps, gated by a uniform so it costs nothing when disabled.
 //
 //  This is written to be trivially portable: it has no dependency on the Swift side
-//  beyond the `HalftoneUniforms` layout, which is mirrored exactly in Swift.
+//  beyond the `DotMatrixUniforms` layout, which is mirrored exactly in Swift.
 //
 
 #include <metal_stdlib>
 using namespace metal;
 
-// Mirrors `HalftoneUniforms` in Swift. Keep field order/packing identical.
-struct HalftoneUniforms {
+// Mirrors `DotMatrixUniforms` in Swift. Keep field order/packing identical.
+struct DotMatrixUniforms {
     float2 resolution;        // drawable size in pixels
     float2 contentScale;      // (texelSize.x/resolution.x, ...) usually 1,1; lets the
                               // source texture differ in size from the drawable.
@@ -88,7 +88,7 @@ struct VSOut {
 };
 
 // Fullscreen triangle — 3 verts, no vertex buffer needed.
-vertex VSOut halftone_vertex(uint vid [[vertex_id]]) {
+vertex VSOut dotMatrix_vertex(uint vid [[vertex_id]]) {
     float2 p = float2((vid << 1) & 2, vid & 2);   // (0,0) (2,0) (0,2)
     VSOut o;
     o.position = float4(p * 2.0 - 1.0, 0.0, 1.0);
@@ -119,7 +119,7 @@ static inline float2 hash22(float2 p) {
 // The per-fragment "front coordinate" the reveal wave compares against its radius
 // `R`: behind the front a fragment shows `revealTo`, ahead `revealFrom`. Swapping
 // the metric is what turns one ripple into many transition shapes.
-static inline float revealFrontCoord(constant HalftoneUniforms& U, float2 toOrigin,
+static inline float revealFrontCoord(constant DotMatrixUniforms& U, float2 toOrigin,
                                      float distO, float2 fragPx) {
     if (U.revealMode < 0.5) {            // radial — expanding circle
         return distO;
@@ -145,9 +145,9 @@ static inline float revealFrontCoord(constant HalftoneUniforms& U, float2 toOrig
 
 // --- fragment --------------------------------------------------------------
 
-fragment float4 halftone_fragment(VSOut in [[stage_in]],
+fragment float4 dotMatrix_fragment(VSOut in [[stage_in]],
                                   texture2d<float, access::sample> src [[texture(0)]],
-                                  constant HalftoneUniforms& U [[buffer(0)]]) {
+                                  constant DotMatrixUniforms& U [[buffer(0)]]) {
     constexpr sampler linearSampler(mag_filter::linear,
                                     min_filter::linear,
                                     mip_filter::linear,

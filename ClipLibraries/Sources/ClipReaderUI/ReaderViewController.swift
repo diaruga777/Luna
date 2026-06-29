@@ -267,7 +267,7 @@ public final class ReaderViewController: UIViewController {
         onModeChange?(newMode)
         // Dissolve the whole content area dot-by-dot from the old mode to the new one
         // (falls back to a plain crossfade when the pixel-wipe is off / unavailable).
-        HalftoneCrossfade.run(in: contentContainer, direction: .random) { [weak self] in
+        DotMatrixCrossfade.run(in: contentContainer, direction: .random) { [weak self] in
             self?.showCurrentMode()
         }
     }

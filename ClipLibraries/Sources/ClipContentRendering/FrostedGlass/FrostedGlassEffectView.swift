@@ -6,7 +6,7 @@
 //  frosted glass" effect to a view: the captured content is diffused by a
 //  scattered glass blur, its bright regions bloom into a tinted neon glow, and a
 //  tap fires an expanding ripple that sweeps the effect in/out from the touch
-//  point. Forked from HalftoneEffectView — it shares the capture/ripple/display-
+//  point. Forked from DotMatrixEffectView — it shares the capture/ripple/display-
 //  link machinery but swaps in the frosted-neon fragment shader and uniforms.
 //
 //  Usage:
@@ -812,13 +812,13 @@ nonisolated(unsafe) private var frostedGlassKey: UInt8 = 0
 
 public extension UIView {
 
-    /// The active halftone effect on this view, if any.
+    /// The active Dot Matrix effect on this view, if any.
     internal(set) var frostedGlassEffect: FrostedGlassEffectView? {
         get { objc_getAssociatedObject(self, &frostedGlassKey) as? FrostedGlassEffectView }
         set { objc_setAssociatedObject(self, &frostedGlassKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
     }
 
-    /// Apply the halftone effect to this view. The effect view is placed directly
+    /// Apply the Dot Matrix effect to this view. The effect view is placed directly
     /// over this view (as a sibling) and re-renders this view's content through the
     /// dot-matrix shader every frame, so animations on this view and its subviews
     /// flow through the effect automatically.
@@ -874,7 +874,7 @@ public extension UIView {
 
     /// Apply the effect to `self` (the layout host) while capturing a *different*
     /// `source` view's content. The effect is pinned to `self`, so `self` stays a
-    /// normal, layout-stable view. See the halftone equivalent for why the captured
+    /// normal, layout-stable view. See the Dot Matrix equivalent for why the captured
     /// view must not be the one that owns layout constraints (CARenderer orphans it).
     @discardableResult
     func applyFrostedGlass(_ config: FrostedGlassConfig = FrostedGlassConfig(), capturing source: UIView) -> FrostedGlassEffectView? {
@@ -888,7 +888,7 @@ public extension UIView {
         return effect
     }
 
-    /// Remove any halftone effect from this view.
+    /// Remove any Dot Matrix effect from this view.
     func removeFrostedGlass() {
         frostedGlassEffect?.remove()
         frostedGlassEffect = nil

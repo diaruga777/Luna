@@ -1,6 +1,6 @@
 //
-//  HalftoneExampleViewController.swift
-//  HalftoneEffect — example / integration reference
+//  DotMatrixExampleViewController.swift
+//  DotMatrixEffect — example / integration reference
 //
 //  This file is OPTIONAL. It shows three things:
 //    1. Applying the effect to an image view in one line.
@@ -13,11 +13,11 @@
 
 import UIKit
 
-final class HalftoneExampleViewController: UIViewController {
+final class DotMatrixExampleViewController: UIViewController {
 
     private let canvas = UIView()
     private let imageView = UIImageView()
-    private var effect: HalftoneEffectView?
+    private var effect: DotMatrixEffectView?
 
     private let cellSlider = UISlider()
     private let radiusSlider = UISlider()
@@ -46,7 +46,7 @@ final class HalftoneExampleViewController: UIViewController {
         addBouncingBlobs(to: canvas)   // complex animation behind the dots
 
         // --- Apply the effect. One line. ---------------------------------------
-        effect = canvas.applyHalftone { c in
+        effect = canvas.applyDotMatrix { c in
             c.cellSize     = 16
             c.dotScale     = 0.84
             c.shape        = .roundedSquare(cornerRadius: 0.30)

@@ -5,7 +5,7 @@
 //  Real-time "neon lights through frosted glass" post-process. The source content
 //  is diffused by a scattered disk blur (the frosting), then its bright/saturated
 //  regions are bloomed into a soft neon glow, optionally tinted. A wave transition
-//  (shared in spirit with the halftone effect) reveals the effect from a tap point
+//  (shared in spirit with the Dot Matrix effect) reveals the effect from a tap point
 //  with a radial ripple through the "glass".
 //
 //  Mirrors `FrostedUniforms` in Swift — keep field order/packing identical.

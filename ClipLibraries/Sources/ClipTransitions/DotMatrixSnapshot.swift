@@ -1,5 +1,5 @@
 //
-//  HalftoneSnapshot.swift
+//  DotMatrixSnapshot.swift
 //  ClipTransitions
 //
 //  Rasterises a view into a UIImage for the GPU transition. Opaque and capped at 2×
@@ -9,7 +9,7 @@
 
 import UIKit
 
-enum HalftoneSnapshot {
+enum DotMatrixSnapshot {
     /// Snapshot `view`'s own hierarchy at its current bounds. `afterScreenUpdates`
     /// true flushes pending layout first (use for the post-change "after" image);
     /// false captures the already-committed state (use for the "before" image, with

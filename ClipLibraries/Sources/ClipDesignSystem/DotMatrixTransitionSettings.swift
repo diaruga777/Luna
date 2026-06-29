@@ -1,8 +1,8 @@
 //
-//  HalftoneTransitionSettings.swift
+//  DotMatrixTransitionSettings.swift
 //  ClipDesignSystem
 //
-//  Persisted, tunable parameters for the halftone "pixel wipe" — the two-wavefront
+//  Persisted, tunable parameters for the Dot Matrix "pixel wipe" — the two-wavefront
 //  pixel-mosaic dissolve used both by the RabbitHole reader (dive / pop / overscroll)
 //  and by the global transitions (nav push/pop, modal present/dismiss, in-place
 //  crossfades, table batch updates). Stored in the App Group so the values survive
@@ -17,7 +17,7 @@
 import CoreGraphics
 import Foundation
 
-public enum HalftoneTransitionSettings {
+public enum DotMatrixTransitionSettings {
 
     // MARK: Slider ranges (each exposed across its full sensible range)
 
@@ -39,10 +39,10 @@ public enum HalftoneTransitionSettings {
 
     private static let defaultPixelSize: Double = 6
     private static let defaultCornerRadius: Double = 2
-    private static let defaultSpacing: Double = 2
-    private static let defaultPhase1: Double = 0.55
-    private static let defaultPhase2: Double = 0.35
-    private static let defaultStagger: Double = 0.6
+    private static let defaultSpacing: Double = 1
+    private static let defaultPhase1: Double = 0.45
+    private static let defaultPhase2: Double = 0.40
+    private static let defaultStagger: Double = 0.2
     private static let defaultMonochrome = false
 
     // MARK: Storage (App Group, shared with the action extension)
@@ -103,6 +103,10 @@ public enum HalftoneTransitionSettings {
     /// fraction of the timeline. The DOMINANT component, so the transition reads as a
     /// moving front (directional) or scattered dots (random) — not a flat fade. Higher
     /// stagger = a more spread-out, sequential front.
+    ///
+    /// The 0.40 floor keeps the front pronounced even at low stagger: at the hardened
+    /// default stagger (0.2) sweep ≈ 0.49 while `win` ≈ 0.26, so the moving front is
+    /// roughly twice the per-cell fade and stays clearly dominant — no flat fade.
     public static var sweep: CGFloat {
         CGFloat(min(max(0.40 + Double(stagger) * 0.45, 0.20), 0.90))
     }

@@ -1,8 +1,8 @@
 //
-//  HalftoneTransitionCenter.swift
+//  DotMatrixTransitionCenter.swift
 //  ClipTransitions
 //
-//  Owns the GPU overlay views for the global halftone "pixel wipe". A single overlay
+//  Owns the GPU overlay views for the global Dot Matrix "pixel wipe". A single overlay
 //  is prewarmed and parked per window so the costly Metal pipeline compile happens
 //  once, off the tap critical path; transitions borrow it, animate, and return it.
 //  `isEnabled` is the single gate every transition surface checks — the user toggle
@@ -14,8 +14,8 @@ import ClipContentRendering
 import ClipDesignSystem
 import UIKit
 
-public final class HalftoneTransitionCenter {
-    public static let shared = HalftoneTransitionCenter()
+public final class DotMatrixTransitionCenter {
+    public static let shared = DotMatrixTransitionCenter()
     private init() {}
 
     /// Parked, reusable overlays keyed weakly by window (auto-released on window

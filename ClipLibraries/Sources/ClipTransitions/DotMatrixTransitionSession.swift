@@ -1,26 +1,26 @@
 //
-//  HalftoneTransitionSession.swift
+//  DotMatrixTransitionSession.swift
 //  ClipTransitions
 //
-//  The shared setup + teardown for a single GPU halftone "pixel wipe" driven by a
-//  UIViewControllerContextTransitioning. Both the non-interactive `HalftoneAnimator`
-//  and the interactive `HalftoneInteractivePopController` use this so the
+//  The shared setup + teardown for a single GPU Dot Matrix "pixel wipe" driven by a
+//  UIViewControllerContextTransitioning. Both the non-interactive `DotMatrixAnimator`
+//  and the interactive `DotMatrixInteractivePopController` use this so the
 //  snapshot/overlay-borrow/commit dance lives in exactly one place.
 //
 //  `begin(context:direction:)` synchronously parents the incoming view, snapshots
 //  before/after, borrows the window's prewarmed overlay, and parks it on top at
 //  progress 0 — all in one runloop so the incoming view is never seen uncovered.
-//  The caller then either runs it to completion (`HalftoneAnimator`) or drives
+//  The caller then either runs it to completion (`DotMatrixAnimator`) or drives
 //  `setProgress` from a gesture and ends with `settle(committed:)` (interactive).
 //
 
 import ClipContentRendering
 import UIKit
 
-/// A live, set-up halftone wipe bound to one transition context. Holds the overlay
+/// A live, set-up Dot Matrix wipe bound to one transition context. Holds the overlay
 /// and the bookkeeping needed to finish the transition cleanly (return the overlay,
 /// remove the incoming view on cancel, call `completeTransition`).
-final class HalftoneTransitionSession {
+final class DotMatrixTransitionSession {
 
     private let ctx: UIViewControllerContextTransitioning
     private let overlay: RabbitHoleTransitionView
@@ -43,9 +43,9 @@ final class HalftoneTransitionSession {
     /// Set up the overlay + snapshots synchronously and park it on top at progress 0
     /// (the before frame). Returns nil — and the caller must complete the context as an
     /// instant cut — when the engine is unavailable or a snapshot fails. Mirrors what the
-    /// old `HalftoneAnimator.animateTransition` did up to the point it kicked off the run.
+    /// old `DotMatrixAnimator.animateTransition` did up to the point it kicked off the run.
     static func begin(context ctx: UIViewControllerContextTransitioning,
-                      direction: HalftoneWavefrontDirection) -> HalftoneTransitionSession? {
+                      direction: DotMatrixWavefrontDirection) -> DotMatrixTransitionSession? {
         let container = ctx.containerView
         guard let toVC = ctx.viewController(forKey: .to),
               let toView = ctx.view(forKey: .to) else { return nil }
@@ -63,14 +63,14 @@ final class HalftoneTransitionSession {
         let window = container.window
         let beforeView = fromView ?? toView
 
-        guard HalftoneTransitionCenter.shared.isEnabled,
-              let beforeImg = HalftoneSnapshot.image(of: beforeView, afterScreenUpdates: false),
-              let afterImg = HalftoneSnapshot.image(of: toView, afterScreenUpdates: true),
-              let overlay = HalftoneTransitionCenter.shared.borrowOverlay(for: window) else {
+        guard DotMatrixTransitionCenter.shared.isEnabled,
+              let beforeImg = DotMatrixSnapshot.image(of: beforeView, afterScreenUpdates: false),
+              let afterImg = DotMatrixSnapshot.image(of: toView, afterScreenUpdates: true),
+              let overlay = DotMatrixTransitionCenter.shared.borrowOverlay(for: window) else {
             return nil
         }
 
-        overlay.style = HalftoneTransitionStyleProvider.style(for: container.traitCollection)
+        overlay.style = DotMatrixTransitionStyleProvider.style(for: container.traitCollection)
         overlay.direction = direction
         overlay.frame = container.bounds
         overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -79,7 +79,7 @@ final class HalftoneTransitionSession {
         overlay.isHidden = false
         container.addSubview(overlay)
 
-        return HalftoneTransitionSession(ctx: ctx, overlay: overlay, window: window,
+        return DotMatrixTransitionSession(ctx: ctx, overlay: overlay, window: window,
                                          toView: toView, isIncomingNew: isIncomingNew)
     }
 
@@ -105,7 +105,7 @@ final class HalftoneTransitionSession {
     /// Return the overlay, undo the incoming view on cancel, and complete the context.
     private func finish(committed: Bool) {
         if !committed && isIncomingNew { toView.removeFromSuperview() }
-        HalftoneTransitionCenter.shared.returnOverlay(overlay, for: window)
+        DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: window)
         ctx.completeTransition(committed)
     }
 }

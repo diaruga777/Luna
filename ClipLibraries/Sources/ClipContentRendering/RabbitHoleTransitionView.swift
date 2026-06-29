@@ -10,7 +10,7 @@
 //  work is the GPU draw; only the one-time snapshots happen on the main thread. The
 //  expensive Metal device/queue/pipeline are built once and shared, so a transition
 //  view can be made (and the overlay prewarmed) without recompiling the shader. The
-//  shipping HalftoneEffectView is untouched.
+//  shipping DotMatrixEffectView is untouched.
 //
 
 import Metal
@@ -20,7 +20,7 @@ import simd
 /// Which way the two wavefronts sweep across the screen. Random reveals cells in a
 /// hashed order (a fade); the directional cases mirror the base UIKit motion (e.g. a
 /// nav push sweeps right-to-left). Both waves travel the same way for directional modes.
-public enum HalftoneWavefrontDirection: Int {
+public enum DotMatrixWavefrontDirection: Int {
     case random = 0
     case leftToRight = 1
     case rightToLeft = 2
@@ -95,7 +95,7 @@ public final class RabbitHoleTransitionView: UIView {
 
     public var style = RabbitHoleTransitionStyle() { didSet { renderFrame() } }
     /// Which way the wavefronts sweep. Set per call (push, pop, fade…) before animating.
-    public var direction: HalftoneWavefrontDirection = .random { didSet { renderFrame() } }
+    public var direction: DotMatrixWavefrontDirection = .random { didSet { renderFrame() } }
 
     private let device: MTLDevice
     private let queue: MTLCommandQueue

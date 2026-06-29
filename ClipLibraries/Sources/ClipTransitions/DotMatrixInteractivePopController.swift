@@ -1,12 +1,12 @@
 //
-//  HalftoneInteractivePopController.swift
+//  DotMatrixInteractivePopController.swift
 //  ClipTransitions
 //
-//  The interactive counterpart to `HalftoneAnimator`: a
-//  `UIViewControllerInteractiveTransitioning` that drives the GPU halftone wipe
+//  The interactive counterpart to `DotMatrixAnimator`: a
+//  `UIViewControllerInteractiveTransitioning` that drives the GPU Dot Matrix wipe
 //  finger-for-finger. `UIPercentDrivenInteractiveTransition` can't be used here — it
 //  scrubs a CAAnimation's `timeOffset`, but the wipe is rendered by a Metal overlay
-//  via a CADisplayLink, NOT a CAAnimation. So this owns a `HalftoneTransitionSession`
+//  via a CADisplayLink, NOT a CAAnimation. So this owns a `DotMatrixTransitionSession`
 //  and maps gesture fraction → `overlay.setProgress` directly.
 //
 //  Lifecycle: `startInteractiveTransition(_:)` does the same before/after snapshot +
@@ -18,21 +18,21 @@
 import ClipContentRendering
 import UIKit
 
-public final class HalftoneInteractivePopController: NSObject, UIViewControllerInteractiveTransitioning {
+public final class DotMatrixInteractivePopController: NSObject, UIViewControllerInteractiveTransitioning {
 
-    private let direction: HalftoneWavefrontDirection
-    private var session: HalftoneTransitionSession?
+    private let direction: DotMatrixWavefrontDirection
+    private var session: DotMatrixTransitionSession?
     /// True once the gesture interaction has actually started driving a context. A driver
     /// checks this to know whether `finish`/`cancel` will do anything.
     public private(set) var isActive = false
 
-    public init(direction: HalftoneWavefrontDirection) {
+    public init(direction: DotMatrixWavefrontDirection) {
         self.direction = direction
         super.init()
     }
 
     public func startInteractiveTransition(_ ctx: UIViewControllerContextTransitioning) {
-        guard let session = HalftoneTransitionSession.begin(context: ctx, direction: direction) else {
+        guard let session = DotMatrixTransitionSession.begin(context: ctx, direction: direction) else {
             // Engine unavailable / snapshot failed: there's nothing to drive, so cancel the
             // interactive pop immediately (UIKit puts the from-VC back).
             ctx.completeTransition(false)

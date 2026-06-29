@@ -822,13 +822,13 @@ nonisolated(unsafe) private var stoneKey: UInt8 = 0
 
 public extension UIView {
 
-    /// The active halftone effect on this view, if any.
+    /// The active Dot Matrix effect on this view, if any.
     internal(set) var stoneEffect: StoneEffectView? {
         get { objc_getAssociatedObject(self, &stoneKey) as? StoneEffectView }
         set { objc_setAssociatedObject(self, &stoneKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
     }
 
-    /// Apply the halftone effect to this view. The effect view is placed directly
+    /// Apply the Dot Matrix effect to this view. The effect view is placed directly
     /// over this view (as a sibling) and re-renders this view's content through the
     /// dot-matrix shader every frame, so animations on this view and its subviews
     /// flow through the effect automatically.
@@ -884,7 +884,7 @@ public extension UIView {
 
     /// Apply the effect to `self` (the layout host) while capturing a *different*
     /// `source` view's content. The effect is pinned to `self`, so `self` stays a
-    /// normal, layout-stable view. See the halftone equivalent for why the captured
+    /// normal, layout-stable view. See the Dot Matrix equivalent for why the captured
     /// view must not be the one that owns layout constraints (CARenderer orphans it).
     @discardableResult
     func applyStone(_ config: StoneConfig = StoneConfig(), capturing source: UIView) -> StoneEffectView? {
@@ -898,7 +898,7 @@ public extension UIView {
         return effect
     }
 
-    /// Remove any halftone effect from this view.
+    /// Remove any Dot Matrix effect from this view.
     func removeStone() {
         stoneEffect?.remove()
         stoneEffect = nil

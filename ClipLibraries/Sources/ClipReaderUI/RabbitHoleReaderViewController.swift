@@ -11,7 +11,7 @@
 //  SplitWebOverlay inline reader are untouched.
 //
 //  Layers rest at integer focus positions (RabbitHoleLayout). Moving between two
-//  positions (dive / pop / interactive overscroll) is rendered by an injected halftone
+//  positions (dive / pop / interactive overscroll) is rendered by an injected Dot Matrix
 //  dot-matrix wipe (`RabbitHoleTransitioning`) over before/after snapshots — never by
 //  moving the live cards, so there's no per-frame relayout.
 //
@@ -370,7 +370,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         }
     }
 
-    // MARK: - Overscroll-to-pop (interactive halftone wipe)
+    // MARK: - Overscroll-to-pop (interactive Dot Matrix wipe)
 
     @objc private func handleOverscrollPan(_ pan: UIPanGestureRecognizer) {
         guard layers.count > 1, !transitionInFlight,
@@ -443,7 +443,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         overscrollScroll = nil
     }
 
-    // MARK: - Left-edge-swipe-to-pop-one-layer (interactive halftone wipe)
+    // MARK: - Left-edge-swipe-to-pop-one-layer (interactive Dot Matrix wipe)
 
     /// Width used to normalise the edge drag into a 0…1 fraction (set on .began).
     private var edgePopWidth: CGFloat = 1

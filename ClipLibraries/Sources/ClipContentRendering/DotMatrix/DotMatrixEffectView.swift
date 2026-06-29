@@ -1,9 +1,9 @@
 //
-//  HalftoneEffectView.swift
-//  HalftoneEffect
+//  DotMatrixEffectView.swift
+//  DotMatrixEffect
 //
 //  A standalone, drop-in UIKit component that applies a real-time "dot-matrix /
-//  halftone" effect to ANY UIView and everything it contains (including live
+//  Dot Matrix" effect to ANY UIView and everything it contains (including live
 //  Core Animation animations), with a Metal pipeline that stays smooth on older
 //  hardware.
 //
@@ -12,10 +12,10 @@
 //  ---------------------------------------------------------------------------
 //
 //      // One line:
-//      let effect = someView.applyHalftone()
+//      let effect = someView.applyDotMatrix()
 //
 //      // …or configured:
-//      let effect = imageView.applyHalftone { c in
+//      let effect = imageView.applyDotMatrix { c in
 //          c.cellSize     = 14
 //          c.dotScale     = 0.82
 //          c.cornerRadius = 0.28      // 0 = square, 1 = circle
@@ -28,9 +28,9 @@
 //      effect.config.cellSize = 22
 //
 //      // Remove:
-//      effect.remove()                // or imageView.removeHalftone()
+//      effect.remove()                // or imageView.removeDotMatrix()
 //
-//  Drop `HalftoneEffectView.swift` + `HalftoneShaders.metal` into your target.
+//  Drop `DotMatrixEffectView.swift` + `DotMatrixShaders.metal` into your target.
 //  No other files required. iOS 13+.
 //
 //  ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ import simd
 
 /// All tunable parameters of the effect. Assigning any property updates the
 /// effect on the next frame. Safe to mutate from the main thread at any time.
-public struct HalftoneConfig: Equatable {
+public struct DotMatrixConfig: Equatable {
 
     public enum DotShape: Equatable {
         case circle
@@ -210,8 +210,8 @@ public struct HalftoneConfig: Equatable {
     // Convenience presets ---------------------------------------------------
 
     /// The reference "LED flower" look: rounded squares on near-black.
-    public static var ledPanel: HalftoneConfig {
-        var c = HalftoneConfig()
+    public static var ledPanel: DotMatrixConfig {
+        var c = DotMatrixConfig()
         c.cellSize = 16
         c.dotScale = 0.84
         c.shape = .roundedSquare(cornerRadius: 0.30)
@@ -221,9 +221,9 @@ public struct HalftoneConfig: Equatable {
         return c
     }
 
-    /// Classic round-dot halftone.
-    public static var dots: HalftoneConfig {
-        var c = HalftoneConfig()
+    /// Classic round-dot Dot Matrix.
+    public static var dots: DotMatrixConfig {
+        var c = DotMatrixConfig()
         c.cellSize = 12
         c.dotScale = 0.9
         c.shape = .circle
@@ -232,8 +232,8 @@ public struct HalftoneConfig: Equatable {
     }
 
     /// Frosted gaps: gaps show a blurred version of the content.
-    public static var frosted: HalftoneConfig {
-        var c = HalftoneConfig()
+    public static var frosted: DotMatrixConfig {
+        var c = DotMatrixConfig()
         c.cellSize = 18
         c.dotScale = 0.8
         c.shape = .roundedSquare(cornerRadius: 0.35)
@@ -253,9 +253,9 @@ public struct HalftoneConfig: Equatable {
     }
 }
 
-// MARK: - Uniforms (must match HalftoneShaders.metal exactly)
+// MARK: - Uniforms (must match DotMatrixShaders.metal exactly)
 
-private struct HalftoneUniforms {
+private struct DotMatrixUniforms {
     var resolution = SIMD2<Float>(0, 0)
     var contentScale = SIMD2<Float>(1, 1)
 
@@ -308,15 +308,15 @@ private struct HalftoneUniforms {
     var scanlineSpacing: Float = 4
 }
 
-// MARK: - HalftoneEffectView
+// MARK: - DotMatrixEffectView
 
 /// The view that performs the effect. You normally create this through
-/// `UIView.applyHalftone(...)` rather than instantiating it directly, but the
+/// `UIView.applyDotMatrix(...)` rather than instantiating it directly, but the
 /// initializer is public if you want full control over placement.
-public final class HalftoneEffectView: UIView {
+public final class DotMatrixEffectView: UIView {
 
     /// Live configuration. Mutate freely on the main thread.
-    public var config: HalftoneConfig {
+    public var config: DotMatrixConfig {
         didSet {
             if config != oldValue {
                 updateOpaqueState()
@@ -448,7 +448,7 @@ public final class HalftoneEffectView: UIView {
     /// Create an effect view bound to `source`. The effect view is sized to the
     /// source's bounds; keep it pinned over the source (the convenience API does
     /// this for you).
-    public init?(source: UIView, config: HalftoneConfig = .ledPanel) {
+    public init?(source: UIView, config: DotMatrixConfig = .ledPanel) {
         guard let device = MTLCreateSystemDefaultDevice(),
               let queue = device.makeCommandQueue() else {
             return nil
@@ -473,7 +473,7 @@ public final class HalftoneEffectView: UIView {
 
         guard buildPipeline() else { return nil }
 
-        uniformBuffer = device.makeBuffer(length: MemoryLayout<HalftoneUniforms>.stride,
+        uniformBuffer = device.makeBuffer(length: MemoryLayout<DotMatrixUniforms>.stride,
                                           options: .storageModeShared)
 
         startDisplayLink()
@@ -497,16 +497,16 @@ public final class HalftoneEffectView: UIView {
         let library: MTLLibrary?
         if let lib = try? device.makeDefaultLibrary(bundle: .module) {
             library = lib
-        } else if let lib = try? device.makeDefaultLibrary(bundle: Bundle(for: HalftoneEffectView.self)) {
+        } else if let lib = try? device.makeDefaultLibrary(bundle: Bundle(for: DotMatrixEffectView.self)) {
             library = lib
         } else {
             library = device.makeDefaultLibrary()
         }
         guard let lib = library,
-              let vfn = lib.makeFunction(name: "halftone_vertex"),
-              let ffn = lib.makeFunction(name: "halftone_fragment") else {
-            assertionFailure("HalftoneEffect: could not load Metal functions. " +
-                             "Ensure HalftoneShaders.metal is in the target.")
+              let vfn = lib.makeFunction(name: "dotMatrix_vertex"),
+              let ffn = lib.makeFunction(name: "dotMatrix_fragment") else {
+            assertionFailure("DotMatrixEffect: could not load Metal functions. " +
+                             "Ensure DotMatrixShaders.metal is in the target.")
             return false
         }
 
@@ -528,7 +528,7 @@ public final class HalftoneEffectView: UIView {
             pipeline = try device.makeRenderPipelineState(descriptor: desc)
             return true
         } catch {
-            assertionFailure("HalftoneEffect: pipeline error \(error)")
+            assertionFailure("DotMatrixEffect: pipeline error \(error)")
             return false
         }
     }
@@ -536,7 +536,7 @@ public final class HalftoneEffectView: UIView {
     // MARK: Display link
 
     private func startDisplayLink() {
-        let link = CADisplayLink(target: HalftoneProxy(self), selector: #selector(HalftoneProxy.tick))
+        let link = CADisplayLink(target: DotMatrixProxy(self), selector: #selector(DotMatrixProxy.tick))
         // Run at the screen's native refresh rate (60 on most devices, 120 on
         // ProMotion) so the effect stays in lock-step with the live UI it mirrors.
         if #available(iOS 15.0, *) {
@@ -822,7 +822,7 @@ public final class HalftoneEffectView: UIView {
     // MARK: Uniforms
 
     private func updateUniforms(drawableSize: CGSize, sourceSize: CGSize) {
-        var u = HalftoneUniforms()
+        var u = DotMatrixUniforms()
         let scale = Float(metalLayer.contentsScale)
 
         u.resolution = SIMD2(Float(drawableSize.width), Float(drawableSize.height))
@@ -874,13 +874,13 @@ public final class HalftoneEffectView: UIView {
         applyRippleUniforms(to: &u, scale: scale)
 
         uniformBuffer.contents().copyMemory(from: &u,
-                                            byteCount: MemoryLayout<HalftoneUniforms>.stride)
+                                            byteCount: MemoryLayout<DotMatrixUniforms>.stride)
     }
 
     /// Fills in the ripple-transition fields. When no wave is in flight the effect
     /// is shown (or hidden) uniformly per `effectVisible`; while a wave is running
     /// the wavefront cross-fades between the two states and pushes the dots out.
-    private func applyRippleUniforms(to u: inout HalftoneUniforms, scale: Float) {
+    private func applyRippleUniforms(to u: inout DotMatrixUniforms, scale: Float) {
         if rippleRunning {
             let elapsed = CACurrentMediaTime() - rippleStart
             if elapsed >= rippleDurationResolved {
@@ -971,16 +971,16 @@ public final class HalftoneEffectView: UIView {
         displayLink = nil
         caRenderer?.layer = nil
         caRenderer = nil
-        sourceView?.halftoneEffect = nil
+        sourceView?.dotMatrixEffect = nil
         removeFromSuperview()
     }
 }
 
 // MARK: - Display link proxy (avoids retain cycle)
 
-private final class HalftoneProxy {
-    weak var target: HalftoneEffectView?
-    init(_ t: HalftoneEffectView) { target = t }
+private final class DotMatrixProxy {
+    weak var target: DotMatrixEffectView?
+    init(_ t: DotMatrixEffectView) { target = t }
     @objc func tick() { target?.renderFrame() }
 }
 
@@ -1011,17 +1011,17 @@ private extension UIColor {
 
 // Only ever used as a stable address for `objc_setAssociatedObject`, never read
 // or written as a value, so unchecked global mutable state is safe here.
-nonisolated(unsafe) private var halftoneKey: UInt8 = 0
+nonisolated(unsafe) private var dotMatrixKey: UInt8 = 0
 
 public extension UIView {
 
-    /// The active halftone effect on this view, if any.
-    internal(set) var halftoneEffect: HalftoneEffectView? {
-        get { objc_getAssociatedObject(self, &halftoneKey) as? HalftoneEffectView }
-        set { objc_setAssociatedObject(self, &halftoneKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
+    /// The active Dot Matrix effect on this view, if any.
+    internal(set) var dotMatrixEffect: DotMatrixEffectView? {
+        get { objc_getAssociatedObject(self, &dotMatrixKey) as? DotMatrixEffectView }
+        set { objc_setAssociatedObject(self, &dotMatrixKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
     }
 
-    /// Apply the halftone effect to this view. The effect view is placed directly
+    /// Apply the Dot Matrix effect to this view. The effect view is placed directly
     /// over this view (as a sibling) and re-renders this view's content through the
     /// dot-matrix shader every frame, so animations on this view and its subviews
     /// flow through the effect automatically.
@@ -1031,10 +1031,10 @@ public extension UIView {
     ///
     /// - Returns: the created effect view, or nil if Metal is unavailable.
     @discardableResult
-    func applyHalftone(_ config: HalftoneConfig = .ledPanel) -> HalftoneEffectView? {
-        removeHalftone()
+    func applyDotMatrix(_ config: DotMatrixConfig = .ledPanel) -> DotMatrixEffectView? {
+        removeDotMatrix()
 
-        guard let effect = HalftoneEffectView(source: self, config: config) else {
+        guard let effect = DotMatrixEffectView(source: self, config: config) else {
             return nil
         }
 
@@ -1063,16 +1063,16 @@ public extension UIView {
         // animation normally, feeding the capture every frame.
         effect.updateOpaqueState()
 
-        halftoneEffect = effect
+        dotMatrixEffect = effect
         return effect
     }
 
     /// Builder-style variant.
     @discardableResult
-    func applyHalftone(_ build: (inout HalftoneConfig) -> Void) -> HalftoneEffectView? {
-        var c = HalftoneConfig.ledPanel
+    func applyDotMatrix(_ build: (inout DotMatrixConfig) -> Void) -> DotMatrixEffectView? {
+        var c = DotMatrixConfig.ledPanel
         build(&c)
-        return applyHalftone(c)
+        return applyDotMatrix(c)
     }
 
     /// Apply the effect to `self` (the layout host) while capturing a *different*
@@ -1085,20 +1085,20 @@ public extension UIView {
     /// captured view would crash with "no common ancestor". Capture a throwaway child
     /// and host the effect on a stable container instead.
     @discardableResult
-    func applyHalftone(_ config: HalftoneConfig = .ledPanel, capturing source: UIView) -> HalftoneEffectView? {
-        removeHalftone()
-        guard let effect = HalftoneEffectView(source: source, config: config) else { return nil }
+    func applyDotMatrix(_ config: DotMatrixConfig = .ledPanel, capturing source: UIView) -> DotMatrixEffectView? {
+        removeDotMatrix()
+        guard let effect = DotMatrixEffectView(source: source, config: config) else { return nil }
         effect.translatesAutoresizingMaskIntoConstraints = false
         addSubview(effect)
         effect.pinEdges(to: self)   // pinned to the host, not the captured source
         effect.updateOpaqueState()
-        halftoneEffect = effect
+        dotMatrixEffect = effect
         return effect
     }
 
-    /// Remove any halftone effect from this view.
-    func removeHalftone() {
-        halftoneEffect?.remove()
-        halftoneEffect = nil
+    /// Remove any Dot Matrix effect from this view.
+    func removeDotMatrix() {
+        dotMatrixEffect?.remove()
+        dotMatrixEffect = nil
     }
 }

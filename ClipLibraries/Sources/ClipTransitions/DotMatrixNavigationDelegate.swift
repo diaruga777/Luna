@@ -1,13 +1,13 @@
 //
-//  HalftoneNavigationDelegate.swift
+//  DotMatrixNavigationDelegate.swift
 //  ClipTransitions
 //
-//  Installs the halftone pixel-wipe on a navigation controller's push/pop, AND a custom
+//  Installs the Dot Matrix pixel-wipe on a navigation controller's push/pop, AND a custom
 //  left-edge-swipe back that drives the pop's wipe interactively (finger-for-finger).
 //
 //  Push sweeps right-to-left and pop left-to-right, mirroring the stock slide. A button
-//  pop uses the NON-interactive `HalftoneAnimator`; an edge-swipe pop is driven by
-//  `HalftoneInteractivePopController` via this delegate's `interactionControllerFor`.
+//  pop uses the NON-interactive `DotMatrixAnimator`; an edge-swipe pop is driven by
+//  `DotMatrixInteractivePopController` via this delegate's `interactionControllerFor`.
 //
 //  Returns nil (⇒ the stock animation) whenever the pixel-wipe is disabled or Metal is
 //  unavailable, so the fallback is free. When disabled we also leave the system's
@@ -16,14 +16,14 @@
 //
 //  Unlike the old stateless shared delegate, this is ONE INSTANCE PER nav controller
 //  (it owns that nav's edge gesture + the in-flight interaction controller). The
-//  instance is retained by the nav controller via `installHalftoneTransitions()`.
+//  instance is retained by the nav controller via `installDotMatrixTransitions()`.
 //
 
 import ClipContentRendering
 import ClipDesignSystem
 import UIKit
 
-public final class HalftoneNavigationDelegate: NSObject, UINavigationControllerDelegate,
+public final class DotMatrixNavigationDelegate: NSObject, UINavigationControllerDelegate,
                                                UIGestureRecognizerDelegate {
 
     private weak var navigationController: UINavigationController?
@@ -32,7 +32,7 @@ public final class HalftoneNavigationDelegate: NSObject, UINavigationControllerD
     /// The interaction controller for the pop currently being driven by an edge swipe,
     /// or nil for a non-interactive (button) pop. Set just before we call
     /// `popViewController` so `interactionControllerFor` can hand it back to UIKit.
-    private var interactivePop: HalftoneInteractivePopController?
+    private var interactivePop: DotMatrixInteractivePopController?
 
     /// Width used to normalise the drag into a 0…1 fraction (set on .began).
     private var dragWidth: CGFloat = 1
@@ -44,10 +44,10 @@ public final class HalftoneNavigationDelegate: NSObject, UINavigationControllerD
         animationControllerFor operation: UINavigationController.Operation,
         from fromVC: UIViewController,
         to toVC: UIViewController) -> UIViewControllerAnimatedTransitioning? {
-        guard HalftoneTransitionCenter.shared.isEnabled else { return nil }
+        guard DotMatrixTransitionCenter.shared.isEnabled else { return nil }
         switch operation {
-        case .push: return HalftoneAnimator(direction: .rightToLeft)
-        case .pop:  return HalftoneAnimator(direction: .leftToRight)
+        case .push: return DotMatrixAnimator(direction: .rightToLeft)
+        case .pop:  return DotMatrixAnimator(direction: .leftToRight)
         default:    return nil
         }
     }
@@ -57,7 +57,7 @@ public final class HalftoneNavigationDelegate: NSObject, UINavigationControllerD
         interactionControllerFor animationController: UIViewControllerAnimatedTransitioning)
         -> UIViewControllerInteractiveTransitioning? {
         // Only an edge-swipe-initiated pop is interactive; a button pop returns nil so the
-        // non-interactive HalftoneAnimator runs as usual.
+        // non-interactive DotMatrixAnimator runs as usual.
         interactivePop
     }
 
@@ -85,14 +85,14 @@ public final class HalftoneNavigationDelegate: NSObject, UINavigationControllerD
 
         switch pan.state {
         case .began:
-            // Only start an interactive halftone pop when the wipe is enabled and there's
+            // Only start an interactive Dot Matrix pop when the wipe is enabled and there's
             // something to pop. (When disabled, our pan refuses to begin — see
             // gestureRecognizerShouldBegin — so we never reach here.)
-            guard HalftoneTransitionCenter.shared.isEnabled,
+            guard DotMatrixTransitionCenter.shared.isEnabled,
                   nav.viewControllers.count > 1,
                   nav.transitionCoordinator == nil else { return }
             dragWidth = width
-            let controller = HalftoneInteractivePopController(direction: .leftToRight)
+            let controller = DotMatrixInteractivePopController(direction: .leftToRight)
             interactivePop = controller
             // Triggering the pop makes UIKit ask us for the animation + interaction
             // controllers; `interactionControllerFor` returns `controller`, whose
@@ -106,7 +106,7 @@ public final class HalftoneNavigationDelegate: NSObject, UINavigationControllerD
             let fraction = pan.translation(in: nav.view).x / dragWidth
             let velocity = pan.velocity(in: nav.view).x
             let committed = pan.state == .ended && (fraction > 0.4 || velocity > 800)
-            let duration = HalftoneTransitionSettings.totalDuration
+            let duration = DotMatrixTransitionSettings.totalDuration
             if committed { controller.finish(duration: duration) }
             else { controller.cancel(duration: duration) }
         default:
@@ -120,7 +120,7 @@ public final class HalftoneNavigationDelegate: NSObject, UINavigationControllerD
         guard gestureRecognizer === edgePan, let nav = navigationController else { return true }
         // Own the back-swipe only while the wipe is enabled and a pop is possible; otherwise
         // step aside so UIKit's own interactivePopGestureRecognizer runs the stock swipe.
-        guard HalftoneTransitionCenter.shared.isEnabled,
+        guard DotMatrixTransitionCenter.shared.isEnabled,
               nav.viewControllers.count > 1,
               nav.transitionCoordinator == nil else { return false }
         return true
@@ -152,21 +152,21 @@ public final class HalftoneNavigationDelegate: NSObject, UINavigationControllerD
 }
 
 public extension UINavigationController {
-    /// Route this nav controller's push/pop through the halftone pixel-wipe and install
+    /// Route this nav controller's push/pop through the Dot Matrix pixel-wipe and install
     /// the interactive left-edge-swipe back. Only takes visible effect when the toggle is
-    /// on; no-op if the controller already has its own (non-halftone) delegate (so bespoke
+    /// on; no-op if the controller already has its own (non-Dot Matrix) delegate (so bespoke
     /// nav delegates aren't clobbered). Idempotent.
-    func installHalftoneTransitions() {
+    func installDotMatrixTransitions() {
         if delegate == nil {
-            let d = HalftoneNavigationDelegate()
+            let d = DotMatrixNavigationDelegate()
             d.attach(to: self)
             // Retain the per-nav delegate: UINavigationController.delegate is weak.
-            objc_setAssociatedObject(self, &Self.halftoneDelegateKey, d,
+            objc_setAssociatedObject(self, &Self.dotMatrixDelegateKey, d,
                                      .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        } else if let existing = delegate as? HalftoneNavigationDelegate {
+        } else if let existing = delegate as? DotMatrixNavigationDelegate {
             existing.attach(to: self)   // re-attach (e.g. re-install after a scene rebuild)
         }
     }
 
-    private static var halftoneDelegateKey: UInt8 = 0
+    private static var dotMatrixDelegateKey: UInt8 = 0
 }

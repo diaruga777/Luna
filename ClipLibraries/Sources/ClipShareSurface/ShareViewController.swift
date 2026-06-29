@@ -629,13 +629,13 @@ extension ShareViewController: ExtensionHost {
             if let navigationController = actionNavigationController {
                 // Swapping archive → reader inside the one embedded nav: pixel-wipe the
                 // swap (a no-op instant swap when the toggle is off or Metal is absent).
-                HalftoneCrossfade.run(in: navigationController.view) {
+                DotMatrixCrossfade.run(in: navigationController.view) {
                     navigationController.setViewControllers([viewController], animated: false)
                 }
                 return
             }
             let navigationController = UINavigationController(rootViewController: viewController)
-            navigationController.installHalftoneTransitions()
+            navigationController.installDotMatrixTransitions()
             navigationController.view.translatesAutoresizingMaskIntoConstraints = false
             addChild(navigationController)
             view.addSubview(navigationController.view)
@@ -650,8 +650,8 @@ extension ShareViewController: ExtensionHost {
             return
         }
         let nav = UINavigationController(rootViewController: viewController)
-        nav.installHalftoneTransitions()
+        nav.installDotMatrixTransitions()
         nav.modalPresentationStyle = .fullScreen
-        HalftoneModal.present(nav, from: self)
+        DotMatrixModal.present(nav, from: self)
     }
 }

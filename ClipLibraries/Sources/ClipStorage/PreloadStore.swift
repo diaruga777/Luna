@@ -62,6 +62,13 @@ public final class PreloadStore {
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
     private let lock = NSLock()
+    /// Process-local snapshot of the on-disk index, used ONLY by the synchronous
+    /// reader-open fast path so a link tap never re-decodes the whole `preloads.json`
+    /// on the main thread (it grows with the preload tree). Refreshed whenever THIS
+    /// process writes the index; a concurrent write from another process (the share
+    /// extension) can leave it slightly stale, which at worst sends one open down the
+    /// async path. The cross-process `entry(for:)`/`mutate` paths still read fresh.
+    private var cachedIndex: [String: PreloadEntry]?
     /// Refcount for the images these preloaded pages downloaded into the shared
     /// `Articles/` cache, so an orphaned page's images are freed too (and never freed
     /// while another page/save still references them). Same container as this store.
@@ -144,7 +151,17 @@ public final class PreloadStore {
         var index = loadIndex()
         let result = body(&index)
         saveIndex(index)
+        cachedIndex = index   // keep the sync fast-path snapshot fresh for this process
         return result
+    }
+
+    /// Index lookup for the synchronous reader-open fast path: serves from the
+    /// process-local snapshot, decoding `preloads.json` at most ONCE per process
+    /// (vs. `entry(for:)`, which re-decodes the whole file every call).
+    private func synchronousEntry(for url: URL) -> PreloadEntry? {
+        lock.lock(); defer { lock.unlock() }
+        if cachedIndex == nil { cachedIndex = loadIndex() }
+        return cachedIndex?[Self.key(for: url)]
     }
 
     // MARK: - Reads (safe from any process)
@@ -167,7 +184,7 @@ public final class PreloadStore {
     public func synchronousArticleContent(for url: URL) -> ArticleContent? {
         let cacheKey = Self.key(for: url) as NSString
         if let boxed = memoryCache.object(forKey: cacheKey) { return boxed.content }
-        guard let entry = entry(for: url), entry.kind == .article, entry.state == .loaded,
+        guard let entry = synchronousEntry(for: url), entry.kind == .article, entry.state == .loaded,
               let file = entry.contentFile else { return nil }
         let fileURL = contentURL(fileName: file)
         let size = (try? fileManager.attributesOfItem(atPath: fileURL.path)[.size] as? Int) ?? nil

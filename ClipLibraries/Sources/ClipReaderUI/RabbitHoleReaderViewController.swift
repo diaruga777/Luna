@@ -152,6 +152,13 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             nav.navigationBar.transform = .identity
             nav.navigationBar.alpha = 1
             nav.setNavigationBarHidden(false, animated: false)
+            // If this is a CANCELLABLE interactive pop (edge-swipe) and it gets
+            // cancelled, the reader stays but we already showed the shared bar above —
+            // re-hide it explicitly instead of relying on UIKit re-firing viewWillAppear.
+            transitionCoordinator?.notifyWhenInteractionChanges { [weak self] ctx in
+                guard ctx.isCancelled else { return }
+                self?.navigationController?.setNavigationBarHidden(true, animated: false)
+            }
         }
     }
 

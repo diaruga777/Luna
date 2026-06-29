@@ -94,21 +94,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     /// De-duplicated http(s) links this layer's article points at, in document order.
     /// The host preloads these so a dive into one is instant.
-    public var outboundLinkURLs: [URL] {
-        guard let content = articleContent else { return [] }
-        var seen = Set<String>()
-        var result: [URL] = []
-        for block in content.blocks {
-            for link in block.links {
-                guard seen.insert(link.urlString).inserted,
-                      let url = URL(string: link.urlString),
-                      let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
-                else { continue }
-                result.append(url)
-            }
-        }
-        return result
-    }
+    public var outboundLinkURLs: [URL] { articleContent?.outboundURLs ?? [] }
 
     /// True once `configure(...)` has assigned this shell a real page to load. A freshly
     /// created shell stays blank (chrome built, nothing loading) so the host can

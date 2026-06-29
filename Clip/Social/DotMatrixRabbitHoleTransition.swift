@@ -1,5 +1,5 @@
 //
-//  HalftoneRabbitHoleTransition.swift
+//  DotMatrixRabbitHoleTransition.swift
 //  Clip
 //
 //  App-side implementation of the RabbitHole reader's transition, backed by the
@@ -19,7 +19,7 @@ import ClipReaderUI
 import ClipTransitions
 import UIKit
 
-final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
+final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
 
     /// The reused overlay, parked hidden in the container between transitions.
     private var overlay: RabbitHoleTransitionView?
@@ -46,7 +46,7 @@ final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
             view.isHidden = false
             container.bringSubviewToFront(view)
             container.layoutIfNeeded()
-            view.animateProgress(to: 1, duration: HalftoneTransitionSettings.totalDuration) {
+            view.animateProgress(to: 1, duration: DotMatrixTransitionSettings.totalDuration) {
                 Self.park(view)
                 completion()
             }
@@ -62,11 +62,11 @@ final class HalftoneRabbitHoleTransition: RabbitHoleTransitioning {
         view.configure(before: before, after: after)
         view.setProgress(0)
         view.isHidden = false
-        return InteractiveHandle(view: view, settleDuration: HalftoneTransitionSettings.totalDuration)
+        return InteractiveHandle(view: view, settleDuration: DotMatrixTransitionSettings.totalDuration)
     }
 
     private func applyStyle(to view: RabbitHoleTransitionView) {
-        view.style = HalftoneTransitionStyleProvider.style(for: view.traitCollection)
+        view.style = DotMatrixTransitionStyleProvider.style(for: view.traitCollection)
         // The reader's dive/pop/overscroll is a stacked-layer reveal, not a strongly
         // directional motion, so it uses the random (fade-order) wavefront.
         view.direction = .random
@@ -112,7 +112,7 @@ private final class InteractiveHandle: RabbitHoleInteractiveTransition {
 
     func finish(committed: Bool, completion: @escaping () -> Void) {
         view.animateProgress(to: committed ? 1 : 0, duration: settleDuration) { [view] in
-            HalftoneRabbitHoleTransition.park(view)
+            DotMatrixRabbitHoleTransition.park(view)
             completion()
         }
     }

@@ -19,7 +19,7 @@ public enum OnboardingFlow {
     public static func make(onFinished: @escaping () -> Void) -> UIViewController {
         let nav = UINavigationController()
         nav.setNavigationBarHidden(true, animated: false)
-        nav.installHalftoneTransitions()
+        nav.installDotMatrixTransitions()
 
         let username = OnboardingViewController { [weak nav] in
             guard let nav else { return }
@@ -36,7 +36,7 @@ public enum OnboardingFlow {
     public static func makeSetupOnly(onFinished: @escaping () -> Void) -> UIViewController {
         let nav = UINavigationController()
         nav.setNavigationBarHidden(true, animated: false)
-        nav.installHalftoneTransitions()
+        nav.installDotMatrixTransitions()
         nav.viewControllers = [notificationsStep(nav: nav, onFinished: onFinished)]
         return nav
     }

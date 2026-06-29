@@ -320,7 +320,7 @@ final class ReadingListViewController: UITableViewController {
                 item: transient, content: content,
                 shareProvider: AppReaderShareProvider.shared,
                 gazeTrackerFactory: AppGazeTracker.factory,
-                transition: HalftoneRabbitHoleTransition())
+                transition: DotMatrixRabbitHoleTransition())
             navigationController?.pushViewController(reader, animated: true)
         }
     }
@@ -420,7 +420,7 @@ final class ReadingListViewController: UITableViewController {
         filter = (index >= 0 && index < filters.count) ? filters[index] : .all
         // A filter switch swaps the whole list at once — pixel-wipe the table between
         // the old and new contents (a no-op fading reload when the toggle is off).
-        HalftoneCrossfade.run(in: tableView, direction: .random) { [weak self] in self?.reload() }
+        DotMatrixCrossfade.run(in: tableView, direction: .random) { [weak self] in self?.reload() }
     }
 
     /// Shows the filter control only when the list has at least two of the three
@@ -594,7 +594,7 @@ final class ReadingListViewController: UITableViewController {
 
     @objc private func catchUpTapped() {
         let catchUp = CatchUpViewController(unread: catchUpQueue(), router: self)
-        HalftoneModal.present(catchUp, from: self)
+        DotMatrixModal.present(catchUp, from: self)
     }
 
     // MARK: - Edit mode
@@ -843,7 +843,7 @@ final class ReadingListViewController: UITableViewController {
         // Collapsing/expanding swaps a whole section of rows at once — pixel-wipe the
         // table between the two layouts (falls back to the stock .automatic row
         // animation when the toggle is off).
-        HalftoneBatch.update(tableView, direction: .random) { [weak self] in
+        DotMatrixBatch.update(tableView, direction: .random) { [weak self] in
             self?.tableView.reloadSections(IndexSet(integer: index), with: .automatic)
         }
     }
@@ -1111,7 +1111,7 @@ final class ReadingListViewController: UITableViewController {
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
             gazeTrackerFactory: AppGazeTracker.factory,
-            transition: HalftoneRabbitHoleTransition())
+            transition: DotMatrixRabbitHoleTransition())
         presenter.navigationController?.pushViewController(reader, animated: true)
     }
 
@@ -1124,7 +1124,7 @@ final class ReadingListViewController: UITableViewController {
     ) {
         let reader = ArchiveWebReaderViewController(articleURL: articleURL, itemID: item.id, store: store)
         let nav = UINavigationController(rootViewController: reader)
-        nav.installHalftoneTransitions()
+        nav.installDotMatrixTransitions()
         reader.onClose = { [weak nav] in nav?.dismiss(animated: true) }
         reader.onOpenInBrowser = { [weak nav] archiveURL in
             // This is an escape from archive.is's WKWebView-specific bot gate, so
@@ -1299,7 +1299,7 @@ final class ReadingListViewController: UITableViewController {
             }
             return
         }
-        HalftoneModal.present(YouTubePlayerViewController(videoID: videoID, itemID: item.id), from: presenter)
+        DotMatrixModal.present(YouTubePlayerViewController(videoID: videoID, itemID: item.id), from: presenter)
     }
 
     /// The thumbnail state for a row: cached art (aspect-fit) when present, a

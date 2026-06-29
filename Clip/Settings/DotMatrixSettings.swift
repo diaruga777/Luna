@@ -1,5 +1,5 @@
 //
-//  HalftoneSettings.swift
+//  DotMatrixSettings.swift
 //  Clip
 //
 
@@ -7,12 +7,12 @@ import ClipStorage
 import UIKit
 import ClipContentRendering
 
-/// Persisted parameters for the experimental Halftone visual effect. Every value
+/// Persisted parameters for the experimental Dot Matrix visual effect. Every value
 /// is stored in the App Group so extensions could read it too, and assembled into
-/// a `HalftoneConfig` on demand. Defaults mirror `HalftoneConfig.ledPanel`.
-enum HalftoneSettings {
+/// a `DotMatrixConfig` on demand. Defaults mirror `DotMatrixConfig.ledPanel`.
+enum DotMatrixSettings {
 
-    /// User-pickable dot shapes (mirrors `HalftoneConfig.DotShape`'s cases).
+    /// User-pickable dot shapes (mirrors `DotMatrixConfig.DotShape`'s cases).
     enum ShapeKind: Int, CaseIterable {
         case circle, square, rounded
         var title: String {
@@ -166,8 +166,8 @@ enum HalftoneSettings {
         get { double("halftone.rippleDuration", 0) }
         set { defaults.set(newValue, forKey: "halftone.rippleDuration") }
     }
-    static var revealMode: HalftoneConfig.RevealMode {
-        get { HalftoneConfig.RevealMode(rawValue: int("halftone.revealMode", 0)) ?? .radial }
+    static var revealMode: DotMatrixConfig.RevealMode {
+        get { DotMatrixConfig.RevealMode(rawValue: int("halftone.revealMode", 0)) ?? .radial }
         set { defaults.set(newValue.rawValue, forKey: "halftone.revealMode") }
     }
     static var revealAngle: Double {
@@ -246,9 +246,9 @@ enum HalftoneSettings {
 
     // MARK: Build the effect config
 
-    /// Assemble a `HalftoneConfig` from the currently persisted parameters.
-    static var currentConfig: HalftoneConfig {
-        var c = HalftoneConfig()
+    /// Assemble a `DotMatrixConfig` from the currently persisted parameters.
+    static var currentConfig: DotMatrixConfig {
+        var c = DotMatrixConfig()
         c.cellSize = CGFloat(cellSize)
         c.dotScale = CGFloat(dotScale)
         c.dotSpacing = CGFloat(dotSpacing)

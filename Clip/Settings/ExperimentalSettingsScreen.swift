@@ -16,7 +16,7 @@ import ClipContentRendering
 final class ExperimentalSettingsScreen: UITableViewController {
 
     private enum Section: Int, CaseIterable {
-        case rabbitHole, semantic, paywallStrategies, archiveOverlay, halftone, frostedGlass, jellystone, quartz, youtube
+        case rabbitHole, semantic, paywallStrategies, archiveOverlay, dotMatrix, frostedGlass, jellystone, quartz, youtube
     }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
     private enum RabbitHoleRow: Int, CaseIterable { case toggle, transition }
@@ -29,7 +29,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
     /// simulator harness can deep-link past the (un-automatable) settings toolbar.
     static func debugEffectScreen(named name: String?) -> UIViewController? {
         switch name?.lowercased() {
-        case "halftone": return HalftoneSettingsScreen()
+        case "dotmatrix", "halftone": return DotMatrixSettingsScreen()
         case "frosted", "frostedglass", "neon": return FrostedGlassSettingsScreen()
         case "jellystone", "jelly", "seaglass": return StoneSettingsScreen(material: .jellystone)
         case "quartz": return StoneSettingsScreen(material: .quartz)
@@ -52,7 +52,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
         case .semantic: return 1
         case .paywallStrategies: return 1
         case .archiveOverlay: return 1
-        case .halftone: return 1
+        case .dotMatrix: return 1
         case .frostedGlass: return 1
         case .jellystone: return 1
         case .quartz: return 1
@@ -62,11 +62,11 @@ final class ExperimentalSettingsScreen: UITableViewController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .rabbitHole: return "Pixel Wipe Transitions"
+        case .rabbitHole: return "Dot Matrix Transitions"
         case .semantic: return "Suggest Shares Based on Content"
         case .paywallStrategies: return "Extra Paywall Unlock Strategies"
         case .archiveOverlay: return "Archive Reader Cover"
-        case .halftone: return "Halftone Effect"
+        case .dotMatrix: return "Dot Matrix Effect"
         case .frostedGlass: return "Frosted Neon Effect"
         case .jellystone: return "Jellystone Effect"
         case .quartz: return "Quartz Effect"
@@ -77,14 +77,14 @@ final class ExperimentalSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .rabbitHole:
-            return "Off by default. Replaces every transition in the app — screen pushes, modals, and list changes — with a halftone \"pixel wipe\": the screen dissolves into spaced, rounded dots of where you're going, then sharpens into it, with the wave sweeping the way the motion would. It also opens saves in the experimental RabbitHole inline reader (dive into a link as a stacked layer; overscroll to pull the previous one back). One switch for both; flip it off to return to the standard animations and reader."
+            return "Off by default. Replaces every transition in the app — screen pushes, modals, and list changes — with a Dot Matrix \"pixel wipe\": the screen dissolves into spaced, rounded dots of where you're going, then sharpens into it, with the wave sweeping the way the motion would. It also opens saves in the experimental RabbitHole inline reader (dive into a link as a stacked layer; overscroll to pull the previous one back). One switch for both; flip it off to return to the standard animations and reader."
         case .semantic:
             return "When you save something that resembles things you've shared with a friend before, Queue can suggest sharing it with them. Slide all the way left to turn this off."
         case .paywallStrategies:
             return "Off by default. When on, Queue first tries to unlock a paywalled article directly on your device (search-engine reads, a fresh session, AMP, and web archives) before falling back to the archive reader. This can unlock some hard paywalls the archive can't, but adds a few seconds before the fallback. Turn it off to go straight to the archive reader."
         case .archiveOverlay:
             return "Opacity of overlay while we work to unlock web articles"
-        case .halftone:
+        case .dotMatrix:
             return "A real-time dot-matrix shader. Tune its parameters and preview it "
                 + "on your own photos, videos, and GIFs; tap the preview to ripple it in."
         case .frostedGlass:
@@ -109,7 +109,7 @@ final class ExperimentalSettingsScreen: UITableViewController {
             switch RabbitHoleRow(rawValue: indexPath.row)! {
             case .toggle: return rabbitHoleCell()
             case .transition:
-                return disclosureCell(title: "Transition Animation", symbol: "square.stack.3d.down.right")
+                return disclosureCell(title: "Dot Matrix Transition", symbol: "square.stack.3d.down.right")
             }
         case .semantic:
             return semanticSensitivityCell()
@@ -117,8 +117,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
             return paywallStrategiesCell()
         case .archiveOverlay:
             return overlayAlphaCell()
-        case .halftone:
-            return halftoneCell()
+        case .dotMatrix:
+            return dotMatrixCell()
         case .frostedGlass:
             return frostedGlassCell()
         case .jellystone:
@@ -130,12 +130,12 @@ final class ExperimentalSettingsScreen: UITableViewController {
         }
     }
 
-    /// The master toggle: global halftone pixel-wipe transitions + RabbitHole reader.
+    /// The master toggle: global Dot Matrix pixel-wipe transitions + RabbitHole reader.
     private func rabbitHoleCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         var content = cell.defaultContentConfiguration()
-        content.text = "Pixel Wipe Transitions"
+        content.text = "Dot Matrix Transitions"
         cell.contentConfiguration = content
         cell.accessoryView = makeToggle(
             isOn: ReaderSettings.pixelWipeTransitionsEnabled,
@@ -228,11 +228,11 @@ final class ExperimentalSettingsScreen: UITableViewController {
         return cell
     }
 
-    /// Disclosure row that drills into the Halftone effect controls.
-    private func halftoneCell() -> UITableViewCell {
+    /// Disclosure row that drills into the Dot Matrix effect controls.
+    private func dotMatrixCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
-        content.text = "Halftone Effect"
+        content.text = "Dot Matrix Effect"
         content.image = UIImage(systemName: "circle.grid.3x3.fill")
         cell.contentConfiguration = content
         cell.accessoryType = .disclosureIndicator
@@ -276,8 +276,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
             if RabbitHoleRow(rawValue: indexPath.row) == .transition {
                 navigationController?.pushViewController(RabbitHoleTransitionSettingsScreen(), animated: true)
             }
-        case .halftone:
-            navigationController?.pushViewController(HalftoneSettingsScreen(), animated: true)
+        case .dotMatrix:
+            navigationController?.pushViewController(DotMatrixSettingsScreen(), animated: true)
         case .frostedGlass:
             navigationController?.pushViewController(FrostedGlassSettingsScreen(), animated: true)
         case .jellystone:

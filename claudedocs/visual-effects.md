@@ -1,4 +1,4 @@
-# Experimental Visual Effects (Halftone & Frosted Neon)
+# Experimental Visual Effects (Dot Matrix & Frosted Neon)
 
 Two real-time GPU shaders that re-render a live UIKit view through Metal, plus a
 media-preview playground for each. Both live under **Settings → Experimental** and
@@ -7,12 +7,12 @@ they can diverge freely.
 
 ## Where things live
 
-| Area | Halftone | Frosted Neon |
+| Area | Dot Matrix | Frosted Neon |
 |---|---|---|
-| Shader | `ClipLibraries/.../ClipContentRendering/Halftone/HalftoneShaders.metal` | `.../FrostedGlass/FrostedGlassShaders.metal` |
-| Effect view | `Halftone/HalftoneEffectView.swift` | `FrostedGlass/FrostedGlassEffectView.swift` |
-| Persisted settings | `Clip/Settings/HalftoneSettings.swift` | `Clip/Settings/FrostedGlassSettings.swift` |
-| Settings + preview screen | `Clip/Settings/HalftoneSettingsScreen.swift` | `Clip/Settings/FrostedGlassSettingsScreen.swift` |
+| Shader | `ClipLibraries/.../ClipContentRendering/DotMatrix/DotMatrixShaders.metal` | `.../FrostedGlass/FrostedGlassShaders.metal` |
+| Effect view | `DotMatrix/DotMatrixEffectView.swift` | `FrostedGlass/FrostedGlassEffectView.swift` |
+| Persisted settings | `Clip/Settings/DotMatrixSettings.swift` | `Clip/Settings/FrostedGlassSettings.swift` |
+| Settings + preview screen | `Clip/Settings/DotMatrixSettingsScreen.swift` | `Clip/Settings/FrostedGlassSettingsScreen.swift` |
 | Entry rows | `Clip/Settings/ExperimentalSettingsScreen.swift` | same |
 
 The `.metal` files compile into `Bundle.module`'s `default.metallib` (loaded first
@@ -20,7 +20,7 @@ in `buildPipeline`).
 
 ## Architecture
 
-- `UIView.applyHalftone(_:)` / `applyFrostedGlass(_:)` insert the effect view as a
+- `UIView.applyDotMatrix(_:)` / `applyFrostedGlass(_:)` insert the effect view as a
   **sibling above** the source view (never a child — that would feed the effect's
   own Metal layer back into the capture and loop).
 - The effect view's layer is a `CAMetalLayer`. Each frame:
@@ -56,7 +56,7 @@ trailing ripples. Duration "Auto" fits the wave to the farthest corner. The
 wavefront softness is the **Reveal Edge**. (The earlier per-dot "flip" animation was
 removed in favour of this clean reveal/push.)
 
-## Halftone-specific controls
+## Dot Matrix-specific controls
 
 - **Dot Spacing** — grid-pitch multiplier (`pitch = cellSize * dotSpacing`).
 - **Dot Size** — fraction of a cell the dot fills; **decoupled from spacing**, so it

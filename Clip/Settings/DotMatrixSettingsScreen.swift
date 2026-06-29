@@ -1,5 +1,5 @@
 //
-//  HalftoneSettingsScreen.swift
+//  DotMatrixSettingsScreen.swift
 //  Clip
 //
 
@@ -10,12 +10,12 @@ import AVFoundation
 import UniformTypeIdentifiers
 import ClipContentRendering
 
-/// Experimental controls for the Halftone visual effect: a master toggle that
+/// Experimental controls for the DotMatrix visual effect: a master toggle that
 /// overlays the effect on the entire app UI, the full set of tunable parameters
 /// (each exposed across its maximum range), the ripple-transition parameters, and
 /// a live media preview pinned to the bottom — pick a photo/video/GIF and tap it
 /// to fire the ripple that animates the effect in and out.
-final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UITableViewDelegate,
+final class DotMatrixSettingsScreen: UIViewController, UITableViewDataSource, UITableViewDelegate,
                                     PHPickerViewControllerDelegate {
 
     /// A labelled, live-updating slider bound to one persisted parameter.
@@ -36,91 +36,91 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     // MARK: Slider groups
 
     private lazy var gridSliders: [SliderSpec] = [
-        SliderSpec(title: "Cell Size", range: HalftoneSettings.cellSizeRange,
-                   get: { HalftoneSettings.cellSize }, set: { HalftoneSettings.cellSize = $0 },
+        SliderSpec(title: "Cell Size", range: DotMatrixSettings.cellSizeRange,
+                   get: { DotMatrixSettings.cellSize }, set: { DotMatrixSettings.cellSize = $0 },
                    format: { String(format: "%.0f pt", $0) }),
-        SliderSpec(title: "Dot Spacing", range: HalftoneSettings.dotSpacingRange,
-                   get: { HalftoneSettings.dotSpacing }, set: { HalftoneSettings.dotSpacing = $0 },
+        SliderSpec(title: "Dot Spacing", range: DotMatrixSettings.dotSpacingRange,
+                   get: { DotMatrixSettings.dotSpacing }, set: { DotMatrixSettings.dotSpacing = $0 },
                    format: { String(format: "%.2f×", $0) }),
-        SliderSpec(title: "Grid Angle", range: HalftoneSettings.gridAngleRange,
-                   get: { HalftoneSettings.gridAngle }, set: { HalftoneSettings.gridAngle = $0 },
+        SliderSpec(title: "Grid Angle", range: DotMatrixSettings.gridAngleRange,
+                   get: { DotMatrixSettings.gridAngle }, set: { DotMatrixSettings.gridAngle = $0 },
                    format: { String(format: "%.0f°", $0 * 180 / .pi) }),
-        SliderSpec(title: "Jitter", range: HalftoneSettings.jitterRange,
-                   get: { HalftoneSettings.jitter }, set: { HalftoneSettings.jitter = $0 }),
+        SliderSpec(title: "Jitter", range: DotMatrixSettings.jitterRange,
+                   get: { DotMatrixSettings.jitter }, set: { DotMatrixSettings.jitter = $0 }),
     ]
 
     private lazy var dotSliders: [SliderSpec] = [
-        SliderSpec(title: "Dot Size", range: HalftoneSettings.dotScaleRange,
-                   get: { HalftoneSettings.dotScale }, set: { HalftoneSettings.dotScale = $0 },
+        SliderSpec(title: "Dot Size", range: DotMatrixSettings.dotScaleRange,
+                   get: { DotMatrixSettings.dotScale }, set: { DotMatrixSettings.dotScale = $0 },
                    format: { String(format: "%.2f×", $0) }),
-        SliderSpec(title: "Dot Opacity", range: HalftoneSettings.dotOpacityRange,
-                   get: { HalftoneSettings.dotOpacity }, set: { HalftoneSettings.dotOpacity = $0 }),
-        SliderSpec(title: "Edge Softness", range: HalftoneSettings.edgeSoftnessRange,
-                   get: { HalftoneSettings.edgeSoftness }, set: { HalftoneSettings.edgeSoftness = $0 },
+        SliderSpec(title: "Dot Opacity", range: DotMatrixSettings.dotOpacityRange,
+                   get: { DotMatrixSettings.dotOpacity }, set: { DotMatrixSettings.dotOpacity = $0 }),
+        SliderSpec(title: "Edge Softness", range: DotMatrixSettings.edgeSoftnessRange,
+                   get: { DotMatrixSettings.edgeSoftness }, set: { DotMatrixSettings.edgeSoftness = $0 },
                    format: { String(format: "%.1f px", $0) }),
-        SliderSpec(title: "Brightness Boost", range: HalftoneSettings.brightnessBoostRange,
-                   get: { HalftoneSettings.brightnessBoost }, set: { HalftoneSettings.brightnessBoost = $0 },
+        SliderSpec(title: "Brightness Boost", range: DotMatrixSettings.brightnessBoostRange,
+                   get: { DotMatrixSettings.brightnessBoost }, set: { DotMatrixSettings.brightnessBoost = $0 },
                    format: { String(format: "%.2f×", $0) }),
     ]
 
     private lazy var gapSliders: [SliderSpec] = [
-        SliderSpec(title: "Gap Opacity", range: HalftoneSettings.gapAlphaRange,
-                   get: { HalftoneSettings.gapColorAlpha }, set: { HalftoneSettings.gapColorAlpha = $0 }),
-        SliderSpec(title: "Gap Blur", range: HalftoneSettings.gapBlurRange,
-                   get: { HalftoneSettings.gapBlur }, set: { HalftoneSettings.gapBlur = $0 },
+        SliderSpec(title: "Gap Opacity", range: DotMatrixSettings.gapAlphaRange,
+                   get: { DotMatrixSettings.gapColorAlpha }, set: { DotMatrixSettings.gapColorAlpha = $0 }),
+        SliderSpec(title: "Gap Blur", range: DotMatrixSettings.gapBlurRange,
+                   get: { DotMatrixSettings.gapBlur }, set: { DotMatrixSettings.gapBlur = $0 },
                    format: { String(format: "%.0f px", $0) }),
-        SliderSpec(title: "Gap Source Mix", range: HalftoneSettings.gapSourceMixRange,
-                   get: { HalftoneSettings.gapSourceMix }, set: { HalftoneSettings.gapSourceMix = $0 }),
+        SliderSpec(title: "Gap Source Mix", range: DotMatrixSettings.gapSourceMixRange,
+                   get: { DotMatrixSettings.gapSourceMix }, set: { DotMatrixSettings.gapSourceMix = $0 }),
     ]
 
     private lazy var rippleSliders: [SliderSpec] = [
-        SliderSpec(title: "Push Distance", range: HalftoneSettings.ripplePushRange,
-                   get: { HalftoneSettings.ripplePush }, set: { HalftoneSettings.ripplePush = $0 },
+        SliderSpec(title: "Push Distance", range: DotMatrixSettings.ripplePushRange,
+                   get: { DotMatrixSettings.ripplePush }, set: { DotMatrixSettings.ripplePush = $0 },
                    format: { String(format: "%.0f pt", $0) }),
-        SliderSpec(title: "Wave Speed", range: HalftoneSettings.rippleSpeedRange,
-                   get: { HalftoneSettings.rippleSpeed }, set: { HalftoneSettings.rippleSpeed = $0 },
+        SliderSpec(title: "Wave Speed", range: DotMatrixSettings.rippleSpeedRange,
+                   get: { DotMatrixSettings.rippleSpeed }, set: { DotMatrixSettings.rippleSpeed = $0 },
                    format: { String(format: "%.0f pt/s", $0) }),
-        SliderSpec(title: "Ring Width", range: HalftoneSettings.rippleWidthRange,
-                   get: { HalftoneSettings.rippleWidth }, set: { HalftoneSettings.rippleWidth = $0 },
+        SliderSpec(title: "Ring Width", range: DotMatrixSettings.rippleWidthRange,
+                   get: { DotMatrixSettings.rippleWidth }, set: { DotMatrixSettings.rippleWidth = $0 },
                    format: { String(format: "%.0f pt", $0) }),
-        SliderSpec(title: "Reveal Edge", range: HalftoneSettings.rippleEdgeRange,
-                   get: { HalftoneSettings.rippleEdge }, set: { HalftoneSettings.rippleEdge = $0 },
+        SliderSpec(title: "Reveal Edge", range: DotMatrixSettings.rippleEdgeRange,
+                   get: { DotMatrixSettings.rippleEdge }, set: { DotMatrixSettings.rippleEdge = $0 },
                    format: { String(format: "%.0f pt", $0) }),
-        SliderSpec(title: "Dispersion λ", range: HalftoneSettings.rippleWavelengthRange,
-                   get: { HalftoneSettings.rippleWavelength }, set: { HalftoneSettings.rippleWavelength = $0 },
+        SliderSpec(title: "Dispersion λ", range: DotMatrixSettings.rippleWavelengthRange,
+                   get: { DotMatrixSettings.rippleWavelength }, set: { DotMatrixSettings.rippleWavelength = $0 },
                    format: { $0 < 1 ? "Off" : String(format: "%.0f pt", $0) }),
-        SliderSpec(title: "Dispersion Decay", range: HalftoneSettings.rippleDecayRange,
-                   get: { HalftoneSettings.rippleDecay }, set: { HalftoneSettings.rippleDecay = $0 },
+        SliderSpec(title: "Dispersion Decay", range: DotMatrixSettings.rippleDecayRange,
+                   get: { DotMatrixSettings.rippleDecay }, set: { DotMatrixSettings.rippleDecay = $0 },
                    format: { String(format: "%.0f pt", $0) }),
-        SliderSpec(title: "Duration", range: HalftoneSettings.rippleDurationRange,
-                   get: { HalftoneSettings.rippleDuration }, set: { HalftoneSettings.rippleDuration = $0 },
+        SliderSpec(title: "Duration", range: DotMatrixSettings.rippleDurationRange,
+                   get: { DotMatrixSettings.rippleDuration }, set: { DotMatrixSettings.rippleDuration = $0 },
                    format: { $0 < 0.01 ? "Auto" : String(format: "%.2f s", $0) }),
     ]
 
     private lazy var stylizeSliders: [SliderSpec] = [
-        SliderSpec(title: "Posterize", range: HalftoneSettings.posterizeRange,
-                   get: { HalftoneSettings.posterizeLevels }, set: { HalftoneSettings.posterizeLevels = $0 },
+        SliderSpec(title: "Posterize", range: DotMatrixSettings.posterizeRange,
+                   get: { DotMatrixSettings.posterizeLevels }, set: { DotMatrixSettings.posterizeLevels = $0 },
                    format: { $0 < 1.5 ? "Off" : String(format: "%.0f levels", $0) }),
-        SliderSpec(title: "Chromatic Aberration", range: HalftoneSettings.chromaticRange,
-                   get: { HalftoneSettings.chromaticAberration }, set: { HalftoneSettings.chromaticAberration = $0 },
+        SliderSpec(title: "Chromatic Aberration", range: DotMatrixSettings.chromaticRange,
+                   get: { DotMatrixSettings.chromaticAberration }, set: { DotMatrixSettings.chromaticAberration = $0 },
                    format: { $0 < 0.1 ? "Off" : String(format: "%.1f px", $0) }),
-        SliderSpec(title: "Scanlines", range: HalftoneSettings.scanlineStrengthRange,
-                   get: { HalftoneSettings.scanlineStrength }, set: { HalftoneSettings.scanlineStrength = $0 },
+        SliderSpec(title: "Scanlines", range: DotMatrixSettings.scanlineStrengthRange,
+                   get: { DotMatrixSettings.scanlineStrength }, set: { DotMatrixSettings.scanlineStrength = $0 },
                    format: { $0 < 0.01 ? "Off" : String(format: "%.0f%%", $0 * 100) }),
-        SliderSpec(title: "Scanline Spacing", range: HalftoneSettings.scanlineSpacingRange,
-                   get: { HalftoneSettings.scanlineSpacing }, set: { HalftoneSettings.scanlineSpacing = $0 },
+        SliderSpec(title: "Scanline Spacing", range: DotMatrixSettings.scanlineSpacingRange,
+                   get: { DotMatrixSettings.scanlineSpacing }, set: { DotMatrixSettings.scanlineSpacing = $0 },
                    format: { String(format: "%.0f px", $0) }),
     ]
 
     private lazy var dragSliders: [SliderSpec] = [
-        SliderSpec(title: "Reach", range: HalftoneSettings.dragRadiusRange,
-                   get: { HalftoneSettings.dragRadius }, set: { HalftoneSettings.dragRadius = $0 },
+        SliderSpec(title: "Reach", range: DotMatrixSettings.dragRadiusRange,
+                   get: { DotMatrixSettings.dragRadius }, set: { DotMatrixSettings.dragRadius = $0 },
                    format: { String(format: "%.0f pt", $0) }),
-        SliderSpec(title: "Strength", range: HalftoneSettings.dragStrengthRange,
-                   get: { HalftoneSettings.dragStrength }, set: { HalftoneSettings.dragStrength = $0 },
+        SliderSpec(title: "Strength", range: DotMatrixSettings.dragStrengthRange,
+                   get: { DotMatrixSettings.dragStrength }, set: { DotMatrixSettings.dragStrength = $0 },
                    format: { String(format: "%.2f×", $0) }),
-        SliderSpec(title: "Snap-Back Distance", range: HalftoneSettings.dragMaxDistanceRange,
-                   get: { HalftoneSettings.dragMaxDistance }, set: { HalftoneSettings.dragMaxDistance = $0 },
+        SliderSpec(title: "Snap-Back Distance", range: DotMatrixSettings.dragMaxDistanceRange,
+                   get: { DotMatrixSettings.dragMaxDistance }, set: { DotMatrixSettings.dragMaxDistance = $0 },
                    format: { String(format: "%.0f pt", $0) }),
     ]
 
@@ -131,7 +131,7 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     private let contentView = UIView()      // throwaway view the effect captures
     private let mediaImageView = UIImageView()
     private let stagePlaceholder = UILabel()
-    private var mediaEffect: HalftoneEffectView?
+    private var mediaEffect: DotMatrixEffectView?
 
     // Fullscreen toggle (item 7): the stage is pinned to the footer normally and to
     // the whole view when expanded. Both constraint sets are swapped on toggle.
@@ -151,7 +151,7 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Halftone Effect"
+        title = "DotMatrix Effect"
         view.backgroundColor = .systemGroupedBackground
         navigationItem.largeTitleDisplayMode = .never
 
@@ -205,8 +205,8 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     }
 
     /// The config for the footer preview.
-    private func footerConfig() -> HalftoneConfig {
-        HalftoneSettings.currentConfig
+    private func footerConfig() -> DotMatrixConfig {
+        DotMatrixSettings.currentConfig
     }
 
     // MARK: Table structure
@@ -289,12 +289,12 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     private func revealModeCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
-        let control = UISegmentedControl(items: HalftoneConfig.RevealMode.allCases.map(\.title))
-        control.selectedSegmentIndex = HalftoneSettings.revealMode.rawValue
+        let control = UISegmentedControl(items: DotMatrixConfig.RevealMode.allCases.map(\.title))
+        control.selectedSegmentIndex = DotMatrixSettings.revealMode.rawValue
         control.apportionsSegmentWidthsByContent = true
         control.addAction(UIAction { [weak self] _ in
-            if let mode = HalftoneConfig.RevealMode(rawValue: control.selectedSegmentIndex) {
-                HalftoneSettings.revealMode = mode
+            if let mode = DotMatrixConfig.RevealMode(rawValue: control.selectedSegmentIndex) {
+                DotMatrixSettings.revealMode = mode
                 self?.settingsChanged()
             }
         }, for: .valueChanged)
@@ -304,8 +304,8 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
 
     private func revealAngleCell() -> UITableViewCell {
         sliderCell(SliderSpec(
-            title: "Reveal Angle", range: HalftoneSettings.revealAngleRange,
-            get: { HalftoneSettings.revealAngle }, set: { HalftoneSettings.revealAngle = $0 },
+            title: "Reveal Angle", range: DotMatrixSettings.revealAngleRange,
+            get: { DotMatrixSettings.revealAngle }, set: { DotMatrixSettings.revealAngle = $0 },
             format: { String(format: "%.0f°", $0 * 180 / .pi) }))
     }
 
@@ -363,11 +363,11 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
     private func shapePickerCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
-        let control = UISegmentedControl(items: HalftoneSettings.ShapeKind.allCases.map(\.title))
-        control.selectedSegmentIndex = HalftoneSettings.shapeKind.rawValue
+        let control = UISegmentedControl(items: DotMatrixSettings.ShapeKind.allCases.map(\.title))
+        control.selectedSegmentIndex = DotMatrixSettings.shapeKind.rawValue
         control.addAction(UIAction { [weak self] _ in
-            if let kind = HalftoneSettings.ShapeKind(rawValue: control.selectedSegmentIndex) {
-                HalftoneSettings.shapeKind = kind
+            if let kind = DotMatrixSettings.ShapeKind(rawValue: control.selectedSegmentIndex) {
+                DotMatrixSettings.shapeKind = kind
                 self?.settingsChanged()
             }
         }, for: .valueChanged)
@@ -377,8 +377,8 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
 
     private func cornerRadiusCell() -> UITableViewCell {
         sliderCell(SliderSpec(
-            title: "Corner Radius", range: HalftoneSettings.cornerRadiusRange,
-            get: { HalftoneSettings.cornerRadius }, set: { HalftoneSettings.cornerRadius = $0 }))
+            title: "Corner Radius", range: DotMatrixSettings.cornerRadiusRange,
+            get: { DotMatrixSettings.cornerRadius }, set: { DotMatrixSettings.cornerRadius = $0 }))
     }
 
     private func averageCellToggleCell() -> UITableViewCell {
@@ -388,12 +388,12 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         cell.contentConfiguration = content
         cell.selectionStyle = .none
         cell.accessoryView = makeToggle(
-            isOn: HalftoneSettings.averageCell, action: #selector(averageCellToggled(_:)))
+            isOn: DotMatrixSettings.averageCell, action: #selector(averageCellToggled(_:)))
         return cell
     }
 
     @objc private func averageCellToggled(_ toggle: UISwitch) {
-        HalftoneSettings.averageCell = toggle.isOn
+        DotMatrixSettings.averageCell = toggle.isOn
         settingsChanged()
     }
 
@@ -404,12 +404,12 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         cell.contentConfiguration = content
         cell.selectionStyle = .none
         cell.accessoryView = makeToggle(
-            isOn: HalftoneSettings.monochrome, action: #selector(greyscaleToggled(_:)))
+            isOn: DotMatrixSettings.monochrome, action: #selector(greyscaleToggled(_:)))
         return cell
     }
 
     @objc private func greyscaleToggled(_ toggle: UISwitch) {
-        HalftoneSettings.monochrome = toggle.isOn
+        DotMatrixSettings.monochrome = toggle.isOn
         settingsChanged()
     }
 
@@ -420,12 +420,12 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         cell.contentConfiguration = content
         cell.selectionStyle = .none
         cell.accessoryView = makeToggle(
-            isOn: HalftoneSettings.transparentBackground, action: #selector(transparentBackgroundToggled(_:)))
+            isOn: DotMatrixSettings.transparentBackground, action: #selector(transparentBackgroundToggled(_:)))
         return cell
     }
 
     @objc private func transparentBackgroundToggled(_ toggle: UISwitch) {
-        HalftoneSettings.transparentBackground = toggle.isOn
+        DotMatrixSettings.transparentBackground = toggle.isOn
         settingsChanged()
     }
 
@@ -438,10 +438,10 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
 
         let well = UIColorWell()
         well.supportsAlpha = true
-        well.selectedColor = HalftoneSettings.gapColor
+        well.selectedColor = DotMatrixSettings.gapColor
         well.addAction(UIAction { [weak self, weak well] _ in
             guard let color = well?.selectedColor else { return }
-            HalftoneSettings.gapColor = color
+            DotMatrixSettings.gapColor = color
             self?.settingsChanged()
         }, for: .valueChanged)
         cell.accessoryView = well
@@ -615,7 +615,7 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
         contentView.frame = CGRect(origin: .zero, size: stageView.bounds.size)
         contentView.layoutIfNeeded()   // detached view: lay out its image by hand
         // Capture the throwaway `contentView`; host the effect on the stable stageView.
-        let effect = stageView.applyHalftone(footerConfig(), capturing: contentView)
+        let effect = stageView.applyDotMatrix(footerConfig(), capturing: contentView)
         effect?.ripplesOnTap = true   // tap the stage to fire the ripple transition
         mediaEffect = effect
         // Keep the hint + fullscreen button above the effect overlay (and tappable).
@@ -822,8 +822,8 @@ final class HalftoneSettingsScreen: UIViewController, UITableViewDataSource, UIT
 /// Weak relay for the video `CADisplayLink` so the link doesn't strongly retain the
 /// screen (which would leak it and keep decoding frames after it's dismissed).
 private final class VideoLinkProxy {
-    weak var target: HalftoneSettingsScreen?
-    init(_ target: HalftoneSettingsScreen) { self.target = target }
+    weak var target: DotMatrixSettingsScreen?
+    init(_ target: DotMatrixSettingsScreen) { self.target = target }
     @objc func tick() { target?.liveTick() }
 }
 

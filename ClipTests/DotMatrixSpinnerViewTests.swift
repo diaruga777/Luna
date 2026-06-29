@@ -2,7 +2,7 @@
 //  DotMatrixSpinnerViewTests.swift
 //  ClipTests
 //
-//  API-contract coverage for the shared halftone `DotMatrixSpinnerView` that
+//  API-contract coverage for the shared Dot Matrix `DotMatrixSpinnerView` that
 //  replaced `UIActivityIndicatorView` app-wide: it must size itself, honor
 //  `hidesWhenStopped`, build its dot matrix, and start/stop cleanly. Plus a
 //  deterministic snapshot of the static (visible, stopped) matrix layout — the
@@ -73,7 +73,7 @@ final class DotMatrixSpinnerViewTests: XCTestCase {
     }
 
     /// A deterministic snapshot of the static matrix (stopped but visible) so the
-    /// halftone look is pinned. The ripple animation is not snapshotted.
+    /// Dot Matrix look is pinned. The ripple animation is not snapshotted.
     func testStaticMatrixSnapshot() {
         let spinner = DotMatrixSpinnerView(dimension: 4, side: 26)
         spinner.hidesWhenStopped = false

@@ -80,7 +80,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 nav.pushViewController(voice, animated: true)
             } else {
                 let nav = UINavigationController(rootViewController: voice)
-                nav.installHalftoneTransitions()
+                nav.installDotMatrixTransitions()
                 presenter.present(nav, animated: true)
             }
         }

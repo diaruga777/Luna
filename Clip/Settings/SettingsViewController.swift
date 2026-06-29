@@ -96,7 +96,7 @@ final class SettingsViewController: UITableViewController {
                 self?.dismiss(animated: true)
             }
             onboarding.modalPresentationStyle = .fullScreen
-            HalftoneModal.present(onboarding, from: self)
+            DotMatrixModal.present(onboarding, from: self)
         }
     }
 }

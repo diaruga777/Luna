@@ -2,9 +2,9 @@
 //  RabbitHoleTransitionSettingsScreen.swift
 //  Clip
 //
-//  Tuning UI for the halftone pixel-wipe transition (used everywhere — nav, modals,
+//  Tuning UI for the Dot Matrix pixel-wipe transition (used everywhere — nav, modals,
 //  in-place changes, table updates, and the RabbitHole reader). Each row edits one
-//  `HalftoneTransitionSettings` value live; changes take effect on the next transition.
+//  `DotMatrixTransitionSettings` value live; changes take effect on the next transition.
 //
 
 import ClipDesignSystem
@@ -21,7 +21,7 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Transition Animation"
+        title = "Dot Matrix Transition"
         navigationItem.largeTitleDisplayMode = .never
     }
 
@@ -59,46 +59,46 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
         switch Section(rawValue: indexPath.section)! {
         case .cellSize:
             return sliderCell(
-                value: Double(HalftoneTransitionSettings.pixelSize),
-                range: HalftoneTransitionSettings.pixelSizeRange,
+                value: Double(DotMatrixTransitionSettings.pixelSize),
+                range: DotMatrixTransitionSettings.pixelSizeRange,
                 minCaption: "6 pt", maxCaption: "64 pt",
                 format: { String(format: "%.0f pt", $0) },
-                onChange: { HalftoneTransitionSettings.pixelSize = CGFloat($0) })
+                onChange: { DotMatrixTransitionSettings.pixelSize = CGFloat($0) })
         case .cornerRadius:
             return sliderCell(
-                value: Double(HalftoneTransitionSettings.cornerRadius),
-                range: HalftoneTransitionSettings.cornerRadiusRange,
+                value: Double(DotMatrixTransitionSettings.cornerRadius),
+                range: DotMatrixTransitionSettings.cornerRadiusRange,
                 minCaption: "0 pt", maxCaption: "8 pt",
                 format: { String(format: "%.0f pt", $0) },
-                onChange: { HalftoneTransitionSettings.cornerRadius = CGFloat($0) })
+                onChange: { DotMatrixTransitionSettings.cornerRadius = CGFloat($0) })
         case .spacing:
             return sliderCell(
-                value: Double(HalftoneTransitionSettings.spacing),
-                range: HalftoneTransitionSettings.spacingRange,
+                value: Double(DotMatrixTransitionSettings.spacing),
+                range: DotMatrixTransitionSettings.spacingRange,
                 minCaption: "0 pt", maxCaption: "8 pt",
                 format: { String(format: "%.0f pt", $0) },
-                onChange: { HalftoneTransitionSettings.spacing = CGFloat($0) })
+                onChange: { DotMatrixTransitionSettings.spacing = CGFloat($0) })
         case .phase1:
             return sliderCell(
-                value: HalftoneTransitionSettings.phase1Duration,
-                range: HalftoneTransitionSettings.phase1DurationRange,
+                value: DotMatrixTransitionSettings.phase1Duration,
+                range: DotMatrixTransitionSettings.phase1DurationRange,
                 minCaption: "0.1 s", maxCaption: "2.0 s",
                 format: { String(format: "%.2f s", $0) },
-                onChange: { HalftoneTransitionSettings.phase1Duration = $0 })
+                onChange: { DotMatrixTransitionSettings.phase1Duration = $0 })
         case .phase2:
             return sliderCell(
-                value: HalftoneTransitionSettings.phase2Duration,
-                range: HalftoneTransitionSettings.phase2DurationRange,
+                value: DotMatrixTransitionSettings.phase2Duration,
+                range: DotMatrixTransitionSettings.phase2DurationRange,
                 minCaption: "0.05 s", maxCaption: "1.5 s",
                 format: { String(format: "%.2f s", $0) },
-                onChange: { HalftoneTransitionSettings.phase2Duration = $0 })
+                onChange: { DotMatrixTransitionSettings.phase2Duration = $0 })
         case .stagger:
             return sliderCell(
-                value: Double(HalftoneTransitionSettings.stagger),
-                range: HalftoneTransitionSettings.staggerRange,
+                value: Double(DotMatrixTransitionSettings.stagger),
+                range: DotMatrixTransitionSettings.staggerRange,
                 minCaption: "Together", maxCaption: "Sequential",
                 format: { String(format: "%.0f%%", $0 * 100) },
-                onChange: { HalftoneTransitionSettings.stagger = CGFloat($0) })
+                onChange: { DotMatrixTransitionSettings.stagger = CGFloat($0) })
         case .color:
             return monochromeCell()
         case .reset:
@@ -157,12 +157,12 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
         content.text = "Monochrome"
         cell.contentConfiguration = content
         cell.accessoryView = makeToggle(
-            isOn: HalftoneTransitionSettings.monochrome, action: #selector(monochromeToggled(_:)))
+            isOn: DotMatrixTransitionSettings.monochrome, action: #selector(monochromeToggled(_:)))
         return cell
     }
 
     @objc private func monochromeToggled(_ toggle: UISwitch) {
-        HalftoneTransitionSettings.monochrome = toggle.isOn
+        DotMatrixTransitionSettings.monochrome = toggle.isOn
     }
 
     private func resetCell() -> UITableViewCell {
@@ -178,7 +178,7 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard Section(rawValue: indexPath.section) == .reset else { return }
-        HalftoneTransitionSettings.resetToDefaults()
+        DotMatrixTransitionSettings.resetToDefaults()
         tableView.reloadData()
     }
 

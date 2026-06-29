@@ -252,6 +252,35 @@ public struct PriceTracker: Codable, Equatable {
         self.alertAcknowledgedAt = nil
     }
 
+    /// Creates a tracker from multiple seller listings, preserving their display
+    /// order while using the lowest known listing price as the alert baseline.
+    public init(
+        productName: String,
+        stores: [PriceTrackerStore],
+        brand: String? = nil,
+        productID: String? = nil,
+        imageFileName: String? = nil,
+        alertThresholdFraction: Double = 0.10
+    ) {
+        let nonEmptyStores = stores.isEmpty
+            ? [PriceTrackerStore(urlString: "", lastPrice: 0, currency: "USD")]
+            : stores
+        self.productName = productName
+        self.stores = nonEmptyStores
+        self.brand = brand
+        self.productID = productID
+        self.imageFileName = imageFileName
+        let baselineStore = nonEmptyStores
+            .filter { $0.lastPrice != nil }
+            .min { ($0.lastPrice ?? 0) < ($1.lastPrice ?? 0) }
+            ?? nonEmptyStores[0]
+        self.initialPrice = baselineStore.lastPrice ?? 0
+        self.initialCurrency = baselineStore.currency
+        self.alertThresholdFraction = alertThresholdFraction
+        self.isArchived = false
+        self.alertAcknowledgedAt = nil
+    }
+
     /// Marks the current alert as viewed (the user opened the alerting tracker), so
     /// the row stops floating to the top of the list and rejoins the price-tracking
     /// section. No-op when not alerting (nothing to acknowledge).

@@ -181,6 +181,43 @@ final class ShareSurfaceDriverTests: XCTestCase {
         XCTAssertNotNil(store.item(forURLString: urlString)?.priceTracker)
     }
 
+    func testGoogleShoppingProductPersistsSellerURLsAsTrackerStores() {
+        let googleURL = url("https://www.google.com/search?q=mova+v50+complete+vs+ultr&udm=28&shopmd=1")
+        _ = store.add(urlString: googleURL.absoluteString)
+        let (driver, host) = makeDriver(isActionExtension: false)
+        let product = ProductInfo(
+            name: "Mova V50 Ultra Robotic Vacuum and Mop",
+            priceAmount: 1098,
+            priceCurrency: "AUD",
+            imageURL: nil,
+            brand: nil,
+            productID: nil,
+            sellers: [
+                ProductSellerInfo(
+                    url: url("https://www.amazon.com.au/MOVA-V50-Ultra-Auto-Empty-Robot/dp/B0F1234567"),
+                    price: ProductPrice(amount: 1099, currency: "AUD")),
+                ProductSellerInfo(
+                    url: url("https://www.harveynorman.com.au/mova-v50-ultra-robotic-vacuum-and-mop.html"),
+                    price: ProductPrice(amount: 1098, currency: "AUD")),
+                ProductSellerInfo(
+                    url: url("https://au.mova-tech.com/products/mova-v50-ultra-robot-vacuum"),
+                    price: ProductPrice(amount: 1099, currency: "AUD")),
+            ])
+
+        driver.present(.product(product, html: "<html></html>"), url: googleURL)
+
+        XCTAssertTrue(host.presented.first is PriceTrackingViewController)
+        let tracker = store.items().first?.priceTracker
+        XCTAssertEqual(tracker?.stores.map(\.urlString), [
+            "https://www.amazon.com.au/MOVA-V50-Ultra-Auto-Empty-Robot/dp/B0F1234567",
+            "https://www.harveynorman.com.au/mova-v50-ultra-robotic-vacuum-and-mop.html",
+            "https://au.mova-tech.com/products/mova-v50-ultra-robot-vacuum",
+        ])
+        XCTAssertEqual(tracker?.stores.map(\.lastPrice), [1099, 1098, 1099])
+        XCTAssertEqual(tracker?.initialPrice, 1098)
+        XCTAssertFalse(tracker?.stores.contains { $0.urlString.contains("google.com") } ?? true)
+    }
+
     // MARK: - Article / failure parity
 
     /// The action extension presents the in-sheet reader for an article and persists

@@ -18,13 +18,20 @@ public struct ProductMetadata: Equatable {
     public let imageURL: URL?
     public let brand: String?
     public let productID: String?
+    /// Seller listings discovered on an aggregate shopping page. Empty for ordinary
+    /// product pages.
+    public let sellers: [ProductSellerInfo]
 
-    public init(name: String, price: ProductPrice, imageURL: URL?, brand: String?, productID: String?) {
+    public init(
+        name: String, price: ProductPrice, imageURL: URL?, brand: String?, productID: String?,
+        sellers: [ProductSellerInfo] = []
+    ) {
         self.name = name
         self.price = price
         self.imageURL = imageURL
         self.brand = brand
         self.productID = productID
+        self.sellers = sellers
     }
 }
 
@@ -92,6 +99,10 @@ public struct ProductMetadataExtractor {
     /// rule or the generic fallback, and assemble the metadata if a price was found.
     private func metadata(url: URL, html: String) -> ProductMetadata? {
         guard let document = try? SwiftSoup.parse(html, url.absoluteString) else { return nil }
+        if let googleShopping = GoogleShoppingProductParser.metadata(
+            url: url, html: html, document: document) {
+            return googleShopping
+        }
         guard let price = resolvePrice(url: url, html: html, document: document) else { return nil }
         let fields = detector.metadataFields(document: document, baseURL: url)
         return ProductMetadata(
@@ -114,6 +125,181 @@ public struct ProductMetadataExtractor {
             return ProductPrice(amount: amount, currency: currency)
         }
         return detector.genericStructuredPrice(document: document, baseURL: url)
+    }
+}
+
+// MARK: - Google Shopping aggregate pages
+
+/// Google Shopping search pages are aggregate listings, not sellers. When a user
+/// saves one, track the seller product pages Google lists instead of google.com.
+enum GoogleShoppingProductParser {
+    static func metadata(url: URL, html: String, document: Document) -> ProductMetadata? {
+        guard isGoogleShoppingURL(url) else { return nil }
+        let sellers = sellerListings(document: document, baseURL: url)
+        guard !sellers.isEmpty,
+              let best = sellers.min(by: { $0.price.amount < $1.price.amount })
+        else { return nil }
+        return ProductMetadata(
+            name: productName(document: document, fallbackURL: url),
+            price: best.price,
+            imageURL: nil,
+            brand: nil,
+            productID: nil,
+            sellers: sellers)
+    }
+
+    private static func isGoogleShoppingURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased(),
+              host == "google.com" || host.hasSuffix(".google.com"),
+              url.path == "/search",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return false }
+        let items = components.queryItems ?? []
+        return items.contains { $0.name == "tbm" && $0.value == "shop" }
+            || items.contains { $0.name == "udm" && $0.value == "28" }
+            || items.contains { $0.name == "shopmd" }
+    }
+
+    private static func sellerListings(document: Document, baseURL: URL) -> [ProductSellerInfo] {
+        guard let links = try? document.select("a[href]") else { return [] }
+        var listings: [ProductSellerInfo] = []
+        var seen = Set<String>()
+        for link in links.array() {
+            guard let href = try? link.attr("href"),
+                  let sellerURL = sellerURL(from: href, baseURL: baseURL),
+                  let price = priceNear(link, sellerURL: sellerURL)
+            else { continue }
+            let key = canonicalKey(sellerURL)
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            listings.append(ProductSellerInfo(url: sellerURL, price: price))
+        }
+        return listings
+    }
+
+    private static func sellerURL(from href: String, baseURL: URL) -> URL? {
+        guard !href.isEmpty else { return nil }
+        let resolved: URL?
+        if href.hasPrefix("http://") || href.hasPrefix("https://") {
+            resolved = URL(string: href)
+        } else {
+            resolved = URL(string: href, relativeTo: baseURL)?.absoluteURL
+        }
+        guard let candidate = resolved else { return nil }
+        let unwrapped = unwrapGoogleRedirect(candidate) ?? candidate
+        guard let scheme = unwrapped.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              !isGoogleOwnedHost(unwrapped.host)
+        else { return nil }
+        return cleanedSellerURL(unwrapped)
+    }
+
+    private static func unwrapGoogleRedirect(_ url: URL) -> URL? {
+        guard isGoogleOwnedHost(url.host),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return nil }
+        for key in ["url", "q", "adurl"] {
+            if let value = components.queryItems?.first(where: { $0.name == key })?.value,
+               let target = URL(string: value) {
+                return target
+            }
+        }
+        return nil
+    }
+
+    private static func isGoogleOwnedHost(_ host: String?) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        return host == "google.com"
+            || host.hasSuffix(".google.com")
+            || host == "g.co"
+            || host.hasSuffix(".g.co")
+            || host == "googleusercontent.com"
+            || host.hasSuffix(".googleusercontent.com")
+            || host == "gstatic.com"
+            || host.hasSuffix(".gstatic.com")
+    }
+
+    private static func priceNear(_ element: Element, sellerURL: URL) -> ProductPrice? {
+        var current: Element? = element
+        for _ in 0..<6 {
+            if let text = try? current?.text(), let price = price(in: text, sellerURL: sellerURL) {
+                return price
+            }
+            current = current?.parent()
+        }
+        return nil
+    }
+
+    private static func price(in text: String, sellerURL: URL) -> ProductPrice? {
+        let pattern = #"(?i)(?:A\$|AU\$|US\$|\$|£|€|¥)\s*[0-9][0-9.,]*"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range, in: text)
+        else { return nil }
+        let raw = String(text[range])
+        guard let amount = ProductPageDetector.parsePrice(raw),
+              let currency = currency(in: raw, sellerURL: sellerURL)
+        else { return nil }
+        return ProductPrice(amount: amount, currency: currency)
+    }
+
+    private static func currency(in raw: String, sellerURL: URL) -> String? {
+        let upper = raw.uppercased()
+        if upper.contains("A$") || upper.contains("AU$") { return "AUD" }
+        if upper.contains("US$") { return "USD" }
+        if raw.contains("£") { return "GBP" }
+        if raw.contains("€") { return "EUR" }
+        if raw.contains("¥") { return "JPY" }
+        if let host = sellerURL.host?.lowercased(),
+           host == "au" || host.hasSuffix(".au") || host.hasSuffix(".com.au") {
+            return "AUD"
+        }
+        return ProductPageDetector.normalizeCurrency("$")
+    }
+
+    private static func productName(document: Document, fallbackURL: URL) -> String {
+        let selectors = [
+            #"meta[property="og:title"]"#,
+            #"meta[name="title"]"#,
+        ]
+        for selector in selectors {
+            if let meta = try? document.select(selector).first(),
+               let content = try? meta.attr("content"),
+               !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return cleanTitle(content)
+            }
+        }
+        if let title = try? document.title(),
+           !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return cleanTitle(title)
+        }
+        let query = URLComponents(url: fallbackURL, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "q" })?.value
+        return query?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? query!
+            : "Product"
+    }
+
+    private static func cleanTitle(_ title: String) -> String {
+        title
+            .replacingOccurrences(of: " - Google Shopping", with: "")
+            .replacingOccurrences(of: " - Google Search", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func canonicalKey(_ url: URL) -> String {
+        cleanedSellerURL(url)?.absoluteString ?? url.absoluteString
+    }
+
+    private static func cleanedSellerURL(_ url: URL) -> URL? {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        let queryItems = components?.queryItems?.filter {
+            !$0.name.lowercased().hasPrefix("utm_")
+        }
+        components?.queryItems = queryItems?.isEmpty == true ? nil : queryItems
+        return components?.url
     }
 }
 

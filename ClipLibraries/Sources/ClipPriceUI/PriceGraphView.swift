@@ -74,6 +74,10 @@ public final class PriceGraphView: UIView {
             return CGPoint(x: x, y: y)
         }
 
+        func y(for price: Double) -> CGFloat {
+            plot.maxY - CGFloat((price - domain.min) / priceSpan) * plot.height
+        }
+
         drawGrid(in: plot, context: context)
 
         // Filled area + line.
@@ -94,13 +98,16 @@ public final class PriceGraphView: UIView {
         line.lineJoinStyle = .round
         line.stroke()
 
-        // y-axis min/max labels live in a dedicated left gutter, so they never collide
-        // with the x-axis dates below the plot.
-        drawAxisLabel(PriceFormatting.string(amount: Decimal(rawMaxPrice), currency: currency),
-                      at: CGPoint(x: plot.minX - 6, y: plot.minY - 1), align: .right)
-        drawAxisLabel(PriceFormatting.string(amount: Decimal(rawMinPrice), currency: currency),
-                      at: CGPoint(x: plot.minX - 6, y: plot.maxY - Self.axisLabelHeight + 1),
-                      align: .right)
+        // y-axis labels live in a dedicated left gutter and are anchored to the actual
+        // price value they describe. A flat series therefore gets one label on the line,
+        // not duplicate labels at the padded domain bounds.
+        drawYAxisLabels(
+            candidates: [
+                (price: rawMaxPrice, y: y(for: rawMaxPrice)),
+                (price: rawMinPrice, y: y(for: rawMinPrice)),
+            ],
+            labelX: plot.minX - 6,
+            plot: plot)
         // x-axis endpoint dates sit below the plot baseline.
         drawAxisLabel(Self.axisDate(points.first!.date),
                       at: CGPoint(x: plot.minX, y: plot.maxY + 8), align: .left)
@@ -173,6 +180,33 @@ public final class PriceGraphView: UIView {
             context.addLine(to: CGPoint(x: plot.maxX, y: y))
         }
         context.strokePath()
+    }
+
+    private func drawYAxisLabels(
+        candidates: [(price: Double, y: CGFloat)],
+        labelX: CGFloat,
+        plot: CGRect
+    ) {
+        var labels: [(text: String, y: CGFloat, count: Int)] = []
+        for candidate in candidates {
+            let text = PriceFormatting.string(amount: Decimal(candidate.price), currency: currency)
+            if let index = labels.firstIndex(where: { $0.text == text }) {
+                let existing = labels[index]
+                labels[index] = (
+                    text: existing.text,
+                    y: (existing.y * CGFloat(existing.count) + candidate.y) / CGFloat(existing.count + 1),
+                    count: existing.count + 1)
+            } else {
+                labels.append((text: text, y: candidate.y, count: 1))
+            }
+        }
+
+        for label in labels {
+            let y = min(
+                max(label.y - Self.axisLabelHeight / 2, plot.minY - 1),
+                plot.maxY - Self.axisLabelHeight + 1)
+            drawAxisLabel(label.text, at: CGPoint(x: labelX, y: y), align: .right)
+        }
     }
 
     private func drawAxisLabel(_ text: String, at origin: CGPoint, align: LabelAlign) {

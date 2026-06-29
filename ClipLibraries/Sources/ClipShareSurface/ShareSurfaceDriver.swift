@@ -197,11 +197,27 @@ public final class ShareSurfaceDriver {
     private func persistTracker(_ product: ProductInfo, url: URL) -> UUID? {
         guard let saved = store.item(forURLString: url.absoluteString) else { return nil }
         let tracker = PriceTracker(
-            productName: product.name, firstStoreURL: url.absoluteString,
-            price: product.priceAmount, currency: product.priceCurrency,
+            productName: product.name, stores: trackerStores(for: product, fallbackURL: url),
             brand: product.brand, productID: product.productID)
         store.savePriceTracker(tracker, for: saved.id)
         return saved.id
+    }
+
+    private func trackerStores(for product: ProductInfo, fallbackURL: URL) -> [PriceTrackerStore] {
+        let now = Date()
+        let sellerStores = product.sellers.map {
+            PriceTrackerStore(
+                urlString: $0.url.absoluteString,
+                lastPrice: $0.price.amount,
+                currency: $0.price.currency,
+                lastRefreshed: now)
+        }
+        if !sellerStores.isEmpty { return sellerStores }
+        return [PriceTrackerStore(
+            urlString: fallbackURL.absoluteString,
+            lastPrice: product.priceAmount,
+            currency: product.priceCurrency,
+            lastRefreshed: now)]
     }
 
     // MARK: - Presentation

@@ -277,12 +277,14 @@ public enum IngestPipeline {
         // confirm it's really a product before extracting.
         let classifiedAsProduct: Bool = { if case .product = classifiedKind { return true }; return false }()
         if !input.forceArticle, let html = directHTML,
-           classifiedAsProduct || productDetector.detect(urlString: url.absoluteString, html: html) != nil,
-           let metadata = await metadataExtractor.extract(url: url, html: html, render: render) {
+           let metadata = await metadataExtractor.extract(url: url, html: html, render: render),
+           classifiedAsProduct || !metadata.sellers.isEmpty
+                || productDetector.detect(urlString: url.absoluteString, html: html) != nil {
             let product = ProductInfo(
                 name: metadata.name, priceAmount: metadata.price.amount,
                 priceCurrency: metadata.price.currency, imageURL: metadata.imageURL,
-                brand: metadata.brand, productID: metadata.productID)
+                brand: metadata.brand, productID: metadata.productID,
+                sellers: metadata.sellers)
             return .product(product, html: html)
         }
 

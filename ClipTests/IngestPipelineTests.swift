@@ -80,6 +80,24 @@ final class IngestPipelineTests: XCTestCase {
         XCTAssertEqual(product.priceCurrency, "AUD")
     }
 
+    func testGoogleShoppingPageIsProductWithSellerListings() async {
+        let html = BypassFixtures.html("Products/google-shopping-mova.html")
+        let outcome = await process(
+            "https://www.google.com/search?q=mova+v50+complete+vs+ultr&udm=28&shopmd=1",
+            html: html,
+            source: .manual)
+        guard case let .product(product, _) = outcome else {
+            return XCTFail("expected .product, got \(outcome)")
+        }
+        XCTAssertEqual(product.priceAmount, 1098)
+        XCTAssertEqual(product.priceCurrency, "AUD")
+        XCTAssertEqual(product.sellers.map(\.url.host), [
+            "www.amazon.com.au",
+            "www.harveynorman.com.au",
+            "au.mova-tech.com",
+        ])
+    }
+
     func testHardPaywallLockedIsNeedsArchive() async {
         let outcome = await process("https://www.wsj.com/articles/x", html: lockedHTML(), source: .manual)
         guard case let .needsArchive(title) = outcome else {

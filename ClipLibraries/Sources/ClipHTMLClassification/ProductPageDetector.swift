@@ -22,6 +22,18 @@ public struct ProductPrice: Equatable {
     }
 }
 
+/// One seller/store listing for an aggregate shopping page. The URL is the
+/// seller's own product page, never the aggregate/search page.
+public struct ProductSellerInfo: Equatable {
+    public let url: URL
+    public let price: ProductPrice
+
+    public init(url: URL, price: ProductPrice) {
+        self.url = url
+        self.price = price
+    }
+}
+
 /// A purchasable product detected on a saved web page, paired with a price that
 /// was successfully fetched up front. The price is REQUIRED: a `ProductInfo` only
 /// exists once a real price is in hand (see `PriceFetcher`), so a price tracker
@@ -40,6 +52,9 @@ public struct ProductInfo: Equatable {
     /// A stable product identifier (GTIN/UPC/EAN/ISBN/MPN/SKU), if declared —
     /// the strongest signal for matching two store pages to the same product.
     public let productID: String?
+    /// Seller listings discovered on an aggregate shopping page. Empty for ordinary
+    /// single-store product pages, where the processed URL itself is the seller.
+    public let sellers: [ProductSellerInfo]
 
     /// Builds the priced product from a detected candidate and a fetched price.
     public init(candidate: ProductCandidate, price: ProductPrice) {
@@ -49,13 +64,15 @@ public struct ProductInfo: Equatable {
         self.imageURL = candidate.imageURL
         self.brand = candidate.brand
         self.productID = candidate.productID
+        self.sellers = []
     }
 
     /// Direct initializer (used by the structured-data path that already has all
     /// fields, and by tests).
     public init(
         name: String, priceAmount: Decimal, priceCurrency: String,
-        imageURL: URL?, brand: String?, productID: String?
+        imageURL: URL?, brand: String?, productID: String?,
+        sellers: [ProductSellerInfo] = []
     ) {
         self.name = name
         self.priceAmount = priceAmount
@@ -63,6 +80,7 @@ public struct ProductInfo: Equatable {
         self.imageURL = imageURL
         self.brand = brand
         self.productID = productID
+        self.sellers = sellers
     }
 }
 

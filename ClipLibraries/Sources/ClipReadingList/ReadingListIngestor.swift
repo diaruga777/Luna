@@ -247,11 +247,22 @@ public final class ReadingListIngestor {
             return ($0.id, tracker)
         }
         if let matchID = ProductMatcher.bestMatch(for: product, among: existing),
-           var matched = store.item(withID: matchID)?.priceTracker,
-           !matched.hasStore(urlString: url.absoluteString) {
-            matched.upsertStore(PriceTrackerStore(
-                urlString: url.absoluteString, lastPrice: product.priceAmount,
-                currency: product.priceCurrency, lastRefreshed: Date()))
+           var matched = store.item(withID: matchID)?.priceTracker {
+            let stores = trackerStores(for: product, fallbackURL: url)
+            let newStores = stores.filter { !matched.hasStore(urlString: $0.urlString) }
+            guard !newStores.isEmpty else {
+                store.delete(item)
+                if let replayID {
+                    await recorder.record(.note("product sellers already tracked by \(matchID)"), for: replayID)
+                    await recorder.terminate(replayID, state: .success, finalContent: nil)
+                }
+                postPriceTrackerSaved(itemID: matchID, source: item.effectiveCaptureSource,
+                                      isMerge: true, highlightedURL: stores.first?.urlString)
+                return
+            }
+            for storeListing in newStores {
+                matched.upsertStore(storeListing)
+            }
             store.updatePriceTracker(matched, for: matchID)
             // The just-saved item was a duplicate route into an existing tracker;
             // drop its placeholder item so only the merged tracker remains.
@@ -266,13 +277,12 @@ public final class ReadingListIngestor {
                 await recorder.terminate(replayID, state: .success, finalContent: nil)
             }
             postPriceTrackerSaved(itemID: matchID, source: item.effectiveCaptureSource,
-                                  isMerge: true, highlightedURL: url.absoluteString)
+                                  isMerge: true, highlightedURL: newStores.first?.urlString)
             return
         }
 
         var tracker = PriceTracker(
-            productName: product.name, firstStoreURL: url.absoluteString,
-            price: product.priceAmount, currency: product.priceCurrency,
+            productName: product.name, stores: trackerStores(for: product, fallbackURL: url),
             brand: product.brand, productID: product.productID)
         if let imageURL = product.imageURL,
            let data = await downloadProductImage(imageURL) {
@@ -294,6 +304,23 @@ public final class ReadingListIngestor {
         }
         postPriceTrackerSaved(itemID: item.id, source: item.effectiveCaptureSource,
                               isMerge: false, highlightedURL: nil)
+    }
+
+    private func trackerStores(for product: ProductInfo, fallbackURL: URL) -> [PriceTrackerStore] {
+        let now = Date()
+        let sellerStores = product.sellers.map {
+            PriceTrackerStore(
+                urlString: $0.url.absoluteString,
+                lastPrice: $0.price.amount,
+                currency: $0.price.currency,
+                lastRefreshed: now)
+        }
+        if !sellerStores.isEmpty { return sellerStores }
+        return [PriceTrackerStore(
+            urlString: fallbackURL.absoluteString,
+            lastPrice: product.priceAmount,
+            currency: product.priceCurrency,
+            lastRefreshed: now)]
     }
 
     /// Announces a just-created/merged price tracker from an interactive in-app

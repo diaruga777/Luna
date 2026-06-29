@@ -196,7 +196,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     /// Begin (or resume) loading once both the view and a `configure(...)` are in place.
     private func beginLoading() {
-        spinner.startAnimating()
+        if case .reader = pendingDecision {
+            spinner.stopAnimating()
+        } else {
+            spinner.startAnimating()
+        }
         applyDecisionIfPossible()
         armLoadWatchdog()
     }
@@ -619,9 +623,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             let scroll = ScrollReaderViewController(
                 item: transient, content: content, audioEnabled: audioOn,
                 gazeTrackerFactory: nil)
-            scroll.onLinkActivated = { [weak self] url in
+            scroll.onLinkActivatedWithRange = { [weak self] url, range in
                 guard let self else { return }
-                self.onLinkActivated?(url, self.lineText(for: url))
+                self.onLinkActivated?(url, self.lineText(for: range))
             }
             scroll.onVisibleLinkURLsChanged = { [weak self] urls in
                 self?.currentVisibleLinkURLs = urls
@@ -665,6 +669,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         (readerChild as? ScrollReaderViewController)?.prepareFullContent()
     }
 
+    /// Offscreen RabbitHole prep hook. The host calls this while a linked page is parked
+    /// outside the viewport so the eventual tap only repositions the existing view.
+    public func prepareInitialViewportForCaching() {
+        guard isViewLoaded else { return }
+        view.layoutIfNeeded()
+        (readerChild as? ScrollReaderViewController)?.prepareInitialViewportForCaching()
+    }
+
     // MARK: - Scroll access (no changes to ScrollReaderViewController)
 
     /// The layer's primary scroll view, found by walking the embedded reader's view
@@ -694,25 +706,17 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         descriptor.scrollOffset = currentScrollOffset
     }
 
-    /// Best-effort text of the line containing the tapped link `url`, for the bottom
-    /// lip. Found by locating the link's range in the embedded text view; nil unless
-    /// we're in a text (scroll) reader.
-    public func lineText(for url: URL) -> String? {
+    /// Best-effort text of the line containing the tapped link range, for the bottom
+    /// lip. The range comes directly from UIKit's link tap resolution, so this avoids
+    /// scanning every link in the attributed string during the tap.
+    public func lineText(for linkRange: NSRange) -> String? {
         guard let textView = contentScrollView as? UITextView else { return nil }
         let attributed = textView.textStorage
         guard attributed.length > 0 else { return nil }
-        var found: NSRange?
-        attributed.enumerateAttribute(.link, in: NSRange(location: 0, length: attributed.length)) {
-            value, range, stop in
-            let matches: Bool
-            if let u = value as? URL { matches = u == url }
-            else if let s = value as? String { matches = s == url.absoluteString }
-            else { matches = false }
-            if matches { found = range; stop.pointee = true }
-        }
-        guard let linkRange = found else { return nil }
+        let bounded = NSIntersectionRange(linkRange, NSRange(location: 0, length: attributed.length))
+        guard bounded.length > 0 else { return nil }
         // Expand to the paragraph/line and trim to a single sensible line.
-        let line = (attributed.string as NSString).lineRange(for: linkRange)
+        let line = (attributed.string as NSString).lineRange(for: bounded)
         let text = (attributed.string as NSString).substring(with: line)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : String(text.prefix(140))

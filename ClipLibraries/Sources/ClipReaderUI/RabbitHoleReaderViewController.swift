@@ -286,7 +286,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         return layer
     }
 
-    /// Pre-create the next layer shell offscreen (hidden) so a dive has nothing to build.
+    /// Pre-create the next layer shell offscreen so a dive has nothing to build.
     /// Built on a later runloop so it never hitches a just-finished transition; if a dive
     /// beats it, `takeSpareLayer` falls back to building one synchronously.
     private func ensureSpareLayer() {
@@ -294,10 +294,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         DispatchQueue.main.async { [weak self] in
             guard let self, self.spareLayer == nil, self.isViewLoaded else { return }
             let layer = self.makeLayerShell()
-            layer.view.isHidden = true
-            layer.view.frame = CGRect(x: -max(self.view.bounds.width, 1), y: 0,
-                                      width: max(self.view.bounds.width, 1),
-                                      height: max(self.view.bounds.height, 1))
+            self.parkInactiveLayerOffscreen(layer, zPosition: -200)
             self.spareLayer = layer
         }
     }
@@ -307,7 +304,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private func takeSpareLayer() -> RabbitHoleLayerViewController {
         if let spare = spareLayer {
             spareLayer = nil
-            spare.view.isHidden = false
             return spare
         }
         return makeLayerShell()
@@ -321,12 +317,14 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         let bounds = view.bounds
         let safe = view.safeAreaInsets
         for (i, layer) in layers.enumerated() {
-            if layer === hidden { layer.view.isHidden = true; continue }
+            if layer === hidden {
+                parkInactiveLayerOffscreen(layer, zPosition: layer.view.layer.zPosition)
+                continue
+            }
             let p = layout.placement(layerIndex: i, focusedIndex: f, bounds: bounds, safeArea: safe)
             layer.view.frame = p.cardFrame
             layer.view.layer.zPosition = p.z
             layer.view.alpha = p.cardAlpha
-            layer.view.isHidden = p.cardAlpha <= 0.001
             layer.applyDepth(p.depth)
             layer.setChrome(role: p.role, alpha: p.chromeAlpha)
         }
@@ -725,11 +723,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             layer.configure(
                 descriptor: RabbitHoleLayerDescriptor(urlString: url.absoluteString),
                 preloadedContent: content)
-            layer.view.isHidden = false
-            layer.view.layer.zPosition = -100
-            parkPreparedLayerOffscreen(layer)
-            layer.view.setNeedsLayout()
-            layer.view.layoutIfNeeded()
+            parkInactiveLayerOffscreen(layer, zPosition: -100)
+            layer.prepareInitialViewportForCaching()
             preparedLayers[key] = layer
         }
     }
@@ -750,13 +745,16 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     }
 
     private func parkPreparedLayersOffscreen() {
-        for layer in preparedLayers.values { parkPreparedLayerOffscreen(layer) }
+        for layer in preparedLayers.values { parkInactiveLayerOffscreen(layer, zPosition: -100) }
     }
 
-    private func parkPreparedLayerOffscreen(_ layer: RabbitHoleLayerViewController) {
+    private func parkInactiveLayerOffscreen(_ layer: RabbitHoleLayerViewController,
+                                            zPosition: CGFloat) {
         let width = max(view.bounds.width, 1)
         let height = max(view.bounds.height, 1)
         layer.view.frame = CGRect(x: -width - 32, y: 0, width: width, height: height)
+        layer.view.alpha = 0
+        layer.view.layer.zPosition = zPosition
     }
 
     /// (Re)start the background drain of `warmURLs` in order. Restarting is cheap: an

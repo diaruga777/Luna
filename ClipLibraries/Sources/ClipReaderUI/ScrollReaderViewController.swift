@@ -24,6 +24,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// a new inline split overlay — used by the inline reader to push the link onto
     /// its own navigation stack rather than nesting another overlay.
     public var onLinkActivated: ((URL) -> Void)?
+    /// Same tap as `onLinkActivated`, but includes the exact text range UIKit already
+    /// resolved for the tapped link. RabbitHole uses it to avoid rescanning links on tap.
+    public var onLinkActivatedWithRange: ((_ url: URL, _ range: NSRange) -> Void)?
     /// Visible/near-visible inline links changed. RabbitHole uses this to rotate the
     /// expensive offscreen child view controllers around what the reader can tap soon,
     /// while the cheaper content preload can stay broader.
@@ -389,6 +392,16 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             let full = ArticleTextRenderer.render(self.content)
             self.applyFullContent(full)
         }
+    }
+
+    /// Offscreen RabbitHole prep hook. Forces the cheap prefix pass to finish layout
+    /// while the layer is still parked, so tapping the link can move an already-laid-out
+    /// reader into place instead of discovering its first TextKit layout during the dive.
+    public func prepareInitialViewportForCaching() {
+        guard isViewLoaded else { return }
+        view.layoutIfNeeded()
+        textView.layoutManager.ensureLayout(for: textView.textContainer)
+        publishVisibleLinkURLsIfNeeded()
     }
 
     /// Swaps the freshly-built full render into the text view, preserving the reader's
@@ -942,7 +955,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         if case .link(let url) = textItem.content {
             return UIAction { [weak self] _ in
                 guard let self else { return }
-                if let onLinkActivated = self.onLinkActivated {
+                if let onLinkActivatedWithRange = self.onLinkActivatedWithRange {
+                    onLinkActivatedWithRange(url, textItem.range)
+                } else if let onLinkActivated = self.onLinkActivated {
                     onLinkActivated(url)
                 } else {
                     self.openSplit(for: url, tappedRange: textItem.range)

@@ -84,7 +84,7 @@ private final class DotMatrixModalAnimator: NSObject, UIViewControllerAnimatedTr
             return
         }
 
-        let finalFrame = modalFrame(ctx.finalFrame(for: toVC), fallback: container.bounds)
+        let finalFrame = presentedFrame(for: toVC, contextFrame: ctx.finalFrame(for: toVC), fallback: container.bounds)
         guard let before = backgroundSnapshot(in: container, frame: finalFrame, ctx: ctx) else {
             toView.frame = finalFrame
             if toView.superview == nil { container.addSubview(toView) }
@@ -104,8 +104,10 @@ private final class DotMatrixModalAnimator: NSObject, UIViewControllerAnimatedTr
             return
         }
 
+        toView.alpha = 0
         configure(overlay, before: before, after: after, frame: finalFrame, in: container)
         overlay.animateProgress(to: 1, duration: transitionDuration(using: ctx)) {
+            toView.alpha = 1
             DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: container.window)
             ctx.completeTransition(!ctx.transitionWasCancelled)
         }
@@ -119,7 +121,10 @@ private final class DotMatrixModalAnimator: NSObject, UIViewControllerAnimatedTr
             return
         }
 
-        let modalFrame = modalFrame(fromView.frame, fallback: container.bounds)
+        let fromVC = ctx.viewController(forKey: .from)
+        let modalFrame = fromVC.map {
+            presentedFrame(for: $0, contextFrame: fromView.frame, fallback: container.bounds)
+        } ?? modalFrame(fromView.frame, fallback: container.bounds)
         guard let before = DotMatrixSnapshot.image(of: fromView, afterScreenUpdates: false) else {
             ctx.completeTransition(!ctx.transitionWasCancelled)
             return
@@ -128,7 +133,9 @@ private final class DotMatrixModalAnimator: NSObject, UIViewControllerAnimatedTr
         if let toView = ctx.view(forKey: .to), toView.superview == nil {
             container.insertSubview(toView, belowSubview: fromView)
             let toVC = ctx.viewController(forKey: .to)
-            let finalFrame = toVC.map { ctx.finalFrame(for: $0) } ?? container.bounds
+            let finalFrame = toVC.map {
+                presentedFrame(for: $0, contextFrame: ctx.finalFrame(for: $0), fallback: container.bounds)
+            } ?? container.bounds
             if !finalFrame.isEmpty { toView.frame = finalFrame }
             container.layoutIfNeeded()
         }
@@ -144,8 +151,10 @@ private final class DotMatrixModalAnimator: NSObject, UIViewControllerAnimatedTr
             return
         }
 
+        fromView.alpha = 0
         configure(overlay, before: before, after: after, frame: modalFrame, in: container)
         overlay.animateProgress(to: 1, duration: transitionDuration(using: ctx)) {
+            fromView.alpha = oldAlpha
             DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: container.window)
             ctx.completeTransition(!ctx.transitionWasCancelled)
         }
@@ -181,6 +190,16 @@ private final class DotMatrixModalAnimator: NSObject, UIViewControllerAnimatedTr
     private func modalFrame(_ frame: CGRect, fallback: CGRect) -> CGRect {
         if frame.width > 1, frame.height > 1 { return frame }
         return fallback
+    }
+
+    private func presentedFrame(for viewController: UIViewController,
+                                contextFrame: CGRect,
+                                fallback: CGRect) -> CGRect {
+        if let frame = viewController.presentationController?.frameOfPresentedViewInContainerView,
+           frame.width > 1, frame.height > 1 {
+            return frame
+        }
+        return modalFrame(contextFrame, fallback: fallback)
     }
 }
 

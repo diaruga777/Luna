@@ -469,9 +469,9 @@ final class CatchUpViewController: UIViewController {
         case .cards:
             let locked = currentItem?.state == .needsCaptcha
             titleLabel.text = "\(queue.count - index) left"
-            leftButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+            leftButton.setImage(UIImage.dotMatrixIcon(systemName: "chevron.left", pointSize: 18), for: .normal)
             rightButton.setTitle(nil, for: .normal)
-            rightButton.setImage(UIImage(systemName: "square.and.arrow.up"), for: .normal)
+            rightButton.setImage(UIImage.dotMatrixIcon(systemName: "square.and.arrow.up", pointSize: 18), for: .normal)
             rightButton.isHidden = false
             // Locked cards: left action is Unlock (not Keep); Bump is disabled.
             styleButton(primaryButton, title: locked ? "Unlock" : "Keep", filled: false)
@@ -480,7 +480,7 @@ final class CatchUpViewController: UIViewController {
             setBottomButtons(hidden: false, singleFullWidth: false)
         case .voicePrompt:
             titleLabel.text = nil
-            leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+            leftButton.setImage(UIImage.dotMatrixIcon(systemName: "xmark", pointSize: 18), for: .normal)
             rightButton.setImage(nil, for: .normal)
             rightButton.setTitle(nil, for: .normal)
             rightButton.isHidden = true
@@ -489,14 +489,14 @@ final class CatchUpViewController: UIViewController {
             setBottomButtons(hidden: false, singleFullWidth: false)
         case .deletePrompt:
             titleLabel.text = nil   // the prompt view carries its own title
-            leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+            leftButton.setImage(UIImage.dotMatrixIcon(systemName: "xmark", pointSize: 18), for: .normal)
             rightButton.isHidden = true
             styleButton(primaryButton, title: "Keep", filled: false)
             styleButton(secondaryButton, title: "Delete All", filled: true, destructive: true)
             setBottomButtons(hidden: false, singleFullWidth: false)
         case .done:
             titleLabel.text = nil
-            leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+            leftButton.setImage(UIImage.dotMatrixIcon(systemName: "xmark", pointSize: 18), for: .normal)
             rightButton.setImage(nil, for: .normal)
             rightButton.setTitle("Undo", for: .normal)
             rightButton.isHidden = false

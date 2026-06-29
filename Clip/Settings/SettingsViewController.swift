@@ -77,11 +77,11 @@ final class SettingsViewController: UITableViewController {
         if indexPath.section == 0 {
             let category = categories[indexPath.row]
             content.text = category.title
-            content.image = UIImage(systemName: category.symbol)
+            content.image = UIImage.dotMatrixIcon(systemName: category.symbol, pointSize: 20)
             cell.accessoryType = .disclosureIndicator
         } else {
             content.text = "Replay Onboarding"
-            content.image = UIImage(systemName: "sparkles")
+            content.image = UIImage.dotMatrixIcon(systemName: "sparkles", pointSize: 20)
         }
         cell.contentConfiguration = content
         return cell

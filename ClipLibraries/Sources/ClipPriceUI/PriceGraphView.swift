@@ -21,7 +21,7 @@ public final class PriceGraphView: UIView {
 
     private let calloutView = UIView()
     private let calloutLabel = UILabel()
-    private let plotInsets = UIEdgeInsets(top: 16, left: 12, bottom: 22, right: 12)
+    private let plotInsets = UIEdgeInsets(top: 14, left: 58, bottom: 34, right: 16)
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -60,17 +60,21 @@ public final class PriceGraphView: UIView {
         guard points.count >= 2, let context = UIGraphicsGetCurrentContext() else { return }
         let plot = rect.inset(by: plotInsets)
         let prices = points.map { ($0.price as NSDecimalNumber).doubleValue }
-        let minPrice = prices.min() ?? 0, maxPrice = prices.max() ?? 0
-        let priceSpan = max(maxPrice - minPrice, 0.0001)
+        let rawMinPrice = prices.min() ?? 0
+        let rawMaxPrice = prices.max() ?? 0
+        let domain = yDomain(min: rawMinPrice, max: rawMaxPrice)
+        let priceSpan = max(domain.max - domain.min, 0.0001)
         let dates = points.map { $0.date.timeIntervalSinceReferenceDate }
         let minDate = dates.first ?? 0, maxDate = dates.last ?? 1
         let dateSpan = max(maxDate - minDate, 1)
 
         func point(at index: Int) -> CGPoint {
             let x = plot.minX + CGFloat((dates[index] - minDate) / dateSpan) * plot.width
-            let y = plot.maxY - CGFloat((prices[index] - minPrice) / priceSpan) * plot.height
+            let y = plot.maxY - CGFloat((prices[index] - domain.min) / priceSpan) * plot.height
             return CGPoint(x: x, y: y)
         }
+
+        drawGrid(in: plot, context: context)
 
         // Filled area + line.
         let line = UIBezierPath()
@@ -90,16 +94,18 @@ public final class PriceGraphView: UIView {
         line.lineJoinStyle = .round
         line.stroke()
 
-        // y-axis min/max labels.
-        drawAxisLabel(PriceFormatting.string(amount: Decimal(maxPrice), currency: currency),
-                      at: CGPoint(x: plot.minX, y: rect.minY + 1), align: .left)
-        drawAxisLabel(PriceFormatting.string(amount: Decimal(minPrice), currency: currency),
-                      at: CGPoint(x: plot.minX, y: plot.maxY + 4), align: .left)
-        // x-axis endpoint dates.
+        // y-axis min/max labels live in a dedicated left gutter, so they never collide
+        // with the x-axis dates below the plot.
+        drawAxisLabel(PriceFormatting.string(amount: Decimal(rawMaxPrice), currency: currency),
+                      at: CGPoint(x: plot.minX - 6, y: plot.minY - 1), align: .right)
+        drawAxisLabel(PriceFormatting.string(amount: Decimal(rawMinPrice), currency: currency),
+                      at: CGPoint(x: plot.minX - 6, y: plot.maxY - Self.axisLabelHeight + 1),
+                      align: .right)
+        // x-axis endpoint dates sit below the plot baseline.
         drawAxisLabel(Self.axisDate(points.first!.date),
-                      at: CGPoint(x: plot.minX, y: rect.maxY - 14), align: .left)
+                      at: CGPoint(x: plot.minX, y: plot.maxY + 8), align: .left)
         drawAxisLabel(Self.axisDate(points.last!.date),
-                      at: CGPoint(x: plot.maxX, y: rect.maxY - 14), align: .right)
+                      at: CGPoint(x: plot.maxX, y: plot.maxY + 8), align: .right)
 
         // Scrubber.
         if let index = selectedIndex, points.indices.contains(index) {
@@ -124,16 +130,7 @@ public final class PriceGraphView: UIView {
     private func drawPlaceholder(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         let plot = rect.inset(by: plotInsets)
-        // Faint horizontal gridlines (the y-axis levels).
-        context.setStrokeColor(UIColor.quaternaryLabel.withAlphaComponent(0.6).cgColor)
-        context.setLineWidth(1)
-        let rows = 4
-        for i in 1...rows {
-            let y = plot.minY + plot.height * CGFloat(i) / CGFloat(rows)
-            context.move(to: CGPoint(x: plot.minX, y: y))
-            context.addLine(to: CGPoint(x: plot.maxX, y: y))
-        }
-        context.strokePath()
+        drawGrid(in: plot, context: context)
         // Solid x and y axes.
         context.setStrokeColor(UIColor.tertiaryLabel.cgColor)
         context.setLineWidth(1)
@@ -142,8 +139,8 @@ public final class PriceGraphView: UIView {
         context.addLine(to: CGPoint(x: plot.maxX, y: plot.maxY))
         context.strokePath()
         // Axis labels (price on y, time on x) + a faint centered caption.
-        drawAxisLabel("Price", at: CGPoint(x: plot.minX, y: rect.minY + 1), align: .left)
-        drawAxisLabel("Time", at: CGPoint(x: plot.maxX, y: rect.maxY - 14), align: .right)
+        drawAxisLabel("Price", at: CGPoint(x: plot.minX - 6, y: plot.minY - 1), align: .right)
+        drawAxisLabel("Time", at: CGPoint(x: plot.maxX, y: plot.maxY + 8), align: .right)
         let caption = "Awaiting more data"
         let attrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 13, weight: .medium),
@@ -155,6 +152,29 @@ public final class PriceGraphView: UIView {
     }
 
     private enum LabelAlign { case left, right }
+    private static let axisLabelHeight: CGFloat = 13
+
+    private func yDomain(min: Double, max: Double) -> (min: Double, max: Double) {
+        if abs(max - min) < 0.0001 {
+            let padding = Swift.max(abs(max) * 0.02, 1)
+            return (min - padding, max + padding)
+        }
+        let padding = (max - min) * 0.12
+        return (min - padding, max + padding)
+    }
+
+    private func drawGrid(in plot: CGRect, context: CGContext) {
+        context.setStrokeColor(UIColor.quaternaryLabel.withAlphaComponent(0.45).cgColor)
+        context.setLineWidth(1)
+        let rows = 3
+        for i in 0...rows {
+            let y = plot.minY + plot.height * CGFloat(i) / CGFloat(rows)
+            context.move(to: CGPoint(x: plot.minX, y: y))
+            context.addLine(to: CGPoint(x: plot.maxX, y: y))
+        }
+        context.strokePath()
+    }
+
     private func drawAxisLabel(_ text: String, at origin: CGPoint, align: LabelAlign) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 10, weight: .medium),

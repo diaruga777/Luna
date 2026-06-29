@@ -59,6 +59,14 @@ public struct PreloadEntry: Codable, Equatable {
 public final class PreloadStore {
     public static let shared = PreloadStore()
 
+    /// A fixed sentinel "owner" for ad-hoc links the user actually TAPS in the reader
+    /// (vs. the save-time crawl's per-save owners). A tapped link is materialized on
+    /// first open and recorded under this durable owner so it survives app relaunches
+    /// and is NOT torn down when the save that surfaced it is deleted — the user reached
+    /// it, so it stays instant forever after. (Distinct from `PreloadCoordinator`'s
+    /// speculative `pasteboardOwner`, whose tree is released when the candidate changes.)
+    public static let tappedLinkOwner = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
     private let lock = NSLock()
@@ -183,16 +191,28 @@ public final class PreloadStore {
     /// a genuine miss or an oversized file (which defers to the async path).
     public func synchronousArticleContent(for url: URL) -> ArticleContent? {
         let cacheKey = Self.key(for: url) as NSString
-        if let boxed = memoryCache.object(forKey: cacheKey) { return boxed.content }
+        if let boxed = memoryCache.object(forKey: cacheKey) {
+            SharedDiagnosticLog.record("cache HIT (memory) \(url.absoluteString)", category: "preload-tap")
+            return boxed.content
+        }
         guard let entry = synchronousEntry(for: url), entry.kind == .article, entry.state == .loaded,
-              let file = entry.contentFile else { return nil }
+              let file = entry.contentFile else {
+            SharedDiagnosticLog.record("cache MISS \(url.absoluteString)", category: "preload-tap")
+            return nil
+        }
         let fileURL = contentURL(fileName: file)
         let size = (try? fileManager.attributesOfItem(atPath: fileURL.path)[.size] as? Int) ?? nil
         guard (size ?? 0) <= Self.maxSyncDecodeBytes,
               let data = try? Data(contentsOf: fileURL),
               let content = try? JSONDecoder().decode(ArticleContent.self, from: data)
-        else { return nil }
+        else {
+            SharedDiagnosticLog.record("cache MISS (disk decode failed/oversized) \(url.absoluteString)",
+                                       category: "preload-tap")
+            return nil
+        }
         memoryCache.setObject(ContentBox(content), forKey: cacheKey)
+        SharedDiagnosticLog.record("cache HIT (disk, sync-decoded) \(url.absoluteString)",
+                                   category: "preload-tap")
         return content
     }
 

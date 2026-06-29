@@ -5,6 +5,7 @@
 
 import ClipDesignSystem
 import ClipModels
+import ClipStorage
 import UIKit
 
 /// The inline reader shown when a link is tapped in the scroll reader.
@@ -162,6 +163,9 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
     private func animateOpen() {
         guard !didAnimateIn else { return }
         didAnimateIn = true
+        SharedDiagnosticLog.record(
+            "transition begin (reveals content already laid out): \(url.absoluteString)",
+            category: "preload-tap")
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         onOpen?()
         // A higher initial velocity + lighter damping so the card starts moving on the

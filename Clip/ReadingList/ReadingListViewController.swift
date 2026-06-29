@@ -213,6 +213,16 @@ final class ReadingListViewController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        // Authoritatively restore the SHARED nav bar to a clean, visible state. Pushed
+        // readers tuck/hide it (transform + alpha, or setNavigationBarHidden(true)) and
+        // an interrupted restore — or a screen that simply never re-asserts it — would
+        // otherwise leave the list with no header + no settings/friends/search buttons.
+        // The custom Dot Matrix pop runs viewWillAppear, so doing it here is reliable.
+        if let bar = navigationController?.navigationBar {
+            bar.transform = .identity
+            bar.alpha = 1
+        }
+        navigationController?.setNavigationBarHidden(false, animated: false)
         pinCatchUpButtonToNavBar()
         catchUpButton.isHidden = isEditing
     }

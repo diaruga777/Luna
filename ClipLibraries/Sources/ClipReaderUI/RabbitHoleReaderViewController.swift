@@ -104,7 +104,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         super.viewDidLoad()
         view.backgroundColor = ReaderDepth.backgroundColor(for: 0)
         navigationItem.largeTitleDisplayMode = .never
-        navigationController?.setNavigationBarHidden(true, animated: false)
 
         buildInitialStack()
         // Park the Metal overlay now so the first dive doesn't pay its setup cost mid-tap.
@@ -128,6 +127,15 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             name: UIApplication.didEnterBackgroundNotification, object: nil)
     }
 
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // This reader draws its own per-layer glass header, so the shared nav bar must
+        // be hidden. Assert it on every appear (not just viewDidLoad) — the custom
+        // Dot Matrix push runs viewWillAppear, and re-asserting here also clears any
+        // leftover transform/alpha so a later restore lands on a clean bar.
+        navigationController?.setNavigationBarHidden(true, animated: false)
+    }
+
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         applyFocus()
@@ -136,6 +144,15 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         persist()
+        // Hand the shared nav bar back to whatever screen we're returning to: restore it
+        // (and clear any leftover mutation) on the way out so the reading list — which
+        // shares this bar — comes back with its full header. The destination also
+        // re-asserts its own state in viewWillAppear; this is the belt to that suspenders.
+        if isMovingFromParent || isBeingDismissed, let nav = navigationController {
+            nav.navigationBar.transform = .identity
+            nav.navigationBar.alpha = 1
+            nav.setNavigationBarHidden(false, animated: false)
+        }
     }
 
     public override func viewDidDisappear(_ animated: Bool) {

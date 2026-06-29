@@ -240,6 +240,16 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// left-edge swipe; extension-hosted editors still have no navigation stack.
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        // Authoritatively show the SHARED nav bar (and clear any leftover transform/alpha
+        // a reader left behind) so this screen's header + back button are always present.
+        // Readers tuck/hide the same bar; without re-asserting here, pushing the price
+        // tracker after a reader would inherit a hidden/transparent bar — items set, but
+        // invisible. The custom Dot Matrix push runs viewWillAppear, so this is reliable.
+        if let bar = navigationController?.navigationBar {
+            bar.transform = .identity
+            bar.alpha = 1
+        }
+        navigationController?.setNavigationBarHidden(false, animated: false)
         refreshGraph()
     }
 

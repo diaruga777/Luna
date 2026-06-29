@@ -104,6 +104,20 @@ public final class ReaderViewController: UIViewController {
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Assert the shared nav bar's state on every appear so the custom Dot Matrix
+        // wipe snapshots a STABLE header (identity transform, full alpha, visible) — both
+        // when first pushed and when an inline overlay dismisses back to us. Otherwise the
+        // snapshot can capture a mid-tuck / transformed bar and the committed frame differs,
+        // making the header blink and jump after the transition lands.
+        if let bar = navigationController?.navigationBar {
+            bar.transform = .identity
+            bar.alpha = 1
+        }
+        navigationController?.setNavigationBarHidden(false, animated: false)
+    }
+
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground

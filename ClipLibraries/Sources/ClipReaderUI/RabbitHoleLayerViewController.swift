@@ -40,9 +40,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     public var onBecameArticle: (() -> Void)?
     /// Fired when the reader mode changes (host updates the descriptor).
     public var onModeChanged: ((ReadingListItem.ReaderMode) -> Void)?
-    /// Visible/near-visible links changed inside the embedded scroll reader. The host
-    /// uses this to rotate prepared offscreen child layers around the current viewport.
-    public var onVisibleLinkURLsChanged: (([URL]) -> Void)?
     /// The header back button (focused layer only): pop one layer, or exit the reader
     /// at the root. The host decides which.
     public var onBack: (() -> Void)?
@@ -128,11 +125,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// De-duplicated http(s) links this layer's article points at, in document order.
     /// The host preloads these so a dive into one is instant.
     public var outboundLinkURLs: [URL] { articleContent?.outboundURLs ?? [] }
-    /// Visible/near-visible links for the scroll reader, in document order. Empty for
-    /// RSVP/web modes where there is no tappable scroll-text viewport.
-    public var visibleLinkURLs: [URL] { currentVisibleLinkURLs }
-    private var currentVisibleLinkURLs: [URL] = []
-
     /// True once `configure(...)` has assigned this shell a real page to load. A freshly
     /// created shell stays blank (chrome built, nothing loading) so the host can
     /// pre-create the next layer offscreen and a dive only sets content + frame.
@@ -627,10 +619,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
                 guard let self else { return }
                 self.onLinkActivated?(url, self.lineText(for: range))
             }
-            scroll.onVisibleLinkURLsChanged = { [weak self] urls in
-                self?.currentVisibleLinkURLs = urls
-                self?.onVisibleLinkURLsChanged?(urls)
-            }
             child = scroll
         case .rsvp:
             let rsvp = RSVPViewController(item: transient, content: content, audioEnabled: audioOn)
@@ -667,14 +655,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// the focused content is the scroll reader (idempotent there).
     public func entryAnimationDidFinish() {
         (readerChild as? ScrollReaderViewController)?.prepareFullContent()
-    }
-
-    /// Offscreen RabbitHole prep hook. The host calls this while a linked page is parked
-    /// outside the viewport so the eventual tap only repositions the existing view.
-    public func prepareInitialViewportForCaching() {
-        guard isViewLoaded else { return }
-        view.layoutIfNeeded()
-        (readerChild as? ScrollReaderViewController)?.prepareInitialViewportForCaching()
     }
 
     // MARK: - Scroll access (no changes to ScrollReaderViewController)

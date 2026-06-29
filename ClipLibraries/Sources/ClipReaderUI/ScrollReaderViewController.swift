@@ -27,9 +27,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Same tap as `onLinkActivated`, but includes the exact text range UIKit already
     /// resolved for the tapped link. RabbitHole uses it to avoid rescanning links on tap.
     public var onLinkActivatedWithRange: ((_ url: URL, _ range: NSRange) -> Void)?
-    /// Visible/near-visible inline links changed. RabbitHole uses this to rotate the
-    /// expensive offscreen child view controllers around what the reader can tap soon,
-    /// while the cheaper content preload can stay broader.
+    /// Visible/near-visible inline links changed. Optional because computing link
+    /// geometry during scroll is only worth paying for hosts that actively need it.
     public var onVisibleLinkURLsChanged: (([URL]) -> Void)?
 
     /// Fired when the end-of-article share footer scrolls into / out of view, so the
@@ -392,16 +391,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             let full = ArticleTextRenderer.render(self.content)
             self.applyFullContent(full)
         }
-    }
-
-    /// Offscreen RabbitHole prep hook. Forces the cheap prefix pass to finish layout
-    /// while the layer is still parked, so tapping the link can move an already-laid-out
-    /// reader into place instead of discovering its first TextKit layout during the dive.
-    public func prepareInitialViewportForCaching() {
-        guard isViewLoaded else { return }
-        view.layoutIfNeeded()
-        textView.layoutManager.ensureLayout(for: textView.textContainer)
-        publishVisibleLinkURLsIfNeeded()
     }
 
     /// Swaps the freshly-built full render into the text view, preserving the reader's
@@ -879,9 +868,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
     }
 
-    /// Links in and near the viewport, in document order. The rect is expanded above
-    /// and below the current viewport so slow scrolls have prepared child VCs before
-    /// the links enter the exact visible area, without preparing the whole article.
+    /// Links in and near the viewport, in document order. Only computed when a host
+    /// explicitly subscribes via `onVisibleLinkURLsChanged`; otherwise scroll stays on
+    /// the normal cheap path.
     private func visibleLinkURLs() -> [URL] {
         guard isViewLoaded, textView.bounds.width > 0, textView.textStorage.length > 0 else { return [] }
         textView.layoutManager.ensureLayout(for: textView.textContainer)
@@ -913,6 +902,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 
     private func publishVisibleLinkURLsIfNeeded(force: Bool = false) {
+        guard onVisibleLinkURLsChanged != nil else { return }
         let urls = visibleLinkURLs()
         let keys = Set(urls.map { PreloadStore.key(for: $0) })
         guard force || keys != lastVisibleLinkKeys else { return }

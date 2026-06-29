@@ -29,6 +29,12 @@ public enum Classifier {
     /// heuristic phase.
     public static func classify(url: URL, html: String? = nil, documentType: String? = nil) -> ContentKind {
         if let documentType, !documentType.isEmpty { return .document(type: documentType) }
+        // Google Shopping pages are distinguished by query params (`ibp=oshop`,
+        // `prds`, `tbm=shop`, …), which the host+path `KnownSite` table can't express.
+        // Route them straight to product extraction — deterministically, before the
+        // table and the HTML heuristics — so a saved shopping page (e.g. a resolved
+        // `share.google` product link) becomes a price tracker, never an article.
+        if GoogleShoppingURL.isProductPage(url) { return .product(.knownShopHost) }
         if let hit = knownSites.first(where: { $0.matches(url) }) {
             return hit.kind(url)
         }

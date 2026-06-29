@@ -36,6 +36,7 @@ first thing that runs on any incoming URL.
 | **Apple News** | `apple.news`, `*.apple.news` | **async** (fetch) | GET page, regex `redirectToUrlAfterTimeout("<url>")`. nil for News+ exclusives. |
 | **Google News classic** | `news.google.com`, `news.url.google.com` | **sync after fetch-of-nothing** | base64url-decode `CBMi…` id → scan decoded bytes for embedded `http(s)://…`. Offline. |
 | **Google News new-style** | same | **async** (2 round-trips) | `batchexecute` RPC: GET page for `data-n-a-sg`/`data-n-a-ts`, POST `f.req` envelope, regex `garturlres` URL out of response. |
+| **Google share** | `share.google`, `*.share.google` | **async** (GET) | Follow redirects with a GET (the on-Google interstitial only emits its onward hop on GET, not HEAD) → final cross-host URL (e.g. a `…/search?ibp=oshop&…&prds=…` Google Shopping product page). Matches the host generically, never a specific id. |
 | **Link shorteners** | hardcoded `Set` (`t.co`, `nyti.ms`, `flip.it`, …) | **async** (HEAD) | Follow redirects, return final URL only if host changed. |
 
 Tracking-param stripping is **not** in the unwrapper — it lives in

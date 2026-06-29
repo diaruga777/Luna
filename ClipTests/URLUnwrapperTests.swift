@@ -237,6 +237,26 @@ final class URLUnwrapperTests: XCTestCase {
         XCTAssertEqual(result.url.absoluteString, finalURL.absoluteString)
     }
 
+    func testUnwrapShareGoogleResolvesToShoppingProductPage() async {
+        // share.google 302s to an on-Google interstitial that only redirects onward on
+        // a GET; URLSession follows the whole chain and exposes the final Shopping
+        // product page. The resolver returns it because it left the share.google host.
+        let product = url(
+            "https://www.google.com/search?ibp=oshop&q=Ryobi&prds=productid:123&utm_source=epsd1")
+        UnwrapMockProtocol.routes = [("share.google", 200, Data(), product)]
+        let result = await URLUnwrapper.unwrap(
+            url("https://share.google/wiwUM80egUfLflHCI"), session: UnwrapMockProtocol.session())
+        XCTAssertTrue(result.didUnwrap)
+        XCTAssertEqual(result.wrapper, .googleShare)
+        XCTAssertEqual(result.url.host, "www.google.com")
+        XCTAssertEqual(result.url.path, "/search")
+        // Tracking params are stripped from the canonical result; shopping markers stay.
+        let items = URLComponents(url: result.url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertTrue(items.contains { $0.name == "ibp" && $0.value == "oshop" })
+        XCTAssertTrue(items.contains { $0.name == "prds" })
+        XCTAssertFalse(items.contains { $0.name == "utm_source" })
+    }
+
     func testUnwrapShortenerStayingOnHostIsNotUnwrapped() async {
         // Final URL resolves back to the same shortener host → not an unwrap.
         let sameHost = url("https://t.co/landing")

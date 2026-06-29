@@ -12,6 +12,7 @@ public enum WrapperKind: String, Equatable {
     case facebook
     case appleNews
     case googleNews
+    case googleShare
     case shortener
 }
 
@@ -96,6 +97,7 @@ public enum URLUnwrapper {
     public static let handlers: [WrapperHandler] = [
         .facebook,
         .googleNews,
+        .googleShare,
         .appleNews,
         .shorteners(redirectShortenerHosts.union(amazonShortLinkHosts)),
     ]
@@ -246,6 +248,26 @@ public extension WrapperHandler {
             .fetch { session in
                 guard let html = await NewsAggregatorUnwrapper.fetchText(url, session: session) else { return nil }
                 return NewsAggregatorUnwrapper.appleNewsPublisherURL(inHTML: html)
+            }
+        })
+
+    /// Google share links (`share.google/<id>`) — Google's server-side share
+    /// shortener. It 302s to an on-Google interstitial that only redirects onward to
+    /// the real destination on a full GET (a HEAD stops one hop short), so this
+    /// follows the chain with a GET rather than the HEAD-first shortener resolver. The
+    /// destination can be anything Google shares — most relevantly a Google Shopping
+    /// product page (`…/search?ibp=oshop&…&prds=…`), which then classifies as a
+    /// product. Matches the host generically (any `share.google` link), never a
+    /// specific id.
+    public static let googleShare = WrapperHandler(
+        kind: .googleShare,
+        matches: { _, host in
+            guard let host else { return false }
+            return host == "share.google" || host.hasSuffix(".share.google")
+        },
+        resolve: { url in
+            .fetch { session in
+                await NewsAggregatorUnwrapper.resolveFinalRedirectViaGET(url, session: session)
             }
         })
 

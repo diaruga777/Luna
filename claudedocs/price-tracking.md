@@ -36,6 +36,18 @@ resolvable (→ article, never a price-less tracker).
   - **`WalmartPriceRule`** — `__NEXT_DATA__` `priceInfo.currentPrice.price` (USD).
   - **Generic fallback** (`ProductPageDetector.genericStructuredPrice`) — JSON-LD
     `Offer` → OG `product:price` → microdata → embedded app-state JSON.
+- **Google Shopping aggregate pages → multi-seller trackers** (`GoogleShoppingProductParser`).
+  A saved Google Shopping page is an aggregator, not a seller, so it becomes a tracker
+  over the retailer pages Google lists (never `google.com`). `GoogleShoppingURL.isProductPage`
+  is the ONE predicate (shared with `Classifier`, which routes a hit straight to
+  `.product`) recognizing `google.com/search` with any shopping marker: the results grid
+  (`tbm=shop`/`udm=28`/`shopmd`) or a specific product's offers page (`ibp=oshop`/`prds`
+  — what a shared `share.google` product link resolves to). Each `<a>` is unwrapped from
+  Google's `/url?…&url=`/`q=`/`adurl=` redirect, Google-owned hosts are dropped, the
+  nearby price (walking ≤6 ancestors) + currency (symbol → seller-TLD) become a
+  `ProductSellerInfo`, and sellers are **deduped by host+path** (so one retailer listed
+  twice under different click-tracking query strings is a single seller; `srsltid`/`gclid`
+  are stripped from the stored URL). Lowest price = the tracker baseline.
 - **The WKWebView render tier is structurally unreachable in extensions.** `extract`
   takes `render: ((URL) async -> String?)?`; the render tier runs ONLY when `render !=
   nil`. `IngestPipeline.process` defaults `render` to **nil**, so the share/action

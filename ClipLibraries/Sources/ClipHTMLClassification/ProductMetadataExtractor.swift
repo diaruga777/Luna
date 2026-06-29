@@ -134,7 +134,7 @@ public struct ProductMetadataExtractor {
 /// saves one, track the seller product pages Google lists instead of google.com.
 enum GoogleShoppingProductParser {
     static func metadata(url: URL, html: String, document: Document) -> ProductMetadata? {
-        guard isGoogleShoppingURL(url) else { return nil }
+        guard GoogleShoppingURL.isProductPage(url) else { return nil }
         let sellers = sellerListings(document: document, baseURL: url)
         guard !sellers.isEmpty,
               let best = sellers.min(by: { $0.price.amount < $1.price.amount })
@@ -146,18 +146,6 @@ enum GoogleShoppingProductParser {
             brand: nil,
             productID: nil,
             sellers: sellers)
-    }
-
-    private static func isGoogleShoppingURL(_ url: URL) -> Bool {
-        guard let host = url.host?.lowercased(),
-              host == "google.com" || host.hasSuffix(".google.com"),
-              url.path == "/search",
-              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        else { return false }
-        let items = components.queryItems ?? []
-        return items.contains { $0.name == "tbm" && $0.value == "shop" }
-            || items.contains { $0.name == "udm" && $0.value == "28" }
-            || items.contains { $0.name == "shopmd" }
     }
 
     private static func sellerListings(document: Document, baseURL: URL) -> [ProductSellerInfo] {
@@ -288,15 +276,25 @@ enum GoogleShoppingProductParser {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Dedup key: host + path only. Google appends per-link click-tracking query
+    /// params (`srsltid`, `region_id`, store ids, …), so the SAME retailer's product
+    /// page is often listed under two different query strings — collapse those to one
+    /// seller by ignoring the query entirely when deduping.
     private static func canonicalKey(_ url: URL) -> String {
-        cleanedSellerURL(url)?.absoluteString ?? url.absoluteString
+        let host = url.host?.lowercased() ?? ""
+        var path = url.path.lowercased()
+        if path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        return host + path
     }
 
     private static func cleanedSellerURL(_ url: URL) -> URL? {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         components?.fragment = nil
-        let queryItems = components?.queryItems?.filter {
-            !$0.name.lowercased().hasPrefix("utm_")
+        let queryItems = components?.queryItems?.filter { item in
+            let name = item.name.lowercased()
+            // Drop tracking params Google attaches to seller links so the stored
+            // tracker URL stays clean across refreshes.
+            return !name.hasPrefix("utm_") && name != "srsltid" && name != "gclid"
         }
         components?.queryItems = queryItems?.isEmpty == true ? nil : queryItems
         return components?.url

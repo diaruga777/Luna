@@ -141,6 +141,21 @@ public enum NewsAggregatorUnwrapper {
         return await finalRedirect(for: request, originalHost: url.host, session: session)
     }
 
+    /// Follows `url`'s HTTP redirects with a GET (never HEAD) and returns the final URL
+    /// once it leaves `url`'s host. Some share interstitials emit their later redirect
+    /// hops only on a full GET — Google's `share.google` link first 302s to an
+    /// on-Google interstitial that 301s onward only under GET, so a HEAD-first follow
+    /// stops one hop short. A 1 KB range cap keeps the final body tiny: only the
+    /// resolved URL is read, and the page is re-fetched downstream for classification.
+    /// Internal so `URLUnwrapper`'s share handler can reuse it.
+    public static func resolveFinalRedirectViaGET(_ url: URL, session: URLSession) async -> URL? {
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.httpMethod = "GET"
+        request.setValue(WebFetchConstants.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("bytes=0-1023", forHTTPHeaderField: "Range")
+        return await finalRedirect(for: request, originalHost: url.host, session: session)
+    }
+
     private static func finalRedirect(
         for request: URLRequest, originalHost: String?, session: URLSession
     ) async -> URL? {

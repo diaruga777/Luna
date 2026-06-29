@@ -49,6 +49,24 @@ final class ClassifierTests: XCTestCase {
         }
     }
 
+    func testGoogleShoppingPagesClassifyAsProduct() {
+        // Both the search-results shopping grid and a specific product's offers page
+        // (the canonical form a shared `share.google` product link resolves to) route
+        // straight to product extraction — URL-only, so they never reach the article
+        // path. Distinguished by query params the host+path table can't express.
+        let shopping = [
+            "https://www.google.com/search?q=vacuum&tbm=shop",
+            "https://www.google.com/search?q=vacuum&udm=28&shopmd=1",
+            "https://www.google.com/search?ibp=oshop&q=Ryobi&prds=productid:17194174350050566621",
+        ]
+        for page in shopping {
+            XCTAssertEqual(Classifier.classify(url: url(page)), .product(.knownShopHost), "for \(page)")
+        }
+        // An ordinary Google web search is NOT a shopping page.
+        XCTAssertEqual(
+            Classifier.classify(url: url("https://www.google.com/search?q=vacuum")), .undetermined)
+    }
+
     // MARK: - Deterministic table: news
 
     func testHardPaywallNewsClassifiesAsPaywalledHardHost() {

@@ -11,8 +11,9 @@
 //
 //  Layout matches a system small-title bar: a 44pt bar below the safe-area top, with a
 //  leading control stack, a centered (large: leading) title, and a trailing control
-//  stack. A material background + hairline separator fade in as content scrolls under
-//  it (mirroring a standard nav bar over a scroll view), via `updateScrolledAppearance`.
+//  stack. A solid (de-glassed) background fill + hairline separator fade in as content
+//  scrolls under it (mirroring a standard nav bar over a scroll view), via
+//  `updateScrolledAppearance`.
 //
 //  Restyle note (Task 3): the button factories below produce PLAIN system-styled
 //  controls (no liquid-glass coupling), so they can be freely restyled.
@@ -29,8 +30,12 @@ public final class NavHeaderBar: UIView {
     /// The standard horizontal inset of bar content from the screen edges.
     public static let horizontalInset: CGFloat = 8
 
-    private let backgroundEffectView: UIVisualEffectView = {
-        let view = UIVisualEffectView(effect: UIBlurEffect(style: .regular))
+    // De-glassed (Task 3): a solid, trait-aware fill that fades in on scroll instead of
+    // a live blur. The header sits on a solid screen background, so the blur added little
+    // and could not be captured faithfully by the Dot Matrix pixel-wipe transition.
+    private let backgroundFill: UIView = {
+        let view = UIView()
+        view.backgroundColor = .systemBackground
         view.translatesAutoresizingMaskIntoConstraints = false
         view.alpha = 0
         return view
@@ -77,7 +82,7 @@ public final class NavHeaderBar: UIView {
         translatesAutoresizingMaskIntoConstraints = false
         backgroundColor = .clear
 
-        addSubview(backgroundEffectView)
+        addSubview(backgroundFill)
         addSubview(separator)
         barRow.translatesAutoresizingMaskIntoConstraints = false
         addSubview(barRow)
@@ -103,10 +108,10 @@ public final class NavHeaderBar: UIView {
         barRow.addSubview(trailingStack)
 
         NSLayoutConstraint.activate([
-            backgroundEffectView.topAnchor.constraint(equalTo: topAnchor),
-            backgroundEffectView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            backgroundEffectView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            backgroundEffectView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            backgroundFill.topAnchor.constraint(equalTo: topAnchor),
+            backgroundFill.leadingAnchor.constraint(equalTo: leadingAnchor),
+            backgroundFill.trailingAnchor.constraint(equalTo: trailingAnchor),
+            backgroundFill.bottomAnchor.constraint(equalTo: bottomAnchor),
 
             separator.leadingAnchor.constraint(equalTo: leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -175,7 +180,7 @@ public final class NavHeaderBar: UIView {
         // few points the content scrolls UNDER the bar.
         let scrolledUnder = contentOffsetY + adjustedTopInset
         let amount = max(0, min(1, scrolledUnder / 6))
-        backgroundEffectView.alpha = amount
+        backgroundFill.alpha = amount
         separator.alpha = amount
     }
 

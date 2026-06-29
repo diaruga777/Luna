@@ -76,4 +76,50 @@ public enum GlassStyle {
         }
         return UIBlurEffect(style: .systemMaterial)
     }
+
+    // MARK: - Solid (de-glassed) fills
+    //
+    // These approximate the glass bar/button materials with solid, trait-aware colors,
+    // for chrome that sits on SOLID color backgrounds where the live blur adds little
+    // and interacts poorly with the Dot Matrix pixel-wipe transition (which can't
+    // capture a UIVisualEffectView's content faithfully). They read like the material
+    // they replace in both light and dark mode.
+
+    /// A solid fill approximating the `barEffect()` material for header/bar backgrounds
+    /// sitting on a solid screen. Slightly translucent so a hint of the content below
+    /// shows through (matching the old material), and trait-aware so it reads correctly
+    /// in light and dark mode.
+    public static var solidBarColor: UIColor {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.16, alpha: 0.94)
+                : UIColor(white: 0.97, alpha: 0.94)
+        }
+    }
+
+    /// A solid `.filled()` analog of `circularButtonConfiguration` for de-glassed
+    /// circular chrome buttons. Same capsule shape, label foreground, and content
+    /// insets; only the glass fill is swapped for a trait-aware translucent fill.
+    public static func solidCircularButtonConfiguration(
+        symbol: String, padding: CGFloat = 10
+    ) -> UIButton.Configuration {
+        var config = UIButton.Configuration.filled()
+        config.baseBackgroundColor = solidButtonFill
+        config.image = UIImage(systemName: symbol)
+        config.cornerStyle = .capsule
+        config.baseForegroundColor = .label
+        config.contentInsets = NSDirectionalEdgeInsets(
+            top: padding, leading: padding, bottom: padding, trailing: padding)
+        return config
+    }
+
+    /// A trait-aware translucent fill for de-glassed circular/capsule buttons, tuned to
+    /// read like the glass button material over the solid reader backgrounds.
+    public static var solidButtonFill: UIColor {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 1.0, alpha: 0.16)
+                : UIColor(white: 0.0, alpha: 0.07)
+        }
+    }
 }

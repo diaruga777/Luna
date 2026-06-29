@@ -34,11 +34,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// link onto its own navigation stack rather than nesting another overlay.
     public var onLinkActivated: ((URL) -> Void)?
 
-    private let item: ReadingListItem
-    private let engine: RSVPEngine
+    private var item: ReadingListItem
+    private var engine: RSVPEngine
     /// Phrase groupings over the same word space, built once (lazily) when the
     /// reader first needs the Phrases sub-mode.
-    private lazy var chunks: [TextChunk] = ChunkPlanner.chunks(words: engine.words)
+    private var chunks: [TextChunk]
     private let store = ReadingListStore.shared
 
     /// Words vs Phrases. Persisted in `ReaderSettings.rsvpMode`.
@@ -54,7 +54,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     // Read-aloud pacing: when on, whole sentences are spoken (natural prosody,
     // normal pace) and the display flashes each word as it's voiced — the WPM
     // setting is ignored.
-    private let isSpeechMode: Bool
+    private var isSpeechMode: Bool
     /// Created lazily so the SILENT speed reader never instantiates a speech
     /// synthesizer — instantiating one can claim the system audio session and
     /// interrupt other audio (e.g. Picture-in-Picture video). Only read-aloud
@@ -90,7 +90,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private let scrubber = UISlider()
     private let controlsStack = UIStackView()
     /// Sharing affordances; nil → the end-of-article share view never reveals.
-    private let shareProvider: ReaderShareProviding?
+    private var shareProvider: ReaderShareProviding?
     /// Revealed (above the controls) when the reader reaches the end.
     private lazy var shareView = makeShareView()
     private var didRevealShare = false
@@ -142,6 +142,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         self.phraseFont = Self.makePhraseFont(from: wordFont)
         self.engine = RSVPEngine(
             content: content, maxCharactersPerWord: Self.targetCharactersAcross)
+        self.chunks = ChunkPlanner.chunks(words: self.engine.words)
         super.init(nibName: nil, bundle: nil)
         if let resume = resumeWordIndex, engine.words.indices.contains(resume) {
             // Carried over from another reader mode — start exactly there.
@@ -155,6 +156,57 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             // eyes were tracked on.
             currentIndex = gazeIndex
         }
+    }
+
+    /// Reuses an already-built RSVP shell with new article content. RabbitHole calls
+    /// this on a pre-added child, so activation only rebuilds the word engine and
+    /// refreshes labels instead of constructing the full controls hierarchy.
+    public func configureForReuse(
+        item: ReadingListItem,
+        content: ArticleContent,
+        audioEnabled: Bool = false,
+        shareProvider: ReaderShareProviding? = nil,
+        resumeWordIndex: Int? = nil,
+        initialDisplayMode: RSVPDisplayMode? = nil
+    ) {
+        pause()
+        linkPillHideTimer?.invalidate()
+        linkPillHideTimer = nil
+        linkPillURL = nil
+        linkPill.alpha = 0
+
+        self.item = item
+        self.isSpeechMode = audioEnabled
+        self.shareProvider = shareProvider
+        self.displayMode = initialDisplayMode ?? ReaderSettings.rsvpMode
+        self.engine = RSVPEngine(content: content, maxCharactersPerWord: Self.targetCharactersAcross)
+        self.chunks = ChunkPlanner.chunks(words: engine.words)
+        self.currentIndex = 0
+        self.currentChunkIndex = 0
+        self.isPlaying = false
+        self.didRevealShare = false
+
+        if let resume = resumeWordIndex, engine.words.indices.contains(resume) {
+            currentIndex = resume
+        } else if let resume = item.lastWordIndex, engine.words.indices.contains(resume) {
+            currentIndex = resume
+        } else if ReaderSettings.eyeTrackingEnabled,
+                  let gazeIndex = item.eyeTrackedWordIndex,
+                  engine.words.indices.contains(gazeIndex) {
+            currentIndex = gazeIndex
+        }
+        if displayMode == .phrases { currentChunkIndex = chunkIndex(forWord: currentIndex) }
+
+        guard isViewLoaded else { return }
+        subModeControl.selectedSegmentIndex = displayMode == .phrases ? 1 : 0
+        scrubber.maximumValue = Float(max(engine.words.count - 1, 1))
+        scrubber.value = Float(currentIndex)
+        shareView.isHidden = true
+        shareView.alpha = 0
+        applyDisplayMode()
+        refreshDisplay()
+        updateStatus()
+        view.setNeedsLayout()
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }

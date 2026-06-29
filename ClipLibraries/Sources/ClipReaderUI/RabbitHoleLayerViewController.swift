@@ -10,6 +10,7 @@
 //
 
 import ClipDesignSystem
+import ClipArchiveReader
 import ClipStorage
 import ClipFetch
 import ClipHTMLClassification
@@ -63,6 +64,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private var audioOn = false
     private weak var readerChild: UIViewController?
     private var webView: WKWebView?
+    private let scrollReader: ScrollReaderViewController
+    private let rsvpReader: RSVPViewController
+    private let originalReader: OriginalPageViewController
 
     // Chrome (focused header + ancestor lips).
     // De-glassed (Task 3): a solid header fill over the layer card's solid background,
@@ -111,6 +115,13 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     public var isArticle: Bool { articleContent != nil }
 
+    private static let emptyContent = ArticleContent(title: "", blocks: [])
+    private static var emptyItem: ReadingListItem {
+        var item = ReadingListItem(urlString: "about:blank")
+        item.state = .ready
+        return item
+    }
+
     #if DEBUG
     /// Test hook: the number of segments actually present in the header mode switcher.
     /// This reads the live mode control (not the `orderedModes` it's built from),
@@ -141,6 +152,12 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         self.shareProvider = shareProvider
         self.gazeTrackerFactory = gazeTrackerFactory
         self.layout = layout
+        let emptyItem = Self.emptyItem
+        self.scrollReader = ScrollReaderViewController(
+            item: emptyItem, content: Self.emptyContent, audioEnabled: false,
+            gazeTrackerFactory: nil)
+        self.rsvpReader = RSVPViewController(item: emptyItem, content: Self.emptyContent)
+        self.originalReader = OriginalPageViewController()
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -183,6 +200,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         view.addSubview(spinner)   // centred manually in viewDidLayoutSubviews
 
         configureChrome()
+        installPreloadedModeChildren()
         if isConfigured { beginLoading() }
     }
 
@@ -221,7 +239,25 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         readerChild?.view.frame = CGRect(x: 0, y: top,
                                          width: view.bounds.width,
                                          height: max(view.bounds.height - top, 0))
+        for child in [scrollReader, rsvpReader, originalReader] {
+            child.view.frame = CGRect(x: 0, y: top,
+                                      width: view.bounds.width,
+                                      height: max(view.bounds.height - top, 0))
+        }
         webView?.frame = view.bounds
+    }
+
+    /// Install all article mode children while the layer shell is still blank. This
+    /// pays the child containment, view creation, TextKit/WebKit setup, constraints,
+    /// controls, and first layout before any link tap needs the layer.
+    private func installPreloadedModeChildren() {
+        for child in [scrollReader, rsvpReader, originalReader] {
+            addChild(child)
+            child.view.isHidden = true
+            child.view.isUserInteractionEnabled = false
+            view.insertSubview(child.view, belowSubview: header)
+            child.didMove(toParent: self)
+        }
     }
 
     /// Set the card's background tint for its stack depth.
@@ -570,6 +606,10 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private func installWebView() {
         guard webView == nil else { return }
         guard let url = descriptor.url else { showLoadError(); return }
+        for child in [scrollReader, rsvpReader, originalReader] {
+            child.view.isHidden = true
+        }
+        readerChild = nil
         let web = WKWebView(frame: view.bounds, configuration: WebJunkBlocker.makeConfiguration())
         webView = web
         let themed = view.backgroundColor ?? ReaderDepth.backgroundColor(for: 0)
@@ -590,20 +630,22 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         guard let content = articleContent, let url = descriptor.url else { return }
         if mode == .original {
             guard readerMode != .original || forceReembed else { return }
-            removeReaderChild()
             spinner.stopAnimating()
-            installWebView()
+            removeLiveWebView()
+            var transient = ReadingListItem(urlString: url.absoluteString)
+            transient.state = .ready
+            transient.title = descriptor.title
+            originalReader.configure(item: transient)
+            showPreloadedChild(originalReader)
             readerMode = .original
             return
         }
         removeLiveWebView()
-        removeReaderChild()
         var transient = ReadingListItem(urlString: url.absoluteString)
         transient.state = .ready
         transient.title = descriptor.title
         transient.lastScrollOffset = descriptor.scrollOffset
 
-        let child: UIViewController
         switch mode {
         case .scroll, .highlight, .original:
             // Deliberately NO gaze tracker here: EyeGazeWordTracker.init starts an
@@ -612,35 +654,32 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             // (the on-device dive hang) and stacked a camera session per layer. Eye
             // tracking stays available in the standard reader; it's off in this
             // experimental stacked reader by design.
-            let scroll = ScrollReaderViewController(
-                item: transient, content: content, audioEnabled: audioOn,
-                gazeTrackerFactory: nil)
-            scroll.onLinkActivatedWithRange = { [weak self] url, range in
+            scrollReader.configureForReuse(
+                item: transient, content: content, audioEnabled: audioOn)
+            scrollReader.onLinkActivatedWithRange = { [weak self] url, range in
                 guard let self else { return }
                 self.onLinkActivated?(url, self.lineText(for: range))
             }
-            child = scroll
+            showPreloadedChild(scrollReader)
         case .rsvp:
-            let rsvp = RSVPViewController(item: transient, content: content, audioEnabled: audioOn)
-            rsvp.onLinkActivated = { [weak self] url in self?.onLinkActivated?(url, nil) }
-            child = rsvp
+            rsvpReader.configureForReuse(item: transient, content: content, audioEnabled: audioOn)
+            rsvpReader.onLinkActivated = { [weak self] url in self?.onLinkActivated?(url, nil) }
+            showPreloadedChild(rsvpReader)
         }
-        addChild(child)
-        child.view.frame = CGRect(x: 0, y: Self.headerHeight, width: view.bounds.width,
-                                  height: max(view.bounds.height - Self.headerHeight, 0))
-        view.insertSubview(child.view, belowSubview: header)
-        child.didMove(toParent: self)
-        readerChild = child
         readerMode = mode
         view.setNeedsLayout()
     }
 
-    private func removeReaderChild() {
-        guard let old = readerChild else { return }
-        old.willMove(toParent: nil)
-        old.view.removeFromSuperview()
-        old.removeFromParent()
-        readerChild = nil
+    private func showPreloadedChild(_ child: UIViewController) {
+        for candidate in [scrollReader, rsvpReader, originalReader] {
+            candidate.view.isHidden = candidate !== child
+        }
+        child.view.frame = CGRect(x: 0, y: Self.headerHeight, width: view.bounds.width,
+                                  height: max(view.bounds.height - Self.headerHeight, 0))
+        view.insertSubview(child.view, belowSubview: header)
+        readerChild = child
+        (child as? ScrollReaderViewController)?
+            .activateVisibleReader(deferFullContentUntilHostCompletion: true)
     }
 
     private func removeLiveWebView() {

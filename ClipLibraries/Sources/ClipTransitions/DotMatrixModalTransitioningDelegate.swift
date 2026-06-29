@@ -10,6 +10,7 @@
 //
 
 import ClipContentRendering
+import ClipDesignSystem
 import ObjectiveC
 import UIKit
 
@@ -36,13 +37,150 @@ public final class DotMatrixModalTransitioningDelegate: NSObject, UIViewControll
         presenting: UIViewController,
         source: UIViewController) -> UIViewControllerAnimatedTransitioning? {
         guard DotMatrixTransitionCenter.shared.isEnabled else { return nil }
-        return DotMatrixAnimator(direction: presentDirection)
+        return DotMatrixModalAnimator(direction: presentDirection, operation: .present)
     }
 
     public func animationController(
         forDismissed dismissed: UIViewController) -> UIViewControllerAnimatedTransitioning? {
         guard DotMatrixTransitionCenter.shared.isEnabled else { return nil }
-        return DotMatrixAnimator(direction: dismissDirection)
+        return DotMatrixModalAnimator(direction: dismissDirection, operation: .dismiss)
+    }
+}
+
+private final class DotMatrixModalAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+    enum Operation {
+        case present
+        case dismiss
+    }
+
+    private let direction: DotMatrixWavefrontDirection
+    private let operation: Operation
+
+    init(direction: DotMatrixWavefrontDirection, operation: Operation) {
+        self.direction = direction
+        self.operation = operation
+        super.init()
+    }
+
+    func transitionDuration(using _: UIViewControllerContextTransitioning?) -> TimeInterval {
+        DotMatrixTransitionSettings.totalDuration
+    }
+
+    func animateTransition(using ctx: UIViewControllerContextTransitioning) {
+        switch operation {
+        case .present:
+            animatePresent(using: ctx)
+        case .dismiss:
+            animateDismiss(using: ctx)
+        }
+    }
+
+    private func animatePresent(using ctx: UIViewControllerContextTransitioning) {
+        let container = ctx.containerView
+        guard DotMatrixTransitionCenter.shared.isEnabled,
+              let toVC = ctx.viewController(forKey: .to),
+              let toView = ctx.view(forKey: .to) else {
+            ctx.completeTransition(!ctx.transitionWasCancelled)
+            return
+        }
+
+        let finalFrame = modalFrame(ctx.finalFrame(for: toVC), fallback: container.bounds)
+        guard let before = backgroundSnapshot(in: container, frame: finalFrame, ctx: ctx) else {
+            toView.frame = finalFrame
+            if toView.superview == nil { container.addSubview(toView) }
+            ctx.completeTransition(!ctx.transitionWasCancelled)
+            return
+        }
+
+        toView.frame = finalFrame
+        if toView.superview == nil {
+            container.addSubview(toView)
+        }
+        container.layoutIfNeeded()
+
+        guard let after = DotMatrixSnapshot.image(of: toView, afterScreenUpdates: true),
+              let overlay = DotMatrixTransitionCenter.shared.borrowOverlay(for: container.window) else {
+            ctx.completeTransition(!ctx.transitionWasCancelled)
+            return
+        }
+
+        configure(overlay, before: before, after: after, frame: finalFrame, in: container)
+        overlay.animateProgress(to: 1, duration: transitionDuration(using: ctx)) {
+            DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: container.window)
+            ctx.completeTransition(!ctx.transitionWasCancelled)
+        }
+    }
+
+    private func animateDismiss(using ctx: UIViewControllerContextTransitioning) {
+        let container = ctx.containerView
+        guard DotMatrixTransitionCenter.shared.isEnabled,
+              let fromView = ctx.view(forKey: .from) else {
+            ctx.completeTransition(!ctx.transitionWasCancelled)
+            return
+        }
+
+        let modalFrame = modalFrame(fromView.frame, fallback: container.bounds)
+        guard let before = DotMatrixSnapshot.image(of: fromView, afterScreenUpdates: false) else {
+            ctx.completeTransition(!ctx.transitionWasCancelled)
+            return
+        }
+
+        if let toView = ctx.view(forKey: .to), toView.superview == nil {
+            container.insertSubview(toView, belowSubview: fromView)
+            let toVC = ctx.viewController(forKey: .to)
+            let finalFrame = toVC.map { ctx.finalFrame(for: $0) } ?? container.bounds
+            if !finalFrame.isEmpty { toView.frame = finalFrame }
+            container.layoutIfNeeded()
+        }
+
+        let oldAlpha = fromView.alpha
+        fromView.alpha = 0
+        let after = backgroundSnapshot(in: container, frame: modalFrame, ctx: ctx)
+        fromView.alpha = oldAlpha
+
+        guard let after,
+              let overlay = DotMatrixTransitionCenter.shared.borrowOverlay(for: container.window) else {
+            ctx.completeTransition(!ctx.transitionWasCancelled)
+            return
+        }
+
+        configure(overlay, before: before, after: after, frame: modalFrame, in: container)
+        overlay.animateProgress(to: 1, duration: transitionDuration(using: ctx)) {
+            DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: container.window)
+            ctx.completeTransition(!ctx.transitionWasCancelled)
+        }
+    }
+
+    private func configure(_ overlay: RabbitHoleTransitionView,
+                           before: UIImage,
+                           after: UIImage,
+                           frame: CGRect,
+                           in container: UIView) {
+        overlay.style = DotMatrixTransitionStyleProvider.style(for: container.traitCollection)
+        overlay.direction = direction
+        overlay.frame = frame
+        overlay.autoresizingMask = []
+        overlay.configure(before: before, after: after)
+        overlay.setProgress(0)
+        overlay.isHidden = false
+        container.addSubview(overlay)
+    }
+
+    private func backgroundSnapshot(in container: UIView,
+                                    frame: CGRect,
+                                    ctx: UIViewControllerContextTransitioning) -> UIImage? {
+        if let snapshot = DotMatrixSnapshot.image(of: container, region: frame, afterScreenUpdates: false) {
+            return snapshot
+        }
+
+        guard let fromView = ctx.view(forKey: .from) else { return nil }
+        let sourceFrame = container.convert(frame, to: fromView)
+        return DotMatrixSnapshot.image(of: fromView, region: sourceFrame, afterScreenUpdates: false)
+    }
+
+    private func modalFrame(_ frame: CGRect, fallback: CGRect) -> CGRect {
+        if frame.width > 1, frame.height > 1 { return frame }
+        return fallback
     }
 }
 

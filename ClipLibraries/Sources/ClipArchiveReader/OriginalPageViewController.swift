@@ -14,8 +14,8 @@ import WebKit
 /// reaches back to the network as a fallback, when a web save's `.webarchive`
 /// capture is missing (so the always-offered Original mode is never blank).
 public final class OriginalPageViewController: UIViewController {
-    private let item: ReadingListItem
-    private let store: ReadingListStore
+    private var item: ReadingListItem?
+    private var store: ReadingListStore
     private let webView: WKWebView
 
     public init(item: ReadingListItem, store: ReadingListStore) {
@@ -27,7 +27,25 @@ public final class OriginalPageViewController: UIViewController {
         super.init(nibName: nil, bundle: nil)
     }
 
+    /// Creates an empty, laid-out original/archive reader shell. RabbitHole uses this
+    /// to keep WebKit construction off the link-tap path, then supplies the item when
+    /// Original mode is actually selected.
+    public convenience init(store: ReadingListStore = .shared) {
+        self.init(item: ReadingListItem(urlString: "about:blank"), store: store)
+        self.item = nil
+    }
+
     public required init?(coder: NSCoder) { fatalError("not used") }
+
+    public var contentScrollView: UIScrollView { webView.scrollView }
+
+    public func configure(item: ReadingListItem, store: ReadingListStore = .shared) {
+        self.item = item
+        self.store = store
+        guard isViewLoaded else { return }
+        webView.stopLoading()
+        loadOriginal()
+    }
 
     public override func viewDidLoad() {
         super.viewDidLoad()
@@ -49,6 +67,7 @@ public final class OriginalPageViewController: UIViewController {
     }
 
     private func loadOriginal() {
+        guard let item else { return }
         let savedItem = store.item(withID: item.id) ?? item
         if let archiveURL = store.webArchiveURL(for: savedItem),
            let data = try? Data(contentsOf: archiveURL) {

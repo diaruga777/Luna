@@ -39,7 +39,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// A word index carried in from another reader mode. When set (and this is
     /// the plain scrolling mode), the view scrolls so that word sits 25% from
     /// the top on first appearance instead of restoring the saved offset.
-    private let explicitResumeWordIndex: Int?
+    private var explicitResumeWordIndex: Int?
 
     /// The content offset captured the moment the reader's initial position is
     /// applied — the baseline for deciding whether the user has since scrolled
@@ -50,7 +50,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// noisy sample — is allowed to move the carried reading position.
     private var gazeLockGate = GazeLockGate()
 
-    private let item: ReadingListItem
+    private var item: ReadingListItem
     private var content: ArticleContent
     private var rendered: RenderedArticle
     private var wordMap: WordMap
@@ -91,7 +91,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     #endif
 
     /// Read aloud (the shared audio toggle).
-    private let audioEnabled: Bool
+    private var audioEnabled: Bool
     private var didStartPlayback = false
 
     // Read-aloud (audio) playback, present only when audio is enabled.
@@ -107,7 +107,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private let gazeTrackerFactory: GazeTrackerFactory?
 
     /// Sharing affordances; nil → no end-of-article share footer (share sheet).
-    private let shareProvider: ReaderShareProviding?
+    private var shareProvider: ReaderShareProviding?
     /// End-of-article share affordance, pinned below the text content (nil when
     /// there's no share provider).
     private lazy var shareView: ArticleShareView? = makeShareView()
@@ -161,6 +161,77 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // If the prefix already covers the whole (short) article there's nothing to
         // swap — Phase 2 is skipped.
         if rendered.isComplete { didLoadFullContent = true }
+    }
+
+    /// Reuses an already-built scroll reader shell with new article content. RabbitHole
+    /// calls this on a pre-added child so link activation does not pay the child-VC,
+    /// TextKit view, gesture, footer, and constraint setup cost.
+    public func configureForReuse(
+        item: ReadingListItem,
+        content: ArticleContent,
+        audioEnabled: Bool = false,
+        shareProvider: ReaderShareProviding? = nil,
+        resumeWordIndex: Int? = nil
+    ) {
+        imageDownloadTask?.cancel()
+        speech?.stop()
+        speech = nil
+        gazeTracker?.stop()
+        gazeTracker = nil
+        contentSizeObservation?.invalidate()
+        contentSizeObservation = nil
+        removeHighlight()
+
+        let resolved = ArticleImageDownloader.resolveLocalImages(content, store: ReadingListStore.shared)
+        self.item = item
+        self.content = resolved
+        self.audioEnabled = audioEnabled
+        self.shareProvider = shareProvider
+        self.explicitResumeWordIndex = resumeWordIndex
+
+        didFinishReading = false
+        didRestoreScroll = false
+        didLoadFullContent = false
+        didBeginFullContentLoad = false
+        didStartGazeObservation = false
+        didStartPlayback = false
+        shareFooterVisible = false
+        openContentOffsetY = nil
+        gazeLockGate = GazeLockGate()
+        lastVisibleLinkKeys = []
+        highlightedRange = nil
+        followPlayback = true
+
+        let needsFullUpFront = audioEnabled || Self.openPositionLikelyBeyondPrefix(
+            item: item, resumeWordIndex: resumeWordIndex, audioEnabled: audioEnabled,
+            content: resolved, budget: Self.prefixCharacterBudget)
+        let rendered = needsFullUpFront
+            ? ArticleTextRenderer.render(resolved)
+            : ArticleTextRenderer.render(resolved, characterBudget: Self.prefixCharacterBudget)
+        self.rendered = rendered
+        self.wordMap = WordMap(content: resolved, rendered: rendered)
+        if rendered.isComplete { didLoadFullContent = true }
+
+        guard isViewLoaded else { return }
+        UIView.performWithoutAnimation {
+            textView.attributedText = rendered.text
+            textView.layoutIfNeeded()
+            textView.layoutManager.ensureLayout(for: textView.textContainer)
+            if textView.bounds.width > 0 {
+                applyInitialScrollPosition()
+                didRestoreScroll = true
+            } else {
+                textView.contentOffset = .zero
+            }
+            textView.alpha = 1
+            footer.isHidden = true
+        }
+        if didLoadFullContent {
+            attachShareFooterIfNeeded()
+            fetchMissingImagesIfNeeded()
+            installPositionDependentFeatures()
+        }
+        view.setNeedsLayout()
     }
 
     /// Whether this open will restore a position that the cheap PREFIX render almost
@@ -585,6 +656,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        activateVisibleReader()
+    }
+
+    /// Called by hosts that keep this reader pre-added while hidden, then reveal it
+    /// later without another UIKit appearance callback.
+    public func activateVisibleReader(deferFullContentUntilHostCompletion: Bool = false) {
         // Fallback if layout hasn't run yet (shouldn't normally happen).
         if !didRestoreScroll {
             didRestoreScroll = true
@@ -603,7 +680,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // animation (the inline split overlay, the RabbitHole stacked wipe) also call
         // `prepareFullContent()` from THEIR completion — `prepareFullContent` is
         // idempotent, so whichever fires first wins.
-        if !didLoadFullContent {
+        if !deferFullContentUntilHostCompletion, !didLoadFullContent {
             if let coordinator = transitionCoordinator {
                 coordinator.animate(alongsideTransition: nil) { [weak self] _ in
                     self?.prepareFullContent()

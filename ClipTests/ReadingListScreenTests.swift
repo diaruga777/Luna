@@ -159,7 +159,9 @@ final class ReadingListScreenTests: XCTestCase {
     func testSettingsButtonPushesSettings() {
         UITestSupport.seedSharedStore(.empty)
         let (viewController, nav, window) = hostedList()
-        invokeBarButton(named: "gearshape", in: viewController.navigationItem.leftBarButtonItems)
+        // The settings control now lives in the in-content NavHeaderBar (not the nav
+        // bar); exercise the same action seam by its selector.
+        viewController.perform(Selector(("settingsTapped")))
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertTrue(nav.topViewController is SettingsViewController,
                       "settings button should push SettingsViewController")
@@ -169,7 +171,7 @@ final class ReadingListScreenTests: XCTestCase {
     func testFriendsButtonPushesFriends() {
         UITestSupport.seedSharedStore(.empty)
         let (viewController, nav, window) = hostedList()
-        invokeBarButton(named: "person.2", in: viewController.navigationItem.leftBarButtonItems)
+        viewController.perform(Selector(("friendsTapped")))
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertTrue(nav.topViewController is FriendsViewController,
                       "friends button should push FriendsViewController")

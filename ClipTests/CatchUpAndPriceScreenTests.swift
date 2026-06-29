@@ -124,14 +124,9 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         nav.pushViewController(editor, animated: false)
         editor.loadViewIfNeeded()
         XCTAssertTrue(nav.topViewController is PriceTrackingViewController)
-        XCTAssertNil(editor.navigationItem.rightBarButtonItem,
-                     "existing mode must NOT show a Read instead button")
-
-        guard let back = editor.navigationItem.leftBarButtonItem, let action = back.action,
-              let target = back.target else {
-            XCTFail("existing mode should have a Back button"); return
-        }
-        _ = target.perform(action)
+        // The header controls now live in the in-content NavHeaderBar (not the nav bar);
+        // exercise the same back action seam by its selector.
+        editor.perform(Selector(("leftButtonTapped")))
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertTrue(nav.topViewController === list, "Back should pop back to the reading list")
         XCTAssertNotNil(ReadingListStore.shared.item(withID: tracker.id),
@@ -178,11 +173,8 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         nav.pushViewController(editor, animated: false)
         editor.loadViewIfNeeded()
 
-        guard let readInstead = editor.navigationItem.rightBarButtonItem,
-              let action = readInstead.action, let target = readInstead.target else {
-            XCTFail("creation mode should have a Read instead button"); return
-        }
-        _ = target.perform(action)
+        // "Read instead" now lives in the in-content NavHeaderBar; drive its action seam.
+        editor.perform(Selector(("readInsteadTapped")))
         // The pop is an animated `popViewController`; under full-suite load it can need
         // more than one run-loop turn to settle, so poll (bounded) instead of a fixed wait.
         let popDeadline = Date().addingTimeInterval(2.0)
@@ -217,11 +209,8 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         nav.pushViewController(editor, animated: false)
         editor.loadViewIfNeeded()
 
-        guard let readInstead = editor.navigationItem.rightBarButtonItem,
-              let action = readInstead.action, let target = readInstead.target else {
-            XCTFail("merge mode should have a Read instead button"); return
-        }
-        _ = target.perform(action)
+        // "Read instead" now lives in the in-content NavHeaderBar; drive its action seam.
+        editor.perform(Selector(("readInsteadTapped")))
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         let after = ReadingListStore.shared.item(withID: item.id)?.priceTracker
         XCTAssertNotNil(after, "merge revert must keep the existing tracker")
@@ -232,22 +221,37 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         _ = window
     }
 
-    /// The action/share extension host shows a Done button (not a Back chevron) as
-    /// the way out, while in-app shows Back.
+    /// The action/share extension host exits via Done (its `onDone` completion), while
+    /// in-app exits via Back (pops the nav stack). The chrome now lives in the
+    /// in-content NavHeaderBar, so this verifies the exit BEHAVIOR rather than the bar
+    /// item kind.
     func testExtensionHostShowsDoneInAppShowsBack() {
         UITestSupport.seedSharedStore(.priceTracking)
         guard let tracker = ReadingListStore.shared.items().first(where: { $0.isPriceTracker }) else {
             XCTFail("no price tracker seeded"); return
         }
+        // In-app: left control pops the nav stack.
+        let list = ReadingListViewController()
+        let nav = UINavigationController(rootViewController: list)
+        let window = UITestSupport.host(nav)
         let inAppEditor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .inApp))
+        nav.pushViewController(inAppEditor, animated: false)
         inAppEditor.loadViewIfNeeded()
-        XCTAssertNotNil(inAppEditor.navigationItem.leftBarButtonItem?.image,
-                        "in-app left button is a back chevron image")
+        inAppEditor.perform(Selector(("leftButtonTapped")))
+        let popDeadline = Date().addingTimeInterval(2.0)
+        while nav.topViewController !== list && Date() < popDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertTrue(nav.topViewController === list, "in-app Back pops to the reading list")
 
+        // Extension host: left control hands off to the `onDone` completion.
         let extEditor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .extension))
+        var didCallOnDone = false
+        extEditor.onDone = { didCallOnDone = true }
         extEditor.loadViewIfNeeded()
-        XCTAssertNil(extEditor.navigationItem.leftBarButtonItem?.image,
-                     "extension host left button is a system Done (no custom image)")
+        extEditor.perform(Selector(("leftButtonTapped")))
+        XCTAssertTrue(didCallOnDone, "extension host Done invokes the onDone completion")
+        _ = window
     }
 
     /// Opening an alerting tracker marks its alert viewed, so it stops floating.

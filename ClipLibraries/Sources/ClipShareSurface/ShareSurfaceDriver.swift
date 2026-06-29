@@ -4,6 +4,7 @@
 //
 
 import ClipPriceUI
+import ClipReaderUI
 import ClipArchiveReader
 import ClipMediaDownload
 import ClipStorage
@@ -82,8 +83,8 @@ public final class ShareSurfaceDriver {
     public func present(_ outcome: Outcome, url: URL) {
         guard let host else { return }
         switch outcome {
-        case let .article(content, _):
-            persistArticle(content, url: url)
+        case let .article(content, html):
+            persistArticle(content, html: html, url: url)
             if let mode = host.readerMode {
                 presentReader(url: url, mode: mode, outcome: outcome)
             } else {
@@ -138,9 +139,24 @@ public final class ShareSurfaceDriver {
 
     // MARK: - Store writes (shared shape with the main app's IngestorOutcomePresenter)
 
-    private func persistArticle(_ content: ArticleContent, url: URL) {
+    private func persistArticle(_ content: ArticleContent, html: String, url: URL) {
         guard let saved = store.item(forURLString: url.absoluteString) else { return }
         _ = store.saveContent(content, for: saved)
+        // Give the row the SAME cover thumbnail an in-app save produces. Best-effort
+        // from the page HTML the pipeline already fetched (Safari's text-only action
+        // snapshot has no og:image, so it simply yields no cover here). The extension
+        // is short-lived, so if this doesn't finish the app backfills it on next launch
+        // (ReadingListIngestor.backfillMissingThumbnails) — this just avoids the wait
+        // in the common case. Skipped for the text-only snapshot, which has no <meta>.
+        guard !html.isEmpty else { return }
+        let store = store
+        let itemID = saved.id
+        Task {
+            guard store.item(withID: itemID)?.thumbnailFileName == nil,
+                  let data = await ArticleCoverThumbnail.coverImageData(html: html, baseURL: url)
+            else { return }
+            store.setThumbnail(data, for: itemID)
+        }
     }
 
     /// Persists a recognized video/social/audio item's classification (platform + item

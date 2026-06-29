@@ -3,7 +3,6 @@
 //  Clip
 //
 
-import ClipDesignSystem
 import ClipReadingListUI
 import ClipReadingList
 import ClipMail
@@ -262,12 +261,12 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
         tableView.reloadData()
     }
 
-    @objc private func importToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func importToggled(_ toggle: UISwitch) {
         IncomingMailSettings.isEnabled = toggle.isOn
         if toggle.isOn { Task { await IncomingMailImporter.shared.importNewMail() } }
     }
 
-    @objc private func autoSendToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func autoSendToggled(_ toggle: UISwitch) {
         IncomingMailSettings.autoSendToKindle = toggle.isOn
     }
 

@@ -3,7 +3,6 @@
 //  Clip
 //
 
-import ClipDesignSystem
 import ClipReadingListUI
 import ClipSocial
 import ClipSend
@@ -130,8 +129,8 @@ final class AutoSendBySourceScreen: UITableViewController {
         }
     }
 
-    private func makeToggle(isOn: Bool, onChange: @escaping (Bool) -> Void) -> DotMatrixSwitch {
-        let toggle = DotMatrixSwitch()
+    private func makeToggle(isOn: Bool, onChange: @escaping (Bool) -> Void) -> UISwitch {
+        let toggle = UISwitch()
         toggle.isOn = isOn
         toggle.addAction(UIAction { [weak toggle] _ in onChange(toggle?.isOn ?? false) }, for: .valueChanged)
         return toggle

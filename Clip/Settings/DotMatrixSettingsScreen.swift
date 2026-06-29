@@ -3,7 +3,6 @@
 //  Clip
 //
 
-import ClipDesignSystem
 import ClipReadingListUI
 import UIKit
 import PhotosUI
@@ -312,8 +311,8 @@ final class DotMatrixSettingsScreen: UIViewController, UITableViewDataSource, UI
 
     // MARK: Cell builders
 
-    private func makeToggle(isOn: Bool, action: Selector) -> DotMatrixSwitch {
-        let toggle = DotMatrixSwitch()
+    private func makeToggle(isOn: Bool, action: Selector) -> UISwitch {
+        let toggle = UISwitch()
         toggle.isOn = isOn
         toggle.addTarget(self, action: action, for: .valueChanged)
         return toggle
@@ -393,7 +392,7 @@ final class DotMatrixSettingsScreen: UIViewController, UITableViewDataSource, UI
         return cell
     }
 
-    @objc private func averageCellToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func averageCellToggled(_ toggle: UISwitch) {
         DotMatrixSettings.averageCell = toggle.isOn
         settingsChanged()
     }
@@ -409,7 +408,7 @@ final class DotMatrixSettingsScreen: UIViewController, UITableViewDataSource, UI
         return cell
     }
 
-    @objc private func greyscaleToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func greyscaleToggled(_ toggle: UISwitch) {
         DotMatrixSettings.monochrome = toggle.isOn
         settingsChanged()
     }
@@ -425,7 +424,7 @@ final class DotMatrixSettingsScreen: UIViewController, UITableViewDataSource, UI
         return cell
     }
 
-    @objc private func transparentBackgroundToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func transparentBackgroundToggled(_ toggle: UISwitch) {
         DotMatrixSettings.transparentBackground = toggle.isOn
         settingsChanged()
     }

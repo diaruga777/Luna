@@ -342,6 +342,16 @@ final class ReadingListViewController: UITableViewController {
 
         updateFilterVisibility()
         updateCatchUpButton()
+        groups = buildGroups()
+        tableView.reloadData()
+    }
+
+    /// Builds the non-empty grouped model (sections × items, in display order) for the
+    /// current filter and store contents — the PURE model step, split out of `reload()`
+    /// so a filter change can diff the old/new models and animate only the rows that
+    /// actually change (see `filterChanged`). May clear a now-saved pasteboard candidate
+    /// as a side effect (mirrors the old `reload`).
+    private func buildGroups() -> [(section: Section, items: [ReadingListItem])] {
         let unfiltered = store.items()
         let all = unfiltered.filter { filter.includes($0) }
         let buckets = ReadingListSectioning.assignSections(items: all, now: Self.sectioningNow())
@@ -372,11 +382,10 @@ final class ReadingListViewController: UITableViewController {
             bySection[.pasteboard] = [loading]
         }
 
-        groups = Self.displayOrder.compactMap { section in
+        return Self.displayOrder.compactMap { section in
             let items = bySection[section] ?? []
             return items.isEmpty ? nil : (section, items)
         }
-        tableView.reloadData()
     }
 
     /// A transient (unsaved) item used to render the pasteboard suggestion row.
@@ -431,15 +440,114 @@ final class ReadingListViewController: UITableViewController {
         let previousIndex = filters.firstIndex(of: filter) ?? control.selectedSegmentIndex
         let index = control.selectedSegmentIndex
         filter = (index >= 0 && index < filters.count) ? filters[index] : .all
-        // Pixel-wipe the segmented control's OWN selection move (the indicator dissolves
-        // dot-by-dot instead of sliding). Scoped to the control — the large "Reading List"
-        // title lives in the nav bar and is untouched.
+
+        // The segmented control's OWN selection move plays the 3-phase pixel-wipe
+        // (pixelate prior segment → move the dot cloud → unpixelate at the new segment).
+        // Scoped to the control — the large "Reading List" title lives in the nav bar and
+        // is untouched.
         DotMatrixSegmentedControl.animateSelectionChange(control, from: previousIndex)
-        // A filter switch swaps the list body at once — pixel-wipe the table between the
-        // old and new contents (a no-op fading reload when the toggle is off). The nav bar
-        // (title + buttons) is a sibling of the table and is never snapshotted, so only the
-        // changing rows/section headers pixelate.
-        DotMatrixCrossfade.run(in: tableView, direction: .random) { [weak self] in self?.reload() }
+
+        // The list body: diff the OLD vs NEW grouped models by item id and animate ONLY
+        // the rows that appear/disappear/move, pixel-wiping just the union rect of those
+        // rows. Rows whose item stays in place don't move and aren't in the wipe region.
+        applyFilteredGroups()
+    }
+
+    /// Swaps `groups` to the freshly-built (filtered) model with a cell-level diff: only
+    /// the rows that appear/disappear/move are inserted/deleted and pixel-wiped (confined
+    /// to their bounding rect); rows that persist in place are reconfigured silently. The
+    /// nav bar (title + buttons) is a sibling of the table and is never snapshotted.
+    private func applyFilteredGroups() {
+        let oldGroups = groups
+        let newGroups = buildGroups()
+
+        // Reuse the table's grouped-model diff (id-keyed) to get the row/section deltas.
+        let diff = ReadingListDiff.compute(
+            old: oldGroups.map { ReadingListGroup(section: $0.section, itemIDs: $0.items.map(\.id)) },
+            new: newGroups.map { ReadingListGroup(section: $0.section, itemIDs: $0.items.map(\.id)) })
+
+        // Nothing changed (e.g. the same filter re-selected) ⇒ no wipe, no table churn.
+        if diff.isEmpty {
+            groups = newGroups
+            return
+        }
+
+        // Build the changed REGION from the rows' before/after frames, keyed by item id,
+        // clamped to the visible table — so off-screen changed rows don't inflate it and
+        // genuinely-unchanged rows are excluded. Unioning before+after frames means a row
+        // that moves wipes both the slot it left and the slot it entered.
+        //
+        // `rectForRow` reads the data source, so accurate new-layout frames need the new
+        // model laid out. We measure both layouts WITHOUT animation, then leave the table
+        // on the OLD model so DotMatrixBatch captures the correct "before" snapshot and
+        // re-applies the new model itself inside its (non-animated) batch update.
+        let visible = tableView.bounds
+        let beforeItems = regionItems(for: oldGroups, clampedTo: visible)
+        var afterItems: [DotMatrixRegion.Item] = []
+        UIView.performWithoutAnimation {
+            self.groups = newGroups
+            self.tableView.reloadData()
+            self.tableView.layoutIfNeeded()
+            afterItems = self.regionItems(for: newGroups, clampedTo: visible)
+            self.groups = oldGroups
+            self.tableView.reloadData()
+            self.tableView.layoutIfNeeded()
+        }
+
+        let region = DotMatrixRegion.changedRegion(before: beforeItems, after: afterItems, in: visible)
+
+        // Apply the diff with real insert/delete ops (the correct UIKit batch shape, so
+        // the disabled-wipe fallback animates rows cleanly). `groups` must already be the
+        // NEW model when the batch body runs, since the table re-queries it for counts.
+        DotMatrixBatch.update(tableView, direction: .random, region: region) { [weak self] in
+            guard let self else { return }
+            self.groups = newGroups
+            self.tableView.deleteSections(diff.deletedSections, with: .fade)
+            self.tableView.insertSections(diff.insertedSections, with: .fade)
+            self.tableView.deleteRows(at: diff.deletedRows, with: .fade)
+            self.tableView.insertRows(at: diff.insertedRows, with: .fade)
+        } completion: { [weak self] _ in
+            // Reconfigure rows whose item persists in place but whose content changed
+            // (state/read-state), without animation — they weren't in the wipe region.
+            self?.reconfigurePersistingCells(in: diff.persistingItemIDs)
+        }
+    }
+
+    /// Silently re-renders any visible cell whose item id is in `ids` — a row that stayed
+    /// put across the filter swap but whose content may have changed. No animation: these
+    /// rows are deliberately excluded from the wipe region.
+    private func reconfigurePersistingCells(in ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        for indexPath in tableView.indexPathsForVisibleRows ?? [] {
+            let item = item(at: indexPath)
+            guard ids.contains(item.id),
+                  let cell = tableView.cellForRow(at: indexPath) as? ReadingListItemCell,
+                  section(at: indexPath.section) != .pasteboard else { continue }
+            UIView.performWithoutAnimation { configureItemCell(cell, for: item) }
+        }
+    }
+
+    /// `DotMatrixRegion.Item`s for every row in `model`, framed by `rectForRow`
+    /// (in the table's own coords), clamped to `bounds`. Items are keyed by the item's
+    /// `id` so the diff matches the same logical row across the before/after layouts; the
+    /// state token folds in the cell's reuse-affecting fields so a row whose content
+    /// changed (but didn't move) still joins the changed region. Header rows aren't
+    /// included — section headers for persisting sections don't change on a filter swap.
+    private func regionItems(
+        for model: [(section: Section, items: [ReadingListItem])], clampedTo bounds: CGRect
+    ) -> [DotMatrixRegion.Item] {
+        var items: [DotMatrixRegion.Item] = []
+        for (sectionIndex, group) in model.enumerated() {
+            guard !isCollapsed(group.section) else { continue }
+            for (rowIndex, item) in group.items.enumerated() {
+                let rect = tableView.rectForRow(at: IndexPath(row: rowIndex, section: sectionIndex))
+                guard rect.intersects(bounds) else { continue }
+                items.append(DotMatrixRegion.Item(
+                    id: item.id, frame: rect,
+                    state: "\(item.state.rawValue)|\(item.readState.rawValue)"))
+            }
+        }
+        return items
     }
 
     /// Shows the filter control only when the list has at least two of the three

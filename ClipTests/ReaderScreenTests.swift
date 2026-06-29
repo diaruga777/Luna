@@ -96,8 +96,10 @@ final class ReaderScreenTests: XCTestCase {
         guard let control = findSegmentedControl(in: reader.view) else {
             XCTFail("reader mode switcher not found"); return
         }
-        XCTAssertEqual(control.numberOfSegments, 2,
-                       "Scroll + RSVP; Original hidden when no source archive exists")
+        XCTAssertEqual(control.numberOfSegments, 3,
+                       "Scroll + RSVP + Original: a web-page save always offers the "
+                       + "original archive (live page fallback when no webarchive yet); "
+                       + "only email-sourced saves hide it")
 
         // Segment 0 = scroll, 1 = rsvp (per ReaderViewController.baseModes).
         XCTAssertTrue(reader.children.first is ScrollReaderViewController,

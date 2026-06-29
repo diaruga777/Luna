@@ -5,6 +5,7 @@
 
 import ClipStorage
 import ClipModels
+import ClipDesignSystem
 import UIKit
 
 /// The user's preferred app for opening music / podcast items (provider-portable
@@ -35,7 +36,7 @@ enum MediaProviderSettings {
 }
 
 /// Settings screen: pick the preferred Music and Podcast apps.
-final class MediaProviderSettingsScreen: UITableViewController {
+final class MediaProviderSettingsScreen: NavHeaderTableController {
 
     private enum Row: Int, CaseIterable { case music, podcast }
 
@@ -43,9 +44,8 @@ final class MediaProviderSettingsScreen: UITableViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Music & Podcasts"
         super.viewDidLoad()
-        title = "Music & Podcasts"
-        navigationItem.largeTitleDisplayMode = .never
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     }
 

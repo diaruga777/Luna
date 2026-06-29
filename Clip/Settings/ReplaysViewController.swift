@@ -5,13 +5,14 @@
 
 import ClipStorage
 import ClipModels
+import ClipDesignSystem
 import UIKit
 
 /// Diagnostics → Replays: lists every stored `Replay` by its item URL. Tapping a
 /// row shares that replay's export zip (`UIActivityViewController`). Rows whose
 /// state is `failed` or `userReported` show a red warning icon. Reached from the
 /// Diagnostics settings screen.
-final class ReplaysViewController: UITableViewController {
+final class ReplaysViewController: NavHeaderTableController {
 
     private let recorder: ReplayRecording
     private var replays: [StoredReplay] = []
@@ -27,9 +28,8 @@ final class ReplaysViewController: UITableViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Replays"
         super.viewDidLoad()
-        title = "Replays"
-        navigationItem.largeTitleDisplayMode = .never
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "replay")
     }
 

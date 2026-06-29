@@ -4,21 +4,21 @@
 //
 
 import ClipReaderUI
+import ClipDesignSystem
 import UIKit
 
 /// Informational read-aloud screen. Clip reads aloud with an enhanced Apple voice
 /// when one is installed and the built-in system voice otherwise — there is no
 /// engine to pick or download. The screen shows whether an enhanced voice is
 /// installed and offers a deep-link into iOS Settings to install one.
-final class VoiceSettingsScreen: UITableViewController {
+final class VoiceSettingsScreen: NavHeaderTableController {
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Voice"
         super.viewDidLoad()
-        title = "Voice"
-        navigationItem.largeTitleDisplayMode = .never
     }
 
     override func viewWillAppear(_ animated: Bool) {

@@ -10,7 +10,7 @@
 import ClipDesignSystem
 import UIKit
 
-final class RabbitHoleTransitionSettingsScreen: UITableViewController {
+final class RabbitHoleTransitionSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
         case cellSize, cornerRadius, spacing, phase1, phase2, stagger, color, reset
@@ -20,9 +20,8 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Dot Matrix Transition"
         super.viewDidLoad()
-        title = "Dot Matrix Transition"
-        navigationItem.largeTitleDisplayMode = .never
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }

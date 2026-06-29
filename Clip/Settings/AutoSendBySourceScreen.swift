@@ -7,13 +7,14 @@ import ClipReadingListUI
 import ClipSocial
 import ClipSend
 import ClipModels
+import ClipDesignSystem
 import UIKit
 
 /// Per-capture-source auto-send configuration for one ereader destination
 /// (Kindle or Boox). Lets the user choose which sources auto-send: App Intents
 /// (Shortcuts) and in-app saves via the send mode, plus on/off for email, the
 /// share sheet & paste, and friend shares (with per-friend overrides).
-final class AutoSendBySourceScreen: UITableViewController {
+final class AutoSendBySourceScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable { case sources, friends }
     private enum SourceRow: Int, CaseIterable { case appIntents, email, shareAndPaste, friendShares }
@@ -31,9 +32,8 @@ final class AutoSendBySourceScreen: UITableViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Forwarding Settings"
         super.viewDidLoad()
-        title = "Forwarding Settings"
-        navigationItem.largeTitleDisplayMode = .never
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         friends = FriendsStore.shared.items()
     }

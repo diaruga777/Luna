@@ -30,7 +30,7 @@ extension UITableViewController {
 
 /// Top-level settings: a system-Settings-style menu that drills into a focused
 /// subpage per category.
-final class SettingsViewController: UITableViewController {
+final class SettingsViewController: NavHeaderTableController {
 
     private struct Category {
         let title: String
@@ -56,9 +56,8 @@ final class SettingsViewController: UITableViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Settings"
         super.viewDidLoad()
-        title = "Settings"
-        navigationItem.largeTitleDisplayMode = .never
     }
 
     /// Section 1 holds a single "Replay Setup" action (presented modally), kept
@@ -104,7 +103,7 @@ final class SettingsViewController: UITableViewController {
 // MARK: - Reader
 
 /// RSVP speed, serif toggle, and text size.
-final class ReaderSettingsScreen: UITableViewController {
+final class ReaderSettingsScreen: NavHeaderTableController {
     private enum Row: Int, CaseIterable { case speed, serif, textSize, accentColor }
     private let wpmLabel = UILabel()
 
@@ -112,9 +111,8 @@ final class ReaderSettingsScreen: UITableViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Reader"
         super.viewDidLoad()
-        title = "Reader"
-        navigationItem.largeTitleDisplayMode = .never
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -228,14 +226,13 @@ final class ReaderSettingsScreen: UITableViewController {
 // MARK: - Reading List
 
 /// Reading-time and progress display toggles.
-final class ReadingListSettingsScreen: UITableViewController {
+final class ReadingListSettingsScreen: NavHeaderTableController {
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Reading List"
         super.viewDidLoad()
-        title = "Reading List"
-        navigationItem.largeTitleDisplayMode = .never
     }
 
     private enum Section: Int, CaseIterable { case display, preload }
@@ -320,14 +317,13 @@ final class ReadingListSettingsScreen: UITableViewController {
 
 // MARK: - Eye Tracking
 
-final class EyeTrackingSettingsScreen: UITableViewController {
+final class EyeTrackingSettingsScreen: NavHeaderTableController {
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Eye Tracking"
         super.viewDidLoad()
-        title = "Eye Tracking"
-        navigationItem.largeTitleDisplayMode = .never
     }
 
     private enum Row: Int, CaseIterable { case track, highlight }
@@ -372,7 +368,7 @@ final class EyeTrackingSettingsScreen: UITableViewController {
 
 // MARK: - Shortcut & Safari
 
-final class ShortcutSettingsScreen: UITableViewController {
+final class ShortcutSettingsScreen: NavHeaderTableController {
     /// Section 0: the Safari extension's "Read in Queue" button visibility.
     /// Section 1: the Action-Button shortcut rows.
     private enum Section: Int, CaseIterable { case suggestionButton, shortcut }
@@ -383,9 +379,8 @@ final class ShortcutSettingsScreen: UITableViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Shortcut & Safari"
         super.viewDidLoad()
-        title = "Shortcut & Safari"
-        navigationItem.largeTitleDisplayMode = .never
         refreshSafariStatus()
     }
 

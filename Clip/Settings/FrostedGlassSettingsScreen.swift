@@ -4,6 +4,7 @@
 //
 
 import ClipReadingListUI
+import ClipDesignSystem
 import UIKit
 import PhotosUI
 import AVFoundation
@@ -31,6 +32,8 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
     }
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    /// In-content header in place of the nav bar, so it's part of the Dot Matrix wipe.
+    private let header = NavHeaderBar()
 
     // MARK: Slider groups
 
@@ -126,9 +129,7 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Frosted Neon"
         view.backgroundColor = .systemGroupedBackground
-        navigationItem.largeTitleDisplayMode = .never
 
         tableView.dataSource = self
         tableView.delegate = self
@@ -137,8 +138,12 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
 
         buildFooter()
 
+        header.title = "Frosted Neon"
+        header.setLeadingControls([NavHeaderBar.backButton(target: self, action: #selector(headerBack))])
+        let headerBottom = header.mount(in: self)
+
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.topAnchor),
+            tableView.topAnchor.constraint(equalTo: headerBottom),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: footer.topAnchor),
@@ -148,6 +153,19 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
             footer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             footer.heightAnchor.constraint(equalToConstant: 260),
         ])
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: false)
+    }
+
+    @objc private func headerBack() {
+        if let navigationController, navigationController.viewControllers.count > 1 {
+            navigationController.popViewController(animated: true)
+        } else {
+            dismiss(animated: true)
+        }
     }
 
     override func viewDidLayoutSubviews() {

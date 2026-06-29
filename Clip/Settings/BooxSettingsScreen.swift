@@ -5,11 +5,12 @@
 
 import ClipReadingListUI
 import ClipSend
+import ClipDesignSystem
 import UIKit
 
 /// Send-to-Boox settings: region, an OTP login that stores the long-lived
 /// token, the auto-send mode, and a test send. Mirrors the Kindle settings.
-final class BooxSettingsScreen: UITableViewController {
+final class BooxSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable { case account, send }
 
@@ -21,9 +22,8 @@ final class BooxSettingsScreen: UITableViewController {
     private var isLoggedIn: Bool { !(credentials.booxToken() ?? "").isEmpty }
 
     override func viewDidLoad() {
+        headerTitle = "Send to Boox"
         super.viewDidLoad()
-        title = "Send to Boox"
-        navigationItem.largeTitleDisplayMode = .never
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     }
 

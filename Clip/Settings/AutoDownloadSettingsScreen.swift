@@ -5,12 +5,13 @@
 
 import ClipReadingListUI
 import ClipMediaDownload
+import ClipDesignSystem
 import UIKit
 
 /// Per-platform toggles to auto-save a saved post's media to the photo library.
 /// Turning a toggle on first requires Photos add permission — flipping it prompts,
 /// and reverts if access is denied.
-final class AutoDownloadSettingsScreen: UITableViewController {
+final class AutoDownloadSettingsScreen: NavHeaderTableController {
 
     private let platforms = AutoDownloadSettings.platforms
     private let saver = PhotoLibrarySaver()
@@ -19,9 +20,8 @@ final class AutoDownloadSettingsScreen: UITableViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Auto-Download Media"
         super.viewDidLoad()
-        title = "Auto-Download Media"
-        navigationItem.largeTitleDisplayMode = .never
     }
 
     // Section 0: the master "Auto-download media" switch (the action extension's

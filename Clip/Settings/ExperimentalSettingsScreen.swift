@@ -13,7 +13,7 @@ import ClipContentRendering
 
 /// Experimental features, off by default: on-device semantic sharing
 /// suggestions, and YouTube integration (sign-in, playlist, auto-add).
-final class ExperimentalSettingsScreen: UITableViewController {
+final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
         case rabbitHole, semantic, paywallStrategies, archiveOverlay, dotMatrix, frostedGlass, jellystone, quartz, youtube
@@ -39,9 +39,8 @@ final class ExperimentalSettingsScreen: UITableViewController {
     #endif
 
     override func viewDidLoad() {
+        headerTitle = "Experimental"
         super.viewDidLoad()
-        title = "Experimental"
-        navigationItem.largeTitleDisplayMode = .never
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }

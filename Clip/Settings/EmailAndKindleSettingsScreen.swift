@@ -7,12 +7,13 @@ import ClipReadingListUI
 import ClipReadingList
 import ClipMail
 import ClipSend
+import ClipDesignSystem
 import UIKit
 
 /// Combined Email & Kindle settings. One Gmail account (app password) powers
 /// both outgoing Send-to-Kindle and incoming email import. Three sections:
 /// the shared email account, Send-to-Kindle, and Import-from-Email.
-final class EmailAndKindleSettingsScreen: UITableViewController {
+final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable { case account, kindle, importMail, subjectFilters }
 
@@ -30,9 +31,8 @@ final class EmailAndKindleSettingsScreen: UITableViewController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        headerTitle = "Email & Kindle"
         super.viewDidLoad()
-        title = "Email & Kindle"
-        navigationItem.largeTitleDisplayMode = .never
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     }
 

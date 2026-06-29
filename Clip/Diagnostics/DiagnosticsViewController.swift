@@ -13,7 +13,10 @@ import UIKit
 final class DiagnosticsViewController: UIViewController {
 
     private let log: DiagnosticLogging
-    private let textView = UITextView()
+    /// Internal (not private) so the layout-sanity test can assert it's on-screen —
+    /// the log content itself (live timestamps) isn't pixel-stable, so this screen is
+    /// covered by a layout assertion rather than a snapshot.
+    let textView = UITextView()
     /// In-content header in place of the nav bar, so it's part of the Dot Matrix wipe.
     private let header = NavHeaderBar()
 

@@ -141,7 +141,7 @@ public final class ReadingListIngestor {
         }
         let resolvedContent = await ArticleImageDownloader.download(
             content, itemID: item.id, store: store, refererURL: url)
-        let coverData = await fetchCoverImageData(html: html, baseURL: url)
+        let coverData = await ArticleCoverThumbnail.coverImageData(html: html, baseURL: url)
         // Persist reader content and flip the row to `.ready` FIRST — the reader is the
         // primary artifact and must not wait on the (up-to-20s) web-archive capture, or
         // a time-bounded save intent (e.g. the Kindle double-press) could miss its
@@ -330,19 +330,6 @@ public final class ReadingListIngestor {
         return data
     }
 
-    /// Downloads an article's cover image (og:image / twitter:image) with a short
-    /// timeout. Returns nil on any failure — the row then shows no thumbnail.
-    private func fetchCoverImageData(html: String, baseURL: URL) async -> Data? {
-        guard let imageURL = LeadImageExtractor.imageURL(in: html, baseURL: baseURL) else { return nil }
-        var request = URLRequest(url: imageURL, timeoutInterval: 8)
-        request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              data.count > 512, data.count <= 5 * 1024 * 1024
-        else { return nil }
-        return data
-    }
-
     /// Document ingestion: parse the imported file (stored at
     /// `Articles/<id>-source.<type>`) into article content. Documents are
     /// Kindle-eligible, so the becameReady hook runs as for web articles.
@@ -442,6 +429,46 @@ public final class ReadingListIngestor {
             Task { await self.ingest(item) }
         }
         backfillMissingWebArchives()
+        backfillMissingThumbnails()
+    }
+
+    /// True while a thumbnail backfill pass is running, so overlapping
+    /// `ingestAllPending()` calls (launch + foreground + pull-to-refresh) don't run
+    /// duplicate cover fetches for the same items.
+    @MainActor private var isBackfillingThumbnails = false
+    /// Items whose thumbnail backfill was attempted-and-failed this session (no
+    /// resolvable cover), so an un-coverable page isn't re-fetched on every pass.
+    @MainActor private var thumbnailBackfillAttempted: Set<UUID> = []
+
+    /// Repairs every ready web article that has no row thumbnail — the action/share
+    /// extension persists article content WITHOUT fetching the page's cover image
+    /// (it's short-lived and sandbox-limited), so those rows arrive thumbnail-less
+    /// even though the in-app/App-Intent path always gets one. This runs in the app
+    /// process (full network) and brings them in line: a downloaded lead image is
+    /// reused as-is, otherwise the page's `og:image` is fetched once. Idempotent —
+    /// items that already have a thumbnail are skipped — so it also backfills any
+    /// historical rows saved before thumbnails existed.
+    public func backfillMissingThumbnails() {
+        Task { @MainActor in
+            guard !isBackfillingThumbnails else { return }
+            isBackfillingThumbnails = true
+            defer { isBackfillingThumbnails = false }
+
+            let candidates = store.items().filter { item in
+                item.state == .ready
+                    && item.thumbnailFileName == nil
+                    && item.platform == nil                       // videos/platforms own their thumbnail
+                    && item.priceTracker == nil                   // trackers own their image
+                    && item.sanitizedDocumentType == nil          // documents have no cover
+                    && !thumbnailBackfillAttempted.contains(item.id)
+                    && (item.url?.scheme?.hasPrefix("http") ?? false)  // excludes clipmail:// / clipdoc://
+            }
+            // Cap per pass so a large backlog can't fire a burst of cover fetches.
+            for item in candidates.prefix(12) {
+                thumbnailBackfillAttempted.insert(item.id)
+                await ArticleCoverThumbnail.backfillThumbnail(for: item, store: store)
+            }
+        }
     }
 
     /// True while a backfill pass is running, so overlapping `ingestAllPending()`

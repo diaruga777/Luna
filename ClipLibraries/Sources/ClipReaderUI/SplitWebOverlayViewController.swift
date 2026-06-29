@@ -20,7 +20,7 @@ import UIKit
 /// is the tapped link; tapping a link inside an embedded reader PUSHES the next page
 /// (the ✕ becomes a back chevron) rather than nesting another overlay. The pages
 /// render the linked page with the app reader when it's article-like, otherwise a
-/// themed web view; a floating glass header holds the close/back, mode switcher, and
+/// themed web view; a floating header holds the close/back, mode switcher, and
 /// save controls.
 ///
 /// All split motion is a single `progress` (0 = fully open, 1 = closed back onto the
@@ -51,7 +51,9 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
     private let topCover = UIView()
     private let card = UIView()
     private let cardShadow = UIView()
-    private let header = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+    // De-glassed (Task 3): a solid header fill over the card's solid background, so the
+    // Dot Matrix pixel-wipe captures it faithfully (a live blur could not be).
+    private let header = UIView()
     private let closeButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
     private let bottomChevron = UIButton(type: .system)
@@ -140,7 +142,7 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
         view.addSubview(card)
 
         setUpInnerNav()         // page navigation stack fills the card
-        configureHeader()       // glass header over the pages
+        configureHeader()       // solid header over the pages
         configureChevron()
     }
 
@@ -285,7 +287,7 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
         innerNav.setViewControllers([root], animated: false)
         innerNav.setNavigationBarHidden(true, animated: false)
         innerNav.delegate = self
-        // Our glass back button drives the stack; the edge-swipe would fight the
+        // Our header back button drives the stack; the edge-swipe would fight the
         // peek-drag dismissal, so it's disabled.
         innerNav.interactivePopGestureRecognizer?.isEnabled = false
         addChild(innerNav)
@@ -321,7 +323,7 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
     /// in the stack, and the mode switcher only when the top page is an article.
     private func syncHeaderToTopPage() {
         let isRoot = innerNav.viewControllers.count <= 1
-        closeButton.configuration = GlassStyle.circularButtonConfiguration(
+        closeButton.configuration = GlassStyle.solidCircularButtonConfiguration(
             symbol: isRoot ? "xmark" : "chevron.backward")
 
         let showsModes = topPage?.isArticle ?? false
@@ -340,15 +342,16 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
     // MARK: - Chrome
 
     private func configureHeader() {
+        header.backgroundColor = GlassStyle.solidBarColor
         header.clipsToBounds = true
         header.layer.cornerRadius = Self.cardCornerRadius
         header.layer.cornerCurve = .continuous
         header.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         card.addSubview(header)
 
-        closeButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "xmark")
+        closeButton.configuration = GlassStyle.solidCircularButtonConfiguration(symbol: "xmark")
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        header.contentView.addSubview(closeButton)
+        header.addSubview(closeButton)
 
         // Mode switcher (scroll / chunk / speed), shown only when the top page is
         // rendered with the app reader.
@@ -358,23 +361,21 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
         modeControl.selectedSegmentIndex = 0
         modeControl.isHidden = true
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
-        header.contentView.addSubview(modeControl)
+        header.addSubview(modeControl)
 
         if shareProvider != nil {
             saveButton.configuration = Self.saveButtonConfiguration(title: "Save")
             saveButton.tintColor = GlassStyle.readingAccent
             saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
-            header.contentView.addSubview(saveButton)
+            header.addSubview(saveButton)
         }
     }
 
-    /// The save button shows the word "Save" (then "Saved") in a glass capsule
+    /// The save button shows the word "Save" (then "Saved") in a de-glassed capsule
     /// rather than an icon, tinted with the reading accent.
     private static func saveButtonConfiguration(title: String) -> UIButton.Configuration {
-        var config: UIButton.Configuration = {
-            if #available(iOS 26.0, *) { return .glass() }
-            return .tinted()
-        }()
+        var config = UIButton.Configuration.filled()
+        config.baseBackgroundColor = GlassStyle.readingAccent.withAlphaComponent(0.16)
         config.title = title
         config.cornerStyle = .capsule
         config.baseForegroundColor = GlassStyle.readingAccent
@@ -415,7 +416,7 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
     }
 
     private func configureChevron() {
-        var config = GlassStyle.circularButtonConfiguration(symbol: "chevron.compact.down")
+        var config = GlassStyle.solidCircularButtonConfiguration(symbol: "chevron.compact.down")
         config.baseForegroundColor = GlassStyle.readingAccent   // blue icon
         bottomChevron.configuration = config
         bottomChevron.tintColor = GlassStyle.readingAccent

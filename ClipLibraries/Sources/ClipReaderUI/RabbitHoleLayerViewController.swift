@@ -50,7 +50,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private let shareProvider: ReaderShareProviding?
     private let gazeTrackerFactory: GazeTrackerFactory?
     private let layout: RabbitHoleLayout
-    /// Height of the floating glass header (focused layer only).
+    /// Height of the floating header (focused layer only).
     public static let headerHeight: CGFloat = 64
 
     private let spinner = DotMatrixSpinnerView()
@@ -68,7 +68,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private var webView: WKWebView?
 
     // Chrome (focused header + ancestor lips).
-    private let header = UIVisualEffectView(effect: GlassStyle.barEffect())
+    // De-glassed (Task 3): a solid header fill over the layer card's solid background,
+    // so the Dot Matrix pixel-wipe captures it faithfully (a live blur could not be).
+    private let header = UIView()
     private let backButton = UIButton(type: .system)
     private let modeControl = UISegmentedControl()
     private let audioButton = UIButton(type: .system)
@@ -136,7 +138,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// pre-create the next layer offscreen and a dive only sets content + frame.
     private var isConfigured = false
 
-    /// Creates a BLANK layer shell: its view loads and all chrome (the glass header,
+    /// Creates a BLANK layer shell: its view loads and all chrome (the header,
     /// buttons, lips, indent) is built immediately, but nothing is fetched or rendered
     /// until `configure(descriptor:preloadedContent:)`. The host pre-creates one of
     /// these offscreen so tapping a link never has to build a view controller.
@@ -234,39 +236,40 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     // MARK: - Chrome (header + lips)
 
     private func configureChrome() {
-        // Floating glass header (focused only): mode switcher + audio + save.
+        // Floating (de-glassed) header (focused only): mode switcher + audio + save.
+        header.backgroundColor = GlassStyle.solidBarColor
         header.clipsToBounds = true
         header.layer.cornerRadius = layout.cornerRadius
         header.layer.cornerCurve = .continuous
         header.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         view.addSubview(header)
 
-        backButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "chevron.backward", padding: 8)
+        backButton.configuration = GlassStyle.solidCircularButtonConfiguration(symbol: "chevron.backward", padding: 8)
         backButton.tintColor = GlassStyle.readingAccent
         backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
-        header.contentView.addSubview(backButton)
+        header.addSubview(backButton)
 
         rebuildModeSegments()
         modeControl.isHidden = true
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
-        header.contentView.addSubview(modeControl)
+        header.addSubview(modeControl)
 
-        audioButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "speaker.slash", padding: 8)
+        audioButton.configuration = GlassStyle.solidCircularButtonConfiguration(symbol: "speaker.slash", padding: 8)
         audioButton.tintColor = GlassStyle.readingAccent
         audioButton.addTarget(self, action: #selector(audioToggled), for: .touchUpInside)
-        header.contentView.addSubview(audioButton)
+        header.addSubview(audioButton)
 
         if shareProvider != nil {
             saveButton.configuration = Self.capsuleConfiguration(title: "Save")
             saveButton.tintColor = GlassStyle.readingAccent
             saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
-            header.contentView.addSubview(saveButton)
+            header.addSubview(saveButton)
 
-            shareButton.configuration = GlassStyle.circularButtonConfiguration(
+            shareButton.configuration = GlassStyle.solidCircularButtonConfiguration(
                 symbol: "square.and.arrow.up", padding: 8)
             shareButton.tintColor = GlassStyle.readingAccent
             shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
-            header.contentView.addSubview(shareButton)
+            header.addSubview(shareButton)
             updateSaveSlot()
         }
 
@@ -392,10 +395,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     }
 
     private static func capsuleConfiguration(title: String) -> UIButton.Configuration {
-        var config: UIButton.Configuration = {
-            if #available(iOS 26.0, *) { return .glass() }
-            return .tinted()
-        }()
+        var config = UIButton.Configuration.filled()
+        config.baseBackgroundColor = GlassStyle.readingAccent.withAlphaComponent(0.16)
         config.title = title
         config.cornerStyle = .capsule
         config.baseForegroundColor = GlassStyle.readingAccent
@@ -446,9 +447,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         if let index = orderedModes.firstIndex(of: mode) {
             modeControl.selectedSegmentIndex = index
         }
-        // Dissolve ONLY the content region (below the floating glass header) dot-by-dot from
+        // Dissolve ONLY the content region (below the floating header) dot-by-dot from
         // the old mode to the new one. The wipe is confined to the reader-child content rect
-        // via `region:`, so the glass header sitting at y:0..headerHeight never pixelates.
+        // via `region:`, so the header sitting at y:0..headerHeight never pixelates.
         // (Falls back to a plain crossfade when the pixel-wipe is off / unavailable.)
         let contentRegion = Self.contentWipeRegion(in: view.bounds)
         DotMatrixCrossfade.run(in: view, direction: .random, region: contentRegion) { [weak self] in
@@ -459,7 +460,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     }
 
     /// The sub-rect of the card the mode-switch wipe is confined to: everything BELOW the
-    /// floating glass header (which sits at `y: 0 ..< headerHeight`). Pure + testable so the
+    /// floating header (which sits at `y: 0 ..< headerHeight`). Pure + testable so the
     /// "header never pixelates" contract is pinned — the returned rect must never overlap the
     /// header band. Mirrors the reader-child content frame in `viewDidLayoutSubviews`.
     public static func contentWipeRegion(in bounds: CGRect) -> CGRect {

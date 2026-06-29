@@ -32,7 +32,7 @@ public final class ReaderViewController: UIViewController {
     /// Child readers fill the area below the (compact) nav bar, which holds the
     /// mode switcher as its title view (between Back and the audio toggle).
     private let contentContainer = UIView()
-    /// Hovering glass share button, bottom-right above the footer controls.
+    /// Hovering share button (de-glassed), bottom-right above the footer controls.
     private let floatingShareButton = UIButton(type: .system)
     /// Drives the share button's vertical position per mode so it clears each
     /// mode's footer: low in scroll (no footer), above the chunk footer in
@@ -56,15 +56,15 @@ public final class ReaderViewController: UIViewController {
 
     private let modeControl = UISegmentedControl()
     private let audioButton = UIButton(type: .system)
-    /// When true, the mode switcher + audio toggle render in an inline liquid-glass
-    /// header embedded DIRECTLY in the view (no UINavigationController). The host
-    /// (a catch-up card) rasterizes itself while rotating during a swipe, so the
-    /// glass renders once at identity scale and never balloons under the transform.
+    /// When true, the mode switcher + audio toggle render in an inline (de-glassed,
+    /// Task 3) header embedded DIRECTLY in the view (no UINavigationController). The
+    /// host (a catch-up card) sits on a solid background, so the bar uses a solid fill
+    /// rather than a live blur — which the Dot Matrix pixel-wipe could not capture.
     private let inlineControlsHeader: Bool
-    /// Optional line shown ABOVE the controls inside the single inline glass header
+    /// Optional line shown ABOVE the controls inside the single inline header
     /// (the catch-up card's date/sender) so the card needs no separate header strip.
     private let inlineHeaderSubtitle: String?
-    private let inlineHeader = UIVisualEffectView(effect: GlassStyle.barEffect())
+    private let inlineHeader = UIView()
 
     private static let baseModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp]
     private let availableModes: [ReadingListItem.ReaderMode]
@@ -137,17 +137,18 @@ public final class ReaderViewController: UIViewController {
 
         let contentTop: NSLayoutYAxisAnchor
         if inlineControlsHeader {
-            // Inline liquid-glass header. The card host rasterizes during its rotation
-            // so this glass never balloons under the transform.
+            // Inline (de-glassed) header on a solid card background — a solid fill,
+            // not a live blur, so the Dot Matrix pixel-wipe captures it faithfully.
             inlineHeader.translatesAutoresizingMaskIntoConstraints = false
+            inlineHeader.backgroundColor = GlassStyle.solidBarColor
             view.addSubview(inlineHeader)
-            audioButton.configuration = GlassStyle.circularButtonConfiguration(
+            audioButton.configuration = GlassStyle.solidCircularButtonConfiguration(
                 symbol: audioOn ? "speaker.wave.2.fill" : "speaker.slash", padding: 8)
             audioButton.tintColor = GlassStyle.readingAccent
             modeControl.translatesAutoresizingMaskIntoConstraints = false
             audioButton.translatesAutoresizingMaskIntoConstraints = false
-            inlineHeader.contentView.addSubview(modeControl)
-            inlineHeader.contentView.addSubview(audioButton)
+            inlineHeader.addSubview(modeControl)
+            inlineHeader.addSubview(audioButton)
             var headerConstraints = [
                 inlineHeader.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
                 inlineHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -165,7 +166,7 @@ public final class ReaderViewController: UIViewController {
                 subtitleLabel.textColor = .secondaryLabel
                 subtitleLabel.textAlignment = .center
                 subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-                inlineHeader.contentView.addSubview(subtitleLabel)
+                inlineHeader.addSubview(subtitleLabel)
                 headerConstraints += [
                     inlineHeader.heightAnchor.constraint(equalToConstant: 80),
                     // Inset from the corners so it clears the card's Bump/Read pills.
@@ -186,9 +187,12 @@ public final class ReaderViewController: UIViewController {
             // Compact header: the mode switcher tucks into the nav bar between the
             // Back button and the audio toggle.
             navigationItem.titleView = modeControl
-            // Blurred material background even at the scroll edge.
+            // De-glassed (Task 3): an opaque solid background instead of the blurred
+            // material, so the bar reads consistently on the solid reader background and
+            // the Dot Matrix pixel-wipe captures it faithfully.
             let appearance = UINavigationBarAppearance()
-            appearance.configureWithDefaultBackground()
+            appearance.configureWithOpaqueBackground()
+            appearance.backgroundColor = .systemBackground
             navigationItem.standardAppearance = appearance
             navigationItem.scrollEdgeAppearance = appearance
             navigationItem.rightBarButtonItems = [UIBarButtonItem(customView: audioButton)]
@@ -202,7 +206,7 @@ public final class ReaderViewController: UIViewController {
             contentContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
-        // Share moved to a hovering glass circle, bottom-right (above the footer
+        // Share moved to a hovering circle (de-glassed), bottom-right (above the footer
         // controls). Shown whenever sharing is available (not in the share sheet).
         if shareProvider != nil {
             setUpFloatingShareButton()
@@ -215,7 +219,7 @@ public final class ReaderViewController: UIViewController {
     }
 
     private func setUpFloatingShareButton() {
-        floatingShareButton.configuration = GlassStyle.circularButtonConfiguration(
+        floatingShareButton.configuration = GlassStyle.solidCircularButtonConfiguration(
             symbol: "square.and.arrow.up", padding: 14)
         floatingShareButton.tintColor = GlassStyle.readingAccent
         floatingShareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
@@ -300,7 +304,7 @@ public final class ReaderViewController: UIViewController {
 
     private func updateAudioButton() {
         let symbol = UIImage(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash")
-        // The inline header uses a glass `Configuration` button; the nav-bar header a
+        // The inline header uses a filled `Configuration` button; the nav-bar header a
         // plain system button. Update whichever this instance has.
         if audioButton.configuration != nil {
             audioButton.configuration?.image = symbol

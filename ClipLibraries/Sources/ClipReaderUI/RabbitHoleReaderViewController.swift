@@ -153,7 +153,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // This reader draws its own per-layer glass header, so the shared nav bar must
+        // This reader draws its own per-layer (de-glassed) header, so the shared nav bar must
         // be hidden. Assert it on every appear (not just viewDidLoad) — the custom
         // Dot Matrix push runs viewWillAppear, and re-asserting here also clears any
         // leftover transform/alpha so a later restore lands on a clean bar.
@@ -256,7 +256,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     }
 
     /// Build a BLANK layer shell, wire its callbacks, and add it to the hierarchy so its
-    /// view loads and chrome (incl. the glass header) is built now — off the tap path.
+    /// view loads and chrome (incl. the header) is built now — off the tap path.
     private func makeLayerShell() -> RabbitHoleLayerViewController {
         let layer = RabbitHoleLayerViewController(
             shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory, layout: layout)
@@ -461,7 +461,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             // snapshot is stale (the dissolve would resolve to the *before* content
             // pixelated). This runs on the next runloop, off the tap's critical path.
             // The focused header is left VISIBLE in the after capture (afterScreenUpdates:true
-            // renders the glass blur faithfully), so the dissolve resolves straight to the
+            // renders the solid header faithfully), so the dissolve resolves straight to the
             // final header — there's no headerless frame to blink before it reappears.
             // When `region` is set both snapshots are that-rect-sized so they align to the
             // region-framed overlay.
@@ -556,7 +556,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         let dying = layers[topIndex]
         applyFocus(focusedIndex: topIndex - 1, hiding: dying)
         // The parent's header stays VISIBLE in the after capture (afterScreenUpdates:true
-        // renders the glass blur faithfully), so as the finger drives the wipe the header
+        // renders the solid header faithfully), so as the finger drives the wipe the header
         // dissolves in proportionally along with the rest of the content — instead of being
         // absent and snapping in only on commit.
         view.layoutIfNeeded()

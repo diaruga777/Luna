@@ -44,6 +44,22 @@ final class CatchUpViewController: UIViewController {
     private let primaryButton = UIButton(type: .system)    // Bump / Keep
     private let secondaryButton = UIButton(type: .system)  // Mark Read / Delete All / Done
 
+    /// A snapshot of the bottom button row's configuration for one card, used to decide
+    /// whether the row actually CHANGED between consecutive cards — if it's identical
+    /// (same titles / fills / enabled state) the row is left untouched (no dotmatrix);
+    /// only a genuine change gets the pixel wipe.
+    private struct ButtonRowDescriptor: Equatable {
+        var primaryTitle: String
+        var primaryFilled: Bool
+        var secondaryTitle: String
+        var secondaryFilled: Bool
+        var secondaryDestructive: Bool
+        var singleFullWidth: Bool
+    }
+    /// The descriptor last APPLIED to the button row (nil before the first card). Drives
+    /// the "did the buttons change?" diff for the cards-phase row wipe.
+    private var appliedButtonRow: ButtonRowDescriptor?
+
     /// Set when the full price-tracking editor is presented over this screen; on the
     /// next `viewDidAppear` the current card is rebuilt so its threshold readout
     /// reflects any edit (the editor dismisses programmatically, so there's no
@@ -444,9 +460,8 @@ final class CatchUpViewController: UIViewController {
             ])
             deleteReadView = prompt
         } else {
-            phase = .done
-            messageView.show(symbol: "checkmark.circle.fill", tint: GlassStyle.readingAccent, text: "All done!")
-            messageView.isHidden = false
+            enterDonePhase()
+            return
         }
         updateChrome()
     }
@@ -465,6 +480,7 @@ final class CatchUpViewController: UIViewController {
 
     private func updateChrome() {
         secondaryButton.isEnabled = true   // reset (delete-prompt may disable it)
+        let row: ButtonRowDescriptor
         switch phase {
         case .cards:
             let locked = currentItem?.state == .needsCaptcha
@@ -473,36 +489,83 @@ final class CatchUpViewController: UIViewController {
             rightButton.setTitle(nil, for: .normal)
             rightButton.setImage(UIImage(systemName: "square.and.arrow.up"), for: .normal)
             rightButton.isHidden = false
-            // Locked cards: left action is Unlock (not Keep); Bump is disabled.
-            styleButton(primaryButton, title: locked ? "Unlock" : "Keep", filled: false)
-            styleButton(secondaryButton, title: "Archive", filled: true)
             simBumpButton?.isEnabled = !locked
-            setBottomButtons(hidden: false, singleFullWidth: false)
+            // Locked cards: left action is Unlock (not Keep); Bump is disabled.
+            row = ButtonRowDescriptor(
+                primaryTitle: locked ? "Unlock" : "Keep", primaryFilled: false,
+                secondaryTitle: "Archive", secondaryFilled: true,
+                secondaryDestructive: false, singleFullWidth: false)
         case .voicePrompt:
             titleLabel.text = nil
             leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
             rightButton.setImage(nil, for: .normal)
             rightButton.setTitle(nil, for: .normal)
             rightButton.isHidden = true
-            styleButton(primaryButton, title: "Not Now", filled: false)
-            styleButton(secondaryButton, title: "Install Voices", filled: true)
-            setBottomButtons(hidden: false, singleFullWidth: false)
+            row = ButtonRowDescriptor(
+                primaryTitle: "Not Now", primaryFilled: false,
+                secondaryTitle: "Install Voices", secondaryFilled: true,
+                secondaryDestructive: false, singleFullWidth: false)
         case .deletePrompt:
             titleLabel.text = nil   // the prompt view carries its own title
             leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
             rightButton.isHidden = true
-            styleButton(primaryButton, title: "Keep", filled: false)
-            styleButton(secondaryButton, title: "Delete All", filled: true, destructive: true)
-            setBottomButtons(hidden: false, singleFullWidth: false)
+            row = ButtonRowDescriptor(
+                primaryTitle: "Keep", primaryFilled: false,
+                secondaryTitle: "Delete All", secondaryFilled: true,
+                secondaryDestructive: true, singleFullWidth: false)
         case .done:
             titleLabel.text = nil
             leftButton.setImage(UIImage(systemName: "xmark"), for: .normal)
             rightButton.setImage(nil, for: .normal)
             rightButton.setTitle("Undo", for: .normal)
             rightButton.isHidden = false
-            styleButton(secondaryButton, title: "Done", filled: true)
-            setBottomButtons(hidden: false, singleFullWidth: true)
+            row = ButtonRowDescriptor(
+                primaryTitle: "", primaryFilled: false,
+                secondaryTitle: "Done", secondaryFilled: true,
+                secondaryDestructive: false, singleFullWidth: true)
         }
+        applyButtonRow(row)
+    }
+
+    /// Applies a button-row descriptor, restyling the bottom buttons. When the row is
+    /// genuinely DIFFERENT from the one already on screen (and a row was previously
+    /// shown), the restyle plays a dotmatrix wipe confined to just the buttons' region;
+    /// when it's unchanged the buttons are left exactly as they are (no animation, no
+    /// flicker). The very first row is applied directly (nothing to wipe from).
+    private func applyButtonRow(_ row: ButtonRowDescriptor) {
+        let previous = appliedButtonRow
+        appliedButtonRow = row
+        guard previous != row else { return }   // identical buttons → leave them put
+
+        let restyle = { [self] in
+            if !row.singleFullWidth {
+                styleButton(primaryButton, title: row.primaryTitle, filled: row.primaryFilled)
+            }
+            styleButton(
+                secondaryButton, title: row.secondaryTitle,
+                filled: row.secondaryFilled, destructive: row.secondaryDestructive)
+            setBottomButtons(hidden: false, singleFullWidth: row.singleFullWidth)
+        }
+
+        // First row, no window yet, or a layout/visibility change (single↔split width)
+        // ⇒ apply directly. A like-for-like content change inside the cards flow gets the
+        // scoped pixel wipe over just the button region.
+        let canWipe = previous != nil
+            && view.window != nil
+            && previous?.singleFullWidth == row.singleFullWidth
+        guard canWipe else { restyle(); return }
+
+        DotMatrixCrossfade.run(in: view, region: buttonRowRegion(), changes: restyle)
+    }
+
+    /// The bounding rect (in `view`'s coordinate space) enclosing both bottom buttons —
+    /// the sub-region the button-row dotmatrix wipe is confined to, so nothing else on
+    /// screen pixelates. Padded slightly so the buttons' shadows/corners are covered.
+    private func buttonRowRegion() -> CGRect {
+        view.layoutIfNeeded()
+        var rect = secondaryButton.frame
+        if !primaryButton.isHidden { rect = rect.union(primaryButton.frame) }
+        return rect.insetBy(dx: -6, dy: -6)
     }
 
     private func styleButton(_ button: UIButton, title: String, filled: Bool, destructive: Bool = false) {
@@ -559,12 +622,29 @@ final class CatchUpViewController: UIViewController {
     }
 
     private func transitionToDone() {
-        phase = .done
-        deleteReadView?.removeFromSuperview()
-        deleteReadView = nil
-        messageView.show(symbol: "checkmark.circle.fill", tint: GlassStyle.readingAccent, text: "All done!")
-        messageView.isHidden = false
-        updateChrome()
+        enterDonePhase()
+    }
+
+    /// Moves into the terminal "All done!" page. The whole triage surface (the current
+    /// card or the delete prompt) dotmatrix-dissolves into the done message + its chrome,
+    /// so finishing a catch-up reads as one pixel wipe rather than an abrupt swap.
+    ///
+    /// Task 9: the All Done page's checkmark/auto-dismiss lives here. Add the animated
+    /// checkmark + auto-dismiss in the `completion` (after the wipe lands the done state
+    /// is fully on screen). `messageView` is the surface to animate; `commitAndClose()`
+    /// is the dismiss path.
+    private func enterDonePhase() {
+        let applyDoneState = { [self] in
+            phase = .done
+            deleteReadView?.removeFromSuperview()
+            deleteReadView = nil
+            tearDownCurrentCard()
+            messageView.show(
+                symbol: "checkmark.circle.fill", tint: GlassStyle.readingAccent, text: "All done!")
+            messageView.isHidden = false
+            updateChrome()
+        }
+        DotMatrixCrossfade.run(in: view, changes: applyDoneState)
     }
 
     @objc private func leftTapped() {

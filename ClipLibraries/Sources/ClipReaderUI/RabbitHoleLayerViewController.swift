@@ -439,18 +439,13 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     public func setMode(_ mode: ReadingListItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }
-        // The segment that WAS selected (the old mode) — captured before `readerMode`
-        // moves so the control's own pixel-wipe knows where to dissolve from.
-        let previousIndex = orderedModes.firstIndex(of: readerMode) ?? modeControl.selectedSegmentIndex
         // Keep the control's live selection on the new mode (it's already there when this
         // came from `modeChanged`; a no-op then, but needed for programmatic mode changes).
+        // The control's OWN selection move uses UIKit's stock selection animation — no
+        // dotmatrix pixel-wipe on the control widget itself; only the content below it wipes.
         if let index = orderedModes.firstIndex(of: mode) {
             modeControl.selectedSegmentIndex = index
         }
-        // Pixel-wipe the mode switcher's OWN selection move (the indicator dissolves
-        // dot-by-dot). Scoped to the control — the floating glass header that hosts it is a
-        // separate view and is never snapshotted, so the header stays stable.
-        DotMatrixSegmentedControl.animateSelectionChange(modeControl, from: previousIndex)
         // Dissolve ONLY the content region (below the floating glass header) dot-by-dot from
         // the old mode to the new one. The wipe is confined to the reader-child content rect
         // via `region:`, so the glass header sitting at y:0..headerHeight never pixelates.

@@ -435,17 +435,12 @@ final class ReadingListViewController: UITableViewController {
 
     @objc private func filterChanged(_ control: UISegmentedControl) {
         let filters = visibleFilters()
-        // The previously-selected segment, derived from the still-current filter before we
-        // reassign it — `.valueChanged` fires after the selection has already moved.
-        let previousIndex = filters.firstIndex(of: filter) ?? control.selectedSegmentIndex
         let index = control.selectedSegmentIndex
         filter = (index >= 0 && index < filters.count) ? filters[index] : .all
 
-        // The segmented control's OWN selection move plays the 3-phase pixel-wipe
-        // (pixelate prior segment → move the dot cloud → unpixelate at the new segment).
-        // Scoped to the control — the large "Reading List" title lives in the nav bar and
-        // is untouched.
-        DotMatrixSegmentedControl.animateSelectionChange(control, from: previousIndex)
+        // The segmented control's OWN selection move uses UIKit's stock selection
+        // animation — no dotmatrix pixel-wipe on the control widget itself. Only the list
+        // content it filters animates (the diff-driven wipe below).
 
         // The list body: diff the OLD vs NEW grouped models by item id and animate ONLY
         // the rows that appear/disappear/move, pixel-wiping just the union rect of those

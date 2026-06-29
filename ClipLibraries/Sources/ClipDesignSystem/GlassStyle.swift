@@ -52,14 +52,8 @@ public enum GlassStyle {
         return panel
     }
 
-    /// A capsule glass configuration for circular floating buttons. The glyph is
-    /// rendered in the dot-matrix style by default; pass `dotMatrix: false` for a
-    /// plain SF Symbol (e.g. when a caller needs `preferredSymbolConfigurationForImage`
-    /// to size it).
-    public static func circularButtonConfiguration(
-        symbol: String, padding: CGFloat = 10,
-        dotMatrix: Bool = true, dotPointSize: CGFloat = 22
-    ) -> UIButton.Configuration {
+    /// A capsule glass configuration for circular floating buttons.
+    public static func circularButtonConfiguration(symbol: String, padding: CGFloat = 10) -> UIButton.Configuration {
         var config: UIButton.Configuration
         if #available(iOS 26.0, *) {
             config = .glass()
@@ -67,9 +61,7 @@ public enum GlassStyle {
             config = .filled()
             config.baseBackgroundColor = .secondarySystemBackground
         }
-        config.image = dotMatrix
-            ? UIImage.dotMatrixIcon(systemName: symbol, pointSize: dotPointSize)
-            : UIImage(systemName: symbol)
+        config.image = UIImage(systemName: symbol)
         config.cornerStyle = .capsule
         config.baseForegroundColor = .label
         config.contentInsets = NSDirectionalEdgeInsets(

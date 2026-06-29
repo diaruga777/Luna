@@ -444,7 +444,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
         func footerButton(_ symbol: String, action: Selector, pointSize: CGFloat = 20) -> UIButton {
             var config = UIButton.Configuration.plain()
-            config.image = UIImage.dotMatrixIcon(systemName: symbol, pointSize: pointSize)
+            config.image = UIImage(systemName: symbol)
+            config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: pointSize)
             let button = UIButton(configuration: config)
             button.addTarget(self, action: action, for: .touchUpInside)
             return button
@@ -453,7 +454,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let back = footerButton("backward.frame.fill", action: #selector(skipBack))
         footerPlayButton.configuration = {
             var config = UIButton.Configuration.plain()
-            config.image = UIImage.dotMatrixIcon(systemName: "pause.fill", pointSize: 26)
+            config.image = UIImage(systemName: "pause.fill")
+            config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 26)
             return config
         }()
         footerPlayButton.addTarget(self, action: #selector(togglePlayback), for: .touchUpInside)
@@ -849,7 +851,7 @@ extension ScrollReaderViewController: SpeechControllerDelegate {
 
     public func speechPlaybackStateDidChange(_ controller: SpeechController) {
         let icon = controller.isPlaying ? "pause.fill" : "play.fill"
-        footerPlayButton.configuration?.image = UIImage.dotMatrixIcon(systemName: icon, pointSize: 26)
+        footerPlayButton.configuration?.image = UIImage(systemName: icon)
         let factor = controller.rateFactor
         footerRateButton.setTitle(
             factor == 1.0 ? "1×" : String(format: "%.1f×", factor), for: .normal)
@@ -861,7 +863,7 @@ extension ScrollReaderViewController: SpeechControllerDelegate {
     public func speechDidFinishArticle(_ controller: SpeechController) {
         didFinishReading = true
         onFinishedReading?()
-        footerPlayButton.configuration?.image = UIImage.dotMatrixIcon(systemName: "play.fill", pointSize: 26)
+        footerPlayButton.configuration?.image = UIImage(systemName: "play.fill")
         removeHighlight()
     }
 }

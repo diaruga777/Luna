@@ -446,7 +446,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     private func configureControls() {
         var playConfig = GlassStyle.circularButtonConfiguration(symbol: "play.fill", padding: 16)
-        playConfig.image = UIImage.dotMatrixIcon(systemName: "play.fill", pointSize: 28)
+        playConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 28)
         playPauseButton.configuration = playConfig
         playPauseButton.accessibilityLabel = "Play"
         playPauseButton.addTarget(self, action: #selector(togglePlayPause), for: .touchUpInside)
@@ -461,12 +461,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         statusLabel.textColor = .secondaryLabel
         statusLabel.textAlignment = .center
 
-        // Tortoise/hare are intricate glyphs that read as mush at this small size,
-        // so keep them as crisp SF Symbols (the play/skip controls carry the dots).
-        wpmDownButton.configuration = GlassStyle.circularButtonConfiguration(
-            symbol: "tortoise.fill", padding: 18, dotMatrix: false)
-        wpmUpButton.configuration = GlassStyle.circularButtonConfiguration(
-            symbol: "hare.fill", padding: 18, dotMatrix: false)
+        wpmDownButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "tortoise.fill", padding: 18)
+        wpmUpButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "hare.fill", padding: 18)
         let paceSymbolSize = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
         wpmDownButton.configuration?.preferredSymbolConfigurationForImage = paceSymbolSize
         wpmUpButton.configuration?.preferredSymbolConfigurationForImage = paceSymbolSize
@@ -477,10 +473,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         wpmDownButton.addTarget(self, action: #selector(wpmDown), for: .touchUpInside)
         wpmUpButton.addTarget(self, action: #selector(wpmUp), for: .touchUpInside)
 
-        skipBackButton.configuration = GlassStyle.circularButtonConfiguration(
-            symbol: "backward.fill", padding: 12, dotPointSize: 19)
-        skipForwardButton.configuration = GlassStyle.circularButtonConfiguration(
-            symbol: "forward.fill", padding: 12, dotPointSize: 19)
+        var skipBackConfig = GlassStyle.circularButtonConfiguration(symbol: "backward.fill", padding: 12)
+        skipBackConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 19)
+        skipBackButton.configuration = skipBackConfig
+        var skipForwardConfig = GlassStyle.circularButtonConfiguration(symbol: "forward.fill", padding: 12)
+        skipForwardConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 19)
+        skipForwardButton.configuration = skipForwardConfig
         skipBackButton.accessibilityLabel = "Skip back 25 words"
         skipForwardButton.accessibilityLabel = "Skip forward 25 words"
         skipBackButton.addTarget(self, action: #selector(skipBack), for: .touchUpInside)
@@ -714,7 +712,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             currentChunkIndex = 0
         }
         isPlaying = true
-        playPauseButton.configuration?.image = UIImage.dotMatrixIcon(systemName: "pause.fill", pointSize: 28)
+        playPauseButton.configuration?.image = UIImage(systemName: "pause.fill")
         playPauseButton.accessibilityLabel = "Pause"
         updateContextVisibility(animated: true, duration: 0.05)
         if isSpeechMode {
@@ -737,7 +735,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             synthesizer.stopSpeaking(at: .immediate)
             deactivateAudioSession()
         }
-        playPauseButton.configuration?.image = UIImage.dotMatrixIcon(systemName: "play.fill", pointSize: 28)
+        playPauseButton.configuration?.image = UIImage(systemName: "play.fill")
         playPauseButton.accessibilityLabel = "Play"
         updateContextVisibility(animated: true, duration: 0.2)
         refreshDisplay()

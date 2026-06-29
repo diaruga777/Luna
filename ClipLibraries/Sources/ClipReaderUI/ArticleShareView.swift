@@ -43,7 +43,7 @@ public final class ArticleShareView: UIView {
 
         var shareConfig = UIButton.Configuration.filled()
         shareConfig.title = "Share"
-        shareConfig.image = UIImage.dotMatrixIcon(systemName: "square.and.arrow.up", pointSize: 18)
+        shareConfig.image = UIImage(systemName: "square.and.arrow.up")
         shareConfig.imagePadding = 8
         shareConfig.baseBackgroundColor = GlassStyle.readingAccent
         shareConfig.cornerStyle = .large
@@ -62,7 +62,7 @@ public final class ArticleShareView: UIView {
         if let suggestionName {
             var suggestConfig = UIButton.Configuration.tinted()
             suggestConfig.title = "Send to \(suggestionName)"
-            suggestConfig.image = UIImage.dotMatrixIcon(systemName: "person.fill", pointSize: 18)
+            suggestConfig.image = UIImage(systemName: "person.fill")
             suggestConfig.imagePadding = 8
             suggestConfig.baseForegroundColor = GlassStyle.readingAccent
             suggestConfig.baseBackgroundColor = GlassStyle.readingAccent
@@ -94,7 +94,8 @@ public final class ArticleShareView: UIView {
     private func makeShareRow(shareButton: UIButton) -> UIView {
         let bugButton = UIButton(type: .system)
         bugButton.setImage(
-            UIImage.dotMatrixIcon(systemName: "ladybug", pointSize: 18, weight: .regular),
+            UIImage(systemName: "ladybug",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)),
             for: .normal)
         bugButton.tintColor = .secondaryLabel
         bugButton.accessibilityLabel = "Report a bug"

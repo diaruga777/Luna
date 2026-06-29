@@ -3,7 +3,6 @@
 //  Clip
 //
 
-import ClipDesignSystem
 import ClipSocial
 import CoreImage
 import UIKit
@@ -172,7 +171,7 @@ public final class FriendsViewController: UITableViewController, UITextFieldDele
             case .scan:
                 content.text = "Scan Friend Code"
                 content.textProperties.color = view.tintColor ?? .systemBlue
-                content.image = UIImage.dotMatrixIcon(systemName: "qrcode.viewfinder", pointSize: 20)
+                content.image = UIImage(systemName: "qrcode.viewfinder")
             case .username:
                 return makeProfileFieldCell(
                     label: "Username", text: identity?.username ?? "", field: .username)
@@ -185,7 +184,7 @@ public final class FriendsViewController: UITableViewController, UITextFieldDele
             case .shareLink:
                 content.text = "Share My Link"
                 content.textProperties.color = view.tintColor ?? .systemBlue
-                content.image = UIImage.dotMatrixIcon(systemName: "square.and.arrow.up", pointSize: 20)
+                content.image = UIImage(systemName: "square.and.arrow.up")
             }
 
         case .friends:
@@ -207,7 +206,7 @@ public final class FriendsViewController: UITableViewController, UITextFieldDele
                 content.secondaryText = details.joined(separator: " · ")
                 content.secondaryTextProperties.color = .secondaryLabel
                 content.secondaryTextProperties.numberOfLines = 2
-                content.image = UIImage.dotMatrixIcon(systemName: "person.circle", pointSize: 20)
+                content.image = UIImage(systemName: "person.circle")
                 cell.accessoryType = .disclosureIndicator
             }
         }

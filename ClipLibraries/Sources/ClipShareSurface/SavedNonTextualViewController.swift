@@ -247,7 +247,7 @@ public final class SavedNonTextualViewController: UIViewController, UITableViewD
 
         var dlConfig = UIButton.Configuration.filled()
         dlConfig.title = "Download media"
-        dlConfig.image = UIImage.dotMatrixIcon(systemName: "arrow.down.circle", pointSize: 18)
+        dlConfig.image = UIImage(systemName: "arrow.down.circle")
         dlConfig.imagePadding = 8
         dlConfig.baseBackgroundColor = GlassStyle.readingAccent
         downloadButton.configuration = dlConfig
@@ -256,7 +256,7 @@ public final class SavedNonTextualViewController: UIViewController, UITableViewD
 
         var saveConfig = UIButton.Configuration.tinted()
         saveConfig.title = "Save to Photos"
-        saveConfig.image = UIImage.dotMatrixIcon(systemName: "photo.badge.arrow.down", pointSize: 18)
+        saveConfig.image = UIImage(systemName: "photo.badge.arrow.down")
         saveConfig.imagePadding = 8
         saveConfig.baseForegroundColor = GlassStyle.readingAccent
         saveButton.configuration = saveConfig

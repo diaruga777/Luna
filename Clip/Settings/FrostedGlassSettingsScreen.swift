@@ -3,7 +3,6 @@
 //  Clip
 //
 
-import ClipDesignSystem
 import ClipReadingListUI
 import UIKit
 import PhotosUI
@@ -280,8 +279,8 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
 
     // MARK: Cell builders
 
-    private func makeToggle(isOn: Bool, action: Selector) -> DotMatrixSwitch {
-        let toggle = DotMatrixSwitch()
+    private func makeToggle(isOn: Bool, action: Selector) -> UISwitch {
+        let toggle = UISwitch()
         toggle.isOn = isOn
         toggle.addTarget(self, action: action, for: .valueChanged)
         return toggle
@@ -359,7 +358,7 @@ final class FrostedGlassSettingsScreen: UIViewController, UITableViewDataSource,
         return cell
     }
 
-    @objc private func additiveGlowToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func additiveGlowToggled(_ toggle: UISwitch) {
         FrostedGlassSettings.additiveGlow = toggle.isOn
         settingsChanged()
     }

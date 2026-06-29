@@ -161,7 +161,7 @@ final class RabbitHoleTransitionSettingsScreen: UITableViewController {
         return cell
     }
 
-    @objc private func monochromeToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func monochromeToggled(_ toggle: UISwitch) {
         DotMatrixTransitionSettings.monochrome = toggle.isOn
     }
 

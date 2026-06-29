@@ -14,8 +14,8 @@ import UIKit
 
 /// Shared helpers for the settings subpages.
 extension UITableViewController {
-    func makeToggle(isOn: Bool, action: Selector) -> DotMatrixSwitch {
-        let toggle = DotMatrixSwitch()
+    func makeToggle(isOn: Bool, action: Selector) -> UISwitch {
+        let toggle = UISwitch()
         toggle.isOn = isOn
         toggle.addTarget(self, action: action, for: .valueChanged)
         return toggle
@@ -77,11 +77,11 @@ final class SettingsViewController: UITableViewController {
         if indexPath.section == 0 {
             let category = categories[indexPath.row]
             content.text = category.title
-            content.image = UIImage.dotMatrixIcon(systemName: category.symbol, pointSize: 20)
+            content.image = UIImage(systemName: category.symbol)
             cell.accessoryType = .disclosureIndicator
         } else {
             content.text = "Replay Onboarding"
-            content.image = UIImage.dotMatrixIcon(systemName: "sparkles", pointSize: 20)
+            content.image = UIImage(systemName: "sparkles")
         }
         cell.contentConfiguration = content
         return cell
@@ -215,7 +215,7 @@ final class ReaderSettingsScreen: UITableViewController {
         wpmLabel.text = "\(Int(rounded)) wpm"
     }
 
-    @objc private func serifToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func serifToggled(_ toggle: UISwitch) {
         ReaderSettings.useSerifFont = toggle.isOn
     }
 
@@ -292,12 +292,12 @@ final class ReadingListSettingsScreen: UITableViewController {
         return cell
     }
 
-    @objc private func readingTimeToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func readingTimeToggled(_ toggle: UISwitch) {
         ReaderSettings.showReadingTime = toggle.isOn
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
     }
 
-    @objc private func progressToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func progressToggled(_ toggle: UISwitch) {
         ReaderSettings.showReadingProgress = toggle.isOn
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
     }
@@ -360,12 +360,12 @@ final class EyeTrackingSettingsScreen: UITableViewController {
         return cell
     }
 
-    @objc private func eyeTrackingToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func eyeTrackingToggled(_ toggle: UISwitch) {
         ReaderSettings.eyeTrackingEnabled = toggle.isOn
         if !toggle.isOn { ReadingListStore.shared.clearAllEyeTracking() }
     }
 
-    @objc private func highlightToggled(_ toggle: DotMatrixSwitch) {
+    @objc private func highlightToggled(_ toggle: UISwitch) {
         ReaderSettings.highlightGazeWord = toggle.isOn
     }
 }

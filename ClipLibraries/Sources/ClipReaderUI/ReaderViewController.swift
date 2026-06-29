@@ -303,7 +303,7 @@ public final class ReaderViewController: UIViewController {
     }
 
     private func updateAudioButton() {
-        let symbol = UIImage.dotMatrixIcon(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash")
+        let symbol = UIImage(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash")
         // The inline header uses a glass `Configuration` button; the nav-bar header a
         // plain system button. Update whichever this instance has.
         if audioButton.configuration != nil {

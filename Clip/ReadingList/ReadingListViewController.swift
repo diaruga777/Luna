@@ -507,8 +507,7 @@ final class ReadingListViewController: UITableViewController {
 
     private func configureCatchUpButton() {
         catchUpButton.setImage(
-            UIImage(systemName: "rectangle.stack",
-                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)),
+            UIImage.dotMatrixIcon(systemName: "rectangle.stack", pointSize: 22, weight: .semibold),
             for: .normal)
         // Same color as the other nav-bar buttons (white in dark, black in light);
         // only the unread dot is red.
@@ -615,16 +614,18 @@ final class ReadingListViewController: UITableViewController {
     private func setDefaultNavItems() {
         navigationItem.leftBarButtonItems = [
             UIBarButtonItem(
-                image: UIImage(systemName: "gearshape"), style: .plain,
+                dotMatrixSystemName: "gearshape",
                 target: self, action: #selector(settingsTapped)),
             UIBarButtonItem(
-                image: UIImage(systemName: "person.2"), style: .plain,
+                dotMatrixSystemName: "person.2",
                 target: self, action: #selector(friendsTapped)),
         ]
         navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
             UIBarButtonItem(
-                image: UIImage(systemName: "magnifyingglass"), style: .plain,
+                dotMatrixSystemName: "plus", pointSize: 20,
+                target: self, action: #selector(addTapped)),
+            UIBarButtonItem(
+                dotMatrixSystemName: "magnifyingglass",
                 target: self, action: #selector(searchTapped)),
         ]
     }
@@ -725,7 +726,7 @@ final class ReadingListViewController: UITableViewController {
             let selectAll = UIBarButtonItem(
                 title: "Select All", style: .plain, target: self, action: #selector(selectAllTapped))
             let deleteSelected = UIBarButtonItem(
-                image: UIImage(systemName: "trash"), style: .plain,
+                image: UIImage.dotMatrixIcon(systemName: "trash"), style: .plain,
                 target: self, action: #selector(deleteSelectedTapped))
             deleteSelected.tintColor = .systemRed
             // Laid out right-to-left: Done, Select All, Delete Selected.

@@ -39,7 +39,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private let recorder: ReplayRecording
     private var replayID: UUID?
     private let webView: WKWebView
-    private let progress = UIActivityIndicatorView(style: .medium)
+    private let progress = DotMatrixSpinnerView()
     /// An opaque, themed cover (spinner) shown OVER the web view to hide the raw
     /// archive.today navigation (home page, form fill/submit, snapshot load). It's
     /// removed only while a CAPTCHA is up — the one moment the user must see and
@@ -49,7 +49,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// flow can't proceed (rate-limited, or the page can't be archived) the cover
     /// stays up and shows the message + an Open-in-Safari escape — not a popup.
     private let loadingOverlay = UIView()
-    private let overlaySpinner = UIActivityIndicatorView(style: .large)
+    private let overlaySpinner = DotMatrixSpinnerView(side: 36)
     private let overlayLabel = UILabel()
     /// An "Open in Safari" escape shown INSIDE the overlay alongside an error /
     /// guidance message. Hidden in extensions (no `UIApplication`).

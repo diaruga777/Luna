@@ -39,7 +39,7 @@ public final class ReadingListItemCell: UITableViewCell {
     private let subtitleLabel = UILabel()
     private let thumbContainer = UIView()
     private let thumbImageView = UIImageView()
-    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let spinner = DotMatrixSpinnerView()
     private let trailingButton = UIButton(type: .system)
     /// Simulator-only: a small bottom-left hit target that opens the row's
     /// context menu on a plain tap (the automation harness can't long-press).

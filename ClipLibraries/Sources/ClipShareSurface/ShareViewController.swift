@@ -36,7 +36,7 @@ public final class ShareViewController: UIViewController {
         return (nsExtension?["NSExtensionPointIdentifier"] as? String) == "com.apple.ui-services"
     }
 
-    private let spinner = UIActivityIndicatorView(style: .large)
+    private let spinner = DotMatrixSpinnerView(side: 36)
     private let statusLabel = UILabel()
     private let closeButton = UIButton(type: .system)
     /// The action extension owns one navigation context for its entire lifetime.
@@ -519,7 +519,7 @@ public final class ShareViewController: UIViewController {
         badge.layer.cornerCurve = .continuous
         badge.clipsToBounds = true
 
-        let spinner = UIActivityIndicatorView(style: .large)
+        let spinner = DotMatrixSpinnerView(side: 36)
         spinner.color = GlassStyle.readingAccent
         spinner.startAnimating()
         let label = UILabel()

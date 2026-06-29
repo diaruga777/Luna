@@ -50,7 +50,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// Height of the floating glass header (focused layer only).
     public static let headerHeight: CGFloat = 64
 
-    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let spinner = DotMatrixSpinnerView()
     /// Backstop so a page that never resolves (slow/hung fetch, web view that never
     /// fires didFinish) can't spin forever — see `armLoadWatchdog`.
     private var loadWatchdog: DispatchWorkItem?

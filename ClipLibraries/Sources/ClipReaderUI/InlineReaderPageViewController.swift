@@ -35,7 +35,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     /// mode switcher for this page).
     public var onBecameArticle: (() -> Void)?
 
-    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let spinner = DotMatrixSpinnerView()
     private var articleProbe: Task<Void, Never>?
     private var articleContent: ArticleContent?
     /// What the probe decided (reader vs raw web). Stashed because the probe is

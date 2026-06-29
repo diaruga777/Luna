@@ -48,7 +48,7 @@ public final class ShareReaderViewController: UIViewController {
     /// A pre-computed `Outcome` to present (the action extension already ran the
     /// shared `IngestPipeline`), or nil to run the pipeline itself on `viewDidLoad`.
     private let precomputedOutcome: Outcome?
-    private let spinner = UIActivityIndicatorView(style: .large)
+    private let spinner = DotMatrixSpinnerView(side: 36)
 
     public init(url: URL, mode: Mode, outcome: Outcome? = nil, onDone: @escaping () -> Void) {
         self.url = url

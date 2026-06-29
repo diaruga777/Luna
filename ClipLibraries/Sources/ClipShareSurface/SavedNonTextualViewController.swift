@@ -67,7 +67,7 @@ public final class SavedNonTextualViewController: UIViewController, UITableViewD
     // load-failure placeholder.
     private let previewContainer = UIView()
     private let previewImageView = UIImageView()
-    private let previewSpinner = UIActivityIndicatorView(style: .large)
+    private let previewSpinner = DotMatrixSpinnerView(side: 36)
     /// A large media icon shown in the pending state (before any download starts).
     private let pendingIconView = UIImageView()
     /// A YouTube-style play overlay shown when the downloaded media is a video.

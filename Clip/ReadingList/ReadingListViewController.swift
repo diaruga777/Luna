@@ -117,12 +117,31 @@ final class ReadingListViewController: UITableViewController {
     /// segments change — read cheaply on every layout pass by `applyFilterWidth`.
     private var filterNaturalWidth: CGFloat = 0
     private var filterHeaderView: UIView?
+    /// The combined scrolling table-header (large-title row + optional filter row).
+    private var tableHeaderContainer: UIView?
+    /// Whether the filter row is currently included in the table header.
+    private var filterRowVisible = false
+    /// The table width the header was last laid out at, so layout passes only rebuild
+    /// the header frame when the width actually changes.
+    private var lastHeaderLayoutWidth: CGFloat = 0
+
+    /// The recreated navigation header bar — a normal content subview (NOT the
+    /// UINavigationController nav bar) pinned to the visible top of the table, so it's
+    /// captured by the Dot Matrix push/pop wipe like the rest of the content. Holds the
+    /// settings/friends (leading) + add/search (trailing) controls; in edit mode it
+    /// swaps to Done / Select All / Delete.
+    private let header = NavHeaderBar()
+
+    /// The scrolling large-title row ("Reading List" + catch-up button), sitting at the
+    /// top of the table's content so it scrolls away under the pinned bar just like a
+    /// system large title. Combined with the filter control into the table header view.
+    private let largeTitleLabel = UILabel()
 
     /// Non-blocking bottom pill for media-download progress/result (created lazily).
     private weak var mediaDownloadStatus: MediaDownloadStatusView?
 
-    /// The "catch up" button, pinned to the large-title row; its red dot badge
-    /// shows when there are unread items to catch up on.
+    /// The "catch up" button, on the large-title row; its red dot badge shows when there
+    /// are unread items to catch up on.
     private let catchUpButton = UIButton(type: .system)
     /// The in-place search overlay cross-faded over the list, if active. Held
     /// strongly: its view is hosted directly in the nav controller's view WITHOUT
@@ -130,10 +149,6 @@ final class ReadingListViewController: UITableViewController {
     /// `children`/stack and makes the list show a back button on return.
     private var searchController: SearchViewController?
     private let catchUpBadge = UIView()
-    private var catchUpPinnedToNavBar = false
-    /// The tallest the nav bar has been seen (large title expanded) — the baseline the
-    /// catch-up button's scroll fade measures collapse against.
-    private var expandedNavBarHeight: CGFloat = 0
 
     /// Non-empty groups in display order; rebuilt on every `reload`.
     private var groups: [(section: Section, items: [ReadingListItem])] = []
@@ -155,42 +170,41 @@ final class ReadingListViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Reading List"
-        navigationController?.navigationBar.prefersLargeTitles = true
-        suppressCollapsedTitle()
 
         tableView.register(
             ReadingListItemCell.self, forCellReuseIdentifier: ReadingListItemCell.reuseID)
 
-        setDefaultNavItems()
+        // The pinned header bar (replaces the nav bar) + its default buttons.
+        header.mount(in: self)
         configureCatchUpButton()
+        setDefaultHeaderControls()
 
         refreshControl = UIRefreshControl()
         refreshControl?.addTarget(self, action: #selector(pulledToRefresh), for: .valueChanged)
 
         filterControl.addTarget(self, action: #selector(filterChanged(_:)), for: .valueChanged)
         filterControl.apportionsSegmentWidthsByContent = true
-        let header = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
+        let filterRow = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
         filterScrollView.showsHorizontalScrollIndicator = false
         filterScrollView.alwaysBounceHorizontal = true
         filterScrollView.translatesAutoresizingMaskIntoConstraints = false
-        header.addSubview(filterScrollView)
+        filterRow.addSubview(filterScrollView)
         filterControl.translatesAutoresizingMaskIntoConstraints = false
         filterScrollView.addSubview(filterControl)
         let width = filterControl.widthAnchor.constraint(equalToConstant: 0)
         filterWidthConstraint = width
         NSLayoutConstraint.activate([
-            filterScrollView.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 16),
-            filterScrollView.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -16),
-            filterScrollView.topAnchor.constraint(equalTo: header.topAnchor),
-            filterScrollView.bottomAnchor.constraint(equalTo: header.bottomAnchor),
+            filterScrollView.leadingAnchor.constraint(equalTo: filterRow.leadingAnchor, constant: 16),
+            filterScrollView.trailingAnchor.constraint(equalTo: filterRow.trailingAnchor, constant: -16),
+            filterScrollView.topAnchor.constraint(equalTo: filterRow.topAnchor),
+            filterScrollView.bottomAnchor.constraint(equalTo: filterRow.bottomAnchor),
             filterControl.leadingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.leadingAnchor),
             filterControl.trailingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.trailingAnchor),
             filterControl.centerYAnchor.constraint(equalTo: filterScrollView.frameLayoutGuide.centerYAnchor),
             filterControl.heightAnchor.constraint(equalToConstant: 32),
             width,
         ])
-        filterHeaderView = header
+        filterHeaderView = filterRow
 
         // Edit mode is entered on demand from the row's long-press menu ("Edit
         // List"); it shows selection radios and enables drag-anywhere reorder (no
@@ -213,17 +227,13 @@ final class ReadingListViewController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Authoritatively restore the SHARED nav bar to a clean, visible state. Pushed
-        // readers tuck/hide it (transform + alpha, or setNavigationBarHidden(true)) and
-        // an interrupted restore — or a screen that simply never re-asserts it — would
-        // otherwise leave the list with no header + no settings/friends/search buttons.
-        // The custom Dot Matrix pop runs viewWillAppear, so doing it here is reliable.
-        if let bar = navigationController?.navigationBar {
-            bar.transform = .identity
-            bar.alpha = 1
-        }
-        navigationController?.setNavigationBarHidden(false, animated: false)
-        pinCatchUpButtonToNavBar()
+        // The list now draws its OWN in-content header (pinned bar + scrolling large
+        // title), captured by the Dot Matrix wipe — so keep the shared nav bar hidden.
+        // Readers/pushed screens also hide it; this re-asserts it on every appearance
+        // (the custom Dot Matrix pop runs viewWillAppear, so this is reliable).
+        navigationController?.setNavigationBarHidden(true, animated: false)
+        // The catch-up button's top inset must clear the pinned bar.
+        updateHeaderInsets()
         catchUpButton.isHidden = isEditing
     }
 
@@ -235,21 +245,33 @@ final class ReadingListViewController: UITableViewController {
         NotificationManager.clearFollowupShareNotifications()
     }
 
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        updateHeaderInsets()
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        guard let header = filterHeaderView else { return }
-        if header.frame.width != tableView.bounds.width {
-            header.frame.size.width = tableView.bounds.width
-            tableView.tableHeaderView = header
+        updateHeaderInsets()
+        // Rebuild the table header at the current width (its frame-height must be set
+        // explicitly for a table header view); only when the width actually changed.
+        let width = tableView.bounds.width
+        if abs(width - lastHeaderLayoutWidth) > 0.5, width > 1 {
+            lastHeaderLayoutWidth = width
+            rebuildTableHeader(showsFilter: filterRowVisible)
         }
         applyFilterWidth()
     }
 
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        // The nav bar is shared with pushed screens — take our title-row button off.
-        catchUpButton.removeFromSuperview()
-        catchUpPinnedToNavBar = false
+    /// Keeps the pinned header's height (= safe-area top + bar) and the table's top
+    /// content/indicator insets in sync, so the scrolling large title starts just
+    /// below the bar.
+    private func updateHeaderInsets() {
+        header.setManagedHeight(topSafeAreaInset: view.safeAreaInsets.top)
+        if abs(tableView.contentInset.top - NavHeaderBar.barHeight) > 0.5 {
+            tableView.contentInset.top = NavHeaderBar.barHeight
+            tableView.verticalScrollIndicatorInsets.top = NavHeaderBar.barHeight
+        }
     }
 
     // MARK: - Pasteboard suggestion
@@ -604,7 +626,12 @@ final class ReadingListViewController: UITableViewController {
         let shouldShow = ReadingListSectioning.shouldShowFilter(items: store.items())
         guard shouldShow else {
             if filter != .all { filter = .all }
-            if tableView.tableHeaderView != nil { tableView.tableHeaderView = nil }
+            if filterRowVisible {
+                filterRowVisible = false
+                rebuildTableHeader(showsFilter: false)
+            } else if tableHeaderContainer == nil {
+                rebuildTableHeader(showsFilter: false)
+            }
             return
         }
 
@@ -619,8 +646,10 @@ final class ReadingListViewController: UITableViewController {
         filterControl.selectedSegmentIndex = filters.firstIndex(of: filter) ?? 0
         measureFilterNaturalWidth()
 
-        if tableView.tableHeaderView !== filterHeaderView {
-            tableView.tableHeaderView = filterHeaderView
+        // Always keep the large-title row; include the filter row.
+        if !filterRowVisible || tableHeaderContainer == nil {
+            filterRowVisible = true
+            rebuildTableHeader(showsFilter: true)
         }
     }
 
@@ -696,74 +725,18 @@ final class ReadingListViewController: UITableViewController {
         ])
     }
 
-    /// Pins the catch-up button to the bottom-right of the nav bar — i.e. the
-    /// trailing edge of the large "Reading List" title row. (Re-pinned each
-    /// appearance since the nav bar is shared across pushed screens.)
-    private func pinCatchUpButtonToNavBar() {
-        guard !catchUpPinnedToNavBar, let navBar = navigationController?.navigationBar else { return }
-        catchUpPinnedToNavBar = true
-        navBar.addSubview(catchUpButton)
-        NSLayoutConstraint.activate([
-            catchUpButton.trailingAnchor.constraint(equalTo: navBar.trailingAnchor, constant: -16),
-            catchUpButton.bottomAnchor.constraint(equalTo: navBar.bottomAnchor, constant: -8),
-            catchUpButton.widthAnchor.constraint(equalToConstant: 34),
-            catchUpButton.heightAnchor.constraint(equalToConstant: 34),
-        ])
-    }
-
     /// Shows the red "action needed" dot once there are 10+ unread items, OR whenever
     /// there's an unarchived LOCKED (paywalled, awaiting unlock) save — regardless of
     /// count. Hides the whole button in edit mode.
     private func updateCatchUpButton() {
         catchUpBadge.isHidden = !ReadingListSectioning.shouldShowCatchUpDot(items: store.items())
         catchUpButton.isHidden = isEditing
-        updateCatchUpButtonFade()
-    }
-
-    /// Fades the catch-up button out as the large-title bar collapses on scroll-up,
-    /// tied DIRECTLY to how far the bar has shrunk (not an animation). The bar's own
-    /// height is the right signal: during the large-title collapse the scroll view's
-    /// `adjustedContentInset.top` shrinks in lock-step with `contentOffset`, so
-    /// `contentOffset + inset` stays ~0 and never reflects the collapse. Fade fully out
-    /// within the first ~11pt of collapse so the button is gone before it rises into
-    /// the +/friends buttons.
-    private func updateCatchUpButtonFade() {
-        guard let navBar = navigationController?.navigationBar else { return }
-        // Pulling DOWN past the top (rubber-band / pull-to-refresh) STRETCHES the
-        // large-title bar taller than its resting height. Treat that as fully
-        // expanded (button shown) and DON'T let it inflate the peak — otherwise the
-        // bar never matches the inflated peak again and the button stays hidden
-        // forever after any overscroll.
-        if tableView.contentOffset.y < -tableView.adjustedContentInset.top - 1 {
-            catchUpButton.alpha = 1
-            return
-        }
-        expandedNavBarHeight = max(expandedNavBarHeight, navBar.frame.height)
-        let collapsed = expandedNavBarHeight - navBar.frame.height
-        catchUpButton.alpha = max(0, min(1, 1 - collapsed / 11))
     }
 
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        updateCatchUpButtonFade()
-    }
-
-    // When scrolling comes to REST, settle the fade: if we're back at the top the
-    // large-title bar has sprung fully open, so the button must read alpha 1 — the
-    // last in-flight `scrollViewDidScroll` can fire before that spring finishes and
-    // leave it < 1 with no further event to correct it.
-    override func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { settleCatchUpButtonFade() }
-    override func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) { settleCatchUpButtonFade() }
-    override func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        if !decelerate { settleCatchUpButtonFade() }
-    }
-
-    private func settleCatchUpButtonFade() {
-        // At rest at (or above) the top the bar is fully expanded → always alpha 1.
-        if tableView.contentOffset.y <= -tableView.adjustedContentInset.top + 1 {
-            catchUpButton.alpha = 1
-        } else {
-            updateCatchUpButtonFade()
-        }
+        header.updateScrolledAppearance(
+            contentOffsetY: scrollView.contentOffset.y,
+            adjustedTopInset: scrollView.adjustedContentInset.top)
     }
 
     @objc private func catchUpTapped() {
@@ -771,47 +744,91 @@ final class ReadingListViewController: UITableViewController {
         DotMatrixModal.present(catchUp, from: self)
     }
 
-    // MARK: - Edit mode
+    // MARK: - Header controls
 
-    /// The normal (non-editing) nav bar: settings + friends (left); add + search
-    /// (right). Plain bar items so the system styles both groups identically — a
-    /// glass capsule on iOS 26+, plain icons pre-26 — instead of a custom tinted pill.
-    private func setDefaultNavItems() {
-        navigationItem.leftBarButtonItems = [
-            UIBarButtonItem(
-                image: UIImage(systemName: "gearshape"), style: .plain,
-                target: self, action: #selector(settingsTapped)),
-            UIBarButtonItem(
-                image: UIImage(systemName: "person.2"), style: .plain,
-                target: self, action: #selector(friendsTapped)),
-        ]
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addTapped)),
-            UIBarButtonItem(
-                image: UIImage(systemName: "magnifyingglass"), style: .plain,
-                target: self, action: #selector(searchTapped)),
-        ]
+    /// The normal (non-editing) header: settings + friends (leading); add + search
+    /// (trailing) in the pinned bar. The large "Reading List" title + catch-up button
+    /// live on the scrolling title row of the table header (`makeTableHeader`).
+    private func setDefaultHeaderControls() {
+        header.setLeadingControls([
+            NavHeaderBar.imageButton(
+                systemName: "gearshape", target: self, action: #selector(settingsTapped),
+                accessibilityLabel: "Settings"),
+            NavHeaderBar.imageButton(
+                systemName: "person.2", target: self, action: #selector(friendsTapped),
+                accessibilityLabel: "Friends"),
+        ])
+        header.setTrailingControls([
+            NavHeaderBar.imageButton(
+                systemName: "plus", target: self, action: #selector(addTapped),
+                accessibilityLabel: "Add"),
+            NavHeaderBar.imageButton(
+                systemName: "magnifyingglass", target: self, action: #selector(searchTapped),
+                accessibilityLabel: "Search"),
+        ])
     }
 
-    /// Keeps the large "Reading List" title (it scrolls away on its own) but hides
-    /// the COLLAPSED inline title, so it doesn't crowd the four bar buttons once the
-    /// large title has scrolled up — the title just goes offscreen with the content.
-    private func suppressCollapsedTitle() {
-        let largeTitle: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor.label]
-        let hiddenInline: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor.clear]
+    /// Builds the scrolling table-header content: the large "Reading List" title row
+    /// (with the catch-up button on its trailing edge) and — when applicable — the
+    /// Articles / Media / Price filter row beneath it. Sized to fit and assigned as the
+    /// `tableHeaderView` so it scrolls away under the pinned bar like a system large
+    /// title. `showsFilter` includes the filter row.
+    private func rebuildTableHeader(showsFilter: Bool) {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
 
-        let atTop = UINavigationBarAppearance()
-        atTop.configureWithTransparentBackground()
-        atTop.largeTitleTextAttributes = largeTitle
-        atTop.titleTextAttributes = hiddenInline
-        navigationItem.scrollEdgeAppearance = atTop
+        // Large-title row: "Reading List" leading, catch-up button trailing.
+        let titleRow = UIView()
+        titleRow.translatesAutoresizingMaskIntoConstraints = false
+        largeTitleLabel.text = "Reading List"
+        largeTitleLabel.font = .systemFont(ofSize: 34, weight: .bold)
+        largeTitleLabel.textColor = .label
+        largeTitleLabel.adjustsFontForContentSizeCategory = true
+        largeTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleRow.addSubview(largeTitleLabel)
+        if catchUpButton.superview != nil { catchUpButton.removeFromSuperview() }
+        titleRow.addSubview(catchUpButton)
+        container.addSubview(titleRow)
 
-        let scrolled = UINavigationBarAppearance()
-        scrolled.configureWithDefaultBackground()
-        scrolled.largeTitleTextAttributes = largeTitle
-        scrolled.titleTextAttributes = hiddenInline   // collapsed title invisible
-        navigationItem.standardAppearance = scrolled
-        navigationItem.compactAppearance = scrolled
+        NSLayoutConstraint.activate([
+            titleRow.topAnchor.constraint(equalTo: container.topAnchor),
+            titleRow.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            titleRow.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            titleRow.heightAnchor.constraint(equalToConstant: 52),
+            largeTitleLabel.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor, constant: 20),
+            largeTitleLabel.bottomAnchor.constraint(equalTo: titleRow.bottomAnchor, constant: -6),
+            catchUpButton.trailingAnchor.constraint(equalTo: titleRow.trailingAnchor, constant: -16),
+            catchUpButton.centerYAnchor.constraint(equalTo: largeTitleLabel.centerYAnchor),
+            catchUpButton.widthAnchor.constraint(equalToConstant: 34),
+            catchUpButton.heightAnchor.constraint(equalToConstant: 34),
+        ])
+
+        var bottomAnchor = titleRow.bottomAnchor
+        if showsFilter, let filterRow = filterHeaderView {
+            filterRow.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(filterRow)
+            NSLayoutConstraint.activate([
+                filterRow.topAnchor.constraint(equalTo: titleRow.bottomAnchor),
+                filterRow.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                filterRow.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                filterRow.heightAnchor.constraint(equalToConstant: 44),
+            ])
+            bottomAnchor = filterRow.bottomAnchor
+        }
+        container.bottomAnchor.constraint(equalTo: bottomAnchor).isActive = true
+
+        // Size the header to fit at the table's width and assign it (table header views
+        // are laid out by their frame, so resolve the height explicitly).
+        let width = max(tableView.bounds.width, 1)
+        container.frame = CGRect(x: 0, y: 0, width: width, height: 0)
+        let height = container.systemLayoutSizeFitting(
+            CGSize(width: width, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel).height
+        container.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        tableHeaderContainer = container
+        tableView.tableHeaderView = container
+        applyFilterWidth()
     }
 
     /// Opens search IN PLACE over the reading list: a child VC cross-faded in (no
@@ -823,13 +840,9 @@ final class ReadingListViewController: UITableViewController {
         // own `view` is the scrolling table — not a valid host. Parenting to the same
         // VC that owns the host view avoids UIKit's appearance-forwarding assertion.
         guard searchController == nil, let nav = navigationController else { return }
-        // Hide the list's nav bar UP FRONT (not in the fade completion). The moment
-        // the search field becomes first responder the keyboard rises, which triggers
-        // a navigation-controller relayout that re-fronts the bar OVER our overlay —
-        // a dark band across the top of the results that only clears once layout
-        // settles (e.g. on the scroll that dismisses the keyboard). Hiding it before
-        // the keyboard appears keeps it down for the whole search session.
-        nav.setNavigationBarHidden(true, animated: false)
+        // The shared nav bar is already hidden (this screen draws its own in-content
+        // header). The search overlay is added to the nav controller's view, so it
+        // covers the table — including our header — for the whole search session.
         let search = SearchViewController(engine: ReadingListSearchEngine(), presenter: self)
         search.topSafeAreaInset = nav.view.safeAreaInsets.top   // status bar — correct from first layout
         search.onExit = { [weak self] in self?.dismissSearch() }
@@ -857,22 +870,20 @@ final class ReadingListViewController: UITableViewController {
         UIView.animate(withDuration: 0.22) { overlay.alpha = 1 }
     }
 
-    /// Fades the in-place search overlay out, then removes it. Restores the nav bar
-    /// first (kept under the still-opaque, fronted overlay) so the list reveals with
-    /// its header intact.
+    /// Fades the in-place search overlay out, then removes it. The list's own
+    /// in-content header is revealed intact as the overlay fades (the shared nav bar
+    /// stays hidden throughout).
     private func dismissSearch() {
         guard let search = searchController else { return }
-        navigationController?.setNavigationBarHidden(false, animated: false)
         navigationController?.view.bringSubviewToFront(search.view)
         UIView.animate(withDuration: 0.28, animations: { search.view.alpha = 0 }) { _ in
             self.removeSearch()
         }
     }
 
-    /// Tears the search overlay down immediately (no fade) and restores the nav bar
-    /// — used when opening a result so the pushed reader animates over the bare list.
+    /// Tears the search overlay down immediately (no fade) — used when opening a result
+    /// so the pushed reader animates over the bare list.
     private func removeSearch() {
-        navigationController?.setNavigationBarHidden(false, animated: false)
         searchController?.view.removeFromSuperview()
         searchController = nil
     }
@@ -883,19 +894,20 @@ final class ReadingListViewController: UITableViewController {
         super.setEditing(editing, animated: animated)
         tableView.dragInteractionEnabled = editing
         if isEditing {
-            navigationItem.leftBarButtonItem = nil
-            let done = UIBarButtonItem(
-                barButtonSystemItem: .done, target: self, action: #selector(doneEditing))
-            let selectAll = UIBarButtonItem(
-                title: "Select All", style: .plain, target: self, action: #selector(selectAllTapped))
-            let deleteSelected = UIBarButtonItem(
-                image: UIImage(systemName: "trash"), style: .plain,
-                target: self, action: #selector(deleteSelectedTapped))
-            deleteSelected.tintColor = .systemRed
-            // Laid out right-to-left: Done, Select All, Delete Selected.
-            navigationItem.rightBarButtonItems = [done, selectAll, deleteSelected]
+            header.setLeadingControls([])
+            // Visually (right→left): Done, Select All, Delete Selected. The trailing
+            // stack lays left→right, so order it Delete, Select All, Done.
+            header.setTrailingControls([
+                NavHeaderBar.imageButton(
+                    systemName: "trash", target: self, action: #selector(deleteSelectedTapped),
+                    tint: .systemRed, accessibilityLabel: "Delete Selected"),
+                NavHeaderBar.textButton(
+                    title: "Select All", target: self, action: #selector(selectAllTapped)),
+                NavHeaderBar.textButton(
+                    title: "Done", target: self, action: #selector(doneEditing), bold: true),
+            ])
         } else {
-            setDefaultNavItems()
+            setDefaultHeaderControls()
         }
         updateCatchUpButton()
     }

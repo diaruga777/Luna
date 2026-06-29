@@ -472,29 +472,20 @@ final class ReadingListViewController: UITableViewController {
             return
         }
 
-        // Build the changed REGION from the rows' before/after frames, keyed by item id,
-        // clamped to the visible table — so off-screen changed rows don't inflate it and
-        // genuinely-unchanged rows are excluded. Unioning before+after frames means a row
-        // that moves wipes both the slot it left and the slot it entered.
+        // Build the changed REGION directly from the diff's index paths against the
+        // CURRENT (old) layout — no reloads. `DotMatrixBatch.update` lays out the NEW model
+        // itself and snapshots the correct "after", so the region only needs to *bound* the
+        // changed area in the table's coordinate space; it never has to be exact.
         //
-        // `rectForRow` reads the data source, so accurate new-layout frames need the new
-        // model laid out. We measure both layouts WITHOUT animation, then leave the table
-        // on the OLD model so DotMatrixBatch captures the correct "before" snapshot and
-        // re-applies the new model itself inside its (non-animated) batch update.
+        // Deleted rows/sections sit at known slots in the old layout, so their `rectForRow`
+        // is read straight from the live table. Insertions don't exist yet, so we span them
+        // by their neighbours: per affected section we union the bounding rect from the
+        // first to the last changed row in the old layout (clamped to visible), which
+        // over-covers slightly but never under-covers changed content — and costs zero
+        // extra reloads/layouts versus the old round-trip.
         let visible = tableView.bounds
-        let beforeItems = regionItems(for: oldGroups, clampedTo: visible)
-        var afterItems: [DotMatrixRegion.Item] = []
-        UIView.performWithoutAnimation {
-            self.groups = newGroups
-            self.tableView.reloadData()
-            self.tableView.layoutIfNeeded()
-            afterItems = self.regionItems(for: newGroups, clampedTo: visible)
-            self.groups = oldGroups
-            self.tableView.reloadData()
-            self.tableView.layoutIfNeeded()
-        }
-
-        let region = DotMatrixRegion.changedRegion(before: beforeItems, after: afterItems, in: visible)
+        let region = changedRegion(for: diff, oldGroups: oldGroups, newGroups: newGroups,
+                                   clampedTo: visible)
 
         // Apply the diff with real insert/delete ops (the correct UIKit batch shape, so
         // the disabled-wipe fallback animates rows cleanly). `groups` must already be the
@@ -527,27 +518,88 @@ final class ReadingListViewController: UITableViewController {
         }
     }
 
-    /// `DotMatrixRegion.Item`s for every row in `model`, framed by `rectForRow`
-    /// (in the table's own coords), clamped to `bounds`. Items are keyed by the item's
-    /// `id` so the diff matches the same logical row across the before/after layouts; the
-    /// state token folds in the cell's reuse-affecting fields so a row whose content
-    /// changed (but didn't move) still joins the changed region. Header rows aren't
-    /// included — section headers for persisting sections don't change on a filter swap.
-    private func regionItems(
-        for model: [(section: Section, items: [ReadingListItem])], clampedTo bounds: CGRect
-    ) -> [DotMatrixRegion.Item] {
-        var items: [DotMatrixRegion.Item] = []
-        for (sectionIndex, group) in model.enumerated() {
-            guard !isCollapsed(group.section) else { continue }
-            for (rowIndex, item) in group.items.enumerated() {
-                let rect = tableView.rectForRow(at: IndexPath(row: rowIndex, section: sectionIndex))
-                guard rect.intersects(bounds) else { continue }
-                items.append(DotMatrixRegion.Item(
-                    id: item.id, frame: rect,
-                    state: "\(item.state.rawValue)|\(item.readState.rawValue)"))
+    /// The changed-region bounding rect (in the table's own coordinate space, clamped to
+    /// `bounds`) for a filter `diff`, measured ENTIRELY against the live OLD layout — no
+    /// reloadData round-trip. The table is still on `oldGroups` here, so every old-layout
+    /// index path (`diff.deletedRows`, rows of `diff.deletedSections`) has a valid
+    /// `rectForRow`. Insertions don't exist in the old layout, so we span them by their
+    /// neighbours in the old layout: per affected section, the union from the first to the
+    /// last changed row index brackets where new rows will land. This over-covers slightly
+    /// but never under-covers changed content. Returns `nil` when nothing on screen
+    /// changed (the wipe is then skipped / falls back to the whole visible table).
+    private func changedRegion(
+        for diff: ReadingListDiff,
+        oldGroups: [(section: Section, items: [ReadingListItem])],
+        newGroups: [(section: Section, items: [ReadingListItem])],
+        clampedTo bounds: CGRect
+    ) -> CGRect? {
+        var union: CGRect = .null
+
+        func add(_ rect: CGRect) {
+            let clamped = rect.intersection(bounds)
+            guard !clamped.isNull, !clamped.isEmpty else { return }
+            union = union.union(clamped)
+        }
+
+        // Map a section kind to its index in each side, so changes in either side resolve
+        // to a frame in the OLD layout (the only layout the live table currently holds).
+        let oldSectionIndex = Dictionary(
+            uniqueKeysWithValues: oldGroups.enumerated().map { ($0.element.section, $0.offset) })
+
+        // Whole deleted sections: union every row they currently occupy in the old layout.
+        for section in diff.deletedSections {
+            let count = tableView.numberOfRows(inSection: section)
+            for row in 0..<max(count, 0) {
+                add(tableView.rectForRow(at: IndexPath(row: row, section: section)))
             }
         }
-        return items
+
+        // Deleted rows sit at known old-layout slots → their rects are read directly.
+        for indexPath in diff.deletedRows {
+            add(tableView.rectForRow(at: indexPath))
+        }
+
+        // Inserted rows/sections don't exist in the old layout. Bracket them against the
+        // old layout per (new) section: span from the first to the last changed row index,
+        // anchored on whatever currently occupies those slots. Clamp the index to the
+        // section's existing row count so a trailing append spans the section's last row.
+        var insertSpanByNewSection: [Int: (min: Int, max: Int)] = [:]
+        for indexPath in diff.insertedRows {
+            let existing = insertSpanByNewSection[indexPath.section]
+            let lo = min(existing?.min ?? indexPath.row, indexPath.row)
+            let hi = max(existing?.max ?? indexPath.row, indexPath.row)
+            insertSpanByNewSection[indexPath.section] = (lo, hi)
+        }
+        for (newSection, span) in insertSpanByNewSection {
+            // Resolve the same section in the OLD layout (a persisting section); inserts
+            // into a brand-new section are already covered by `insertedSections`.
+            guard newSection < newGroups.count,
+                  let oldSection = oldSectionIndex[newGroups[newSection].section] else { continue }
+            let oldCount = tableView.numberOfRows(inSection: oldSection)
+            guard oldCount > 0 else { continue }
+            for row in span.min...span.max {
+                add(tableView.rectForRow(at: IndexPath(row: min(row, oldCount - 1), section: oldSection)))
+            }
+        }
+
+        // Whole inserted sections: a new section lands adjacent to a persisting neighbour.
+        // Anchor on the nearest persisting section's edge in the old layout so the wipe
+        // reaches the strip where the section will appear.
+        for newSection in diff.insertedSections {
+            // The persisting section immediately before this new one (if any) gives a
+            // lower anchor; otherwise the section after it. Both resolve via the old layout.
+            if newSection > 0, newSection - 1 < newGroups.count,
+               let oldPrev = oldSectionIndex[newGroups[newSection - 1].section] {
+                let count = tableView.numberOfRows(inSection: oldPrev)
+                if count > 0 { add(tableView.rectForRow(at: IndexPath(row: count - 1, section: oldPrev))) }
+            } else if newSection + 1 < newGroups.count,
+                      let oldNext = oldSectionIndex[newGroups[newSection + 1].section] {
+                let count = tableView.numberOfRows(inSection: oldNext)
+                if count > 0 { add(tableView.rectForRow(at: IndexPath(row: 0, section: oldNext))) }
+            }
+        }
+
+        return union.isNull ? nil : union
     }
 
     /// Shows the filter control only when the list has at least two of the three

@@ -82,20 +82,16 @@ public struct ReadingListDiff: Equatable {
             guard let newIdx = newSectionIndex[group.section] else { continue }
             let oldIDs = group.itemIDs
             let newIDs = new[newIdx].itemIDs
-            let oldSet = Set(oldIDs)
-            let newSet = Set(newIDs)
 
             // A row "stays put" only when its id is at the SAME row index on both sides;
             // otherwise it's a delete of its old slot and an insert of its new slot.
             for (row, id) in oldIDs.enumerated() {
                 let stays = row < newIDs.count && newIDs[row] == id
                 if !stays { deletedRows.append(IndexPath(row: row, section: oldIdx)) }
-                _ = newSet  // (kept for clarity; membership handled by the index check)
             }
             for (row, id) in newIDs.enumerated() {
                 let stays = row < oldIDs.count && oldIDs[row] == id
                 if !stays { insertedRows.append(IndexPath(row: row, section: newIdx)) }
-                _ = oldSet
             }
         }
 

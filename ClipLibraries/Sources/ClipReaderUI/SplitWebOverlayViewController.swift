@@ -173,6 +173,10 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
         UIView.animate(withDuration: 0.34, delay: 0, usingSpringWithDamping: 0.82,
                        initialSpringVelocity: 1.0, options: [.beginFromCurrentState]) {
             self.apply(progress: 0)
+        } completion: { [weak self] _ in
+            // Open animation done: let the root page's embedded reader render the full
+            // article now (its Phase-2 swap), off the open's critical path.
+            self?.topPage?.entryAnimationDidFinish()
         }
     }
 

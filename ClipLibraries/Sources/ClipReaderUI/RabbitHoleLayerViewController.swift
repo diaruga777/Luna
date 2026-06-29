@@ -650,6 +650,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         webView = nil
     }
 
+    /// The stacked-layer wipe that revealed this layer has finished — tell the embedded
+    /// scroll reader to run its progressive-load Phase 2 (full render + swap) now, so
+    /// the heavy glyph pass lands after the wipe instead of stalling it. No-op unless
+    /// the focused content is the scroll reader (idempotent there).
+    public func entryAnimationDidFinish() {
+        (readerChild as? ScrollReaderViewController)?.prepareFullContent()
+    }
+
     // MARK: - Scroll access (no changes to ScrollReaderViewController)
 
     /// The layer's primary scroll view, found by walking the embedded reader's view

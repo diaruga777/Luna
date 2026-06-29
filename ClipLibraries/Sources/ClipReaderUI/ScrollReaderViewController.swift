@@ -54,6 +54,35 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var didFinishReading = false
     private var didRestoreScroll = false
 
+    // MARK: - Progressive (two-phase) load
+
+    /// Phase 1 renders only this many leading characters so the first paint is a
+    /// near-instant layout of one+ screen of text — the heavy whole-article glyph
+    /// generation that stalled behind the entry animation is deferred to Phase 2.
+    /// A few hundred characters comfortably fills a screen of serif body text while
+    /// keeping the initial `UITextView` layout cheap.
+    private static let prefixCharacterBudget = 700
+
+    /// True once the FULL article has been rendered + swapped in (Phase 2 done, or
+    /// never needed because the prefix already covered the whole article). Until
+    /// then `rendered`/`wordMap` describe only the prefix, so position-dependent
+    /// features (RSVP/audio resume, gaze, the share footer) wait for it.
+    private var didLoadFullContent = false
+    /// Set once Phase 2 has been kicked off so it runs exactly once.
+    private var didBeginFullContentLoad = false
+    /// Set once the plain-scroll gaze carry-over observation has been wired, so it's
+    /// started exactly once whether that happens in `viewDidAppear` (short article,
+    /// tracker already present) or in `applyFullContent` (progressive open).
+    private var didStartGazeObservation = false
+
+    #if DEBUG
+    /// Test hooks for the progressive load: whether the full content has been
+    /// swapped in, and the rendered text length / word count currently shown.
+    public var didLoadFullContentForTesting: Bool { didLoadFullContent }
+    public var renderedTextLengthForTesting: Int { rendered.text.length }
+    public var wordCountForTesting: Int { wordMap.wordCount }
+    #endif
+
     /// Read aloud (the shared audio toggle).
     private let audioEnabled: Bool
     private var didStartPlayback = false
@@ -98,9 +127,60 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         self.shareProvider = shareProvider
         self.gazeTrackerFactory = gazeTrackerFactory
         self.explicitResumeWordIndex = resumeWordIndex
-        self.rendered = ArticleTextRenderer.render(resolved)
+        // Phase 1: render only a leading prefix so the FIRST layout of the text view
+        // is cheap (a couple hundred characters), removing the whole-article glyph
+        // pass that stalled the first open behind the entry animation. The full text
+        // is rendered + swapped in by `prepareFullContent()` after that animation.
+        //
+        // EXCEPTIONS where the prefix is useless, so render the whole article up front:
+        //  • read-aloud (audio) — speech needs every word immediately and reads from the
+        //    top, and there's no first-paint stall to hide behind an entry animation;
+        //  • restoring a saved/carried position beyond the prefix (resuming a part-read
+        //    article, or a position carried in from another mode) — the prefix can't show
+        //    that region, and that open already hides the text until the position lands.
+        // The progressive path is for the common FROM-THE-TOP, no-audio fresh open.
+        let needsFullUpFront = audioEnabled || Self.openPositionLikelyBeyondPrefix(
+            item: item, resumeWordIndex: resumeWordIndex, audioEnabled: audioEnabled,
+            content: resolved, budget: Self.prefixCharacterBudget)
+        let rendered = needsFullUpFront
+            ? ArticleTextRenderer.render(resolved)
+            : ArticleTextRenderer.render(resolved, characterBudget: Self.prefixCharacterBudget)
+        self.rendered = rendered
         self.wordMap = WordMap(content: resolved, rendered: rendered)
         super.init(nibName: nil, bundle: nil)
+        // If the prefix already covers the whole (short) article there's nothing to
+        // swap — Phase 2 is skipped.
+        if rendered.isComplete { didLoadFullContent = true }
+    }
+
+    /// Whether this open will restore a position that the cheap PREFIX render almost
+    /// certainly wouldn't contain — in which case the prefix is useless and we render
+    /// the full article up front. Conservative on purpose: it only suppresses the
+    /// progressive path for a genuine resume, never for the common top-of-article open.
+    private static func openPositionLikelyBeyondPrefix(
+        item: ReadingListItem, resumeWordIndex: Int?, audioEnabled: Bool,
+        content: ArticleContent, budget: Int) -> Bool {
+        // A non-trivial saved scroll offset (more than a screen down) resumes below
+        // the prefix. A tiny offset (near the top) is fine to show against the prefix.
+        if let saved = item.lastScrollOffset, saved > CGFloat(UIScreen.main.bounds.height) {
+            return true
+        }
+        // A carried-in word index (mode switch) beyond the budget's worth of words.
+        let carried = (!audioEnabled) ? resumeWordIndex : nil
+        if let carried, carried > 0 {
+            // Rough word-budget: count words in the leading blocks up to the
+            // character budget; a carried index past that won't be in the prefix.
+            var chars = 0
+            var words = 0
+            for block in content.blocks {
+                if chars > budget { break }
+                if block.kind == .image { continue }
+                words += block.text.split(whereSeparator: { $0.isWhitespace }).count
+                chars += block.text.count
+            }
+            if carried >= words { return true }
+        }
+        return false
     }
 
     /// The word currently being read, carried to other modes on a switch.
@@ -173,7 +253,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Positions the share view just below the text content and reserves scroll
     /// room for it (and the floating footer) so it clears the controls.
     private func layoutShareView() {
-        guard let shareView else { return }
+        // Only once the footer is actually attached (after the full content lands).
+        guard let shareView, shareView.superview != nil else { return }
         let width = textView.bounds.width
         guard width > 0 else { return }
         let height = shareView.systemLayoutSizeFitting(
@@ -220,34 +301,25 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         textView.addGestureRecognizer(imageTap)
         textView.addInteraction(UIContextMenuInteraction(delegate: self))
 
-        fetchMissingImagesIfNeeded()
-
         configureFooter()
 
-        if let shareView {
-            textView.addSubview(shareView)
-            contentSizeObservation = textView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
-                self?.layoutShareView()
-            }
-        }
+        // The end-of-article share footer is attached only once the FULL article is
+        // rendered (its position is keyed off the complete content size). For a short
+        // article the prefix is already complete, so attach it now; otherwise
+        // `prepareFullContent()` attaches it after the swap.
+        if didLoadFullContent { attachShareFooterIfNeeded() }
 
-        // Force full text layout shortly after first paint: one early hitch
-        // while the user starts reading, so link taps / split dismissals later
-        // never stall on a whole-article layout pass.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            guard let self else { return }
-            self.textView.layoutManager.ensureLayout(for: self.textView.textContainer)
-        }
+        // Images cached on disk are baked into the prefix already; only genuinely
+        // uncached ones (action/share surface) fall through here. Once the full
+        // content lands this re-runs against it (see `prepareFullContent`).
+        if didLoadFullContent { fetchMissingImagesIfNeeded() }
 
         addSimulatorSplitHooksIfNeeded()
 
-        // Where read-aloud left off, shown until the user scrolls.
-        if let spokenIndex = item.lastSpokenWordIndex,
-           let range = wordMap.attributedRange(forWord: spokenIndex) {
-            applyHighlight(range)
-        }
-
-        gazeTracker = gazeTrackerFactory?(textView, wordMap, item.eyeTrackedWordIndex)
+        // The resume highlight + gaze tracker both need the FULL word map (a deep
+        // resume word / gaze estimate isn't in the prefix), so install them only once
+        // the full content has landed. For an already-complete prefix that's now.
+        if didLoadFullContent { installPositionDependentFeatures() }
 
         // Hide the text until the saved scroll position is applied, so the
         // article never flashes at the top and then jumps. Fresh articles (no
@@ -278,6 +350,117 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             didRestoreScroll = true
             applyInitialScrollPosition()
             revealContent()
+        }
+    }
+
+    // MARK: - Progressive (two-phase) load
+
+    /// Phase 2. Renders the FULL article and swaps it in for the prefix, SEAMLESSLY
+    /// and preserving scroll position. Call once the entry animation has finished
+    /// (the host wires this to its open-animation completion); the reader also calls
+    /// it itself once it appears, so it works regardless of host. Idempotent and a
+    /// no-op when the prefix already covered the whole article.
+    ///
+    /// Phase 2 runs AFTER the entry animation, so the article's heavy whole-text glyph
+    /// generation no longer stalls the open. The attributed-string build + the forced
+    /// layout both run on the main actor (the renderer touches `UIScreen`/`UIFont`, and
+    /// TextKit layout must be on main anyway) — it's the TIMING (off the animation's
+    /// critical path), not threading, that removes the stall. Because the prefix is a
+    /// STRICT prefix of the full text, the top/visible layout is identical, so restoring
+    /// the captured `contentOffset` across the swap is invisible.
+    public func prepareFullContent() {
+        guard !didLoadFullContent, !didBeginFullContentLoad else { return }
+        didBeginFullContentLoad = true
+        // Defer one runloop so a host that calls this from inside its open-animation
+        // completion doesn't pay the build cost in the same commit as that completion.
+        DispatchQueue.main.async { [weak self] in
+            // `[weak self]` drops this if the VC deallocated. Require the view loaded
+            // (it always is by the time Phase 2 is triggered) before touching it.
+            guard let self, self.isViewLoaded, !self.didLoadFullContent else { return }
+            let full = ArticleTextRenderer.render(self.content)
+            self.applyFullContent(full)
+        }
+    }
+
+    /// Swaps the freshly-built full render into the text view, preserving the reader's
+    /// scroll position. Runs on the main actor.
+    @MainActor
+    private func applyFullContent(_ full: RenderedArticle) {
+        guard !didLoadFullContent else { return }
+        // The user might have scrolled within the prefix while it was the only thing
+        // laid out. Capture where they are so the swap is seamless.
+        let offset = textView.contentOffset
+        // First-fully-visible word BEFORE the swap, as a fallback anchor for the rare
+        // case the captured offset can't be trusted (see below).
+        let anchorWord = firstFullyVisibleWordIndex()
+
+        rendered = full
+        wordMap = WordMap(content: content, rendered: full)
+
+        UIView.performWithoutAnimation {
+            textView.attributedText = full.text
+            textView.layoutManager.ensureLayout(for: textView.textContainer)
+            // The prefix is a strict prefix, so the leading layout is identical and the
+            // captured offset still points at the same line — restore it directly.
+            // (Clamp so it can't exceed the — now larger — scrollable range.)
+            textView.contentOffset.y = clampedContentOffsetY(offset.y)
+            // Safety net: if the offset somehow landed past the old prefix's end (e.g.
+            // the user reached the bottom of the short prefix), re-anchor to the
+            // first-visible word's position in the full text so nothing jumps.
+            if let anchorWord, offset.y > 0,
+               let range = wordMap.attributedRange(forWord: anchorWord) {
+                let glyphRange = textView.layoutManager.glyphRange(
+                    forCharacterRange: range, actualCharacterRange: nil)
+                var rect = textView.layoutManager.boundingRect(
+                    forGlyphRange: glyphRange, in: textView.textContainer)
+                rect.origin.y += textView.textContainerInset.top
+                // Only re-anchor if the direct restore is clearly off (the visible word
+                // moved by more than a line) — otherwise the direct restore is exact.
+                if abs(rect.minY - offset.y) > textView.bounds.height {
+                    textView.contentOffset.y = clampedContentOffsetY(rect.minY)
+                }
+            }
+        }
+
+        didLoadFullContent = true
+        // Now that the full word map exists, wire up the position-dependent features
+        // and finish the inline-image fetch + share footer against the real content.
+        installPositionDependentFeatures()
+        attachShareFooterIfNeeded()
+        layoutShareView()
+        fetchMissingImagesIfNeeded()
+    }
+
+    /// Installs the read-aloud resume highlight and the gaze tracker — both of which
+    /// need the FULL word map (a deep resume word / gaze estimate isn't in the prefix).
+    /// Called once the full content is in place; idempotent-safe via the gaze guard.
+    /// If the view has already appeared in plain-scroll mode, also starts the gaze
+    /// carry-over observation (which `viewDidAppear` couldn't, having had no tracker
+    /// yet on a progressive open).
+    private func installPositionDependentFeatures() {
+        if let spokenIndex = item.lastSpokenWordIndex,
+           let range = wordMap.attributedRange(forWord: spokenIndex) {
+            applyHighlight(range)
+        }
+        if gazeTracker == nil {
+            gazeTracker = gazeTrackerFactory?(textView, wordMap, item.eyeTrackedWordIndex)
+        }
+        // Started playback already (the view appeared) in plain scroll, but the gaze
+        // observation was skipped because the tracker didn't exist yet — start it now.
+        if didStartPlayback, !audioEnabled, gazeTracker != nil, !didStartGazeObservation {
+            didStartGazeObservation = true
+            observeGazeForCarryOver(alsoHighlight: ReaderSettings.highlightGazeWord)
+        }
+    }
+
+    /// Adds the end-of-article share footer (and the content-size observer that keeps
+    /// it pinned below the text). Deferred until the full content is rendered so it
+    /// sits at the true bottom. Idempotent.
+    private func attachShareFooterIfNeeded() {
+        guard let shareView, shareView.superview == nil else { return }
+        textView.addSubview(shareView)
+        contentSizeObservation = textView.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+            self?.layoutShareView()
         }
     }
 
@@ -400,6 +583,24 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // all means it's been read.
         checkFinishedReading()
 
+        // Phase 2 of the progressive load: render the FULL article and swap it in,
+        // AFTER the entry animation, so its heavy glyph generation never stalls the
+        // open. Run it alongside the (push) transition's completion when there is one;
+        // otherwise (no coordinator — e.g. presented without animation, or already
+        // settled) kick it off on the next runloop. Hosts that drive a custom entry
+        // animation (the inline split overlay, the RabbitHole stacked wipe) also call
+        // `prepareFullContent()` from THEIR completion — `prepareFullContent` is
+        // idempotent, so whichever fires first wins.
+        if !didLoadFullContent {
+            if let coordinator = transitionCoordinator {
+                coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+                    self?.prepareFullContent()
+                }
+            } else {
+                DispatchQueue.main.async { [weak self] in self?.prepareFullContent() }
+            }
+        }
+
         // Start playback once: read-aloud when audio is on; plain scroll
         // otherwise.
         if !didStartPlayback {
@@ -411,7 +612,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 SharedDiagnosticLog.record(
                     "reader opened (scroll): gazeTracker=\(gazeTracker != nil) highlightSetting=\(ReaderSettings.highlightGazeWord)",
                     category: "gaze")
-                if gazeTracker != nil {
+                // On a progressive (long-article) open the tracker doesn't exist yet —
+                // `installPositionDependentFeatures` starts the observation once Phase 2
+                // creates it. Here we cover the short-article case (tracker already made).
+                if gazeTracker != nil, !didStartGazeObservation {
+                    didStartGazeObservation = true
                     observeGazeForCarryOver(alsoHighlight: ReaderSettings.highlightGazeWord)
                 }
             }
@@ -652,7 +857,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Notifies the host when the end-of-article share footer is at least partly
     /// scrolled into view (it sits just below the text, in the bottom inset region).
     private func updateShareFooterVisibility() {
-        guard let shareView else { return }
+        // The footer is only attached/positioned once the full content is in (otherwise
+        // its frame is still .zero and would read as "revealed" against the prefix).
+        guard didLoadFullContent, let shareView, shareView.superview != nil else { return }
         let viewportBottom = textView.contentOffset.y + textView.bounds.height
         let revealed = viewportBottom >= shareView.frame.minY + shareView.bounds.height * 0.3
         guard revealed != shareFooterVisible else { return }
@@ -661,7 +868,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 
     private func checkFinishedReading() {
-        guard !didFinishReading, textView.contentSize.height > 0 else { return }
+        // Never decide "finished" against the PREFIX content size — a long article
+        // whose prefix happens to fit one screen would be wrongly marked read before
+        // Phase 2 expands it. Wait for the full content.
+        guard didLoadFullContent, !didFinishReading, textView.contentSize.height > 0 else { return }
         let visibleBottom = textView.contentOffset.y + textView.bounds.height
         if visibleBottom >= textView.contentSize.height - 40 {
             didFinishReading = true

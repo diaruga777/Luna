@@ -169,6 +169,14 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         webView.load(URLRequest(url: url))
     }
 
+    /// The host's open animation has finished — tell the embedded scroll reader to do
+    /// its progressive-load Phase 2 (render the full article + swap it in) now, so the
+    /// heavy glyph generation lands AFTER the open rather than stalling behind it.
+    /// No-op unless the embedded child is the scroll reader (idempotent there).
+    public func entryAnimationDidFinish() {
+        (readerChild as? ScrollReaderViewController)?.prepareFullContent()
+    }
+
     /// Switches the embedded reader to `mode` (no-op unless this page is an article).
     public func setMode(_ mode: ReadingListItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }

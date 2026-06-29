@@ -128,6 +128,21 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             name: UIApplication.didEnterBackgroundNotification, object: nil)
     }
 
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // The reader's own entry (push) animation has finished — let the focused (root)
+        // layer's embedded reader run its progressive-load Phase 2 now, aligned with the
+        // open animation. Idempotent; the embedded reader also self-triggers as a backstop.
+        if let coordinator = transitionCoordinator {
+            coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+                guard let self else { return }
+                self.layers[safe: self.focus]?.entryAnimationDidFinish()
+            }
+        } else {
+            layers[safe: focus]?.entryAnimationDidFinish()
+        }
+    }
+
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // This reader draws its own per-layer glass header, so the shared nav bar must
@@ -352,9 +367,12 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             self.focus = self.topIndex
             self.applyFocus()
         }, completion: { [weak self] in
-            self?.persist()
-            self?.warmPreloadsForFocusedLayer()
-            self?.ensureSpareLayer()   // this dive consumed the spare — rebuild the next one
+            guard let self else { return }
+            self.persist()
+            self.warmPreloadsForFocusedLayer()
+            self.ensureSpareLayer()   // this dive consumed the spare — rebuild the next one
+            // Dive wipe done: let the now-focused layer's reader swap in its full content.
+            self.layers[safe: self.focus]?.entryAnimationDidFinish()
         })
     }
 

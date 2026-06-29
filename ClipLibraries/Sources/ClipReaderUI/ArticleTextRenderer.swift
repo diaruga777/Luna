@@ -17,15 +17,22 @@ public struct RenderedArticle {
     public let blockTextRanges: [NSRange?]
     /// Attachment ranges and their local source files, for inline-image gestures.
     public let imageRanges: [(range: NSRange, fileURL: URL)]
+    /// Whether this render covers the WHOLE article. `false` only for a
+    /// `characterBudget`-truncated PREFIX render (the progressive-load Phase 1) —
+    /// the scroll reader uses this to decide whether a full-content swap is still
+    /// owed. A full render is always complete.
+    public let isComplete: Bool
 
     public init(
         text: NSAttributedString,
         blockTextRanges: [NSRange?],
-        imageRanges: [(range: NSRange, fileURL: URL)] = []
+        imageRanges: [(range: NSRange, fileURL: URL)] = [],
+        isComplete: Bool = true
     ) {
         self.text = text
         self.blockTextRanges = blockTextRanges
         self.imageRanges = imageRanges
+        self.isComplete = isComplete
     }
 }
 
@@ -34,7 +41,28 @@ public struct RenderedArticle {
 /// inlining downloaded article images as text attachments.
 public enum ArticleTextRenderer {
 
+    /// Builds the full attributed string for the article.
     public static func render(_ content: ArticleContent) -> RenderedArticle {
+        render(content, characterBudget: nil)
+    }
+
+    /// Builds the attributed string for the article, optionally TRUNCATED to a
+    /// leading prefix.
+    ///
+    /// With a `characterBudget`, blocks are appended until the cumulative count of
+    /// included BODY text first exceeds the budget; the block that crosses it is
+    /// included whole (so the prefix always reaches at least one full block past
+    /// the threshold and fills the screen), then rendering stops. The title (and
+    /// author) are always present. The returned `blockTextRanges` cover only the
+    /// included blocks, and `imageRanges` only images whose block fell inside the
+    /// prefix — so the prefix is a STRICT prefix of the full render (identical
+    /// leading layout) and `WordMap`/image hit-testing stay consistent for it.
+    /// `isComplete` is `false` only when the budget actually cut the article short.
+    ///
+    /// This is the scroll reader's Phase-1 fast path: laying out a few hundred
+    /// characters is near-instant, so the reader paints immediately behind the
+    /// entry animation; the full text is rendered and swapped in afterward.
+    public static func render(_ content: ArticleContent, characterBudget: Int?) -> RenderedArticle {
         let result = NSMutableAttributedString()
         var blockTextRanges: [NSRange?] = []
         var imageRanges: [(NSRange, URL)] = []
@@ -64,7 +92,19 @@ public enum ArticleTextRenderer {
                 ]))
         }
 
+        // Running count of BODY text characters included so far — drives the
+        // prefix cutoff. Matches `ArticleContent.bodyTextLength` (sums block text),
+        // so the budget is expressed in the same units the article reports.
+        var includedTextCount = 0
+        var truncated = false
+
         for block in content.blocks {
+            // Stop once the budget is exceeded — but only AFTER at least one body
+            // block is in (so the prefix is never empty / shorter than a screen).
+            if let budget = characterBudget, includedTextCount > budget {
+                truncated = true
+                break
+            }
             if block.kind == .image {
                 if let fileName = block.imageFileName,
                    let imageString = attributedImage(
@@ -82,8 +122,11 @@ public enum ArticleTextRenderer {
                 location: result.length + textOffsetInBlock,
                 length: (block.text as NSString).length))
             result.append(blockString)
+            includedTextCount += block.text.count
         }
-        return RenderedArticle(text: result, blockTextRanges: blockTextRanges, imageRanges: imageRanges)
+        return RenderedArticle(
+            text: result, blockTextRanges: blockTextRanges, imageRanges: imageRanges,
+            isComplete: !truncated)
     }
 
     // MARK: - Images

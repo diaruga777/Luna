@@ -325,7 +325,7 @@ final class CatchUpViewController: UIViewController {
         // adaptive-presentation delegate), so we rebuild THIS card on our next
         // `viewDidAppear` to reflect any threshold change.
         needsCardReloadOnReappear = true
-        present(nav, animated: true)
+        DotMatrixModal.present(nav, from: self)
     }
 
     /// The locked-card placeholder: a lock glyph + title + hint (no content exists

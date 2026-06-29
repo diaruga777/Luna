@@ -8,6 +8,7 @@ import ClipHTMLClassification
 import ClipURLClassification
 import ClipModels
 import ClipDesignSystem
+import ClipTransitions
 import UIKit
 
 public extension Notification.Name {
@@ -402,7 +403,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             self?.presentSearchOverlay()
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     /// Adds `urlString` as a seller: fetches its price (mandatory, via the same
@@ -460,7 +461,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     private func presentMessage(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     // MARK: - Search overlay
@@ -485,7 +486,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
                 urlString: urlString, prefetchedHTML: html.isEmpty ? nil : html,
                 report: completion)
         }
-        present(overlay, animated: true)
+        DotMatrixModal.present(overlay, from: self)
     }
 
     // MARK: - Exit

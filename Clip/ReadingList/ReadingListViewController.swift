@@ -962,7 +962,7 @@ final class ReadingListViewController: UITableViewController {
             guard let normalized = Self.normalizedTypedURL(entered) else { return }
             Task { await ReadingListIngestor.shared.handleSavePress(urlString: normalized) }
         })
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     /// Validates a typed/pasted URL string before saving, replacing the old blind
@@ -988,7 +988,7 @@ final class ReadingListViewController: UITableViewController {
             self?.store.deleteItems(ids: Set(archived.map(\.id)))
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     // MARK: - Delete
@@ -1449,7 +1449,7 @@ final class ReadingListViewController: UITableViewController {
         }
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         sheet.popoverPresentationController?.sourceView = sourceView
-        present(sheet, animated: true)
+        DotMatrixModal.present(sheet, from: self)
     }
 
     /// Shares a price tracker (all store URLs + best price + threshold) to a friend.
@@ -1481,7 +1481,7 @@ final class ReadingListViewController: UITableViewController {
         }
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         sheet.popoverPresentationController?.sourceView = sourceView
-        present(sheet, animated: true)
+        DotMatrixModal.present(sheet, from: self)
     }
 
     // MARK: - Video playback

@@ -7,6 +7,7 @@ import ClipReaderUI
 import ClipDesignSystem
 import ClipHTMLClassification
 import ClipURLClassification
+import ClipTransitions
 import UIKit
 import WebKit
 
@@ -343,7 +344,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         alert.addAction(UIAlertAction(title: "No thanks", style: .cancel) { [weak self] _ in
             self?.isOfferingUseThisPage = false
         })
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     /// Reads the rendered HTML and hands it to the host, then routes the host's
@@ -385,7 +386,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
     private func presentMessage(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     // MARK: - WKNavigationDelegate

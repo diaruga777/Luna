@@ -4,6 +4,7 @@
 //
 
 import SafariServices
+import ClipTransitions
 import UIKit
 
 /// Ultimate fallback for opening a platform item: an in-app `SFSafariViewController`
@@ -16,6 +17,6 @@ public enum InAppBrowser {
               scheme == "http" || scheme == "https"
         else { return }
         let safari = SFSafariViewController(url: url)
-        presenter.present(safari, animated: true)
+        DotMatrixModal.present(safari, from: presenter)
     }
 }

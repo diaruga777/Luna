@@ -36,6 +36,14 @@ final class CatchUpViewController: UIViewController {
     private var deleteReadView: CatchUpDeleteReadView?
     private var phase: Phase = .cards
 
+    /// Single guard so the flow dismisses EXACTLY once: the done-screen checkmark
+    /// auto-dismiss and an early "Done" tap both route through `commitAndClose()`,
+    /// whichever fires first wins and the other becomes a no-op.
+    private var isDismissing = false
+    /// The scheduled auto-dismiss after the checkmark celebration. Held so an early
+    /// "Done" tap can cancel it (otherwise both would fire → double dismissal).
+    private var pendingAutoDismiss: DispatchWorkItem?
+
     private let titleLabel = UILabel()
     private let leftButton = UIButton(type: .system)
     private let rightButton = UIButton(type: .system)
@@ -629,22 +637,44 @@ final class CatchUpViewController: UIViewController {
     /// card or the delete prompt) dotmatrix-dissolves into the done message + its chrome,
     /// so finishing a catch-up reads as one pixel wipe rather than an abrupt swap.
     ///
-    /// Task 9: the All Done page's checkmark/auto-dismiss lives here. Add the animated
-    /// checkmark + auto-dismiss in the `completion` (after the wipe lands the done state
-    /// is fully on screen). `messageView` is the surface to animate; `commitAndClose()`
-    /// is the dismiss path.
+    /// Task 9: the All Done page. The triage surface dotmatrix-dissolves into the done
+    /// chrome (`changes`), then — once the wipe lands — the checkmark plays its draw-on
+    /// celebration. When the tick finishes we hold briefly so the user registers "all
+    /// done", then auto-dismiss back to the reading list. The whole checkmark path is
+    /// pure Core Animation, so it plays (and still auto-dismisses) even when the
+    /// pixel-wipe gate is OFF — `DotMatrixCrossfade.run` invokes `completion` either way.
     private func enterDonePhase() {
         let applyDoneState = { [self] in
             phase = .done
             deleteReadView?.removeFromSuperview()
             deleteReadView = nil
             tearDownCurrentCard()
-            messageView.show(
-                symbol: "checkmark.circle.fill", tint: GlassStyle.readingAccent, text: "All done!")
             messageView.isHidden = false
             updateChrome()
         }
-        DotMatrixCrossfade.run(in: view, changes: applyDoneState)
+        DotMatrixCrossfade.run(in: view, changes: applyDoneState) { [weak self] in
+            self?.playDoneCheckmarkAndAutoDismiss()
+        }
+    }
+
+    /// Plays the checkmark celebration on the done message, then schedules the
+    /// auto-dismiss. Tapping "Done" before the hold elapses cancels `pendingAutoDismiss`
+    /// and dismisses early; the `isDismissing` guard in `commitAndClose()` keeps it to a
+    /// single dismissal regardless of which fires first.
+    private func playDoneCheckmarkAndAutoDismiss() {
+        // If the user already left (early Done tap during the wipe), do nothing.
+        guard !isDismissing else { return }
+
+        // A readable beat after the tick lands before the screen dismisses itself.
+        // Slightly longer under Reduce Motion since the draw-on is skipped.
+        let hold: TimeInterval = UIAccessibility.isReduceMotionEnabled ? 1.0 : 0.7
+
+        messageView.playDoneCheckmark(tint: GlassStyle.readingAccent, text: "All done!") { [weak self] in
+            guard let self, !self.isDismissing else { return }
+            let work = DispatchWorkItem { [weak self] in self?.commitAndClose() }
+            self.pendingAutoDismiss = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + hold, execute: work)
+        }
     }
 
     @objc private func leftTapped() {
@@ -659,6 +689,12 @@ final class CatchUpViewController: UIViewController {
             AppReaderShareProvider.shared.presentShareSheet(
                 urlString: item.urlString, title: item.title, from: self, sourceView: rightButton)
         case .done:
+            // Undo: route through the single-dismiss guard so it can't race the
+            // checkmark auto-dismiss into a double dismissal.
+            guard !isDismissing else { return }
+            isDismissing = true
+            pendingAutoDismiss?.cancel()
+            pendingAutoDismiss = nil
             store.restore(snapshot)
             dismiss(animated: true)
         case .voicePrompt, .deletePrompt:
@@ -667,6 +703,14 @@ final class CatchUpViewController: UIViewController {
     }
 
     private func commitAndClose() {
+        // Single-dismiss guard: the auto-dismiss and an early "Done" tap both land here;
+        // whichever is first wins, the rest are no-ops (no double dismissal).
+        guard !isDismissing else { return }
+        isDismissing = true
+        // Cancel any scheduled auto-dismiss (an early "Done" tap pre-empting the hold).
+        pendingAutoDismiss?.cancel()
+        pendingAutoDismiss = nil
+
         for id in pendingDeleteIDs {
             if let item = store.item(withID: id) { store.delete(item) }
         }

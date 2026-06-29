@@ -12,20 +12,42 @@ import UIKit
 
 /// The full-screen end-of-catch-up message (delete prompt / all done): a large
 /// accent SF Symbol over bold text, centered — in the app's own aesthetic.
+///
+/// The glyph slot is a fixed-size square so it can host either a static SF Symbol
+/// (the delete prompt's `trash` etc.) OR a vector-drawn, animatable checkmark (the
+/// "All done!" celebration). The checkmark is drawn with CAShapeLayers so the ring
+/// can spring-pop in and the tick can stroke on — see `playDoneCheckmark`.
 final class CatchUpMessageView: UIView {
     private let glyph = UIImageView()
     private let textLabel = UILabel()
+
+    /// The fixed square that holds whichever glyph (symbol or drawn check) is shown.
+    /// A constant size keeps layout stable whether we show a symbol or draw vectors,
+    /// and gives the shape layers a deterministic canvas to lay out into.
+    private static let glyphSize: CGFloat = 84
+    private let glyphContainer = UIView()
+
+    // Vector checkmark layers (lazily built on first `playDoneCheckmark`). The ring is
+    // a stroked circle; the tick is a stroked check path. Kept around so an in-flight
+    // animation can be torn down cleanly if the view is reused.
+    private var ringLayer: CAShapeLayer?
+    private var checkLayer: CAShapeLayer?
 
     init() {
         super.init(frame: .zero)
         glyph.contentMode = .center
         glyph.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 52, weight: .semibold)
+        glyph.translatesAutoresizingMaskIntoConstraints = false
+
+        glyphContainer.translatesAutoresizingMaskIntoConstraints = false
+        glyphContainer.addSubview(glyph)
+
         textLabel.font = .systemFont(ofSize: 28, weight: .bold)
         textLabel.textColor = .label
         textLabel.textAlignment = .center
         textLabel.numberOfLines = 0
 
-        let stack = UIStackView(arrangedSubviews: [glyph, textLabel])
+        let stack = UIStackView(arrangedSubviews: [glyphContainer, textLabel])
         stack.axis = .vertical
         stack.spacing = 22
         stack.alignment = .center
@@ -36,14 +58,147 @@ final class CatchUpMessageView: UIView {
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            glyphContainer.widthAnchor.constraint(equalToConstant: Self.glyphSize),
+            glyphContainer.heightAnchor.constraint(equalToConstant: Self.glyphSize),
+            glyph.centerXAnchor.constraint(equalTo: glyphContainer.centerXAnchor),
+            glyph.centerYAnchor.constraint(equalTo: glyphContainer.centerYAnchor),
         ])
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func show(symbol: String, tint: UIColor, text: String) {
+        // Showing a plain symbol replaces any drawn checkmark from a prior use.
+        tearDownCheckmarkLayers()
+        glyph.isHidden = false
         glyph.image = UIImage(systemName: symbol)
         glyph.tintColor = tint
         textLabel.text = text
+    }
+
+    /// Sets up the "All done!" message and plays a celebratory checkmark: the accent
+    /// ring springs/pops in while the tick strokes on, landing on a settled checkmark.
+    /// `completion` fires once the tick has finished drawing (or immediately-ish under
+    /// Reduce Motion, where we just show the finished mark). Independent of the
+    /// pixel-wipe gate — this is pure Core Animation.
+    ///
+    /// - Parameter tint: the accent color for the ring + tick.
+    /// - Parameter text: the headline ("All done!").
+    func playDoneCheckmark(tint: UIColor, text: String, completion: @escaping () -> Void) {
+        textLabel.text = text
+        glyph.isHidden = true          // hide the static symbol slot; we draw vectors
+        glyph.image = nil
+
+        // Lay out so the container has its final size before we build the shapes.
+        layoutIfNeeded()
+        buildCheckmarkLayers(tint: tint)
+
+        if UIAccessibility.isReduceMotionEnabled {
+            // Reduce Motion: skip the draw-on. Snap the finished mark on screen and let
+            // the caller hold/auto-dismiss. Still calls completion so the user is never
+            // stranded on the done screen.
+            ringLayer?.strokeEnd = 1
+            checkLayer?.strokeEnd = 1
+            completion()
+            return
+        }
+
+        animateCheckmark(completion: completion)
+    }
+
+    // MARK: - Vector checkmark
+
+    private func tearDownCheckmarkLayers() {
+        ringLayer?.removeAllAnimations(); ringLayer?.removeFromSuperlayer(); ringLayer = nil
+        checkLayer?.removeAllAnimations(); checkLayer?.removeFromSuperlayer(); checkLayer = nil
+    }
+
+    /// Builds (or rebuilds) the ring + tick shape layers, sized to the glyph square and
+    /// starting fully un-drawn (`strokeEnd = 0`) ready to animate.
+    private func buildCheckmarkLayers(tint: UIColor) {
+        tearDownCheckmarkLayers()
+        let size = Self.glyphSize
+        let bounds = CGRect(x: 0, y: 0, width: size, height: size)
+        let lineWidth: CGFloat = 6
+
+        // Ring: a full circle inset by half the stroke so it isn't clipped.
+        let ring = CAShapeLayer()
+        ring.frame = bounds
+        ring.fillColor = UIColor.clear.cgColor
+        ring.strokeColor = tint.cgColor
+        ring.lineWidth = lineWidth
+        ring.lineCap = .round
+        let ringRect = bounds.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+        // Start the stroke at the top so it sweeps around symmetrically.
+        let ringPath = UIBezierPath(
+            arcCenter: CGPoint(x: size / 2, y: size / 2),
+            radius: ringRect.width / 2,
+            startAngle: -.pi / 2, endAngle: 1.5 * .pi, clockwise: true)
+        ring.path = ringPath.cgPath
+        ring.strokeEnd = 0
+
+        // Tick: the classic check, proportioned to the square.
+        let check = CAShapeLayer()
+        check.frame = bounds
+        check.fillColor = UIColor.clear.cgColor
+        check.strokeColor = tint.cgColor
+        check.lineWidth = lineWidth
+        check.lineCap = .round
+        check.lineJoin = .round
+        let tick = UIBezierPath()
+        tick.move(to: CGPoint(x: size * 0.28, y: size * 0.52))
+        tick.addLine(to: CGPoint(x: size * 0.44, y: size * 0.68))
+        tick.addLine(to: CGPoint(x: size * 0.73, y: size * 0.34))
+        check.path = tick.cgPath
+        check.strokeEnd = 0
+
+        glyphContainer.layer.addSublayer(ring)
+        glyphContainer.layer.addSublayer(check)
+        ringLayer = ring
+        checkLayer = check
+    }
+
+    /// The celebration: the ring strokes + pops in with a spring scale, then the tick
+    /// strokes on. `completion` fires when the tick finishes.
+    private func animateCheckmark(completion: @escaping () -> Void) {
+        guard let ring = ringLayer, let check = checkLayer else { completion(); return }
+
+        let ringDraw: CFTimeInterval = 0.32
+        let tickDraw: CFTimeInterval = 0.30
+
+        // Ring stroke-on.
+        let ringStroke = CABasicAnimation(keyPath: "strokeEnd")
+        ringStroke.fromValue = 0
+        ringStroke.toValue = 1
+        ringStroke.duration = ringDraw
+        ringStroke.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        ring.strokeEnd = 1
+        ring.add(ringStroke, forKey: "ringStroke")
+
+        // A subtle spring scale "pop" on the whole glyph square as the ring lands.
+        let pop = CASpringAnimation(keyPath: "transform.scale")
+        pop.fromValue = 0.6
+        pop.toValue = 1.0
+        pop.damping = 9
+        pop.stiffness = 170
+        pop.mass = 0.7
+        pop.initialVelocity = 6
+        pop.duration = pop.settlingDuration
+        glyphContainer.layer.add(pop, forKey: "pop")
+
+        // Tick stroke-on, delayed until the ring is mostly drawn so it reads as a beat.
+        let tickStroke = CABasicAnimation(keyPath: "strokeEnd")
+        tickStroke.fromValue = 0
+        tickStroke.toValue = 1
+        tickStroke.duration = tickDraw
+        tickStroke.beginTime = CACurrentMediaTime() + ringDraw * 0.7
+        tickStroke.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        tickStroke.fillMode = .backwards
+        check.strokeEnd = 1
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock(completion)
+        check.add(tickStroke, forKey: "tickStroke")
+        CATransaction.commit()
     }
 }
 

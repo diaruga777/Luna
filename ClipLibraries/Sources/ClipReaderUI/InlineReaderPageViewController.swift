@@ -74,7 +74,13 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         super.init(nibName: nil, bundle: nil)
         if let preloadedContent {
             articleContent = preloadedContent   // marks isArticle for the host header
+            SharedDiagnosticLog.record(
+                "rendered from cache (sync, no network blocked display): \(url.absoluteString)",
+                category: "preload-tap")
         } else {
+            SharedDiagnosticLog.record(
+                "MISS → awaiting network (spinner will show this first open only): \(url.absoluteString)",
+                category: "preload-tap")
             // Begin fetching immediately so the network round-trip overlaps the host's
             // open animation rather than starting only once the view has loaded.
             probeForArticle()
@@ -116,6 +122,12 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         didDecide = true
         articleContent = content
         embedReader(mode: readerMode)
+        // Content is fully embedded/laid out on this (the first) frame, BEFORE the
+        // host's open animation runs in `viewIsAppearing` — so the pixelated transition
+        // reveals already-loaded content, never a spinner.
+        SharedDiagnosticLog.record(
+            "content ready (laid out before transition begins): \(url.absoluteString)",
+            category: "preload-tap")
         onBecameArticle?()
         refreshPreloadedCache(url)
     }
@@ -169,29 +181,31 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         let target = url
         articleProbe = Task { [weak self] in
             // Everything off the main thread so the spinner never blocks the UI (the
-            // overlay stays dismissable). A preloaded article opens instantly — its
-            // cache read + JSON decode happen here, not on main.
-            let result: (content: ArticleContent?, fromCache: Bool) =
-                await Task.detached(priority: .userInitiated) {
-                    if let cached = PreloadStore.shared.articleContent(for: target),
-                       cached.isArticleLike {
-                        return (cached, true)
-                    }
-                    guard let html = try? await ArticleFetcher().fetchHTML(from: target) else {
-                        return (nil, false)
-                    }
-                    return (try? ArticleExtractor().extract(html: html, baseURL: target), false)
-                }.value
+            // overlay stays dismissable). `materialize` first reuses an existing cache
+            // entry (a within-session warm); on a genuine miss it fetches + extracts +
+            // downloads images + PERSISTS the result to disk under the durable
+            // `tappedLinkOwner`, so the NEXT open of this tapped link — this session OR
+            // after a relaunch — is an instant synchronous cache hit (no spinner ever
+            // again). The very first open of a never-before-seen link is the only one
+            // that can await the network.
+            let content: ArticleContent? = await Task.detached(priority: .userInitiated) {
+                await RabbitHolePreloader.materialize(
+                    url: target, owner: PreloadStore.tappedLinkOwner)
+            }.value
             guard let self, !Task.isCancelled else { return }
             await MainActor.run {
-                if let content = result.content, content.isArticleLike {
+                if let content, content.isArticleLike {
+                    SharedDiagnosticLog.record(
+                        "awaited network, now persisted to disk (next open instant): "
+                        + "\(target.absoluteString)", category: "preload-tap")
                     self.pendingDecision = .reader(content)
                 } else {
+                    SharedDiagnosticLog.record(
+                        "awaited network, not article-like → web view: \(target.absoluteString)",
+                        category: "preload-tap")
                     self.pendingDecision = .web   // not article-like → show the page
                 }
                 self.applyDecisionIfPossible()
-                // Refresh the on-disk cache for next time (does not disturb the view).
-                if result.fromCache { self.refreshPreloadedCache(target) }
             }
         }
     }

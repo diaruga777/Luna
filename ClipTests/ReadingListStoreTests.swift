@@ -174,13 +174,14 @@ final class ReadingListStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourceURL.path))
     }
 
-    /// A mail/email save (no preserved web archive, no imported source document) has
+    /// A mail/email save (synthetic `clipmail://` URL, `captureSource == .email`) has
     /// no original artifact to show — the reader must not offer the Original/web mode.
     /// `ReaderViewController` keys the Original segment off `hasOriginalSource(for:)`,
-    /// so this is the exact condition that hides it.
+    /// so this is the exact condition that hides it. This is the ONLY save type that
+    /// hides the mode.
     func testEmailSaveHasNoOriginalSource() throws {
         // A mail import: no real web URL, no webarchive, no source document.
-        var item = store.add(urlString: "clipmail://message")
+        var item = store.add(urlString: "clipmail://message", source: .email)
         item.state = .ready
         store.restore([item])
 
@@ -188,5 +189,20 @@ final class ReadingListStoreTests: XCTestCase {
         XCTAssertNil(store.originalDocumentURL(for: item))
         XCTAssertFalse(store.hasOriginalSource(for: item),
                        "Email saves have no web archive or source file, so Original mode must be hidden.")
+    }
+
+    /// A web page must offer the Original mode even before (or if) its `.webarchive`
+    /// is captured — availability keys off the save's source, not file existence, and
+    /// `OriginalPageViewController` falls back to the live page. (Regression guard: an
+    /// earlier fix had tied availability to the archive file, hiding the mode for web
+    /// saves whose capture hadn't landed.)
+    func testWebPageHasOriginalSourceEvenWithoutSavedArchive() throws {
+        let item = store.add(urlString: "https://example.com/article", source: .appIntent)
+        let saved = try XCTUnwrap(store.item(withID: item.id))
+
+        XCTAssertNil(store.webArchiveURL(for: saved),
+                     "Precondition: no archive captured yet.")
+        XCTAssertTrue(store.hasOriginalSource(for: saved),
+                      "A web page always offers Original mode, even before its webarchive is captured.")
     }
 }

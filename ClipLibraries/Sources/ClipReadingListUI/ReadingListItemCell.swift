@@ -155,8 +155,7 @@ public final class ReadingListItemCell: UITableViewCell {
         self.onTrailingButton = onTrailingButton
         if let symbol = trailingButtonSymbol {
             trailingButton.setImage(
-                UIImage(systemName: symbol, withConfiguration:
-                    UIImage.SymbolConfiguration(pointSize: 24, weight: .regular)), for: .normal)
+                UIImage.dotMatrixIcon(systemName: symbol, pointSize: 24, weight: .regular), for: .normal)
             trailingButton.sizeToFit()
             trailingButton.tintColor = GlassStyle.readingAccent
             accessoryView = trailingButton

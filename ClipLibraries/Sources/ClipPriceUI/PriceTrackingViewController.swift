@@ -3,6 +3,7 @@
 //  ShareKit
 //
 
+import ClipDesignSystem
 import ClipStorage
 import ClipHTMLClassification
 import ClipURLClassification
@@ -173,8 +174,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         productHeader.addSubview(productTitleLabel)
 
         var addConfig = UIButton.Configuration.plain()
-        addConfig.image = UIImage(systemName: "plus", withConfiguration:
-            UIImage.SymbolConfiguration(textStyle: .body, scale: .medium))
+        addConfig.image = UIImage.dotMatrixIcon(systemName: "plus", pointSize: 18)
         addConfig.contentInsets = .zero
         addSellerButton.configuration = addConfig
         addSellerButton.setContentHuggingPriority(.required, for: .horizontal)
@@ -290,7 +290,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         switch exitContext.leftButton {
         case .back:
             navigationItem.leftBarButtonItem = UIBarButtonItem(
-                image: UIImage(systemName: "chevron.backward"),
+                image: UIImage.dotMatrixIcon(systemName: "chevron.backward"),
                 style: .plain, target: self, action: #selector(leftButtonTapped))
         case .done:
             navigationItem.leftBarButtonItem = UIBarButtonItem(

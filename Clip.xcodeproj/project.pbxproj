@@ -540,6 +540,7 @@
 				7445361A6C10C9E25040C4AD /* ClipSocialUI */,
 				F1D3242938BA3B48ED8EA6DD /* ClipIntents */,
 				3933ED17E10DC2C0C55B129C /* ClipReadingListUI */,
+				C100000000000000000000018 /* ClipTransitions */,
 			);
 			productName = ClipTests;
 			productReference = AA0200000000000000000003 /* ClipTests.xctest */;

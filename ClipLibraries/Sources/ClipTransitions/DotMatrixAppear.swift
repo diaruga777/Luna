@@ -29,7 +29,13 @@ public enum DotMatrixAppear {
                                   completion: (() -> Void)? = nil) {
         view.layoutIfNeeded()
 
+        // The overlay must be parented in the view's SUPERVIEW (not the view itself): the
+        // appearing view may be a `UIVisualEffectView` (e.g. the toast pill), and adding a
+        // subview directly to a visual-effect view — rather than its `contentView` — is
+        // unsupported on modern iOS and traps. Hosting the overlay as a sibling, framed in
+        // the superview's coordinate space, sidesteps that entirely. No superview ⇒ fall back.
         guard DotMatrixTransitionCenter.shared.isEnabled,
+              let host = view.superview,
               let after = DotMatrixSnapshot.image(of: view, afterScreenUpdates: true),
               let overlay = DotMatrixTransitionCenter.shared.borrowOverlay(for: view.window) else {
             fadeIn(view, duration: duration, completion: completion)
@@ -46,12 +52,14 @@ public enum DotMatrixAppear {
 
         overlay.style = DotMatrixTransitionStyleProvider.style(for: view.traitCollection)
         overlay.direction = direction
-        overlay.frame = view.bounds
-        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        // Frame the overlay over the view, but in the SUPERVIEW's coordinate space, and sit
+        // it directly above the view so it covers it.
+        overlay.frame = view.frame
+        overlay.autoresizingMask = []
         overlay.configure(before: before, after: after)
         overlay.setProgress(0)
         overlay.isHidden = false
-        view.addSubview(overlay)
+        host.insertSubview(overlay, aboveSubview: view)
 
         let window = view.window
         overlay.animateProgress(to: 1, duration: duration ?? DotMatrixTransitionSettings.totalDuration) {

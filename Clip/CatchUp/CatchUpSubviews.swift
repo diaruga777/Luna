@@ -331,23 +331,20 @@ final class CatchUpPriceTrackerCardBody: UIView {
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// A read-only liquid-glass pill mirroring `AlertThresholdSlider`'s chrome — the
-    /// "Alert threshold" title and the SAME percent + absolute readout
+    /// A read-only solid (de-glassed, Task 3) pill mirroring `AlertThresholdSlider`'s
+    /// chrome — the "Alert threshold" title and the SAME percent + absolute readout
     /// (`PriceFormatting.thresholdDescription`) — but with a "Change" button instead
     /// of the interactive slider, since catch-up is a glance surface (editing happens
     /// on the full price-tracking screen).
     private static func makeThresholdReadout(
         tracker: PriceTracker, onChange: @escaping () -> Void
     ) -> UIView {
-        let glassPill = UIVisualEffectView(effect: GlassStyle.barEffect())
-        glassPill.translatesAutoresizingMaskIntoConstraints = false
-        if #available(iOS 26.0, *) {
-            glassPill.cornerConfiguration = .corners(radius: 22)
-        } else {
-            glassPill.layer.cornerRadius = 22
-            glassPill.layer.cornerCurve = .continuous
-            glassPill.clipsToBounds = true
-        }
+        let pill = UIView()
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        pill.backgroundColor = GlassStyle.solidBarColor
+        pill.layer.cornerRadius = 22
+        pill.layer.cornerCurve = .continuous
+        pill.clipsToBounds = true
 
         let title = UILabel()
         title.text = "Alert threshold"
@@ -386,21 +383,21 @@ final class CatchUpPriceTrackerCardBody: UIView {
         copy.spacing = 3
         copy.alignment = .leading
         copy.translatesAutoresizingMaskIntoConstraints = false
-        glassPill.contentView.addSubview(copy)
+        pill.addSubview(copy)
         changeButton.translatesAutoresizingMaskIntoConstraints = false
-        glassPill.contentView.addSubview(changeButton)
+        pill.addSubview(changeButton)
         // Text on the left, a self-sized capsule "Change" button on the right, side by
         // side with a real gap — so the button is an unambiguous tap target and the
         // multi-line readout can never run underneath it.
         NSLayoutConstraint.activate([
-            copy.topAnchor.constraint(equalTo: glassPill.contentView.topAnchor, constant: 12),
-            copy.leadingAnchor.constraint(equalTo: glassPill.contentView.leadingAnchor, constant: 16),
-            copy.bottomAnchor.constraint(equalTo: glassPill.contentView.bottomAnchor, constant: -12),
+            copy.topAnchor.constraint(equalTo: pill.topAnchor, constant: 12),
+            copy.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 16),
+            copy.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -12),
             changeButton.leadingAnchor.constraint(equalTo: copy.trailingAnchor, constant: 12),
-            changeButton.trailingAnchor.constraint(equalTo: glassPill.contentView.trailingAnchor, constant: -16),
-            changeButton.centerYAnchor.constraint(equalTo: glassPill.contentView.centerYAnchor),
+            changeButton.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -16),
+            changeButton.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
         ])
-        return glassPill
+        return pill
     }
 
     /// Resolves the tracker's product image the SAME way the reading-list cell does

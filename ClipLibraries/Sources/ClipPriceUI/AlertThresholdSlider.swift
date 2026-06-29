@@ -7,10 +7,10 @@ import ClipDesignSystem
 import ClipModels
 import UIKit
 
-/// The shared alert-threshold control for price trackers: a liquid-glass pill
-/// (`GlassStyle.barEffect()`) containing the title **"Alert threshold"**, a slider
-/// over the fractional drop, and a readout line showing the same percent + absolute
-/// price text everywhere (`PriceFormatting.thresholdDescription`).
+/// The shared alert-threshold control for price trackers: a solid rounded pill
+/// (de-glassed — `GlassStyle.solidBarColor`) containing the title **"Alert threshold"**,
+/// a slider over the fractional drop, and a readout line showing the same percent +
+/// absolute price text everywhere (`PriceFormatting.thresholdDescription`).
 ///
 /// Used identically by the price-tracking editor and the catch-up price-tracker
 /// card, so both render the same and drive the same `alertThresholdFraction`. The
@@ -27,7 +27,10 @@ public final class AlertThresholdSlider: UIView {
 
     private let slider = UISlider()
     private let readoutLabel = UILabel()
-    private let glassPill = UIVisualEffectView(effect: GlassStyle.barEffect())
+    /// De-glassed (Task 3): a solid rounded pill. This sits on the editor / catch-up
+    /// card's solid background, so the live blur added little and could not be captured
+    /// faithfully by the Dot Matrix pixel-wipe transition.
+    private let pill = UIView()
 
     /// The price baseline + currency the readout's absolute-drop text is computed
     /// against (the tracker's initial best price). Set via `configure`.
@@ -45,15 +48,12 @@ public final class AlertThresholdSlider: UIView {
     private func buildLayout() {
         backgroundColor = .clear
 
-        glassPill.translatesAutoresizingMaskIntoConstraints = false
-        if #available(iOS 26.0, *) {
-            glassPill.cornerConfiguration = .corners(radius: 22)
-        } else {
-            glassPill.layer.cornerRadius = 22
-            glassPill.layer.cornerCurve = .continuous
-            glassPill.clipsToBounds = true
-        }
-        addSubview(glassPill)
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        pill.backgroundColor = GlassStyle.solidBarColor
+        pill.layer.cornerRadius = 22
+        pill.layer.cornerCurve = .continuous
+        pill.clipsToBounds = true
+        addSubview(pill)
 
         let title = UILabel()
         title.text = "Alert threshold"
@@ -75,17 +75,17 @@ public final class AlertThresholdSlider: UIView {
         stack.axis = .vertical
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
-        glassPill.contentView.addSubview(stack)
+        pill.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            glassPill.topAnchor.constraint(equalTo: topAnchor),
-            glassPill.bottomAnchor.constraint(equalTo: bottomAnchor),
-            glassPill.leadingAnchor.constraint(equalTo: leadingAnchor),
-            glassPill.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.topAnchor.constraint(equalTo: glassPill.contentView.topAnchor, constant: 16),
-            stack.bottomAnchor.constraint(equalTo: glassPill.contentView.bottomAnchor, constant: -16),
-            stack.leadingAnchor.constraint(equalTo: glassPill.contentView.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: glassPill.contentView.trailingAnchor, constant: -20),
+            pill.topAnchor.constraint(equalTo: topAnchor),
+            pill.bottomAnchor.constraint(equalTo: bottomAnchor),
+            pill.leadingAnchor.constraint(equalTo: leadingAnchor),
+            pill.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.topAnchor.constraint(equalTo: pill.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -16),
+            stack.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -20),
         ])
     }
 

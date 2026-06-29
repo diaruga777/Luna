@@ -27,17 +27,25 @@ final class DotMatrixTransitionSession {
     private let window: UIWindow?
     private let toView: UIView
     private let isIncomingNew: Bool
+    /// The navigation bar hidden under the wipe (so it can't snap/blink above the overlay)
+    /// and its alpha to restore on completion. Nil for non-nav transitions or a hidden bar.
+    private let hiddenBar: UINavigationBar?
+    private let restoreBarAlpha: CGFloat
 
     private init(ctx: UIViewControllerContextTransitioning,
                  overlay: RabbitHoleTransitionView,
                  window: UIWindow?,
                  toView: UIView,
-                 isIncomingNew: Bool) {
+                 isIncomingNew: Bool,
+                 hiddenBar: UINavigationBar?,
+                 restoreBarAlpha: CGFloat) {
         self.ctx = ctx
         self.overlay = overlay
         self.window = window
         self.toView = toView
         self.isIncomingNew = isIncomingNew
+        self.hiddenBar = hiddenBar
+        self.restoreBarAlpha = restoreBarAlpha
     }
 
     /// Set up the overlay + snapshots synchronously and park it on top at progress 0
@@ -51,6 +59,34 @@ final class DotMatrixTransitionSession {
               let toView = ctx.view(forKey: .to) else { return nil }
         let fromView = ctx.view(forKey: .from)
 
+        guard DotMatrixTransitionCenter.shared.isEnabled else { return nil }
+
+        // The navigation bar is a sibling ABOVE the transition container, and UIKit swaps
+        // its items to the destination's BEFORE our animator runs — so a live bar would
+        // either snap (interactive pop) or blink (push/pop to a bar-hiding screen) above
+        // the overlay. Fold it INTO the wipe instead: snapshot the source bar now, the
+        // destination bar after the lifecycle flush, composite each into its frame, and
+        // keep the live bar hidden for the whole wipe (restored on completion). The header
+        // then dissolves proportionally with the content and tracks an interactive gesture.
+        let fromVC = ctx.viewController(forKey: .from)
+        let nav = toVC.navigationController ?? fromVC?.navigationController
+        let bar = nav?.navigationBar
+        // Bar frame in the snapshot (container) coordinate space, captured up front.
+        let barFrame = bar.flatMap { $0.superview?.convert($0.frame, to: container) }
+        // Snapshot the bar only while it's actually on screen (a bar-hiding destination
+        // leaves it nil so we don't fold a ghost header into that side of the wipe).
+        func barSnapshot() -> UIImage? {
+            guard let bar, !bar.isHidden, bar.alpha > 0.01 else { return nil }
+            return DotMatrixSnapshot.image(of: bar, afterScreenUpdates: false)
+        }
+        let sourceBarImg = barSnapshot()
+
+        // Capture the before content (still the on-screen from-view) BEFORE the to-view is
+        // added / laid out, so it's the genuine outgoing screen.
+        let beforeView = fromView ?? toView
+        guard let beforeContent = DotMatrixSnapshot.image(of: beforeView, afterScreenUpdates: false)
+        else { return nil }
+
         // Present/push add the incoming view; dismiss/pop already have it behind.
         let isIncomingNew = (toView.superview == nil)
         if isIncomingNew {
@@ -60,14 +96,32 @@ final class DotMatrixTransitionSession {
         }
         container.layoutIfNeeded()
 
-        let window = container.window
-        let beforeView = fromView ?? toView
+        // The after content (afterScreenUpdates:true flushes the to-VC's viewWillAppear, so
+        // any setNavigationBarHidden it does is applied and the bar now reflects the
+        // destination). Capture the destination bar AFTER that flush.
+        guard let afterContent = DotMatrixSnapshot.image(of: toView, afterScreenUpdates: true)
+        else { return nil }
+        let destBarImg = barSnapshot()
 
-        guard DotMatrixTransitionCenter.shared.isEnabled,
-              let beforeImg = DotMatrixSnapshot.image(of: beforeView, afterScreenUpdates: false),
-              let afterImg = DotMatrixSnapshot.image(of: toView, afterScreenUpdates: true),
-              let overlay = DotMatrixTransitionCenter.shared.borrowOverlay(for: window) else {
+        let window = container.window
+        let beforeImg = composite(content: beforeContent, bar: sourceBarImg,
+                                  at: barFrame, size: container.bounds.size)
+        let afterImg = composite(content: afterContent, bar: destBarImg,
+                                 at: barFrame, size: container.bounds.size)
+        guard let overlay = DotMatrixTransitionCenter.shared.borrowOverlay(for: window) else {
             return nil
+        }
+
+        // Hide the live bar for the duration so the composited one in the snapshots is the
+        // only header on screen during the wipe; restore its alpha (the destination
+        // hidden-state is already correct) on completion.
+        let restoreAlpha = bar?.alpha ?? 1
+        let hiddenBar: UINavigationBar?
+        if let bar, sourceBarImg != nil || destBarImg != nil {
+            bar.alpha = 0
+            hiddenBar = bar
+        } else {
+            hiddenBar = nil
         }
 
         overlay.style = DotMatrixTransitionStyleProvider.style(for: container.traitCollection)
@@ -80,7 +134,23 @@ final class DotMatrixTransitionSession {
         container.addSubview(overlay)
 
         return DotMatrixTransitionSession(ctx: ctx, overlay: overlay, window: window,
-                                         toView: toView, isIncomingNew: isIncomingNew)
+                                         toView: toView, isIncomingNew: isIncomingNew,
+                                         hiddenBar: hiddenBar, restoreBarAlpha: restoreAlpha)
+    }
+
+    /// Draw `content` and (if present) the navigation `bar` snapshot at `frame` into one
+    /// image, so the header is part of the wipe rather than a live sibling floating above
+    /// the overlay. Returns the content unchanged when there's no bar to fold in.
+    private static func composite(content: UIImage, bar: UIImage?,
+                                  at frame: CGRect?, size: CGSize) -> UIImage {
+        guard let bar, let frame, size.width > 1, size.height > 1 else { return content }
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.scale = content.scale
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            content.draw(in: CGRect(origin: .zero, size: size))
+            bar.draw(in: frame)
+        }
     }
 
     /// Drive the wipe directly (0 = before, 1 = after) — interactive use.
@@ -102,9 +172,13 @@ final class DotMatrixTransitionSession {
         }
     }
 
-    /// Return the overlay, undo the incoming view on cancel, and complete the context.
+    /// Return the overlay, undo the incoming view on cancel, restore the live nav bar, and
+    /// complete the context. The bar's hidden-state is already what the surviving screen
+    /// wants (committed → destination; cancelled → UIKit re-asserts the source); we only
+    /// undo the alpha we forced to 0 for the wipe.
     private func finish(committed: Bool) {
         if !committed && isIncomingNew { toView.removeFromSuperview() }
+        hiddenBar?.alpha = restoreBarAlpha
         DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: window)
         ctx.completeTransition(committed)
     }

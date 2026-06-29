@@ -12,6 +12,7 @@
 
 import ClipReaderUI
 import ClipModels
+import ClipStorage
 import Foundation
 import UIKit
 import XCTest
@@ -106,6 +107,23 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         XCTAssertLessThan(prefix.blockTextRanges.count, article.blocks.count)
     }
 
+    func testImageInsidePrefixIsRenderedForInitialSnapshot() throws {
+        let fileName = "prefix-\(UUID().uuidString).png"
+        let fileURL = ReadingListStore.shared.articlesDirectory.appendingPathComponent(fileName)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        try makeTinyPNG().write(to: fileURL)
+
+        let article = ArticleContent(
+            title: "Image first",
+            blocks: [image(fileName), paragraph("short body")])
+        let prefix = ArticleTextRenderer.render(article, characterBudget: 700)
+
+        XCTAssertTrue(prefix.isComplete)
+        XCTAssertEqual(prefix.imageRanges.count, 1)
+    }
+
     // MARK: - WordMap is richer on the full render than on the prefix
 
     func testFullRenderWordMapHasMoreWordsThanPrefix() {
@@ -171,5 +189,14 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         if let tv = view as? UITextView { return tv }
         for sub in view.subviews { if let found = firstTextView(in: sub) { return found } }
         return nil
+    }
+
+    private func makeTinyPNG() throws -> Data {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
+        let image = renderer.image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        return try XCTUnwrap(image.pngData())
     }
 }

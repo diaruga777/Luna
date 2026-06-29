@@ -62,6 +62,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// on the next dive so tapping a link never builds a view controller — see
     /// `ensureSpareLayer` / `takeSpareLayer`.
     private var spareLayer: RabbitHoleLayerViewController?
+    /// Fully configured layer views for the focused page's preloaded links, keyed by
+    /// `PreloadStore` URL key. These are already child VCs in this parent hierarchy and
+    /// parked just offscreen, so a tap only moves an existing view into the stack.
+    private var preparedLayers: [String: RabbitHoleLayerViewController] = [:]
+    private var preparedWindowKeys = Set<String>()
     /// The in-flight background materialization of the focused page's links (cancelled
     /// when the focus changes or the reader closes).
     private var warmTask: Task<Void, Never>?
@@ -69,7 +74,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// warm queue (tapping a link promotes it to the front; see `promote`).
     private var warmURLs: [URL] = []
     /// Cap on how many of a page's links we hold in memory at once.
-    private static let maxPreloadedLinks = 40
+    private static let maxPreloadedLinks = 80
+    /// Cap on expensive offscreen child view controllers. Content can preload much
+    /// wider; actual UIViewController/view hierarchy prep rotates around the viewport.
+    private static let maxPreparedLayerLinks = 8
 
     /// Owner id for this reader open's SPECULATIVE preloads — the pages one depth beyond
     /// `ReaderSettings.preloadDepth` that we materialize while reading. They're owned only
@@ -155,6 +163,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         applyFocus()
+        parkPreparedLayersOffscreen()
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
@@ -232,9 +241,16 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// only sets its content here and its frame via `applyFocus`, never builds a VC.
     @discardableResult
     private func addLayer(_ descriptor: RabbitHoleLayerDescriptor,
-                          preloadedContent: ArticleContent? = nil) -> RabbitHoleLayerViewController {
-        let layer = takeSpareLayer()
-        layer.configure(descriptor: descriptor, preloadedContent: preloadedContent)
+                          preloadedContent: ArticleContent? = nil,
+                          preparedLayer: RabbitHoleLayerViewController? = nil) -> RabbitHoleLayerViewController {
+        let layer: RabbitHoleLayerViewController
+        if let preparedLayer {
+            layer = preparedLayer
+            layer.view.layer.zPosition = 0
+        } else {
+            layer = takeSpareLayer()
+            layer.configure(descriptor: descriptor, preloadedContent: preloadedContent)
+        }
         layers.append(layer)
         return layer
     }
@@ -259,6 +275,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         layer.onBecameArticle = { [weak self, weak layer] in
             guard let self, let layer, layer === self.layers[safe: self.focus] else { return }
             self.warmPreloadsForFocusedLayer()
+        }
+        layer.onVisibleLinkURLsChanged = { [weak self, weak layer] urls in
+            guard let self, let layer, layer === self.layers[safe: self.focus] else { return }
+            self.updatePreparedLayerWindow(urls)
         }
         addChild(layer)
         view.addSubview(layer.view)   // loads the view → builds chrome immediately
@@ -355,7 +375,13 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
         // Hand the new layer its already-decoded content (if we preloaded this link) so
         // it renders synchronously — the "after" snapshot then shows the real article.
-        let preloaded = preloadedContent[PreloadStore.key(for: url)]
+        let key = PreloadStore.key(for: url)
+        let prepared = takePreparedLayer(for: url)
+        let preloaded = preloadedContent[key]
+            ?? PreloadStore.shared.synchronousArticleContent(for: url)
+        if let preloaded, preloadedContent[key] == nil {
+            preloadedContent[key] = preloaded
+        }
         // Diving: focus f→f+1, one layer appended. Unchanged layers (e.g. the layer-0
         // lip on a depth-2 push) are excluded so they stay perfectly static.
         let region = changedRegion(fromFocus: focus, fromCount: layers.count,
@@ -363,7 +389,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         runTransition(region: region, applyState: { [weak self] in
             guard let self else { return }
             self.addLayer(RabbitHoleLayerDescriptor(urlString: url.absoluteString),
-                          preloadedContent: preloaded)
+                          preloadedContent: preloaded,
+                          preparedLayer: prepared)
             self.focus = self.topIndex
             self.applyFocus()
         }, completion: { [weak self] in
@@ -636,13 +663,100 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         guard let focused = layers[safe: focus], focused.isArticle else {
             warmURLs = []
             warmTask?.cancel()
+            clearPreparedLayers()
             return
         }
         warmURLs = Array(focused.outboundLinkURLs.prefix(Self.maxPreloadedLinks))
         let wantedSet = Set(warmURLs.map { PreloadStore.key(for: $0) })
         // Drop in-memory entries no longer reachable from the focused page.
         preloadedContent = preloadedContent.filter { wantedSet.contains($0.key) }
+        clearPreparedLayers(keeping: wantedSet)
+        updatePreparedLayerWindow(focused.visibleLinkURLs)
         runWarm()
+    }
+
+    /// Rotate the expensive prepared child VCs to the visible/near-visible links only.
+    /// This is intentionally much narrower than the content preload queue.
+    private func updatePreparedLayerWindow(_ urls: [URL]) {
+        let candidates = Array(urls.prefix(Self.maxPreparedLayerLinks))
+        let wanted = Set(candidates.map { PreloadStore.key(for: $0) })
+        preparedWindowKeys = wanted
+        clearPreparedLayers(keeping: wanted)
+        guard !candidates.isEmpty else { return }
+        let focusedLayer = layers[safe: focus]
+        DispatchQueue.main.async { [weak self, weak focusedLayer] in
+            guard let self, let focusedLayer,
+                  focusedLayer === self.layers[safe: self.focus],
+                  self.preparedWindowKeys == wanted
+            else { return }
+            self.seedSynchronousPreloads(for: candidates)
+            self.prepareOffscreenLayers(for: candidates)
+        }
+    }
+
+    /// Cold launch case: save-time preloading may have written article JSON to disk,
+    /// but this reader's `preloadedContent` dictionary is empty. Seed only the current
+    /// prepared-layer window synchronously; the tap path has the same fallback for a
+    /// link the user reaches before the window update catches it.
+    private func seedSynchronousPreloads(for urls: [URL]) {
+        for url in urls {
+            let key = PreloadStore.key(for: url)
+            guard preloadedContent[key] == nil,
+                  let content = PreloadStore.shared.synchronousArticleContent(for: url),
+                  content.isArticleLike
+            else { continue }
+            preloadedContent[key] = content
+        }
+    }
+
+    /// Build the actual next-layer UI for every focused-page link whose content is
+    /// already in memory. Each layer is parented now and parked just outside the visible
+    /// bounds, which moves VC construction, chrome setup, reader embedding, and first
+    /// prefix layout off the tap path.
+    private func prepareOffscreenLayers(for urls: [URL]) {
+        guard isViewLoaded else { return }
+        for url in urls {
+            let key = PreloadStore.key(for: url)
+            guard preparedLayers[key] == nil,
+                  let content = preloadedContent[key],
+                  content.isArticleLike
+            else { continue }
+            let layer = makeLayerShell()
+            layer.configure(
+                descriptor: RabbitHoleLayerDescriptor(urlString: url.absoluteString),
+                preloadedContent: content)
+            layer.view.isHidden = false
+            layer.view.layer.zPosition = -100
+            parkPreparedLayerOffscreen(layer)
+            layer.view.setNeedsLayout()
+            layer.view.layoutIfNeeded()
+            preparedLayers[key] = layer
+        }
+    }
+
+    private func takePreparedLayer(for url: URL) -> RabbitHoleLayerViewController? {
+        preparedLayers.removeValue(forKey: PreloadStore.key(for: url))
+    }
+
+    private func clearPreparedLayers(keeping wantedKeys: Set<String> = []) {
+        if wantedKeys.isEmpty { preparedWindowKeys = [] }
+        let keys = preparedLayers.keys.filter { !wantedKeys.contains($0) }
+        for key in keys {
+            guard let layer = preparedLayers.removeValue(forKey: key) else { continue }
+            layer.willMove(toParent: nil)
+            layer.view.removeFromSuperview()
+            layer.removeFromParent()
+        }
+    }
+
+    private func parkPreparedLayersOffscreen() {
+        for layer in preparedLayers.values { parkPreparedLayerOffscreen(layer) }
+    }
+
+    private func parkPreparedLayerOffscreen(_ layer: RabbitHoleLayerViewController) {
+        let width = max(view.bounds.width, 1)
+        let height = max(view.bounds.height, 1)
+        layer.view.frame = CGRect(x: -width - 32, y: 0, width: width, height: height)
     }
 
     /// (Re)start the background drain of `warmURLs` in order. Restarting is cheap: an
@@ -669,6 +783,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
                     // Only keep it if the focus hasn't moved on to a different page.
                     guard let self, wantedSet.contains(key) else { return }
                     self.preloadedContent[key] = content
+                    if self.layers[safe: self.focus]?.visibleLinkURLs
+                        .contains(where: { PreloadStore.key(for: $0) == key }) == true {
+                        self.updatePreparedLayerWindow(
+                            self.layers[safe: self.focus]?.visibleLinkURLs ?? [])
+                    }
                 }
             }
         }

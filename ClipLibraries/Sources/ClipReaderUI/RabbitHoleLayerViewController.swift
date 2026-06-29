@@ -40,6 +40,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     public var onBecameArticle: (() -> Void)?
     /// Fired when the reader mode changes (host updates the descriptor).
     public var onModeChanged: ((ReadingListItem.ReaderMode) -> Void)?
+    /// Visible/near-visible links changed inside the embedded scroll reader. The host
+    /// uses this to rotate prepared offscreen child layers around the current viewport.
+    public var onVisibleLinkURLsChanged: (([URL]) -> Void)?
     /// The header back button (focused layer only): pop one layer, or exit the reader
     /// at the root. The host decides which.
     public var onBack: (() -> Void)?
@@ -123,6 +126,10 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// De-duplicated http(s) links this layer's article points at, in document order.
     /// The host preloads these so a dive into one is instant.
     public var outboundLinkURLs: [URL] { articleContent?.outboundURLs ?? [] }
+    /// Visible/near-visible links for the scroll reader, in document order. Empty for
+    /// RSVP/web modes where there is no tappable scroll-text viewport.
+    public var visibleLinkURLs: [URL] { currentVisibleLinkURLs }
+    private var currentVisibleLinkURLs: [URL] = []
 
     /// True once `configure(...)` has assigned this shell a real page to load. A freshly
     /// created shell stays blank (chrome built, nothing loading) so the host can
@@ -619,6 +626,10 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             scroll.onLinkActivated = { [weak self] url in
                 guard let self else { return }
                 self.onLinkActivated?(url, self.lineText(for: url))
+            }
+            scroll.onVisibleLinkURLsChanged = { [weak self] urls in
+                self?.currentVisibleLinkURLs = urls
+                self?.onVisibleLinkURLsChanged?(urls)
             }
             child = scroll
         case .rsvp:

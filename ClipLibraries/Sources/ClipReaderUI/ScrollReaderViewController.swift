@@ -24,6 +24,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// a new inline split overlay — used by the inline reader to push the link onto
     /// its own navigation stack rather than nesting another overlay.
     public var onLinkActivated: ((URL) -> Void)?
+    /// Visible/near-visible inline links changed. RabbitHole uses this to rotate the
+    /// expensive offscreen child view controllers around what the reader can tap soon,
+    /// while the cheaper content preload can stay broader.
+    public var onVisibleLinkURLsChanged: (([URL]) -> Void)?
 
     /// Fired when the end-of-article share footer scrolls into / out of view, so the
     /// host can fade its floating share button (the footer already offers sharing).
@@ -74,6 +78,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// started exactly once whether that happens in `viewDidAppear` (short article,
     /// tracker already present) or in `applyFullContent` (progressive open).
     private var didStartGazeObservation = false
+    private var lastVisibleLinkKeys: Set<String> = []
 
     #if DEBUG
     /// Test hooks for the progressive load: whether the full content has been
@@ -129,8 +134,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         self.explicitResumeWordIndex = resumeWordIndex
         // Phase 1: render only a leading prefix so the FIRST layout of the text view
         // is cheap (a couple hundred characters), removing the whole-article glyph
-        // pass that stalled the first open behind the entry animation. The full text
-        // is rendered + swapped in by `prepareFullContent()` after that animation.
+        // pass that stalled the first open behind the entry animation. Local images
+        // inside that prefix are rendered immediately because they are part of the
+        // first visible page and must be present in RabbitHole transition snapshots.
+        // The rest of the article renders + swaps in by `prepareFullContent()` after
+        // that animation.
         //
         // EXCEPTIONS where the prefix is useless, so render the whole article up front:
         //  • read-aloud (audio) — speech needs every word immediately and reads from the
@@ -351,6 +359,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             applyInitialScrollPosition()
             revealContent()
         }
+        publishVisibleLinkURLsIfNeeded()
     }
 
     // MARK: - Progressive (two-phase) load
@@ -429,6 +438,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         attachShareFooterIfNeeded()
         layoutShareView()
         fetchMissingImagesIfNeeded()
+        publishVisibleLinkURLsIfNeeded(force: true)
     }
 
     /// Installs the read-aloud resume highlight and the gaze tracker — both of which
@@ -621,6 +631,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 }
             }
         }
+        publishVisibleLinkURLsIfNeeded()
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
@@ -844,6 +855,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         checkFinishedReading()
         updateShareFooterVisibility()
+        publishVisibleLinkURLsIfNeeded()
         if scrollView.isTracking || scrollView.isDragging {
             // User-driven scroll: stop auto-follow; drop the resume highlight
             // only when nothing is actively playing.
@@ -852,6 +864,47 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             }
             followPlayback = false
         }
+    }
+
+    /// Links in and near the viewport, in document order. The rect is expanded above
+    /// and below the current viewport so slow scrolls have prepared child VCs before
+    /// the links enter the exact visible area, without preparing the whole article.
+    private func visibleLinkURLs() -> [URL] {
+        guard isViewLoaded, textView.bounds.width > 0, textView.textStorage.length > 0 else { return [] }
+        textView.layoutManager.ensureLayout(for: textView.textContainer)
+        let viewport = CGRect(
+            x: 0,
+            y: textView.contentOffset.y - textView.bounds.height,
+            width: textView.bounds.width,
+            height: textView.bounds.height * 3)
+        var urls: [URL] = []
+        var seen = Set<String>()
+        let full = NSRange(location: 0, length: textView.textStorage.length)
+        textView.textStorage.enumerateAttribute(.link, in: full) { value, range, _ in
+            let url: URL?
+            if let u = value as? URL { url = u }
+            else if let s = value as? String { url = URL(string: s) }
+            else { url = nil }
+            guard let url else { return }
+            let key = PreloadStore.key(for: url)
+            guard seen.insert(key).inserted else { return }
+            let glyphRange = textView.layoutManager.glyphRange(
+                forCharacterRange: range, actualCharacterRange: nil)
+            var rect = textView.layoutManager.boundingRect(
+                forGlyphRange: glyphRange, in: textView.textContainer)
+            rect.origin.x += textView.textContainerInset.left
+            rect.origin.y += textView.textContainerInset.top
+            if rect.intersects(viewport) { urls.append(url) }
+        }
+        return urls
+    }
+
+    private func publishVisibleLinkURLsIfNeeded(force: Bool = false) {
+        let urls = visibleLinkURLs()
+        let keys = Set(urls.map { PreloadStore.key(for: $0) })
+        guard force || keys != lastVisibleLinkKeys else { return }
+        lastVisibleLinkKeys = keys
+        onVisibleLinkURLsChanged?(urls)
     }
 
     /// Notifies the host when the end-of-article share footer is at least partly

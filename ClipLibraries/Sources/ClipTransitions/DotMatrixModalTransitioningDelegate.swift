@@ -11,7 +11,6 @@
 
 import ClipContentRendering
 import ClipDesignSystem
-import ObjectiveC
 import UIKit
 
 public final class DotMatrixModalTransitioningDelegate: NSObject, UIViewControllerTransitioningDelegate {
@@ -206,18 +205,16 @@ private final class DotMatrixModalAnimator: NSObject, UIViewControllerAnimatedTr
 /// Convenience for presenting with the Dot Matrix pixel-wipe. Owns the transitioning
 /// delegate (UIKit only holds it weakly) by attaching it to the presented VC.
 public enum DotMatrixModal {
-    private static var delegateKey: UInt8 = 0
 
-    /// Present `vc` from `presenter` with a Dot Matrix wipe whose direction mirrors
-    /// `vc.modalTransitionStyle`. Falls through to the stock animation when the
-    /// pixel-wipe is disabled (the delegate just returns nil animators).
+    /// Present `vc` from `presenter`. The modal pixel-wipe is disabled for now, so this
+    /// uses the stock UIKit animation. To bring the wipe back, attach
+    /// `DotMatrixModalTransitioningDelegate.forStyle(vc.modalTransitionStyle)` as `vc`'s
+    /// `transitioningDelegate`, keeping it alive for `vc`'s lifetime via an associated
+    /// object (UIKit only holds `transitioningDelegate` weakly).
     public static func present(_ vc: UIViewController,
                                from presenter: UIViewController,
                                animated: Bool = true,
                                completion: (() -> Void)? = nil) {
-        let delegate = DotMatrixModalTransitioningDelegate.forStyle(vc.modalTransitionStyle)
-        objc_setAssociatedObject(vc, &delegateKey, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        vc.transitioningDelegate = delegate
         presenter.present(vc, animated: animated, completion: completion)
     }
 }

@@ -12,8 +12,8 @@ Files audited (all paths absolute):
 - `ReaderKit/PriceRefresher.swift` — background re-fetch loop
 - `ReaderKit/PriceTracker.swift` — the model
 - `ReaderKit/ArticleIngestDecider.swift` — the shared save-time composition
-- `Clip/ReadingList/ReadingListIngestor.swift`, `ShareKit/ShareViewController.swift`, `Clip/ReadingList/PriceTrackingManager.swift`, `Clip/ReadingList/PriceRefreshCoordinator.swift` — call sites
-- `ClipTests/Fixtures/Products/*`, `ClipTests/*Tests.swift`
+- `Lune/ReadingList/ReadingListIngestor.swift`, `ShareKit/ShareViewController.swift`, `Lune/ReadingList/PriceTrackingManager.swift`, `Lune/ReadingList/PriceRefreshCoordinator.swift` — call sites
+- `LuneTests/Fixtures/Products/*`, `LuneTests/*Tests.swift`
 
 ---
 
@@ -63,10 +63,10 @@ The single shared routine for all surfaces. Order:
 3. Else `ArticleResolver.resolve` → `.article` / `.needsArchive` / `.failed`.
 
 Call sites (verified):
-- `ReadingListIngestor.ingest` (`Clip/ReadingList/ReadingListIngestor.swift:151`) — main app; passes its own `priceFetcher`. **All Shortcuts/App Intents funnel here** (`SaveLinkIntent`/`SaveFromAppIntent`/`ClipSafariPageIntent` → `ReadingListIngestor.handleSavePress`), so they inherit the main-app wiring.
+- `ReadingListIngestor.ingest` (`Lune/ReadingList/ReadingListIngestor.swift:151`) — main app; passes its own `priceFetcher`. **All Shortcuts/App Intents funnel here** (`SaveLinkIntent`/`SaveFromAppIntent`/`LuneSafariPageIntent` → `ReadingListIngestor.handleSavePress`), so they inherit the main-app wiring.
 - `ShareViewController` inline ingest (`ShareKit/ShareViewController.swift:459`) — share extension; **all-default `decide(url:fetcher:)`**, so default `PriceFetcher()`.
 - `ShareReaderViewController.ingestAndPresent` (`ShareKit/ShareReaderViewController.swift:82`) — action/reader extension; **all-default `decide(url:)`**, so default `PriceFetcher()`.
-- `SocialMessageCenter` (`Clip/Social/SocialMessageCenter.swift:367`) — incoming friend-shared tracker; reconstructs from `PriceTrackerShare`, no detection/fetch (not a save-time extraction path).
+- `SocialMessageCenter` (`Lune/Social/SocialMessageCenter.swift:367`) — incoming friend-shared tracker; reconstructs from `PriceTrackerShare`, no detection/fetch (not a save-time extraction path).
 
 HTML is fetched once per save and threaded through as `prefetchedHTML`, so the *static* paths don't double-fetch — but `detect()` and `fetchPrice()` still re-parse it independently (see P1), and the WebView tier re-fetches over the network.
 

@@ -9,7 +9,7 @@ YouTube links are first-class reading-list items: thumbnail rows, app/in-app
 playback, playlist auto-add, and a channel+title search intent. Videos are
 NEVER sent to Kindle; social sharing works normally.
 
-## Key files (`Clip/YouTube/`)
+## Key files (`Lune/YouTube/`)
 
 - `YouTubeURL.swift` — `videoID(from:)` (watch?v= / youtu.be / shorts / embed
   / live / v; 11-char ID validation), `watchURLString`, `appURL`
@@ -24,7 +24,7 @@ NEVER sent to Kindle; social sharing works normally.
   reachable from the fullscreen controls on device).
 - `GoogleAuthClient.swift` — Google OAuth (ASWebAuthenticationSession, PKCE
   S256, redirect = reversed client ID scheme), tokens in Keychain
-  (`com.hpiddy.clip.google`), auto-refresh. The OAuth client ID is **shipped
+  (`com.hpiddy.lune.google`), auto-refresh. The OAuth client ID is **shipped
   in the app** (`YouTubeSettings.googleClientID`, a constant); users don't
   enter one.
 - `YouTubeQuery.swift` — parses the intent's "channel:title" input: splits on
@@ -39,7 +39,7 @@ NEVER sent to Kindle; social sharing works normally.
   presses): if signed in + auto-add on + playlist chosen → add to playlist.
   It does NOT mark the item read — saved inputs always stay unread on insert.
   The real Watch Later playlist is closed to the API (since 2016);
-  users pick/create a playlist (settings offers "Watch Later (Clip)").
+  users pick/create a playlist (settings offers "Watch Later (Lune)").
 
 ## Ingestion & model
 
@@ -62,15 +62,15 @@ no article content) → `WatchLaterAutoAdder.videoBecameReady`. Item fields:
 ## Settings → YouTube
 
 Client ID field, Sign In/Out, Playlist picker (lists user's playlists +
-"Create 'Watch Later (Clip)'"), Auto-Add toggle. Footer documents the Watch
+"Create 'Watch Later (Lune)'"), Auto-Add toggle. Footer documents the Watch
 Later API limitation and Google Cloud setup (create iOS OAuth client for
-com.hpiddy.clip + enable YouTube Data API v3).
+com.hpiddy.lune + enable YouTube Data API v3).
 
 ## Intent
 
 `FindYouTubeVideoIntent(channel:videoTitle:)` — requires sign-in; channel
 search → video search → match selection → `handleSavePress` (same dedupe-first
-path as all saves) → returns saved URL. In `ClipShortcuts`.
+path as all saves) → returns saved URL. In `LuneShortcuts`.
 
 ## Tests
 

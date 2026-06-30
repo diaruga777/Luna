@@ -9,11 +9,11 @@ they can diverge freely.
 
 | Area | Dot Matrix | Frosted Neon |
 |---|---|---|
-| Shader | `ClipLibraries/.../ClipContentRendering/DotMatrix/DotMatrixShaders.metal` | `.../FrostedGlass/FrostedGlassShaders.metal` |
+| Shader | `LuneLibraries/.../LuneContentRendering/DotMatrix/DotMatrixShaders.metal` | `.../FrostedGlass/FrostedGlassShaders.metal` |
 | Effect view | `DotMatrix/DotMatrixEffectView.swift` | `FrostedGlass/FrostedGlassEffectView.swift` |
-| Persisted settings | `Clip/Settings/DotMatrixSettings.swift` | `Clip/Settings/FrostedGlassSettings.swift` |
-| Settings + preview screen | `Clip/Settings/DotMatrixSettingsScreen.swift` | `Clip/Settings/FrostedGlassSettingsScreen.swift` |
-| Entry rows | `Clip/Settings/ExperimentalSettingsScreen.swift` | same |
+| Persisted settings | `Lune/Settings/DotMatrixSettings.swift` | `Lune/Settings/FrostedGlassSettings.swift` |
+| Settings + preview screen | `Lune/Settings/DotMatrixSettingsScreen.swift` | `Lune/Settings/FrostedGlassSettingsScreen.swift` |
+| Entry rows | `Lune/Settings/ExperimentalSettingsScreen.swift` | same |
 
 The `.metal` files compile into `Bundle.module`'s `default.metallib` (loaded first
 in `buildPipeline`).
@@ -82,14 +82,14 @@ A **fullscreen toggle** expands the preview to fill the screen (aspect-fit) and 
 
 ## Dot Matrix pixel-wipe TRANSITIONS (the facade) — region-confined wipes
 
-Separate from the effects playground above: the **`ClipTransitions`** library wraps the
-`ClipContentRendering` Metal dissolve (`RabbitHoleTransitionView`) into UIKit transition
+Separate from the effects playground above: the **`LuneTransitions`** library wraps the
+`LuneContentRendering` Metal dissolve (`RabbitHoleTransitionView`) into UIKit transition
 helpers, all gated on `DotMatrixTransitionCenter.shared.isEnabled` (user toggle AND Metal
 availability — false ⇒ stock UIKit animation). Surfaces: `DotMatrixCrossfade` (in-place
 view change), `DotMatrixBatch` (table row updates), `DotMatrixSegmentedControl`,
 `DotMatrixAppear`, `DotMatrixTransitionSession` (nav push/pop). The RabbitHole reader's
-dive/pop/overscroll uses the `RabbitHoleTransitioning` protocol (`ClipReaderUI`), with the
-app-side Metal impl `Clip/Social/DotMatrixRabbitHoleTransition.swift`.
+dive/pop/overscroll uses the `RabbitHoleTransitioning` protocol (`LuneReaderUI`), with the
+app-side Metal impl `Lune/Social/DotMatrixRabbitHoleTransition.swift`.
 
 ### THE RULE: only changed REGIONS animate — UIVIEW-level, never pixel-by-pixel
 
@@ -99,7 +99,7 @@ pixelated mid-dissolve. The canonical case: in the RabbitHole stacked reader, pu
 layer 2 leaves layer-0's top/bottom **lips** unchanged, so they must not animate.
 
 Diffing is at the **UIVIEW level (region/rect-based), not pixel-by-pixel**. The shared
-mechanism is **`DotMatrixRegion`** (`ClipTransitions/DotMatrixRegion.swift`):
+mechanism is **`DotMatrixRegion`** (`LuneTransitions/DotMatrixRegion.swift`):
 
 - `DotMatrixRegion.Item(id:frame:state:)` — one identified participant: an `id` (ties the
   same logical view across before/after), a `frame` (host coordinate space), and an opaque

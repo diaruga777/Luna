@@ -1,10 +1,10 @@
 
 # Snapshot test diff artifacts
-ClipTests/ReferenceImages/*.actual.png
+LuneTests/ReferenceImages/*.actual.png
 
 # SwiftPM build artifacts
 .build/
-ClipLibraries/.build/
+LuneLibraries/.build/
 
 # DerivedData
 DerivedData/

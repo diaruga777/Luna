@@ -6,12 +6,12 @@ first thing that runs on any incoming URL.
 
 **Files in scope**
 - `ReaderKit/NewsAggregatorUnwrapper.swift` — the unwrapper (sole logic)
-- `Clip/ReadingList/ReadingListIngestor.swift` — `ingest` (async unwrap choke point)
+- `Lune/ReadingList/ReadingListIngestor.swift` — `ingest` (async unwrap choke point)
 - `ShareKit/ShareViewController.swift` — share/action extension entry points
-- `Clip/ReadingList/ReadingListViewController.swift` — in-app "Save a Link" alert + paste row
-- `Clip/Intents/ClipSafariPageIntent.swift` — `IntentIngestHelper.handleSavePressWithTimeout`
+- `Lune/ReadingList/ReadingListViewController.swift` — in-app "Save a Link" alert + paste row
+- `Lune/Intents/LuneSafariPageIntent.swift` — `IntentIngestHelper.handleSavePressWithTimeout`
 - `ReaderKit/ArticleFetcher.swift` — `canonicalForArchiving` (tracking-param stripping; tightly coupled to unwrap output)
-- `ClipTests/NewsAggregatorUnwrapperTests.swift` — tests
+- `LuneTests/NewsAggregatorUnwrapperTests.swift` — tests
 - `claudedocs/reading-list.md` — docs
 
 ---

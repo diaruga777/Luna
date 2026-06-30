@@ -1,21 +1,21 @@
-# App Intents (`Clip/Intents/`)
+# App Intents (`Lune/Intents/`)
 
 All save actions are `AppIntent`s. They appear in the Shortcuts **action search**
-when discoverable; the ones in `ClipShortcuts` (`AppShortcutsProvider`) also show
+when discoverable; the ones in `LuneShortcuts` (`AppShortcutsProvider`) also show
 prominently at the top of the app's Shortcuts page + Spotlight.
 
 > **Hard limit: an `AppShortcutsProvider` may list AT MOST 10 `AppShortcut`s.**
 > Exceeding it is a HALTING build error in `appintentsmetadataprocessor` — and
 > then NO AppIntents metadata is exported at all (every intent disappears from
-> Shortcuts). Keep `ClipShortcuts.appShortcuts` ≤ 10.
+> Shortcuts). Keep `LuneShortcuts.appShortcuts` ≤ 10.
 
 To check what's actually registered, inspect the built metadata:
-`Clip.app/Metadata.appintents/extract.actionsdata` (JSON; `autoShortcuts` = the
+`Lune.app/Metadata.appintents/extract.actionsdata` (JSON; `autoShortcuts` = the
 provider list, `actions` = all discoverable intents).
 
-## The 10 prominent App Shortcuts (`ClipShortcuts.swift`)
+## The 10 prominent App Shortcuts (`LuneShortcuts.swift`)
 
-`ClipSafariPageIntent`, `SaveLinkIntent`, `FindYouTubeVideoIntent`,
+`LuneSafariPageIntent`, `SaveLinkIntent`, `FindYouTubeVideoIntent`,
 `FindBlueskyPostIntent`, `FindRedditPostIntent`, `SaveXPostIntent`,
 `SaveTikTokIntent`, `SaveInstagramPostIntent`, `SaveFromAppIntent`,
 `ScreenAnalysisPromptIntent`. (Save Song / Save Podcast / Save Facebook are

@@ -34,7 +34,7 @@ Bump indigo accent, Archive green). The card header (date/sender)
 is centered and media/link bodies are vertically centered, leaving the corners clear
 for the pills.
 
-## `Clip/CatchUp/`
+## `Lune/CatchUp/`
 
 - **`CatchUpViewController.swift`** — orchestrator. Phases: `.cards` → (`.voicePrompt`
   when no enhanced voice is installed and the user hasn't dismissed it —

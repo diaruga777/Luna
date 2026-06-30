@@ -6,7 +6,7 @@ Books, Kobo, reMarkable, Boox, Files, AirDrop, Mail, etc.
 
 ## Key file
 
-`Clip/Export/ArticleExportService.swift`:
+`Lune/Export/ArticleExportService.swift`:
 - `writeEPUB(for:) throws -> URL` — builds the EPUB via `EpubBuilder` (content +
   images from `ReadingListStore`) and writes it to a temp file named via
   `ArticleSendCoordinator.epubFileName(forTitle:)`. Throws `ExportError.noContent`
@@ -33,5 +33,5 @@ representation would register alongside it on the same provider.
 
 ## Tests
 
-`ClipTests/ArticleExportServiceTests.swift` — valid-zip EPUB bytes + sanitized
+`LuneTests/ArticleExportServiceTests.swift` — valid-zip EPUB bytes + sanitized
 filename, item provider advertises `UTType.epub`, throws without content.

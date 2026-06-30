@@ -1,0 +1,38 @@
+//
+//  DotMatrixAnimator.swift
+//  LuneTransitions
+//
+//  The GPU Dot Matrix "pixel wipe" expressed as a UIViewControllerAnimatedTransitioning,
+//  used for nav push/pop and modal present/dismiss. Snapshots the outgoing screen
+//  (before) and the incoming screen (after), then plays the two-wavefront dissolve on a
+//  borrowed Metal overlay — all set up synchronously in one runloop so nothing flashes.
+//  If the engine is unavailable or a snapshot fails, it completes as an instant cut
+//  (callers only install this animator when `DotMatrixTransitionCenter.isEnabled`).
+//
+
+import LuneContentRendering
+import LuneDesignSystem
+import UIKit
+
+public final class DotMatrixAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+
+    private let direction: DotMatrixWavefrontDirection
+
+    public init(direction: DotMatrixWavefrontDirection) {
+        self.direction = direction
+        super.init()
+    }
+
+    public func transitionDuration(using _: UIViewControllerContextTransitioning?) -> TimeInterval {
+        DotMatrixTransitionSettings.totalDuration
+    }
+
+    public func animateTransition(using ctx: UIViewControllerContextTransitioning) {
+        // Shared setup (snapshot + borrow overlay + park on top at progress 0); nil ⇒ the
+        // engine is unavailable or a snapshot failed, so fall through to an instant cut.
+        guard let session = DotMatrixTransitionSession.begin(context: ctx, direction: direction) else {
+            ctx.completeTransition(!ctx.transitionWasCancelled); return
+        }
+        session.runToCompletion(duration: transitionDuration(using: ctx))
+    }
+}

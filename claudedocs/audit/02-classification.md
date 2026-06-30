@@ -27,7 +27,7 @@ before it will return a kind.
 | `YouTubeURL.videoID` | `ReaderKit/YouTubeURL.swift` | ✅ pure | `String?` (video id) | youtube only |
 | `PlatformClassifier.classify` | `ReaderKit/PlatformClassifier.swift` | ✅ pure | `PlatformClassification?` | youtube, x, bluesky, reddit, tiktok, instagram, facebook, music, podcast |
 | `NonTextualContent.detect` | `ReaderKit/NonTextualContent.swift` | ✅ pure (wraps `PlatformClassifier`) | `NonTextualContent?` | youtube + platform (rendering-oriented wrapper) |
-| `PlatformRegistry.detect` | `Clip/Platforms/PlatformRegistry.swift` ⚠️ **main-app only** | ✅ pure (wraps `PlatformClassifier`) | `PlatformMatch?` | same as `PlatformClassifier` |
+| `PlatformRegistry.detect` | `Lune/Platforms/PlatformRegistry.swift` ⚠️ **main-app only** | ✅ pure (wraps `PlatformClassifier`) | `PlatformMatch?` | same as `PlatformClassifier` |
 | `ReadingListItem.isDocument` | `ReaderKit/ReadingListItem.swift` | ✅ pure (flag) | `Bool` | document (set at save time, not URL-derived) |
 | `ProductPageDetector.detect` | `ReaderKit/ProductPageDetector.swift` | ✅ pure (HTML in) | `ProductCandidate?` | product (Tier-1 structured + Tier-2 heuristic) |
 | `PaywallDetector` | `ReaderKit/PaywallDetector.swift` | ✅ pure (text/HTML in) | `Bool` | paywall (content markers + schema.org lock) |
@@ -43,7 +43,7 @@ calls), and a *fourth* re-derivation lives inside `BypassGate`.
 
 There is no shared ordering. Each surface re-implements the sequence:
 
-**Main app — `ReadingListIngestor.ingest`** (`Clip/ReadingList/ReadingListIngestor.swift:37`):
+**Main app — `ReadingListIngestor.ingest`** (`Lune/ReadingList/ReadingListIngestor.swift:37`):
 ```
 unwrap aggregator (NewsAggregatorUnwrapper)         line 66
 1. document?      item.isDocument        → ingestDocument        line 89   ← gated HERE, not in decider
@@ -70,7 +70,7 @@ NonTextualContent.detect (youtube + platform, NO document, NO product) line 279/
 ArticleIngestDecider.decide(...)   ← article/product/paywall ONLY
 ```
 
-**Action extension entry** (`Clip Action Extension/`): contains **no Swift
+**Action extension entry** (`Lune Action Extension/`): contains **no Swift
 classification** — only `GetURL.js` (a JS preprocessing file that hands Safari's page
 URL to `ShareViewController`). All its classification is inherited from
 `ShareViewController` / `ShareReaderViewController`.
@@ -92,7 +92,7 @@ URL to `ShareViewController`). All its classification is inherited from
 3. **Platform gating uses two different wrappers.** Main app uses
    `PlatformRegistry.detect`; the share controller uses `NonTextualContent.detect`.
    Both delegate to `PlatformClassifier`, so they agree *today* — but
-   `PlatformRegistry` lives in **`Clip/` (main-app target only)** and violates the
+   `PlatformRegistry` lives in **`Lune/` (main-app target only)** and violates the
    dependency rule that shared classification should live in `ReaderKit/`. The
    extensions literally **cannot** use `PlatformRegistry`.
 
@@ -168,7 +168,7 @@ a false product positive **silently suppresses the article** and creates a bogus
 price tracker. A deterministic shop-host list would let real shops bypass the fuzzy
 scorer entirely (fewer heuristic calls = fewer false positives).
 
-**P7 — `PlatformRegistry` in the wrong target.** It's in `Clip/`, unusable by
+**P7 — `PlatformRegistry` in the wrong target.** It's in `Lune/`, unusable by
 `ReaderKit/` consumers and extensions, directly contradicting CLAUDE.md's
 "`shared/` must not import from `clipper/`; extensions must not import from `clipper/`."
 
@@ -397,6 +397,6 @@ enum Classifier {
 phase (don't rewrite their logic). Collapse the four scattered host sets
 (`hardPaywallHosts`, `archiveTodayHosts`, `youtubeHosts`, inlined platform `matches`)
 into `knownSites`. Move `PlatformRegistry`'s classification half into `ReaderKit`
-(P7); leave its *rendering* `module(for:)` in `Clip/`. Strip fetch/price/bypass out of
+(P7); leave its *rendering* `module(for:)` in `Lune/`. Strip fetch/price/bypass out of
 `ArticleIngestDecider`, leaving it as the **processing** stage that consumes a
 `ContentKind` — restoring the determination ⟂ processing separation the owner wants.

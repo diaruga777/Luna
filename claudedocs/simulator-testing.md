@@ -24,7 +24,7 @@ When a feature relies on a gesture the harness can't perform, **add an alternati
 tap target / button behind a simulator check** so you can test it yourself, then
 verify via the harness. NEVER ship these on device.
 
-- Gate every hook with **`if AppEnvironment.isSimulator`** (`Clip/AppEnvironment.swift`,
+- Gate every hook with **`if AppEnvironment.isSimulator`** (`Lune/AppEnvironment.swift`,
   `#if targetEnvironment(simulator)`).
 - Give the hook an `accessibilityLabel` so `describe_screen` can find it.
 - Prefer reusing the real code path (e.g. set a `UIButton.menu` to the same `UIMenu`

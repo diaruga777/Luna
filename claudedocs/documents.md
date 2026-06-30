@@ -1,13 +1,13 @@
 # Document Import
 
-Documents (PDF, TXT, Markdown, RTF, and any `public.text`) shared to Clip from
+Documents (PDF, TXT, Markdown, RTF, and any `public.text`) shared to Lune from
 the system share sheet are parsed into reading-list articles with **no web
 URL**. They can be read in both readers and sent to Kindle, but cannot be
 shared to friends or via the system share sheet (no URL).
 
 ## Flow
 
-1. **Share extension** (`ClipShare`) and **action extension** (`Clip Action
+1. **Share extension** (`LuneShare`) and **action extension** (`Lune Action
    Extension`): both activation rules match files
    (`NSExtensionActivationSupportsFileWithMaxCount`) and share the same
    `ShareKit/ShareViewController`. It prefers a web URL; otherwise takes the
@@ -15,7 +15,7 @@ shared to friends or via the system share sheet (no URL).
    `loadFileRepresentation`s it.
    `SharedReadingListAppender.appendDocument` copies the file into the App
    Group at `Articles/<id>-source.<ext>` and appends a pending item with
-   `urlString = clipdoc://<id>`, `documentType = ext`, `title = filename`.
+   `urlString = lunedoc://<id>`, `documentType = ext`, `title = filename`.
 2. **Ingestor** (`ReadingListIngestor.ingestDocument`): on next launch/
    foreground, parses the source file via `DocumentParser` into
    `ArticleContent`, saves it (state → ready), and fires the Kindle
@@ -25,10 +25,10 @@ shared to friends or via the system share sheet (no URL).
 
 `ReadingListItem.documentType` (`decodeIfPresent`, mirrored in the appender) →
 `isDocument` / `canShareToFriends` (false for docs). Identity is the synthetic
-`clipdoc://<uuid>` (`ReadingListItem.documentURLString(id:)`). `store.delete`
+`lunedoc://<uuid>` (`ReadingListItem.documentURLString(id:)`). `store.delete`
 removes the `-source.<ext>` file too.
 
-## Parsing (`Clip/Documents/DocumentParser.swift`)
+## Parsing (`Lune/Documents/DocumentParser.swift`)
 
 - PDF → PDFKit page text → `PlainTextParser`.
 - RTF → `NSAttributedString(rtf)` → `PlainTextParser`.

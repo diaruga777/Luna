@@ -5,15 +5,15 @@ harness** (reused by the in-app screenshot flow and the unit tests), **snapshot
 tests** (render a VC, compare to a committed reference PNG), and **navigation/layout
 tests** (assert the right control lands on the right screen with sane frames).
 
-Everything runs in the existing **`ClipTests`** target (host app = `Clip.app`) — no
+Everything runs in the existing **`LuneTests`** target (host app = `Lune.app`) — no
 separate UI-test target, no external SPM dependency. Reference images live in
-`ClipTests/ReferenceImages/`.
+`LuneTests/ReferenceImages/`.
 
 ## Build & test
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode-26.2.0.app/Contents/Developer \
-  xcodebuild test -project Clip.xcodeproj -scheme Clip -configuration Debug \
+  xcodebuild test -project Lune.xcodeproj -scheme Lune -configuration Debug \
   -destination 'platform=iOS Simulator,id=AA3C058C-9671-4448-9F53-510DED654FE5' \
   -derivedDataPath /tmp/clipDD-uitests 2>&1 | tail -50
 ```
@@ -32,10 +32,10 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 | `ReaderKit/UITestFixtures.swift` | `UITestState` enum + `UITestFixtures` builders (pure, shared by app + tests). |
 | `ReaderKit/ReadingListItem.swift` | DEBUG `init(seed:…)` fixture initializer + `deterministicUUID(from:)`. |
 | `ReaderKit/ReadingListStore.swift` | DEBUG `seedForTesting(items:contents:)` / `wipeForTesting()`. |
-| `Clip/UITestSeeder.swift` | Launch-arg driver: `-uiTestState <name>` / `-uiTestOnboardingStep <n>` / `-uiTestScreen <name>`. Exposes `isUITestLaunch`. |
-| `Clip/UITestScreen.swift` | `UITestScreen` enum + `UITestScreenBuilder`: deep-links the window root to any named screen for the screenshot agent. DEBUG-only. |
+| `Lune/UITestSeeder.swift` | Launch-arg driver: `-uiTestState <name>` / `-uiTestOnboardingStep <n>` / `-uiTestScreen <name>`. Exposes `isUITestLaunch`. |
+| `Lune/UITestScreen.swift` | `UITestScreen` enum + `UITestScreenBuilder`: deep-links the window root to any named screen for the screenshot agent. DEBUG-only. |
 | `ReaderKit/UITestFixtures.swift` | Also defines `UITestLaunch.isActive` (reads the harness launch args; usable from ReaderKit, which can't import the app target). |
-| `Clip/SceneDelegate.swift` | Calls `UITestSeeder.applyIfNeeded()` + forces a UI-test root (deep-linked screen, onboarding, or reading list). |
+| `Lune/SceneDelegate.swift` | Calls `UITestSeeder.applyIfNeeded()` + forces a UI-test root (deep-linked screen, onboarding, or reading list). |
 
 ### Named states (`UITestState`)
 
@@ -56,7 +56,7 @@ clock** to `UITestFixtures.baseDate` (`UITestSeeder.sectioningNow`) so fixed-dat
 fixtures land in the **Reading** section instead of Archive, **resets persisted list
 prefs** (selected filter → All, default collapsed set), and `SceneDelegate` forces
 the right root VC. No-op (production paths unchanged) when the arg is absent or in
-release. Verified live: `simctl launch com.hpiddy.clip -uiTestState mixed`.
+release. Verified live: `simctl launch com.hpiddy.lune -uiTestState mixed`.
 
 ### Screen deep-linking (`-uiTestScreen <name>`)
 
@@ -91,7 +91,7 @@ UITestSupport.wipeSharedStore()             // in tearDown
 seam the app uses. Read items back from `ReadingListStore.shared.items()` when you
 need the on-disk `contentFileName` (the in-memory fixture copies don't carry it).
 
-## Snapshot testing (`ClipTests/SnapshotTesting.swift`)
+## Snapshot testing (`LuneTests/SnapshotTesting.swift`)
 
 `SnapshotTesting.assertSnapshot(of: vc, named: "…")` hosts the VC in a fixed-size
 window (393×852 @1x, light mode), runs a real layout pass, rasterizes via
@@ -101,7 +101,7 @@ test windows), and compares to `ReferenceImages/<name>.png`. Pixel diff allows
 (defaults 24 / 2%). On mismatch it writes `<name>.actual.png` (gitignored) next to
 the reference for inspection.
 
-## Navigation / layout (`ClipTests/UITestSupport.swift`)
+## Navigation / layout (`LuneTests/UITestSupport.swift`)
 
 - `UITestSupport.host(vc)` → hosts in a window, forces layout, returns the window
   (keep it alive for the assertions). Returns the window — `_ = window` at the end.
@@ -134,7 +134,7 @@ The share/action extension's ingest+present flow is extracted into the host-agno
 seams the real `NSExtensionContext` harness provides — `isActionExtension`/`readerMode`,
 `presentModally`, `confirmSavedThenComplete`, `autoDownloadThenComplete`, `failOrComplete`).
 A `FakeExtensionHost` records what the driver asked for, so the whole "URL → pipeline →
-Outcome → present" flow is asserted in `ClipTests` without the real share sheet (which a
+Outcome → present" flow is asserted in `LuneTests` without the real share sheet (which a
 simulator can't drive). The real `ShareViewController` is a thin `ExtensionHost` adapter.
 
 ### Not snapshotted (flagged, with reason)

@@ -12,7 +12,7 @@ No UI taps needed once configured.
 
 ## Destinations
 
-`ArticleDestination` (`Clip/Send/ArticleSendCoordinator.swift`) abstracts a
+`ArticleDestination` (`Lune/Send/ArticleSendCoordinator.swift`) abstracts a
 target: `id` (`ArticleDestinationID.kindle` / `.boox`), `displayName`,
 `isConfigured`, `sendMode(for: ReadingListItem)` (source-aware), `appIntentsSendMode`
 (the App-Intents/in-app mode, for double-save press detection), and
@@ -36,7 +36,7 @@ Each item records where it came from: `ReadingListItem.captureSource`
 - **paste** — `ReadingListViewController` pasteboard saves.
 - **manual** — default (typed URL, reader save button, deep links).
 
-`SourceSendSettings` (`Clip/Send/SourceSendSettings.swift`) resolves, per
+`SourceSendSettings` (`Lune/Send/SourceSendSettings.swift`) resolves, per
 destination, a source → `ArticleSendMode`:
 
 - **App Intents (Shortcuts) & in-app saves** → the destination's existing
@@ -52,7 +52,7 @@ Sources other than App Intents default to the legacy "all saves" behavior
 
 ## Gating (save-press state machine)
 
-All save entry points (`ClipSafariPageIntent`, `SaveLinkIntent`, in-app add)
+All save entry points (`LuneSafariPageIntent`, `SaveLinkIntent`, in-app add)
 funnel through `ReadingListIngestor.handleSavePress(urlString:source:)`:
 
 1. URL not in list → save (tagged with `source`) + ingest.
@@ -82,7 +82,7 @@ shown only when that destination is configured.
 
 ## Boox (Send2Boox — unofficial)
 
-Ported from `hrw/onyx-send2boox`. Files in `Clip/Send/Boox/`:
+Ported from `hrw/onyx-send2boox`. Files in `Lune/Send/Boox/`:
 - `BooxAuthClient.swift` — OTP login: `users/sendMobileCode` (request code) →
   `users/signupByPhoneOrEmail` (code → long-lived token). Token in Keychain.
 - `Send2BooxClient.swift` — `upload(epubData:fileName:title:)`: `users/me` (uid) →
@@ -106,7 +106,7 @@ against a live Onyx account/device — gated behind explicit setup with an in-ap
 disclosure; a friend tests post-publication. Known risk: `URLSession` may strip
 the signed `Date` header (→ switch to a presigned URL if uploads 403).
 
-## Other shared send files (`Clip/Send/`)
+## Other shared send files (`Lune/Send/`)
 
 - `EpubBuilder.swift` — EPUB 3 from `ArticleContent` (mimetype stored first,
   container.xml, content.opf, nav.xhtml, one chapter.xhtml, embedded jpg/png/gif/webp).
@@ -134,12 +134,12 @@ on `.sent`.
   "Send to Boox" screen (`BooxSettingsScreen`: region, OTP login/logout, test
   send, unofficial-API disclosure footer). Both expose an **"Auto-Send by
   Source"** disclosure row pushing the shared `AutoSendBySourceScreen`
-  (`Clip/Settings/`): App Intents mode + email / share-sheet-&-paste / friend
+  (`Lune/Settings/`): App Intents mode + email / share-sheet-&-paste / friend
   toggles + a per-friend list.
 - `ReadingListViewController`: per-destination context-menu rows; subtitle shows
   `sent to Kindle` / `Boox send failed` / `sending to …` per destination.
 
-## Tests (`ClipTests/`)
+## Tests (`LuneTests/`)
 
 `ZipArchiveWriterTests`, `EpubBuilderTests`, `MIMEMessageTests`, `SMTPClientTests`,
 `SavePressPolicyTests` (per-destination eligibility matrix), `ArticleSendCoordinatorTests`

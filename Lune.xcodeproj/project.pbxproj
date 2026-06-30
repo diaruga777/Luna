@@ -1,0 +1,3098 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 71;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		004D6B2EC6400E1B8AB54302 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
+		00E81FA7348B98F12E825428 /* LuneShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */; };
+		0169577E91695AA63AC0F64D /* LunePriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunePriceUI */; };
+		017142487CB9382F3711F47D /* LuneHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LuneHTMLClassification */; };
+		031E8ADC155AA75D3BE885A9 /* LunePlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunePlatforms */; };
+		031FF107DF1A6AF0F5958C46 /* LunePlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunePlatforms */; };
+		0393CD1C3594607CDD98DE13 /* LunePriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunePriceUI */; };
+		040A03EEE1831C1357CF106C /* LuneReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LuneReaderUI */; };
+		041A74CEFA9B22277C35C056 /* LuneContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LuneContentRendering */; };
+		04325C8AF877D151D2D31605 /* LuneIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LuneIngest */; };
+		049E5C818766CE6BF95D8B7E /* LunePriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunePriceUI */; };
+		056B75A640F952053F3EDC66 /* LuneReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* LuneReadingListUI */; };
+		05EB3A454381CBF19D2309FB /* LuneMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */; };
+		0C5EEFE7889EB736FFF2CCDD /* LuneSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* LuneSend */; };
+		0F27F2E19202007B318860C3 /* LuneReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LuneReaderEngine */; };
+		104179571BCFAD95AF412350 /* LunePriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunePriceUI */; };
+		10E3A3034E4E07E994855921 /* LuneDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LuneDesignSystem */; };
+		120F0560C8E724311F84921D /* LuneDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LuneDesignSystem */; };
+		12CE8504E187135A0601430B /* LuneMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */; };
+		12E8A107B1FCA1F360C74E20 /* LuneMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */; };
+		130D863DAC44E26AE76EC384 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
+		14D2AFFC19A169338A1147DD /* LuneReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LuneReaderUI */; };
+		163F79C6D83DEC977C7F2E29 /* LuneContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LuneContentRendering */; };
+		164DC728A7C83E13375A08BA /* LuneDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LuneDesignSystem */; };
+		17E518D87CDB4BF1B0B02FD4 /* LuneHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LuneHTMLClassification */; };
+		1A489052B9F7B48762402AE3 /* LuneReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LuneReaderEngine */; };
+		1B6EC6CA4339522B2907A219 /* LunePriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunePriceUI */; };
+		1D5C5BE5ACB9DA6A8AD62370 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
+		1DC60CDB9FB0C111849CB64B /* LuneReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LuneReaderEngine */; };
+		1E13E73BB6DD36900A58F4D7 /* LuneIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LuneIngest */; };
+		218FEE114769C57F7F045DE1 /* LuneReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LuneReaderUI */; };
+		22E0EDD000440E93E410F2F8 /* LuneReadingList in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* LuneReadingList */; };
+		2744203EEAF1B7AF22E1271E /* LunePlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunePlatforms */; };
+		2A5827BF73E328760F8C9C6B /* LuneIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LuneIngest */; };
+		2B4134FA0043E8CD5CE0CD04 /* LuneReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LuneReaderUI */; };
+		2D6B8766380C840A5550ED7B /* LuneShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */; };
+		2DFFAA3C4566EE3AF536D910 /* LuneURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LuneURLClassification */; };
+		2F22403ECDD962D932AA6BD3 /* LuneEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* LuneEpub */; };
+		3171DB114CF9D5BD337B7C29 /* LuneIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* LuneIntents */; };
+		350EAC340A2B445558410825 /* LunePriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunePriceMetadata */; };
+		354AF4B589322E401B1E5CBD /* LuneSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* LuneSocialUI */; };
+		35721F092939636390C38BE3 /* LuneStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LuneStorage */; };
+		3662E7565E058CF3AB52F87A /* LuneSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* LuneSemantic */; };
+		368370AB0EF05B8E339B4A47 /* LuneReadingList in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* LuneReadingList */; };
+		375621BBEDE7DFDFCA7E7CF7 /* LuneIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* LuneIntents */; };
+		37BCDAFE96268444DFD3A513 /* LunePriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunePriceMetadata */; };
+		3BF52B30E74A297E08A41982 /* LuneReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LuneReaderEngine */; };
+		3D823901FC6901D6BB41A6AB /* LuneReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LuneReaderUI */; };
+		3EB986A4B023ACBE9D376F7B /* LuneShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */; };
+		3EE5E285E488168AC19BECB2 /* LuneDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LuneDesignSystem */; };
+		3F984499DD8FB375FDE9BB96 /* LuneSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* LuneSend */; };
+		408BAA99D147B5FF19864BCC /* LuneDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LuneDesignSystem */; };
+		41CED045DAB9F43705D5B165 /* LuneTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LuneTransitions */; };
+		422D5BFF58CAF04E95D0E2FE /* LunePriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunePriceUI */; };
+		42B701ABE733F820F5447F96 /* LuneStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LuneStorage */; };
+		42F0FDA59D82F9D669F258D6 /* LuneMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */; };
+		4664FD984F47FB50B8DC0A5B /* LuneShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */; };
+		4764C751E2AFA2AD7653CB79 /* LuneReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LuneReaderUI */; };
+		47AFF9C55EA1844DB55C585E /* LuneTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LuneTransitions */; };
+		47D4FE0F200DA343FE5968BE /* LuneHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LuneHTMLClassification */; };
+		483B2A559218C68EC599D979 /* LuneMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* LuneMail */; };
+		4896036FA6285884E0F288A9 /* LuneSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* LuneSend */; };
+		4945ABFEEE9A2AFD3E284565 /* LunePlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunePlatforms */; };
+		4A1B3F8FAA22CE45ADB6CAB6 /* LuneModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LuneModels */; };
+		4B4F339D818E638F4C34B75A /* LuneSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* LuneSemantic */; };
+		4D71261636172E65F9B61A1B /* LuneReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LuneReaderUI */; };
+		4F79C2BC707D182410347251 /* LunePriceTrackerShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E34729A9C0FBABDE05C923C3 /* LunePriceTrackerShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		4FA4D6ECCD2EB5EDB599A9C8 /* LuneContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LuneContentRendering */; };
+		50E8B760CEB7EA7C19318D68 /* LuneTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LuneTransitions */; };
+		511AFE358958CF34F726A711 /* LuneURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LuneURLClassification */; };
+		51414525A3F33F736F5E5386 /* LuneStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LuneStorage */; };
+		51B6B2D5D43F2B4C0B2096FB /* LuneDownloaderSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BB94D412ABEBAB217EB72608 /* LuneDownloaderSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5313886A2454CED64F14769A /* LuneArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LuneArchiveReader */; };
+		532BCFEE05A361CD75DB29B4 /* LuneStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LuneStorage */; };
+		535077B96135F4456ADF0386 /* LuneEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* LuneEpub */; };
+		53FBAD67762D020D14FCEB00 /* LuneReadingList in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* LuneReadingList */; };
+		564D3AAC03C7A9A959BB013A /* LuneShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */; };
+		57CE4CEC1B7E83451AFE6B55 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000004 /* SwiftSoup */; };
+		5815024122D68F45BB81517C /* LunePaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunePaywallBypass */; };
+		59C336E6E016223659B23C6A /* LuneReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LuneReaderEngine */; };
+		5C942F41F32AC814369DBF84 /* LuneStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LuneStorage */; };
+		5D0128410A32E572FFD81F45 /* LuneShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */; };
+		5D640FB33B81996588B52B5C /* LuneDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LuneDesignSystem */; };
+		5E5E886D0FEC30FC8E45E7FC /* LuneMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */; };
+		5EA1C0323A202BAC11549C51 /* LunePriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunePriceMetadata */; };
+		63966E7C73DDA5F156C49F35 /* LuneIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LuneIngest */; };
+		65B50A608717FED6D7E96734 /* LuneArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LuneArchiveReader */; };
+		65EBACE869DBDECC866531F6 /* LunePriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunePriceUI */; };
+		670A781911DA94A8B457F826 /* LunePlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunePlatforms */; };
+		671D19B093B080BB0C00EC9F /* LunePaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunePaywallBypass */; };
+		6898420458832516B791DD26 /* LuneShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */; };
+		6CFA4E6C81F6A8A764739AA7 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
+		6EF9995A1F1B77BC1D7DA64C /* LuneSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* LuneSemantic */; };
+		6F438E9F1C4DEAAF57A692B8 /* LuneArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LuneArchiveReader */; };
+		6FC987A819941677EC289003 /* LunePaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunePaywallBypass */; };
+		702E5F3168388EFBA0E30508 /* LuneFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LuneFetch */; };
+		7114CE03937EE5341100D0AD /* LuneIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LuneIngest */; };
+		7148134A504E2679D2161243 /* LuneModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LuneModels */; };
+		71FE9DB128832A382EC0438E /* LuneSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* LuneSocialUI */; };
+		72CBAF942437AEB0C420300B /* LunePriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunePriceUI */; };
+		73BC26E788E13A1901F2D82C /* LuneYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* LuneYouTubeAPI */; };
+		7524FB14EDBA875CD17CE996 /* LuneArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LuneArchiveReader */; };
+		75CED0C0BDA899FF368A0CB5 /* LuneStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LuneStorage */; };
+		76B7947490B07082BD9DF92B /* LunePriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunePriceMetadata */; };
+		780D2CF3158D3FED4C7444BA /* LuneContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LuneContentRendering */; };
+		78F8CA2D8D526E87CFADAF26 /* LuneDownloaderAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D3B0961D49B070035B3E0FD1 /* LuneDownloaderAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		79001DA32FF23BFD001CD5B9 /* LuneTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LuneTransitions */; };
+		79105F98461EAB4D02BB8DD1 /* LuneReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LuneReaderUI */; };
+		7958393C2FE0A62700C775CA /* LuneShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* LuneShare.appex */; };
+		7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
+		79583DFF2FE0BAD100C775CA /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */; };
+		79583E0B2FE0BAD200C775CA /* Lune Action Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 79583DFC2FE0BAD100C775CA /* Lune Action Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7A2A261BD9A78CDAD99A8432 /* LunePriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunePriceMetadata */; };
+		7AF7216F62048B1A8C59F9E6 /* LunePlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunePlatforms */; };
+		7D74667CBC09543524AD4E59 /* LuneArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LuneArchiveReader */; };
+		7E2C368831952671CD7BF66A /* LuneModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LuneModels */; };
+		803D0D24B44A38A7397BAEAF /* LuneIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LuneIngest */; };
+		80CE7CB338F6866D7AA929AC /* LuneReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* LuneReadingListUI */; };
+		80D1546C306DE0208046F4A7 /* LuneYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* LuneYouTubeAPI */; };
+		828C373FE02ADBEC3BC5D19C /* LuneTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LuneTransitions */; };
+		82CB10A29885630A935F920C /* LuneDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* LuneDocuments */; };
+		849EA42595D2866D9C9ED25D /* LuneModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LuneModels */; };
+		85801B836910A1B6E0475DEE /* LuneMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */; };
+		879E1EB684DA6EC925A092AB /* LuneMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* LuneMail */; };
+		895F613F383ECDE66152264A /* LuneSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* LuneSocial */; };
+		8A90AEADC8E26CAB6BAAAA9E /* LuneModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LuneModels */; };
+		8B9033F91E7B9093D251BB7C /* LuneFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LuneFetch */; };
+		8CEAE71ABE739FBA45F28B3E /* LuneArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LuneArchiveReader */; };
+		940BD49E545FC05A21DC8F50 /* LuneSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* LuneSend */; };
+		9BE33A85BAAC090D42815A34 /* LuneYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* LuneYouTubeAPI */; };
+		9C31EDA76E809B77E2BD23D5 /* LuneURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LuneURLClassification */; };
+		9EAEEFFE364822D5BD7E30AF /* LuneShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */; };
+		A5189E94CA8DCC97591BC9C9 /* LuneDownloaderShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B59B827071F5B3640BB31428 /* LuneDownloaderShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A6A1E5E7C77D91ED5C367FB7 /* LuneIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LuneIngest */; };
+		AA0100000000000000000001 /* LuneSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000002 /* LuneSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA0100000000000000000002 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
+		AA0100000000000000000003 /* LuneShare.appex in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* LuneShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA0100000000000000000004 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000004 /* SwiftSoup */; };
+		AA3E180AD65849A74D458B4B /* LuneEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* LuneEpub */; };
+		AF875A2EB193F3644FC2FF89 /* LuneYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* LuneYouTubeAPI */; };
+		AFE494BDD40C5AA532E29ED9 /* LuneFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LuneFetch */; };
+		B0A258B018CE3BC9C0CD17C8 /* LuneHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LuneHTMLClassification */; };
+		B0B25841CA9850CBB48F1A28 /* LuneTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LuneTransitions */; };
+		B1783409EFF8E80CEA65CB3C /* LuneReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LuneReaderEngine */; };
+		B7EB2775DD38C41CBD105079 /* LuneIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LuneIngest */; };
+		B7F55D93B9FEB969A95C8183 /* LunePaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunePaywallBypass */; };
+		B89DC941DCBF7DBB88D2FE2C /* LuneReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LuneReaderEngine */; };
+		B8A14BC5B261F66C58BF6ED0 /* LuneShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */; };
+		BA4D33437C8419EB9CA78225 /* LuneModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LuneModels */; };
+		BB496482363743D2266EE1EE /* LuneHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LuneHTMLClassification */; };
+		BD5B48658A5362866AA5CF57 /* LunePriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunePriceUI */; };
+		BDBA0CFFF11430D086BE5A66 /* LuneDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LuneDesignSystem */; };
+		BE529FEC68767C9B157BA455 /* LuneContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LuneContentRendering */; };
+		BF10D89E8F106E5148E47260 /* LuneMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* LuneMail */; };
+		C100000000000000000000021 /* LuneURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LuneURLClassification */; };
+		C100000000000000000000022 /* LuneHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LuneHTMLClassification */; };
+		C100000000000000000000023 /* LunePaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunePaywallBypass */; };
+		C100000000000000000000024 /* LunePriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunePriceMetadata */; };
+		C100000000000000000000025 /* LuneContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LuneContentRendering */; };
+		C100000000000000000000026 /* LuneModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LuneModels */; };
+		C100000000000000000000027 /* LuneFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LuneFetch */; };
+		C100000000000000000000028 /* LuneTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LuneTransitions */; };
+		C100000000000000000000031 /* LuneURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LuneURLClassification */; };
+		C100000000000000000000032 /* LuneHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LuneHTMLClassification */; };
+		C100000000000000000000033 /* LunePaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunePaywallBypass */; };
+		C100000000000000000000034 /* LunePriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunePriceMetadata */; };
+		C100000000000000000000035 /* LuneContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LuneContentRendering */; };
+		C100000000000000000000036 /* LuneModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LuneModels */; };
+		C100000000000000000000037 /* LuneFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LuneFetch */; };
+		C100000000000000000000038 /* LuneTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LuneTransitions */; };
+		C100000000000000000000041 /* LuneURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LuneURLClassification */; };
+		C100000000000000000000042 /* LuneHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LuneHTMLClassification */; };
+		C100000000000000000000043 /* LunePaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunePaywallBypass */; };
+		C100000000000000000000044 /* LunePriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunePriceMetadata */; };
+		C100000000000000000000045 /* LuneContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LuneContentRendering */; };
+		C100000000000000000000046 /* LuneModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LuneModels */; };
+		C100000000000000000000047 /* LuneFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LuneFetch */; };
+		C100000000000000000000048 /* LuneTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LuneTransitions */; };
+		C100000000000000000000053 /* LunePaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunePaywallBypass */; };
+		C100000000000000000000056 /* LuneModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LuneModels */; };
+		C100000000000000000000057 /* LuneFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LuneFetch */; };
+		C1666BA7FC1EAE467E0165F4 /* LuneSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* LuneSocialUI */; };
+		C2651D3DB2A545CDDEA3C458 /* LuneStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LuneStorage */; };
+		C4A1971292F67D93A944D0EC /* LuneReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LuneReaderEngine */; };
+		C5715F633A1284FAA141611A /* LuneMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */; };
+		C577C66921234C2F66BFD088 /* LunePlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunePlatforms */; };
+		C586707358D74315870A9DF6 /* LuneReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* LuneReadingListUI */; };
+		C75DD0FABB085716259EAC0D /* LuneDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* LuneDocuments */; };
+		C7AF1235EF22D641FCB763F0 /* LunePlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunePlatforms */; };
+		C7F110C64D19ADC2D98C4712 /* LuneStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LuneStorage */; };
+		C7F5D1B5D38DADD2899366C7 /* LunePlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunePlatforms */; };
+		C85B86A55DAD524B8438CA85 /* LuneDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LuneDesignSystem */; };
+		C891EE202DB65235195020F6 /* LuneShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */; };
+		C94D4C1756F0BCE091A23BFC /* LuneURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LuneURLClassification */; };
+		CBB76821F704AEC464650875 /* LuneIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* LuneIntents */; };
+		CCEB43D729954FAF19DB73EF /* LuneIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LuneIngest */; };
+		CEBF52E52DB5EDC016C4BF68 /* LuneReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* LuneReadingListUI */; };
+		CFB8713184006BB8632A924A /* LunePriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunePriceUI */; };
+		CFF894A26385765A04FB4137 /* LuneReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LuneReaderEngine */; };
+		CFF9121C657C3CCF8473919B /* LuneStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LuneStorage */; };
+		D32E35604B47E9C10CE0433B /* LuneIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LuneIngest */; };
+		D333CB64CE02FCC308D02AAE /* LuneURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LuneURLClassification */; };
+		D3EA1630994091EEDD2F190E /* LuneFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LuneFetch */; };
+		D42B57E8D2EC0818A73B6FD4 /* LuneDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LuneDesignSystem */; };
+		D467F392C25AA4F4DE1C5D5F /* LuneSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* LuneSocialUI */; };
+		D51185A738D87061659336B0 /* LuneSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* LuneSocial */; };
+		D5AFE94D87296B201C34D805 /* LuneFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LuneFetch */; };
+		D78CCB8D56C3815B050BB01C /* LuneReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LuneReaderEngine */; };
+		D791BC1D5E2C8220E6CC3716 /* LuneTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LuneTransitions */; };
+		DACDDE724A61366A55815CDE /* LuneArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LuneArchiveReader */; };
+		DB3B179AA253D0576510D32F /* LuneFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LuneFetch */; };
+		DD60A5F05A129459CBC84020 /* LuneSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* LuneSocial */; };
+		DD8D0966751EECEEA1CC3FC4 /* LuneDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* LuneDocuments */; };
+		DE437B044AAB729C6E379D3F /* LuneHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LuneHTMLClassification */; };
+		DE66DCA327DA9E81723DC210 /* LuneDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* LuneDocuments */; };
+		E1414C57BB183D4575B3E04F /* LuneContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LuneContentRendering */; };
+		E2EA24D7991D81278A552F99 /* LuneArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LuneArchiveReader */; };
+		E31B09DF7960DE871F25EC71 /* LuneIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* LuneIntents */; };
+		E4985943E018E5FE92C11606 /* LuneMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */; };
+		E54532DF71D52079A8742E8C /* LuneSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* LuneSemantic */; };
+		E5EA91F4EF26613A941C56F6 /* LuneReadingList in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* LuneReadingList */; };
+		E69342FE12CC67327392E2D2 /* LuneMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */; };
+		E8862EF24F49E2D02D978A89 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000004 /* SwiftSoup */; };
+		EABFA40C72847D3F294B32F8 /* LuneReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LuneReaderUI */; };
+		EAF435B92CB3F940D4C5E9AB /* LunePaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunePaywallBypass */; };
+		EB0EBC1067690C77BA252745 /* LuneEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* LuneEpub */; };
+		EE4780B9AFD12FEBC6947099 /* LuneArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LuneArchiveReader */; };
+		EF6B3AC95FDA89E16A1F2698 /* LuneMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* LuneMail */; };
+		F35941D40835BF7824598AE9 /* LuneArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LuneArchiveReader */; };
+		F360E825848811D0E4C3BAF0 /* LuneURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LuneURLClassification */; };
+		F599702F89767DDCF2FB385C /* LunePriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunePriceMetadata */; };
+		F73819AA386C2618CCBCCF32 /* LunePaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunePaywallBypass */; };
+		F9B0746CEE264B742FEFA170 /* LunePlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunePlatforms */; };
+		FC3B05B51F7C576146ECF6CD /* LuneSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* LuneSocial */; };
+		FD9DE7E101A1AA02A7972334 /* LuneReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LuneReaderUI */; };
+		FDAADF201763CAFF39798A60 /* LunePriceTrackerAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3C0179E7326B416352FD04AE /* LunePriceTrackerAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		FE1291C488E2C83AADA41FA1 /* LuneDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LuneDesignSystem */; };
+		FE32AC608EC551DA7216DB1A /* LunePriceTrackerSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7222BE8C519159B489DB3C0C /* LunePriceTrackerSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		FF5DFE4CF92F033FB81C7A5B /* LuneStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LuneStorage */; };
+		FF6630FB61B598C594FCDE61 /* LuneMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		019AFC8CDB7CCEC35B2E3F5B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A2B18D43A980A2C17A48B019;
+			remoteInfo = LuneDownloaderAction;
+		};
+		15D241473DC420B319D7F3C1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 96905778435E3C7F63FA5E07;
+			remoteInfo = LuneDownloaderShare;
+		};
+		3CC259C243F6AEE5B238E89D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8B037A04C4B57DCC3B52F210;
+			remoteInfo = LuneDownloaderSafari;
+		};
+		79583E092FE0BAD200C775CA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 79583DFB2FE0BAD100C775CA;
+			remoteInfo = "Lune Action Extension";
+		};
+		80226DBE727E6C900B6BC73B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BE0F0A63AC930FAA7923DDFC;
+			remoteInfo = LunePriceTrackerAction;
+		};
+		89EB5051C98FC05A977EE7C7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 914B0BF1DD6F590D135488AC;
+			remoteInfo = LunePriceTrackerSafari;
+		};
+		AA0400000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AAE100000000000000000000;
+			remoteInfo = LuneSafari;
+		};
+		AA0400000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AAE000000000000000000000;
+			remoteInfo = Lune;
+		};
+		AA0400000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AAE300000000000000000000;
+			remoteInfo = LuneShare;
+		};
+		CED961C8298641D78A116DA5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2746B738BB4967D72B4784AA;
+			remoteInfo = LunePriceTrackerShare;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2160D2503718567D7AE0E6F6 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				4F79C2BC707D182410347251 /* LunePriceTrackerShare.appex in Embed Foundation Extensions */,
+				FDAADF201763CAFF39798A60 /* LunePriceTrackerAction.appex in Embed Foundation Extensions */,
+				FE32AC608EC551DA7216DB1A /* LunePriceTrackerSafari.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9836EC78CC443E7D4C813A08 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A5189E94CA8DCC97591BC9C9 /* LuneDownloaderShare.appex in Embed Foundation Extensions */,
+				78F8CA2D8D526E87CFADAF26 /* LuneDownloaderAction.appex in Embed Foundation Extensions */,
+				51B6B2D5D43F2B4C0B2096FB /* LuneDownloaderSafari.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0500000000000000000001 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA0100000000000000000001 /* LuneSafari.appex in Embed Foundation Extensions */,
+				7958393C2FE0A62700C775CA /* LuneShare.appex in Embed Foundation Extensions */,
+				79583E0B2FE0BAD200C775CA /* Lune Action Extension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		17C57D675E0712054ACE6584 /* LunePriceTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LunePriceTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3C0179E7326B416352FD04AE /* LunePriceTrackerAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunePriceTrackerAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7222BE8C519159B489DB3C0C /* LunePriceTrackerSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunePriceTrackerSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		79583DFC2FE0BAD100C775CA /* Lune Action Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Lune Action Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
+		AA0200000000000000000001 /* Lune.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lune.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0200000000000000000002 /* LuneSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LuneSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0200000000000000000003 /* LuneTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LuneTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0200000000000000000004 /* LuneShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LuneShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B59B827071F5B3640BB31428 /* LuneDownloaderShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LuneDownloaderShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB94D412ABEBAB217EB72608 /* LuneDownloaderSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LuneDownloaderSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D3B0961D49B070035B3E0FD1 /* LuneDownloaderAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LuneDownloaderAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E13583D77605D977B0A8FDD3 /* LuneDownloader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LuneDownloader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E34729A9C0FBABDE05C923C3 /* LunePriceTrackerShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunePriceTrackerShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		QZ00000000000000000001 /* Lune.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Lune.xcconfig; path = Config/Lune.xcconfig; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0F6359E5F1947F76D1DC13EC /* Exceptions for "LuneShare" folder in "LunePriceTrackerShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 2746B738BB4967D72B4784AA /* LunePriceTrackerShare */;
+		};
+		11BF6D0279EC0EB0310C162F /* Exceptions for "LuneShare" folder in "LuneDownloaderShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 96905778435E3C7F63FA5E07 /* LuneDownloaderShare */;
+		};
+		1BA4AEE0B8443EEBE988E541 /* Exceptions for "Lune Action Extension" folder in "LuneDownloaderAction" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A2B18D43A980A2C17A48B019 /* LuneDownloaderAction */;
+		};
+		1CE7EDA84A9EF6FD416248DA /* Exceptions for "Lune" folder in "LuneDownloader" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AF19C41BA051B4C0892BDA4E /* LuneDownloader */;
+		};
+		60BE25B026183D60EA23D207 /* Exceptions for "Lune" folder in "LunePriceTracker" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 6C65D0274C393548D3654967 /* LunePriceTracker */;
+		};
+		70C08B3EB91494263C62F319 /* Exceptions for "LuneSafari" folder in "LunePriceTrackerSafari" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 914B0BF1DD6F590D135488AC /* LunePriceTrackerSafari */;
+		};
+		79583E0F2FE0BAD200C775CA /* Exceptions for "Lune Action Extension" folder in "Lune Action Extension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 79583DFB2FE0BAD100C775CA /* Lune Action Extension */;
+		};
+		882C8351B7C877C0F5234404 /* Exceptions for "LuneSafari" folder in "LuneDownloaderSafari" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 8B037A04C4B57DCC3B52F210 /* LuneDownloaderSafari */;
+		};
+		AA0600000000000000000001 /* Exceptions for "Lune" folder in "Lune" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AAE000000000000000000000 /* Lune */;
+		};
+		AA0600000000000000000002 /* Exceptions for "LuneSafari" folder in "LuneSafari" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AAE100000000000000000000 /* LuneSafari */;
+		};
+		AA0600000000000000000003 /* Exceptions for "LuneShare" folder in "LuneShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AAE300000000000000000000 /* LuneShare */;
+		};
+		D667B7400D02129A1457006D /* Exceptions for "Lune Action Extension" folder in "LunePriceTrackerAction" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = BE0F0A63AC930FAA7923DDFC /* LunePriceTrackerAction */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		79583E002FE0BAD100C775CA /* Lune Action Extension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				79583E0F2FE0BAD200C775CA /* Exceptions for "Lune Action Extension" folder in "Lune Action Extension" target */,
+				1BA4AEE0B8443EEBE988E541 /* Exceptions for "Lune Action Extension" folder in "LuneDownloaderAction" target */,
+				D667B7400D02129A1457006D /* Exceptions for "Lune Action Extension" folder in "LunePriceTrackerAction" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = "Lune Action Extension";
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000001 /* Lune */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0600000000000000000001 /* Exceptions for "Lune" folder in "Lune" target */,
+				1CE7EDA84A9EF6FD416248DA /* Exceptions for "Lune" folder in "LuneDownloader" target */,
+				60BE25B026183D60EA23D207 /* Exceptions for "Lune" folder in "LunePriceTracker" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Lune;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000002 /* LuneSafari */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0600000000000000000002 /* Exceptions for "LuneSafari" folder in "LuneSafari" target */,
+				882C8351B7C877C0F5234404 /* Exceptions for "LuneSafari" folder in "LuneDownloaderSafari" target */,
+				70C08B3EB91494263C62F319 /* Exceptions for "LuneSafari" folder in "LunePriceTrackerSafari" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LuneSafari;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000003 /* LuneTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LuneTests;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000004 /* LuneShare */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0600000000000000000003 /* Exceptions for "LuneShare" folder in "LuneShare" target */,
+				11BF6D0279EC0EB0310C162F /* Exceptions for "LuneShare" folder in "LuneDownloaderShare" target */,
+				0F6359E5F1947F76D1DC13EC /* Exceptions for "LuneShare" folder in "LunePriceTrackerShare" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LuneShare;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		04C4B73342B81E2FE429106D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6CFA4E6C81F6A8A764739AA7 /* SwiftSoup in Frameworks */,
+				2DFFAA3C4566EE3AF536D910 /* LuneURLClassification in Frameworks */,
+				DE437B044AAB729C6E379D3F /* LuneHTMLClassification in Frameworks */,
+				B7F55D93B9FEB969A95C8183 /* LunePaywallBypass in Frameworks */,
+				76B7947490B07082BD9DF92B /* LunePriceMetadata in Frameworks */,
+				163F79C6D83DEC977C7F2E29 /* LuneContentRendering in Frameworks */,
+				50E8B760CEB7EA7C19318D68 /* LuneTransitions in Frameworks */,
+				849EA42595D2866D9C9ED25D /* LuneModels in Frameworks */,
+				702E5F3168388EFBA0E30508 /* LuneFetch in Frameworks */,
+				2A5827BF73E328760F8C9C6B /* LuneIngest in Frameworks */,
+				42B701ABE733F820F5447F96 /* LuneStorage in Frameworks */,
+				DD8D0966751EECEEA1CC3FC4 /* LuneDocuments in Frameworks */,
+				AA3E180AD65849A74D458B4B /* LuneEpub in Frameworks */,
+				4896036FA6285884E0F288A9 /* LuneSend in Frameworks */,
+				879E1EB684DA6EC925A092AB /* LuneMail in Frameworks */,
+				FE1291C488E2C83AADA41FA1 /* LuneDesignSystem in Frameworks */,
+				031E8ADC155AA75D3BE885A9 /* LunePlatforms in Frameworks */,
+				C5715F633A1284FAA141611A /* LuneMediaDownload in Frameworks */,
+				895F613F383ECDE66152264A /* LuneSocial in Frameworks */,
+				3662E7565E058CF3AB52F87A /* LuneSemantic in Frameworks */,
+				1DC60CDB9FB0C111849CB64B /* LuneReaderEngine in Frameworks */,
+				8CEAE71ABE739FBA45F28B3E /* LuneArchiveReader in Frameworks */,
+				EABFA40C72847D3F294B32F8 /* LuneReaderUI in Frameworks */,
+				0169577E91695AA63AC0F64D /* LunePriceUI in Frameworks */,
+				4664FD984F47FB50B8DC0A5B /* LuneShareSurface in Frameworks */,
+				9BE33A85BAAC090D42815A34 /* LuneYouTubeAPI in Frameworks */,
+				368370AB0EF05B8E339B4A47 /* LuneReadingList in Frameworks */,
+				D467F392C25AA4F4DE1C5D5F /* LuneSocialUI in Frameworks */,
+				CBB76821F704AEC464650875 /* LuneIntents in Frameworks */,
+				056B75A640F952053F3EDC66 /* LuneReadingListUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3AB1019F78884E8898F0365B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				57CE4CEC1B7E83451AFE6B55 /* SwiftSoup in Frameworks */,
+				C94D4C1756F0BCE091A23BFC /* LuneURLClassification in Frameworks */,
+				017142487CB9382F3711F47D /* LuneHTMLClassification in Frameworks */,
+				5815024122D68F45BB81517C /* LunePaywallBypass in Frameworks */,
+				37BCDAFE96268444DFD3A513 /* LunePriceMetadata in Frameworks */,
+				E1414C57BB183D4575B3E04F /* LuneContentRendering in Frameworks */,
+				D791BC1D5E2C8220E6CC3716 /* LuneTransitions in Frameworks */,
+				7148134A504E2679D2161243 /* LuneModels in Frameworks */,
+				AFE494BDD40C5AA532E29ED9 /* LuneFetch in Frameworks */,
+				803D0D24B44A38A7397BAEAF /* LuneIngest in Frameworks */,
+				5C942F41F32AC814369DBF84 /* LuneStorage in Frameworks */,
+				10E3A3034E4E07E994855921 /* LuneDesignSystem in Frameworks */,
+				4945ABFEEE9A2AFD3E284565 /* LunePlatforms in Frameworks */,
+				85801B836910A1B6E0475DEE /* LuneMediaDownload in Frameworks */,
+				B89DC941DCBF7DBB88D2FE2C /* LuneReaderEngine in Frameworks */,
+				E2EA24D7991D81278A552F99 /* LuneArchiveReader in Frameworks */,
+				040A03EEE1831C1357CF106C /* LuneReaderUI in Frameworks */,
+				72CBAF942437AEB0C420300B /* LunePriceUI in Frameworks */,
+				00E81FA7348B98F12E825428 /* LuneShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		63DAF29D7BE8CFCDD82FC8D3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		79583DF92FE0BAD100C775CA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				79583DFF2FE0BAD100C775CA /* UniformTypeIdentifiers.framework in Frameworks */,
+				AA0100000000000000000004 /* SwiftSoup in Frameworks */,
+				C100000000000000000000031 /* LuneURLClassification in Frameworks */,
+				C100000000000000000000032 /* LuneHTMLClassification in Frameworks */,
+				C100000000000000000000033 /* LunePaywallBypass in Frameworks */,
+				C100000000000000000000034 /* LunePriceMetadata in Frameworks */,
+				C100000000000000000000035 /* LuneContentRendering in Frameworks */,
+				C100000000000000000000038 /* LuneTransitions in Frameworks */,
+				C100000000000000000000036 /* LuneModels in Frameworks */,
+				C100000000000000000000037 /* LuneFetch in Frameworks */,
+				CCEB43D729954FAF19DB73EF /* LuneIngest in Frameworks */,
+				FF5DFE4CF92F033FB81C7A5B /* LuneStorage in Frameworks */,
+				3EE5E285E488168AC19BECB2 /* LuneDesignSystem in Frameworks */,
+				F9B0746CEE264B742FEFA170 /* LunePlatforms in Frameworks */,
+				E69342FE12CC67327392E2D2 /* LuneMediaDownload in Frameworks */,
+				59C336E6E016223659B23C6A /* LuneReaderEngine in Frameworks */,
+				EE4780B9AFD12FEBC6947099 /* LuneArchiveReader in Frameworks */,
+				79105F98461EAB4D02BB8DD1 /* LuneReaderUI in Frameworks */,
+				0393CD1C3594607CDD98DE13 /* LunePriceUI in Frameworks */,
+				9EAEEFFE364822D5BD7E30AF /* LuneShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A0047EA7E66649097A1AD197 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				130D863DAC44E26AE76EC384 /* SwiftSoup in Frameworks */,
+				F360E825848811D0E4C3BAF0 /* LuneURLClassification in Frameworks */,
+				17E518D87CDB4BF1B0B02FD4 /* LuneHTMLClassification in Frameworks */,
+				F73819AA386C2618CCBCCF32 /* LunePaywallBypass in Frameworks */,
+				350EAC340A2B445558410825 /* LunePriceMetadata in Frameworks */,
+				041A74CEFA9B22277C35C056 /* LuneContentRendering in Frameworks */,
+				828C373FE02ADBEC3BC5D19C /* LuneTransitions in Frameworks */,
+				7E2C368831952671CD7BF66A /* LuneModels in Frameworks */,
+				DB3B179AA253D0576510D32F /* LuneFetch in Frameworks */,
+				1E13E73BB6DD36900A58F4D7 /* LuneIngest in Frameworks */,
+				75CED0C0BDA899FF368A0CB5 /* LuneStorage in Frameworks */,
+				82CB10A29885630A935F920C /* LuneDocuments in Frameworks */,
+				EB0EBC1067690C77BA252745 /* LuneEpub in Frameworks */,
+				940BD49E545FC05A21DC8F50 /* LuneSend in Frameworks */,
+				BF10D89E8F106E5148E47260 /* LuneMail in Frameworks */,
+				BDBA0CFFF11430D086BE5A66 /* LuneDesignSystem in Frameworks */,
+				C7F5D1B5D38DADD2899366C7 /* LunePlatforms in Frameworks */,
+				12CE8504E187135A0601430B /* LuneMediaDownload in Frameworks */,
+				DD60A5F05A129459CBC84020 /* LuneSocial in Frameworks */,
+				6EF9995A1F1B77BC1D7DA64C /* LuneSemantic in Frameworks */,
+				C4A1971292F67D93A944D0EC /* LuneReaderEngine in Frameworks */,
+				5313886A2454CED64F14769A /* LuneArchiveReader in Frameworks */,
+				FD9DE7E101A1AA02A7972334 /* LuneReaderUI in Frameworks */,
+				422D5BFF58CAF04E95D0E2FE /* LunePriceUI in Frameworks */,
+				B8A14BC5B261F66C58BF6ED0 /* LuneShareSurface in Frameworks */,
+				73BC26E788E13A1901F2D82C /* LuneYouTubeAPI in Frameworks */,
+				22E0EDD000440E93E410F2F8 /* LuneReadingList in Frameworks */,
+				71FE9DB128832A382EC0438E /* LuneSocialUI in Frameworks */,
+				375621BBEDE7DFDFCA7E7CF7 /* LuneIntents in Frameworks */,
+				CEBF52E52DB5EDC016C4BF68 /* LuneReadingListUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0800000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0100000000000000000002 /* SwiftSoup in Frameworks */,
+				C100000000000000000000021 /* LuneURLClassification in Frameworks */,
+				C100000000000000000000022 /* LuneHTMLClassification in Frameworks */,
+				C100000000000000000000023 /* LunePaywallBypass in Frameworks */,
+				C100000000000000000000024 /* LunePriceMetadata in Frameworks */,
+				C100000000000000000000025 /* LuneContentRendering in Frameworks */,
+				C100000000000000000000028 /* LuneTransitions in Frameworks */,
+				C100000000000000000000026 /* LuneModels in Frameworks */,
+				C100000000000000000000027 /* LuneFetch in Frameworks */,
+				04325C8AF877D151D2D31605 /* LuneIngest in Frameworks */,
+				C2651D3DB2A545CDDEA3C458 /* LuneStorage in Frameworks */,
+				C75DD0FABB085716259EAC0D /* LuneDocuments in Frameworks */,
+				535077B96135F4456ADF0386 /* LuneEpub in Frameworks */,
+				0C5EEFE7889EB736FFF2CCDD /* LuneSend in Frameworks */,
+				483B2A559218C68EC599D979 /* LuneMail in Frameworks */,
+				D42B57E8D2EC0818A73B6FD4 /* LuneDesignSystem in Frameworks */,
+				031FF107DF1A6AF0F5958C46 /* LunePlatforms in Frameworks */,
+				FF6630FB61B598C594FCDE61 /* LuneMediaDownload in Frameworks */,
+				FC3B05B51F7C576146ECF6CD /* LuneSocial in Frameworks */,
+				E54532DF71D52079A8742E8C /* LuneSemantic in Frameworks */,
+				B1783409EFF8E80CEA65CB3C /* LuneReaderEngine in Frameworks */,
+				6F438E9F1C4DEAAF57A692B8 /* LuneArchiveReader in Frameworks */,
+				4764C751E2AFA2AD7653CB79 /* LuneReaderUI in Frameworks */,
+				049E5C818766CE6BF95D8B7E /* LunePriceUI in Frameworks */,
+				564D3AAC03C7A9A959BB013A /* LuneShareSurface in Frameworks */,
+				AF875A2EB193F3644FC2FF89 /* LuneYouTubeAPI in Frameworks */,
+				E5EA91F4EF26613A941C56F6 /* LuneReadingList in Frameworks */,
+				354AF4B589322E401B1E5CBD /* LuneSocialUI in Frameworks */,
+				E31B09DF7960DE871F25EC71 /* LuneIntents in Frameworks */,
+				80CE7CB338F6866D7AA929AC /* LuneReadingListUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0800000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0800000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C100000000000000000000056 /* LuneModels in Frameworks */,
+				C100000000000000000000057 /* LuneFetch in Frameworks */,
+				B7EB2775DD38C41CBD105079 /* LuneIngest in Frameworks */,
+				C7F110C64D19ADC2D98C4712 /* LuneStorage in Frameworks */,
+				DE66DCA327DA9E81723DC210 /* LuneDocuments in Frameworks */,
+				2F22403ECDD962D932AA6BD3 /* LuneEpub in Frameworks */,
+				3F984499DD8FB375FDE9BB96 /* LuneSend in Frameworks */,
+				EF6B3AC95FDA89E16A1F2698 /* LuneMail in Frameworks */,
+				408BAA99D147B5FF19864BCC /* LuneDesignSystem in Frameworks */,
+				670A781911DA94A8B457F826 /* LunePlatforms in Frameworks */,
+				42F0FDA59D82F9D669F258D6 /* LuneMediaDownload in Frameworks */,
+				D51185A738D87061659336B0 /* LuneSocial in Frameworks */,
+				4B4F339D818E638F4C34B75A /* LuneSemantic in Frameworks */,
+				1A489052B9F7B48762402AE3 /* LuneReaderEngine in Frameworks */,
+				7524FB14EDBA875CD17CE996 /* LuneArchiveReader in Frameworks */,
+				C100000000000000000000053 /* LunePaywallBypass in Frameworks */,
+				14D2AFFC19A169338A1147DD /* LuneReaderUI in Frameworks */,
+				BD5B48658A5362866AA5CF57 /* LunePriceUI in Frameworks */,
+				3EB986A4B023ACBE9D376F7B /* LuneShareSurface in Frameworks */,
+				79001DA32FF23BFD001CD5B9 /* LuneTransitions in Frameworks */,
+				80D1546C306DE0208046F4A7 /* LuneYouTubeAPI in Frameworks */,
+				53FBAD67762D020D14FCEB00 /* LuneReadingList in Frameworks */,
+				C1666BA7FC1EAE467E0165F4 /* LuneSocialUI in Frameworks */,
+				3171DB114CF9D5BD337B7C29 /* LuneIntents in Frameworks */,
+				C586707358D74315870A9DF6 /* LuneReadingListUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0800000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */,
+				AA0100000000000000000003 /* LuneShare.appex in Frameworks */,
+				C100000000000000000000041 /* LuneURLClassification in Frameworks */,
+				C100000000000000000000042 /* LuneHTMLClassification in Frameworks */,
+				C100000000000000000000043 /* LunePaywallBypass in Frameworks */,
+				C100000000000000000000044 /* LunePriceMetadata in Frameworks */,
+				C100000000000000000000045 /* LuneContentRendering in Frameworks */,
+				C100000000000000000000048 /* LuneTransitions in Frameworks */,
+				C100000000000000000000046 /* LuneModels in Frameworks */,
+				C100000000000000000000047 /* LuneFetch in Frameworks */,
+				A6A1E5E7C77D91ED5C367FB7 /* LuneIngest in Frameworks */,
+				35721F092939636390C38BE3 /* LuneStorage in Frameworks */,
+				C85B86A55DAD524B8438CA85 /* LuneDesignSystem in Frameworks */,
+				C577C66921234C2F66BFD088 /* LunePlatforms in Frameworks */,
+				E4985943E018E5FE92C11606 /* LuneMediaDownload in Frameworks */,
+				3BF52B30E74A297E08A41982 /* LuneReaderEngine in Frameworks */,
+				F35941D40835BF7824598AE9 /* LuneArchiveReader in Frameworks */,
+				2B4134FA0043E8CD5CE0CD04 /* LuneReaderUI in Frameworks */,
+				65EBACE869DBDECC866531F6 /* LunePriceUI in Frameworks */,
+				C891EE202DB65235195020F6 /* LuneShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B18D99CD9E7FD8DE44D77406 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E8862EF24F49E2D02D978A89 /* SwiftSoup in Frameworks */,
+				511AFE358958CF34F726A711 /* LuneURLClassification in Frameworks */,
+				BB496482363743D2266EE1EE /* LuneHTMLClassification in Frameworks */,
+				6FC987A819941677EC289003 /* LunePaywallBypass in Frameworks */,
+				F599702F89767DDCF2FB385C /* LunePriceMetadata in Frameworks */,
+				BE529FEC68767C9B157BA455 /* LuneContentRendering in Frameworks */,
+				41CED045DAB9F43705D5B165 /* LuneTransitions in Frameworks */,
+				8A90AEADC8E26CAB6BAAAA9E /* LuneModels in Frameworks */,
+				D3EA1630994091EEDD2F190E /* LuneFetch in Frameworks */,
+				D32E35604B47E9C10CE0433B /* LuneIngest in Frameworks */,
+				532BCFEE05A361CD75DB29B4 /* LuneStorage in Frameworks */,
+				5D640FB33B81996588B52B5C /* LuneDesignSystem in Frameworks */,
+				C7AF1235EF22D641FCB763F0 /* LunePlatforms in Frameworks */,
+				5E5E886D0FEC30FC8E45E7FC /* LuneMediaDownload in Frameworks */,
+				CFF894A26385765A04FB4137 /* LuneReaderEngine in Frameworks */,
+				65B50A608717FED6D7E96734 /* LuneArchiveReader in Frameworks */,
+				4D71261636172E65F9B61A1B /* LuneReaderUI in Frameworks */,
+				CFB8713184006BB8632A924A /* LunePriceUI in Frameworks */,
+				5D0128410A32E572FFD81F45 /* LuneShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B5E1B6795149EA116215B0F6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D5C5BE5ACB9DA6A8AD62370 /* SwiftSoup in Frameworks */,
+				9C31EDA76E809B77E2BD23D5 /* LuneURLClassification in Frameworks */,
+				B0A258B018CE3BC9C0CD17C8 /* LuneHTMLClassification in Frameworks */,
+				671D19B093B080BB0C00EC9F /* LunePaywallBypass in Frameworks */,
+				5EA1C0323A202BAC11549C51 /* LunePriceMetadata in Frameworks */,
+				780D2CF3158D3FED4C7444BA /* LuneContentRendering in Frameworks */,
+				B0B25841CA9850CBB48F1A28 /* LuneTransitions in Frameworks */,
+				BA4D33437C8419EB9CA78225 /* LuneModels in Frameworks */,
+				8B9033F91E7B9093D251BB7C /* LuneFetch in Frameworks */,
+				7114CE03937EE5341100D0AD /* LuneIngest in Frameworks */,
+				51414525A3F33F736F5E5386 /* LuneStorage in Frameworks */,
+				120F0560C8E724311F84921D /* LuneDesignSystem in Frameworks */,
+				2744203EEAF1B7AF22E1271E /* LunePlatforms in Frameworks */,
+				05EB3A454381CBF19D2309FB /* LuneMediaDownload in Frameworks */,
+				D78CCB8D56C3815B050BB01C /* LuneReaderEngine in Frameworks */,
+				7D74667CBC09543524AD4E59 /* LuneArchiveReader in Frameworks */,
+				218FEE114769C57F7F045DE1 /* LuneReaderUI in Frameworks */,
+				104179571BCFAD95AF412350 /* LunePriceUI in Frameworks */,
+				2D6B8766380C840A5550ED7B /* LuneShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D8458C70E2FFCCAB9891ED19 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E8A1C231FD34FAB9D3079585 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				004D6B2EC6400E1B8AB54302 /* SwiftSoup in Frameworks */,
+				D333CB64CE02FCC308D02AAE /* LuneURLClassification in Frameworks */,
+				47D4FE0F200DA343FE5968BE /* LuneHTMLClassification in Frameworks */,
+				EAF435B92CB3F940D4C5E9AB /* LunePaywallBypass in Frameworks */,
+				7A2A261BD9A78CDAD99A8432 /* LunePriceMetadata in Frameworks */,
+				4FA4D6ECCD2EB5EDB599A9C8 /* LuneContentRendering in Frameworks */,
+				47AFF9C55EA1844DB55C585E /* LuneTransitions in Frameworks */,
+				4A1B3F8FAA22CE45ADB6CAB6 /* LuneModels in Frameworks */,
+				D5AFE94D87296B201C34D805 /* LuneFetch in Frameworks */,
+				63966E7C73DDA5F156C49F35 /* LuneIngest in Frameworks */,
+				CFF9121C657C3CCF8473919B /* LuneStorage in Frameworks */,
+				164DC728A7C83E13375A08BA /* LuneDesignSystem in Frameworks */,
+				7AF7216F62048B1A8C59F9E6 /* LunePlatforms in Frameworks */,
+				12E8A107B1FCA1F360C74E20 /* LuneMediaDownload in Frameworks */,
+				0F27F2E19202007B318860C3 /* LuneReaderEngine in Frameworks */,
+				DACDDE724A61366A55815CDE /* LuneArchiveReader in Frameworks */,
+				3D823901FC6901D6BB41A6AB /* LuneReaderUI in Frameworks */,
+				1B6EC6CA4339522B2907A219 /* LunePriceUI in Frameworks */,
+				6898420458832516B791DD26 /* LuneShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		79583DFD2FE0BAD100C775CA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		795840BB2FE0BD8600C775CA /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		AA0900000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				QZ00000000000000000001 /* Lune.xcconfig */,
+				AA0700000000000000000001 /* Lune */,
+				AA0700000000000000000002 /* LuneSafari */,
+				AA0700000000000000000004 /* LuneShare */,
+				AA0700000000000000000003 /* LuneTests */,
+				79583E002FE0BAD100C775CA /* Lune Action Extension */,
+				79583DFD2FE0BAD100C775CA /* Frameworks */,
+				AA0900000000000000000002 /* Products */,
+				795840BB2FE0BD8600C775CA /* Recovered References */,
+			);
+			sourceTree = "<group>";
+		};
+		AA0900000000000000000002 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA0200000000000000000001 /* Lune.app */,
+				AA0200000000000000000002 /* LuneSafari.appex */,
+				AA0200000000000000000004 /* LuneShare.appex */,
+				AA0200000000000000000003 /* LuneTests.xctest */,
+				79583DFC2FE0BAD100C775CA /* Lune Action Extension.appex */,
+				B59B827071F5B3640BB31428 /* LuneDownloaderShare.appex */,
+				D3B0961D49B070035B3E0FD1 /* LuneDownloaderAction.appex */,
+				BB94D412ABEBAB217EB72608 /* LuneDownloaderSafari.appex */,
+				E13583D77605D977B0A8FDD3 /* LuneDownloader.app */,
+				E34729A9C0FBABDE05C923C3 /* LunePriceTrackerShare.appex */,
+				3C0179E7326B416352FD04AE /* LunePriceTrackerAction.appex */,
+				7222BE8C519159B489DB3C0C /* LunePriceTrackerSafari.appex */,
+				17C57D675E0712054ACE6584 /* LunePriceTracker.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2746B738BB4967D72B4784AA /* LunePriceTrackerShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BBBAB49D7E42C2856846AF7C /* Build configuration list for PBXNativeTarget "LunePriceTrackerShare" */;
+			buildPhases = (
+				373A4FE3831DC2BDBE2A869D /* Sources */,
+				E8A1C231FD34FAB9D3079585 /* Frameworks */,
+				DDD51270230A986A15CBC90D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000004 /* LuneShare */,
+			);
+			name = LunePriceTrackerShare;
+			packageProductDependencies = (
+				AA0300000000000000000003 /* SwiftSoup */,
+				C100000000000000000000011 /* LuneURLClassification */,
+				C100000000000000000000012 /* LuneHTMLClassification */,
+				C100000000000000000000013 /* LunePaywallBypass */,
+				C100000000000000000000014 /* LunePriceMetadata */,
+				C100000000000000000000015 /* LuneContentRendering */,
+				C100000000000000000000018 /* LuneTransitions */,
+				C100000000000000000000016 /* LuneModels */,
+				C100000000000000000000017 /* LuneFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* LuneIngest */,
+				A982CE2BE48B7474FDAD7A00 /* LuneStorage */,
+				333A451D2F6E424BF2A01F84 /* LuneDesignSystem */,
+				72398B0845A005923290AE55 /* LunePlatforms */,
+				4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */,
+				48455ED52E3622FE10B6DA75 /* LuneReaderEngine */,
+				74662FE2996754685063847E /* LuneArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* LuneReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* LunePriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */,
+			);
+			productName = LunePriceTrackerShare;
+			productReference = E34729A9C0FBABDE05C923C3 /* LunePriceTrackerShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		6C65D0274C393548D3654967 /* LunePriceTracker */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 65CC8E353E396283FCEE0898 /* Build configuration list for PBXNativeTarget "LunePriceTracker" */;
+			buildPhases = (
+				69326230C9193A79E2B04484 /* Sources */,
+				04C4B73342B81E2FE429106D /* Frameworks */,
+				6ED0D1662C9D703BF6C0F4BA /* Resources */,
+				2160D2503718567D7AE0E6F6 /* Embed Foundation Extensions */,
+				3D30D1BA1BC66A3464973E88 /* Re-sign embedded extensions (debug) */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				110F1850003FAD24F03CB81F /* PBXTargetDependency */,
+				0665879E5C0FDB9B54C481ED /* PBXTargetDependency */,
+				F6A0E89B7A606B31EE9AE1D6 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000001 /* Lune */,
+			);
+			name = LunePriceTracker;
+			packageProductDependencies = (
+				AA0300000000000000000002 /* SwiftSoup */,
+				C100000000000000000000011 /* LuneURLClassification */,
+				C100000000000000000000012 /* LuneHTMLClassification */,
+				C100000000000000000000013 /* LunePaywallBypass */,
+				C100000000000000000000014 /* LunePriceMetadata */,
+				C100000000000000000000015 /* LuneContentRendering */,
+				C100000000000000000000018 /* LuneTransitions */,
+				C100000000000000000000016 /* LuneModels */,
+				C100000000000000000000017 /* LuneFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* LuneIngest */,
+				A982CE2BE48B7474FDAD7A00 /* LuneStorage */,
+				EC12441B238CDC7A3EEDD1A0 /* LuneDocuments */,
+				AA824D3974D944B8BC077857 /* LuneEpub */,
+				A1AC9F7C74411AF59CC240DB /* LuneSend */,
+				6733C497754C454FAA262597 /* LuneMail */,
+				333A451D2F6E424BF2A01F84 /* LuneDesignSystem */,
+				72398B0845A005923290AE55 /* LunePlatforms */,
+				4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */,
+				DE798ED2A5DA5A986EE4B864 /* LuneSocial */,
+				92CAEC0F8C340469B9AB25E3 /* LuneSemantic */,
+				48455ED52E3622FE10B6DA75 /* LuneReaderEngine */,
+				74662FE2996754685063847E /* LuneArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* LuneReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* LunePriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */,
+				EB6678402070E752D0A4FF94 /* LuneYouTubeAPI */,
+				6EDC1D9AE1F39D473CE9B129 /* LuneReadingList */,
+				7445361A6C10C9E25040C4AD /* LuneSocialUI */,
+				F1D3242938BA3B48ED8EA6DD /* LuneIntents */,
+				3933ED17E10DC2C0C55B129C /* LuneReadingListUI */,
+			);
+			productName = LunePriceTracker;
+			productReference = 17C57D675E0712054ACE6584 /* LunePriceTracker.app */;
+			productType = "com.apple.product-type.application";
+		};
+		79583DFB2FE0BAD100C775CA /* Lune Action Extension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 79583E0E2FE0BAD200C775CA /* Build configuration list for PBXNativeTarget "Lune Action Extension" */;
+			buildPhases = (
+				79583DF82FE0BAD100C775CA /* Sources */,
+				79583DF92FE0BAD100C775CA /* Frameworks */,
+				79583DFA2FE0BAD100C775CA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				79583E002FE0BAD100C775CA /* Lune Action Extension */,
+			);
+			name = "Lune Action Extension";
+			packageProductDependencies = (
+				AA0300000000000000000004 /* SwiftSoup */,
+				C100000000000000000000011 /* LuneURLClassification */,
+				C100000000000000000000012 /* LuneHTMLClassification */,
+				C100000000000000000000013 /* LunePaywallBypass */,
+				C100000000000000000000014 /* LunePriceMetadata */,
+				C100000000000000000000015 /* LuneContentRendering */,
+				C100000000000000000000018 /* LuneTransitions */,
+				C100000000000000000000016 /* LuneModels */,
+				C100000000000000000000017 /* LuneFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* LuneIngest */,
+				A982CE2BE48B7474FDAD7A00 /* LuneStorage */,
+				333A451D2F6E424BF2A01F84 /* LuneDesignSystem */,
+				72398B0845A005923290AE55 /* LunePlatforms */,
+				4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */,
+				48455ED52E3622FE10B6DA75 /* LuneReaderEngine */,
+				74662FE2996754685063847E /* LuneArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* LuneReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* LunePriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */,
+			);
+			productName = "Lune Action Extension";
+			productReference = 79583DFC2FE0BAD100C775CA /* Lune Action Extension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		8B037A04C4B57DCC3B52F210 /* LuneDownloaderSafari */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A78C5DD51FCC623948CD4C4C /* Build configuration list for PBXNativeTarget "LuneDownloaderSafari" */;
+			buildPhases = (
+				090152A075555CC1E88333EA /* Sources */,
+				D8458C70E2FFCCAB9891ED19 /* Frameworks */,
+				8D625DA4155FF73472CEE0E6 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000002 /* LuneSafari */,
+			);
+			name = LuneDownloaderSafari;
+			productName = LuneDownloaderSafari;
+			productReference = BB94D412ABEBAB217EB72608 /* LuneDownloaderSafari.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		914B0BF1DD6F590D135488AC /* LunePriceTrackerSafari */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB3EF4BE1D4A86FE309C3FEE /* Build configuration list for PBXNativeTarget "LunePriceTrackerSafari" */;
+			buildPhases = (
+				6F840481808C183EA2D897C9 /* Sources */,
+				63DAF29D7BE8CFCDD82FC8D3 /* Frameworks */,
+				6679DE7338A7B19B74E7FB33 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000002 /* LuneSafari */,
+			);
+			name = LunePriceTrackerSafari;
+			productName = LunePriceTrackerSafari;
+			productReference = 7222BE8C519159B489DB3C0C /* LunePriceTrackerSafari.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		96905778435E3C7F63FA5E07 /* LuneDownloaderShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ECD7350BEB2AF4860E954473 /* Build configuration list for PBXNativeTarget "LuneDownloaderShare" */;
+			buildPhases = (
+				7276E5B4DBA5CB57A58E7631 /* Sources */,
+				B5E1B6795149EA116215B0F6 /* Frameworks */,
+				7654D757DB485C9238DD39AB /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000004 /* LuneShare */,
+			);
+			name = LuneDownloaderShare;
+			packageProductDependencies = (
+				AA0300000000000000000003 /* SwiftSoup */,
+				C100000000000000000000011 /* LuneURLClassification */,
+				C100000000000000000000012 /* LuneHTMLClassification */,
+				C100000000000000000000013 /* LunePaywallBypass */,
+				C100000000000000000000014 /* LunePriceMetadata */,
+				C100000000000000000000015 /* LuneContentRendering */,
+				C100000000000000000000018 /* LuneTransitions */,
+				C100000000000000000000016 /* LuneModels */,
+				C100000000000000000000017 /* LuneFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* LuneIngest */,
+				A982CE2BE48B7474FDAD7A00 /* LuneStorage */,
+				333A451D2F6E424BF2A01F84 /* LuneDesignSystem */,
+				72398B0845A005923290AE55 /* LunePlatforms */,
+				4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */,
+				48455ED52E3622FE10B6DA75 /* LuneReaderEngine */,
+				74662FE2996754685063847E /* LuneArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* LuneReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* LunePriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */,
+			);
+			productName = LuneDownloaderShare;
+			productReference = B59B827071F5B3640BB31428 /* LuneDownloaderShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A2B18D43A980A2C17A48B019 /* LuneDownloaderAction */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 604934514C838BF7A7DE32C3 /* Build configuration list for PBXNativeTarget "LuneDownloaderAction" */;
+			buildPhases = (
+				49BD90EDAA1C832A8F3D7C4E /* Sources */,
+				B18D99CD9E7FD8DE44D77406 /* Frameworks */,
+				263BDD1DB396671A4F6B3810 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				79583E002FE0BAD100C775CA /* Lune Action Extension */,
+			);
+			name = LuneDownloaderAction;
+			packageProductDependencies = (
+				AA0300000000000000000004 /* SwiftSoup */,
+				C100000000000000000000011 /* LuneURLClassification */,
+				C100000000000000000000012 /* LuneHTMLClassification */,
+				C100000000000000000000013 /* LunePaywallBypass */,
+				C100000000000000000000014 /* LunePriceMetadata */,
+				C100000000000000000000015 /* LuneContentRendering */,
+				C100000000000000000000018 /* LuneTransitions */,
+				C100000000000000000000016 /* LuneModels */,
+				C100000000000000000000017 /* LuneFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* LuneIngest */,
+				A982CE2BE48B7474FDAD7A00 /* LuneStorage */,
+				333A451D2F6E424BF2A01F84 /* LuneDesignSystem */,
+				72398B0845A005923290AE55 /* LunePlatforms */,
+				4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */,
+				48455ED52E3622FE10B6DA75 /* LuneReaderEngine */,
+				74662FE2996754685063847E /* LuneArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* LuneReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* LunePriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */,
+			);
+			productName = LuneDownloaderAction;
+			productReference = D3B0961D49B070035B3E0FD1 /* LuneDownloaderAction.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		AAE000000000000000000000 /* Lune */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAD100000000000000000000 /* Build configuration list for PBXNativeTarget "Lune" */;
+			buildPhases = (
+				AA1000000000000000000001 /* Sources */,
+				AA0800000000000000000001 /* Frameworks */,
+				AA1100000000000000000001 /* Resources */,
+				AA0500000000000000000001 /* Embed Foundation Extensions */,
+				AA9000000000000000000001 /* Re-sign embedded extensions (debug) */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA1200000000000000000001 /* PBXTargetDependency */,
+				AA1200000000000000000003 /* PBXTargetDependency */,
+				79583E0A2FE0BAD200C775CA /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000001 /* Lune */,
+			);
+			name = Lune;
+			packageProductDependencies = (
+				AA0300000000000000000002 /* SwiftSoup */,
+				C100000000000000000000011 /* LuneURLClassification */,
+				C100000000000000000000012 /* LuneHTMLClassification */,
+				C100000000000000000000013 /* LunePaywallBypass */,
+				C100000000000000000000014 /* LunePriceMetadata */,
+				C100000000000000000000015 /* LuneContentRendering */,
+				C100000000000000000000018 /* LuneTransitions */,
+				C100000000000000000000016 /* LuneModels */,
+				C100000000000000000000017 /* LuneFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* LuneIngest */,
+				A982CE2BE48B7474FDAD7A00 /* LuneStorage */,
+				EC12441B238CDC7A3EEDD1A0 /* LuneDocuments */,
+				AA824D3974D944B8BC077857 /* LuneEpub */,
+				A1AC9F7C74411AF59CC240DB /* LuneSend */,
+				6733C497754C454FAA262597 /* LuneMail */,
+				333A451D2F6E424BF2A01F84 /* LuneDesignSystem */,
+				72398B0845A005923290AE55 /* LunePlatforms */,
+				4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */,
+				DE798ED2A5DA5A986EE4B864 /* LuneSocial */,
+				92CAEC0F8C340469B9AB25E3 /* LuneSemantic */,
+				48455ED52E3622FE10B6DA75 /* LuneReaderEngine */,
+				74662FE2996754685063847E /* LuneArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* LuneReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* LunePriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */,
+				EB6678402070E752D0A4FF94 /* LuneYouTubeAPI */,
+				6EDC1D9AE1F39D473CE9B129 /* LuneReadingList */,
+				7445361A6C10C9E25040C4AD /* LuneSocialUI */,
+				F1D3242938BA3B48ED8EA6DD /* LuneIntents */,
+				3933ED17E10DC2C0C55B129C /* LuneReadingListUI */,
+			);
+			productName = Lune;
+			productReference = AA0200000000000000000001 /* Lune.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AAE100000000000000000000 /* LuneSafari */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAD200000000000000000000 /* Build configuration list for PBXNativeTarget "LuneSafari" */;
+			buildPhases = (
+				AA1000000000000000000002 /* Sources */,
+				AA0800000000000000000002 /* Frameworks */,
+				AA1100000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000002 /* LuneSafari */,
+			);
+			name = LuneSafari;
+			productName = LuneSafari;
+			productReference = AA0200000000000000000002 /* LuneSafari.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		AAE200000000000000000000 /* LuneTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAD300000000000000000000 /* Build configuration list for PBXNativeTarget "LuneTests" */;
+			buildPhases = (
+				AA1000000000000000000003 /* Sources */,
+				AA0800000000000000000003 /* Frameworks */,
+				AA1100000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA1200000000000000000002 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000003 /* LuneTests */,
+			);
+			name = LuneTests;
+			packageProductDependencies = (
+				C100000000000000000000016 /* LuneModels */,
+				C100000000000000000000017 /* LuneFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* LuneIngest */,
+				A982CE2BE48B7474FDAD7A00 /* LuneStorage */,
+				EC12441B238CDC7A3EEDD1A0 /* LuneDocuments */,
+				AA824D3974D944B8BC077857 /* LuneEpub */,
+				A1AC9F7C74411AF59CC240DB /* LuneSend */,
+				6733C497754C454FAA262597 /* LuneMail */,
+				333A451D2F6E424BF2A01F84 /* LuneDesignSystem */,
+				72398B0845A005923290AE55 /* LunePlatforms */,
+				4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */,
+				DE798ED2A5DA5A986EE4B864 /* LuneSocial */,
+				92CAEC0F8C340469B9AB25E3 /* LuneSemantic */,
+				48455ED52E3622FE10B6DA75 /* LuneReaderEngine */,
+				74662FE2996754685063847E /* LuneArchiveReader */,
+				C100000000000000000000013 /* LunePaywallBypass */,
+				436F1044DB2553FED3D9DB4C /* LuneReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* LunePriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */,
+				EB6678402070E752D0A4FF94 /* LuneYouTubeAPI */,
+				6EDC1D9AE1F39D473CE9B129 /* LuneReadingList */,
+				7445361A6C10C9E25040C4AD /* LuneSocialUI */,
+				F1D3242938BA3B48ED8EA6DD /* LuneIntents */,
+				3933ED17E10DC2C0C55B129C /* LuneReadingListUI */,
+				C100000000000000000000018 /* LuneTransitions */,
+			);
+			productName = LuneTests;
+			productReference = AA0200000000000000000003 /* LuneTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		AAE300000000000000000000 /* LuneShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAD400000000000000000000 /* Build configuration list for PBXNativeTarget "LuneShare" */;
+			buildPhases = (
+				AA1000000000000000000004 /* Sources */,
+				AA0800000000000000000004 /* Frameworks */,
+				AA1100000000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000004 /* LuneShare */,
+			);
+			name = LuneShare;
+			packageProductDependencies = (
+				AA0300000000000000000003 /* SwiftSoup */,
+				C100000000000000000000011 /* LuneURLClassification */,
+				C100000000000000000000012 /* LuneHTMLClassification */,
+				C100000000000000000000013 /* LunePaywallBypass */,
+				C100000000000000000000014 /* LunePriceMetadata */,
+				C100000000000000000000015 /* LuneContentRendering */,
+				C100000000000000000000018 /* LuneTransitions */,
+				C100000000000000000000016 /* LuneModels */,
+				C100000000000000000000017 /* LuneFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* LuneIngest */,
+				A982CE2BE48B7474FDAD7A00 /* LuneStorage */,
+				333A451D2F6E424BF2A01F84 /* LuneDesignSystem */,
+				72398B0845A005923290AE55 /* LunePlatforms */,
+				4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */,
+				48455ED52E3622FE10B6DA75 /* LuneReaderEngine */,
+				74662FE2996754685063847E /* LuneArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* LuneReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* LunePriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */,
+			);
+			productName = LuneShare;
+			productReference = AA0200000000000000000004 /* LuneShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		AF19C41BA051B4C0892BDA4E /* LuneDownloader */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 79F9AA8B374CC68FA35DFE00 /* Build configuration list for PBXNativeTarget "LuneDownloader" */;
+			buildPhases = (
+				836705B5BFAEBF1F5E5F928B /* Sources */,
+				A0047EA7E66649097A1AD197 /* Frameworks */,
+				A8328BDA696E47B16CE4447A /* Resources */,
+				9836EC78CC443E7D4C813A08 /* Embed Foundation Extensions */,
+				F2DB15EE1976B470D4B0D7AF /* Re-sign embedded extensions (debug) */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				17DCF01578521F73EED10D1C /* PBXTargetDependency */,
+				58B195B7FD225D014BEECD28 /* PBXTargetDependency */,
+				192707161F88BF06756CFDD7 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000001 /* Lune */,
+			);
+			name = LuneDownloader;
+			packageProductDependencies = (
+				AA0300000000000000000002 /* SwiftSoup */,
+				C100000000000000000000011 /* LuneURLClassification */,
+				C100000000000000000000012 /* LuneHTMLClassification */,
+				C100000000000000000000013 /* LunePaywallBypass */,
+				C100000000000000000000014 /* LunePriceMetadata */,
+				C100000000000000000000015 /* LuneContentRendering */,
+				C100000000000000000000018 /* LuneTransitions */,
+				C100000000000000000000016 /* LuneModels */,
+				C100000000000000000000017 /* LuneFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* LuneIngest */,
+				A982CE2BE48B7474FDAD7A00 /* LuneStorage */,
+				EC12441B238CDC7A3EEDD1A0 /* LuneDocuments */,
+				AA824D3974D944B8BC077857 /* LuneEpub */,
+				A1AC9F7C74411AF59CC240DB /* LuneSend */,
+				6733C497754C454FAA262597 /* LuneMail */,
+				333A451D2F6E424BF2A01F84 /* LuneDesignSystem */,
+				72398B0845A005923290AE55 /* LunePlatforms */,
+				4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */,
+				DE798ED2A5DA5A986EE4B864 /* LuneSocial */,
+				92CAEC0F8C340469B9AB25E3 /* LuneSemantic */,
+				48455ED52E3622FE10B6DA75 /* LuneReaderEngine */,
+				74662FE2996754685063847E /* LuneArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* LuneReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* LunePriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */,
+				EB6678402070E752D0A4FF94 /* LuneYouTubeAPI */,
+				6EDC1D9AE1F39D473CE9B129 /* LuneReadingList */,
+				7445361A6C10C9E25040C4AD /* LuneSocialUI */,
+				F1D3242938BA3B48ED8EA6DD /* LuneIntents */,
+				3933ED17E10DC2C0C55B129C /* LuneReadingListUI */,
+			);
+			productName = LuneDownloader;
+			productReference = E13583D77605D977B0A8FDD3 /* LuneDownloader.app */;
+			productType = "com.apple.product-type.application";
+		};
+		BE0F0A63AC930FAA7923DDFC /* LunePriceTrackerAction */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 84026801BFD01156DB04DA71 /* Build configuration list for PBXNativeTarget "LunePriceTrackerAction" */;
+			buildPhases = (
+				BD2C5C88A6DFF558F6C3C1F7 /* Sources */,
+				3AB1019F78884E8898F0365B /* Frameworks */,
+				51F636BA6A71CDFAAE7F7202 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				79583E002FE0BAD100C775CA /* Lune Action Extension */,
+			);
+			name = LunePriceTrackerAction;
+			packageProductDependencies = (
+				AA0300000000000000000004 /* SwiftSoup */,
+				C100000000000000000000011 /* LuneURLClassification */,
+				C100000000000000000000012 /* LuneHTMLClassification */,
+				C100000000000000000000013 /* LunePaywallBypass */,
+				C100000000000000000000014 /* LunePriceMetadata */,
+				C100000000000000000000015 /* LuneContentRendering */,
+				C100000000000000000000018 /* LuneTransitions */,
+				C100000000000000000000016 /* LuneModels */,
+				C100000000000000000000017 /* LuneFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* LuneIngest */,
+				A982CE2BE48B7474FDAD7A00 /* LuneStorage */,
+				333A451D2F6E424BF2A01F84 /* LuneDesignSystem */,
+				72398B0845A005923290AE55 /* LunePlatforms */,
+				4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */,
+				48455ED52E3622FE10B6DA75 /* LuneReaderEngine */,
+				74662FE2996754685063847E /* LuneArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* LuneReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* LunePriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */,
+			);
+			productName = LunePriceTrackerAction;
+			productReference = 3C0179E7326B416352FD04AE /* LunePriceTrackerAction.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AAA000000000000000000000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 1620;
+				TargetAttributes = {
+					79583DFB2FE0BAD100C775CA = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					AAE000000000000000000000 = {
+						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = MM5QBNLXR6;
+						ProvisioningStyle = Automatic;
+					};
+					AAE100000000000000000000 = {
+						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = MM5QBNLXR6;
+						ProvisioningStyle = Automatic;
+					};
+					AAE200000000000000000000 = {
+						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = MM5QBNLXR6;
+						ProvisioningStyle = Automatic;
+						TestTargetID = AAE000000000000000000000;
+					};
+					AAE300000000000000000000 = {
+						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = MM5QBNLXR6;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = AAD000000000000000000000 /* Build configuration list for PBXProject "Lune" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AA0900000000000000000001;
+			packageReferences = (
+				AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+				C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */,
+			);
+			productRefGroup = AA0900000000000000000002 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AAE000000000000000000000 /* Lune */,
+				AAE100000000000000000000 /* LuneSafari */,
+				AAE300000000000000000000 /* LuneShare */,
+				AAE200000000000000000000 /* LuneTests */,
+				79583DFB2FE0BAD100C775CA /* Lune Action Extension */,
+				96905778435E3C7F63FA5E07 /* LuneDownloaderShare */,
+				A2B18D43A980A2C17A48B019 /* LuneDownloaderAction */,
+				8B037A04C4B57DCC3B52F210 /* LuneDownloaderSafari */,
+				AF19C41BA051B4C0892BDA4E /* LuneDownloader */,
+				2746B738BB4967D72B4784AA /* LunePriceTrackerShare */,
+				BE0F0A63AC930FAA7923DDFC /* LunePriceTrackerAction */,
+				914B0BF1DD6F590D135488AC /* LunePriceTrackerSafari */,
+				6C65D0274C393548D3654967 /* LunePriceTracker */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		263BDD1DB396671A4F6B3810 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		51F636BA6A71CDFAAE7F7202 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6679DE7338A7B19B74E7FB33 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6ED0D1662C9D703BF6C0F4BA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7654D757DB485C9238DD39AB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		79583DFA2FE0BAD100C775CA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8D625DA4155FF73472CEE0E6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A8328BDA696E47B16CE4447A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1100000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1100000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1100000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1100000000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DDD51270230A986A15CBC90D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		3D30D1BA1BC66A3464973E88 /* Re-sign embedded extensions (debug) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Re-sign embedded extensions (debug)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
+		AA9000000000000000000001 /* Re-sign embedded extensions (debug) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Re-sign embedded extensions (debug)";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
+		F2DB15EE1976B470D4B0D7AF /* Re-sign embedded extensions (debug) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Re-sign embedded extensions (debug)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		090152A075555CC1E88333EA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		373A4FE3831DC2BDBE2A869D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		49BD90EDAA1C832A8F3D7C4E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		69326230C9193A79E2B04484 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6F840481808C183EA2D897C9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7276E5B4DBA5CB57A58E7631 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		79583DF82FE0BAD100C775CA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		836705B5BFAEBF1F5E5F928B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BD2C5C88A6DFF558F6C3C1F7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0665879E5C0FDB9B54C481ED /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LunePriceTrackerAction;
+			target = BE0F0A63AC930FAA7923DDFC /* LunePriceTrackerAction */;
+			targetProxy = 80226DBE727E6C900B6BC73B /* PBXContainerItemProxy */;
+		};
+		110F1850003FAD24F03CB81F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LunePriceTrackerShare;
+			target = 2746B738BB4967D72B4784AA /* LunePriceTrackerShare */;
+			targetProxy = CED961C8298641D78A116DA5 /* PBXContainerItemProxy */;
+		};
+		17DCF01578521F73EED10D1C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LuneDownloaderShare;
+			target = 96905778435E3C7F63FA5E07 /* LuneDownloaderShare */;
+			targetProxy = 15D241473DC420B319D7F3C1 /* PBXContainerItemProxy */;
+		};
+		192707161F88BF06756CFDD7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LuneDownloaderSafari;
+			target = 8B037A04C4B57DCC3B52F210 /* LuneDownloaderSafari */;
+			targetProxy = 3CC259C243F6AEE5B238E89D /* PBXContainerItemProxy */;
+		};
+		58B195B7FD225D014BEECD28 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LuneDownloaderAction;
+			target = A2B18D43A980A2C17A48B019 /* LuneDownloaderAction */;
+			targetProxy = 019AFC8CDB7CCEC35B2E3F5B /* PBXContainerItemProxy */;
+		};
+		79583E0A2FE0BAD200C775CA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 79583DFB2FE0BAD100C775CA /* Lune Action Extension */;
+			targetProxy = 79583E092FE0BAD200C775CA /* PBXContainerItemProxy */;
+		};
+		AA1200000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AAE100000000000000000000 /* LuneSafari */;
+			targetProxy = AA0400000000000000000001 /* PBXContainerItemProxy */;
+		};
+		AA1200000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AAE000000000000000000000 /* Lune */;
+			targetProxy = AA0400000000000000000002 /* PBXContainerItemProxy */;
+		};
+		AA1200000000000000000003 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AAE300000000000000000000 /* LuneShare */;
+			targetProxy = AA0400000000000000000003 /* PBXContainerItemProxy */;
+		};
+		F6A0E89B7A606B31EE9AE1D6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LunePriceTrackerSafari;
+			target = 914B0BF1DD6F590D135488AC /* LunePriceTrackerSafari */;
+			targetProxy = 89EB5051C98FC05A977EE7C7 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		023E20620BE250C369387843 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Lune/Lune.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Lune/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Lune uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		144800522E501D4A6D024453 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPriceTracker;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Lune/Lune.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Lune/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Lune uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		36BE64E58068B0FF635CA9AC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Lune Action Extension/Lune Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Lune Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.action";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		3A579C741B51DE45A7E87D13 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Lune Action Extension/Lune Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Lune Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.action";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5353B55D7367CE5C1A03EA6C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneSafari/LuneSafari.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5AD1A6F1DABCAE5BC3DD6321 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneShare/LuneShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		65686C7A8A0FBCDB65DD7149 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneShare/LuneShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		6F468BEA5E125B25A9C8D2DC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Lune Action Extension/Lune Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Lune Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.action";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		79583E0C2FE0BAD200C775CA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Lune Action Extension/Lune Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Lune Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader.action";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		79583E0D2FE0BAD200C775CA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Lune Action Extension/Lune Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Lune Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader.action";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		7F9C81DD57B2AE5AC8CC1B13 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneSafari/LuneSafari.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		85CB1AEB69C5B855D8FF4C59 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneShare/LuneShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A06A267FE792581B276EB885 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Lune Action Extension/Lune Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Lune Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.action";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AAC100000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = QZ00000000000000000001 /* Lune.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AAC200000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = QZ00000000000000000001 /* Lune.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		AAC300000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Lune/Lune.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Lune/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Lune uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AAC400000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Lune/Lune.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Lune/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Lune uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		AAC500000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneSafari/LuneSafari.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AAC600000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneSafari/LuneSafari.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		AAC700000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lune.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lune";
+			};
+			name = Debug;
+		};
+		AAC800000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lune.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lune";
+			};
+			name = Release;
+		};
+		AAC900000000000000000000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneShare/LuneShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AACA00000000000000000000 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneShare/LuneShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		BE6F0F191F208F7FEDC7D0B5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Lune/Lune.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Lune/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Lune uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C5863E0B66F8E9D9132F65C0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneShare/LuneShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D0EE387C77FBD5AA16E996A7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneSafari/LuneSafari.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D82FEA89A1E463804FF7AF6B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LuneSafari/LuneSafari.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LuneSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		ED6F9B6CE81E9794FA1FC336 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPriceTracker;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Lune/Lune.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Lune/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Lune uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		604934514C838BF7A7DE32C3 /* Build configuration list for PBXNativeTarget "LuneDownloaderAction" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3A579C741B51DE45A7E87D13 /* Debug */,
+				36BE64E58068B0FF635CA9AC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		65CC8E353E396283FCEE0898 /* Build configuration list for PBXNativeTarget "LunePriceTracker" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				144800522E501D4A6D024453 /* Debug */,
+				ED6F9B6CE81E9794FA1FC336 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		79583E0E2FE0BAD200C775CA /* Build configuration list for PBXNativeTarget "Lune Action Extension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				79583E0C2FE0BAD200C775CA /* Debug */,
+				79583E0D2FE0BAD200C775CA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		79F9AA8B374CC68FA35DFE00 /* Build configuration list for PBXNativeTarget "LuneDownloader" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BE6F0F191F208F7FEDC7D0B5 /* Debug */,
+				023E20620BE250C369387843 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		84026801BFD01156DB04DA71 /* Build configuration list for PBXNativeTarget "LunePriceTrackerAction" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6F468BEA5E125B25A9C8D2DC /* Debug */,
+				A06A267FE792581B276EB885 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A78C5DD51FCC623948CD4C4C /* Build configuration list for PBXNativeTarget "LuneDownloaderSafari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5353B55D7367CE5C1A03EA6C /* Debug */,
+				D0EE387C77FBD5AA16E996A7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAD000000000000000000000 /* Build configuration list for PBXProject "Lune" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAC100000000000000000000 /* Debug */,
+				AAC200000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAD100000000000000000000 /* Build configuration list for PBXNativeTarget "Lune" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAC300000000000000000000 /* Debug */,
+				AAC400000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAD200000000000000000000 /* Build configuration list for PBXNativeTarget "LuneSafari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAC500000000000000000000 /* Debug */,
+				AAC600000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAD300000000000000000000 /* Build configuration list for PBXNativeTarget "LuneTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAC700000000000000000000 /* Debug */,
+				AAC800000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAD400000000000000000000 /* Build configuration list for PBXNativeTarget "LuneShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAC900000000000000000000 /* Debug */,
+				AACA00000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB3EF4BE1D4A86FE309C3FEE /* Build configuration list for PBXNativeTarget "LunePriceTrackerSafari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F9C81DD57B2AE5AC8CC1B13 /* Debug */,
+				D82FEA89A1E463804FF7AF6B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BBBAB49D7E42C2856846AF7C /* Build configuration list for PBXNativeTarget "LunePriceTrackerShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5AD1A6F1DABCAE5BC3DD6321 /* Debug */,
+				85CB1AEB69C5B855D8FF4C59 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ECD7350BEB2AF4860E954473 /* Build configuration list for PBXNativeTarget "LuneDownloaderShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C5863E0B66F8E9D9132F65C0 /* Debug */,
+				65686C7A8A0FBCDB65DD7149 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LuneLibraries;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.7.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		05BEB00D14C2BD469EC11FB7 /* LuneShareSurface */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneShareSurface;
+		};
+		333A451D2F6E424BF2A01F84 /* LuneDesignSystem */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneDesignSystem;
+		};
+		3933ED17E10DC2C0C55B129C /* LuneReadingListUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneReadingListUI;
+		};
+		436F1044DB2553FED3D9DB4C /* LuneReaderUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneReaderUI;
+		};
+		48455ED52E3622FE10B6DA75 /* LuneReaderEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneReaderEngine;
+		};
+		4DFF8DE25D4460FB9484A013 /* LuneMediaDownload */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneMediaDownload;
+		};
+		59E17EB39B108E9054CCFBA3 /* LunePriceUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LunePriceUI;
+		};
+		6733C497754C454FAA262597 /* LuneMail */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneMail;
+		};
+		6EDC1D9AE1F39D473CE9B129 /* LuneReadingList */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneReadingList;
+		};
+		72398B0845A005923290AE55 /* LunePlatforms */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LunePlatforms;
+		};
+		7445361A6C10C9E25040C4AD /* LuneSocialUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneSocialUI;
+		};
+		74662FE2996754685063847E /* LuneArchiveReader */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneArchiveReader;
+		};
+		92CAEC0F8C340469B9AB25E3 /* LuneSemantic */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneSemantic;
+		};
+		A1AC9F7C74411AF59CC240DB /* LuneSend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneSend;
+		};
+		A982CE2BE48B7474FDAD7A00 /* LuneStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneStorage;
+		};
+		AA0300000000000000000002 /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
+		};
+		AA0300000000000000000003 /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
+		};
+		AA0300000000000000000004 /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0300000000000000000001 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
+		};
+		AA824D3974D944B8BC077857 /* LuneEpub */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneEpub;
+		};
+		C100000000000000000000011 /* LuneURLClassification */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneURLClassification;
+		};
+		C100000000000000000000012 /* LuneHTMLClassification */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneHTMLClassification;
+		};
+		C100000000000000000000013 /* LunePaywallBypass */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LunePaywallBypass;
+		};
+		C100000000000000000000014 /* LunePriceMetadata */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LunePriceMetadata;
+		};
+		C100000000000000000000015 /* LuneContentRendering */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneContentRendering;
+		};
+		C100000000000000000000016 /* LuneModels */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneModels;
+		};
+		C100000000000000000000017 /* LuneFetch */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneFetch;
+		};
+		C100000000000000000000018 /* LuneTransitions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneTransitions;
+		};
+		DE798ED2A5DA5A986EE4B864 /* LuneSocial */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneSocial;
+		};
+		E656FCBCB33D2B83A5BC2B9D /* LuneIngest */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneIngest;
+		};
+		EB6678402070E752D0A4FF94 /* LuneYouTubeAPI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneYouTubeAPI;
+		};
+		EC12441B238CDC7A3EEDD1A0 /* LuneDocuments */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneDocuments;
+		};
+		F1D3242938BA3B48ED8EA6DD /* LuneIntents */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LuneLibraries" */;
+			productName = LuneIntents;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = AAA000000000000000000000 /* Project object */;
+}

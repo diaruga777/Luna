@@ -1,6 +1,6 @@
 # Price Tracking
 
-When a saved/pasted URL is a **product page with a price**, Clip treats the save
+When a saved/pasted URL is a **product page with a price**, Lune treats the save
 as a **price tracker** instead of an article: it watches the product's price
 across one or more store URLs and alerts the user (local notification + a red
 top-of-list badge) when the price drops past a threshold.
@@ -176,7 +176,7 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   THIS run = the notification trigger).
 - `ReaderKit/PriceFormatting.swift` — **pure** currency string (`$45.99`, `€23.50`,
   `AUD 89.00`) and `thresholdDescription` ("10% off — alert below $90.00").
-- `Clip/ReadingList/PriceTrackingManager.swift` — `PriceTrackingManaging`
+- `Lune/ReadingList/PriceTrackingManager.swift` — `PriceTrackingManaging`
   (`fetchPrice(urlString:) -> ProductPrice?`); live impl wraps `PriceFetcher` so the
   add-a-store UI resolves a new URL's price with the same strategy.
 - `ReaderKit/PriceTrackingExitContext.swift` — **pure** navigation decision model.
@@ -257,7 +257,7 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
     convenience for the paste path) wraps `PriceFetcher` (static → embedded JSON →
     WebView). The search overlay's captured HTML feeds the fast static path.
   - Declares `Notification.Name.priceTrackerSavedInteractively`.
-- `Clip/ReadingList/AlertThresholdSlider.swift` — the **shared** alert-threshold
+- `Lune/ReadingList/AlertThresholdSlider.swift` — the **shared** alert-threshold
   control: a liquid-glass pill (`GlassStyle.barEffect()`) with the title **"Alert
   threshold"**, a slider (0.01…0.90), and a readout line
   (`PriceFormatting.thresholdDescription` — percent + absolute "alert below $…").
@@ -265,7 +265,7 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   via `onChanged` (live) / `onCommitted` (on release → host persists). Used IDENTICALLY
   by `PriceTrackingViewController`'s footer AND the catch-up price-tracker card, so
   both render the same and drive the same `alertThresholdFraction`.
-- `Clip/ReadingList/PriceRefreshCoordinator.swift` — main-app side effects: runs
+- `Lune/ReadingList/PriceRefreshCoordinator.swift` — main-app side effects: runs
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
   per `newlyAlerting` outcome.
 
@@ -357,7 +357,7 @@ allowed non-determinism is genuine network failure, which fails safely+consisten
 
 ## Background refresh (`AppDelegate`)
 
-`BGProcessingTaskRequest` id `com.hpiddy.clip.priceRefresh` (~every 12h, needs
+`BGProcessingTaskRequest` id `com.hpiddy.lune.priceRefresh` (~every 12h, needs
 network), registered + scheduled alongside the existing inbox/mail tasks; the
 identifier is in `Info.plist` `BGTaskSchedulerPermittedIdentifiers`. Handler →
 `PriceRefreshCoordinator.refreshAndNotify`. Resumable: stalest-first + per-tracker
@@ -386,7 +386,7 @@ notes), like youtube/platform/document saves.
 
 ## Tests
 
-- `ProductPageDetectorTests` (18) — fixtures `ClipTests/Fixtures/Products/`
+- `ProductPageDetectorTests` (18) — fixtures `LuneTests/Fixtures/Products/`
   (amazon JSON-LD, shopify OG, bestbuy microdata, generic `@graph`+AggregateOffer+EU
   price, article no-price negative, **bunnings-nextdata** heuristic+embedded-JSON;
   Tier-1 candidates assert `staticPrice`) + embedded-price `firstPrice` unit tests

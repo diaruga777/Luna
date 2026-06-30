@@ -13,23 +13,23 @@ Users get a durable identity (UUID + X25519 encryption keypair + Ed25519
 signing keypair) created during first-launch onboarding and stored in the
 **iCloud-synchronized Keychain** (survives reinstall, roams devices). Username
 (≤20 chars), email, phone are cosmetic profile fields. Friends exchange
-identities via QR / `clipreader://` links; messages flow through the CloudKit
+identities via QR / `lunereader://` links; messages flow through the CloudKit
 **public database** — friend adds are bi-directional and friends can push
 articles into each other's reading lists.
 
-## Key files (`Clip/Social/`)
+## Key files (`Lune/Social/`)
 
 - `UserIdentity.swift` — `UserIdentity` (private half) / `IdentityCard`
   (public half: uuid, username, email?, phone?, both public keys);
   `ProfileValidation` (username 1–20 chars, contact fields ≤60).
 - `IdentityStore.swift` — `IdentityStoring`: `loadIdentity`,
   `createIdentity`, `updateProfile`. `KeychainIdentityStore` persists JSON in
-  a synchronizable generic-password item (service `com.hpiddy.clip.identity`,
+  a synchronizable generic-password item (service `com.hpiddy.lune.identity`,
   `kSecAttrSynchronizable`, AfterFirstUnlock); `InMemoryIdentityStore` for tests.
 - `FriendsStore.swift` — `friends.json` in the app group (ReadingListStore
   pattern: lock-serialized mutations, `.friendsListChanged`). `add` is
   idempotent by uuid and refreshes profile/keys.
-- `FriendLink.swift` — `clipreader://friend?u=<uuid>&n=<name>&ke=<b64url
+- `FriendLink.swift` — `lunereader://friend?u=<uuid>&n=<name>&ke=<b64url
   x25519>&ks=<b64url ed25519>[&e=<email>&p=<phone>]` codec. Same URL in QR
   codes, shared links, system-camera scans.
 - `MessageEnvelope.swift` — `MessageBody`: `friendAdd(IdentityCard)`,
@@ -41,7 +41,7 @@ articles into each other's reading lists.
   the signature and returns the signer key for the caller's trust decision.
 - `MessageTransport.swift` — protocol (`send`/`fetchInbox`/`delete`/
   `ensureSubscription`/`availability`) + `InMemoryMessageTransport` mock.
-- `CloudKitMessageTransport.swift` — public DB of `iCloud.com.hpiddy.clip`,
+- `CloudKitMessageTransport.swift` — public DB of `iCloud.com.hpiddy.lune`,
   record type `Message` {`recipientUUID` String (queryable), `senderUUID`
   String, `payload` Bytes}. Delete treats `.unknownItem` as success (two
   devices, one identity). Subscription `inbox-<uuid>`, `.firesOnRecordCreation`,
@@ -137,7 +137,7 @@ always-share set, plus one shared `pendingSuggestion` slot.
   teaches iOS the conversation so friends surface in the system share sheet's
   people row and learns the share habit. Tested: handle preference.
 - **Share-sheet target**: the extension declares `IntentsSupported` +
-  `NSUserActivityTypes` = `INSendMessageIntent`. Tapping a Queue friend
+  `NSUserActivityTypes` = `INSendMessageIntent`. Tapping a Lune friend
   suggestion launches the extension with that intent; it reads the conversation
   UUID and queues the URL via `PendingFriendShareStore` (the extension has no
   crypto/CloudKit). The main app's `SocialMessageCenter.drainPendingFriendShares`
@@ -171,12 +171,12 @@ iPhone-mini-sized screen:
   `textFieldShouldReturn` advances username → email.
 
 The keyboard-frame math (`bottomInset`, `contentOffsetToReveal`) is factored into the
-pure `KeyboardAvoidance` enum (`Clip/Social/KeyboardAvoidance.swift`), unit-tested by
-`ClipTests/KeyboardAvoidanceTests.swift`. Small-screen layout is asserted by
+pure `KeyboardAvoidance` enum (`Lune/Social/KeyboardAvoidance.swift`), unit-tested by
+`LuneTests/KeyboardAvoidanceTests.swift`. Small-screen layout is asserted by
 `OnboardingScreenTests` (`testIdentityStepFitsSmallScreen`, `testSetupStepsFitSmallScreen`,
 hosted at 375×812).
 
-## Diagnostics (`Clip/Diagnostics/`)
+## Diagnostics (`Lune/Diagnostics/`)
 
 On-device log capture, because Console.app can't read an iOS-beta device's
 log archive on an older macOS (format-version mismatch), and `log collect`
@@ -239,16 +239,16 @@ Incoming `readingListItem`: dropped entirely when the URL is already saved
 
 ## Wiring
 
-- `Info.plist`: `CFBundleURLTypes` scheme `clipreader`; `UIBackgroundModes`
+- `Info.plist`: `CFBundleURLTypes` scheme `lunereader`; `UIBackgroundModes`
   audio + `remote-notification`; camera usage string covers QR scanning.
-- `Clip.entitlements`: iCloud container `iCloud.com.hpiddy.clip` + CloudKit
+- `Lune.entitlements`: iCloud container `iCloud.com.hpiddy.lune` + CloudKit
   service + `aps-environment` (+ existing app group).
 - Deployment target: **iOS 26.0** all targets (no iOS-27-only APIs; gate any
   future ones with `#available(iOS 27)`).
 
 ## CloudKit ops (NOT in code — Console steps)
 
-The container `iCloud.com.hpiddy.clip` was created by automatic signing
+The container `iCloud.com.hpiddy.lune` was created by automatic signing
 during the build-20 archive. Before messaging works:
 
 1. One-time token: `DEVELOPER_DIR=/Applications/Xcode-26.2.0.app xcrun cktool save-token --type management`
@@ -256,7 +256,7 @@ during the build-20 archive. Before messaging works:
 2. Import the prepared schema (`claudedocs/cloudkit-schema.ckdb` — record
    type, queryable indexes on `recipientUUID` + `recordID`, `_icloud`
    Create+Write grant) into BOTH environments:
-   `xcrun cktool import-schema --team-id MM5QBNLXR6 --container-id iCloud.com.hpiddy.clip --environment development --file claudedocs/cloudkit-schema.ckdb`
+   `xcrun cktool import-schema --team-id MM5QBNLXR6 --container-id iCloud.com.hpiddy.lune --environment development --file claudedocs/cloudkit-schema.ckdb`
    then `--environment production`. (If the GRANT lines are rejected by an
    older cktool, set Security Roles in the Console instead: `_icloud` =
    Create + Write on `Message`.)
@@ -265,7 +265,7 @@ during the build-20 archive. Before messaging works:
 
 ## Intents (orthogonal change, same round)
 
-`ClipSafariPageIntent` / `SaveLinkIntent` now return
+`LuneSafariPageIntent` / `SaveLinkIntent` now return
 `some IntentResult & ReturnsValue<String?>`: the saved URL (also for ignored
 duplicates — it's in the list), nil if the 12 s intent timeout hit first;
 hard failures still throw.

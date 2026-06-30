@@ -30,9 +30,9 @@ Replay-compatible).
   `ReplayHTMLFetcher`, and diff the produced `ArticleContent` against the recorded
   `finalContent` (returns a structured `Outcome`, no XCTest dependency).
 - `ReplayBugReporter.swift` — marks a save's replay `.userReported` + shares its zip.
-- `ZipArchiveWriter.swift` — stored-entry ZIP writer (moved here from `Clip/Send/`;
+- `ZipArchiveWriter.swift` — stored-entry ZIP writer (moved here from `Lune/Send/`;
   shared so extensions can zip exports).
-- `Clip/Settings/ReplaysViewController.swift` — the Replays list UI (main app).
+- `Lune/Settings/ReplaysViewController.swift` — the Replays list UI (main app).
 
 ## Schema (`schemaVersion = 1`)
 
@@ -189,7 +189,7 @@ nothing accumulates across saves.
 
 | Entry point | File | What it records |
 |---|---|---|
-| Background ingest (paste / manual / **all app intents** via `handleSavePress`) | `Clip/ReadingList/ReadingListIngestor.swift` `ingest` | begin; `unwrap`; wraps the resolver fetcher with `RecordingHTMLFetcher`; `resolveDecision`; `extraction`; terminate on outcome; non-article items (`youtube`/`platform`/`document`) record a note + thumbnail `mediaReference` and terminate |
+| Background ingest (paste / manual / **all app intents** via `handleSavePress`) | `Lune/ReadingList/ReadingListIngestor.swift` `ingest` | begin; `unwrap`; wraps the resolver fetcher with `RecordingHTMLFetcher`; `resolveDecision`; `extraction`; terminate on outcome; non-article items (`youtube`/`platform`/`document`) record a note + thumbnail `mediaReference` and terminate |
 | Silent bypass loop | `ReaderKit/ArticleResolver.swift` `resolve(…, replayLog:)` | `bypassStrategy` per silent strategy (name + succeeded) |
 | Every URLSession fetch | `ReaderKit/RecordingHTMLFetcher.swift` | `networkRequest` + `networkResponse` (HTML body verbatim; error on failure) |
 | Share / action extension inline ingest | `ShareKit/ShareViewController.swift` `ingestArticleThenComplete` | begin; wrapped fetcher; `resolveDecision`/`extraction`; terminate |
@@ -201,7 +201,7 @@ The recorder is injected as a protocol (`ReplayRecording`), so a save with the
 
 ## UI entry points
 
-- **Diagnostics → Replays** (`Clip/Settings/ReplaysViewController.swift`, opened
+- **Diagnostics → Replays** (`Lune/Settings/ReplaysViewController.swift`, opened
   via the "Replays" bar button on `DiagnosticsViewController`): a table listing all
   stored replays **by URL**, an explanatory paragraph at the top ("Replays record
   all data and events for a save and are useful for diagnostics."). Tapping a row
@@ -213,7 +213,7 @@ The recorder is injected as a protocol (`ReplayRecording`), so a save with the
   the Share button**. Tapping opens a menu with **"Report a bug"** / **"Dismiss"**
   (tapping outside dismisses). "Report a bug" → `ReplayBugReporter.report`.
 - **Bug report — reading-list row**: the long-press context menu
-  (`Clip/ReadingList/ReadingListViewController.swift` `rowMenu`) has a **"Report a
+  (`Lune/ReadingList/ReadingListViewController.swift` `rowMenu`) has a **"Report a
   bug"** item with the same behavior.
 
 `ReplayBugReporter.report(itemURLString:from:sourceView:)` marks the most recent
@@ -250,7 +250,7 @@ recorded state (`failed`/`userReported`) is satisfied by any non-`success` outco
 - Export: Diagnostics → Replays (tap a row) or the reader footer ladybug → "Report a
   bug". Both share a `<uuid>.zip` containing one stored `<uuid>.txt` of pretty JSON.
 - Unzip the `.zip` and drop its `<uuid>.txt` (or any `*.json`) into
-  `ClipTests/Fixtures/Replays/`. That's it — `ReplayPlayerTests`
+  `LuneTests/Fixtures/Replays/`. That's it — `ReplayPlayerTests`
   `testAllReplayFixturesReproduce` auto-discovers every `*.json`/`*.txt` there and
   asserts each one reproduces (the project uses synchronized folders, so no
   `.pbxproj` edit is needed).
@@ -277,13 +277,13 @@ recorded state (`failed`/`userReported`) is satisfied by any non-`success` outco
 
 ## Tests
 
-`ClipTests/ReplayTests.swift` — encode/decode round-trip (one of every event
+`LuneTests/ReplayTests.swift` — encode/decode round-trip (one of every event
 kind), discriminator shapes, source round-trip, recorder event ordering + terminal
 state + body capping + `markUserReported`, disk store zip round-trip +
 `firstStoredEntryData`, the recording fetcher decorator (success + error) via the
 mock fetcher, resolver `bypassStrategy` logging, and media redaction. 13 tests.
 
-`ClipTests/ReplayPlayerTests.swift` — the integration harness: auto-discovered
+`LuneTests/ReplayPlayerTests.swift` — the integration harness: auto-discovered
 fixture replays (`testAllReplayFixturesReproduce` over `Fixtures/Replays/*.json|txt`),
 a success round-trip, a tampered-content reproduction failure, a recorded-transport-
 error failure, recorded-unwrap honoring, and unsupported-source rejection. Fixtures:

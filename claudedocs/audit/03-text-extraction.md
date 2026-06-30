@@ -317,7 +317,7 @@ strategy loop via `StubRunner`/`MockArticleFetcher`). Gaps and additions:
 
 ### Fixtures — per-site, readable + paywalled-stub variants
 
-Add committed fixtures under `ClipTests/Fixtures/` (the current real-page test reads from
+Add committed fixtures under `LuneTests/Fixtures/` (the current real-page test reads from
 `/tmp` and silently skips when absent — non-deterministic CI coverage, P4-adjacent):
 
 | Site | `…-readable.html` | `…-paywalled.html` |

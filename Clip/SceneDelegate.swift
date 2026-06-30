@@ -131,7 +131,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         #endif
 
-        if KeychainIdentityStore.shared.loadIdentity() == nil {
+        // Onboarding only sets up the friend-sharing identity, which is a Downloader
+        // (social) feature — Reader and Price Tracker skip it and go straight to their list.
+        if AppSurfaceConfig.current == .downloader,
+           KeychainIdentityStore.shared.loadIdentity() == nil {
             window.rootViewController = OnboardingFlow.make { [weak self] in
                 self?.showMainUI()
                 if let url = self?.pendingFriendURL {

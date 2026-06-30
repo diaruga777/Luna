@@ -52,7 +52,7 @@ public enum NotificationManager {
     public static func postArticleShared(fromUsername username: String, title: String?) {
         let content = UNMutableNotificationContent()
         content.title = "\(username) shared an article"
-        content.body = title ?? "Open Queue to read it."
+        content.body = title ?? "Open Quartz to read it."
         content.sound = .default
         content.userInfo = [typeKey: typeShareFollowup]
         post(content, identifier: followupIdentifierPrefix + UUID().uuidString)

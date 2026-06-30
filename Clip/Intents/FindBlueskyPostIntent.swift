@@ -16,7 +16,7 @@ struct FindBlueskyPostIntent: AppIntent {
     init() {}
     static let title: LocalizedStringResource = "Save Bluesky Post"
     static let description = IntentDescription(
-        "Finds a Bluesky post by author handle + a phrase from it and saves it to your Queue reading list.")
+        "Finds a Bluesky post by author handle + a phrase from it and saves it to your Quartz reading list.")
     static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Handle", description: "The author's handle, with or without \"@\" — e.g. \"@jay.bsky.team\".")

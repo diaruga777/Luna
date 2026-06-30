@@ -41,7 +41,7 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         if section == 0 {
             return "When on, the action extension downloads a saved post's media automatically and shows it inline. Turn off to download manually with a button."
         }
-        return "Auto-download media from saved posts from that platform and save straight to your photo library. Requires Photos access. Queue never reads or edits your photos."
+        return "Auto-download media from saved posts from that platform and save straight to your photo library. Requires Photos access. Quartz never reads or edits your photos."
     }
 
     override func tableView(

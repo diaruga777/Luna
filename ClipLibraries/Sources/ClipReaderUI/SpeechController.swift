@@ -265,7 +265,7 @@ public final class SpeechController: NSObject {
     private func updateNowPlaying() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
             MPMediaItemPropertyTitle: nowPlayingTitle,
-            MPMediaItemPropertyArtist: "Queue",
+            MPMediaItemPropertyArtist: "Quartz",
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
         ]
     }

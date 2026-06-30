@@ -11,7 +11,7 @@ import Foundation
 /// Shared by the generic save intent and the screen-prompt intent.
 public enum AppNamePlatform {
 
-    /// Whether the current app is one Queue knows how to save from — a recognized
+    /// Whether the current app is one Quartz knows how to save from — a recognized
     /// content platform, or Safari (whose plain page URL is saved directly). Unknown
     /// apps are unsupported; the screen-prompt intent returns "unsupported" for them.
     public static func isSupported(forAppName app: String) -> Bool {

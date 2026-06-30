@@ -7,7 +7,7 @@ import ClipReaderUI
 import UIKit
 
 /// The action extension's reader sharing: lets the user share the article they
-/// just read with a Queue friend or via the system link share. The extension
+/// just read with a Quartz friend or via the system link share. The extension
 /// has no CloudKit/crypto, so a friend send is QUEUED to the App Group
 /// (`PendingFriendShareWriter`) and the main app delivers it on next launch.
 /// There's no suggestion engine in the extension, so no one-tap suggested send.
@@ -22,8 +22,8 @@ public final class ExtensionReaderShareProvider: ReaderShareProviding {
         let sheet = UIAlertController(
             title: title ?? urlString,
             message: friends.isEmpty
-                ? "Add friends in Queue to send articles directly."
-                : "Send to a friend's Queue reading list, or share the link.",
+                ? "Add friends in Quartz to send articles directly."
+                : "Send to a friend's Quartz reading list, or share the link.",
             preferredStyle: .actionSheet)
 
         for friend in friends {
@@ -36,7 +36,7 @@ public final class ExtensionReaderShareProvider: ReaderShareProviding {
         }
 
         sheet.addAction(UIAlertAction(title: "Share Link…", style: .default) { _ in
-            // Plain URL only — no Queue deep link, no accessory text.
+            // Plain URL only — no Quartz deep link, no accessory text.
             let shared: Any = URL(string: urlString) ?? urlString
             let activity = UIActivityViewController(
                 activityItems: [shared], applicationActivities: nil)
@@ -61,7 +61,7 @@ public final class ExtensionReaderShareProvider: ReaderShareProviding {
     private static func confirmQueued(friendName: String, from presenter: UIViewController) {
         let alert = UIAlertController(
             title: "Will Send to \(friendName)",
-            message: "It'll be delivered the next time you open Queue.",
+            message: "It'll be delivered the next time you open Quartz.",
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         presenter.present(alert, animated: true)

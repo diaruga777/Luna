@@ -46,7 +46,7 @@ public enum SendToFriendSheet {
         presenter.present(sheet, animated: true)
     }
 
-    /// Shares the plain article URL — no Queue deep link, no accessory text — so it
+    /// Shares the plain article URL — no Quartz deep link, no accessory text — so it
     /// behaves like any normal link share.
     public static func shareLink(urlString: String, from presenter: UIViewController, sourceView: UIView) {
         let shared: Any = URL(string: urlString) ?? urlString

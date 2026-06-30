@@ -5,7 +5,7 @@
 
 import Foundation
 
-/// The reader mode the "Read in Queue" ACTION extension last used. Persisted in
+/// The reader mode the "Read in Quartz" ACTION extension last used. Persisted in
 /// the extension's OWN `UserDefaults.standard` (its private container — NOT the
 /// App Group, NOT the main app), so the action extension remembers its own
 /// preference independently of the main-app reader.

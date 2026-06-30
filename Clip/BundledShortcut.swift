@@ -13,7 +13,7 @@ enum BundledShortcut {
 
     /// The shortcut's name as it appears in the Shortcuts app and the Action
     /// Button picker after import. Must match the bundled `.shortcut` file's name.
-    static let displayName = "Send To Queue"
+    static let displayName = "Send To Quartz"
 
     /// Presents the system share sheet to import the bundled shortcut into the
     /// Shortcuts app. (`shortcuts://import-workflow?url=` rejects local file URLs,

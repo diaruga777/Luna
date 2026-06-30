@@ -6,7 +6,7 @@
 import ClipStorage
 import Foundation
 
-/// When the Safari extension shows its "Read in Queue" button. Stored in the App
+/// When the Safari extension shows its "Read in Quartz" button. Stored in the App
 /// Group so the extension's native handler can read it (the extension and app
 /// don't share a framework — the handler reads the raw `rawValue` string under
 /// `SafariSuggestionSettings.key`). Defaults to `.all`.

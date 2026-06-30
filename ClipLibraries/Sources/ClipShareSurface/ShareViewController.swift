@@ -18,7 +18,7 @@ import UniformTypeIdentifiers
 /// Markdown/RTF) from the share sheet, appends it to the shared reading list,
 /// and completes immediately. The main app downloads/parses on next launch.
 ///
-/// When launched by tapping a Queue friend in the share sheet's people row, the
+/// When launched by tapping a Quartz friend in the share sheet's people row, the
 /// shared URL is queued as an outgoing friend-share for the main app to send
 /// (the extension has no crypto/CloudKit access).
 public final class ShareViewController: UIViewController {
@@ -27,7 +27,7 @@ public final class ShareViewController: UIViewController {
     /// covers .txt, .md/.markdown, and most source/plain formats.
     private static let documentTypes: [UTType] = [.pdf, .rtf, .plainText, .text]
 
-    /// True when hosted by the "Read in Queue" action extension
+    /// True when hosted by the "Read in Quartz" action extension
     /// (`com.apple.ui-services`) rather than the zero-UI share extension
     /// (`com.apple.share-services`). The action extension always opens the
     /// reader; the share extension only does when the user enabled it.
@@ -84,7 +84,7 @@ public final class ShareViewController: UIViewController {
         // provider whose callback never fires.
         armLoadWatchdog()
 
-        // Tapped a Queue friend suggestion in the share sheet's PEOPLE ROW: the
+        // Tapped a Quartz friend suggestion in the share sheet's PEOPLE ROW: the
         // conversation identifier is the friend's UUID. This only happens for
         // the share extension — guard the `intent` access behind that, since
         // touching `extensionContext.intent` in a `com.apple.ui-services` action
@@ -150,7 +150,7 @@ public final class ShareViewController: UIViewController {
             handleText(textProvider)
             return
         }
-        failOrComplete("This type of content can't be read in Queue.")
+        failOrComplete("This type of content can't be read in Quartz.")
     }
 
     // MARK: - Status / error UI (action extension)
@@ -160,7 +160,7 @@ public final class ShareViewController: UIViewController {
         spinner.translatesAutoresizingMaskIntoConstraints = false
         spinner.startAnimating()
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.text = "Opening in Queue…"
+        statusLabel.text = "Opening in Quartz…"
         statusLabel.textColor = .secondaryLabel
         statusLabel.font = .preferredFont(forTextStyle: .body)
         statusLabel.textAlignment = .center
@@ -611,7 +611,7 @@ public final class ShareViewController: UIViewController {
 extension ShareViewController: ExtensionHost {
 
     /// The reader mode to present, or nil to save silently. Fixed behavior (no in-app
-    /// setting): the share extension always saves and dismisses; the "Read in Queue"
+    /// setting): the share extension always saves and dismisses; the "Read in Quartz"
     /// action extension always opens the reader, in whichever mode it was last used in
     /// (state local to the extension).
     public var readerMode: ShareReaderViewController.Mode? {

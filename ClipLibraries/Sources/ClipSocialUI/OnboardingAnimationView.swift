@@ -16,7 +16,7 @@ public final class OnboardingAnimationView: UIView {
         case notification     // a banner sliding in
         case settingsToggle   // a Settings row whose switch flips on
         case actionButton     // the Action Button pressed → "Saved" card
-        case actionExtension  // Safari → Share → "Read in Queue" action → reader
+        case actionExtension  // Safari → Share → "Read in Quartz" action → reader
     }
 
     private let kind: Kind
@@ -76,7 +76,7 @@ public final class OnboardingAnimationView: UIView {
         appIcon.translatesAutoresizingMaskIntoConstraints = false
 
         let title = UILabel()
-        title.text = "Queue"
+        title.text = "Quartz"
         title.font = .systemFont(ofSize: 14, weight: .semibold)
         let bodyText = UILabel()
         bodyText.text = "htest shared an article"
@@ -134,7 +134,7 @@ public final class OnboardingAnimationView: UIView {
         row.translatesAutoresizingMaskIntoConstraints = false
 
         let label = UILabel()
-        label.text = "Queue"
+        label.text = "Quartz"
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.translatesAutoresizingMaskIntoConstraints = false
 
@@ -256,7 +256,7 @@ public final class OnboardingAnimationView: UIView {
         addressBar.addSubview(urlPill)
         urlPill.addSubview(urlStack)
 
-        // "Saved to Queue" toast inside the phone screen.
+        // "Saved to Quartz" toast inside the phone screen.
         savedToast.backgroundColor = accent
         savedToast.layer.cornerRadius = 11
         savedToast.layer.cornerCurve = .continuous
@@ -267,7 +267,7 @@ public final class OnboardingAnimationView: UIView {
             systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold)))
         check.tintColor = .white
         let savedLabel = UILabel()
-        savedLabel.text = "Saved to Queue"
+        savedLabel.text = "Saved to Quartz"
         savedLabel.textColor = .white
         savedLabel.font = .systemFont(ofSize: 11, weight: .semibold)
         let toastStack = UIStackView(arrangedSubviews: [check, savedLabel])
@@ -361,7 +361,7 @@ public final class OnboardingAnimationView: UIView {
         }
     }
 
-    // MARK: - Action extension (Safari → Share → "Read in Queue" → reader)
+    // MARK: - Action extension (Safari → Share → "Read in Quartz" → reader)
 
     private let axShareRipple = UIView()
     private let axShareSheet = UIView()
@@ -473,7 +473,7 @@ public final class OnboardingAnimationView: UIView {
         axRowList.translatesAutoresizingMaskIntoConstraints = false
         axRowScroll.addSubview(axReadHighlight)
         axRowScroll.addSubview(axRowList)
-        // The Queue row sits low in the list, so the list must scroll up.
+        // The Quartz row sits low in the list, so the list must scroll up.
         let readRow = axQueueActionRow()
         for row in [axActionRow(symbol: "doc.on.doc", placeholderWidth: 34),
                     axActionRow(symbol: "eyeglasses", placeholderWidth: 82),
@@ -484,7 +484,7 @@ public final class OnboardingAnimationView: UIView {
             axRowList.addArrangedSubview(row)
         }
 
-        // The action-extension UI (the Queue reader) — slides up over everything.
+        // The action-extension UI (the Quartz reader) — slides up over everything.
         axActionCard.backgroundColor = .systemBackground
         axActionCard.layer.cornerRadius = 18
         axActionCard.layer.cornerCurve = .continuous
@@ -626,8 +626,8 @@ public final class OnboardingAnimationView: UIView {
         return axActionRow(icon: icon, trailing: labelPlaceholder)
     }
 
-    /// The Queue action-extension row: the app's Q mark (leading) and real
-    /// "Queue it" text (trailing), tinted in the app accent. This is the row the
+    /// The Quartz action-extension row: the app's Q mark (leading) and real
+    /// "Quartz it" text (trailing), tinted in the app accent. This is the row the
     /// animation scrolls to and taps — so it gets the one bit of literal text.
     private func axQueueActionRow() -> UIView {
         let icon = UIImageView(image: UIImage(named: "queue-app-mark"))
@@ -639,7 +639,7 @@ public final class OnboardingAnimationView: UIView {
         icon.widthAnchor.constraint(equalToConstant: 20).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 20).isActive = true
         let label = UILabel()
-        label.text = "Queue it"
+        label.text = "Quartz it"
         label.font = .systemFont(ofSize: 12, weight: .semibold)
         label.textColor = accent
         return axActionRow(icon: icon, trailing: label)
@@ -667,7 +667,7 @@ public final class OnboardingAnimationView: UIView {
         layoutIfNeeded()
         let sheetDrop = CGAffineTransform(translationX: 0, y: axShareSheet.bounds.height + 8)
         let cardDrop = CGAffineTransform(translationX: 0, y: axActionCard.bounds.height + 8)
-        // Scroll the list up so "Read in Queue" (the 5th of 6 rows) comes into view.
+        // Scroll the list up so "Read in Quartz" (the 5th of 6 rows) comes into view.
         let listScroll = CGAffineTransform(translationX: 0, y: -64)
 
         func reset() {
@@ -694,18 +694,18 @@ public final class OnboardingAnimationView: UIView {
             UIView.addKeyframe(withRelativeStartTime: 0.08, relativeDuration: 0.14) {
                 self.axShareSheet.transform = .identity
             }
-            // Scroll to the "Read in Queue" action. The highlight is anchored to the
+            // Scroll to the "Read in Quartz" action. The highlight is anchored to the
             // row's pre-scroll layout frame, so it must take the SAME transform to
             // stay aligned with the (transformed) row.
             UIView.addKeyframe(withRelativeStartTime: 0.34, relativeDuration: 0.14) {
                 self.axRowList.transform = listScroll
                 self.axReadHighlight.transform = listScroll
             }
-            // Tap it (highlight on the "Read in Queue" row).
+            // Tap it (highlight on the "Read in Quartz" row).
             UIView.addKeyframe(withRelativeStartTime: 0.50, relativeDuration: 0.06) {
                 self.axReadHighlight.alpha = 1
             }
-            // The Queue reader (action extension) slides up.
+            // The Quartz reader (action extension) slides up.
             UIView.addKeyframe(withRelativeStartTime: 0.58, relativeDuration: 0.14) {
                 self.axActionCard.transform = .identity
             }

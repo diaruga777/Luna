@@ -346,7 +346,7 @@ final class CatchUpViewController: UIViewController {
         titleLabel.numberOfLines = 4
 
         let hint = UILabel()
-        hint.text = "Locked · swipe left or tap Unlock to read it in Queue"
+        hint.text = "Locked · swipe left or tap Unlock to read it in Quartz"
         hint.font = .preferredFont(forTextStyle: .subheadline)
         hint.textColor = .secondaryLabel
         hint.textAlignment = .center

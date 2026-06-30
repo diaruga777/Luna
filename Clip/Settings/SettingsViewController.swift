@@ -369,7 +369,7 @@ final class EyeTrackingSettingsScreen: NavHeaderTableController {
 // MARK: - Shortcut & Safari
 
 final class ShortcutSettingsScreen: NavHeaderTableController {
-    /// Section 0: the Safari extension's "Read in Queue" button visibility.
+    /// Section 0: the Safari extension's "Read in Quartz" button visibility.
     /// Section 1: the Action-Button shortcut rows.
     private enum Section: Int, CaseIterable { case suggestionButton, shortcut }
     private enum Row: Int, CaseIterable { case install, openShortcuts, refreshStatus }
@@ -394,17 +394,17 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        Section(rawValue: section) == .suggestionButton ? "Read in Queue Button" : "Action Button Shortcut"
+        Section(rawValue: section) == .suggestionButton ? "Read in Quartz Button" : "Action Button Shortcut"
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .suggestionButton:
-            return "When browsing in Safari (with the Queue extension enabled), show a "
-                + "\"Read in Queue\" button to open the page in Queue — unlocking paywalled "
+            return "When browsing in Safari (with the Quartz extension enabled), show a "
+                + "\"Read in Quartz\" button to open the page in Quartz — unlocking paywalled "
                 + "articles via the in-app reader. Choose when it appears."
         case .shortcut:
-            let base = "Save the Safari webpage by pressing the Action Button: enable the Queue Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
+            let base = "Save the Safari webpage by pressing the Action Button: enable the Quartz Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
             if #unavailable(iOS 27.0) {
                 return "⚠️ One-press Safari saving requires iOS 27 or later.\n\n" + base
             }
@@ -483,7 +483,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
             } ?? "unknown time"
             safariStatusText = "Last visited Safari URL (\(when)): \(url)"
         } else {
-            safariStatusText = "No Safari URL tracked yet. Enable the Queue extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page."
+            safariStatusText = "No Safari URL tracked yet. Enable the Quartz extension in Safari (Settings → Apps → Safari → Extensions) and browse to a page."
         }
     }
 }

@@ -13,7 +13,7 @@ public struct SaveLinkIntent: AppIntent {
     public init() {}
     public static let title: LocalizedStringResource = "Save Link"
     public static let description = IntentDescription(
-        "Saves a link to your Queue reading list.")
+        "Saves a link to your Quartz reading list.")
     public static let openAppWhenRun: Bool = false
 
     @Parameter(title: "URL", description: "The link to save.")

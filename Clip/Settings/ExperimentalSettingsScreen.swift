@@ -78,9 +78,9 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         case .rabbitHole:
             return "Off by default. Replaces every transition in the app — screen pushes, modals, and list changes — with a Dot Matrix \"pixel wipe\": the screen dissolves into spaced, rounded dots of where you're going, then sharpens into it, with the wave sweeping the way the motion would. It also opens saves in the experimental RabbitHole inline reader (dive into a link as a stacked layer; overscroll to pull the previous one back). One switch for both; flip it off to return to the standard animations and reader."
         case .semantic:
-            return "When you save something that resembles things you've shared with a friend before, Queue can suggest sharing it with them. Slide all the way left to turn this off."
+            return "When you save something that resembles things you've shared with a friend before, Quartz can suggest sharing it with them. Slide all the way left to turn this off."
         case .paywallStrategies:
-            return "Off by default. When on, Queue first tries to unlock a paywalled article directly on your device (search-engine reads, a fresh session, AMP, and web archives) before falling back to the archive reader. This can unlock some hard paywalls the archive can't, but adds a few seconds before the fallback. Turn it off to go straight to the archive reader."
+            return "Off by default. When on, Quartz first tries to unlock a paywalled article directly on your device (search-engine reads, a fresh session, AMP, and web archives) before falling back to the archive reader. This can unlock some hard paywalls the archive can't, but adds a few seconds before the fallback. Turn it off to go straight to the archive reader."
         case .archiveOverlay:
             return "Opacity of overlay while we work to unlock web articles"
         case .dotMatrix:
@@ -376,10 +376,10 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
                 self?.tableView.reloadData()
             })
         }
-        sheet.addAction(UIAlertAction(title: "Create \"Watch Later (Queue)\"", style: .default) { [weak self] _ in
+        sheet.addAction(UIAlertAction(title: "Create \"Watch Later (Quartz)\"", style: .default) { [weak self] _ in
             Task {
                 do {
-                    let created = try await YouTubeAPIClient().createPlaylist(title: "Watch Later (Queue)")
+                    let created = try await YouTubeAPIClient().createPlaylist(title: "Watch Later (Quartz)")
                     YouTubeSettings.playlistID = created.id
                     YouTubeSettings.playlistTitle = created.title
                     self?.tableView.reloadData()

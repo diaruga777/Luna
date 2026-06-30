@@ -16,7 +16,7 @@ public struct SaveMusicItemIntent: AppIntent {
     public init() {}
     public static let title: LocalizedStringResource = "Save Song"
     public static let description = IntentDescription(
-        "Saves a song by artist + title to your Queue reading list (no link needed).")
+        "Saves a song by artist + title to your Quartz reading list (no link needed).")
     public static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Artist", description: "The artist name (text).") var artist: String
@@ -40,7 +40,7 @@ public struct SavePodcastItemIntent: AppIntent {
     public init() {}
     public static let title: LocalizedStringResource = "Save Podcast Episode"
     public static let description = IntentDescription(
-        "Saves a podcast episode by show name + episode title (text) to your Queue reading list (no link needed).")
+        "Saves a podcast episode by show name + episode title (text) to your Quartz reading list (no link needed).")
     public static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Show", description: "The podcast show's name (text).") var show: String

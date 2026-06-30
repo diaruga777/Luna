@@ -57,7 +57,7 @@ final class DiagnosticLogTests: XCTestCase {
         let url = try log.exportFile()
         XCTAssertEqual(url.pathExtension, "txt")
         let exported = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(exported.contains("Queue diagnostics"))
+        XCTAssertTrue(exported.contains("Quartz diagnostics"))
         XCTAssertTrue(exported.contains("[push] exported event"))
     }
 

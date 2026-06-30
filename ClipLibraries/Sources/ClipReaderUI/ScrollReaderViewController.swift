@@ -1043,7 +1043,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         guard case .link(let url) = textItem.content else {
             return UITextItem.MenuConfiguration(menu: defaultMenu)
         }
-        let save = UIAction(title: "Save to Queue", image: UIImage(systemName: "plus.circle")) { [weak self] _ in
+        let save = UIAction(title: "Save to Quartz", image: UIImage(systemName: "plus.circle")) { [weak self] _ in
             self?.shareProvider?.saveLink(urlString: url.absoluteString)
         }
         let share = UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in

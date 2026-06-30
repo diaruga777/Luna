@@ -37,7 +37,7 @@ public struct SetShareChoiceIntent: AppIntent {
             case .unknownChoice:
                 return "Choice must be Don't Share, Share Once, Always Share, No, or Yes."
             case .sendFailed:
-                return "Couldn't send the article. It stays saved in Queue."
+                return "Couldn't send the article. It stays saved in Quartz."
             }
         }
     }

@@ -6,7 +6,7 @@
 import ClipIngest
 import UIKit
 
-/// The host an extension surface ("share" zero-UI sheet or "action" Read-in-Queue
+/// The host an extension surface ("share" zero-UI sheet or "action" Read-in-Quartz
 /// sheet) provides to the shared `ShareSurfaceDriver`. It abstracts the ONLY parts
 /// of the real `NSExtensionContext`/UIKit harness the ingest+present flow touches —
 /// completing the request, presenting a view controller, and the surface's

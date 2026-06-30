@@ -104,7 +104,7 @@ public final class SavedNonTextualViewController: UIViewController, UITableViewD
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        title = "Saved to Queue"
+        title = "Saved to Quartz"
 
         let onDone = self.onDone
         navigationItem.leftBarButtonItem = UIBarButtonItem(

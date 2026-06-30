@@ -7,7 +7,7 @@ import ClipReaderUI
 import ClipDesignSystem
 import UIKit
 
-/// Informational read-aloud screen. Clip reads aloud with an enhanced Apple voice
+/// Informational read-aloud screen. Quartz reads aloud with an enhanced Apple voice
 /// when one is installed and the built-in system voice otherwise — there is no
 /// engine to pick or download. The screen shows whether an enhanced voice is
 /// installed and offers a deep-link into iOS Settings to install one.
@@ -44,7 +44,7 @@ final class VoiceSettingsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Clip reads aloud with enhanced Apple voices when they're installed, "
+        "Quartz reads aloud with enhanced Apple voices when they're installed, "
             + "otherwise the built-in system voice. Install enhanced voices in iOS "
             + "Settings → Accessibility → Spoken Content → Voices."
     }

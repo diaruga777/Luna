@@ -123,7 +123,7 @@ public final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
         let identity = Self.exportIdentityProvider()
         let exportedAt = ISO8601DateFormatter().string(from: Date())
         return """
-        Queue diagnostics
+        Quartz diagnostics
         App: \(version) (\(build))
         OS: \(systemDescription())
         Identity UUID: \(identity)

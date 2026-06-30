@@ -39,7 +39,7 @@ public enum ShareIntentDonor {
             content: nil,
             speakableGroupName: INSpeakableString(spokenPhrase: card.username),
             conversationIdentifier: card.uuid.uuidString,
-            serviceName: "Queue",
+            serviceName: "Quartz",
             sender: nil,
             attachments: nil)
 

@@ -45,10 +45,10 @@ public final class OnboardingViewController: UIViewController, UITextFieldDelega
         view.backgroundColor = .systemBackground
 
         let titleLabel = UILabel()
-        titleLabel.text = "Welcome to Queue Reader"
+        titleLabel.text = "Welcome to Quartz"
         titleLabel.font = .systemFont(ofSize: 32, weight: .bold)
         // Wrap rather than truncate: the 32pt title overflows one line on narrow
-        // devices (iPhone mini / regular iPhone), where it showed "Welcome to Queue R…".
+        // devices (iPhone mini / regular iPhone), where it showed "Welcome to Quartz R…".
         titleLabel.numberOfLines = 0
 
         let subtitleLabel = UILabel()

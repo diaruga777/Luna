@@ -137,7 +137,7 @@ public final class FriendsViewController: NavHeaderTableController, UITextFieldD
             }
             return footer
         case .friends:
-            return "Adding is two-way: when someone adds you, you're added back automatically. Friends can send articles to your reading list. You can also scan a Queue QR code with the system Camera app."
+            return "Adding is two-way: when someone adds you, you're added back automatically. Friends can send articles to your reading list. You can also scan a Quartz QR code with the system Camera app."
         }
     }
 

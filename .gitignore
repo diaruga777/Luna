@@ -8,3 +8,4 @@ ClipLibraries/.build/
 
 # DerivedData
 DerivedData/
+.build-dd/

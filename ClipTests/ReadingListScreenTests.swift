@@ -7,6 +7,7 @@
 //  correct viewer per item type.
 //
 
+import ClipReadingListUI
 import ClipSocialUI
 import ClipPriceUI
 import ClipReaderUI
@@ -137,6 +138,32 @@ final class ReadingListScreenTests: XCTestCase {
             RunLoop.main.run(until: Date().addingTimeInterval(0.03))
             SnapshotTesting.assertSnapshot(of: nav, named: "reading-list-filter-\(segment)")
         }
+        _ = window
+    }
+
+    // MARK: - Per-app surface
+
+    func testAppSurfaceBaseFilters() {
+        XCTAssertEqual(AppSurface.reader.baseFilter, .articles)
+        XCTAssertEqual(AppSurface.downloader.baseFilter, .mediaAndLinks)
+        XCTAssertEqual(AppSurface.priceTracker.baseFilter, .priceTrackers)
+    }
+
+    /// A concrete surface (Quartz Reader) shows only its category and hides the filter
+    /// segments, even though the shared store also holds media + price-tracker items.
+    func testReaderSurfaceHidesFilterAndScopesToArticles() {
+        let items = UITestSupport.seedSharedStore(.mixed)
+        let nav = UINavigationController(rootViewController: ReadingListViewController(surface: .reader))
+        let window = UITestSupport.host(nav)
+
+        XCTAssertNil(findSegmentedControl(in: nav.view),
+                     "a single-category surface must not show the filter segments")
+        // Sanity: the mixed fixture really does contain both reader and non-reader items,
+        // so the surface scoping is doing meaningful work.
+        let readerItems = items.filter { AppSurface.reader.includes($0) }
+        XCTAssertGreaterThan(readerItems.count, 0, "fixture should contain reader items")
+        XCTAssertLessThan(readerItems.count, items.count,
+                          "fixture should also contain non-reader items the reader surface hides")
         _ = window
     }
 

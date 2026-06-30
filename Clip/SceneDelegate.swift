@@ -8,6 +8,7 @@
 //  messages) and sent to a Kindle.
 //
 
+import ClipReadingListUI
 import ClipSocialUI
 import ClipReadingList
 import ClipArchiveReader
@@ -144,8 +145,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 self?.applyPendingNotificationRoute()
             }
         } else {
+            // Quartz Reader surfaces only reader items; media/price links saved here are
+            // still stored in the shared App Group and appear in their own apps.
+            // (Phase 4 makes this per-app rather than hardcoded.)
             window.rootViewController = UINavigationController(
-                rootViewController: ReadingListViewController())
+                rootViewController: ReadingListViewController(surface: .reader))
         }
         self.window = window
         window.makeKeyAndVisible()
@@ -246,7 +250,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func showMainUI() {
         window?.rootViewController = UINavigationController(
-            rootViewController: ReadingListViewController())
+            rootViewController: ReadingListViewController(surface: .reader))
         installDotMatrixTransitions()
     }
 

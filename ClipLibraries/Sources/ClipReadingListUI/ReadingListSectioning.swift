@@ -199,3 +199,35 @@ public enum ReadingListSectioning {
             || (!VoiceModelStore.isAppleEnhancedInstalled && !VoiceModelStore.hasDismissedVoiceCatchUp)
     }
 }
+
+/// Which standalone Quartz app a reading-list screen renders for. The three apps share
+/// ONE App Group and ONE `readingList.json`: any link saved through any surface is
+/// classified and stored the same way, and each app shows ONLY the single content
+/// category that matches it. Items of other categories are still ingested and stored —
+/// they simply surface in their own app.
+///
+/// `ReadingListViewController(surface:)` takes `AppSurface?`; `nil` means the legacy
+/// combined list (all categories, with the filter segments) used by tests and dev tools.
+public enum AppSurface {
+    /// Quartz Reader — articles, paywalled articles, documents (anything that opens in
+    /// the text reader).
+    case reader
+    /// Quartz Downloader — social / video / audio posts (media & links).
+    case downloader
+    /// Quartz Price Tracker — product price trackers.
+    case priceTracker
+
+    /// The single content category this surface shows.
+    public var baseFilter: ReadingListSectioning.ListFilter {
+        switch self {
+        case .reader: return .articles
+        case .downloader: return .mediaAndLinks
+        case .priceTracker: return .priceTrackers
+        }
+    }
+
+    /// Whether `item` belongs to this surface (and should therefore be shown here).
+    public func includes(_ item: ReadingListItem) -> Bool {
+        baseFilter.includes(item)
+    }
+}

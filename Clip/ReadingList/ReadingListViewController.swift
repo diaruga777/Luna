@@ -36,7 +36,14 @@ import UIKit
 /// drag-anywhere reorder within Reading, no handle).
 final class ReadingListViewController: UITableViewController {
 
-    init() {
+    /// Which standalone app this list renders for. A concrete surface shows ONLY its
+    /// content category (and hides the filter segments); `nil` is the legacy combined
+    /// list — all categories with the Articles / Media / Price filter — kept for the
+    /// dev/test harness.
+    private let surface: AppSurface?
+
+    init(surface: AppSurface? = nil) {
+        self.surface = surface
         super.init(style: .insetGrouped)
     }
 
@@ -385,7 +392,10 @@ final class ReadingListViewController: UITableViewController {
     /// as a side effect (mirrors the old `reload`).
     private func buildGroups() -> [(section: Section, items: [ReadingListItem])] {
         let unfiltered = store.items()
-        let all = unfiltered.filter { filter.includes($0) }
+        // A concrete surface restricts the whole list to its single category (other
+        // categories live in the same store but surface in their own app); the combined
+        // list (surface == nil) honours the user-selected filter segment.
+        let all = unfiltered.filter { surface?.includes($0) ?? filter.includes($0) }
         let buckets = ReadingListSectioning.assignSections(items: all, now: Self.sectioningNow())
         var bySection: [Section: [ReadingListItem]] =
             [.reading: buckets.reading, .archive: buckets.archive, .error: buckets.failed]
@@ -633,7 +643,10 @@ final class ReadingListViewController: UITableViewController {
     /// kinds (reader / media / price tracker); otherwise it's meaningless. Rebuilds
     /// the segments to match the kinds present and resets a now-invalid selection.
     private func updateFilterVisibility() {
-        let shouldShow = ReadingListSectioning.shouldShowFilter(items: store.items())
+        // A concrete surface is single-category, so the filter segments are meaningless —
+        // never show them. Only the combined list (surface == nil) offers the filter.
+        let shouldShow = surface == nil
+            && ReadingListSectioning.shouldShowFilter(items: store.items())
         guard shouldShow else {
             if filter != .all { filter = .all }
             if filterRowVisible {

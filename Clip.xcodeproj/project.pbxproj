@@ -7,53 +7,160 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		004D6B2EC6400E1B8AB54302 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
+		00E81FA7348B98F12E825428 /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		0169577E91695AA63AC0F64D /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		017142487CB9382F3711F47D /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
+		031E8ADC155AA75D3BE885A9 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 		031FF107DF1A6AF0F5958C46 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 		0393CD1C3594607CDD98DE13 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		040A03EEE1831C1357CF106C /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		041A74CEFA9B22277C35C056 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
 		04325C8AF877D151D2D31605 /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
 		049E5C818766CE6BF95D8B7E /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		056B75A640F952053F3EDC66 /* ClipReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* ClipReadingListUI */; };
+		05EB3A454381CBF19D2309FB /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
 		0C5EEFE7889EB736FFF2CCDD /* ClipSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* ClipSend */; };
+		0F27F2E19202007B318860C3 /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
+		104179571BCFAD95AF412350 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		10E3A3034E4E07E994855921 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		120F0560C8E724311F84921D /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		12CE8504E187135A0601430B /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		12E8A107B1FCA1F360C74E20 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		130D863DAC44E26AE76EC384 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
 		14D2AFFC19A169338A1147DD /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		163F79C6D83DEC977C7F2E29 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
+		164DC728A7C83E13375A08BA /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		17E518D87CDB4BF1B0B02FD4 /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
 		1A489052B9F7B48762402AE3 /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
+		1B6EC6CA4339522B2907A219 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		1D5C5BE5ACB9DA6A8AD62370 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
+		1DC60CDB9FB0C111849CB64B /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
+		1E13E73BB6DD36900A58F4D7 /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
+		218FEE114769C57F7F045DE1 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		22E0EDD000440E93E410F2F8 /* ClipReadingList in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */; };
+		2744203EEAF1B7AF22E1271E /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
+		2A5827BF73E328760F8C9C6B /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
 		2B4134FA0043E8CD5CE0CD04 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		2D6B8766380C840A5550ED7B /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		2DFFAA3C4566EE3AF536D910 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
 		2F22403ECDD962D932AA6BD3 /* ClipEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* ClipEpub */; };
 		3171DB114CF9D5BD337B7C29 /* ClipIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* ClipIntents */; };
+		350EAC340A2B445558410825 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
 		354AF4B589322E401B1E5CBD /* ClipSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* ClipSocialUI */; };
 		35721F092939636390C38BE3 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
+		3662E7565E058CF3AB52F87A /* ClipSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* ClipSemantic */; };
+		368370AB0EF05B8E339B4A47 /* ClipReadingList in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */; };
+		375621BBEDE7DFDFCA7E7CF7 /* ClipIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* ClipIntents */; };
+		37BCDAFE96268444DFD3A513 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
 		3BF52B30E74A297E08A41982 /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
+		3D823901FC6901D6BB41A6AB /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
 		3EB986A4B023ACBE9D376F7B /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
 		3EE5E285E488168AC19BECB2 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
 		3F984499DD8FB375FDE9BB96 /* ClipSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* ClipSend */; };
 		408BAA99D147B5FF19864BCC /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		41CED045DAB9F43705D5B165 /* ClipTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* ClipTransitions */; };
+		422D5BFF58CAF04E95D0E2FE /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		42B701ABE733F820F5447F96 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
 		42F0FDA59D82F9D669F258D6 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		4664FD984F47FB50B8DC0A5B /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
 		4764C751E2AFA2AD7653CB79 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		47AFF9C55EA1844DB55C585E /* ClipTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* ClipTransitions */; };
+		47D4FE0F200DA343FE5968BE /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
 		483B2A559218C68EC599D979 /* ClipMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* ClipMail */; };
+		4896036FA6285884E0F288A9 /* ClipSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* ClipSend */; };
+		4945ABFEEE9A2AFD3E284565 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
+		4A1B3F8FAA22CE45ADB6CAB6 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
 		4B4F339D818E638F4C34B75A /* ClipSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* ClipSemantic */; };
+		4D71261636172E65F9B61A1B /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		4F79C2BC707D182410347251 /* QuartzPriceTrackerShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E34729A9C0FBABDE05C923C3 /* QuartzPriceTrackerShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		4FA4D6ECCD2EB5EDB599A9C8 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
+		50E8B760CEB7EA7C19318D68 /* ClipTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* ClipTransitions */; };
+		511AFE358958CF34F726A711 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
+		51414525A3F33F736F5E5386 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
+		51B6B2D5D43F2B4C0B2096FB /* QuartzDownloaderSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BB94D412ABEBAB217EB72608 /* QuartzDownloaderSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5313886A2454CED64F14769A /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
+		532BCFEE05A361CD75DB29B4 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
 		535077B96135F4456ADF0386 /* ClipEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* ClipEpub */; };
 		53FBAD67762D020D14FCEB00 /* ClipReadingList in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */; };
 		564D3AAC03C7A9A959BB013A /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		57CE4CEC1B7E83451AFE6B55 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000004 /* SwiftSoup */; };
+		5815024122D68F45BB81517C /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
 		59C336E6E016223659B23C6A /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
+		5C942F41F32AC814369DBF84 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
+		5D0128410A32E572FFD81F45 /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		5D640FB33B81996588B52B5C /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		5E5E886D0FEC30FC8E45E7FC /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		5EA1C0323A202BAC11549C51 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
+		63966E7C73DDA5F156C49F35 /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
+		65B50A608717FED6D7E96734 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
 		65EBACE869DBDECC866531F6 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
 		670A781911DA94A8B457F826 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
+		671D19B093B080BB0C00EC9F /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
+		6898420458832516B791DD26 /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		6CFA4E6C81F6A8A764739AA7 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
+		6EF9995A1F1B77BC1D7DA64C /* ClipSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* ClipSemantic */; };
 		6F438E9F1C4DEAAF57A692B8 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
+		6FC987A819941677EC289003 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
+		702E5F3168388EFBA0E30508 /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
+		7114CE03937EE5341100D0AD /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
+		7148134A504E2679D2161243 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
+		71FE9DB128832A382EC0438E /* ClipSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* ClipSocialUI */; };
+		72CBAF942437AEB0C420300B /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		73BC26E788E13A1901F2D82C /* ClipYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */; };
 		7524FB14EDBA875CD17CE996 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
+		75CED0C0BDA899FF368A0CB5 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
+		76B7947490B07082BD9DF92B /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
+		780D2CF3158D3FED4C7444BA /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
+		78F8CA2D8D526E87CFADAF26 /* QuartzDownloaderAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D3B0961D49B070035B3E0FD1 /* QuartzDownloaderAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		79001DA32FF23BFD001CD5B9 /* ClipTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* ClipTransitions */; };
 		79105F98461EAB4D02BB8DD1 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
 		7958393C2FE0A62700C775CA /* ClipShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* ClipShare.appex */; };
 		7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
 		79583DFF2FE0BAD100C775CA /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */; };
 		79583E0B2FE0BAD200C775CA /* Clip Action Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7A2A261BD9A78CDAD99A8432 /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
+		7AF7216F62048B1A8C59F9E6 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
+		7D74667CBC09543524AD4E59 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
+		7E2C368831952671CD7BF66A /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
+		803D0D24B44A38A7397BAEAF /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
 		80CE7CB338F6866D7AA929AC /* ClipReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* ClipReadingListUI */; };
 		80D1546C306DE0208046F4A7 /* ClipYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */; };
+		828C373FE02ADBEC3BC5D19C /* ClipTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* ClipTransitions */; };
+		82CB10A29885630A935F920C /* ClipDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */; };
+		849EA42595D2866D9C9ED25D /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
+		85801B836910A1B6E0475DEE /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		879E1EB684DA6EC925A092AB /* ClipMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* ClipMail */; };
+		895F613F383ECDE66152264A /* ClipSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* ClipSocial */; };
+		8A90AEADC8E26CAB6BAAAA9E /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
+		8B9033F91E7B9093D251BB7C /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
+		8CEAE71ABE739FBA45F28B3E /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
+		940BD49E545FC05A21DC8F50 /* ClipSend in Frameworks */ = {isa = PBXBuildFile; productRef = A1AC9F7C74411AF59CC240DB /* ClipSend */; };
+		9BE33A85BAAC090D42815A34 /* ClipYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */; };
+		9C31EDA76E809B77E2BD23D5 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
 		9EAEEFFE364822D5BD7E30AF /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		A5189E94CA8DCC97591BC9C9 /* QuartzDownloaderShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B59B827071F5B3640BB31428 /* QuartzDownloaderShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A6A1E5E7C77D91ED5C367FB7 /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
 		AA0100000000000000000001 /* ClipSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000002 /* ClipSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AA0100000000000000000002 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
 		AA0100000000000000000003 /* ClipShare.appex in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* ClipShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AA0100000000000000000004 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000004 /* SwiftSoup */; };
+		AA3E180AD65849A74D458B4B /* ClipEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* ClipEpub */; };
 		AF875A2EB193F3644FC2FF89 /* ClipYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */; };
+		AFE494BDD40C5AA532E29ED9 /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
+		B0A258B018CE3BC9C0CD17C8 /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
+		B0B25841CA9850CBB48F1A28 /* ClipTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* ClipTransitions */; };
 		B1783409EFF8E80CEA65CB3C /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
 		B7EB2775DD38C41CBD105079 /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
+		B7F55D93B9FEB969A95C8183 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
+		B89DC941DCBF7DBB88D2FE2C /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
+		B8A14BC5B261F66C58BF6ED0 /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		BA4D33437C8419EB9CA78225 /* ClipModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* ClipModels */; };
+		BB496482363743D2266EE1EE /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
 		BD5B48658A5362866AA5CF57 /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		BDBA0CFFF11430D086BE5A66 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		BE529FEC68767C9B157BA455 /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
+		BF10D89E8F106E5148E47260 /* ClipMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* ClipMail */; };
 		C100000000000000000000021 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
 		C100000000000000000000022 /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
 		C100000000000000000000023 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
@@ -83,37 +190,107 @@
 		C100000000000000000000057 /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
 		C1666BA7FC1EAE467E0165F4 /* ClipSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* ClipSocialUI */; };
 		C2651D3DB2A545CDDEA3C458 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
+		C4A1971292F67D93A944D0EC /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
+		C5715F633A1284FAA141611A /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
 		C577C66921234C2F66BFD088 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 		C586707358D74315870A9DF6 /* ClipReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* ClipReadingListUI */; };
 		C75DD0FABB085716259EAC0D /* ClipDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */; };
+		C7AF1235EF22D641FCB763F0 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 		C7F110C64D19ADC2D98C4712 /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
+		C7F5D1B5D38DADD2899366C7 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 		C85B86A55DAD524B8438CA85 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
 		C891EE202DB65235195020F6 /* ClipShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */; };
+		C94D4C1756F0BCE091A23BFC /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
+		CBB76821F704AEC464650875 /* ClipIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* ClipIntents */; };
 		CCEB43D729954FAF19DB73EF /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
+		CEBF52E52DB5EDC016C4BF68 /* ClipReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* ClipReadingListUI */; };
+		CFB8713184006BB8632A924A /* ClipPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* ClipPriceUI */; };
+		CFF894A26385765A04FB4137 /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
+		CFF9121C657C3CCF8473919B /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
+		D32E35604B47E9C10CE0433B /* ClipIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* ClipIngest */; };
+		D333CB64CE02FCC308D02AAE /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
+		D3EA1630994091EEDD2F190E /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
 		D42B57E8D2EC0818A73B6FD4 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		D467F392C25AA4F4DE1C5D5F /* ClipSocialUI in Frameworks */ = {isa = PBXBuildFile; productRef = 7445361A6C10C9E25040C4AD /* ClipSocialUI */; };
 		D51185A738D87061659336B0 /* ClipSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* ClipSocial */; };
+		D5AFE94D87296B201C34D805 /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
+		D78CCB8D56C3815B050BB01C /* ClipReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* ClipReaderEngine */; };
+		D791BC1D5E2C8220E6CC3716 /* ClipTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* ClipTransitions */; };
+		DACDDE724A61366A55815CDE /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
+		DB3B179AA253D0576510D32F /* ClipFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* ClipFetch */; };
+		DD60A5F05A129459CBC84020 /* ClipSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* ClipSocial */; };
+		DD8D0966751EECEEA1CC3FC4 /* ClipDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */; };
+		DE437B044AAB729C6E379D3F /* ClipHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* ClipHTMLClassification */; };
 		DE66DCA327DA9E81723DC210 /* ClipDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */; };
+		E1414C57BB183D4575B3E04F /* ClipContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* ClipContentRendering */; };
+		E2EA24D7991D81278A552F99 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
 		E31B09DF7960DE871F25EC71 /* ClipIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* ClipIntents */; };
 		E4985943E018E5FE92C11606 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
 		E54532DF71D52079A8742E8C /* ClipSemantic in Frameworks */ = {isa = PBXBuildFile; productRef = 92CAEC0F8C340469B9AB25E3 /* ClipSemantic */; };
 		E5EA91F4EF26613A941C56F6 /* ClipReadingList in Frameworks */ = {isa = PBXBuildFile; productRef = 6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */; };
 		E69342FE12CC67327392E2D2 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
+		E8862EF24F49E2D02D978A89 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000004 /* SwiftSoup */; };
+		EABFA40C72847D3F294B32F8 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		EAF435B92CB3F940D4C5E9AB /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
+		EB0EBC1067690C77BA252745 /* ClipEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* ClipEpub */; };
 		EE4780B9AFD12FEBC6947099 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
 		EF6B3AC95FDA89E16A1F2698 /* ClipMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* ClipMail */; };
 		F35941D40835BF7824598AE9 /* ClipArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* ClipArchiveReader */; };
+		F360E825848811D0E4C3BAF0 /* ClipURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* ClipURLClassification */; };
+		F599702F89767DDCF2FB385C /* ClipPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* ClipPriceMetadata */; };
+		F73819AA386C2618CCBCCF32 /* ClipPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* ClipPaywallBypass */; };
 		F9B0746CEE264B742FEFA170 /* ClipPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* ClipPlatforms */; };
 		FC3B05B51F7C576146ECF6CD /* ClipSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* ClipSocial */; };
+		FD9DE7E101A1AA02A7972334 /* ClipReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* ClipReaderUI */; };
+		FDAADF201763CAFF39798A60 /* QuartzPriceTrackerAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3C0179E7326B416352FD04AE /* QuartzPriceTrackerAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		FE1291C488E2C83AADA41FA1 /* ClipDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* ClipDesignSystem */; };
+		FE32AC608EC551DA7216DB1A /* QuartzPriceTrackerSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7222BE8C519159B489DB3C0C /* QuartzPriceTrackerSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FF5DFE4CF92F033FB81C7A5B /* ClipStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* ClipStorage */; };
 		FF6630FB61B598C594FCDE61 /* ClipMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		019AFC8CDB7CCEC35B2E3F5B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A2B18D43A980A2C17A48B019;
+			remoteInfo = QuartzDownloaderAction;
+		};
+		15D241473DC420B319D7F3C1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 96905778435E3C7F63FA5E07;
+			remoteInfo = QuartzDownloaderShare;
+		};
+		3CC259C243F6AEE5B238E89D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8B037A04C4B57DCC3B52F210;
+			remoteInfo = QuartzDownloaderSafari;
+		};
 		79583E092FE0BAD200C775CA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AAA000000000000000000000 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 79583DFB2FE0BAD100C775CA;
 			remoteInfo = "Clip Action Extension";
+		};
+		80226DBE727E6C900B6BC73B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BE0F0A63AC930FAA7923DDFC;
+			remoteInfo = QuartzPriceTrackerAction;
+		};
+		89EB5051C98FC05A977EE7C7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 914B0BF1DD6F590D135488AC;
+			remoteInfo = QuartzPriceTrackerSafari;
 		};
 		AA0400000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -136,9 +313,42 @@
 			remoteGlobalIDString = AAE300000000000000000000;
 			remoteInfo = ClipShare;
 		};
+		CED961C8298641D78A116DA5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AAA000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2746B738BB4967D72B4784AA;
+			remoteInfo = QuartzPriceTrackerShare;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		2160D2503718567D7AE0E6F6 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				4F79C2BC707D182410347251 /* QuartzPriceTrackerShare.appex in Embed Foundation Extensions */,
+				FDAADF201763CAFF39798A60 /* QuartzPriceTrackerAction.appex in Embed Foundation Extensions */,
+				FE32AC608EC551DA7216DB1A /* QuartzPriceTrackerSafari.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9836EC78CC443E7D4C813A08 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A5189E94CA8DCC97591BC9C9 /* QuartzDownloaderShare.appex in Embed Foundation Extensions */,
+				78F8CA2D8D526E87CFADAF26 /* QuartzDownloaderAction.appex in Embed Foundation Extensions */,
+				51B6B2D5D43F2B4C0B2096FB /* QuartzDownloaderSafari.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0500000000000000000001 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -155,55 +365,251 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		17C57D675E0712054ACE6584 /* QuartzPriceTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuartzPriceTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3C0179E7326B416352FD04AE /* QuartzPriceTrackerAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QuartzPriceTrackerAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7222BE8C519159B489DB3C0C /* QuartzPriceTrackerSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QuartzPriceTrackerSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Clip Action Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
 		AA0200000000000000000001 /* Clip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Clip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000002 /* ClipSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClipSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000003 /* ClipTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClipTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000004 /* ClipShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClipShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B59B827071F5B3640BB31428 /* QuartzDownloaderShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QuartzDownloaderShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB94D412ABEBAB217EB72608 /* QuartzDownloaderSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QuartzDownloaderSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D3B0961D49B070035B3E0FD1 /* QuartzDownloaderAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QuartzDownloaderAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E13583D77605D977B0A8FDD3 /* QuartzDownloader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuartzDownloader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E34729A9C0FBABDE05C923C3 /* QuartzPriceTrackerShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QuartzPriceTrackerShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		QZ00000000000000000001 /* Quartz.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Quartz.xcconfig; path = Config/Quartz.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		79583E0F2FE0BAD200C775CA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		0F6359E5F1947F76D1DC13EC /* Exceptions for "ClipShare" folder in "QuartzPriceTrackerShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 2746B738BB4967D72B4784AA /* QuartzPriceTrackerShare */;
+		};
+		11BF6D0279EC0EB0310C162F /* Exceptions for "ClipShare" folder in "QuartzDownloaderShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 96905778435E3C7F63FA5E07 /* QuartzDownloaderShare */;
+		};
+		1BA4AEE0B8443EEBE988E541 /* Exceptions for "Clip Action Extension" folder in "QuartzDownloaderAction" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A2B18D43A980A2C17A48B019 /* QuartzDownloaderAction */;
+		};
+		1CE7EDA84A9EF6FD416248DA /* Exceptions for "Clip" folder in "QuartzDownloader" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AF19C41BA051B4C0892BDA4E /* QuartzDownloader */;
+		};
+		60BE25B026183D60EA23D207 /* Exceptions for "Clip" folder in "QuartzPriceTracker" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 6C65D0274C393548D3654967 /* QuartzPriceTracker */;
+		};
+		70C08B3EB91494263C62F319 /* Exceptions for "ClipSafari" folder in "QuartzPriceTrackerSafari" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 914B0BF1DD6F590D135488AC /* QuartzPriceTrackerSafari */;
+		};
+		79583E0F2FE0BAD200C775CA /* Exceptions for "Clip Action Extension" folder in "Clip Action Extension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 79583DFB2FE0BAD100C775CA /* Clip Action Extension */;
 		};
-		AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		882C8351B7C877C0F5234404 /* Exceptions for "ClipSafari" folder in "QuartzDownloaderSafari" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 8B037A04C4B57DCC3B52F210 /* QuartzDownloaderSafari */;
+		};
+		AA0600000000000000000001 /* Exceptions for "Clip" folder in "Clip" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = AAE000000000000000000000 /* Clip */;
 		};
-		AA0600000000000000000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		AA0600000000000000000002 /* Exceptions for "ClipSafari" folder in "ClipSafari" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = AAE100000000000000000000 /* ClipSafari */;
 		};
-		AA0600000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		AA0600000000000000000003 /* Exceptions for "ClipShare" folder in "ClipShare" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = AAE300000000000000000000 /* ClipShare */;
 		};
+		D667B7400D02129A1457006D /* Exceptions for "Clip Action Extension" folder in "QuartzPriceTrackerAction" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = BE0F0A63AC930FAA7923DDFC /* QuartzPriceTrackerAction */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		79583E002FE0BAD100C775CA /* Clip Action Extension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (79583E0F2FE0BAD200C775CA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Clip Action Extension"; sourceTree = "<group>"; };
-		AA0700000000000000000001 /* Clip */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Clip; sourceTree = "<group>"; };
-		AA0700000000000000000002 /* ClipSafari */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ClipSafari; sourceTree = "<group>"; };
-		AA0700000000000000000003 /* ClipTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ClipTests; sourceTree = "<group>"; };
-		AA0700000000000000000004 /* ClipShare */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ClipShare; sourceTree = "<group>"; };
+		79583E002FE0BAD100C775CA /* Clip Action Extension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				79583E0F2FE0BAD200C775CA /* Exceptions for "Clip Action Extension" folder in "Clip Action Extension" target */,
+				1BA4AEE0B8443EEBE988E541 /* Exceptions for "Clip Action Extension" folder in "QuartzDownloaderAction" target */,
+				D667B7400D02129A1457006D /* Exceptions for "Clip Action Extension" folder in "QuartzPriceTrackerAction" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = "Clip Action Extension";
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000001 /* Clip */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0600000000000000000001 /* Exceptions for "Clip" folder in "Clip" target */,
+				1CE7EDA84A9EF6FD416248DA /* Exceptions for "Clip" folder in "QuartzDownloader" target */,
+				60BE25B026183D60EA23D207 /* Exceptions for "Clip" folder in "QuartzPriceTracker" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Clip;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000002 /* ClipSafari */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0600000000000000000002 /* Exceptions for "ClipSafari" folder in "ClipSafari" target */,
+				882C8351B7C877C0F5234404 /* Exceptions for "ClipSafari" folder in "QuartzDownloaderSafari" target */,
+				70C08B3EB91494263C62F319 /* Exceptions for "ClipSafari" folder in "QuartzPriceTrackerSafari" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = ClipSafari;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000003 /* ClipTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = ClipTests;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000004 /* ClipShare */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0600000000000000000003 /* Exceptions for "ClipShare" folder in "ClipShare" target */,
+				11BF6D0279EC0EB0310C162F /* Exceptions for "ClipShare" folder in "QuartzDownloaderShare" target */,
+				0F6359E5F1947F76D1DC13EC /* Exceptions for "ClipShare" folder in "QuartzPriceTrackerShare" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = ClipShare;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		04C4B73342B81E2FE429106D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6CFA4E6C81F6A8A764739AA7 /* SwiftSoup in Frameworks */,
+				2DFFAA3C4566EE3AF536D910 /* ClipURLClassification in Frameworks */,
+				DE437B044AAB729C6E379D3F /* ClipHTMLClassification in Frameworks */,
+				B7F55D93B9FEB969A95C8183 /* ClipPaywallBypass in Frameworks */,
+				76B7947490B07082BD9DF92B /* ClipPriceMetadata in Frameworks */,
+				163F79C6D83DEC977C7F2E29 /* ClipContentRendering in Frameworks */,
+				50E8B760CEB7EA7C19318D68 /* ClipTransitions in Frameworks */,
+				849EA42595D2866D9C9ED25D /* ClipModels in Frameworks */,
+				702E5F3168388EFBA0E30508 /* ClipFetch in Frameworks */,
+				2A5827BF73E328760F8C9C6B /* ClipIngest in Frameworks */,
+				42B701ABE733F820F5447F96 /* ClipStorage in Frameworks */,
+				DD8D0966751EECEEA1CC3FC4 /* ClipDocuments in Frameworks */,
+				AA3E180AD65849A74D458B4B /* ClipEpub in Frameworks */,
+				4896036FA6285884E0F288A9 /* ClipSend in Frameworks */,
+				879E1EB684DA6EC925A092AB /* ClipMail in Frameworks */,
+				FE1291C488E2C83AADA41FA1 /* ClipDesignSystem in Frameworks */,
+				031E8ADC155AA75D3BE885A9 /* ClipPlatforms in Frameworks */,
+				C5715F633A1284FAA141611A /* ClipMediaDownload in Frameworks */,
+				895F613F383ECDE66152264A /* ClipSocial in Frameworks */,
+				3662E7565E058CF3AB52F87A /* ClipSemantic in Frameworks */,
+				1DC60CDB9FB0C111849CB64B /* ClipReaderEngine in Frameworks */,
+				8CEAE71ABE739FBA45F28B3E /* ClipArchiveReader in Frameworks */,
+				EABFA40C72847D3F294B32F8 /* ClipReaderUI in Frameworks */,
+				0169577E91695AA63AC0F64D /* ClipPriceUI in Frameworks */,
+				4664FD984F47FB50B8DC0A5B /* ClipShareSurface in Frameworks */,
+				9BE33A85BAAC090D42815A34 /* ClipYouTubeAPI in Frameworks */,
+				368370AB0EF05B8E339B4A47 /* ClipReadingList in Frameworks */,
+				D467F392C25AA4F4DE1C5D5F /* ClipSocialUI in Frameworks */,
+				CBB76821F704AEC464650875 /* ClipIntents in Frameworks */,
+				056B75A640F952053F3EDC66 /* ClipReadingListUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3AB1019F78884E8898F0365B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				57CE4CEC1B7E83451AFE6B55 /* SwiftSoup in Frameworks */,
+				C94D4C1756F0BCE091A23BFC /* ClipURLClassification in Frameworks */,
+				017142487CB9382F3711F47D /* ClipHTMLClassification in Frameworks */,
+				5815024122D68F45BB81517C /* ClipPaywallBypass in Frameworks */,
+				37BCDAFE96268444DFD3A513 /* ClipPriceMetadata in Frameworks */,
+				E1414C57BB183D4575B3E04F /* ClipContentRendering in Frameworks */,
+				D791BC1D5E2C8220E6CC3716 /* ClipTransitions in Frameworks */,
+				7148134A504E2679D2161243 /* ClipModels in Frameworks */,
+				AFE494BDD40C5AA532E29ED9 /* ClipFetch in Frameworks */,
+				803D0D24B44A38A7397BAEAF /* ClipIngest in Frameworks */,
+				5C942F41F32AC814369DBF84 /* ClipStorage in Frameworks */,
+				10E3A3034E4E07E994855921 /* ClipDesignSystem in Frameworks */,
+				4945ABFEEE9A2AFD3E284565 /* ClipPlatforms in Frameworks */,
+				85801B836910A1B6E0475DEE /* ClipMediaDownload in Frameworks */,
+				B89DC941DCBF7DBB88D2FE2C /* ClipReaderEngine in Frameworks */,
+				E2EA24D7991D81278A552F99 /* ClipArchiveReader in Frameworks */,
+				040A03EEE1831C1357CF106C /* ClipReaderUI in Frameworks */,
+				72CBAF942437AEB0C420300B /* ClipPriceUI in Frameworks */,
+				00E81FA7348B98F12E825428 /* ClipShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		63DAF29D7BE8CFCDD82FC8D3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		79583DF92FE0BAD100C775CA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -228,6 +634,43 @@
 				79105F98461EAB4D02BB8DD1 /* ClipReaderUI in Frameworks */,
 				0393CD1C3594607CDD98DE13 /* ClipPriceUI in Frameworks */,
 				9EAEEFFE364822D5BD7E30AF /* ClipShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A0047EA7E66649097A1AD197 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				130D863DAC44E26AE76EC384 /* SwiftSoup in Frameworks */,
+				F360E825848811D0E4C3BAF0 /* ClipURLClassification in Frameworks */,
+				17E518D87CDB4BF1B0B02FD4 /* ClipHTMLClassification in Frameworks */,
+				F73819AA386C2618CCBCCF32 /* ClipPaywallBypass in Frameworks */,
+				350EAC340A2B445558410825 /* ClipPriceMetadata in Frameworks */,
+				041A74CEFA9B22277C35C056 /* ClipContentRendering in Frameworks */,
+				828C373FE02ADBEC3BC5D19C /* ClipTransitions in Frameworks */,
+				7E2C368831952671CD7BF66A /* ClipModels in Frameworks */,
+				DB3B179AA253D0576510D32F /* ClipFetch in Frameworks */,
+				1E13E73BB6DD36900A58F4D7 /* ClipIngest in Frameworks */,
+				75CED0C0BDA899FF368A0CB5 /* ClipStorage in Frameworks */,
+				82CB10A29885630A935F920C /* ClipDocuments in Frameworks */,
+				EB0EBC1067690C77BA252745 /* ClipEpub in Frameworks */,
+				940BD49E545FC05A21DC8F50 /* ClipSend in Frameworks */,
+				BF10D89E8F106E5148E47260 /* ClipMail in Frameworks */,
+				BDBA0CFFF11430D086BE5A66 /* ClipDesignSystem in Frameworks */,
+				C7F5D1B5D38DADD2899366C7 /* ClipPlatforms in Frameworks */,
+				12CE8504E187135A0601430B /* ClipMediaDownload in Frameworks */,
+				DD60A5F05A129459CBC84020 /* ClipSocial in Frameworks */,
+				6EF9995A1F1B77BC1D7DA64C /* ClipSemantic in Frameworks */,
+				C4A1971292F67D93A944D0EC /* ClipReaderEngine in Frameworks */,
+				5313886A2454CED64F14769A /* ClipArchiveReader in Frameworks */,
+				FD9DE7E101A1AA02A7972334 /* ClipReaderUI in Frameworks */,
+				422D5BFF58CAF04E95D0E2FE /* ClipPriceUI in Frameworks */,
+				B8A14BC5B261F66C58BF6ED0 /* ClipShareSurface in Frameworks */,
+				73BC26E788E13A1901F2D82C /* ClipYouTubeAPI in Frameworks */,
+				22E0EDD000440E93E410F2F8 /* ClipReadingList in Frameworks */,
+				71FE9DB128832A382EC0438E /* ClipSocialUI in Frameworks */,
+				375621BBEDE7DFDFCA7E7CF7 /* ClipIntents in Frameworks */,
+				CEBF52E52DB5EDC016C4BF68 /* ClipReadingListUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -334,6 +777,91 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B18D99CD9E7FD8DE44D77406 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E8862EF24F49E2D02D978A89 /* SwiftSoup in Frameworks */,
+				511AFE358958CF34F726A711 /* ClipURLClassification in Frameworks */,
+				BB496482363743D2266EE1EE /* ClipHTMLClassification in Frameworks */,
+				6FC987A819941677EC289003 /* ClipPaywallBypass in Frameworks */,
+				F599702F89767DDCF2FB385C /* ClipPriceMetadata in Frameworks */,
+				BE529FEC68767C9B157BA455 /* ClipContentRendering in Frameworks */,
+				41CED045DAB9F43705D5B165 /* ClipTransitions in Frameworks */,
+				8A90AEADC8E26CAB6BAAAA9E /* ClipModels in Frameworks */,
+				D3EA1630994091EEDD2F190E /* ClipFetch in Frameworks */,
+				D32E35604B47E9C10CE0433B /* ClipIngest in Frameworks */,
+				532BCFEE05A361CD75DB29B4 /* ClipStorage in Frameworks */,
+				5D640FB33B81996588B52B5C /* ClipDesignSystem in Frameworks */,
+				C7AF1235EF22D641FCB763F0 /* ClipPlatforms in Frameworks */,
+				5E5E886D0FEC30FC8E45E7FC /* ClipMediaDownload in Frameworks */,
+				CFF894A26385765A04FB4137 /* ClipReaderEngine in Frameworks */,
+				65B50A608717FED6D7E96734 /* ClipArchiveReader in Frameworks */,
+				4D71261636172E65F9B61A1B /* ClipReaderUI in Frameworks */,
+				CFB8713184006BB8632A924A /* ClipPriceUI in Frameworks */,
+				5D0128410A32E572FFD81F45 /* ClipShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B5E1B6795149EA116215B0F6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D5C5BE5ACB9DA6A8AD62370 /* SwiftSoup in Frameworks */,
+				9C31EDA76E809B77E2BD23D5 /* ClipURLClassification in Frameworks */,
+				B0A258B018CE3BC9C0CD17C8 /* ClipHTMLClassification in Frameworks */,
+				671D19B093B080BB0C00EC9F /* ClipPaywallBypass in Frameworks */,
+				5EA1C0323A202BAC11549C51 /* ClipPriceMetadata in Frameworks */,
+				780D2CF3158D3FED4C7444BA /* ClipContentRendering in Frameworks */,
+				B0B25841CA9850CBB48F1A28 /* ClipTransitions in Frameworks */,
+				BA4D33437C8419EB9CA78225 /* ClipModels in Frameworks */,
+				8B9033F91E7B9093D251BB7C /* ClipFetch in Frameworks */,
+				7114CE03937EE5341100D0AD /* ClipIngest in Frameworks */,
+				51414525A3F33F736F5E5386 /* ClipStorage in Frameworks */,
+				120F0560C8E724311F84921D /* ClipDesignSystem in Frameworks */,
+				2744203EEAF1B7AF22E1271E /* ClipPlatforms in Frameworks */,
+				05EB3A454381CBF19D2309FB /* ClipMediaDownload in Frameworks */,
+				D78CCB8D56C3815B050BB01C /* ClipReaderEngine in Frameworks */,
+				7D74667CBC09543524AD4E59 /* ClipArchiveReader in Frameworks */,
+				218FEE114769C57F7F045DE1 /* ClipReaderUI in Frameworks */,
+				104179571BCFAD95AF412350 /* ClipPriceUI in Frameworks */,
+				2D6B8766380C840A5550ED7B /* ClipShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D8458C70E2FFCCAB9891ED19 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E8A1C231FD34FAB9D3079585 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				004D6B2EC6400E1B8AB54302 /* SwiftSoup in Frameworks */,
+				D333CB64CE02FCC308D02AAE /* ClipURLClassification in Frameworks */,
+				47D4FE0F200DA343FE5968BE /* ClipHTMLClassification in Frameworks */,
+				EAF435B92CB3F940D4C5E9AB /* ClipPaywallBypass in Frameworks */,
+				7A2A261BD9A78CDAD99A8432 /* ClipPriceMetadata in Frameworks */,
+				4FA4D6ECCD2EB5EDB599A9C8 /* ClipContentRendering in Frameworks */,
+				47AFF9C55EA1844DB55C585E /* ClipTransitions in Frameworks */,
+				4A1B3F8FAA22CE45ADB6CAB6 /* ClipModels in Frameworks */,
+				D5AFE94D87296B201C34D805 /* ClipFetch in Frameworks */,
+				63966E7C73DDA5F156C49F35 /* ClipIngest in Frameworks */,
+				CFF9121C657C3CCF8473919B /* ClipStorage in Frameworks */,
+				164DC728A7C83E13375A08BA /* ClipDesignSystem in Frameworks */,
+				7AF7216F62048B1A8C59F9E6 /* ClipPlatforms in Frameworks */,
+				12E8A107B1FCA1F360C74E20 /* ClipMediaDownload in Frameworks */,
+				0F27F2E19202007B318860C3 /* ClipReaderEngine in Frameworks */,
+				DACDDE724A61366A55815CDE /* ClipArchiveReader in Frameworks */,
+				3D823901FC6901D6BB41A6AB /* ClipReaderUI in Frameworks */,
+				1B6EC6CA4339522B2907A219 /* ClipPriceUI in Frameworks */,
+				6898420458832516B791DD26 /* ClipShareSurface in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -375,6 +903,14 @@
 				AA0200000000000000000004 /* ClipShare.appex */,
 				AA0200000000000000000003 /* ClipTests.xctest */,
 				79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */,
+				B59B827071F5B3640BB31428 /* QuartzDownloaderShare.appex */,
+				D3B0961D49B070035B3E0FD1 /* QuartzDownloaderAction.appex */,
+				BB94D412ABEBAB217EB72608 /* QuartzDownloaderSafari.appex */,
+				E13583D77605D977B0A8FDD3 /* QuartzDownloader.app */,
+				E34729A9C0FBABDE05C923C3 /* QuartzPriceTrackerShare.appex */,
+				3C0179E7326B416352FD04AE /* QuartzPriceTrackerAction.appex */,
+				7222BE8C519159B489DB3C0C /* QuartzPriceTrackerSafari.appex */,
+				17C57D675E0712054ACE6584 /* QuartzPriceTracker.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -382,6 +918,104 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		2746B738BB4967D72B4784AA /* QuartzPriceTrackerShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BBBAB49D7E42C2856846AF7C /* Build configuration list for PBXNativeTarget "QuartzPriceTrackerShare" */;
+			buildPhases = (
+				373A4FE3831DC2BDBE2A869D /* Sources */,
+				E8A1C231FD34FAB9D3079585 /* Frameworks */,
+				DDD51270230A986A15CBC90D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000004 /* ClipShare */,
+			);
+			name = QuartzPriceTrackerShare;
+			packageProductDependencies = (
+				AA0300000000000000000003 /* SwiftSoup */,
+				C100000000000000000000011 /* ClipURLClassification */,
+				C100000000000000000000012 /* ClipHTMLClassification */,
+				C100000000000000000000013 /* ClipPaywallBypass */,
+				C100000000000000000000014 /* ClipPriceMetadata */,
+				C100000000000000000000015 /* ClipContentRendering */,
+				C100000000000000000000018 /* ClipTransitions */,
+				C100000000000000000000016 /* ClipModels */,
+				C100000000000000000000017 /* ClipFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
+				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
+				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
+				72398B0845A005923290AE55 /* ClipPlatforms */,
+				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
+				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
+				74662FE2996754685063847E /* ClipArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
+			);
+			productName = QuartzPriceTrackerShare;
+			productReference = E34729A9C0FBABDE05C923C3 /* QuartzPriceTrackerShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		6C65D0274C393548D3654967 /* QuartzPriceTracker */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 65CC8E353E396283FCEE0898 /* Build configuration list for PBXNativeTarget "QuartzPriceTracker" */;
+			buildPhases = (
+				69326230C9193A79E2B04484 /* Sources */,
+				04C4B73342B81E2FE429106D /* Frameworks */,
+				6ED0D1662C9D703BF6C0F4BA /* Resources */,
+				2160D2503718567D7AE0E6F6 /* Embed Foundation Extensions */,
+				3D30D1BA1BC66A3464973E88 /* Re-sign embedded extensions (debug) */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				110F1850003FAD24F03CB81F /* PBXTargetDependency */,
+				0665879E5C0FDB9B54C481ED /* PBXTargetDependency */,
+				F6A0E89B7A606B31EE9AE1D6 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000001 /* Clip */,
+			);
+			name = QuartzPriceTracker;
+			packageProductDependencies = (
+				AA0300000000000000000002 /* SwiftSoup */,
+				C100000000000000000000011 /* ClipURLClassification */,
+				C100000000000000000000012 /* ClipHTMLClassification */,
+				C100000000000000000000013 /* ClipPaywallBypass */,
+				C100000000000000000000014 /* ClipPriceMetadata */,
+				C100000000000000000000015 /* ClipContentRendering */,
+				C100000000000000000000018 /* ClipTransitions */,
+				C100000000000000000000016 /* ClipModels */,
+				C100000000000000000000017 /* ClipFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
+				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
+				EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */,
+				AA824D3974D944B8BC077857 /* ClipEpub */,
+				A1AC9F7C74411AF59CC240DB /* ClipSend */,
+				6733C497754C454FAA262597 /* ClipMail */,
+				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
+				72398B0845A005923290AE55 /* ClipPlatforms */,
+				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
+				DE798ED2A5DA5A986EE4B864 /* ClipSocial */,
+				92CAEC0F8C340469B9AB25E3 /* ClipSemantic */,
+				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
+				74662FE2996754685063847E /* ClipArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
+				EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */,
+				6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */,
+				7445361A6C10C9E25040C4AD /* ClipSocialUI */,
+				F1D3242938BA3B48ED8EA6DD /* ClipIntents */,
+				3933ED17E10DC2C0C55B129C /* ClipReadingListUI */,
+			);
+			productName = QuartzPriceTracker;
+			productReference = 17C57D675E0712054ACE6584 /* QuartzPriceTracker.app */;
+			productType = "com.apple.product-type.application";
+		};
 		79583DFB2FE0BAD100C775CA /* Clip Action Extension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 79583E0E2FE0BAD200C775CA /* Build configuration list for PBXNativeTarget "Clip Action Extension" */;
@@ -421,6 +1055,128 @@
 			);
 			productName = "Clip Action Extension";
 			productReference = 79583DFC2FE0BAD100C775CA /* Clip Action Extension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		8B037A04C4B57DCC3B52F210 /* QuartzDownloaderSafari */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A78C5DD51FCC623948CD4C4C /* Build configuration list for PBXNativeTarget "QuartzDownloaderSafari" */;
+			buildPhases = (
+				090152A075555CC1E88333EA /* Sources */,
+				D8458C70E2FFCCAB9891ED19 /* Frameworks */,
+				8D625DA4155FF73472CEE0E6 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000002 /* ClipSafari */,
+			);
+			name = QuartzDownloaderSafari;
+			productName = QuartzDownloaderSafari;
+			productReference = BB94D412ABEBAB217EB72608 /* QuartzDownloaderSafari.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		914B0BF1DD6F590D135488AC /* QuartzPriceTrackerSafari */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB3EF4BE1D4A86FE309C3FEE /* Build configuration list for PBXNativeTarget "QuartzPriceTrackerSafari" */;
+			buildPhases = (
+				6F840481808C183EA2D897C9 /* Sources */,
+				63DAF29D7BE8CFCDD82FC8D3 /* Frameworks */,
+				6679DE7338A7B19B74E7FB33 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000002 /* ClipSafari */,
+			);
+			name = QuartzPriceTrackerSafari;
+			productName = QuartzPriceTrackerSafari;
+			productReference = 7222BE8C519159B489DB3C0C /* QuartzPriceTrackerSafari.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		96905778435E3C7F63FA5E07 /* QuartzDownloaderShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ECD7350BEB2AF4860E954473 /* Build configuration list for PBXNativeTarget "QuartzDownloaderShare" */;
+			buildPhases = (
+				7276E5B4DBA5CB57A58E7631 /* Sources */,
+				B5E1B6795149EA116215B0F6 /* Frameworks */,
+				7654D757DB485C9238DD39AB /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000004 /* ClipShare */,
+			);
+			name = QuartzDownloaderShare;
+			packageProductDependencies = (
+				AA0300000000000000000003 /* SwiftSoup */,
+				C100000000000000000000011 /* ClipURLClassification */,
+				C100000000000000000000012 /* ClipHTMLClassification */,
+				C100000000000000000000013 /* ClipPaywallBypass */,
+				C100000000000000000000014 /* ClipPriceMetadata */,
+				C100000000000000000000015 /* ClipContentRendering */,
+				C100000000000000000000018 /* ClipTransitions */,
+				C100000000000000000000016 /* ClipModels */,
+				C100000000000000000000017 /* ClipFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
+				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
+				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
+				72398B0845A005923290AE55 /* ClipPlatforms */,
+				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
+				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
+				74662FE2996754685063847E /* ClipArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
+			);
+			productName = QuartzDownloaderShare;
+			productReference = B59B827071F5B3640BB31428 /* QuartzDownloaderShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A2B18D43A980A2C17A48B019 /* QuartzDownloaderAction */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 604934514C838BF7A7DE32C3 /* Build configuration list for PBXNativeTarget "QuartzDownloaderAction" */;
+			buildPhases = (
+				49BD90EDAA1C832A8F3D7C4E /* Sources */,
+				B18D99CD9E7FD8DE44D77406 /* Frameworks */,
+				263BDD1DB396671A4F6B3810 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				79583E002FE0BAD100C775CA /* Clip Action Extension */,
+			);
+			name = QuartzDownloaderAction;
+			packageProductDependencies = (
+				AA0300000000000000000004 /* SwiftSoup */,
+				C100000000000000000000011 /* ClipURLClassification */,
+				C100000000000000000000012 /* ClipHTMLClassification */,
+				C100000000000000000000013 /* ClipPaywallBypass */,
+				C100000000000000000000014 /* ClipPriceMetadata */,
+				C100000000000000000000015 /* ClipContentRendering */,
+				C100000000000000000000018 /* ClipTransitions */,
+				C100000000000000000000016 /* ClipModels */,
+				C100000000000000000000017 /* ClipFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
+				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
+				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
+				72398B0845A005923290AE55 /* ClipPlatforms */,
+				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
+				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
+				74662FE2996754685063847E /* ClipArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
+			);
+			productName = QuartzDownloaderAction;
+			productReference = D3B0961D49B070035B3E0FD1 /* QuartzDownloaderAction.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		AAE000000000000000000000 /* Clip */ = {
@@ -496,8 +1252,6 @@
 				AA0700000000000000000002 /* ClipSafari */,
 			);
 			name = ClipSafari;
-			packageProductDependencies = (
-			);
 			productName = ClipSafari;
 			productReference = AA0200000000000000000002 /* ClipSafari.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -591,6 +1345,104 @@
 			productReference = AA0200000000000000000004 /* ClipShare.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		AF19C41BA051B4C0892BDA4E /* QuartzDownloader */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 79F9AA8B374CC68FA35DFE00 /* Build configuration list for PBXNativeTarget "QuartzDownloader" */;
+			buildPhases = (
+				836705B5BFAEBF1F5E5F928B /* Sources */,
+				A0047EA7E66649097A1AD197 /* Frameworks */,
+				A8328BDA696E47B16CE4447A /* Resources */,
+				9836EC78CC443E7D4C813A08 /* Embed Foundation Extensions */,
+				F2DB15EE1976B470D4B0D7AF /* Re-sign embedded extensions (debug) */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				17DCF01578521F73EED10D1C /* PBXTargetDependency */,
+				58B195B7FD225D014BEECD28 /* PBXTargetDependency */,
+				192707161F88BF06756CFDD7 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0700000000000000000001 /* Clip */,
+			);
+			name = QuartzDownloader;
+			packageProductDependencies = (
+				AA0300000000000000000002 /* SwiftSoup */,
+				C100000000000000000000011 /* ClipURLClassification */,
+				C100000000000000000000012 /* ClipHTMLClassification */,
+				C100000000000000000000013 /* ClipPaywallBypass */,
+				C100000000000000000000014 /* ClipPriceMetadata */,
+				C100000000000000000000015 /* ClipContentRendering */,
+				C100000000000000000000018 /* ClipTransitions */,
+				C100000000000000000000016 /* ClipModels */,
+				C100000000000000000000017 /* ClipFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
+				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
+				EC12441B238CDC7A3EEDD1A0 /* ClipDocuments */,
+				AA824D3974D944B8BC077857 /* ClipEpub */,
+				A1AC9F7C74411AF59CC240DB /* ClipSend */,
+				6733C497754C454FAA262597 /* ClipMail */,
+				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
+				72398B0845A005923290AE55 /* ClipPlatforms */,
+				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
+				DE798ED2A5DA5A986EE4B864 /* ClipSocial */,
+				92CAEC0F8C340469B9AB25E3 /* ClipSemantic */,
+				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
+				74662FE2996754685063847E /* ClipArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
+				EB6678402070E752D0A4FF94 /* ClipYouTubeAPI */,
+				6EDC1D9AE1F39D473CE9B129 /* ClipReadingList */,
+				7445361A6C10C9E25040C4AD /* ClipSocialUI */,
+				F1D3242938BA3B48ED8EA6DD /* ClipIntents */,
+				3933ED17E10DC2C0C55B129C /* ClipReadingListUI */,
+			);
+			productName = QuartzDownloader;
+			productReference = E13583D77605D977B0A8FDD3 /* QuartzDownloader.app */;
+			productType = "com.apple.product-type.application";
+		};
+		BE0F0A63AC930FAA7923DDFC /* QuartzPriceTrackerAction */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 84026801BFD01156DB04DA71 /* Build configuration list for PBXNativeTarget "QuartzPriceTrackerAction" */;
+			buildPhases = (
+				BD2C5C88A6DFF558F6C3C1F7 /* Sources */,
+				3AB1019F78884E8898F0365B /* Frameworks */,
+				51F636BA6A71CDFAAE7F7202 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				79583E002FE0BAD100C775CA /* Clip Action Extension */,
+			);
+			name = QuartzPriceTrackerAction;
+			packageProductDependencies = (
+				AA0300000000000000000004 /* SwiftSoup */,
+				C100000000000000000000011 /* ClipURLClassification */,
+				C100000000000000000000012 /* ClipHTMLClassification */,
+				C100000000000000000000013 /* ClipPaywallBypass */,
+				C100000000000000000000014 /* ClipPriceMetadata */,
+				C100000000000000000000015 /* ClipContentRendering */,
+				C100000000000000000000018 /* ClipTransitions */,
+				C100000000000000000000016 /* ClipModels */,
+				C100000000000000000000017 /* ClipFetch */,
+				E656FCBCB33D2B83A5BC2B9D /* ClipIngest */,
+				A982CE2BE48B7474FDAD7A00 /* ClipStorage */,
+				333A451D2F6E424BF2A01F84 /* ClipDesignSystem */,
+				72398B0845A005923290AE55 /* ClipPlatforms */,
+				4DFF8DE25D4460FB9484A013 /* ClipMediaDownload */,
+				48455ED52E3622FE10B6DA75 /* ClipReaderEngine */,
+				74662FE2996754685063847E /* ClipArchiveReader */,
+				436F1044DB2553FED3D9DB4C /* ClipReaderUI */,
+				59E17EB39B108E9054CCFBA3 /* ClipPriceUI */,
+				05BEB00D14C2BD469EC11FB7 /* ClipShareSurface */,
+			);
+			productName = QuartzPriceTrackerAction;
+			productReference = 3C0179E7326B416352FD04AE /* QuartzPriceTrackerAction.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -649,12 +1501,69 @@
 				AAE300000000000000000000 /* ClipShare */,
 				AAE200000000000000000000 /* ClipTests */,
 				79583DFB2FE0BAD100C775CA /* Clip Action Extension */,
+				96905778435E3C7F63FA5E07 /* QuartzDownloaderShare */,
+				A2B18D43A980A2C17A48B019 /* QuartzDownloaderAction */,
+				8B037A04C4B57DCC3B52F210 /* QuartzDownloaderSafari */,
+				AF19C41BA051B4C0892BDA4E /* QuartzDownloader */,
+				2746B738BB4967D72B4784AA /* QuartzPriceTrackerShare */,
+				BE0F0A63AC930FAA7923DDFC /* QuartzPriceTrackerAction */,
+				914B0BF1DD6F590D135488AC /* QuartzPriceTrackerSafari */,
+				6C65D0274C393548D3654967 /* QuartzPriceTracker */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		263BDD1DB396671A4F6B3810 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		51F636BA6A71CDFAAE7F7202 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6679DE7338A7B19B74E7FB33 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6ED0D1662C9D703BF6C0F4BA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7654D757DB485C9238DD39AB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		79583DFA2FE0BAD100C775CA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8D625DA4155FF73472CEE0E6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A8328BDA696E47B16CE4447A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -689,9 +1598,35 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DDD51270230A986A15CBC90D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		3D30D1BA1BC66A3464973E88 /* Re-sign embedded extensions (debug) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Re-sign embedded extensions (debug)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
 		AA9000000000000000000001 /* Re-sign embedded extensions (debug) */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -707,10 +1642,78 @@
 			shellPath = /bin/sh;
 			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
 		};
+		F2DB15EE1976B470D4B0D7AF /* Re-sign embedded extensions (debug) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Re-sign embedded extensions (debug)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		090152A075555CC1E88333EA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		373A4FE3831DC2BDBE2A869D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		49BD90EDAA1C832A8F3D7C4E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		69326230C9193A79E2B04484 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6F840481808C183EA2D897C9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7276E5B4DBA5CB57A58E7631 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		79583DF82FE0BAD100C775CA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		836705B5BFAEBF1F5E5F928B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -745,9 +1748,46 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BD2C5C88A6DFF558F6C3C1F7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		0665879E5C0FDB9B54C481ED /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = QuartzPriceTrackerAction;
+			target = BE0F0A63AC930FAA7923DDFC /* QuartzPriceTrackerAction */;
+			targetProxy = 80226DBE727E6C900B6BC73B /* PBXContainerItemProxy */;
+		};
+		110F1850003FAD24F03CB81F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = QuartzPriceTrackerShare;
+			target = 2746B738BB4967D72B4784AA /* QuartzPriceTrackerShare */;
+			targetProxy = CED961C8298641D78A116DA5 /* PBXContainerItemProxy */;
+		};
+		17DCF01578521F73EED10D1C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = QuartzDownloaderShare;
+			target = 96905778435E3C7F63FA5E07 /* QuartzDownloaderShare */;
+			targetProxy = 15D241473DC420B319D7F3C1 /* PBXContainerItemProxy */;
+		};
+		192707161F88BF06756CFDD7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = QuartzDownloaderSafari;
+			target = 8B037A04C4B57DCC3B52F210 /* QuartzDownloaderSafari */;
+			targetProxy = 3CC259C243F6AEE5B238E89D /* PBXContainerItemProxy */;
+		};
+		58B195B7FD225D014BEECD28 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = QuartzDownloaderAction;
+			target = A2B18D43A980A2C17A48B019 /* QuartzDownloaderAction */;
+			targetProxy = 019AFC8CDB7CCEC35B2E3F5B /* PBXContainerItemProxy */;
+		};
 		79583E0A2FE0BAD200C775CA /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 79583DFB2FE0BAD100C775CA /* Clip Action Extension */;
@@ -768,9 +1808,341 @@
 			target = AAE300000000000000000000 /* ClipShare */;
 			targetProxy = AA0400000000000000000003 /* PBXContainerItemProxy */;
 		};
+		F6A0E89B7A606B31EE9AE1D6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = QuartzPriceTrackerSafari;
+			target = 914B0BF1DD6F590D135488AC /* QuartzPriceTrackerSafari */;
+			targetProxy = 89EB5051C98FC05A977EE7C7 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		023E20620BE250C369387843 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Clip/Clip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Clip/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Clip uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		144800522E501D4A6D024453 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Clip/Clip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Clip/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Clip uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		36BE64E58068B0FF635CA9AC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Clip Action Extension/Clip Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Clip Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.action";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		3A579C741B51DE45A7E87D13 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Clip Action Extension/Clip Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Clip Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.action";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5353B55D7367CE5C1A03EA6C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClipSafari/ClipSafari.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5AD1A6F1DABCAE5BC3DD6321 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClipShare/ClipShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		65686C7A8A0FBCDB65DD7149 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClipShare/ClipShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		6F468BEA5E125B25A9C8D2DC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Clip Action Extension/Clip Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Clip Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.action";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		79583E0C2FE0BAD200C775CA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -885,6 +2257,122 @@
 				MARKETING_VERSION = 0.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader.action";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		7F9C81DD57B2AE5AC8CC1B13 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClipSafari/ClipSafari.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		85CB1AEB69C5B855D8FF4C59 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClipShare/ClipShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A06A267FE792581B276EB885 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_ENTITLEMENTS = "Clip Action Extension/Clip Action Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Clip Action Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.action";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1156,14 +2644,197 @@
 			};
 			name = Release;
 		};
+		BE6F0F191F208F7FEDC7D0B5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Clip/Clip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Clip/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Clip uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C5863E0B66F8E9D9132F65C0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClipShare/ClipShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.share";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D0EE387C77FBD5AA16E996A7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClipSafari/ClipSafari.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D82FEA89A1E463804FF7AF6B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClipSafari/ClipSafari.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ClipSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker.safari";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		ED6F9B6CE81E9794FA1FC336 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Clip/Clip.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 123;
+				DEVELOPMENT_TEAM = MM5QBNLXR6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Clip/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Clip uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		604934514C838BF7A7DE32C3 /* Build configuration list for PBXNativeTarget "QuartzDownloaderAction" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3A579C741B51DE45A7E87D13 /* Debug */,
+				36BE64E58068B0FF635CA9AC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		65CC8E353E396283FCEE0898 /* Build configuration list for PBXNativeTarget "QuartzPriceTracker" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				144800522E501D4A6D024453 /* Debug */,
+				ED6F9B6CE81E9794FA1FC336 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		79583E0E2FE0BAD200C775CA /* Build configuration list for PBXNativeTarget "Clip Action Extension" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				79583E0C2FE0BAD200C775CA /* Debug */,
 				79583E0D2FE0BAD200C775CA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		79F9AA8B374CC68FA35DFE00 /* Build configuration list for PBXNativeTarget "QuartzDownloader" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BE6F0F191F208F7FEDC7D0B5 /* Debug */,
+				023E20620BE250C369387843 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		84026801BFD01156DB04DA71 /* Build configuration list for PBXNativeTarget "QuartzPriceTrackerAction" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6F468BEA5E125B25A9C8D2DC /* Debug */,
+				A06A267FE792581B276EB885 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A78C5DD51FCC623948CD4C4C /* Build configuration list for PBXNativeTarget "QuartzDownloaderSafari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5353B55D7367CE5C1A03EA6C /* Debug */,
+				D0EE387C77FBD5AA16E996A7 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -1209,6 +2880,33 @@
 			buildConfigurations = (
 				AAC900000000000000000000 /* Debug */,
 				AACA00000000000000000000 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB3EF4BE1D4A86FE309C3FEE /* Build configuration list for PBXNativeTarget "QuartzPriceTrackerSafari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F9C81DD57B2AE5AC8CC1B13 /* Debug */,
+				D82FEA89A1E463804FF7AF6B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BBBAB49D7E42C2856846AF7C /* Build configuration list for PBXNativeTarget "QuartzPriceTrackerShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5AD1A6F1DABCAE5BC3DD6321 /* Debug */,
+				85CB1AEB69C5B855D8FF4C59 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ECD7350BEB2AF4860E954473 /* Build configuration list for PBXNativeTarget "QuartzDownloaderShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C5863E0B66F8E9D9132F65C0 /* Debug */,
+				65686C7A8A0FBCDB65DD7149 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

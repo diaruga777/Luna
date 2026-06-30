@@ -74,7 +74,7 @@ public enum OnboardingFlow {
         return OnboardingStepViewController(
             symbol: "bell.badge",
             title: "Get notified",
-            body: "Enable to get a notification when a friend shares an article with you.",
+            body: "Enable notifications for price drops, articles ready to read, and links shared with you.",
             primary: .init(title: "Enable Notifications") { _ in
                 NotificationManager.requestAuthorization()
                 UIApplication.shared.registerForRemoteNotifications()
@@ -91,7 +91,7 @@ public enum OnboardingFlow {
         OnboardingStepViewController(
             symbol: "safari",
             title: "Save any Safari page instantly",
-            body: "Queue remembers your last visited site. Visit data stays on device and is never shared.\n\nTurn on the Queue extension in Settings → Apps → Safari → Extensions.",
+            body: "Quartz remembers your last visited site. Visit data stays on device and is never shared.\n\nTurn on the Quartz extension in Settings → Apps → Safari → Extensions.",
             primary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
             continueTitle: "Continue",
             animation: .settingsToggle,
@@ -116,12 +116,12 @@ public enum OnboardingFlow {
             })
     }
 
-    /// Final step: how the Share-sheet "Read in Queue" action extension works.
+    /// Final step: how the Share-sheet "Read in Quartz" action extension works.
     private static func actionExtensionStep(onFinished: @escaping () -> Void) -> UIViewController {
         OnboardingStepViewController(
             symbol: "square.and.arrow.up",
-            title: "Share to your Queue",
-            body: "Send in anything to read instantly!\n\nTap \"Edit Actions\" and add Queue to favorites to make it even easier.",
+            title: "Share to your Quartz",
+            body: "Send in anything to read instantly!\n\nTap \"Edit Actions\" and add Quartz to favorites to make it even easier.",
             primary: nil,
             continueTitle: "Done",
             animation: .actionExtension,

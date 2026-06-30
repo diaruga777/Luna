@@ -773,14 +773,18 @@ final class ReadingListViewController: UITableViewController {
     /// (trailing) in the pinned bar. The large "Reading List" title + catch-up button
     /// live on the scrolling title row of the table header (`makeTableHeader`).
     private func setDefaultHeaderControls() {
-        header.setLeadingControls([
+        var leading = [
             NavHeaderBar.imageButton(
                 systemName: "gearshape", target: self, action: #selector(settingsTapped),
                 accessibilityLabel: "Settings"),
-            NavHeaderBar.imageButton(
+        ]
+        // Friend sharing is a Downloader-only feature (nil = combined dev/test surface).
+        if surface == nil || surface == .downloader {
+            leading.append(NavHeaderBar.imageButton(
                 systemName: "person.2", target: self, action: #selector(friendsTapped),
-                accessibilityLabel: "Friends"),
-        ])
+                accessibilityLabel: "Friends"))
+        }
+        header.setLeadingControls(leading)
         header.setTrailingControls([
             NavHeaderBar.imageButton(
                 systemName: "plus", target: self, action: #selector(addTapped),
@@ -1341,7 +1345,7 @@ final class ReadingListViewController: UITableViewController {
         reader.onClose = { [weak nav] in nav?.dismiss(animated: true) }
         reader.onOpenInBrowser = { [weak nav] archiveURL in
             // This is an escape from archive.is's WKWebView-specific bot gate, so
-            // it must leave Queue for the system browser — an SFSafari sheet remains
+            // it must leave Quartz for the system browser — an SFSafari sheet remains
             // inside our presentation and doesn't provide the requested escape.
             nav?.dismiss(animated: true) {
                 UIApplication.shared.open(archiveURL)

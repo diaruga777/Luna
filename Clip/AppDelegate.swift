@@ -155,16 +155,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             self?.schedulePriceRefresh(reason: "reading list changed")
         }
 
-        Task {
-            await SocialMessageCenter.shared.ensureSubscription()
-            await SocialMessageCenter.shared.drainPendingFriendShares()
-            await SocialMessageCenter.shared.processInbox()
+        // Friend-sharing (CloudKit inbox/subscription) is a Downloader-only feature.
+        if AppSurfaceConfig.current == .downloader {
+            Task {
+                await SocialMessageCenter.shared.ensureSubscription()
+                await SocialMessageCenter.shared.drainPendingFriendShares()
+                await SocialMessageCenter.shared.processInbox()
+            }
         }
         Task { await IncomingMailImporter.shared.importNewMail() }
         // Experimental semantic sharing index — main app only (loads an NL
         // model; never run in the memory-limited intent runner). No-op when off.
         SemanticIndexer.shared.scheduleRun()
-        scheduleInboxRefresh()
+        if AppSurfaceConfig.current == .downloader { scheduleInboxRefresh() }
         scheduleMailFetch()
         schedulePriceRefresh(reason: "launch")
         refreshOverduePriceTrackersOnLaunch()
@@ -172,7 +175,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        scheduleInboxRefresh()
+        if AppSurfaceConfig.current == .downloader { scheduleInboxRefresh() }
         scheduleMailFetch()
         schedulePriceRefresh(reason: "entered background")
     }

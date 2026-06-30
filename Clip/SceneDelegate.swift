@@ -21,6 +21,9 @@ import UIKit
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
+    /// Per-app (private defaults) flag: each Quartz app shows onboarding once.
+    private static let onboardingCompleteKey = "hasCompletedOnboarding"
+
     var window: UIWindow?
 
     /// A friend URL that arrived before onboarding finished; replayed once an
@@ -131,11 +134,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         #endif
 
-        // Onboarding only sets up the friend-sharing identity, which is a Downloader
-        // (social) feature — Reader and Price Tracker skip it and go straight to their list.
-        if AppSurfaceConfig.current == .downloader,
-           KeychainIdentityStore.shared.loadIdentity() == nil {
-            window.rootViewController = OnboardingFlow.make { [weak self] in
+        // All three apps onboard once (per-app flag in the app's private defaults). Only
+        // the Downloader runs the friend-sharing username/identity step; Reader and Price
+        // Tracker run just the device-setup steps (notifications, Safari, shortcut, share).
+        if !UserDefaults.standard.bool(forKey: Self.onboardingCompleteKey) {
+            let finish: () -> Void = { [weak self] in
+                UserDefaults.standard.set(true, forKey: Self.onboardingCompleteKey)
                 self?.showMainUI()
                 if let url = self?.pendingFriendURL {
                     self?.pendingFriendURL = nil
@@ -147,6 +151,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 }
                 self?.applyPendingNotificationRoute()
             }
+            window.rootViewController = AppSurfaceConfig.current == .downloader
+                ? OnboardingFlow.make(onFinished: finish)
+                : OnboardingFlow.makeSetupOnly(onFinished: finish)
         } else {
             // Each Quartz app surfaces only its own category; links of other categories
             // saved here are still stored in the shared App Group and appear in their

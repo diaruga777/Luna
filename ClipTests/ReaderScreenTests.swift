@@ -23,12 +23,24 @@ final class ReaderScreenTests: XCTestCase {
                         state: .ready, wordCount: 480)
     }
 
+    private var priorPixelWipe = false
+
     override func setUp() {
         super.setUp()
         UIView.setAnimationsEnabled(false)
         // The RSVP sub-mode is persisted; pin it so snapshots are deterministic
         // regardless of any value left behind by other runs.
         ReaderSettings.rsvpMode = .words
+        // These tests exercise the STANDARD reader. The experimental pixel-wipe /
+        // RabbitHole toggle is App-Group-persisted and defaults to on, so pin it off
+        // for hermeticity (a fresh container would otherwise route to RabbitHole).
+        priorPixelWipe = ReaderSettings.pixelWipeTransitionsEnabled
+        ReaderSettings.pixelWipeTransitionsEnabled = false
+    }
+
+    override func tearDown() {
+        ReaderSettings.pixelWipeTransitionsEnabled = priorPixelWipe
+        super.tearDown()
     }
 
     // MARK: - Snapshots per reader mode
@@ -137,8 +149,10 @@ final class ReaderScreenTests: XCTestCase {
             persistsModePreference: false, marksOpenedOnLoad: false)
     }
 
-    private func findSegmentedControl(in view: UIView) -> UISegmentedControl? {
-        if let control = view as? UISegmentedControl { return control }
+    // The mode switcher / filter are the project's custom `ClipSegmentedControl`
+    // (a UIControl), not a UIKit `UISegmentedControl`.
+    private func findSegmentedControl(in view: UIView) -> ClipSegmentedControl? {
+        if let control = view as? ClipSegmentedControl { return control }
         for subview in view.subviews {
             if let found = findSegmentedControl(in: subview) { return found }
         }

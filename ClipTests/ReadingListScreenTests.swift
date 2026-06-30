@@ -12,13 +12,26 @@ import ClipPriceUI
 import ClipReaderUI
 import ClipArchiveReader
 import ClipStorage
+import ClipDesignSystem
 import UIKit
 import XCTest
 @testable import Clip
 
 final class ReadingListScreenTests: XCTestCase {
 
+    private var priorPixelWipe = false
+
+    override func setUp() {
+        super.setUp()
+        // The experimental pixel-wipe / RabbitHole toggle is App-Group-persisted and
+        // defaults to on; these tests assert the standard reader + filter chrome, so
+        // pin it off for hermeticity regardless of any value left in the container.
+        priorPixelWipe = ReaderSettings.pixelWipeTransitionsEnabled
+        ReaderSettings.pixelWipeTransitionsEnabled = false
+    }
+
     override func tearDown() {
+        ReaderSettings.pixelWipeTransitionsEnabled = priorPixelWipe
         UITestSupport.wipeSharedStore()
         super.tearDown()
     }
@@ -299,8 +312,10 @@ final class ReadingListScreenTests: XCTestCase {
         return nil
     }
 
-    private func findSegmentedControl(in view: UIView) -> UISegmentedControl? {
-        if let control = view as? UISegmentedControl { return control }
+    // The filter / mode switcher are the project's custom `ClipSegmentedControl`
+    // (a UIControl), not a UIKit `UISegmentedControl`.
+    private func findSegmentedControl(in view: UIView) -> ClipSegmentedControl? {
+        if let control = view as? ClipSegmentedControl { return control }
         for subview in view.subviews {
             if let found = findSegmentedControl(in: subview) { return found }
         }

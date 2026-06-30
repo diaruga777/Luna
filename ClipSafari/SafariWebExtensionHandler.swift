@@ -10,7 +10,7 @@ import SafariServices
 /// visibility setting the content script asks for.
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
-    private static let appGroupID = "group.com.hpiddy.clip"
+    private static let appGroupID = SafariAppGroup.id
     private static let suggestionModeKey = "safariSuggestionMode"
 
     func beginRequest(with context: NSExtensionContext) {

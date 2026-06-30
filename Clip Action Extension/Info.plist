@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>QuartzAppGroupID</key>
+	<string>$(APP_GROUP_ID)</string>
+	<key>QuartzICloudContainerID</key>
+	<string>$(ICLOUD_CONTAINER_ID)</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Queue saves photos, GIFs, and videos you download from social posts to your photo library.</string>
 	<key>NSExtension</key>

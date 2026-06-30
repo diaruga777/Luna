@@ -3,6 +3,7 @@
 //  ClipPaywallBypass
 //
 
+import ClipAppConfig
 import Foundation
 
 /// The one bypass-related user setting the pure strategy logic needs to read:
@@ -10,7 +11,7 @@ import Foundation
 /// enabled. Reads the same App-Group key the app's `ReaderSettings` writes, so the
 /// value is consistent without the bypass layer depending on the UI/settings layer.
 public enum BypassSettings {
-    private static let appGroupID = "group.com.hpiddy.clip"
+    private static let appGroupID = AppConfig.appGroupID
     private static let nonArchiveBypassKey = "nonArchiveBypassEnabled"
 
     /// OFF by default (no key present → `bool(forKey:)` returns false), matching

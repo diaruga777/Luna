@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipAppConfig
 import CloudKit
 import Foundation
 
@@ -16,7 +17,7 @@ import Foundation
 /// TestFlight builds can use it.
 public final class CloudKitMessageTransport: MessageTransport {
 
-    public static let containerID = "iCloud.com.hpiddy.clip"
+    public static let containerID = AppConfig.iCloudContainerID
     public static let recordType = "Message"
 
     private let container = CKContainer(identifier: CloudKitMessageTransport.containerID)

@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipAppConfig
 import ClipModels
 import Foundation
 
@@ -10,7 +11,7 @@ import Foundation
 /// Group so every save path (app, intents, extensions) reads the same values.
 /// Enabling a toggle requires Photos add permission (the settings screen prompts).
 public enum AutoDownloadSettings {
-    private static let appGroupID = "group.com.hpiddy.clip"
+    private static let appGroupID = AppConfig.appGroupID
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
     /// Platforms that support auto-download, in display order.

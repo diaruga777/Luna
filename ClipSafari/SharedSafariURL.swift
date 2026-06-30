@@ -9,7 +9,10 @@ import Foundation
 /// The main app reads these keys via `SafariURLStore` (kept as a separate copy
 /// because the extension and app don't share a framework in this small project).
 enum SharedSafariURL {
-    static let appGroupID = "group.com.hpiddy.clip"
+    // Read from the build-injected Info.plist key (see Config/Quartz.xcconfig) so the
+    // App Group id has a single source of truth shared with the app + other extensions.
+    // This target doesn't link the package, so the lookup is inlined here.
+    static let appGroupID = SafariAppGroup.id
     static let urlKey = "lastSafariURL"
     static let dateKey = "lastSafariURLDate"
 

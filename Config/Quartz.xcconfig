@@ -1,0 +1,22 @@
+// Quartz — single source of truth for product identity.
+//
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │  TO RENAME THE WHOLE PRODUCT, EDIT ONLY THE TWO LINES BELOW.               │
+// │  Everything else — bundle IDs, the shared App Group, the iCloud container, │
+// │  and the in-code identifiers (via injected Info.plist keys) — derives from │
+// │  them. "quartz" is a placeholder.                                          │
+// └──────────────────────────────────────────────────────────────────────────┘
+QUARTZ_NAMESPACE = quartz
+COMPANY_PREFIX = com.hsanabria
+
+// ── Derived identifiers (do not edit) ───────────────────────────────────────
+PRODUCT_BUNDLE_PREFIX = $(COMPANY_PREFIX).$(QUARTZ_NAMESPACE)
+
+// The App Group and iCloud container are SHARED across all Quartz apps and every
+// bundled extension, so they carry the namespace prefix WITHOUT a per-app suffix.
+// This is what lets a link saved in any app surface land in one shared store.
+APP_GROUP_ID = group.$(PRODUCT_BUNDLE_PREFIX)
+ICLOUD_CONTAINER_ID = iCloud.$(PRODUCT_BUNDLE_PREFIX)
+
+// Human-visible app name prefix, e.g. "Quartz Reader".
+DISPLAY_NAME_PREFIX = Quartz

@@ -3,19 +3,20 @@
 //  ReaderKit
 //
 
+import ClipAppConfig
 import Foundation
 
 /// Shared, App-Group-backed state for the text-to-speech system: the one-time
 /// first-run prompt flag and the catch-up voice-card dismissal flag, plus a
 /// convenience check for whether an enhanced Apple voice is installed. Readable
-/// from BOTH the main app and the extensions (they share `group.com.hpiddy.clip`).
+/// from BOTH the main app and the extensions (they share the same App Group).
 ///
 /// Read-aloud uses an enhanced Apple voice when one is installed and the built-in
 /// system voice otherwise; Clip never downloads or stores voice models itself
 /// (enhanced voices are installed by the user in iOS Settings).
 public enum VoiceModelStore {
 
-    public static let appGroupID = "group.com.hpiddy.clip"
+    public static let appGroupID = AppConfig.appGroupID
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
     private static let hasSeenVoicePromptKey = "hasSeenVoicePrompt"

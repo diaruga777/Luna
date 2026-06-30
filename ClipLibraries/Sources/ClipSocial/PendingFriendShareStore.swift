@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipAppConfig
 import Foundation
 
 /// One outgoing friend-share queued by the share extension. The extension can't
@@ -16,7 +17,7 @@ public struct PendingFriendShare: Codable, Equatable {
 /// App-Group-backed queue of pending outgoing friend shares. The share
 /// extension enqueues (via its own copy of the file shape); the main app drains.
 public enum PendingFriendShareStore {
-    public static let appGroupID = "group.com.hpiddy.clip"
+    public static let appGroupID = AppConfig.appGroupID
 
     private static var fileURL: URL? {
         FileManager.default

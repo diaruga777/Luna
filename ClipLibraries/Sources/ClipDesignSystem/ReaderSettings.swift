@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipAppConfig
 import ClipModels
 import Foundation
 
@@ -15,7 +16,7 @@ public enum RSVPDisplayMode: String {
 /// User-adjustable reading preferences, persisted in the App Group so the
 /// share-extension reader honors the same settings as the main app.
 public enum ReaderSettings {
-    public static let appGroupID = "group.com.hpiddy.clip"
+    public static let appGroupID = AppConfig.appGroupID
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
     private static let wpmKey = "rsvpBaseWPM"

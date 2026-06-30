@@ -3,6 +3,7 @@
 //  ClipShare
 //
 
+import ClipAppConfig
 import ClipURLClassification
 import ClipModels
 import Foundation
@@ -15,7 +16,7 @@ import Foundation
 /// struct and re-encoding it used to silently drop any field the mirror didn't
 /// know about — e.g. `platform`/`sendStates` — corrupting other items.)
 public enum SharedReadingListAppender {
-    public static let appGroupID = "group.com.hpiddy.clip"
+    public static let appGroupID = AppConfig.appGroupID
 
     public static func append(urlString: String) {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return }

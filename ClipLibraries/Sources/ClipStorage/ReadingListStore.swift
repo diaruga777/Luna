@@ -3,6 +3,7 @@
 //  Clip
 //
 
+import ClipAppConfig
 import ClipURLClassification
 import ClipModels
 import Foundation
@@ -18,7 +19,7 @@ public extension Notification.Name {
 public final class ReadingListStore {
     public static let shared = ReadingListStore()
 
-    public static let appGroupID = "group.com.hpiddy.clip"
+    public static let appGroupID = AppConfig.appGroupID
 
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?

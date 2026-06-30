@@ -3,12 +3,13 @@
 //  Clip
 //
 
+import ClipAppConfig
 import Foundation
 
 /// Reads the last Safari URL recorded by the ClipSafari web extension's native
 /// handler (see ClipSafari/SharedSafariURL.swift, which writes these keys).
 public enum SafariURLStore {
-    public static let appGroupID = "group.com.hpiddy.clip"
+    public static let appGroupID = AppConfig.appGroupID
     public static let urlKey = "lastSafariURL"
     public static let dateKey = "lastSafariURLDate"
 

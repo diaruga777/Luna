@@ -5,6 +5,7 @@
 //  Forked, experimental "RabbitHole" reader — see RabbitHoleReaderViewController.
 //
 
+import ClipAppConfig
 import ClipStorage
 import ClipModels
 import Foundation
@@ -20,7 +21,7 @@ import Foundation
 public final class RabbitHoleStackStore {
     public static let shared = RabbitHoleStackStore()
 
-    public static let appGroupID = "group.com.hpiddy.clip"
+    public static let appGroupID = AppConfig.appGroupID
 
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?

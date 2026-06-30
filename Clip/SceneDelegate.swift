@@ -145,11 +145,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 self?.applyPendingNotificationRoute()
             }
         } else {
-            // Quartz Reader surfaces only reader items; media/price links saved here are
-            // still stored in the shared App Group and appear in their own apps.
-            // (Phase 4 makes this per-app rather than hardcoded.)
+            // Each Quartz app surfaces only its own category; links of other categories
+            // saved here are still stored in the shared App Group and appear in their
+            // own apps. The surface is derived from this bundle's identifier.
             window.rootViewController = UINavigationController(
-                rootViewController: ReadingListViewController(surface: .reader))
+                rootViewController: ReadingListViewController(surface: AppSurfaceConfig.current))
         }
         self.window = window
         window.makeKeyAndVisible()
@@ -250,7 +250,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func showMainUI() {
         window?.rootViewController = UINavigationController(
-            rootViewController: ReadingListViewController(surface: .reader))
+            rootViewController: ReadingListViewController(surface: AppSurfaceConfig.current))
         installDotMatrixTransitions()
     }
 

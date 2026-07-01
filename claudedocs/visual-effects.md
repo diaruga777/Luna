@@ -91,6 +91,21 @@ view change), `DotMatrixBatch` (table row updates), `DotMatrixSegmentedControl`,
 dive/pop/overscroll uses the `RabbitHoleTransitioning` protocol (`LunaReaderUI`), with the
 app-side Metal impl `Luna/Social/DotMatrixRabbitHoleTransition.swift`.
 
+### Timing model (two waves, `DotMatrixTransitionSettings`)
+
+The wipe is one `progress` 0→1 ramp over `totalDuration`; the shader normalises its
+timeline by `span = sweep + lag + win`, so the per-cell wall times are `(sweep/span)·total`
+(wave-1 front sweep), `(lag/span)·total` (wave-1 → wave-2 START gap) and `(win/span)·total`
+(one cell's fade). `DotMatrixTransitionSettings` therefore expresses `sweep`/`lag`/`win` as
+the actual wall-second budgets normalised to sum to 1 and sets `totalDuration` to their sum,
+so each fraction lands on its exact wall duration. **Defaults:** wave 1 = wave 2 = **0.1s**
+each (`phase1Duration`/`phase2Duration`, averaged into the shared sweep), the gap between the
+two wave STARTS = **0.2s** (`interWaveDelay`, new tunable — larger than the wave durations, so
+the screen briefly holds the fully-pixelated state between the fronts), per-cell fade from
+`stagger`. All four are sliders in `RabbitHoleTransitionSettingsScreen` ("Wave 1", "Wave 2",
+"Time Between Waves", "Pixel Stagger"). Global — every pixel-wipe (nav/modal/crossfade/reader
+mode-switch) shares it.
+
 ### THE RULE: only changed REGIONS animate — UIVIEW-level, never pixel-by-pixel
 
 A wipe must dissolve **only the screen regions that actually change**. Genuinely-unchanged

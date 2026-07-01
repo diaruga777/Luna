@@ -13,7 +13,7 @@ import UIKit
 final class RabbitHoleTransitionSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
-        case cellSize, cornerRadius, spacing, phase1, phase2, stagger, color, reset
+        case cellSize, cornerRadius, spacing, phase1, phase2, interWaveDelay, stagger, color, reset
     }
 
     init() { super.init(style: .insetGrouped) }
@@ -35,6 +35,7 @@ final class RabbitHoleTransitionSettingsScreen: NavHeaderTableController {
         case .spacing: return "Dot Spacing"
         case .phase1: return "Wave 1 · Dissolve to Pixels"
         case .phase2: return "Wave 2 · Sharpen to Final"
+        case .interWaveDelay: return "Time Between Waves"
         case .stagger: return "Pixel Stagger"
         case .color: return "Color"
         case .reset: return nil
@@ -46,8 +47,9 @@ final class RabbitHoleTransitionSettingsScreen: NavHeaderTableController {
         case .cellSize: return "Size of one mosaic dot. Bigger = chunkier pixels."
         case .cornerRadius: return "How rounded each dot's corners are."
         case .spacing: return "Gap between dots, filled with the background colour (white in light mode, black in dark mode)."
-        case .phase1: return "How long wave 1 takes to dissolve the existing view into spaced, rounded dots of the destination."
-        case .phase2: return "How long wave 2 takes to sharpen the dots into the final, readable view. It starts while wave 1 is still sweeping."
+        case .phase1: return "How long wave 1's pixelation front takes to cross the screen."
+        case .phase2: return "How long wave 2's sharpen front takes to cross the screen."
+        case .interWaveDelay: return "How long after wave 1 begins that wave 2 begins. Larger than the wave durations holds the fully-pixelated state between the two fronts; smaller lets wave 2 start while wave 1 is still sweeping."
         case .stagger: return "How spread out the per-pixel reveal is within each wave. Left: every pixel flips at once. Right: strictly one pixel at a time."
         case .color: return "Render the dissolve in greyscale instead of full colour."
         case .reset: return nil
@@ -91,6 +93,13 @@ final class RabbitHoleTransitionSettingsScreen: NavHeaderTableController {
                 minCaption: "0.05 s", maxCaption: "1.5 s",
                 format: { String(format: "%.2f s", $0) },
                 onChange: { DotMatrixTransitionSettings.phase2Duration = $0 })
+        case .interWaveDelay:
+            return sliderCell(
+                value: DotMatrixTransitionSettings.interWaveDelay,
+                range: DotMatrixTransitionSettings.interWaveDelayRange,
+                minCaption: "0 s", maxCaption: "1.0 s",
+                format: { String(format: "%.2f s", $0) },
+                onChange: { DotMatrixTransitionSettings.interWaveDelay = $0 })
         case .stagger:
             return sliderCell(
                 value: Double(DotMatrixTransitionSettings.stagger),

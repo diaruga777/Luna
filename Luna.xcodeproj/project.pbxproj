@@ -35,6 +35,7 @@
 		1A489052B9F7B48762402AE3 /* LunaReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LunaReaderEngine */; };
 		1B6EC6CA4339522B2907A219 /* LunaPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunaPriceUI */; };
 		1D5C5BE5ACB9DA6A8AD62370 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
+		1D9791BC850C101BD3B152AC /* LunaMailAccount in Frameworks */ = {isa = PBXBuildFile; productRef = 239B4BC2C21EA5A3A51F16EE /* LunaMailAccount */; };
 		1DC60CDB9FB0C111849CB64B /* LunaReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LunaReaderEngine */; };
 		1E13E73BB6DD36900A58F4D7 /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
 		218FEE114769C57F7F045DE1 /* LunaReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LunaReaderUI */; };
@@ -63,6 +64,7 @@
 		422D5BFF58CAF04E95D0E2FE /* LunaPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunaPriceUI */; };
 		42B701ABE733F820F5447F96 /* LunaStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LunaStorage */; };
 		42F0FDA59D82F9D669F258D6 /* LunaMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */; };
+		43386DB52129C67C73723CEA /* LunaMailAccount in Frameworks */ = {isa = PBXBuildFile; productRef = 182108EE181A9FAAB156FAD6 /* LunaMailAccount */; };
 		4664FD984F47FB50B8DC0A5B /* LunaShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */; };
 		4764C751E2AFA2AD7653CB79 /* LunaReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LunaReaderUI */; };
 		47AFF9C55EA1844DB55C585E /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
@@ -139,6 +141,7 @@
 		9BE33A85BAAC090D42815A34 /* LunaYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* LunaYouTubeAPI */; };
 		9C31EDA76E809B77E2BD23D5 /* LunaURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LunaURLClassification */; };
 		9EAEEFFE364822D5BD7E30AF /* LunaShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */; };
+		A3B17B01D056FAFF33FF8155 /* LunaMailTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 8909E25ED1F6D19133F69D41 /* LunaMailTransport */; };
 		A5189E94CA8DCC97591BC9C9 /* LunaDownloaderShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B59B827071F5B3640BB31428 /* LunaDownloaderShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A6A1E5E7C77D91ED5C367FB7 /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
 		AA0100000000000000000001 /* LunaSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000002 /* LunaSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -146,17 +149,21 @@
 		AA0100000000000000000003 /* LunaShare.appex in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000004 /* LunaShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AA0100000000000000000004 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000004 /* SwiftSoup */; };
 		AA3E180AD65849A74D458B4B /* LunaEpub in Frameworks */ = {isa = PBXBuildFile; productRef = AA824D3974D944B8BC077857 /* LunaEpub */; };
+		AF85B8B395A4BB24759C5032 /* LunaMailTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 4E960E9AC07457DC10E6833B /* LunaMailTransport */; };
 		AF875A2EB193F3644FC2FF89 /* LunaYouTubeAPI in Frameworks */ = {isa = PBXBuildFile; productRef = EB6678402070E752D0A4FF94 /* LunaYouTubeAPI */; };
 		AFE494BDD40C5AA532E29ED9 /* LunaFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LunaFetch */; };
 		B0A258B018CE3BC9C0CD17C8 /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
 		B0B25841CA9850CBB48F1A28 /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
+		B16E9F2CCEE262E0FE64B309 /* LunaMailTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 6BFF45ED325119736D0AE171 /* LunaMailTransport */; };
 		B1783409EFF8E80CEA65CB3C /* LunaReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LunaReaderEngine */; };
+		B6EFCE0F29679BE7BE4C18C6 /* LunaMailTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 7B33BAF00CD2BE5E49340839 /* LunaMailTransport */; };
 		B7EB2775DD38C41CBD105079 /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
 		B7F55D93B9FEB969A95C8183 /* LunaPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunaPaywallBypass */; };
 		B89DC941DCBF7DBB88D2FE2C /* LunaReaderEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 48455ED52E3622FE10B6DA75 /* LunaReaderEngine */; };
 		B8A14BC5B261F66C58BF6ED0 /* LunaShareSurface in Frameworks */ = {isa = PBXBuildFile; productRef = 05BEB00D14C2BD469EC11FB7 /* LunaShareSurface */; };
 		BA4D33437C8419EB9CA78225 /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LunaModels */; };
 		BB496482363743D2266EE1EE /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
+		BB96330AEB2778127D830A98 /* LunaMailAccount in Frameworks */ = {isa = PBXBuildFile; productRef = 3C1C5EEBEEE23956FF251A3B /* LunaMailAccount */; };
 		BD5B48658A5362866AA5CF57 /* LunaPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunaPriceUI */; };
 		BDBA0CFFF11430D086BE5A66 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
 		BE529FEC68767C9B157BA455 /* LunaContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LunaContentRendering */; };
@@ -238,6 +245,7 @@
 		F35941D40835BF7824598AE9 /* LunaArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LunaArchiveReader */; };
 		F360E825848811D0E4C3BAF0 /* LunaURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LunaURLClassification */; };
 		F599702F89767DDCF2FB385C /* LunaPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunaPriceMetadata */; };
+		F6E022911E552D80CE371EB3 /* LunaMailAccount in Frameworks */ = {isa = PBXBuildFile; productRef = 3097C2C000FCEA7B5ACE23A8 /* LunaMailAccount */; };
 		F73819AA386C2618CCBCCF32 /* LunaPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunaPaywallBypass */; };
 		F9B0746CEE264B742FEFA170 /* LunaPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunaPlatforms */; };
 		FC3B05B51F7C576146ECF6CD /* LunaSocial in Frameworks */ = {isa = PBXBuildFile; productRef = DE798ED2A5DA5A986EE4B864 /* LunaSocial */; };
@@ -574,6 +582,8 @@
 				D467F392C25AA4F4DE1C5D5F /* LunaSocialUI in Frameworks */,
 				CBB76821F704AEC464650875 /* LunaIntents in Frameworks */,
 				056B75A640F952053F3EDC66 /* LunaReadingListUI in Frameworks */,
+				1D9791BC850C101BD3B152AC /* LunaMailAccount in Frameworks */,
+				AF85B8B395A4BB24759C5032 /* LunaMailTransport in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -671,6 +681,8 @@
 				71FE9DB128832A382EC0438E /* LunaSocialUI in Frameworks */,
 				375621BBEDE7DFDFCA7E7CF7 /* LunaIntents in Frameworks */,
 				CEBF52E52DB5EDC016C4BF68 /* LunaReadingListUI in Frameworks */,
+				BB96330AEB2778127D830A98 /* LunaMailAccount in Frameworks */,
+				B16E9F2CCEE262E0FE64B309 /* LunaMailTransport in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -708,6 +720,8 @@
 				354AF4B589322E401B1E5CBD /* LunaSocialUI in Frameworks */,
 				E31B09DF7960DE871F25EC71 /* LunaIntents in Frameworks */,
 				80CE7CB338F6866D7AA929AC /* LunaReadingListUI in Frameworks */,
+				43386DB52129C67C73723CEA /* LunaMailAccount in Frameworks */,
+				B6EFCE0F29679BE7BE4C18C6 /* LunaMailTransport in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -747,6 +761,8 @@
 				C1666BA7FC1EAE467E0165F4 /* LunaSocialUI in Frameworks */,
 				3171DB114CF9D5BD337B7C29 /* LunaIntents in Frameworks */,
 				C586707358D74315870A9DF6 /* LunaReadingListUI in Frameworks */,
+				F6E022911E552D80CE371EB3 /* LunaMailAccount in Frameworks */,
+				A3B17B01D056FAFF33FF8155 /* LunaMailTransport in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1011,6 +1027,8 @@
 				7445361A6C10C9E25040C4AD /* LunaSocialUI */,
 				F1D3242938BA3B48ED8EA6DD /* LunaIntents */,
 				3933ED17E10DC2C0C55B129C /* LunaReadingListUI */,
+				239B4BC2C21EA5A3A51F16EE /* LunaMailAccount */,
+				4E960E9AC07457DC10E6833B /* LunaMailTransport */,
 			);
 			productName = LunaPriceTracker;
 			productReference = 17C57D675E0712054ACE6584 /* LunaPriceTracker.app */;
@@ -1231,6 +1249,8 @@
 				7445361A6C10C9E25040C4AD /* LunaSocialUI */,
 				F1D3242938BA3B48ED8EA6DD /* LunaIntents */,
 				3933ED17E10DC2C0C55B129C /* LunaReadingListUI */,
+				182108EE181A9FAAB156FAD6 /* LunaMailAccount */,
+				7B33BAF00CD2BE5E49340839 /* LunaMailTransport */,
 			);
 			productName = Luna;
 			productReference = AA0200000000000000000001 /* Luna.app */;
@@ -1299,6 +1319,8 @@
 				F1D3242938BA3B48ED8EA6DD /* LunaIntents */,
 				3933ED17E10DC2C0C55B129C /* LunaReadingListUI */,
 				C100000000000000000000018 /* LunaTransitions */,
+				3097C2C000FCEA7B5ACE23A8 /* LunaMailAccount */,
+				8909E25ED1F6D19133F69D41 /* LunaMailTransport */,
 			);
 			productName = LunaTests;
 			productReference = AA0200000000000000000003 /* LunaTests.xctest */;
@@ -1397,6 +1419,8 @@
 				7445361A6C10C9E25040C4AD /* LunaSocialUI */,
 				F1D3242938BA3B48ED8EA6DD /* LunaIntents */,
 				3933ED17E10DC2C0C55B129C /* LunaReadingListUI */,
+				3C1C5EEBEEE23956FF251A3B /* LunaMailAccount */,
+				6BFF45ED325119736D0AE171 /* LunaMailTransport */,
 			);
 			productName = LunaDownloader;
 			productReference = E13583D77605D977B0A8FDD3 /* LunaDownloader.app */;
@@ -2937,6 +2961,21 @@
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaShareSurface;
 		};
+		182108EE181A9FAAB156FAD6 /* LunaMailAccount */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaMailAccount;
+		};
+		239B4BC2C21EA5A3A51F16EE /* LunaMailAccount */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaMailAccount;
+		};
+		3097C2C000FCEA7B5ACE23A8 /* LunaMailAccount */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaMailAccount;
+		};
 		333A451D2F6E424BF2A01F84 /* LunaDesignSystem */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
@@ -2946,6 +2985,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaReadingListUI;
+		};
+		3C1C5EEBEEE23956FF251A3B /* LunaMailAccount */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaMailAccount;
 		};
 		436F1044DB2553FED3D9DB4C /* LunaReaderUI */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -2962,6 +3006,11 @@
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaMediaDownload;
 		};
+		4E960E9AC07457DC10E6833B /* LunaMailTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaMailTransport;
+		};
 		59E17EB39B108E9054CCFBA3 /* LunaPriceUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
@@ -2971,6 +3020,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaMail;
+		};
+		6BFF45ED325119736D0AE171 /* LunaMailTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaMailTransport;
 		};
 		6EDC1D9AE1F39D473CE9B129 /* LunaReadingList */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -2991,6 +3045,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaArchiveReader;
+		};
+		7B33BAF00CD2BE5E49340839 /* LunaMailTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaMailTransport;
+		};
+		8909E25ED1F6D19133F69D41 /* LunaMailTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaMailTransport;
 		};
 		92CAEC0F8C340469B9AB25E3 /* LunaSemantic */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -24,7 +24,7 @@ articles into each other's reading lists.
   `ProfileValidation` (username 1–20 chars, contact fields ≤60).
 - `IdentityStore.swift` — `IdentityStoring`: `loadIdentity`,
   `createIdentity`, `updateProfile`. `KeychainIdentityStore` persists JSON in
-  a synchronizable generic-password item (service `com.hpiddy.luna.identity`,
+  a synchronizable generic-password item (service `com.hsanabria.luna.identity`,
   `kSecAttrSynchronizable`, AfterFirstUnlock); `InMemoryIdentityStore` for tests.
 - `FriendsStore.swift` — `friends.json` in the app group (ReadingListStore
   pattern: lock-serialized mutations, `.friendsListChanged`). `add` is
@@ -41,7 +41,7 @@ articles into each other's reading lists.
   the signature and returns the signer key for the caller's trust decision.
 - `MessageTransport.swift` — protocol (`send`/`fetchInbox`/`delete`/
   `ensureSubscription`/`availability`) + `InMemoryMessageTransport` mock.
-- `CloudKitMessageTransport.swift` — public DB of `iCloud.com.hpiddy.luna`,
+- `CloudKitMessageTransport.swift` — public DB of `iCloud.com.hsanabria.luna`,
   record type `Message` {`recipientUUID` String (queryable), `senderUUID`
   String, `payload` Bytes}. Delete treats `.unknownItem` as success (two
   devices, one identity). Subscription `inbox-<uuid>`, `.firesOnRecordCreation`,
@@ -241,14 +241,14 @@ Incoming `readingListItem`: dropped entirely when the URL is already saved
 
 - `Info.plist`: `CFBundleURLTypes` scheme `lunareader`; `UIBackgroundModes`
   audio + `remote-notification`; camera usage string covers QR scanning.
-- `Luna.entitlements`: iCloud container `iCloud.com.hpiddy.luna` + CloudKit
+- `Luna.entitlements`: iCloud container `iCloud.com.hsanabria.luna` + CloudKit
   service + `aps-environment` (+ existing app group).
 - Deployment target: **iOS 26.0** all targets (no iOS-27-only APIs; gate any
   future ones with `#available(iOS 27)`).
 
 ## CloudKit ops (NOT in code — Console steps)
 
-The container `iCloud.com.hpiddy.luna` was created by automatic signing
+The container `iCloud.com.hsanabria.luna` was created by automatic signing
 during the build-20 archive. Before messaging works:
 
 1. One-time token: `DEVELOPER_DIR=/Applications/Xcode-26.2.0.app xcrun cktool save-token --type management`
@@ -256,7 +256,7 @@ during the build-20 archive. Before messaging works:
 2. Import the prepared schema (`claudedocs/cloudkit-schema.ckdb` — record
    type, queryable indexes on `recipientUUID` + `recordID`, `_icloud`
    Create+Write grant) into BOTH environments:
-   `xcrun cktool import-schema --team-id MM5QBNLXR6 --container-id iCloud.com.hpiddy.luna --environment development --file claudedocs/cloudkit-schema.ckdb`
+   `xcrun cktool import-schema --team-id MM5QBNLXR6 --container-id iCloud.com.hsanabria.luna --environment development --file claudedocs/cloudkit-schema.ckdb`
    then `--environment production`. (If the GRANT lines are rejected by an
    older cktool, set Security Roles in the Console instead: `_icloud` =
    Create + Write on `Message`.)

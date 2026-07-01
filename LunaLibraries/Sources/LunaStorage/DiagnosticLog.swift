@@ -31,7 +31,7 @@ public final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
 
     public static let shared = DiagnosticLog()
 
-    private let queue = DispatchQueue(label: "com.hpiddy.luna.diagnosticlog")
+    private let queue = DispatchQueue(label: "com.hsanabria.luna.diagnosticlog")
     private let fileURL: URL
     private let maxBytes: Int
     private let timestampFormatter: ISO8601DateFormatter

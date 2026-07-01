@@ -28,7 +28,7 @@ public final class KeychainIdentityStore: IdentityStoring {
 
     public static let shared = KeychainIdentityStore()
 
-    private let service = "com.hpiddy.luna.identity"
+    private let service = "com.hsanabria.luna.identity"
     private let account = "identity"
 
     /// On-disk shape: keys as raw bytes alongside the profile.

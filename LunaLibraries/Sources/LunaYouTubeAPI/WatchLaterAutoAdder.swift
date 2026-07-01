@@ -15,7 +15,7 @@ public final class WatchLaterAutoAdder {
 
     public static let shared = WatchLaterAutoAdder()
 
-    private let logger = Logger(subsystem: "com.hpiddy.luna", category: "youtube")
+    private let logger = Logger(subsystem: "com.hsanabria.luna", category: "youtube")
     private let auth: GoogleAuthProviding
     private let api: YouTubeAPIProviding
 

@@ -55,7 +55,7 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
     /// layout is correct even before this hosted view's own window insets resolve.
     var topSafeAreaInset: CGFloat = 0
     /// Runs semantic embeds one at a time, off-main (the NL model isn't reentrant).
-    private let semanticQueue = DispatchQueue(label: "com.hpiddy.luna.search.semantic", qos: .userInitiated)
+    private let semanticQueue = DispatchQueue(label: "com.hsanabria.luna.search.semantic", qos: .userInitiated)
     /// Bumps on every keystroke so a late semantic result for an old query is dropped.
     private var queryToken = 0
 

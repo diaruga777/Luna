@@ -81,7 +81,7 @@ snapinsta, …) with keyless, client-side extraction.
 ## Auto-download settings
 
 `Settings → Auto-Download Media` (`AutoDownloadSettingsScreen`) has two sections, both
-stored in `AutoDownloadSettings` (App Group `group.com.hpiddy.luna`, readable by app +
+stored in `AutoDownloadSettings` (App Group `group.com.hsanabria.luna`, readable by app +
 extensions):
 
 1. **Master "Auto-download media"** toggle (`autoDownloadMediaInPreview`, **default ON**)

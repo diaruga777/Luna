@@ -357,7 +357,7 @@ allowed non-determinism is genuine network failure, which fails safely+consisten
 
 ## Background refresh (`AppDelegate`)
 
-`BGProcessingTaskRequest` id `com.hpiddy.luna.priceRefresh` (~every 12h, needs
+`BGProcessingTaskRequest` id `com.hsanabria.luna.priceRefresh` (~every 12h, needs
 network), registered + scheduled alongside the existing inbox/mail tasks; the
 identifier is in `Info.plist` `BGTaskSchedulerPermittedIdentifiers`. Handler →
 `PriceRefreshCoordinator.refreshAndNotify`. Resumable: stalest-first + per-tracker

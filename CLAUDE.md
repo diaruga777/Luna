@@ -95,7 +95,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   AND device builds. You no longer need to delete the built `.app`/`.appex` products
   before each run. (Old escape hatch if it ever resurfaces:
   `rm -rf "$DD/Build/Products/Debug-iphone"*/*.app …/*.appex`.)
-- **Do NOT pass `CODE_SIGNING_ALLOWED=NO`** — it strips the `group.com.hpiddy.luna`
+- **Do NOT pass `CODE_SIGNING_ALLOWED=NO`** — it strips the `group.com.hsanabria.luna`
   app-group entitlement, so the test host crashes at launch (early-exit, "external
   symbol") on app-group container access. Default ad-hoc signing applies the
   entitlement and the app group works on the simulator.

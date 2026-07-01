@@ -57,8 +57,8 @@ fuzzy subject phrases (swipe to delete).
 ## Background delivery
 
 `AppDelegate` registers two `BGTaskScheduler` tasks: the existing
-`com.hpiddy.luna.inboxRefresh` (`BGAppRefreshTask`, ~15 min — now also imports
-mail) and `com.hpiddy.luna.mailFetch` (`BGProcessingTask`, ~12 h,
+`com.hsanabria.luna.inboxRefresh` (`BGAppRefreshTask`, ~15 min — now also imports
+mail) and `com.hsanabria.luna.mailFetch` (`BGProcessingTask`, ~12 h,
 `requiresNetworkConnectivity`) dedicated to mail import + Kindle forwarding.
 Both identifiers are in `Info.plist` `BGTaskSchedulerPermittedIdentifiers`;
 `UIBackgroundModes` includes `fetch` + `processing`. iOS schedules these

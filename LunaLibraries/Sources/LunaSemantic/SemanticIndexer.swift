@@ -29,7 +29,7 @@ public final class SemanticIndexer {
     private static let maxChunks = 8
     private static let maxChunkChars = 800
 
-    private let queue = DispatchQueue(label: "com.hpiddy.luna.semanticindexer", qos: .utility)
+    private let queue = DispatchQueue(label: "com.hsanabria.luna.semanticindexer", qos: .utility)
     private let index = SemanticIndexStore.shared
 
     private func log(_ message: String) {

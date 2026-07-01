@@ -35,7 +35,7 @@ public final class GoogleAuthClient: NSObject, GoogleAuthProviding,
         public init(reason: String) { self.reason = reason }
     }
 
-    private let keychainService = "com.hpiddy.luna.google"
+    private let keychainService = "com.hsanabria.luna.google"
     private let keychainAccount = "oauth-tokens"
     private let scope = "https://www.googleapis.com/auth/youtube"
 

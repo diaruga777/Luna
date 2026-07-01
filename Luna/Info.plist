@@ -16,7 +16,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.hpiddy.luna.friend</string>
+			<string>com.hsanabria.luna.friend</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>lunareader</string>
@@ -24,7 +24,7 @@
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.hpiddy.luna.read</string>
+			<string>com.hsanabria.luna.read</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>lunareader</string>
@@ -48,9 +48,9 @@
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.hpiddy.luna.inboxRefresh</string>
-		<string>com.hpiddy.luna.mailFetch</string>
-		<string>com.hpiddy.luna.priceRefresh</string>
+		<string>com.hsanabria.luna.inboxRefresh</string>
+		<string>com.hsanabria.luna.mailFetch</string>
+		<string>com.hsanabria.luna.priceRefresh</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

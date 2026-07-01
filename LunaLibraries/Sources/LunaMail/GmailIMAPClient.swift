@@ -89,7 +89,7 @@ public final class GmailIMAPClient: IMAPFetching {
     }
 
     private let connection: NWConnection
-    private let queue = DispatchQueue(label: "com.hpiddy.luna.imap")
+    private let queue = DispatchQueue(label: "com.hsanabria.luna.imap")
     private var receiveBuffer = Data()
     private var tagCounter = 0
 

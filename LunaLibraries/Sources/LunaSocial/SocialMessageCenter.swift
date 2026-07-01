@@ -24,7 +24,7 @@ public final class SocialMessageCenter {
     /// index. Injected by the app (the semantic layer sits above social); nil otherwise.
     public static var shareRecorder: ((UUID, UUID, String) -> Void)?
 
-    private let logger = Logger(subsystem: "com.hpiddy.luna", category: "social")
+    private let logger = Logger(subsystem: "com.hsanabria.luna", category: "social")
     private let identityStore: IdentityStoring
     private let friendsStore: FriendsStore
     private let transport: MessageTransport

@@ -24,7 +24,7 @@ NEVER sent to Kindle; social sharing works normally.
   reachable from the fullscreen controls on device).
 - `GoogleAuthClient.swift` — Google OAuth (ASWebAuthenticationSession, PKCE
   S256, redirect = reversed client ID scheme), tokens in Keychain
-  (`com.hpiddy.luna.google`), auto-refresh. The OAuth client ID is **shipped
+  (`com.hsanabria.luna.google`), auto-refresh. The OAuth client ID is **shipped
   in the app** (`YouTubeSettings.googleClientID`, a constant); users don't
   enter one.
 - `YouTubeQuery.swift` — parses the intent's "channel:title" input: splits on
@@ -64,7 +64,7 @@ no article content) → `WatchLaterAutoAdder.videoBecameReady`. Item fields:
 Client ID field, Sign In/Out, Playlist picker (lists user's playlists +
 "Create 'Watch Later (Luna)'"), Auto-Add toggle. Footer documents the Watch
 Later API limitation and Google Cloud setup (create iOS OAuth client for
-com.hpiddy.luna + enable YouTube Data API v3).
+com.hsanabria.luna + enable YouTube Data API v3).
 
 ## Intent
 

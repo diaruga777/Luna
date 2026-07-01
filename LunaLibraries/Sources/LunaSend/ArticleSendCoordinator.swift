@@ -114,7 +114,7 @@ public final class ArticleSendCoordinator {
 
     public static let shared = ArticleSendCoordinator()
 
-    private let logger = Logger(subsystem: "com.hpiddy.luna", category: "send")
+    private let logger = Logger(subsystem: "com.hsanabria.luna", category: "send")
     private let store: ReadingListStore
     private let destinations: [ArticleDestination]
 

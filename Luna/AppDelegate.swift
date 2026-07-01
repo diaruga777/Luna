@@ -20,20 +20,20 @@ import os
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
-    private let logger = Logger(subsystem: "com.hpiddy.luna", category: "push")
+    private let logger = Logger(subsystem: "com.hsanabria.luna", category: "push")
     /// Background inbox poll — a fallback for unreliable silent pushes (it
     /// doesn't depend on the push pipeline at all).
-    private static let inboxRefreshTaskID = "com.hpiddy.luna.inboxRefresh"
+    private static let inboxRefreshTaskID = "com.hsanabria.luna.inboxRefresh"
     /// Heavier periodic task (~twice daily) that fetches new email and forwards
     /// it to Kindle, so newsletters are delivered even if the app is never
     /// opened. Separate from the inbox refresh: it needs network and runs less
     /// often.
-    private static let mailFetchTaskID = "com.hpiddy.luna.mailFetch"
+    private static let mailFetchTaskID = "com.hsanabria.luna.mailFetch"
     private static let mailFetchInterval: TimeInterval = 12 * 60 * 60
     /// Periodic task (~every 12h) that re-fetches every non-archived price
     /// tracker's store prices and fires a local notification on a first drop past
     /// threshold. Processing-class (needs network) like the mail fetch.
-    private static let priceRefreshTaskID = "com.hpiddy.luna.priceRefresh"
+    private static let priceRefreshTaskID = "com.hsanabria.luna.priceRefresh"
     private static let priceRefreshInterval: TimeInterval = 12 * 60 * 60
     private var readingListObserver: NSObjectProtocol?
 

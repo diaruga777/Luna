@@ -56,7 +56,7 @@ clock** to `UITestFixtures.baseDate` (`UITestSeeder.sectioningNow`) so fixed-dat
 fixtures land in the **Reading** section instead of Archive, **resets persisted list
 prefs** (selected filter → All, default collapsed set), and `SceneDelegate` forces
 the right root VC. No-op (production paths unchanged) when the arg is absent or in
-release. Verified live: `simctl launch com.hpiddy.luna -uiTestState mixed`.
+release. Verified live: `simctl launch com.hsanabria.luna -uiTestState mixed`.
 
 ### Screen deep-linking (`-uiTestScreen <name>`)
 

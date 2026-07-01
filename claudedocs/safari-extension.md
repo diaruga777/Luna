@@ -8,7 +8,7 @@ Tracks the URL of the active Safari tab and persists it so the SaveLink intent c
 background.js (tabs.onActivated / tabs.onUpdated)
   → browser.runtime.sendNativeMessage("application.id", {url})
   → SafariWebExtensionHandler (extension process, NSExtensionRequestHandling)
-  → App Group UserDefaults (group.com.hpiddy.luna): lastSafariURL, lastSafariURLDate
+  → App Group UserDefaults (group.com.hsanabria.luna): lastSafariURL, lastSafariURLDate
   → read by SafariURLStore (app) / SaveLinkIntent
 ```
 
@@ -19,7 +19,7 @@ background.js (tabs.onActivated / tabs.onUpdated)
 - `LunaSafari/SafariWebExtensionHandler.swift` — principal class (`NSExtensionPointIdentifier = com.apple.Safari.web-extension` in `LunaSafari/Info.plist`); writes via `SharedSafariURL`.
 - `LunaSafari/SharedSafariURL.swift` — App Group defaults writer (key constants duplicated in app-side `SafariURLStore` — no shared framework in this small project).
 
-Target: `LunaSafari`, bundle `com.hpiddy.luna.safari`, app-extension product embedded in Luna.app/PlugIns. Resources flatten into the appex root (Safari requires manifest.json at bundle root on iOS).
+Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product embedded in Luna.app/PlugIns. Resources flatten into the appex root (Safari requires manifest.json at bundle root on iOS).
 
 ## "Read in Luna" button (deep-link into the app)
 

@@ -25,9 +25,9 @@ public final class KeychainSendCredentialsStore: SendCredentialsStoring {
 
     public static let shared = KeychainSendCredentialsStore()
 
-    private let smtpService = "com.hpiddy.luna.smtp"
+    private let smtpService = "com.hsanabria.luna.smtp"
     private let smtpAccount = "smtp-password"
-    private let booxService = "com.hpiddy.luna.boox"
+    private let booxService = "com.hsanabria.luna.boox"
     private let booxAccount = "boox-token"
 
     public func smtpPassword() -> String? { read(service: smtpService, account: smtpAccount) }

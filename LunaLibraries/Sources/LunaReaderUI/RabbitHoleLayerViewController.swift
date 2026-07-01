@@ -63,6 +63,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
     private var audioOn = false
     private weak var readerChild: UIViewController?
+    /// This layer's current chrome role, tracked so a mode switch (which re-embeds the
+    /// reader child) can restore the new child's interaction to match the focus state —
+    /// the preloaded children start with interaction OFF (see `installPreloadedModeChildren`)
+    /// and only the focused layer's active child should take touches.
+    private var currentRole: RabbitHoleLayout.Role = .focused
     private var webView: WKWebView?
     private let scrollReader: ScrollReaderViewController
     private let rsvpReader: RSVPViewController
@@ -375,6 +380,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// Show/hide chrome for this layer's role. `alpha` is the layout's `chromeAlpha`
     /// (0 = focused header showing, 1 = full ancestor lips).
     public func setChrome(role: RabbitHoleLayout.Role, alpha: CGFloat) {
+        currentRole = role
         let lipAlpha = alpha
         topLip.alpha = lipAlpha
         bottomLip.alpha = lipAlpha
@@ -678,6 +684,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
                                   height: max(view.bounds.height - Self.headerHeight, 0))
         view.insertSubview(child.view, belowSubview: header)
         readerChild = child
+        // The preloaded children start non-interactive; a mode switch re-embeds a fresh
+        // child here WITHOUT going through `setChrome`, so restore its interaction to the
+        // layer's current focus state (else the whole switched-to reader is untappable —
+        // e.g. RSVP after a mode switch). Only the focused layer's active child takes touches.
+        child.view.isUserInteractionEnabled = (currentRole == .focused)
         (child as? ScrollReaderViewController)?
             .activateVisibleReader(deferFullContentUntilHostCompletion: true)
     }

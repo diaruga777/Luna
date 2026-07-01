@@ -22,6 +22,7 @@ let package = Package(
         .library(name: "LunaEpub", targets: ["LunaEpub"]),
         .library(name: "LunaSend", targets: ["LunaSend"]),
         .library(name: "LunaMail", targets: ["LunaMail"]),
+        .library(name: "LunaMailAccount", targets: ["LunaMailAccount"]),
         .library(name: "LunaDesignSystem", targets: ["LunaDesignSystem"]),
         .library(name: "LunaPlatforms", targets: ["LunaPlatforms"]),
         .library(name: "LunaMediaDownload", targets: ["LunaMediaDownload"]),
@@ -71,6 +72,7 @@ let package = Package(
         .target(name: "LunaEpub", dependencies: ["LunaModels"]),
         .target(name: "LunaSend", dependencies: ["LunaModels", "LunaStorage", "LunaEpub"]),
         .target(name: "LunaMail", dependencies: ["LunaModels", "LunaHTMLClassification", "LunaStorage"]),
+        .target(name: "LunaMailAccount", dependencies: ["LunaAppConfig", "LunaModels"]),
         .target(name: "LunaDesignSystem", dependencies: ["LunaAppConfig", "LunaModels"]),
         .target(name: "LunaPlatforms", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaStorage", "LunaDesignSystem"]),
         .target(name: "LunaMediaDownload", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
@@ -92,6 +94,7 @@ let package = Package(
         .testTarget(name: "LunaHTMLClassificationTests", dependencies: ["LunaHTMLClassification"]),
         .testTarget(name: "LunaPaywallBypassTests", dependencies: ["LunaPaywallBypass"]),
         .testTarget(name: "LunaPriceMetadataTests", dependencies: ["LunaPriceMetadata"]),
+        .testTarget(name: "LunaMailAccountTests", dependencies: ["LunaMailAccount"]),
     ],
     // Swift 5 language mode to match the app target — this is a structural
     // extraction, not a Swift 6 strict-concurrency migration (a separate effort).

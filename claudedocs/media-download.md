@@ -1,6 +1,6 @@
 # Social Media Download to Photos
 
-Downloads still images, GIFs, and videos from **X, Instagram, and TikTok** posts and
+Downloads still images, GIFs, and videos from **X, Instagram, TikTok, and Facebook** posts and
 saves them to the user's photo library (PhotoKit). If a post has multiple media items,
 the **first** is taken. Mirrors public web downloaders (twittervideodownloader,
 snapinsta, …) with keyless, client-side extraction.
@@ -66,6 +66,14 @@ snapinsta, …) with keyless, client-side extraction.
     saved a still from every video reel. Fallbacks (in order): legacy regex
     `assets(fromHTML:)` (`"video_url"` / `"display_url"` / `og:` tags; `unescape` fixes
     `&`,`\/`,`&amp;`), then the post page's `og:` tags via `facebookexternalhit/1.1`.
+  - `FacebookMediaParser` — the resolver fetches the **full page with a browser UA
+    FIRST** and parses the real playable video URL out of the inline JSON
+    (`browser_native_hd_url` / `playable_url_quality_hd` / `hd_src` first, then the SD
+    variants; `unescape` fixes `\/`,`&`,`&amp;`), then og:video, then the og:image
+    poster. Same fix as Instagram: a reel's crawler `og:` tags expose ONLY the poster
+    still behind a login wall, so the OLD og-first `resolveFacebook` saved a static image
+    from every video reel. If the browser-UA page yields nothing it falls back to the
+    `facebookexternalhit/1.1` og-unfurl (video, then poster image).
   - Requests use a desktop Safari UA (`MediaDownloadHTTP.browserUserAgent`).
 - **`MediaDownloadService.swift`** — `downloadFirstMediaToPhotos(from:onProgress:)`:
   guards `supports`, requests add-only auth FIRST, resolves, downloads the first asset,

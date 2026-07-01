@@ -80,11 +80,24 @@ public struct SocialMediaResolver: SocialMediaResolving {
         return []
     }
 
-    /// Facebook's public post markup exposes direct media in Open Graph tags to
-    /// unfurlers. Prefer video (including reels) and fall back to its preview image.
-    /// This is intentionally best-effort: inaccessible/private posts simply expose
-    /// no asset and the caller keeps the saved link usable.
+    /// Facebook reels/videos: the real playable video URL lives in the page's embedded
+    /// JSON (`browser_native_hd_url` / `playable_url` / …), NOT the Open Graph tags —
+    /// exactly like Instagram, a reel's crawler `og:` tags expose ONLY the poster still
+    /// behind a login wall, so the OLD og-first order saved a still from every video
+    /// reel. So fetch the FULL page with a browser UA FIRST and parse the video URL out
+    /// of the JSON; only if that yields nothing fall back to the og-unfurl tags
+    /// (video, then image). Best-effort: inaccessible/private posts expose no asset and
+    /// the caller keeps the saved link usable.
     private func resolveFacebook(url: URL) async -> [MediaAsset] {
+        // Browser-UA page: carries the playable video URL in inline JSON.
+        if let data = await fetch(htmlRequest(url)),
+           let html = String(data: data, encoding: .utf8) {
+            let assets = FacebookMediaParser.assets(fromHTML: html)
+            if !assets.isEmpty { return assets }
+        }
+
+        // Fallback: the og-unfurl view (`facebookexternalhit`) — video if it exposes
+        // one, else the poster image (better than nothing when the page is walled).
         guard let data = await fetch(metaScrapeRequest(url)),
               let html = String(data: data, encoding: .utf8) else { return [] }
         if let videoURL = OpenGraphMediaParser.content(named: "og:video", in: html)
@@ -325,6 +338,56 @@ public enum InstagramMediaParser {
     }
 
     /// Unescapes the JSON/HTML-encoded URLs Instagram embeds in markup.
+    public static func unescape(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "\\u0026", with: "&")
+            .replacingOccurrences(of: "\\/", with: "/")
+            .replacingOccurrences(of: "&amp;", with: "&")
+    }
+
+    private static func firstGroup(in html: String, pattern: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
+            return nil
+        }
+        let range = NSRange(html.startIndex..., in: html)
+        guard let match = regex.firstMatch(in: html, range: range), match.numberOfRanges > 1,
+              let group = Range(match.range(at: 1), in: html) else { return nil }
+        let value = String(html[group])
+        return value.isEmpty ? nil : value
+    }
+}
+
+/// Parses a Facebook reel/video/post page into a single media asset (video preferred).
+/// Facebook inlines the real playable video URL in JSON blobs on the page; a walled
+/// reel's `og:` tags only carry the poster still, so those JSON keys are the reliable
+/// keyless source for the actual video (mirrors public FB downloaders).
+public enum FacebookMediaParser {
+    public static func assets(fromHTML html: String) -> [MediaAsset] {
+        // Playable video URL, HD first. Facebook uses several key names across its
+        // page variants; try them in quality order. Values are JSON string literals
+        // with escaped slashes / ampersands.
+        for key in ["browser_native_hd_url", "playable_url_quality_hd", "hd_src",
+                    "browser_native_sd_url", "playable_url", "sd_src"] {
+            if let raw = firstGroup(in: html, pattern: "\"\(key)\":\"(.*?)\""),
+               let url = URL(string: unescape(raw)) {
+                return [MediaAsset(url: url, kind: .video)]
+            }
+        }
+        // Open Graph video, then the poster image, as a last resort.
+        for pattern in [#"property="og:video(?::secure_url|:url)?" content="(.*?)""#] {
+            if let raw = firstGroup(in: html, pattern: pattern),
+               let url = URL(string: unescape(raw)) {
+                return [MediaAsset(url: url, kind: .video)]
+            }
+        }
+        if let raw = firstGroup(in: html, pattern: #"property="og:image" content="(.*?)""#),
+           let url = URL(string: unescape(raw)) {
+            return [MediaAsset(url: url, kind: .image)]
+        }
+        return []
+    }
+
+    /// Unescapes the JSON/HTML-encoded URLs Facebook embeds in markup.
     public static func unescape(_ string: String) -> String {
         string
             .replacingOccurrences(of: "\\u0026", with: "&")

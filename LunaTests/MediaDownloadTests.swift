@@ -197,6 +197,54 @@ final class MediaDownloadTests: XCTestCase {
         ])
     }
 
+    func testFacebookParserPrefersPlayableVideoOverPosterImage() {
+        // A reel page: only an og:image poster in the meta tags, but the real playable
+        // video URL is in the inline JSON. The video must win (the bug: it saved the
+        // poster still). URL is JSON-escaped (\/ and &).
+        let html = """
+        <html><head>
+        <meta property="og:image" content="https://scontent.fb.com/poster.jpg">
+        </head><body>
+        <script>{"browser_native_sd_url":"https:\\/\\/video.fb.com\\/sd.mp4?a=1\\u0026b=2",
+        "browser_native_hd_url":"https:\\/\\/video.fb.com\\/hd.mp4?a=1\\u0026b=2"}</script>
+        </body></html>
+        """
+        XCTAssertEqual(
+            FacebookMediaParser.assets(fromHTML: html),
+            [MediaAsset(url: URL(string: "https://video.fb.com/hd.mp4?a=1&b=2")!, kind: .video)])
+    }
+
+    func testFacebookParserFallsBackToPosterWhenNoVideo() {
+        let html = """
+        <html><head>
+        <meta property="og:image" content="https://scontent.fb.com/poster.jpg">
+        </head></html>
+        """
+        XCTAssertEqual(
+            FacebookMediaParser.assets(fromHTML: html),
+            [MediaAsset(url: URL(string: "https://scontent.fb.com/poster.jpg")!, kind: .image)])
+    }
+
+    func testResolverUsesFacebookPlayableVideoFromPage() async {
+        // The full page (browser UA) carries the JSON video URL; even though a poster
+        // og:image is present, the resolver returns the actual video.
+        let html = Data("""
+        <html><head>
+        <meta property="og:image" content="https://scontent.fb.com/poster.jpg">
+        </head><body>
+        <script>{"playable_url":"https:\\/\\/video.fb.com\\/reel.mp4"}</script>
+        </body></html>
+        """.utf8)
+        let resolver = SocialMediaResolver(fetch: { _ in html })
+
+        let assets = await resolver.resolveAssets(
+            for: URL(string: "https://www.facebook.com/reel/123")!)
+
+        XCTAssertEqual(assets, [
+            MediaAsset(url: URL(string: "https://video.fb.com/reel.mp4")!, kind: .video),
+        ])
+    }
+
     func testResolverReturnsEmptyForUnsupported() async {
         let resolver = SocialMediaResolver(fetch: { _ in Data() })
         let assets = await resolver.resolveAssets(for: URL(string: "https://example.com/x")!)

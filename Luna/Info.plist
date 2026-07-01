@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LunaAppGroupID</key>
+	<string>$(APP_GROUP_ID)</string>
+	<key>LunaICloudContainerID</key>
+	<string>$(ICLOUD_CONTAINER_ID)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>Luna uses the camera to scan friends' QR codes, and the front camera to estimate which word you're reading so audio and RSVP playback can start where you left off (toggleable in Settings).</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Luna saves photos, GIFs, and videos you download from social posts to your photo library.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.hpiddy.luna.friend</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lunareader</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.hpiddy.luna.read</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lunareader</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>youtube</string>
+		<string>twitter</string>
+		<string>x</string>
+		<string>bluesky</string>
+		<string>reddit</string>
+		<string>spotify</string>
+		<string>music</string>
+		<string>podcasts</string>
+		<string>tiktok</string>
+		<string>snssdk1233</string>
+		<string>instagram</string>
+		<string>fb</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.hpiddy.luna.inboxRefresh</string>
+		<string>com.hpiddy.luna.mailFetch</string>
+		<string>com.hpiddy.luna.priceRefresh</string>
+	</array>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>remote-notification</string>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
+</dict>
+</plist>

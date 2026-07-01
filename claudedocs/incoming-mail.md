@@ -5,7 +5,7 @@ reading-list items. Reuses the send-to-Kindle Gmail account + app password.
 Runs on launch/foreground AND on a background schedule (so newsletters reach
 Kindle even if the app is never opened).
 
-## Key files (`Lune/Mail/`)
+## Key files (`Luna/Mail/`)
 
 - **`GmailIMAPClient`** (`IMAPFetching`): hand-rolled minimal IMAP4rev1 over
   `NWConnection` TLS to `imap.gmail.com:993`. `LOGIN` (quoted account + app
@@ -37,7 +37,7 @@ Kindle even if the app is never opened).
   `lastUID` + `uidValidity`.
 - **`IncomingMailImporter`** (`.shared`): if configured, fetches new mail and
   saves each message **as an article** (the email body IS the content;
-  `lunemail://<uid>` item + `saveContent`), falling back to the first URL when
+  `lunamail://<uid>` item + `saveContent`), falling back to the first URL when
   there's no usable body. Items are tagged `captureSource: .email`; auto-send is
   then handled by `ArticleSendCoordinator.articleBecameReady` per the
   destination's email-source setting (Kindle's reuses `autoSendToKindle`; see
@@ -57,8 +57,8 @@ fuzzy subject phrases (swipe to delete).
 ## Background delivery
 
 `AppDelegate` registers two `BGTaskScheduler` tasks: the existing
-`com.hpiddy.lune.inboxRefresh` (`BGAppRefreshTask`, ~15 min — now also imports
-mail) and `com.hpiddy.lune.mailFetch` (`BGProcessingTask`, ~12 h,
+`com.hpiddy.luna.inboxRefresh` (`BGAppRefreshTask`, ~15 min — now also imports
+mail) and `com.hpiddy.luna.mailFetch` (`BGProcessingTask`, ~12 h,
 `requiresNetworkConnectivity`) dedicated to mail import + Kindle forwarding.
 Both identifiers are in `Info.plist` `BGTaskSchedulerPermittedIdentifiers`;
 `UIBackgroundModes` includes `fetch` + `processing`. iOS schedules these

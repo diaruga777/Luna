@@ -43,7 +43,7 @@ cosine threshold via the pure `threshold(forSensitivity:)`: `strictestThreshold`
 old flat 0.55 so suggestions are less aggressive even at "Often". `bestMatch`
 takes the threshold explicitly (the store stays pure/threshold-agnostic).
 
-## Key files (`Lune/Social/`)
+## Key files (`Luna/Social/`)
 
 - **`SemanticSharingSettings`** — `sensitivity` (0...1; default 0 = off),
   `isEnabled` (`sensitivity > 0`), `similarityThreshold` + pure
@@ -77,7 +77,7 @@ takes the threshold explicitly (the store stays pure/threshold-agnostic).
 
 ## Tests
 
-`LuneTests/SemanticIndexStoreTests.swift` — cosine, maxChunkSimilarity, bestMatch
+`LunaTests/SemanticIndexStoreTests.swift` — cosine, maxChunkSimilarity, bestMatch
 (close/none/already-shared), needs-vectors; `SemanticSensitivityTests` — the
 sensitivity→threshold mapping (monotonic + clamped).
 

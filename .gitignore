@@ -1,10 +1,10 @@
 
 # Snapshot test diff artifacts
-LuneTests/ReferenceImages/*.actual.png
+LunaTests/ReferenceImages/*.actual.png
 
 # SwiftPM build artifacts
 .build/
-LuneLibraries/.build/
+LunaLibraries/.build/
 
 # DerivedData
 DerivedData/

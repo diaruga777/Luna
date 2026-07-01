@@ -71,10 +71,10 @@ Registry `handlers = [.facebook, .googleNews, .appleNews, .shorteners(redirectSh
 
 ### Tests (Stage 1: +30, suite 786 → 816, all green)
 
-- `LuneTests/ClassifierTests.swift` (23) — KnownSite table over named shops/news/social (positives + negatives), platform-first ordering, YouTube channel page ≠ video, URL-only miss → undetermined, heuristic structured/OG product, the stray-`addToCart` article false-positive guard, paywall-locked HTML, no-signal article → undetermined, document-flag-wins, determinism/parity.
-- `LuneTests/URLUnwrapperTests.swift` (14) — offline facebook (fbrpc + l.php shim, fb-target rejected) + google-classic; `.fetch` wrappers left offline; tracking-strip; apple.news fetch (+ News+ exclusive unchanged); google-new batchexecute (mock 2 round-trips); shortener cross-host vs same-host; ordinary URL does no network. Uses a `URLProtocol` mock session.
-- `LuneTests/PlatformRecognizerTests.swift` (13) — data-driven sweep over real example URLs (youtube/x/instagram/tiktok/facebook/reddit/bluesky/spotify/apple) with expected platform + itemID + kind, plus negatives, plus the derived `platformHosts` gate.
-- Fixtures: `LuneTests/Fixtures/classifier-article-stray-addtocart.html`, `classifier-paywall-locked.html` (+ reuses `Fixtures/Products/*`). Fixtures load by file path (`BypassFixtures.html`), not bundled resources.
+- `LunaTests/ClassifierTests.swift` (23) — KnownSite table over named shops/news/social (positives + negatives), platform-first ordering, YouTube channel page ≠ video, URL-only miss → undetermined, heuristic structured/OG product, the stray-`addToCart` article false-positive guard, paywall-locked HTML, no-signal article → undetermined, document-flag-wins, determinism/parity.
+- `LunaTests/URLUnwrapperTests.swift` (14) — offline facebook (fbrpc + l.php shim, fb-target rejected) + google-classic; `.fetch` wrappers left offline; tracking-strip; apple.news fetch (+ News+ exclusive unchanged); google-new batchexecute (mock 2 round-trips); shortener cross-host vs same-host; ordinary URL does no network. Uses a `URLProtocol` mock session.
+- `LunaTests/PlatformRecognizerTests.swift` (13) — data-driven sweep over real example URLs (youtube/x/instagram/tiktok/facebook/reddit/bluesky/spotify/apple) with expected platform + itemID + kind, plus negatives, plus the derived `platformHosts` gate.
+- Fixtures: `LunaTests/Fixtures/classifier-article-stray-addtocart.html`, `classifier-paywall-locked.html` (+ reuses `Fixtures/Products/*`). Fixtures load by file path (`BypassFixtures.html`), not bundled resources.
 
 ## Stage 2 — Processing components (DONE)
 
@@ -233,7 +233,7 @@ Stage 4 pins the pipeline with a named-site fixture/parity matrix, removes the l
 Stage-1/3 shims, and folds the remaining duplicate sources into one each. Suite is
 green; Release (generic/iOS) compiles.
 
-### Named-site fixtures + the parity table (`LuneTests/NamedSiteParityTests.swift`)
+### Named-site fixtures + the parity table (`LunaTests/NamedSiteParityTests.swift`)
 
 A single data-driven table drives the REAL `IngestPipeline.process` (so
 `URLUnwrapper` → `Classifier` → per-kind processing all run) with a mock `HTMLFetching`
@@ -333,7 +333,7 @@ pipeline). Suite → 852, all green; Release (all extension targets) compiles.
   extensions used to save the tracker silently + a checkmark. FIX: the driver's `.product`
   case PRESENTS the SAME `PriceTrackingViewController` the main app shows, hosted in the
   extension via `PriceTrackingHost.extension` (Done chrome). The editor + its small deps
-  (`AlertThresholdSlider`, `PriceTrackingManager`, `InAppBrowser`) MOVED from `Lune/` into
+  (`AlertThresholdSlider`, `PriceTrackingManager`, `InAppBrowser`) MOVED from `Luna/` into
   `ShareKit/` (compiled into all targets); the one main-app-only call ("Read instead" →
   `ReadingListIngestor.saveAsArticle`) is now an injected closure — a static
   `PriceTrackingViewController.defaultSaveAsArticle` the app installs at launch, a re-append
@@ -350,7 +350,7 @@ pipeline). Suite → 852, all green; Release (all extension targets) compiles.
   native reader on extract). `SurfaceParityTests` caught this divergence and forced the
   collapse.
 
-### Cross-surface parity tests (`LuneTests/SurfaceParityTests.swift`)
+### Cross-surface parity tests (`LunaTests/SurfaceParityTests.swift`)
 
 Drives the SAME nine example links — amazon, nytimes, wsj, an fbrpc Facebook link, an
 apple.news link, a Google News link, youtube, instagram, x — through the MAIN-APP source AND

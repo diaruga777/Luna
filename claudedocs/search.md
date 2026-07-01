@@ -15,8 +15,8 @@ The list's nav bar is hidden **synchronously up front** (`setNavigationBarHidden
 
 ## Key files
 
-- `Lune/Search/SearchViewController.swift` — the UI. Bottom search field (focuses in `viewDidAppear`); an **X to its left** exits (`exitSearch` → `engine.release()` + dismiss); the field's inline **clear (x)** is `clearButtonMode = .whileEditing`. Results render in a `UITableView` ABOVE the field (table pinned top→`bar.top`; the bar pinned to `view.keyboardLayoutGuide.topAnchor` so it rides above the keyboard). Rows reuse `ReadingListItemCell`.
-- `Lune/Search/ReadingListSearchEngine.swift` — `ReadingListSearching`. Two streams:
+- `Luna/Search/SearchViewController.swift` — the UI. Bottom search field (focuses in `viewDidAppear`); an **X to its left** exits (`exitSearch` → `engine.release()` + dismiss); the field's inline **clear (x)** is `clearButtonMode = .whileEditing`. Results render in a `UITableView` ABOVE the field (table pinned top→`bar.top`; the bar pinned to `view.keyboardLayoutGuide.topAnchor` so it rides above the keyboard). Rows reuse `ReadingListItemCell`.
+- `Luna/Search/ReadingListSearchEngine.swift` — `ReadingListSearching`. Two streams:
   - **String** (`stringMatches`): an in-memory `[SearchEntry]` haystack (pre-lowercased title/metadata + extracted body), built once per session in `prepare()` off-main. Pure `rank(needle:in:)` returns **title/metadata hits first, then body-only hits** (unit-tested in `ReadingListSearchEngineTests`). Instant per keystroke.
   - **Semantic** (`semanticMatches`): embeds the query via `SemanticEmbedder`, then `SemanticIndexStore.nearestItems(toVectors:threshold:excluding:limit:)`. Threshold `semanticThreshold = 0.45` (tunable; query→content cosine runs lower than the item→item sharing threshold), limit 40.
 - Reuse seam: `ReadingListItemPresenting` (in SearchViewController.swift, implemented by `ReadingListViewController`) — `configureItemCell`, `open(_:presenter:)`, `searchResultMenu(for:sourceView:presenter:onChange:)`. So search rows look/behave exactly like list rows.

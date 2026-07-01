@@ -1,6 +1,6 @@
 # Audit 07 — Input Surfaces + UI Outcome Handling
 
-Scope: every way a URL enters Lune and how each surface presents the pipeline's
+Scope: every way a URL enters Luna and how each surface presents the pipeline's
 outcome. Owner's rule: the SAME pipeline runs across ALL surfaces; each surface is
 a thin presenter; no surface hangs.
 
@@ -31,7 +31,7 @@ There are SIX entry surfaces. Two distinct pipeline "depths" exist:
 | In-app "Save a Link" (typed/pasted URL) | `ReadingListViewController.addTapped` → `handleSavePress(source:.manual)` | **full** | list row; price tracker via `.priceTrackerSavedInteractively` notification → push `PriceTrackingViewController`; tap → `open(_:)` |
 | App intents (Save Link, Safari page, platform finders, Save-from-App) | `IntentIngestHelper.handleSavePressWithTimeout` → `handleSavePress(source:.appIntent)` (12 s task-group timeout) | **full** | none in-process (background); item appears in list later; tracker push fires only if app is foregrounded via notification |
 | Share extension (`com.apple.share-services`) | `ShareViewController.routeSavedOrReader` → `ingestArticleThenComplete` (article) / `autoDownloadThenComplete` (non-textual) | **decider only** + ad-hoc `NonTextualContent.detect` gate | `finishArticleIngest`: `.article`→checkmark, `.priceTracker`→save-silent+checkmark, `.needsArchive`→`ArchiveWebReaderViewController`, `.failed`→checkmark |
-| Action extension "Read in Lune" (`com.apple.ui-services`) | `ShareViewController.routeSavedOrReader` → `presentReader` → `ShareReaderViewController.ingestAndPresent` (article) / `presentSavedNonTextual` (non-textual) | **decider only**, NO timeout | `ShareReaderViewController`: `.article`→`ReaderViewController`, `.priceTracker`→confirmation card, `.needsArchive`→archive reader, `.failed`→error card |
+| Action extension "Read in Luna" (`com.apple.ui-services`) | `ShareViewController.routeSavedOrReader` → `presentReader` → `ShareReaderViewController.ingestAndPresent` (article) / `presentSavedNonTextual` (non-textual) | **decider only**, NO timeout | `ShareReaderViewController`: `.article`→`ReaderViewController`, `.priceTracker`→confirmation card, `.needsArchive`→archive reader, `.failed`→error card |
 | Friend share (incoming) | `SocialMessageCenter.process(.readingListItem)` → `startIngest` → `ReadingListIngestor.ingest(source:.friendShare)` | **full** | none (background); notification only; tap later → `open(_:)` |
 | Friend share (outgoing via people-row) | `ShareViewController.handleFriendShare` → `PendingFriendShareWriter.enqueue` → main app `drainPendingFriendShares` | none (queue only) | `complete()` immediately |
 

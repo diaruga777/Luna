@@ -9,12 +9,12 @@ Files audited (paths absolute under `/Users/hsp/Desktop/monorepo/production/ios-
 `ReaderKit/PlatformClassifier.swift`, `ReaderKit/NonTextualContent.swift`,
 `ReaderKit/YouTubeURL.swift`, `ReaderKit/ContentPlatform.swift`,
 `ReaderKit/MediaItemKey.swift`, `ReaderKit/ReadingListItem.swift`,
-`ReaderKit/ArticleIngestDecider.swift`, `Lune/Platforms/PlatformRegistry.swift`,
-`Lune/Platforms/PlatformModule.swift`, all `Lune/Platforms/**` modules,
-`Lune/ReadingList/ReadingListIngestor.swift`, `Lune/ReadingList/PasteboardSuggester.swift`,
+`ReaderKit/ArticleIngestDecider.swift`, `Luna/Platforms/PlatformRegistry.swift`,
+`Luna/Platforms/PlatformModule.swift`, all `Luna/Platforms/**` modules,
+`Luna/ReadingList/ReadingListIngestor.swift`, `Luna/ReadingList/PasteboardSuggester.swift`,
 `ShareKit/ShareViewController.swift`, `ShareKit/ShareReaderViewController.swift`,
-`ShareKit/SharedReadingListAppender.swift`, `Lune/Social/SocialMessageCenter.swift`,
-`LuneSafari/*`, the `Lune/Intents/*` save/find intents, and the relevant `LuneTests/*`.
+`ShareKit/SharedReadingListAppender.swift`, `Luna/Social/SocialMessageCenter.swift`,
+`LunaSafari/*`, the `Luna/Intents/*` save/find intents, and the relevant `LunaTests/*`.
 
 ---
 
@@ -87,7 +87,7 @@ classification, live for rendering), and `YouTubeURL` (shared, called by both).
 `mediaSourceService`, legacy `youtubeVideoID`/`channelName`). Computed
 `contentPlatform` (falls back to `.youtube` for legacy items with a `youtubeVideoID`),
 `isPlatformItem`, `isURLlessMedia`, `isYouTubeVideo`. `ContentPlatform` enum +
-`MusicProvider`. `MediaItemKey` builds the synthetic `lunemusic://`/`lunepodcast://`
+`MusicProvider`. `MediaItemKey` builds the synthetic `lunamusic://`/`lunapodcast://`
 key for URL-less media items.
 
 ### Where recognition is invoked, per surface
@@ -101,7 +101,7 @@ key for URL-less media items.
 | Action ext (reader mode) | `ShareViewController.swift:288` | `NonTextualContent.detect` | guards: platform → `presentSavedNonTextual`, else `presentReader` | ✅ |
 | **Action ext inline reader** | **`ShareReaderViewController.swift:73-104`** | **NONE** — calls `ArticleIngestDecider.decide(url:)` directly | **no platform/YT guard at all** | ❌ |
 | Intents (SaveLink / platform / find / Safari page) | → `ReadingListIngestor.handleSavePress` → `ingest` | shared ingest path | ✅ |
-| Safari extension | `LuneSafari/*` records URL only; shortcut → save intent → `ingest` | shared ingest path | ✅ |
+| Safari extension | `LunaSafari/*` records URL only; shortcut → save intent → `ingest` | shared ingest path | ✅ |
 | Friend receive (CloudKit) | `SocialMessageCenter.swift:54,~344` | `startIngest` → `ReadingListIngestor.shared.ingest` | shared ingest path | ✅ |
 
 ### The single "shared decider" is platform-blind
@@ -308,7 +308,7 @@ Concrete cases to assert (`expected platform`, and `itemID` where deterministic)
 - **Apple** (`.audio`): `https://music.apple.com/us/album/x/1?i=2` →music/apple, id `2`;
   `https://podcasts.apple.com/us/podcast/x/id1?i=2` →podcast/apple.
 - **Negatives**: `https://en.wikipedia.org/wiki/Swift`, `https://www.nytimes.com/2026/01/01/story.html`,
-  `"not a url"`, `mailto:x@y.com`, `lunedoc://<uuid>` → all nil.
+  `"not a url"`, `mailto:x@y.com`, `lunadoc://<uuid>` → all nil.
 
 Plus a **parity test** asserting `recognize` is what each surface uses: e.g.
 `ArticleIngestDecider.decide` returns `.platform` (never `.article`) for every

@@ -1,12 +1,12 @@
 # Content Platforms
 
-Lune accepts and renders links from many platforms beyond plain articles:
+Luna accepts and renders links from many platforms beyond plain articles:
 YouTube, X, Bluesky, Reddit, TikTok, Instagram, Facebook, plus provider-agnostic
 **music** and **podcast** items (Spotify / Apple). A recognized platform URL is
 saved as a no-content `.ready` item (NEVER "Couldn't Load") and rendered with a
 platform glyph + creator; tapping runs a launch ladder.
 
-## Architecture (`Lune/Platforms/`, enums in `ReaderKit/`)
+## Architecture (`Luna/Platforms/`, enums in `ReaderKit/`)
 
 - **`ContentPlatform`** (ReaderKit) — `youtube/x/bluesky/reddit/tiktok/instagram/
   facebook/music/podcast`. `MusicProvider` — `apple/spotify`. (In ReaderKit so
@@ -86,7 +86,7 @@ play them); Spotify uses one app/scheme for both.
 
 **URL-less items** (no shareable http URL) come from `SaveMusicItemIntent`/
 `SavePodcastItemIntent` (now-playing OCR via the shortcut). Keyed by a synthetic
-`lunemusic://`/`lunepodcast://` (`MediaItemKey`); `ReadingListStore.
+`lunamusic://`/`lunapodcast://` (`MediaItemKey`); `ReadingListStore.
 createURLlessMediaItem`. They share via the CloudKit **`mediaItem`** case
 (`MessageBody.mediaItem(kind:creator:title:)` + `SocialMessageCenter.
 sendMediaItem`/receive), not as URLs. URL-based platform items share for free via
@@ -104,7 +104,7 @@ The OCR-driven capture flow (current app → screenshot → scan text → the ma
 (`BundledShortcut`); the `.shortcut` binary can't be generated in code. **Pending
 manual step.**
 
-## Tests (`LuneTests/`)
+## Tests (`LunaTests/`)
 
 `PlatformRegistryTests`, `BlueskyLinkTests`, `PlatformParsersTests` (X/TikTok/
 Reddit/Instagram/Facebook), `MediaPlatformTests` (parse/scheme/search-links/

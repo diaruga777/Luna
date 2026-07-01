@@ -7,7 +7,7 @@ snapinsta, …) with keyless, client-side extraction.
 
 ## Entry points
 
-1. **Action extension ("Lune it")** — `ShareKit/SavedNonTextualViewController` shows a
+1. **Action extension ("Luna it")** — `ShareKit/SavedNonTextualViewController` shows a
    **fixed-height inline media preview** for X/Instagram/TikTok/Facebook posts (gated on
    `MediaDownloadablePlatform.supports`). Unlike the old static-poster preview, it
    downloads the **actual media file** and shows it inline, driven by a small **state
@@ -81,7 +81,7 @@ snapinsta, …) with keyless, client-side extraction.
 ## Auto-download settings
 
 `Settings → Auto-Download Media` (`AutoDownloadSettingsScreen`) has two sections, both
-stored in `AutoDownloadSettings` (App Group `group.com.hpiddy.lune`, readable by app +
+stored in `AutoDownloadSettings` (App Group `group.com.hpiddy.luna`, readable by app +
 extensions):
 
 1. **Master "Auto-download media"** toggle (`autoDownloadMediaInPreview`, **default ON**)
@@ -107,8 +107,8 @@ the main app re-ingests it. Note: the share extension has its OWN Photos permiss
 
 ## Permissions
 
-`NSPhotoLibraryAddUsageDescription` is in both `Lune/Info.plist` and
-`Lune Action Extension/Info.plist`.
+`NSPhotoLibraryAddUsageDescription` is in both `Luna/Info.plist` and
+`Luna Action Extension/Info.plist`.
 
 ## Caveats (best-effort, like the web tools)
 
@@ -120,6 +120,6 @@ is not guaranteed end-to-end. Twitter "GIFs" are mp4 and save as videos.
 
 ## Tests
 
-`LuneTests/MediaDownloadTests.swift` — platform support, X/TikTok/Instagram parsers
+`LunaTests/MediaDownloadTests.swift` — platform support, X/TikTok/Instagram parsers
 (incl. fallbacks + unescape), `fileExtension` mapping, and resolver dispatch via an
 injected fetch. Network is not hit.

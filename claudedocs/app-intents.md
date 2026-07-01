@@ -1,21 +1,21 @@
-# App Intents (`Lune/Intents/`)
+# App Intents (`Luna/Intents/`)
 
 All save actions are `AppIntent`s. They appear in the Shortcuts **action search**
-when discoverable; the ones in `LuneShortcuts` (`AppShortcutsProvider`) also show
+when discoverable; the ones in `LunaShortcuts` (`AppShortcutsProvider`) also show
 prominently at the top of the app's Shortcuts page + Spotlight.
 
 > **Hard limit: an `AppShortcutsProvider` may list AT MOST 10 `AppShortcut`s.**
 > Exceeding it is a HALTING build error in `appintentsmetadataprocessor` — and
 > then NO AppIntents metadata is exported at all (every intent disappears from
-> Shortcuts). Keep `LuneShortcuts.appShortcuts` ≤ 10.
+> Shortcuts). Keep `LunaShortcuts.appShortcuts` ≤ 10.
 
 To check what's actually registered, inspect the built metadata:
-`Lune.app/Metadata.appintents/extract.actionsdata` (JSON; `autoShortcuts` = the
+`Luna.app/Metadata.appintents/extract.actionsdata` (JSON; `autoShortcuts` = the
 provider list, `actions` = all discoverable intents).
 
-## The 10 prominent App Shortcuts (`LuneShortcuts.swift`)
+## The 10 prominent App Shortcuts (`LunaShortcuts.swift`)
 
-`LuneSafariPageIntent`, `SaveLinkIntent`, `FindYouTubeVideoIntent`,
+`LunaSafariPageIntent`, `SaveLinkIntent`, `FindYouTubeVideoIntent`,
 `FindBlueskyPostIntent`, `FindRedditPostIntent`, `SaveXPostIntent`,
 `SaveTikTokIntent`, `SaveInstagramPostIntent`, `SaveFromAppIntent`,
 `ScreenAnalysisPromptIntent`. (Save Song / Save Podcast / Save Facebook are

@@ -1,0 +1,753 @@
+//
+//  ReadingListStore.swift
+//  Luna
+//
+
+import LunaAppConfig
+import LunaURLClassification
+import LunaModels
+import Foundation
+
+public extension Notification.Name {
+    /// Posted whenever the reading list changes (add/update/delete).
+    public static let readingListChanged = Notification.Name("readingListChanged")
+}
+
+/// Persists the reading list as JSON in the shared App Group container so both
+/// the app and the SaveLink intent (which may run while the app is backgrounded)
+/// see the same data. Reads fresh from disk on every operation — simple over fast.
+public final class ReadingListStore {
+    public static let shared = ReadingListStore()
+
+    public static let appGroupID = AppConfig.appGroupID
+
+    private let fileManager = FileManager.default
+    private let overrideContainerURL: URL?
+
+    /// Serializes read-modify-write mutations WITHIN this process.
+    private let mutationLock = NSLock()
+    /// Serializes read-modify-write mutations ACROSS processes (app, SaveLink
+    /// intent, share/action extensions all write `readingList.json`): without it,
+    /// two processes that load → modify → save concurrently silently lose one
+    /// side's update. Every mutation runs its read+modify+write inside one writing
+    /// coordination via `coordinatedMutate`/`coordinatedUpdate`.
+    private let fileCoordinator = NSFileCoordinator()
+
+    /// Refcount for downloaded article images (shared `Articles/img-<hash>` files):
+    /// a saved item owns the images its content references, so deleting the item frees
+    /// them — unless another save or preloaded page still references the same image.
+    private let imageReferences: ImageReferenceStore
+
+    /// The shared store uses the App Group container; tests pass a scratch
+    /// directory so they never touch (or wipe) real user data.
+    public init(containerURL: URL? = nil) {
+        self.overrideContainerURL = containerURL
+        self.imageReferences = ImageReferenceStore(containerURL: containerURL)
+    }
+
+    private var containerURL: URL {
+        if let overrideContainerURL { return overrideContainerURL }
+        // The App Group container is provisioned for this app; if it's missing the
+        // build is misconfigured and nothing works anyway, so fall back to temp.
+        return fileManager.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupID)
+            ?? fileManager.temporaryDirectory
+    }
+
+    private var listFileURL: URL {
+        containerURL.appendingPathComponent("readingList.json")
+    }
+
+    public var articlesDirectory: URL {
+        let dir = containerURL.appendingPathComponent("Articles", isDirectory: true)
+        try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Original page artifacts are deliberately separate from parsed article JSON
+    /// and downloaded reader images. A `.webarchive` is immutable source material;
+    /// the reader must never regenerate it from `ArticleContent`.
+    public var originalArchivesDirectory: URL {
+        let dir = containerURL.appendingPathComponent("OriginalArchives", isDirectory: true)
+        try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    // MARK: - List operations
+
+    /// All items in saved order — newest first (new items prepend), reorderable
+    /// by the user.
+    public func items() -> [ReadingListItem] {
+        var result: [ReadingListItem] = []
+        var coordError: NSError?
+        var ran = false
+        fileCoordinator.coordinate(readingItemAt: listFileURL, options: [], error: &coordError) { url in
+            ran = true
+            result = Self.decodeItems(at: url)
+        }
+        if !ran { result = Self.decodeItems(at: listFileURL) }
+        return result
+    }
+
+    /// Reorders the stored list to match `orderedIDs` (items not listed keep
+    /// their relative order at the end). Backs manual drag-to-reorder.
+    public func setOrder(_ orderedIDs: [UUID]) {
+        coordinatedMutate { all in
+            let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            var reordered = orderedIDs.compactMap { byID[$0] }
+            let placed = Set(orderedIDs)
+            reordered.append(contentsOf: all.filter { !placed.contains($0.id) })
+            all = reordered
+        }
+    }
+
+    /// The existing item for a URL, if it's already in the list.
+    public func item(forURLString urlString: String) -> ReadingListItem? {
+        items().first { $0.urlString == urlString }
+    }
+
+    /// A fresh copy of an item by ID (callers' copies go stale across mutations).
+    public func item(withID itemID: UUID) -> ReadingListItem? {
+        items().first { $0.id == itemID }
+    }
+
+    /// Repoints an item at an unwrapped URL (e.g. an `apple.news` / Google News
+    /// wrapper resolved to the real publisher article). Returns the refreshed item.
+    /// If another item already holds that URL, the wrapper is a duplicate — it's
+    /// removed (with its files) and nil is returned so the caller stops ingesting it.
+    @discardableResult
+    public func updateURL(_ urlString: String, for itemID: UUID) -> ReadingListItem? {
+        coordinatedMutate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
+            if all.contains(where: { $0.id != itemID && $0.urlString == urlString }) {
+                let removed = all.remove(at: index)
+                self.removeFiles(for: removed)
+                return nil
+            }
+            all[index].urlString = urlString
+            return all[index]
+        }
+    }
+
+    @discardableResult
+    public func add(urlString: String, source: CaptureSource = .manual) -> ReadingListItem {
+        coordinatedMutate { all in
+            if let existing = all.first(where: { $0.urlString == urlString }) {
+                return existing
+            }
+            var item = ReadingListItem(urlString: urlString)
+            item.captureSource = source
+            all.insert(item, at: 0) // newest first
+            return item
+        }
+    }
+
+    /// Adds a URL only when it isn't already saved, returning the new item, or nil
+    /// when an item with that exact URL already exists. THE single URL-existence
+    /// dedup authority for "drop a duplicate incoming item" (the recipient-side
+    /// friend-share guard): callers that must NOT re-attribute / re-notify a
+    /// duplicate route through here rather than pre-checking `item(forURLString:)`
+    /// then calling `add`. (The ingestor's separate tracker-merge guard is an
+    /// orthogonal condition — same URL inside a different item's price tracker.)
+    public func addIfAbsent(urlString: String, source: CaptureSource = .manual) -> ReadingListItem? {
+        coordinatedMutate { all in
+            guard !all.contains(where: { $0.urlString == urlString }) else { return nil }
+            var item = ReadingListItem(urlString: urlString)
+            item.captureSource = source
+            all.insert(item, at: 0) // newest first
+            return item
+        }
+    }
+
+    // Mutations are targeted (fetch-fresh, set one field, save) rather than
+    // whole-item writes: callers hold stale copies, and overwriting the whole
+    // item silently reverts fields written by other screens in the meantime.
+
+    /// Persists the RSVP resume position.
+    public func setLastWordIndex(_ wordIndex: Int, for itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }),
+                  all[index].lastWordIndex != wordIndex else { return false }
+            all[index].lastWordIndex = wordIndex
+            return true
+        }
+    }
+
+    /// Marks a download/extraction failure.
+    public func markFailed(_ itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            all[index].state = .failed
+            return true
+        }
+    }
+
+    /// Persists the scroll reader's resume position.
+    public func setLastScrollOffset(_ offset: Double, for itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }),
+                  all[index].lastScrollOffset != offset else { return false }
+            all[index].lastScrollOffset = offset
+            return true
+        }
+    }
+
+    /// Persists the read-aloud resume position (marks audio as having played).
+    public func setLastSpokenWordIndex(_ wordIndex: Int, for itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }),
+                  all[index].lastSpokenWordIndex != wordIndex else { return false }
+            all[index].lastSpokenWordIndex = wordIndex
+            return true
+        }
+    }
+
+    /// Persists how far through the article the user has gotten (0…1, only
+    /// ever increases).
+    public func setReadingProgress(_ progress: Double, for itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            let clamped = min(max(progress, 0), 1)
+            guard clamped > (all[index].readingProgress ?? 0) else { return false }
+            all[index].readingProgress = clamped
+            return true
+        }
+    }
+
+    /// Persists the eye-tracking estimate (nil clears it).
+    public func setEyeTrackedWordIndex(_ wordIndex: Int?, for itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }),
+                  all[index].eyeTrackedWordIndex != wordIndex else { return false }
+            all[index].eyeTrackedWordIndex = wordIndex
+            return true
+        }
+    }
+
+    /// Disabling eye tracking wipes every stored gaze estimate.
+    public func clearAllEyeTracking() {
+        coordinatedUpdate { all in
+            var changed = false
+            for index in all.indices where all[index].eyeTrackedWordIndex != nil {
+                all[index].eyeTrackedWordIndex = nil
+                changed = true
+            }
+            return changed
+        }
+    }
+
+    public func delete(_ item: ReadingListItem) {
+        coordinatedMutate { all in
+            if let found = all.first(where: { $0.id == item.id }) { self.removeFiles(for: found) }
+            all.removeAll { $0.id == item.id }
+        }
+    }
+
+    /// Removes every finished article (and its cached content) in one pass.
+    public func deleteAllRead() {
+        coordinatedMutate { all in
+            for item in all where item.readState == .read { self.removeFiles(for: item) }
+            all.removeAll { $0.readState == .read }
+        }
+    }
+
+    /// Removes a set of items (and their cached content) in one pass — used to clear
+    /// the whole Archive section at once.
+    public func deleteItems(ids: Set<UUID>) {
+        coordinatedMutate { all in
+            for item in all where ids.contains(item.id) { self.removeFiles(for: item) }
+            all.removeAll { ids.contains($0.id) }
+        }
+    }
+
+    /// Remembers which reader the user last used for an article.
+    public func setReaderMode(_ mode: ReadingListItem.ReaderMode, for itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }),
+                  all[index].lastReaderMode != mode else { return false }
+            all[index].lastReaderMode = mode
+            return true
+        }
+    }
+
+    /// Updates a destination's delivery status; `.sent` also stamps the
+    /// destination's `datesSent` (the once-per-day resend guard).
+    public func setSendState(
+        _ sendState: ReadingListItem.SendState, for itemID: UUID, destination: String
+    ) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            all[index].sendStates[destination] = sendState
+            if sendState == .sent {
+                all[index].datesSent[destination] = Date()
+            }
+            return true
+        }
+    }
+
+    /// Records a save press on an already-listed URL and returns the previous
+    /// press time (the item's save time, if this is the first repeat press) —
+    /// the primitive behind double-save-to-send detection.
+    @discardableResult
+    public func recordSaveAttempt(for itemID: UUID) -> Date? {
+        coordinatedMutate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
+            let previous = all[index].lastSaveAttemptDate ?? all[index].dateAdded
+            all[index].lastSaveAttemptDate = Date()
+            return previous
+        }
+    }
+
+    /// Sets the leading-label source (e.g. the email sender for imported mail,
+    /// shown where the host would be).
+    public func setChannelName(_ name: String, for itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }),
+                  all[index].channelName != name else { return false }
+            all[index].channelName = name
+            return true
+        }
+    }
+
+    /// Writes downloaded art bytes to the Articles dir and points the item at it.
+    public func setThumbnail(_ data: Data, for itemID: UUID) {
+        let fileName = "\(itemID.uuidString)-thumb.jpg"
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            try? data.write(to: self.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
+            all[index].thumbnailFileName = fileName
+            return true
+        }
+    }
+
+    /// Records which friend shared this item to us (set once, on acceptance).
+    public func setSharedBy(_ username: String, for itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }),
+                  all[index].sharedByUsername != username else { return false }
+            all[index].sharedByUsername = username
+            return true
+        }
+    }
+
+    /// Fills in the YouTube metadata produced by ingestion and marks the item
+    /// ready (videos have no article content).
+    public func saveYouTubeMetadata(
+        videoID: String, title: String, channelName: String?,
+        thumbnailFileName: String?, for itemID: UUID
+    ) -> ReadingListItem? {
+        coordinatedMutate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
+            all[index].youtubeVideoID = videoID
+            all[index].platform = .youtube
+            all[index].platformItemID = videoID
+            all[index].title = title
+            all[index].channelName = channelName
+            all[index].thumbnailFileName = thumbnailFileName
+            all[index].state = .ready
+            return all[index]
+        }
+    }
+
+    /// Creates (or returns the existing) URL-less music/podcast item from a
+    /// synthetic `lunamusic://`/`lunapodcast://` key, marked ready. Used by the
+    /// media intents and incoming media shares.
+    @discardableResult
+    public func createURLlessMediaItem(
+        platform: ContentPlatform, creator: String, title: String
+    ) -> ReadingListItem {
+        let key = MediaItemKey.url(platform: platform, creator: creator, title: title)
+        let item = add(urlString: key)
+        let display = creator.isEmpty ? title : "\(creator) — \(title)"
+        return savePlatformMetadata(
+            platform: platform, platformItemID: nil, title: display, creator: creator,
+            thumbnailFileName: nil, mediaCreatorName: creator, mediaItemTitle: title,
+            mediaSourceService: nil, for: item.id) ?? item
+    }
+
+    /// Fills in metadata for a recognized platform item and marks it ready
+    /// (platform items have no `ArticleContent`). Best-effort: any field may be
+    /// nil and the item still renders (logo + deep link). Mirrors
+    /// `saveYouTubeMetadata` for the generic platform path.
+    public func savePlatformMetadata(
+        platform: ContentPlatform, platformItemID: String?, title: String?,
+        creator: String?, thumbnailFileName: String?,
+        mediaCreatorName: String?, mediaItemTitle: String?,
+        mediaSourceService: MusicProvider?, for itemID: UUID
+    ) -> ReadingListItem? {
+        coordinatedMutate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
+            all[index].platform = platform
+            all[index].platformItemID = platformItemID
+            if let title, !title.isEmpty { all[index].title = title }
+            if let creator, !creator.isEmpty { all[index].channelName = creator }
+            if let thumbnailFileName { all[index].thumbnailFileName = thumbnailFileName }
+            all[index].mediaCreatorName = mediaCreatorName
+            all[index].mediaItemTitle = mediaItemTitle
+            all[index].mediaSourceService = mediaSourceService
+            all[index].state = .ready
+            return all[index]
+        }
+    }
+
+    /// Raises the item's read state; never downgrades (read stays read).
+    public func markReadState(_ newState: ReadingListItem.ReadState, for itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            let order: [ReadingListItem.ReadState] = [.unopened, .opened, .read]
+            guard let current = order.firstIndex(of: all[index].readState),
+                  let proposed = order.firstIndex(of: newState),
+                  proposed > current
+            else { return false }
+            all[index].readState = newState
+            return true
+        }
+    }
+
+    /// Forces an item back to unread (the Archive-section "Unarchive" action) — a
+    /// deliberate downgrade that `markReadState`'s forward-only guard disallows.
+    public func markUnread(_ itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }),
+                  all[index].readState != .unopened else { return false }
+            all[index].readState = .unopened
+            return true
+        }
+    }
+
+    // MARK: - Price tracking
+
+    /// Attaches a price-tracker payload to an item and marks it ready (a tracker
+    /// has no article content to download). Returns the refreshed item.
+    @discardableResult
+    public func savePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
+        coordinatedMutate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
+            all[index].priceTracker = tracker
+            all[index].title = tracker.productName
+            all[index].state = .ready
+            return all[index]
+        }
+    }
+
+    /// Replaces the price-tracker payload of an existing tracker (add/remove store,
+    /// change threshold, archive). Returns the refreshed item.
+    @discardableResult
+    public func updatePriceTracker(_ tracker: PriceTracker, for itemID: UUID) -> ReadingListItem? {
+        coordinatedMutate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }),
+                  all[index].priceTracker != nil else { return nil }
+            all[index].priceTracker = tracker
+            all[index].title = tracker.productName
+            return all[index]
+        }
+    }
+
+    /// The existing price tracker (and its item id) whose stores already include
+    /// `urlString`, if any. Lets a re-save of an already-tracked URL short-circuit
+    /// to the existing tracker instead of re-detecting (and re-merging into a
+    /// duplicate). Items are scanned in stable id order so the result is
+    /// deterministic when (defensively) more than one tracker holds the URL.
+    public func priceTracker(containingStoreURL urlString: String) -> (itemID: UUID, tracker: PriceTracker)? {
+        let candidates = items()
+            .compactMap { item -> (itemID: UUID, tracker: PriceTracker)? in
+                guard let tracker = item.priceTracker,
+                      tracker.hasStore(urlString: urlString) else { return nil }
+                return (item.id, tracker)
+            }
+            .sorted { $0.itemID.uuidString < $1.itemID.uuidString }
+        return candidates.first
+    }
+
+    /// All non-archived price trackers, ordered stalest-first (oldest minimum
+    /// `lastRefreshed` across their stores) so a killed background refresh makes
+    /// progress on the longest-unrefreshed trackers each run.
+    public func priceTrackersStalestFirst() -> [ReadingListItem] {
+        items()
+            .filter { ($0.priceTracker?.isArchived == false) }
+            .sorted { lhs, rhs in
+                Self.stalestRefresh(lhs.priceTracker) < Self.stalestRefresh(rhs.priceTracker)
+            }
+    }
+
+    /// The oldest `lastRefreshed` across a tracker's stores (a never-refreshed
+    /// store sorts first, as `.distantPast`).
+    public static func stalestRefresh(_ tracker: PriceTracker?) -> Date {
+        guard let tracker else { return .distantPast }
+        return tracker.stores.map { $0.lastRefreshed ?? .distantPast }.min() ?? .distantPast
+    }
+
+    // MARK: - Catch-up
+
+    /// Stamps a new bump date on an item and moves it to the top of the list (it
+    /// re-sorts up in the reading list and shows the bump date on future catch-up
+    /// cards).
+    public func bump(_ itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            var item = all.remove(at: index)
+            item.bumpDate = Date()
+            all.insert(item, at: 0)
+            return true
+        }
+    }
+
+    /// Overwrites the entire list with `items` — used to UNDO a whole catch-up
+    /// session (bumps + read marks) in one shot from a pre-session snapshot.
+    public func restore(_ items: [ReadingListItem]) {
+        coordinatedMutate { all in all = items }
+    }
+
+    // MARK: - Article content
+
+    public func saveContent(_ content: ArticleContent, for item: ReadingListItem) -> ReadingListItem {
+        let fileName = "\(item.id.uuidString).json"
+        return coordinatedMutate { all in
+            guard let index = all.firstIndex(where: { $0.id == item.id }) else { return item }
+            if let data = try? JSONEncoder().encode(content) {
+                try? data.write(
+                    to: self.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
+                all[index].contentFileName = fileName
+                all[index].title = content.title
+                // This save now owns the images its content references (so they survive
+                // until the item is deleted, and aren't deleted while it still needs them).
+                self.imageReferences.setReferences(
+                    contentKey: ImageReferenceStore.itemKey(item.id),
+                    files: ImageReferenceStore.imageFiles(in: content))
+                // Real content now exists (possibly after the user solved an archive
+                // CAPTCHA), so this is the terminal ready state regardless of how it got here.
+                all[index].state = .ready
+                all[index].wordCount = content.blocks.reduce(0) {
+                    $0 + $1.text.split(whereSeparator: { $0.isWhitespace }).count
+                }
+            } else {
+                all[index].state = .failed
+            }
+            return all[index]
+        }
+    }
+
+    /// Marks a hard-paywalled article as needing a user-solved archive CAPTCHA: it
+    /// lands in the list (with its real title) in the `.needsCaptcha` state, shown
+    /// with a "tap to unlock" affordance. Tapping opens the archive.today snapshot in
+    /// a web view; once the user solves the CAPTCHA the article is extracted and
+    /// `saveContent` moves it to `.ready`.
+    public func markNeedsCaptcha(_ itemID: UUID, title: String?) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            // Never downgrade a readable item (a concurrent app/extension extract,
+            // or a reused cf_clearance, may have already filled it in).
+            guard all[index].state != .ready else { return false }
+            all[index].state = .needsCaptcha
+            if let title, !title.isEmpty { all[index].title = title }
+            return true
+        }
+    }
+
+    #if DEBUG
+    /// Deterministic test/UI-test seeding: replaces the entire reading list with
+    /// `items` and writes each provided `ArticleContent` to its item's content file
+    /// (keyed by item id). Wipes any existing Articles content files first so the
+    /// container is a clean, reproducible fixture. DEBUG-only — never compiled into
+    /// a release build, so production code paths can't reach it.
+    ///
+    /// Used by both the in-app `UITestSeeder` (launch-argument seeding for the
+    /// screenshot harness) and unit tests that render real view controllers against
+    /// a fixed fixture set.
+    public func seedForTesting(items: [ReadingListItem], contents: [UUID: ArticleContent]) {
+        let articlesDir = articlesDirectory
+        let originalsDir = originalArchivesDirectory
+        coordinatedMutate { all in
+            // Remove every prior article content/source file so leftover state from
+            // an earlier seed can't leak into this one.
+            if let existing = try? self.fileManager.contentsOfDirectory(
+                at: articlesDir, includingPropertiesForKeys: nil) {
+                for file in existing { try? self.fileManager.removeItem(at: file) }
+            }
+            if let existing = try? self.fileManager.contentsOfDirectory(
+                at: originalsDir, includingPropertiesForKeys: nil) {
+                for file in existing { try? self.fileManager.removeItem(at: file) }
+            }
+            var seeded = items
+            for index in seeded.indices {
+                guard let content = contents[seeded[index].id] else { continue }
+                let fileName = "\(seeded[index].id.uuidString).json"
+                if let data = try? JSONEncoder().encode(content) {
+                    try? data.write(
+                        to: articlesDir.appendingPathComponent(fileName), options: .atomic)
+                    seeded[index].contentFileName = fileName
+                }
+            }
+            all = seeded
+        }
+    }
+
+    /// Empties the reading list and removes all article files. DEBUG-only.
+    public func wipeForTesting() {
+        let articlesDir = articlesDirectory
+        let originalsDir = originalArchivesDirectory
+        coordinatedMutate { all in
+            if let existing = try? self.fileManager.contentsOfDirectory(
+                at: articlesDir, includingPropertiesForKeys: nil) {
+                for file in existing { try? self.fileManager.removeItem(at: file) }
+            }
+            if let existing = try? self.fileManager.contentsOfDirectory(
+                at: originalsDir, includingPropertiesForKeys: nil) {
+                for file in existing { try? self.fileManager.removeItem(at: file) }
+            }
+            all = []
+        }
+    }
+    #endif
+
+    public func content(for item: ReadingListItem) -> ArticleContent? {
+        guard let fileName = item.contentFileName else { return nil }
+        guard let data = try? Data(contentsOf: articlesDirectory.appendingPathComponent(fileName))
+        else { return nil }
+        return try? JSONDecoder().decode(ArticleContent.self, from: data)
+    }
+
+    /// Saves an immutable WebKit web archive. The archive is written before its
+    /// file name is committed to the list, so the Original mode can never point at
+    /// a half-written artifact.
+    public func saveWebArchive(_ data: Data, for item: ReadingListItem) {
+        let fileName = "\(item.id.uuidString).webarchive"
+        let url = originalArchivesDirectory.appendingPathComponent(fileName)
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            return
+        }
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == item.id }),
+                  all[index].originalArchiveFileName != fileName else { return false }
+            all[index].originalArchiveFileName = fileName
+            return true
+        }
+    }
+
+    /// The saved web archive, when one was successfully captured for a web page.
+    public func webArchiveURL(for item: ReadingListItem) -> URL? {
+        guard let fileName = item.originalArchiveFileName,
+              fileName.hasSuffix(".webarchive"),
+              fileName == URL(fileURLWithPath: fileName).lastPathComponent
+        else { return nil }
+        let url = originalArchivesDirectory.appendingPathComponent(fileName)
+        return fileManager.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// An imported document is already its own original artifact. Mail imports have
+    /// neither a web archive nor a source file, so they intentionally return nil.
+    public func originalDocumentURL(for item: ReadingListItem) -> URL? {
+        guard let ext = item.sanitizedDocumentType else { return nil }
+        let url = articlesDirectory.appendingPathComponent("\(item.id.uuidString)-source.\(ext)")
+        return fileManager.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Whether the reader should offer the Original/archive view mode for this save.
+    ///
+    /// Keyed off the save's *source* (`ReadingListItem.canHaveOriginalArchive`), NOT
+    /// off whether the archive file is on disk yet: every web page and imported
+    /// document owns an original artifact and gets the mode (a web page whose
+    /// `.webarchive` capture is still missing falls back to its live page in
+    /// `OriginalPageViewController`), while email-text imports — the only saves with
+    /// no original artifact — never get it.
+    public func hasOriginalSource(for item: ReadingListItem) -> Bool {
+        item.canHaveOriginalArchive
+    }
+
+    // MARK: - Private
+
+    private static func decodeItems(at url: URL) -> [ReadingListItem] {
+        guard let data = try? Data(contentsOf: url),
+              let items = try? JSONDecoder().decode([ReadingListItem].self, from: data)
+        else { return [] }
+        return items
+    }
+
+    private static func encodeItems(_ items: [ReadingListItem], to url: URL) {
+        if let data = try? JSONEncoder().encode(items) {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    /// Coordinated read-modify-write of the whole list, returning `body`'s value.
+    /// Holds the in-process `mutationLock` AND an `NSFileCoordinator` writing
+    /// coordination across the entire read+modify+write so other processes can't
+    /// lose this update (or vice versa). Always writes + posts `.readingListChanged`.
+    @discardableResult
+    private func coordinatedMutate<T>(_ body: (inout [ReadingListItem]) -> T) -> T {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        func perform(_ url: URL) -> T {
+            var all = Self.decodeItems(at: url)
+            let result = body(&all)
+            Self.encodeItems(all, to: url)
+            return result
+        }
+        var coordResult: T?
+        var coordError: NSError?
+        fileCoordinator.coordinate(writingItemAt: listFileURL, options: [], error: &coordError) { url in
+            coordResult = perform(url)
+        }
+        let result = coordResult ?? perform(listFileURL)
+        postChanged()
+        return result
+    }
+
+    /// Like `coordinatedMutate` but only writes + notifies when `body` reports a
+    /// change — preserves the "skip the write if nothing changed" behavior of the
+    /// targeted setters (no spurious reloads).
+    private func coordinatedUpdate(_ body: (inout [ReadingListItem]) -> Bool) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        var changed = false
+        func perform(_ url: URL) {
+            var all = Self.decodeItems(at: url)
+            if body(&all) {
+                Self.encodeItems(all, to: url)
+                changed = true
+            }
+        }
+        var coordError: NSError?
+        var ran = false
+        fileCoordinator.coordinate(writingItemAt: listFileURL, options: [], error: &coordError) { url in
+            ran = true
+            perform(url)
+        }
+        if !ran { perform(listFileURL) }
+        if changed { postChanged() }
+    }
+
+    private func postChanged() {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        }
+    }
+
+    /// Removes an item's on-disk artifacts (content JSON, imported source file,
+    /// thumbnail). The source extension is the SANITIZED document type so a crafted
+    /// `documentType` can't point the delete outside the Articles directory.
+    private func removeFiles(for item: ReadingListItem) {
+        if let fileName = item.contentFileName {
+            try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(fileName))
+        }
+        if let fileName = item.originalArchiveFileName,
+           fileName == URL(fileURLWithPath: fileName).lastPathComponent {
+            let directory = fileName.hasSuffix(".webarchive") ? originalArchivesDirectory : articlesDirectory
+            try? fileManager.removeItem(at: directory.appendingPathComponent(fileName))
+        }
+        if let ext = item.sanitizedDocumentType {
+            try? fileManager.removeItem(at: articlesDirectory
+                .appendingPathComponent("\(item.id.uuidString)-source.\(ext)"))
+        }
+        if let thumb = item.thumbnailFileName {
+            try? fileManager.removeItem(at: articlesDirectory.appendingPathComponent(thumb))
+        }
+        // Release this save's downloaded images (deleted only if no other save/preloaded
+        // page still references the same shared `img-<hash>` file).
+        imageReferences.removeReferences(contentKey: ImageReferenceStore.itemKey(item.id))
+        // Release this save's preload subtree (refcount decrement; only ever deletes
+        // files under Preloads/, never a user save).
+        PreloadStore.shared.releaseTree(rootID: item.id)
+    }
+}

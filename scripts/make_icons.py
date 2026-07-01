@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate the three Lune app icons (faceted crystal + glyph), 1024x1024 PNG.
+"""Generate the three Luna app icons (faceted crystal + glyph), 1024x1024 PNG.
 
-Lune-stone aesthetic: a cool diagonal gradient overlaid with translucent angular
-facets (crystal planes), each app a distinct lune variety, with a bold white glyph
+Luna-stone aesthetic: a cool diagonal gradient overlaid with translucent angular
+facets (crystal planes), each app a distinct luna variety, with a bold white glyph
 and soft shadow. Rendered at 4x and downsampled (LANCZOS) for clean edges.
 """
 import os
@@ -96,7 +96,7 @@ def build(palette, glyph):
     out = Image.alpha_composite(out, layer)
     return out.convert("RGB").resize((S, S), Image.LANCZOS)
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "Lune", "Assets.xcassets")
+OUT = os.path.join(os.path.dirname(__file__), "..", "Luna", "Assets.xcassets")
 CONTENTS = ('{\n  "images" : [\n    {\n      "filename" : "%s-1024.png",\n'
             '      "idiom" : "universal",\n      "platform" : "ios",\n'
             '      "size" : "1024x1024"\n    }\n  ],\n'

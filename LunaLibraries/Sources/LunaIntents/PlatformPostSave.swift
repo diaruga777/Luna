@@ -3,7 +3,6 @@
 //  LunaIntents
 //
 
-import LunaSocial
 import LunaPlatforms
 import AppIntents
 import Foundation
@@ -24,7 +23,7 @@ public enum PlatformPostSave {
             platform: platform, handle: handle, content: content, timestamp: timestamp)
         else { throw PlatformPostError.notFound }
         _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
-        return ShareSuggestionStore.shared.pendingSuggestionToken()
+        return "Saved to Luna."
     }
 }
 

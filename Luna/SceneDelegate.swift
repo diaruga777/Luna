@@ -4,8 +4,8 @@
 //
 //  Luna is a weblink reader: save links from Safari (via the bundled Safari
 //  extension + action-button shortcut), then read them in a scrolling reader
-//  or an RSVP speed reader. Articles can be shared with friends (CloudKit
-//  messages) and sent to a Kindle.
+//  or an RSVP speed reader. Articles can be shared with friends by email and
+//  sent to a Kindle.
 //
 
 import LunaReadingListUI
@@ -13,7 +13,6 @@ import LunaSocialUI
 import LunaReadingList
 import LunaArchiveReader
 import LunaSemantic
-import LunaSocial
 import LunaStorage
 import LunaTransitions
 import LunaURLClassification
@@ -26,31 +25,18 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
 
-    /// A friend URL that arrived before onboarding finished; replayed once an
-    /// identity exists.
-    private var pendingFriendURL: URL?
     /// A `lunareader://read` article URL that arrived before the main UI was up.
     private var pendingReadURL: String?
-    /// A friend whose settings page a tapped first-share notification asked to
-    /// open; applied once the main UI (reading-list nav) exists. Static because
-    /// the notification tap is delivered to the AppDelegate, before any scene may
-    /// have connected.
-    private static var pendingFriendSettingsUUID: UUID?
-    /// Set when a tapped friend-added notification asks to open the friends list.
-    private static var pendingFriendsList = false
+    /// Set when a tapped pending-request notification asks to open that screen.
+    /// Static because the tap is delivered to the AppDelegate before any scene
+    /// may have connected.
+    private static var pendingRequestsRoute = false
 
-    /// Entry point for a tapped first-share notification (called from
-    /// `AppDelegate.userNotificationCenter(_:didReceive:)`). Routes to the
-    /// friend's settings page now if the UI is ready, else stashes it for when it
-    /// is (scene connect / onboarding finish / foreground).
-    static func routeToFriendSettings(friendUUID: UUID) {
-        pendingFriendSettingsUUID = friendUUID
-        activeSceneDelegate()?.applyPendingNotificationRoute()
-    }
-
-    /// Entry point for a tapped friend-added notification — opens the friends list.
-    static func routeToFriends() {
-        pendingFriendsList = true
+    /// Entry point for a tapped pending-request notification (called from
+    /// `AppDelegate.userNotificationCenter(_:didReceive:)`). Opens the Pending
+    /// Requests screen now if the UI is ready, else stashes it for when it is.
+    static func routeToPendingRequests() {
+        pendingRequestsRoute = true
         activeSceneDelegate()?.applyPendingNotificationRoute()
     }
 
@@ -58,36 +44,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         UIApplication.shared.connectedScenes.compactMap { $0.delegate as? SceneDelegate }.first
     }
 
-    /// Applies whichever notification-tap route is pending, once the main UI exists.
+    /// Pushes the Pending Requests screen onto the reading-list nav once the main
+    /// UI exists.
     private func applyPendingNotificationRoute() {
-        applyPendingFriendSettings()
-        applyPendingFriendsList()
-    }
-
-    /// Pushes the friends list onto the reading-list nav (friend-added tap).
-    private func applyPendingFriendsList() {
-        guard Self.pendingFriendsList,
+        guard Self.pendingRequestsRoute,
               let nav = window?.rootViewController as? UINavigationController else { return }
-        Self.pendingFriendsList = false
+        Self.pendingRequestsRoute = false
         nav.dismiss(animated: false)
         nav.popToRootViewController(animated: false)
-        nav.pushViewController(FriendsViewController(), animated: true)
-    }
-
-    /// Pushes the pending friend's settings page onto the reading-list nav, if the
-    /// main UI is up and the friend still exists. No-op (leaving the request
-    /// pending) during onboarding.
-    private func applyPendingFriendSettings() {
-        guard let uuid = Self.pendingFriendSettingsUUID,
-              let nav = window?.rootViewController as? UINavigationController,
-              let friend = FriendsStore.shared.friend(withUUID: uuid) else { return }
-        Self.pendingFriendSettingsUUID = nil
-        nav.dismiss(animated: false) // clear any presented reader/sheet
-        nav.popToRootViewController(animated: false)
-        let detail = FriendDetailViewController(friend: friend) { [weak nav] in
-            nav?.popViewController(animated: true)
-        }
-        nav.pushViewController(detail, animated: true)
+        nav.pushViewController(PendingRequestsViewController(), animated: true)
     }
 
     func scene(
@@ -108,10 +73,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
 
         #if DEBUG
-        // Debug hook: deep-link straight to an experimental effect screen via
-        // `-openEffect <name>` (the settings toolbar isn't reachable via UI
-        // automation). Gated to DEBUG + an explicit launch arg, so production never
-        // hits it.
         if let effect = ExperimentalSettingsScreen.debugEffectScreen(
             named: debugLaunchArgValue(after: "-openEffect")) {
             window.rootViewController = UINavigationController(rootViewController: effect)
@@ -119,11 +80,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             window.makeKeyAndVisible()
             return
         }
-        // Deep-link straight into the interactive archive/bypass reader for a URL, to
-        // exercise the trailing-dot WKWebView pre-stage end-to-end.
         if let archiveArg = debugLaunchArgValue(after: "-openArchive"),
            let archiveURL = URL(string: archiveArg) {
-            // A real item id is required for extraction to save (and not silently bail).
             let item = ReadingListStore.shared.addIfAbsent(urlString: archiveURL.absoluteString)
                 ?? ReadingListStore.shared.add(urlString: archiveURL.absoluteString)
             let reader = ArchiveWebReaderViewController(articleURL: archiveURL, itemID: item.id)
@@ -134,30 +92,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         #endif
 
-        // All three apps onboard once (per-app flag in the app's private defaults). Only
-        // the Downloader runs the friend-sharing username/identity step; Reader and Price
-        // Tracker run just the device-setup steps (notifications, Safari, shortcut, share).
+        // All three apps onboard once (per-app flag). Onboarding includes a
+        // skippable email-account step; email sharing is universal across apps.
         if !UserDefaults.standard.bool(forKey: Self.onboardingCompleteKey) {
             let finish: () -> Void = { [weak self] in
                 UserDefaults.standard.set(true, forKey: Self.onboardingCompleteKey)
                 self?.showMainUI()
-                if let url = self?.pendingFriendURL {
-                    self?.pendingFriendURL = nil
-                    self?.handleFriendURL(url)
-                }
                 if let articleURL = self?.pendingReadURL {
                     self?.pendingReadURL = nil
                     self?.openReader(articleURL: articleURL)
                 }
                 self?.applyPendingNotificationRoute()
             }
-            window.rootViewController = AppSurfaceConfig.current == .downloader
-                ? OnboardingFlow.make(onFinished: finish)
-                : OnboardingFlow.makeSetupOnly(onFinished: finish)
+            window.rootViewController = OnboardingFlow.make(onFinished: finish)
         } else {
-            // Each Luna app surfaces only its own category; links of other categories
-            // saved here are still stored in the shared App Group and appear in their
-            // own apps. The surface is derived from this bundle's identifier.
             window.rootViewController = UINavigationController(
                 rootViewController: ReadingListViewController(surface: AppSurfaceConfig.current))
         }
@@ -168,8 +116,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let url = connectionOptions.urlContexts.first?.url {
             route(url)
         }
-        // A notification tapped from a cold launch may have set a pending route
-        // before this scene connected.
         applyPendingNotificationRoute()
     }
 
@@ -187,20 +133,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         route(url)
     }
 
-    /// Dispatches an incoming URL: a `lunareader://read` link opens the reader;
-    /// anything else is treated as a `lunareader://friend` link.
+    /// Dispatches an incoming URL: a `lunareader://read` link opens the reader.
     private func route(_ url: URL) {
         if let articleURL = LunaDeepLink.articleURL(from: url) {
             openReader(articleURL: articleURL)
-        } else {
-            handleFriendURL(url)
         }
     }
 
-    /// Saves the article (if new), then opens it the way tapping its list row does
-    /// — so a paywalled article opens straight into the in-app archive reader, a
-    /// ready article into the native reader, a video into its player. Stashes the
-    /// URL if the main UI isn't up yet (onboarding).
+    /// Saves the article (if new), then opens it the way tapping its list row does.
+    /// Stashes the URL if the main UI isn't up yet (onboarding).
     private func openReader(articleURL: String) {
         guard let nav = window?.rootViewController as? UINavigationController else {
             pendingReadURL = articleURL
@@ -227,10 +168,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
         ReadingListIngestor.shared.ingestAllPending()
-        Task {
-            await SocialMessageCenter.shared.drainPendingFriendShares()
-            await SocialMessageCenter.shared.processInbox()
-        }
         Task { await IncomingMailImporter.shared.importNewMail() }
         SemanticIndexer.shared.scheduleRun()
         // Resume any link preloading left incomplete (interrupted save / new depth).
@@ -239,10 +176,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         applyPendingNotificationRoute()
     }
 
-    /// The forced root view controller for a UI-test launch, or nil when not in a
-    /// UI-test seeded launch. When an onboarding step is requested, shows the full
-    /// onboarding flow (the harness walks it); otherwise, when a state is seeded,
-    /// shows the main reading list regardless of stored identity. DEBUG-only.
     private func uiTestRootViewController() -> UIViewController? {
         #if DEBUG
         if UITestSeeder.requestedOnboardingStep != nil {
@@ -264,32 +197,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         installDotMatrixTransitions()
     }
 
-    /// Prewarm the GPU overlay for this window and route the root navigation
-    /// controller's push/pop through the Dot Matrix pixel-wipe (a no-op when the toggle
-    /// is off or Metal is unavailable). Covers every screen pushed onto the root nav —
-    /// Settings, Friends, Price tracking, the reader, etc.
+    /// Prewarm the GPU overlay and route the root navigation controller's push/pop
+    /// through the Dot Matrix pixel-wipe (a no-op when off / Metal unavailable).
     private func installDotMatrixTransitions() {
         guard let window else { return }
         DotMatrixTransitionCenter.shared.prewarm(in: window)
         (window.rootViewController as? UINavigationController)?.installDotMatrixTransitions()
-    }
-
-    /// Parses a `lunareader://friend` URL and runs the confirm-add flow.
-    private func handleFriendURL(_ url: URL) {
-        guard let card = FriendLink.card(from: url) else { return }
-        guard KeychainIdentityStore.shared.loadIdentity() != nil else {
-            pendingFriendURL = url
-            return
-        }
-        guard let presenter = window?.rootViewController else { return }
-        FriendAddFlow.confirmAndAdd(card: card, from: topViewController(of: presenter))
-    }
-
-    private func topViewController(of root: UIViewController) -> UIViewController {
-        var top = root
-        while let presented = top.presentedViewController {
-            top = presented
-        }
-        return top
     }
 }

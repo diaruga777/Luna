@@ -55,6 +55,12 @@ public enum IncomingMailSettings {
         set { UserDefaults.standard.set(newValue, forKey: uidValidityKey) }
     }
 
+    /// Graph high-water cursor (ISO `receivedDateTime`); unused on the IMAP path.
+    public static var cursorToken: String? {
+        get { UserDefaults.standard.string(forKey: "incomingMailCursorToken") }
+        set { UserDefaults.standard.set(newValue, forKey: "incomingMailCursorToken") }
+    }
+
     public static func addSender(_ raw: String) {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard trimmed.contains("@"), !allowedSenders.contains(trimmed) else { return }

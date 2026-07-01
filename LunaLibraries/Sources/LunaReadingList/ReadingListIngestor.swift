@@ -7,7 +7,6 @@ import LunaYouTubeAPI
 import LunaReaderUI
 import LunaArchiveReader
 import LunaSemantic
-import LunaSocial
 import LunaMediaDownload
 import LunaPlatforms
 import LunaSend
@@ -399,15 +398,6 @@ public final class ReadingListIngestor {
                 thumbnailFileName: thumbnailFileName, for: item.id)
             else { return }
             await WatchLaterAutoAdder.shared.videoBecameReady(updated)
-            // YouTube suggestion streaks key on the CHANNEL, which is only known
-            // now (post-oEmbed) — so the streak/auto-share check runs here, not
-            // at save time (where handleNewSave saw no channel and no-oped).
-            let autoShareTargets = ShareSuggestionStore.shared.handleNewSave(
-                urlString: updated.urlString, channelName: metadata.channelName)
-            for target in autoShareTargets {
-                await SocialMessageCenter.shared.autoShare(
-                    urlString: updated.urlString, toFriendUUID: target.uuid)
-            }
         } catch {
             store.markFailed(item.id)
         }
@@ -572,11 +562,7 @@ public final class ReadingListIngestor {
         switch decision {
         case .saveNew:
             let item = store.add(urlString: urlString, source: source)
-            // New-save automation runs HERE and only here — repeat presses
-            // (e.g. double-save for Kindle) never re-share or re-suggest.
-            fireAutoShares(urlString: urlString)
             await ingest(item)
-            armSemanticSuggestionIfNeeded(urlString: urlString, itemID: item.id)
             return .saved(item)
         case .sendToEreaders(let destinationIDs):
             // The policy only returns this for an existing item.
@@ -612,7 +598,6 @@ public final class ReadingListIngestor {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
         let urlString = url.absoluteString
         let item = store.add(urlString: urlString, source: source)
-        fireAutoShares(urlString: urlString)
         // The pre-fetched content was extracted from `urlString` as given. If that
         // URL is a wrapper (Facebook deep link / Apple-Google News / shortener), the
         // pre-fetched content is the wrapper shell, not the article — so unwrap and
@@ -626,30 +611,7 @@ public final class ReadingListIngestor {
         if saved.state == .ready {
             ArticleSendCoordinator.shared.articleBecameReady(saved)
         }
-        armSemanticSuggestionIfNeeded(urlString: urlString, itemID: item.id)
         return saved
-    }
-
-    /// Auto-shares a newly saved URL to every friend the user set to always
-    /// receive that site.
-    private func fireAutoShares(urlString: String) {
-        let autoShareTargets = ShareSuggestionStore.shared.handleNewSave(urlString: urlString)
-        for target in autoShareTargets {
-            Task {
-                await SocialMessageCenter.shared.autoShare(
-                    urlString: urlString, toFriendUUID: target.uuid)
-            }
-        }
-    }
-
-    /// Arms the immediate content-similarity suggestion (one embed of just this
-    /// item) — only when no same-site/-channel streak already armed one.
-    private func armSemanticSuggestionIfNeeded(urlString: String, itemID: UUID) {
-        guard ShareSuggestionStore.shared.pendingSuggestion() == nil,
-              let match = SemanticIndexer.shared.immediateSuggestion(forItemID: itemID)
-        else { return }
-        ShareSuggestionStore.shared.armSemanticSuggestion(
-            urlString: urlString, friendUUID: match.uuid, friendUsername: match.username)
     }
 }
 

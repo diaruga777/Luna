@@ -9,7 +9,6 @@
 import AppIntents
 import LunaIntents
 import LunaPlatforms
-import LunaSocial
 import Foundation
 
 struct FindRedditPostIntent: AppIntent {
@@ -40,6 +39,6 @@ struct FindRedditPostIntent: AppIntent {
         guard !query.isEmpty, let url = try? await RedditSearchClient().topPostURL(query: query)
         else { throw FindError.notFound }
         _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
-        return .result(value: ShareSuggestionStore.shared.pendingSuggestionToken())
+        return .result(value: "Saved to Luna.")
     }
 }

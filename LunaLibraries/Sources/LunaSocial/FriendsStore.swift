@@ -1,25 +1,69 @@
 //
 //  FriendsStore.swift
-//  Luna
+//  LunaSocial
 //
 
 import LunaStorage
 import Foundation
 
 public extension Notification.Name {
-    /// Posted whenever the friends list changes (add/update/delete).
-    public static let friendsListChanged = Notification.Name("friendsListChanged")
+    /// Posted whenever the friends list changes (add/update/remove).
+    static let friendsListChanged = Notification.Name("friendsListChanged")
+    /// Posted whenever the pending-requests list changes.
+    static let pendingRequestsChanged = Notification.Name("pendingRequestsChanged")
 }
 
-/// A user this user has exchanged identities with.
+/// A person the user shares with — identified solely by email address. A
+/// display name (from Contacts, an in-app nickname, or the address local part)
+/// is used everywhere the friend is shown.
 public struct Friend: Codable, Equatable {
-    public var card: IdentityCard
+    /// Lowercased email address — the stable identifier.
+    public var email: String
+    /// Optional nickname / contact name.
+    public var name: String?
     public var dateAdded: Date
+    /// When true, notify on every accepted share; otherwise only the first one.
+    public var notifyOnEveryShare: Bool
+    /// Whether an accepted share from this friend has ever been received (so the
+    /// first one can always notify).
+    public var hasReceivedShare: Bool
+
+    public init(email: String, name: String? = nil, dateAdded: Date = Date(),
+                notifyOnEveryShare: Bool = false, hasReceivedShare: Bool = false) {
+        self.email = Friend.normalize(email)
+        self.name = name
+        self.dateAdded = dateAdded
+        self.notifyOnEveryShare = notifyOnEveryShare
+        self.hasReceivedShare = hasReceivedShare
+    }
+
+    /// User-facing name: the nickname, else the address local part.
+    public var displayName: String {
+        if let name, !name.trimmingCharacters(in: .whitespaces).isEmpty { return name }
+        return Friend.localPart(email)
+    }
+
+    public static func normalize(_ email: String) -> String {
+        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    public static func localPart(_ email: String) -> String {
+        guard let at = email.firstIndex(of: "@") else { return email }
+        return String(email[..<at])
+    }
+
+    /// Loose validity check for an address the user typed or picked.
+    public static func isValidEmail(_ raw: String) -> Bool {
+        let email = normalize(raw)
+        guard let at = email.firstIndex(of: "@"), at != email.startIndex else { return false }
+        let domain = email[email.index(after: at)...]
+        return domain.contains(".") && !domain.hasSuffix(".") && !email.contains(" ")
+    }
 }
 
-/// Persists the friends list as JSON in the App Group container, mirroring
-/// the `ReadingListStore` pattern (fresh disk reads, lock-serialized
-/// mutations, change notification).
+/// Persists the friends list as JSON in the App Group container (shared by all
+/// three apps), mirroring the `ReadingListStore` pattern: fresh disk reads,
+/// lock-serialized mutations, change notification.
 public final class FriendsStore {
 
     public static let shared = FriendsStore()
@@ -28,8 +72,6 @@ public final class FriendsStore {
     private let overrideContainerURL: URL?
     private let mutationLock = NSLock()
 
-    /// The shared store uses the App Group container; tests pass a scratch
-    /// directory so they never touch real data.
     public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
     }
@@ -50,31 +92,68 @@ public final class FriendsStore {
         return friends.sorted { $0.dateAdded > $1.dateAdded }
     }
 
-    public func friend(withUUID uuid: UUID) -> Friend? {
-        items().first { $0.card.uuid == uuid }
+    public func friend(withEmail email: String) -> Friend? {
+        let normalized = Friend.normalize(email)
+        return items().first { $0.email == normalized }
     }
 
-    /// Adds (or refreshes) a friend. Re-adding the same UUID updates the
-    /// profile fields and keys rather than duplicating.
-    public func add(_ card: IdentityCard) {
+    public func isFriend(_ email: String) -> Bool { friend(withEmail: email) != nil }
+
+    /// Adds a friend (or updates the name of an existing one). Returns the
+    /// resulting friend.
+    @discardableResult
+    public func add(email: String, name: String? = nil) -> Friend {
         mutationLock.lock()
         defer { mutationLock.unlock() }
         var all = items()
-        if let index = all.firstIndex(where: { $0.card.uuid == card.uuid }) {
-            guard all[index].card != card else { return }
-            all[index].card = card
-        } else {
-            all.insert(Friend(card: card, dateAdded: Date()), at: 0)
+        let normalized = Friend.normalize(email)
+        if let index = all.firstIndex(where: { $0.email == normalized }) {
+            if let name, !name.isEmpty { all[index].name = name }
+            save(all)
+            return all[index]
         }
+        let friend = Friend(email: normalized, name: name)
+        all.insert(friend, at: 0)
         save(all)
+        return friend
     }
 
-    public func delete(uuid: UUID) {
+    /// Persists a full friend record (used to flip toggles / flags).
+    public func update(_ friend: Friend) {
         mutationLock.lock()
         defer { mutationLock.unlock() }
         var all = items()
-        all.removeAll { $0.card.uuid == uuid }
+        guard let index = all.firstIndex(where: { $0.email == friend.email }) else { return }
+        all[index] = friend
         save(all)
+    }
+
+    public func remove(email: String) {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        let normalized = Friend.normalize(email)
+        var all = items()
+        all.removeAll { $0.email == normalized }
+        save(all)
+    }
+
+    public func setNotifyOnEveryShare(_ enabled: Bool, email: String) {
+        guard var friend = friend(withEmail: email) else { return }
+        friend.notifyOnEveryShare = enabled
+        update(friend)
+    }
+
+    /// Records that a share from this friend was received. Returns true if this
+    /// was the first ever (so the caller can always notify on the first one).
+    @discardableResult
+    public func markReceivedShare(email: String) -> Bool {
+        guard var friend = friend(withEmail: email) else { return false }
+        let wasFirst = !friend.hasReceivedShare
+        if wasFirst {
+            friend.hasReceivedShare = true
+            update(friend)
+        }
+        return wasFirst
     }
 
     private func save(_ friends: [Friend]) {

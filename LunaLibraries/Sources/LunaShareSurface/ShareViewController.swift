@@ -84,22 +84,6 @@ public final class ShareViewController: UIViewController {
         // provider whose callback never fires.
         armLoadWatchdog()
 
-        // Tapped a Luna friend suggestion in the share sheet's PEOPLE ROW: the
-        // conversation identifier is the friend's UUID. This only happens for
-        // the share extension — guard the `intent` access behind that, since
-        // touching `extensionContext.intent` in a `com.apple.ui-services` action
-        // extension is unnecessary and a likely crash point.
-        if !isActionExtension,
-           let intent = extensionContext?.intent as? INSendMessageIntent,
-           let conversationID = intent.conversationIdentifier,
-           let friendUUID = UUID(uuidString: conversationID),
-           let urlProvider = providers.first(where: {
-               $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
-           }) {
-            handleFriendShare(urlProvider, friendUUID: friendUUID)
-            return
-        }
-
         // Safari (action extension) delivers the page URL via the JavaScript
         // preprocessing result — a property-list attachment — NOT a public.url.
         if let item = items.first(where: { item in
@@ -429,18 +413,6 @@ public final class ShareViewController: UIViewController {
             SharedReadingListAppender.appendDocument(sourceURL: url)
             SharedDiagnosticLog.record("saved document \(url.lastPathComponent)", category: "share")
             self.completeAfterDirectSave()
-        }
-    }
-
-    private func handleFriendShare(_ provider: NSItemProvider, friendUUID: UUID) {
-        provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] value, _ in
-            self?.cancelLoadWatchdog()
-            if let raw = value as? URL,
-               let url = URLUnwrapper.ingestURL(from: raw.absoluteString) {
-                PendingFriendShareWriter.enqueue(
-                    friendUUID: friendUUID, urlString: url.absoluteString)
-            }
-            self?.complete()
         }
     }
 

@@ -6,6 +6,7 @@
 import LunaReadingListUI
 import LunaSocialUI
 import LunaReadingList
+import LunaMailAccount
 import LunaYouTubeAPI
 import LunaPriceUI
 import LunaReaderUI
@@ -249,7 +250,7 @@ final class ReadingListViewController: UITableViewController {
         // Reaching the reading list (on launch or by navigating back) clears the
         // "open the app" follow-up share notifications; first-share prompts that
         // deep-link to settings are left intact.
-        NotificationManager.clearFollowupShareNotifications()
+        NotificationManager.clearShareNotifications()
     }
 
     override func viewSafeAreaInsetsDidChange() {
@@ -704,7 +705,7 @@ final class ReadingListViewController: UITableViewController {
     @objc private func pulledToRefresh() {
         ReadingListIngestor.shared.ingestAllPending()
         ArticleSendCoordinator.shared.retryPendingSends()
-        Task { await SocialMessageCenter.shared.processInbox() }
+        Task { await IncomingMailImporter.shared.importNewMail() }
         reload()
         refreshControl?.endRefreshing()
     }
@@ -752,7 +753,10 @@ final class ReadingListViewController: UITableViewController {
     /// there's an unarchived LOCKED (paywalled, awaiting unlock) save — regardless of
     /// count. Hides the whole button in edit mode.
     private func updateCatchUpButton() {
-        catchUpBadge.isHidden = !ReadingListSectioning.shouldShowCatchUpDot(items: store.items())
+        // Badge while there's catch-up worth doing, or until the email account is set up.
+        let needsEmailSetup = !EmailAccountStore.shared.isConfigured
+        catchUpBadge.isHidden = !(ReadingListSectioning.shouldShowCatchUpDot(items: store.items())
+            || needsEmailSetup)
         catchUpButton.isHidden = isEditing
     }
 
@@ -778,12 +782,10 @@ final class ReadingListViewController: UITableViewController {
                 systemName: "gearshape", target: self, action: #selector(settingsTapped),
                 accessibilityLabel: "Settings"),
         ]
-        // Friend sharing is a Downloader-only feature (nil = combined dev/test surface).
-        if surface == nil || surface == .downloader {
-            leading.append(NavHeaderBar.imageButton(
-                systemName: "person.2", target: self, action: #selector(friendsTapped),
-                accessibilityLabel: "Friends"))
-        }
+        // Friends / email sharing is available in all three apps.
+        leading.append(NavHeaderBar.imageButton(
+            systemName: "person.2", target: self, action: #selector(friendsTapped),
+            accessibilityLabel: "Friends"))
         header.setLeadingControls(leading)
         header.setTrailingControls([
             NavHeaderBar.imageButton(
@@ -1435,70 +1437,12 @@ final class ReadingListViewController: UITableViewController {
         }
     }
 
-    /// Sends a URL-less music/podcast item to a friend (via the CloudKit media case).
-    private func sendMediaToFriend(_ item: ReadingListItem, from sourceView: UIView) {
-        let friends = FriendsStore.shared.items()
-        guard !friends.isEmpty else {
-            presentInfoAlert(
-                title: "No Friends Yet",
-                message: "Add friends from the Friends screen to share directly.")
-            return
-        }
-        let sheet = UIAlertController(
-            title: item.title ?? "Share", message: nil, preferredStyle: .actionSheet)
-        let kind = item.contentPlatform ?? .music
-        let creator = item.mediaCreatorName ?? ""
-        let title = item.mediaItemTitle ?? item.title ?? ""
-        for friend in friends {
-            sheet.addAction(UIAlertAction(title: "Send to \(friend.card.username)", style: .default) { [weak self] _ in
-                guard let self else { return }
-                Task { @MainActor in
-                    guard await ICloudGate.requireICloud(presenting: self) else { return }
-                    do {
-                        try await SocialMessageCenter.shared.sendMediaItem(
-                            kind: kind, creator: creator, title: title, to: friend)
-                        Toast.show("Sent to \(friend.card.username)", from: self)
-                    } catch {
-                        self.presentInfoAlert(title: "Couldn't Send", message: "\(error)")
-                    }
-                }
-            })
-        }
-        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        sheet.popoverPresentationController?.sourceView = sourceView
-        DotMatrixModal.present(sheet, from: self)
-    }
-
-    /// Shares a price tracker (all store URLs + best price + threshold) to a friend.
-    private func sendTrackerToFriend(_ tracker: PriceTracker, from sourceView: UIView) {
-        let friends = FriendsStore.shared.items()
-        guard !friends.isEmpty else {
-            presentInfoAlert(
-                title: "No Friends Yet",
-                message: "Add friends from the Friends screen to share directly.")
-            return
-        }
-        let sheet = UIAlertController(
-            title: tracker.productName, message: nil, preferredStyle: .actionSheet)
-        for friend in friends {
-            sheet.addAction(UIAlertAction(
-                title: "Send to \(friend.card.username)", style: .default
-            ) { [weak self] _ in
-                guard let self else { return }
-                Task { @MainActor in
-                    guard await ICloudGate.requireICloud(presenting: self) else { return }
-                    do {
-                        try await SocialMessageCenter.shared.sendPriceTracker(tracker, to: friend)
-                        Toast.show("Sent to \(friend.card.username)", from: self)
-                    } catch {
-                        self.presentInfoAlert(title: "Couldn't Send", message: "\(error)")
-                    }
-                }
-            })
-        }
-        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        sheet.popoverPresentationController?.sourceView = sourceView
-        DotMatrixModal.present(sheet, from: self)
+    /// Sends any reading-list item (article, media, or price tracker) to chosen
+    /// recipients as a Luna email.
+    private func presentSend(_ item: ReadingListItem, from sourceView: UIView) {
+        SendToFriendSheet.present(
+            from: self, sourceView: sourceView, item: item,
+            urlString: item.urlString, title: item.title)
     }
 
     // MARK: - Video playback
@@ -1593,7 +1537,7 @@ final class ReadingListViewController: UITableViewController {
             guard let self else { return }
             let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
             SendToFriendSheet.present(
-                from: self, sourceView: sourceView,
+                from: self, sourceView: sourceView, item: item,
                 urlString: item.urlString, title: item.title)
         }
         let sendToKindle = UIAction(
@@ -1639,22 +1583,20 @@ final class ReadingListViewController: UITableViewController {
         ) { [weak self] _ in
             guard let self else { return }
             let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-            self.sendMediaToFriend(item, from: sourceView)
+            self.presentSend(item, from: sourceView)
         }
 
         // Price trackers get a focused menu: share the tracker to a friend,
         // archive/unarchive it (archived = hidden + excluded from refresh), delete.
         if let tracker = item.priceTracker {
             var trackerChildren: [UIAction] = []
-            if !FriendsStore.shared.items().isEmpty {
-                trackerChildren.append(UIAction(
-                    title: "Send to Friend…", image: UIImage(systemName: "person.2")
-                ) { [weak self] _ in
-                    guard let self else { return }
-                    let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-                    self.sendTrackerToFriend(tracker, from: sourceView)
-                })
-            }
+            trackerChildren.append(UIAction(
+                title: "Send to Friend…", image: UIImage(systemName: "person.2")
+            ) { [weak self] _ in
+                guard let self else { return }
+                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+                self.presentSend(item, from: sourceView)
+            })
             let archiveTitle = tracker.isArchived ? "Unarchive Tracker" : "Archive Tracker"
             let archiveIcon = tracker.isArchived ? "tray.and.arrow.up" : "archivebox"
             trackerChildren.append(UIAction(
@@ -1758,7 +1700,7 @@ final class ReadingListViewController: UITableViewController {
         if item.canShareToFriends {
             children.append(UIAction(title: "Send to Friend…", image: UIImage(systemName: "person.2")) { _ in
                 SendToFriendSheet.present(
-                    from: presenter, sourceView: sourceView,
+                    from: presenter, sourceView: sourceView, item: item,
                     urlString: item.urlString, title: item.title)
             })
         }

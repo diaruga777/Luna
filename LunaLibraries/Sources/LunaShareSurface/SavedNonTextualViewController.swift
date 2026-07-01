@@ -27,14 +27,12 @@ import UIKit
 /// on tap. A video gets a play-button overlay (tap → AVPlayer); an image just
 /// displays. Once downloaded (auto or manual) a "Save to Photos" button enables;
 /// saving writes to the Photos library AND marks the item read in the reading list.
-public final class SavedNonTextualViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+public final class SavedNonTextualViewController: UIViewController {
 
     private let articleURLString: String
     private let content: NonTextualContent
     private let onDone: () -> Void
 
-    private let friends = ExtensionFriendsReader.friends()
-    private let friendsTable = UITableView(frame: .zero, style: .plain)
     private let savedLabel = UILabel()
 
     // MARK: - Downloadable-media state machine
@@ -145,32 +143,6 @@ public final class SavedNonTextualViewController: UIViewController, UITableViewD
         ])
 
         beginMediaFlow()
-
-        // A scrolling friend list fills the rest — tapping one shares instantly.
-        guard articleURLString.hasPrefix("http"), !friends.isEmpty else { return }
-        let friendsHeader = UILabel()
-        friendsHeader.text = "Send to a Friend"
-        friendsHeader.font = .systemFont(ofSize: 15, weight: .semibold)
-        friendsHeader.textColor = .secondaryLabel
-        friendsHeader.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(friendsHeader)
-
-        friendsTable.dataSource = self
-        friendsTable.delegate = self
-        friendsTable.rowHeight = 52
-        friendsTable.register(UITableViewCell.self, forCellReuseIdentifier: "friend")
-        friendsTable.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(friendsTable)
-
-        NSLayoutConstraint.activate([
-            friendsHeader.topAnchor.constraint(equalTo: topStack.bottomAnchor, constant: 28),
-            friendsHeader.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            friendsHeader.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            friendsTable.topAnchor.constraint(equalTo: friendsHeader.bottomAnchor, constant: 6),
-            friendsTable.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            friendsTable.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            friendsTable.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
     }
 
     // MARK: - Media preview UI
@@ -576,32 +548,5 @@ public final class SavedNonTextualViewController: UIViewController, UITableViewD
             await MainActor.run { imageView?.image = image }
         }
         return container
-    }
-
-    // MARK: - Friend list
-
-    public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        friends.count
-    }
-
-    public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "friend", for: indexPath)
-        var config = cell.defaultContentConfiguration()
-        config.text = friends[indexPath.row].username
-        config.image = UIImage(systemName: "person.crop.circle.fill")
-        config.imageProperties.tintColor = GlassStyle.readingAccent
-        cell.contentConfiguration = config
-        cell.accessoryType = .disclosureIndicator
-        return cell
-    }
-
-    /// Tapping a friend queues the send instantly, confirms briefly, then dismisses.
-    public func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
-        let friend = friends[indexPath.row]
-        PendingFriendShareWriter.enqueue(friendUUID: friend.uuid, urlString: articleURLString)
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        savedLabel.text = "Will send to \(friend.username)."
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.onDone() }
     }
 }

@@ -8,6 +8,8 @@ import LunaPriceUI
 import LunaReaderUI
 import LunaSemantic
 import LunaSocial
+import LunaSocialUI
+import LunaMailAccount
 import LunaMediaDownload
 import LunaDesignSystem
 import LunaStorage
@@ -21,13 +23,9 @@ import os
 final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
     private let logger = Logger(subsystem: "com.hsanabria.luna", category: "push")
-    /// Background inbox poll — a fallback for unreliable silent pushes (it
-    /// doesn't depend on the push pipeline at all).
-    private static let inboxRefreshTaskID = "com.hsanabria.luna.inboxRefresh"
-    /// Heavier periodic task (~twice daily) that fetches new email and forwards
-    /// it to Kindle, so newsletters are delivered even if the app is never
-    /// opened. Separate from the inbox refresh: it needs network and runs less
-    /// often.
+    /// Periodic task (~twice daily) that reads new mail: imports Luna shares
+    /// (friends' auto-import; strangers → pending requests) and matched
+    /// newsletters, so shares arrive even if the app is never opened.
     private static let mailFetchTaskID = "com.hsanabria.luna.mailFetch"
     private static let mailFetchInterval: TimeInterval = 12 * 60 * 60
     /// Periodic task (~every 12h) that re-fetches every non-archived price
@@ -45,7 +43,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Move reader settings into the App Group so the share-extension reader
         // honors them (WPM, font, highlight color, …).
         ReaderSettings.migrateFromStandardIfNeeded()
-        recordEnvironmentSnapshot()
+        let account = EmailAccountStore.shared.account?.address ?? "none"
+        DiagnosticLog.shared.record("email account: \(account)", category: "mail")
 
         // Install the in-app "Read instead" behavior for the price-tracking editor
         // (now shared with the extensions in ShareKit, which can't reference the
@@ -54,12 +53,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
         }
 
-        // Diagnostics export header pulls messaging identity + CloudKit container
-        // from the social layer (which lives above LunaStorage), injected here.
+        // Diagnostics export header shows the connected email account (which lives
+        // above LunaStorage), injected here.
         DiagnosticLog.exportIdentityProvider = {
-            KeychainIdentityStore.shared.loadIdentity()?.uuid.uuidString ?? "none"
+            EmailAccountStore.shared.account?.address ?? "none"
         }
-        DiagnosticLog.exportCloudKitContainer = { CloudKitMessageTransport.containerID }
 
         // The confirmation toast lives in LunaDesignSystem (below LunaTransitions), so
         // its Dot Matrix wipe is injected here. The pill assembles dot-by-dot on appear
@@ -73,14 +71,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             DotMatrixDisappear.pixelateOut(pill)
         }
 
-        // A friend-shared article received over CloudKit is ingested via the main-app
-        // ingestor (which lives above the social layer), injected here.
-        SocialMessageCenter.ingestHandler = { item in
-            Task { await ReadingListIngestor.shared.ingest(item) }
-        }
-        SocialMessageCenter.shareRecorder = { itemID, personUUID, username in
-            SemanticIndexStore.shared.recordShare(
-                itemID: itemID, personUUID: personUUID, username: username)
+        // Let the share sheet launch the email-account login flow when no account
+        // is connected yet.
+        SendToFriendSheet.accountSetupLauncher = { presenter in
+            EmailLoginFlow.present(from: presenter)
         }
 
         // Wire the read-aloud first-run prompt's "Open Settings" to push the
@@ -115,27 +109,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // background intent without network time).
         ReadingListIngestor.shared.ingestAllPending()
 
-        // Social inbox: CloudKit query-subscription pushes need registration
-        // every launch; the subscription save is idempotent. Pushes are only a
-        // hint — the foreground processInbox calls are the source of truth.
-        application.registerForRemoteNotifications()
-        // Needed so the "friend shared" local notifications can appear, and so
-        // they show as banners while the app is open (delegate below).
+        // Local notifications: show as banners while open (delegate below) and,
+        // for already-onboarded users, ensure authorization (new users get the
+        // prompt during onboarding's notifications step, with context).
         UNUserNotificationCenter.current().delegate = self
-        // New users get the prompt during onboarding's notifications step (with
-        // context); only auto-request here for already-onboarded users.
-        if KeychainIdentityStore.shared.loadIdentity() != nil {
+        if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
             NotificationManager.requestAuthorization()
         }
 
-        // Background polling fallback: silent CloudKit pushes are unreliable
-        // (and currently broken by an iOS 26.4 regression), so also drain the
-        // inbox on the system's periodic background-refresh schedule.
-        let inboxRegistered = BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: Self.inboxRefreshTaskID, using: nil
-        ) { [weak self] task in
-            self?.handleInboxRefresh(task as? BGAppRefreshTask)
-        }
         let mailRegistered = BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.mailFetchTaskID, using: nil
         ) { [weak self] task in
@@ -147,7 +128,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             self?.handlePriceRefresh(task as? BGProcessingTask)
         }
         DiagnosticLog.shared.record(
-            "price refresh: BG task registration=\(priceRegistered) (inbox=\(inboxRegistered), mail=\(mailRegistered))",
+            "BG task registration: mail=\(mailRegistered), price=\(priceRegistered)",
             category: "price")
         readingListObserver = NotificationCenter.default.addObserver(
             forName: .readingListChanged, object: nil, queue: .main
@@ -155,19 +136,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             self?.schedulePriceRefresh(reason: "reading list changed")
         }
 
-        // Friend-sharing (CloudKit inbox/subscription) is a Downloader-only feature.
-        if AppSurfaceConfig.current == .downloader {
-            Task {
-                await SocialMessageCenter.shared.ensureSubscription()
-                await SocialMessageCenter.shared.drainPendingFriendShares()
-                await SocialMessageCenter.shared.processInbox()
-            }
-        }
+        // Read incoming mail (Luna shares + newsletters) — all surfaces.
         Task { await IncomingMailImporter.shared.importNewMail() }
-        // Experimental semantic sharing index — main app only (loads an NL
-        // model; never run in the memory-limited intent runner). No-op when off.
+        // Semantic search index — main app only (loads an NL model; never in the
+        // memory-limited intent runner). No-op when nothing needs embedding.
         SemanticIndexer.shared.scheduleRun()
-        if AppSurfaceConfig.current == .downloader { scheduleInboxRefresh() }
         scheduleMailFetch()
         schedulePriceRefresh(reason: "launch")
         refreshOverduePriceTrackersOnLaunch()
@@ -175,36 +148,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        if AppSurfaceConfig.current == .downloader { scheduleInboxRefresh() }
         scheduleMailFetch()
         schedulePriceRefresh(reason: "entered background")
-    }
-
-    private func scheduleInboxRefresh() {
-        let request = BGAppRefreshTaskRequest(identifier: Self.inboxRefreshTaskID)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            logger.error("Couldn't schedule inbox refresh: \(String(describing: error), privacy: .public)")
-        }
-    }
-
-    private func handleInboxRefresh(_ task: BGAppRefreshTask?) {
-        guard let task else { return }
-        DiagnosticLog.shared.record("bg-refresh task fired", category: "push")
-        scheduleInboxRefresh() // chain the next one
-        let work = Task {
-            await SocialMessageCenter.shared.processInbox(trigger: "bgRefresh")
-            // Opportunistically pull mail too — the more often we run, the more
-            // likely a newsletter reaches Kindle promptly.
-            await IncomingMailImporter.shared.importNewMail()
-            task.setTaskCompleted(success: true)
-        }
-        task.expirationHandler = {
-            DiagnosticLog.shared.record("bg-refresh task expired", category: "push")
-            work.cancel()
-        }
     }
 
     private func scheduleMailFetch() {
@@ -327,53 +272,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         }
     }
 
-    /// Records iCloud availability and our messaging identity at launch — the
-    /// context most useful for diagnosing why a friend's share didn't arrive.
-    private func recordEnvironmentSnapshot() {
-        let identity = KeychainIdentityStore.shared.loadIdentity()?.uuid.uuidString ?? "none"
-        DiagnosticLog.shared.record("messaging identity: \(identity)", category: "social")
-        Task {
-            let availability = await SocialMessageCenter.shared.availability()
-            DiagnosticLog.shared.record("iCloud availability: \(availability)", category: "social")
-        }
-    }
-
-    func application(
-        _ application: UIApplication,
-        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
-    ) {
-        logger.notice("Registered for remote notifications (\(deviceToken.count) byte token).")
-        DiagnosticLog.shared.record(
-            "registered for remote notifications (\(deviceToken.count)-byte token)", category: "push")
-    }
-
-    /// Silent push from the CloudKit subscription: a message record matching
-    /// our UUID was created. Drain the inbox, even in the background.
-    func application(
-        _ application: UIApplication,
-        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
-        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
-    ) {
-        let keys = userInfo.keys.map { "\($0)" }.joined(separator: ",")
-        logger.notice("Remote notification received (keys: \(keys, privacy: .public)).")
-        DiagnosticLog.shared.record("remote notification received (keys: \(keys))", category: "push")
-        Task {
-            await SocialMessageCenter.shared.processPush(userInfo: userInfo)
-            completionHandler(.newData)
-        }
-    }
-
-    func application(
-        _ application: UIApplication,
-        didFailToRegisterForRemoteNotificationsWithError error: Error
-    ) {
-        // Expected on simulators without push support; foreground polling covers it.
-        logger.error("Remote notification registration failed: \(String(describing: error), privacy: .public)")
-        DiagnosticLog.shared.record(
-            "remote notification registration FAILED: \(String(describing: error))", category: "push")
-    }
-
-    /// Show friend-share notifications as banners even while the app is open.
+    /// Show share notifications as banners even while the app is open.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
@@ -381,24 +280,16 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         [.banner, .list, .sound]
     }
 
-    /// Handle a notification tap. A FIRST-share notification deep-links to that
-    /// friend's settings page (to enable future-share notifications); every other
-    /// notification (follow-up shares, price drops) just opens the app with no
-    /// in-app routing.
+    /// Handle a notification tap. A pending-request notification deep-links to
+    /// the Pending Requests screen; everything else just opens the app.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
         let userInfo = response.notification.request.content.userInfo
-        let type = userInfo[NotificationManager.typeKey] as? String
-        if type == NotificationManager.typeFriendAdded {
-            await MainActor.run { SceneDelegate.routeToFriends() }
-            return
+        if userInfo[NotificationManager.typeKey] as? String == NotificationManager.typePendingRequest {
+            await MainActor.run { SceneDelegate.routeToPendingRequests() }
         }
-        guard type == NotificationManager.typeFirstShare,
-              let uuidString = userInfo[NotificationManager.friendUUIDKey] as? String,
-              let friendUUID = UUID(uuidString: uuidString) else { return }
-        await MainActor.run { SceneDelegate.routeToFriendSettings(friendUUID: friendUUID) }
     }
 
     func application(

@@ -1,16 +1,15 @@
 //
 //  NotificationManager.swift
-//  Luna
+//  LunaSocial
 //
 
 import LunaStorage
 import Foundation
 import UserNotifications
 
-/// Local-notification helper for social events. Silent CloudKit pushes wake the
-/// app to drain the inbox; this surfaces the decrypted result to the user (a
-/// CloudKit push can't carry the encrypted content itself). Authorization is
-/// requested once at launch so notifications can actually appear.
+/// Local-notification helper for share events. The email importer surfaces
+/// results here (a friend's accepted share, or a new pending request from a
+/// stranger). Authorization is requested once so notifications can appear.
 public enum NotificationManager {
 
     // MARK: - userInfo keys / values
@@ -18,19 +17,13 @@ public enum NotificationManager {
     /// `userInfo` key distinguishing a notification's kind (for tap routing and
     /// bulk dismissal).
     public static let typeKey = "lunaNotificationType"
-    /// `userInfo` key carrying the sharing friend's UUID string.
-    public static let friendUUIDKey = "lunaFriendUUID"
-    /// The first-ever share from a friend — tapping it deep-links to that
-    /// friend's settings page.
-    public static let typeFirstShare = "friendFirstShare"
-    /// A follow-up (not first) friend share — tapping it just opens the app;
+    /// A new pending request from someone who isn't a friend yet — tapping it
+    /// opens the Pending Requests screen.
+    public static let typePendingRequest = "pendingRequest"
+    /// An accepted friend's share was imported — tapping it just opens the app;
     /// these are cleared when the user reaches the reading list.
-    public static let typeShareFollowup = "friendShareFollowup"
-    /// Someone added you as a friend — tapping it opens the in-app friends list.
-    public static let typeFriendAdded = "friendAdded"
-    /// Identifier prefix for follow-up share notifications, so they can be
-    /// removed in bulk without disturbing first-share (or other) notifications.
-    private static let followupIdentifierPrefix = "friendShareFollowup-"
+    public static let typeShareReceived = "shareReceived"
+    private static let receivedIdentifierPrefix = "shareReceived-"
 
     /// Requests alert/sound authorization (no-op if already decided).
     public static func requestAuthorization() {
@@ -46,49 +39,36 @@ public enum NotificationManager {
         }
     }
 
-    /// Posts "X shared an article" when a friend with notifications enabled
-    /// sends us a link. A follow-up (not first) share: tapping it just opens the
-    /// app, and it auto-dismisses once the user reaches the reading list.
-    public static func postArticleShared(fromUsername username: String, title: String?) {
+    /// Posts "X shared an article" for an accepted friend's import. A follow-up
+    /// notification: tapping it opens the app and it auto-dismisses when the user
+    /// reaches the reading list.
+    public static func postShareReceived(fromName name: String, title: String?) {
         let content = UNMutableNotificationContent()
-        content.title = "\(username) shared an article"
+        content.title = "\(name) shared an article"
         content.body = title ?? "Open Luna to read it."
         content.sound = .default
-        content.userInfo = [typeKey: typeShareFollowup]
-        post(content, identifier: followupIdentifierPrefix + UUID().uuidString)
+        content.userInfo = [typeKey: typeShareReceived]
+        post(content, identifier: receivedIdentifierPrefix + UUID().uuidString)
     }
 
-    /// Posts the FIRST-ever share from a friend, which always notifies (regardless
-    /// of the per-friend toggle). Tapping it deep-links to that friend's settings
-    /// page so the user can turn on future-share notifications.
-    public static func postFirstShare(fromUsername username: String, friendUUID: UUID) {
+    /// Posts "X wants to share with you" for a new pending request from a
+    /// stranger. Tapping it opens the Pending Requests screen.
+    public static func postPendingRequest(fromName name: String, title: String?) {
         let content = UNMutableNotificationContent()
-        content.title = "\(username) shared w/ you for the first time!"
-        content.subtitle = "To see future shares from \(username), go to settings"
+        content.title = "\(name) wants to share with you"
+        content.body = title ?? "Review the request in Luna."
         content.sound = .default
-        content.userInfo = [typeKey: typeFirstShare, friendUUIDKey: friendUUID.uuidString]
-        // One first-share prompt per friend (a later first-share, e.g. after the
-        // friend was re-added, replaces the prior one rather than stacking).
-        post(content, identifier: "friendFirstShare-\(friendUUID.uuidString)")
-    }
-
-    /// Posts "X added you as a friend" when someone adds us back (a new friend
-    /// appears in our inbox). Tapping it opens the in-app friends list.
-    public static func postFriendAdded(fromUsername username: String) {
-        let content = UNMutableNotificationContent()
-        content.title = "\(username) added you as a friend"
-        content.sound = .default
-        content.userInfo = [typeKey: typeFriendAdded]
+        content.userInfo = [typeKey: typePendingRequest]
         post(content)
     }
 
-    /// Removes any delivered follow-up share notifications (called when the user
-    /// reaches the reading list). Leaves first-share prompts intact.
-    public static func clearFollowupShareNotifications() {
+    /// Removes delivered "share received" notifications (called when the user
+    /// reaches the reading list).
+    public static func clearShareNotifications() {
         let center = UNUserNotificationCenter.current()
         center.getDeliveredNotifications { delivered in
             let ids = delivered
-                .filter { $0.request.content.userInfo[typeKey] as? String == typeShareFollowup }
+                .filter { $0.request.content.userInfo[typeKey] as? String == typeShareReceived }
                 .map(\.request.identifier)
             guard !ids.isEmpty else { return }
             center.removeDeliveredNotifications(withIdentifiers: ids)

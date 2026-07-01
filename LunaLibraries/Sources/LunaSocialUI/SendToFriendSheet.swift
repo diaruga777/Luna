@@ -1,89 +1,92 @@
 //
 //  SendToFriendSheet.swift
-//  Luna
+//  LunaSocialUI
 //
 
 import LunaSocial
+import LunaReadingList
+import LunaModels
 import LunaDesignSystem
 import UIKit
 
-/// The shared "share this article" sheet used by the reading list and the
-/// reader: pick a friend to send via Luna messaging, or fall back to the
-/// system share sheet with the plain URL.
+/// The shared "share this" entry point used by the reading list and the reader:
+/// pick recipients and send a Luna email, or fall back to the system share sheet
+/// with the plain URL.
 public enum SendToFriendSheet {
 
+    /// Injected by the app so the sheet can launch the email-account login flow
+    /// when no account is configured yet.
+    public static var accountSetupLauncher: ((UIViewController) -> Void)?
+
+    /// Presents the recipient picker for a reading-list item (preferred — sends
+    /// the item's rich content), or a bare URL when no item is available.
     public static func present(
         from presenter: UIViewController,
-        sourceView: UIView,
+        sourceView: UIView? = nil,
+        item: ReadingListItem? = nil,
         urlString: String,
         title: String?
     ) {
-        // Share Link is a separate menu item at the call sites — this is the friend
-        // picker.
-        presentFriendPicker(
-            from: presenter, sourceView: sourceView, urlString: urlString, title: title)
-    }
-
-    /// Presents the modern friend-picker sheet; picking one sends the article to
-    /// their reading list.
-    public static func presentFriendPicker(
-        from presenter: UIViewController, sourceView: UIView, urlString: String, title: String?
-    ) {
-        let friends = FriendsStore.shared.items()
-        guard !friends.isEmpty else {
-            let alert = UIAlertController(
-                title: "No Friends Yet",
-                message: "Add friends from the Friends screen to send articles directly.",
-                preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default))
-            presenter.present(alert, animated: true)
+        guard EmailShareCenter.shared.isConfigured else {
+            promptAccountSetup(from: presenter)
             return
         }
-        let sheet = FriendPickerSheet(friends: friends) { [weak presenter] friend in
-            guard let presenter else { return }
-            deliver(urlString: urlString, title: title, to: friend, presenter: presenter)
+        let picker = RecipientPickerViewController { emails in
+            guard !emails.isEmpty else { return }
+            deliver(item: item, urlString: urlString, title: title, to: emails, from: presenter)
         }
-        presenter.present(sheet, animated: true)
+        let nav = UINavigationController(rootViewController: picker)
+        presenter.present(nav, animated: true)
     }
 
-    /// Shares the plain article URL — no Luna deep link, no accessory text — so it
-    /// behaves like any normal link share.
-    public static func shareLink(urlString: String, from presenter: UIViewController, sourceView: UIView) {
+    /// Shares the plain URL via the system share sheet (no Luna framing).
+    public static func shareLink(urlString: String, from presenter: UIViewController, sourceView: UIView?) {
         let shared: Any = URL(string: urlString) ?? urlString
-        let activity = UIActivityViewController(
-            activityItems: [shared], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = sourceView
+        let activity = UIActivityViewController(activityItems: [shared], applicationActivities: nil)
+        activity.popoverPresentationController?.sourceView = sourceView ?? presenter.view
         presenter.present(activity, animated: true)
     }
 
-    /// One-tap send to a specific friend (the end-of-article suggestion),
-    /// resolving the friend by UUID. Falls back silently if the friend is gone.
-    public static func sendToFriend(
-        uuid: UUID, urlString: String, title: String?, from presenter: UIViewController
-    ) {
-        guard let friend = FriendsStore.shared.friend(withUUID: uuid) else { return }
-        deliver(urlString: urlString, title: title, to: friend, presenter: presenter)
-    }
+    // MARK: - Delivery
 
     private static func deliver(
-        urlString: String, title: String?, to friend: Friend,
-        presenter: UIViewController
+        item: ReadingListItem?, urlString: String, title: String?,
+        to emails: [String], from presenter: UIViewController
     ) {
         Task { @MainActor in
-            guard await ICloudGate.requireICloud(presenting: presenter) else { return }
             do {
-                try await SocialMessageCenter.shared.sendArticle(
-                    urlString: urlString, title: title, to: friend)
+                if let item {
+                    try await EmailShareCenter.shared.send(item: item, to: emails)
+                } else {
+                    try await EmailShareCenter.shared.share(urlString: urlString, title: title, to: emails)
+                }
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                Toast.show("Sent to \(friend.card.username)", from: presenter)
             } catch {
-                let alert = UIAlertController(
-                    title: "Couldn't Send",
-                    message: "\(error)",
-                    preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "OK", style: .default))
-                presenter.present(alert, animated: true)
+                presentError(error, from: presenter)
             }
         }
+    }
+
+    private static func promptAccountSetup(from presenter: UIViewController) {
+        let alert = UIAlertController(
+            title: "Set up email first",
+            message: "Connect your email account to send articles to friends.",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Not Now", style: .cancel))
+        if let launcher = accountSetupLauncher {
+            alert.addAction(UIAlertAction(title: "Set Up", style: .default) { _ in
+                launcher(presenter)
+            })
+        }
+        presenter.present(alert, animated: true)
+    }
+
+    private static func presentError(_ error: Error, from presenter: UIViewController) {
+        let alert = UIAlertController(
+            title: "Couldn't send",
+            message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription,
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        presenter.present(alert, animated: true)
     }
 }

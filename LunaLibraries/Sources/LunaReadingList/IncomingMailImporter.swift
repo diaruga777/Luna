@@ -1,123 +1,178 @@
 //
 //  IncomingMailImporter.swift
-//  Luna
+//  LunaReadingList
 //
 
 import LunaMail
+import LunaMailAccount
+import LunaMailTransport
 import LunaSend
+import LunaSocial
 import LunaStorage
 import LunaModels
 import Foundation
 
-/// Fetches new mail from allowed senders (via IMAP) and turns the first URL in
-/// each message into a reading-list item. Runs on launch/foreground — no
-/// background fetch. Reuses the send-to-Kindle Gmail account + app password.
+/// Opportunistically reads incoming mail (on launch/foreground/background) via
+/// the connected email account and:
+///  - imports **Luna shares** (messages carrying the `X-Luna-Share` marker) —
+///    auto-importing those from accepted friends, and queuing those from
+///    strangers into the pending-requests moderation list;
+///  - imports **matched newsletters** (the existing sender/subject filters) as
+///    articles.
+/// Luna mail is marked read as it's processed.
 public final class IncomingMailImporter {
 
     public static let shared = IncomingMailImporter()
 
-    private let makeClient: () -> IMAPFetching
-    private let credentials: SendCredentialsStoring
     private let store: ReadingListStore
-    /// Kicks ingestion for a saved URL; injectable for tests.
-    private let ingest: (ReadingListItem) -> Void
+    private let friends: FriendsStore
+    private let pending: PendingRequestsStore
+    private let accountStore: EmailAccountStore
     private var isRunning = false
 
-    public init(makeClient: @escaping () -> IMAPFetching = { GmailIMAPClient() },
-         credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared,
-         store: ReadingListStore = .shared,
-         ingest: ((ReadingListItem) -> Void)? = nil) {
-        self.makeClient = makeClient
-        self.credentials = credentials
+    public init(store: ReadingListStore = .shared,
+                friends: FriendsStore = .shared,
+                pending: PendingRequestsStore = .shared,
+                accountStore: EmailAccountStore = .shared) {
         self.store = store
-        self.ingest = ingest ?? { item in
-            Task {
-                await ReadingListIngestor.shared.ingest(item)
-                // Optionally forward the imported article to Kindle once parsed.
-                if IncomingMailSettings.autoSendToKindle,
-                   ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle),
-                   let ready = ReadingListStore.shared.item(withID: item.id),
-                   ready.state == .ready {
-                    await ArticleSendCoordinator.shared.send(
-                        ready, toDestinationID: ArticleDestinationID.kindle)
-                }
-            }
-        }
+        self.friends = friends
+        self.pending = pending
+        self.accountStore = accountStore
     }
 
-    /// Whether incoming import can run (enabled, has at least one sender or
-    /// subject filter, has a Gmail account + password).
-    public var isConfigured: Bool {
-        IncomingMailSettings.isEnabled
-            && !(IncomingMailSettings.allowedSenders.isEmpty
-                 && IncomingMailSettings.subjectFilters.isEmpty)
-            && !KindleSendSettings.smtpUsername.isEmpty
-            && !(credentials.smtpPassword() ?? "").isEmpty
-    }
+    /// Can run when an email account is connected.
+    public var isConfigured: Bool { accountStore.isConfigured }
 
-    /// Fetches and imports. Safe to call repeatedly; coalesces overlaps.
+    /// Fetches and processes new mail. Safe to call repeatedly; coalesces overlaps.
     public func importNewMail() async {
         guard isConfigured, !isRunning else { return }
+        guard let transport = MailTransportFactory.make(store: accountStore) else { return }
         isRunning = true
         defer { isRunning = false }
 
-        let account = KindleSendSettings.smtpUsername
-        guard let password = credentials.smtpPassword() else { return }
+        let cursor = MailCursor(
+            uid: IncomingMailSettings.lastUID,
+            uidValidity: IncomingMailSettings.uidValidity,
+            token: IncomingMailSettings.cursorToken)
 
         do {
-            let outcome = try await makeClient().fetchNewMessages(
-                account: account, password: password,
-                senders: IncomingMailSettings.allowedSenders,
-                subjectFilters: IncomingMailSettings.subjectFilters,
-                afterUID: IncomingMailSettings.lastUID,
-                knownUIDValidity: IncomingMailSettings.uidValidity == 0
-                    ? nil : IncomingMailSettings.uidValidity)
+            let result = try await transport.fetchShares(
+                after: cursor,
+                extraSenders: IncomingMailSettings.allowedSenders,
+                extraSubjects: IncomingMailSettings.subjectFilters)
 
-            var imported = 0
-            for message in outcome.messages {
-                if let content = MailArticleBuilder.article(from: message) {
-                    // Newsletters etc.: the email body IS the article. Save it
-                    // directly (no fetch), tagged with the sender.
-                    let item = store.add(urlString: "lunamail://\(message.uid)", source: .email)
-                    if let sender = MailArticleBuilder.senderName(from: message.from) {
-                        store.setChannelName(sender, for: item.id)
+            var toMarkRead: [String] = []
+            for message in result.messages {
+                if let marker = message.marker {
+                    if await handleLunaShare(marker, message: message) {
+                        toMarkRead.append(message.id)
                     }
-                    let ready = store.saveContent(content, for: item)
-                    imported += 1
-                    let firstBlock = content.blocks.first(where: {
-                        !$0.text.trimmingCharacters(in: .whitespaces).isEmpty
-                    })?.text.prefix(120) ?? ""
-                    DiagnosticLog.shared.record(
-                        "incoming mail: imported uid \(message.uid) as article \"\(content.title)\" (\(content.blocks.count) blocks) first=\"\(firstBlock)\"",
-                        category: "mail")
-                    // Body-derived articles don't run through `ingest`, so kick the
-                    // auto-send check here. Per-destination email-source settings
-                    // decide whether (and where) it goes.
-                    if ready.state == .ready {
-                        ArticleSendCoordinator.shared.articleBecameReady(ready)
-                    }
-                } else if let url = message.urls.first {
-                    // No usable body but there's a link — save + ingest it.
-                    let item = store.add(urlString: url.absoluteString, source: .email)
-                    if item.state == .pending { ingest(item) }
-                    imported += 1
-                    DiagnosticLog.shared.record(
-                        "incoming mail: imported uid \(message.uid) as link \(url.absoluteString)",
-                        category: "mail")
                 } else {
-                    DiagnosticLog.shared.record(
-                        "incoming mail: uid \(message.uid) skipped — no article body and no link",
-                        category: "mail")
+                    importNewsletter(message)
+                    toMarkRead.append(message.id)
                 }
             }
-            IncomingMailSettings.uidValidity = outcome.uidValidity
-            IncomingMailSettings.lastUID = outcome.highestUID
+            if !toMarkRead.isEmpty { try? await transport.markRead(toMarkRead) }
+
+            IncomingMailSettings.lastUID = result.cursor.uid
+            IncomingMailSettings.uidValidity = result.cursor.uidValidity
+            IncomingMailSettings.cursorToken = result.cursor.token
             DiagnosticLog.shared.record(
-                "incoming mail: imported \(imported) of \(outcome.messages.count) message(s)",
-                category: "mail")
+                "incoming mail: processed \(result.messages.count) message(s)", category: "mail")
         } catch {
             DiagnosticLog.shared.record(
                 "incoming mail fetch failed: \(String(describing: error))", category: "mail")
         }
+    }
+
+    // MARK: - Luna shares
+
+    /// Routes a Luna share by sender. Returns true if the message was handled
+    /// (and should be marked read).
+    private func handleLunaShare(_ marker: LunaShareMarker, message: FetchedMessage) async -> Bool {
+        let senderEmail = Self.address(from: message.from)
+        guard Friend.isValidEmail(senderEmail) else { return false }
+        guard !marker.url.isEmpty, URL(string: marker.url)?.scheme?.hasPrefix("http") == true
+        else { return false }
+
+        if let friend = friends.friend(withEmail: senderEmail) {
+            await autoImport(marker, from: friend)
+        } else {
+            queuePending(marker, message: message, senderEmail: senderEmail)
+        }
+        return true
+    }
+
+    /// Auto-imports an accepted friend's share into the reading list.
+    private func autoImport(_ marker: LunaShareMarker, from friend: Friend) async {
+        guard let item = store.addIfAbsent(urlString: marker.url, source: .email) else { return }
+        store.setChannelName(friend.displayName, for: item.id)
+        await ReadingListIngestor.shared.ingest(item)
+
+        let wasFirst = friends.markReceivedShare(email: friend.email)
+        if wasFirst || friend.notifyOnEveryShare {
+            NotificationManager.postShareReceived(
+                fromName: friend.displayName, title: marker.title.isEmpty ? nil : marker.title)
+        }
+        DiagnosticLog.shared.record(
+            "incoming mail: auto-imported share from friend \(friend.email)", category: "mail")
+    }
+
+    /// Queues a stranger's share for moderation (not imported yet).
+    private func queuePending(
+        _ marker: LunaShareMarker, message: FetchedMessage, senderEmail: String
+    ) {
+        guard !pending.contains(urlString: marker.url, senderEmail: senderEmail) else { return }
+        let senderName = Self.displayName(from: message.from)
+        pending.add(PendingRequest(
+            senderEmail: senderEmail, senderName: senderName,
+            urlString: marker.url, title: marker.title.isEmpty ? nil : marker.title,
+            kind: marker.kind, messageID: message.id))
+        NotificationManager.postPendingRequest(
+            fromName: senderName ?? Friend.localPart(senderEmail),
+            title: marker.title.isEmpty ? nil : marker.title)
+        DiagnosticLog.shared.record(
+            "incoming mail: queued pending request from \(senderEmail)", category: "mail")
+    }
+
+    // MARK: - Newsletters (existing sender/subject filters)
+
+    private func importNewsletter(_ message: FetchedMessage) {
+        let incoming = IncomingMessage(
+            uid: message.uid ?? 0, from: message.from, subject: message.subject,
+            date: message.date, contentType: message.headers["content-type"] ?? "",
+            transferEncoding: message.headers["content-transfer-encoding"] ?? "",
+            body: message.bodyText, urls: Self.urls(in: message.bodyText))
+
+        if let content = MailArticleBuilder.article(from: incoming) {
+            let item = store.add(urlString: "lunamail://\(message.id)", source: .email)
+            if let sender = MailArticleBuilder.senderName(from: message.from) {
+                store.setChannelName(sender, for: item.id)
+            }
+            let ready = store.saveContent(content, for: item)
+            if ready.state == .ready { ArticleSendCoordinator.shared.articleBecameReady(ready) }
+        } else if let url = incoming.urls.first, let item = store.addIfAbsent(
+            urlString: url.absoluteString, source: .email) {
+            Task { await ReadingListIngestor.shared.ingest(item) }
+        }
+    }
+
+    // MARK: - Address parsing
+
+    /// The email address from a `From` header (`"Name" <a@b.com>` → `a@b.com`).
+    static func address(from raw: String) -> String {
+        if let open = raw.firstIndex(of: "<"), let close = raw.firstIndex(of: ">"), open < close {
+            return Friend.normalize(String(raw[raw.index(after: open)..<close]))
+        }
+        return Friend.normalize(raw)
+    }
+
+    /// The display name from a `From` header, if any.
+    static func displayName(from raw: String) -> String? {
+        MailArticleBuilder.senderName(from: raw)
+    }
+
+    private static func urls(in text: String) -> [URL] {
+        GmailIMAPClient.extractURLs(from: text)
     }
 }

@@ -6,36 +6,17 @@
 import LunaSocialUI
 import LunaReadingList
 import LunaReaderUI
-import LunaSemantic
-import LunaSocial
 import LunaDesignSystem
 import LunaStorage
 import UIKit
 
-/// Main-app sharing provider, backed by the social stack (ShareSuggestionStore
-/// + SendToFriendSheet → CloudKit). Injected into readers in the main app; the
-/// share extension passes nil instead, so neither this type nor CloudKit is
-/// compiled into the extension.
+/// Main-app sharing provider: pick recipients and send a Luna email (via
+/// `SendToFriendSheet` → `EmailShareCenter`), or export/share the link. Injected
+/// into readers in the main app; the share extension passes nil instead.
 public final class AppReaderShareProvider: ReaderShareProviding {
     public static let shared = AppReaderShareProvider()
 
-    public func suggestedFriendName(forURLString urlString: String) -> String? {
-        bestFriend(forURLString: urlString)?.username
-    }
-
-    /// The friend to surface at the end of an article: the same-site/-channel
-    /// streak suggestion, else a cached content-similarity match (no embedding).
-    private func bestFriend(forURLString urlString: String) -> (uuid: UUID, username: String)? {
-        let item = ReadingListStore.shared.item(forURLString: urlString)
-        if let streak = ShareSuggestionStore.shared.suggestedFriend(
-            forURLString: urlString, channelName: item?.channelName) {
-            return streak
-        }
-        if let itemID = item?.id {
-            return SemanticIndexer.shared.cachedSuggestion(forItemID: itemID)
-        }
-        return nil
-    }
+    public func suggestedFriendName(forURLString urlString: String) -> String? { nil }
 
     public func presentShareSheet(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
@@ -49,19 +30,15 @@ public final class AppReaderShareProvider: ReaderShareProviding {
                 for: item, from: presenter, sourceView: sourceView)
             return
         }
-        let suggestion = bestFriend(forURLString: urlString)
         let rows = ReaderShareSheet.rows(
-            suggestedFriendName: suggestion?.username,
+            suggestedFriendName: nil,
             includeEbook: isArticle,
-            onSendToSuggested: { [weak presenter] in
-                guard let presenter, let suggestion else { return }
-                SendToFriendSheet.sendToFriend(
-                    uuid: suggestion.uuid, urlString: urlString, title: title, from: presenter)
-            },
+            onSendToSuggested: {},
             onPickFriend: { [weak presenter] in
                 guard let presenter else { return }
-                SendToFriendSheet.presentFriendPicker(
-                    from: presenter, sourceView: sourceView, urlString: urlString, title: title)
+                SendToFriendSheet.present(
+                    from: presenter, sourceView: sourceView, item: item,
+                    urlString: urlString, title: title)
             },
             onShareLink: { [weak presenter] in
                 guard let presenter else { return }
@@ -77,9 +54,9 @@ public final class AppReaderShareProvider: ReaderShareProviding {
     }
 
     public func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController) {
-        guard let suggestion = bestFriend(forURLString: urlString) else { return }
-        SendToFriendSheet.sendToFriend(
-            uuid: suggestion.uuid, urlString: urlString, title: title, from: presenter)
+        let item = ReadingListStore.shared.item(forURLString: urlString)
+        SendToFriendSheet.present(
+            from: presenter, item: item, urlString: urlString, title: title)
     }
 
     public func saveLink(urlString: String) {

@@ -92,7 +92,7 @@ let package = Package(
         .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReaderUI", "LunaReadingList", "LunaSemantic", "LunaSocial"]),
         .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaPlatforms", "LunaReadingList", "LunaSocial", "LunaYouTubeAPI"]),
         .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaPlatforms", "LunaMediaDownload", "LunaSemantic", "LunaReaderUI", "LunaSend"]),
-        .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaDesignSystem", "LunaDocuments", "LunaEpub", "LunaSend", "LunaMail", "LunaMediaDownload", "LunaPlatforms", "LunaPriceUI", "LunaReaderUI", "LunaArchiveReader", "LunaSemantic", "LunaSocial", "LunaYouTubeAPI"]),
+        .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaDesignSystem", "LunaDocuments", "LunaEpub", "LunaSend", "LunaMail", "LunaMailAccount", "LunaMailTransport", "LunaMediaDownload", "LunaPlatforms", "LunaPriceUI", "LunaReaderUI", "LunaArchiveReader", "LunaSemantic", "LunaSocial", "LunaYouTubeAPI"]),
         .testTarget(name: "LunaAppConfigTests", dependencies: ["LunaAppConfig"]),
         .testTarget(name: "LunaModelsTests", dependencies: ["LunaModels"]),
         .testTarget(name: "LunaURLClassificationTests", dependencies: ["LunaURLClassification"]),

@@ -5,7 +5,6 @@
 
 import LunaIntents
 import LunaYouTubeAPI
-import LunaSocial
 import LunaURLClassification
 import AppIntents
 import Foundation
@@ -63,6 +62,6 @@ public struct FindYouTubeVideoIntent: AppIntent {
         let urlString = YouTubeURL.watchURLString(videoID: match.videoID)
         _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: urlString)
         // Return the share-suggestion token (see LunaSafariPageIntent).
-        return .result(value: ShareSuggestionStore.shared.pendingSuggestionToken())
+        return .result(value: "Saved to Luna.")
     }
 }

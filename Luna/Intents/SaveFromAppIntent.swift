@@ -5,7 +5,6 @@
 
 import LunaIntents
 import LunaYouTubeAPI
-import LunaSocial
 import LunaPlatforms
 import LunaStorage
 import LunaURLClassification
@@ -88,7 +87,7 @@ public struct SaveFromAppIntent: AppIntent {
             guard let link, link.hasPrefix("http") else { throw SaveError.notFound }
             _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: link)
         }
-        return .result(value: ShareSuggestionStore.shared.pendingSuggestionToken())
+        return .result(value: "Saved to Luna.")
     }
 
     /// Splits the model's single response string into its " ; "-joined fields,

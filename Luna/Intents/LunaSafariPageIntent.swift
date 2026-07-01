@@ -8,7 +8,6 @@
 
 import AppIntents
 import LunaIntents
-import LunaSocial
 import LunaStorage
 import Foundation
 
@@ -61,6 +60,6 @@ struct LunaSafariPageIntent: AppIntent {
         _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: tracked)
         // Return the share-suggestion token so the shortcut can offer the right
         // menu ("" none / "3:name" yes-always-no / "2:name" yes-no).
-        return .result(value: ShareSuggestionStore.shared.pendingSuggestionToken())
+        return .result(value: "Saved to Luna.")
     }
 }

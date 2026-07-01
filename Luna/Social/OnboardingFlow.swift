@@ -9,9 +9,9 @@ import LunaModels
 import LunaTransitions
 import UIKit
 
-/// Builds the first-launch onboarding: pick a username, then quick steps to
-/// enable notifications, install the Safari extension, and set up the
-/// save-page shortcut / Action Button. Each step can be skipped.
+/// Builds the first-launch onboarding: a skippable email-account step, then
+/// quick steps to enable notifications, install the Safari extension, and set up
+/// the save-page shortcut / Action Button. Each step can be skipped.
 public enum OnboardingFlow {
 
     /// Returns the onboarding root (a bare navigation controller). `onFinished`
@@ -20,35 +20,22 @@ public enum OnboardingFlow {
         let nav = UINavigationController()
         nav.setNavigationBarHidden(true, animated: false)
         nav.installDotMatrixTransitions()
-
-        let username = OnboardingViewController { [weak nav] in
-            guard let nav else { return }
-            nav.pushViewController(notificationsStep(nav: nav, onFinished: onFinished), animated: true)
-        }
-        nav.viewControllers = [username]
+        nav.viewControllers = [emailStep(nav: nav, onFinished: onFinished)]
         return nav
     }
 
-    /// Re-runs ONLY the device-setup steps (notifications, Safari extension,
-    /// shortcut) — not the username/identity step, which would create a new
-    /// identity and orphan existing friends. Used by the Settings "Replay
-    /// Setup" button.
+    /// Re-runs the same onboarding (used by the Settings "Replay Onboarding"
+    /// button). Nothing is destructive, so it's identical to `make`.
     public static func makeSetupOnly(onFinished: @escaping () -> Void) -> UIViewController {
-        let nav = UINavigationController()
-        nav.setNavigationBarHidden(true, animated: false)
-        nav.installDotMatrixTransitions()
-        nav.viewControllers = [notificationsStep(nav: nav, onFinished: onFinished)]
-        return nav
+        make(onFinished: onFinished)
     }
 
     #if DEBUG
     /// Standalone, ordered onboarding step view controllers for snapshot/navigation
-    /// tests. These are the same screens the flow pushes, built without the
-    /// inter-step navigation wiring so each can be rendered in isolation. Index 0 is
-    /// the username step; the rest are the device-setup steps in flow order.
+    /// tests, built without the inter-step navigation wiring.
     public static func stepViewControllersForTesting() -> [UIViewController] {
         let nav = UINavigationController()
-        var steps: [UIViewController] = [OnboardingViewController(onComplete: {})]
+        var steps: [UIViewController] = [emailStep(nav: nav, onFinished: {})]
         steps.append(notificationsStep(nav: nav, onFinished: {}))
         if #available(iOS 27.0, *) {
             steps.append(safariStep(nav: nav, onFinished: {}))
@@ -58,6 +45,27 @@ public enum OnboardingFlow {
         return steps
     }
     #endif
+
+    /// Skippable step: connect an email account (drives send + receive of shares).
+    private static func emailStep(
+        nav: UINavigationController, onFinished: @escaping () -> Void
+    ) -> UIViewController {
+        let proceed: () -> Void = { [weak nav] in
+            guard let nav else { return }
+            nav.pushViewController(notificationsStep(nav: nav, onFinished: onFinished), animated: true)
+        }
+        return OnboardingStepViewController(
+            symbol: "envelope.badge",
+            title: "Connect your email",
+            body: "Luna sends and receives shared articles through your own email account. "
+                + "Connect it now, or set it up later — you'll see a reminder in your reading list.",
+            primary: .init(title: "Set Up Email") { step in
+                EmailLoginFlow.present(from: step) { _ in proceed() }
+            },
+            continueTitle: "Skip",
+            animation: nil,
+            onContinue: proceed)
+    }
 
     private static func notificationsStep(
         nav: UINavigationController, onFinished: @escaping () -> Void
@@ -77,7 +85,6 @@ public enum OnboardingFlow {
             body: "Enable notifications for price drops, articles ready to read, and links shared with you.",
             primary: .init(title: "Enable Notifications") { _ in
                 NotificationManager.requestAuthorization()
-                UIApplication.shared.registerForRemoteNotifications()
                 proceed()
             },
             continueTitle: "Not Now",
@@ -127,5 +134,4 @@ public enum OnboardingFlow {
             animation: .actionExtension,
             onContinue: onFinished)
     }
-
 }

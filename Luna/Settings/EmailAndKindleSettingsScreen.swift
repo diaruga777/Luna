@@ -6,16 +6,17 @@
 import LunaReadingListUI
 import LunaReadingList
 import LunaMail
+import LunaMailAccount
 import LunaSend
 import LunaDesignSystem
 import UIKit
 
-/// Combined Email & Kindle settings. One Gmail account (app password) powers
-/// both outgoing Send-to-Kindle and incoming email import. Three sections:
-/// the shared email account, Send-to-Kindle, and Import-from-Email.
+/// Email & Kindle settings. The Luma Sharing Account (any provider) powers
+/// sending articles to friends and importing shares. Send-to-Kindle keeps its
+/// own SMTP account. Sections: sharing account, Send-to-Kindle, Import-from-Email.
 final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
-    private enum Section: Int, CaseIterable { case account, kindle, importMail, subjectFilters }
+    private enum Section: Int, CaseIterable { case lunaAccount, account, kindle, importMail, subjectFilters }
 
     /// Field tags for the text fields.
     private enum Field: Int { case host = 1, username, password, kindleAddress }
@@ -40,6 +41,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
+        case .lunaAccount: return EmailAccountStore.shared.isConfigured ? 2 : 1
         case .account: return 1 /* provider */ + accountRows.count
         case .kindle: return 3 /* mode, kindle address, test send */
         case .importMail: return 2 /* enabled, auto-send */ + IncomingMailSettings.allowedSenders.count + 1 /* add */
@@ -49,7 +51,8 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .account: return "Email Account"
+        case .lunaAccount: return "Sharing Account"
+        case .account: return "Send-to-Kindle Account"
         case .kindle: return "Send to Kindle"
         case .importMail: return "Import from Email"
         case .subjectFilters: return "Subject Filters"
@@ -58,8 +61,10 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
+        case .lunaAccount:
+            return "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to friends and import shares sent to you."
         case .account:
-            return "Used for both sending to Kindle and importing email. For Gmail, use an app password (myaccount.google.com → Security → App passwords).\n\nAll your email data stays local on this device, unless forwarded to Kindle via your email server."
+            return "The account Send-to-Kindle mails from. For Gmail, use an app password (myaccount.google.com → Security → App passwords)."
         case .kindle:
             return "Amazon only accepts mail from approved senders — add this account at amazon.com → Preferences → Personal Document Settings."
         case .importMail:
@@ -79,6 +84,22 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         cell.selectionStyle = .none
 
         switch Section(rawValue: indexPath.section)! {
+        case .lunaAccount:
+            if EmailAccountStore.shared.isConfigured {
+                if indexPath.row == 0 {
+                    content.text = EmailAccountStore.shared.account?.address
+                    content.secondaryText = EmailAccountStore.shared.account?.provider.displayName
+                } else {
+                    content.text = "Sign Out"
+                    content.textProperties.color = .systemRed
+                    cell.selectionStyle = .default
+                }
+            } else {
+                content.text = "Connect Email Account…"
+                content.textProperties.color = view.tintColor ?? .systemBlue
+                cell.selectionStyle = .default
+            }
+
         case .account:
             if indexPath.row == 0 {
                 content.text = "Provider"
@@ -159,6 +180,15 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
+        case .lunaAccount:
+            if EmailAccountStore.shared.isConfigured {
+                if indexPath.row == 1 {
+                    EmailAccountStore.shared.clear()
+                    tableView.reloadData()
+                }
+            } else {
+                EmailLoginFlow.present(from: self) { [weak self] _ in self?.tableView.reloadData() }
+            }
         case .kindle where indexPath.row == 0:
             navigationController?.pushViewController(
                 AutoSendBySourceScreen(

@@ -84,6 +84,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 .flatMap(\.windows)
                 .first { $0.isKeyWindow }
         }
+        // Pay the keyboard's one-time bring-up cost after launch settles, not on the
+        // first tap that needs a text field.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            DotMatrixKeyboardReveal.prewarmKeyboard()
+        }
 
         // Wire the read-aloud first-run prompt's "Open Settings" to push the
         // Voice settings screen. Setting this hook is what enables the prompt in

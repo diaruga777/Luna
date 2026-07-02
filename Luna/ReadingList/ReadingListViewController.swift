@@ -1003,11 +1003,16 @@ final class ReadingListViewController: UITableViewController {
     @objc private func addTapped() {
         let alert = UIAlertController(
             title: "Save a Link", message: nil, preferredStyle: .alert)
+        // Prefill from the already-evaluated pasteboard suggestion, never from a
+        // live `UIPasteboard` read: that read is synchronous cross-process IPC and
+        // raises the system paste banner, stalling the tap before the present
+        // animation can start.
+        let prefill = pasteboardCandidate?.urlString
         alert.addTextField { field in
             field.placeholder = "https://…"
             field.keyboardType = .URL
             field.autocapitalizationType = .none
-            field.text = UIPasteboard.general.url?.absoluteString
+            field.text = prefill
         }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak alert] _ in

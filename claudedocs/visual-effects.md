@@ -47,13 +47,17 @@ presentation really happens `animated:false` under an opaque **cover window** (l
 normal+50, below status bar/keyboard) showing a pre-captured screen snapshot, and the
 animation plays on top with real committed pixels:
 
-- **Partial-screen present**: (1) *chrome fade* — everything outside the modal's
-  resolved frame (dimming, sheet stack-back) crossfades between two full-window
-  snapshots over `chromeFadeDuration` (0.12s), never pixelating; (2) *region wipe* —
-  the two-wave dissolve confined to the modal's pixel-aligned frame (the modal-free
-  background is captured by briefly hiding the presentation's chrome view under the
-  cover). Dismiss mirrors it (wipe first, then un-dim fade). A final 0.08s cover fade
-  over the live UI softens anything snapshots can't know (shadows, mid-wipe motion).
+- **Partial-screen present**: the *region wipe* starts FIRST — the two-wave dissolve
+  confined to the modal's pixel-aligned frame and clipped to its platter's rounded
+  corners (`cornerAttributes` walks the platter for the real radius/maskedCorners),
+  from the old screen's region pixels (identical to the cover beneath, so the overlay
+  appears seamlessly) to the committed modal — because everything before its first
+  frame reads as tap latency. The *chrome fade* runs alongside: everything outside
+  the frame (dimming, sheet stack-back) crossfades to the modal-free background,
+  captured by briefly hiding the presentation's chrome view under the cover, never
+  pixelating. Dismiss mirrors it (wipe first, then un-dim fade). A final 0.06s cover
+  fade over the live UI softens anything snapshots can't know (shadows, mid-wipe
+  motion).
 - **Full-screen present/dismiss**: one whole-screen wipe, like a nav push.
 - **Directions** (`DotMatrixModalStyle.automatic`, resolved from REAL post-layout
   geometry so iPhone/iPad adaptations pick the right feel): full-screen and
@@ -116,10 +120,15 @@ the mode), revealing whatever LIVE content sits beneath the layer. On
 (level 2e7) holds the pre-keyboard pixels — copied from the modal cover's image when
 one is up (`DotMatrixKeyboardReveal.activeCover`), else the live window — the
 keyboard rises invisibly beneath it, and on `keyboardDidShow` the patch dissolves out
-in 0.15s (bottom-to-top wave). Frame CHANGES while visible, hardware-keyboard bars
+in 0.15s (bottom-to-top wave). A keyboard rising during a `DotMatrixModal` present (a
+modal text field auto-focusing) instead holds under its patch until
+`modalWipeDidStart()` so its dots run in step with the modal's wipe (1s fallback if
+the choreography bails). Frame CHANGES while visible, hardware-keyboard bars
 and floating iPad keyboards are ignored; a hide mid-reveal tears down instantly.
 Installed once in AppDelegate via `DotMatrixKeyboardReveal.install(windowProvider:)`
-(a closure, so the library stays extension-safe).
+(a closure, so the library stays extension-safe), which also schedules
+`prewarmKeyboard()` ~1s post-launch to pay the process's one-time keyboard bring-up
+cost off any tap path.
 
 **Intentional exclusions**: toasts, spinners, gesture snap-backs and other
 micro-interactions per the rule below.

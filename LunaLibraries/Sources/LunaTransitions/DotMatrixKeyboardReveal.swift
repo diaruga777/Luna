@@ -53,7 +53,7 @@ public enum DotMatrixKeyboardReveal {
         }
         center.addObserver(forName: UIResponder.keyboardDidShowNotification,
                            object: nil, queue: .main) { _ in
-            current?.beginDissolve()
+            current?.keyboardDidShow()
         }
         center.addObserver(forName: UIResponder.keyboardWillHideNotification,
                            object: nil, queue: .main) { _ in
@@ -65,9 +65,14 @@ public enum DotMatrixKeyboardReveal {
     private static func handleWillShow(_ note: Notification) {
         let wasVisible = keyboardVisible
         keyboardVisible = true
+        // `DotMatrixModal` presents with `animated: false`, which UIKit runs with
+        // animations transiently disabled — and a modal text field's keyboardWillShow
+        // arrives inside that window. A live modal cover therefore counts as
+        // animations-on; the bare check still skips test runs (globally disabled).
+        let animationsAllowed = UIView.areAnimationsEnabled || activeCover != nil
         guard !wasVisible,                       // an appearance, not a frame change
               current == nil,
-              UIView.areAnimationsEnabled,
+              animationsAllowed,
               DotMatrixTransitionCenter.shared.isEnabled,
               let window = windowProvider?(),
               let scene = window.windowScene,
@@ -91,11 +96,39 @@ public enum DotMatrixKeyboardReveal {
 
         let slideDuration = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey]
             as? TimeInterval) ?? 0.25
+        // A keyboard rising inside a `DotMatrixModal` present appears instantly (the
+        // present is unanimated), long before the modal's own wipe plays. Deferring
+        // the dissolve until `modalWipeDidStart()` makes the keyboard's dots run in
+        // step with the modal's; the longer fallback covers a choreography that bails.
+        let deferred = activeCover != nil
         current = Reveal(scene: scene, appWindow: window, overlay: overlay, frame: rect,
                          patch: patch, dissolveDuration: dissolveDuration,
-                         fallbackDelay: slideDuration + 0.1) {
+                         deferToModalWipe: deferred,
+                         fallbackDelay: deferred ? 1.0 : slideDuration + 0.1) {
             current = nil
         }
+    }
+
+    /// Called by `DotMatrixModal` the moment its wipe starts (or its choreography
+    /// bails), releasing a reveal that armed during the unanimated present.
+    static func modalWipeDidStart() {
+        current?.beginDissolve()
+    }
+
+    /// Pay the process's one-time keyboard bring-up cost (~100ms+) now, off any tap
+    /// path, so the first real keyboard — e.g. the reading list's "Save a Link"
+    /// field — appears without stalling its modal's wipe. Call once, shortly after
+    /// the window is up. The throwaway responder round-trip runs without animations,
+    /// so the reveal machinery above ignores it.
+    public static func prewarmKeyboard() {
+        guard let window = windowProvider?() else { return }
+        let field = UITextField(frame: .zero)
+        window.addSubview(field)
+        UIView.performWithoutAnimation {
+            _ = field.becomeFirstResponder()
+            _ = field.resignFirstResponder()
+        }
+        field.removeFromSuperview()
     }
 }
 
@@ -108,6 +141,7 @@ private final class Reveal {
     private let overlay: RabbitHoleTransitionView
     private weak var appWindow: UIWindow?
     private let dissolveDuration: TimeInterval
+    private let deferToModalWipe: Bool
     private let onFinish: () -> Void
     private var fallback: DispatchWorkItem?
     private var dissolving = false
@@ -115,10 +149,12 @@ private final class Reveal {
 
     init(scene: UIWindowScene, appWindow: UIWindow, overlay: RabbitHoleTransitionView,
          frame: CGRect, patch: UIImage, dissolveDuration: TimeInterval,
-         fallbackDelay: TimeInterval, onFinish: @escaping () -> Void) {
+         deferToModalWipe: Bool, fallbackDelay: TimeInterval,
+         onFinish: @escaping () -> Void) {
         self.overlay = overlay
         self.appWindow = appWindow
         self.dissolveDuration = dissolveDuration
+        self.deferToModalWipe = deferToModalWipe
         self.onFinish = onFinish
 
         // Above the keyboard's own window (≈ level 1e7); touch-transparent so the
@@ -150,7 +186,15 @@ private final class Reveal {
         DispatchQueue.main.asyncAfter(deadline: .now() + fallbackDelay, execute: work)
     }
 
-    /// The keyboard has settled beneath the patch — dissolve the old pixels out.
+    /// The keyboard has settled beneath the patch. Standalone reveals dissolve now;
+    /// one armed during a modal present holds for `modalWipeDidStart()` (or the
+    /// fallback) so its dots run in step with the modal's wipe.
+    func keyboardDidShow() {
+        guard !deferToModalWipe else { return }
+        beginDissolve()
+    }
+
+    /// Dissolve the old pixels out, revealing the live keyboard.
     func beginDissolve() {
         guard !dissolving, !finished else { return }
         dissolving = true

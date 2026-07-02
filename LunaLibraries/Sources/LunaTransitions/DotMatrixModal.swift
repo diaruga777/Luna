@@ -20,15 +20,19 @@
 //
 //   Present (partial-screen modal — alert / sheet / popover):
 //     1. Snapshot the screen, show it on the cover, present unanimated beneath it.
-//     2. CHROME FADE: everything outside the modal's frame (the dimming, a sheet's
-//        stack-back scale) crossfades from the old screen to the new background —
-//        chrome never pixelates, mirroring the header/footer rule elsewhere.
-//     3. REGION WIPE: the two-wave Metal dissolve runs confined to the modal's frame.
-//        "Appear in place" modals (alerts, popovers, centred sheets) use the random
-//        wavefront — scattered dots of the final UI appear at their final position,
-//        then a second scattered wave sharpens them. "Movement" modals (bottom sheets,
-//        action sheets, full covers) sweep both waves from the edge the stock motion
-//        would have come from (up from the bottom on present, back down on dismiss).
+//     2. REGION WIPE, immediately: the two-wave Metal dissolve runs confined to the
+//        modal's frame (clipped to its rounded corners), from the old screen's pixels
+//        to the committed modal. "Appear in place" modals (alerts, popovers, centred
+//        sheets) use the random wavefront — scattered dots of the final UI appear at
+//        their final position, then a second scattered wave sharpens them. "Movement"
+//        modals (bottom sheets, action sheets, full covers) sweep both waves from the
+//        edge the stock motion would have come from (up from the bottom on present,
+//        back down on dismiss).
+//     3. CHROME FADE, alongside the wipe: everything outside the modal's frame (the
+//        dimming, a sheet's stack-back scale) crossfades from the old screen to the
+//        new background — chrome never pixelates, mirroring the header/footer rule
+//        elsewhere. The wipe leads rather than waits: everything before its first
+//        frame is perceived tap latency.
 //     4. The cover fades out over the live UI. The wipe's "after" texture was captured
 //        from the real committed screen, so the reveal is pixel-exact.
 //
@@ -135,33 +139,40 @@ public enum DotMatrixModal {
                 return
             }
 
-            // Partial-screen modal. Capture the modal-free background (chrome briefly
-            // hidden — invisible, we're under the cover) so the chrome fade and the
-            // wipe's "before" both show the real dimming/stack-back, never a guess.
-            chrome.alpha = 0
-            let background = DotMatrixSnapshot.image(of: window, afterScreenUpdates: true)
-            chrome.alpha = 1
-            guard let background,
-                  let beforeRegion = DotMatrixSnapshot.crop(background, to: region),
+            // Partial-screen modal. The wipe starts FIRST — its before texture is the
+            // old screen's region, pixel-identical to the cover beneath it, so the
+            // overlay appears seamlessly — because every millisecond before it reads
+            // as tap latency (UIKit's unanimated-present completion already burns a
+            // few hundred, most of it keyboard bring-up when the modal has a field).
+            guard let beforeRegion = DotMatrixSnapshot.crop(beforeFull, to: region),
                   let afterRegion = DotMatrixSnapshot.image(of: window, region: region,
                                                             afterScreenUpdates: true),
                   let overlay = DotMatrixTransitionCenter.shared.borrowOverlay(for: window) else {
                 teardown(cover, overlay: nil, window: window, fade: true, completion: completion)
                 return
             }
+            install(overlay, frame: region, in: cover, traits: window.traitCollection,
+                    direction: directions.present, corner: cornerAttributes(of: chrome),
+                    before: beforeRegion, after: afterRegion)
+            overlay.animateProgress(to: 1, duration: wipeDuration) {
+                teardown(cover, overlay: overlay, window: window, fade: true, completion: completion)
+            }
 
-            // Phase 1 — chrome fade: old screen → modal-free new background.
-            cover.backView.image = background
-            UIView.animate(withDuration: modalChromeFadeDuration, animations: {
-                cover.frontView.alpha = 0
-            }, completion: { _ in
-                // Phase 2 — region wipe: background → modal, confined to its frame.
-                install(overlay, frame: region, in: cover, traits: window.traitCollection,
-                        direction: directions.present, before: beforeRegion, after: afterRegion)
-                overlay.animateProgress(to: 1, duration: wipeDuration) {
-                    teardown(cover, overlay: overlay, window: window, fade: true, completion: completion)
+            // The chrome fade runs alongside the wipe: capture the modal-free
+            // background (chrome briefly hidden — invisible under the cover, and the
+            // overlay owns its region) and crossfade the surroundings from the old
+            // screen to the real dimming/stack-back. If the snapshot fails the wipe
+            // just finishes over the old chrome and teardown's cover fade reconciles
+            // the rest — the screen is never left covered.
+            chrome.alpha = 0
+            let background = DotMatrixSnapshot.image(of: window, afterScreenUpdates: true)
+            chrome.alpha = 1
+            if let background {
+                cover.backView.image = background
+                UIView.animate(withDuration: modalChromeFadeDuration) {
+                    cover.frontView.alpha = 0
                 }
-            })
+            }
         }
     }
 
@@ -197,8 +208,10 @@ public enum DotMatrixModal {
         let directions = resolveDirections(style, for: presented, region: region, bounds: window.bounds)
         let isFull = DotMatrixRegion.isFullScreen(region, bounds: window.bounds)
 
-        // The modal-free-but-still-dimmed background must be captured while the modal
-        // is still presented (the dimming is gone after the dismissal commits).
+        // The modal-free-but-still-dimmed background and the platter's rounding must
+        // be captured while the modal is still presented (both are gone after the
+        // dismissal commits).
+        let corner = isFull ? nil : cornerAttributes(of: chrome)
         var background: UIImage?
         if !isFull {
             chrome.alpha = 0
@@ -237,7 +250,8 @@ public enum DotMatrixModal {
                 return
             }
             install(overlay, frame: region, in: cover, traits: window.traitCollection,
-                    direction: directions.dismiss, before: beforeRegion, after: backgroundRegion)
+                    direction: directions.dismiss, corner: corner,
+                    before: beforeRegion, after: backgroundRegion)
             overlay.animateProgress(to: 1, duration: wipeDuration) {
                 // Phase 2 — chrome fade: swap to the modal-free image (pixel-identical
                 // to what's on screen: outside the region the two snapshots match, and
@@ -291,6 +305,39 @@ public enum DotMatrixModal {
 
     // MARK: - Geometry
 
+    /// A modal platter's corner rounding, applied to the overlay so the wipe clips to
+    /// the modal's real shape — a hard rectangle would pixelate the background showing
+    /// through the rounded corners.
+    private struct CornerAttributes {
+        let radius: CGFloat
+        let corners: CACornerMask
+        let curve: CALayerCornerCurve
+    }
+
+    /// Find the modal's rounding. UIKit puts the radius on the platter itself or on a
+    /// platter-sized descendant (alerts round a backdrop, sheets the presented view),
+    /// so walk a few levels down, following only views that still cover the platter.
+    private static func cornerAttributes(of chrome: UIView) -> CornerAttributes? {
+        var queue: [UIView] = [chrome]
+        for _ in 0...3 {
+            var next: [UIView] = []
+            for view in queue {
+                let frame = view.convert(view.bounds, to: chrome)
+                guard frame.width >= chrome.bounds.width * 0.85,
+                      frame.height >= chrome.bounds.height * 0.85 else { continue }
+                if view.layer.cornerRadius > 0 {
+                    return CornerAttributes(radius: view.layer.cornerRadius,
+                                            corners: view.layer.maskedCorners,
+                                            curve: view.layer.cornerCurve)
+                }
+                next.append(contentsOf: view.subviews)
+            }
+            if next.isEmpty { break }
+            queue = next
+        }
+        return nil
+    }
+
     /// The presentation's outermost own view inside the container — the presented view
     /// plus whatever platter/shadow wrapper UIKit put around it, but NOT the dimming
     /// (a sibling). Its frame is the wipe region; hiding it exposes the modal-free
@@ -334,16 +381,26 @@ public enum DotMatrixModal {
                                 in cover: DotMatrixCoverWindow,
                                 traits: UITraitCollection,
                                 direction: DotMatrixWavefrontDirection,
+                                corner: CornerAttributes? = nil,
                                 before: UIImage,
                                 after: UIImage) {
         overlay.style = DotMatrixTransitionStyleProvider.style(for: traits)
         overlay.direction = direction
         overlay.frame = frame
         overlay.autoresizingMask = []
+        overlay.layer.cornerRadius = corner?.radius ?? 0
+        overlay.layer.maskedCorners = corner?.corners
+            ?? [.layerMinXMinYCorner, .layerMaxXMinYCorner,
+                .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        overlay.layer.cornerCurve = corner?.curve ?? .circular
+        overlay.layer.masksToBounds = corner != nil
         overlay.configure(before: before, after: after)
         overlay.setProgress(0)
         overlay.isHidden = false
         cover.contentView.addSubview(overlay)
+        // A keyboard that rose during the unanimated present has been waiting under
+        // its patch for this moment — its dissolve runs in step with the wipe.
+        DotMatrixKeyboardReveal.modalWipeDidStart()
     }
 
     /// Retire the cover (fading it over the live UI unless told not to), return the
@@ -363,6 +420,9 @@ public enum DotMatrixModal {
             }
             cover.isHidden = true
             cover.rootViewController = nil
+            // A choreography that bailed before any wipe must still release a
+            // deferred keyboard reveal (no-op when none is pending).
+            DotMatrixKeyboardReveal.modalWipeDidStart()
             completion?()
         }
         guard fade else { finish(); return }

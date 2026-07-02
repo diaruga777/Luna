@@ -57,6 +57,8 @@ public final class DotMatrixTransitionCenter {
     /// it for reuse (one per window; transient extras are simply released).
     func returnOverlay(_ view: RabbitHoleTransitionView, for window: UIWindow?) {
         view.dissolvesOut = false
+        view.layer.cornerRadius = 0
+        view.layer.masksToBounds = false
         view.clearTextures()
         view.isHidden = true
         view.removeFromSuperview()

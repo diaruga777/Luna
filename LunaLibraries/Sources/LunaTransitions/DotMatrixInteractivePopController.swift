@@ -22,9 +22,6 @@ public final class DotMatrixInteractivePopController: NSObject, UIViewController
 
     private let direction: DotMatrixWavefrontDirection
     private var session: DotMatrixTransitionSession?
-    /// True once the gesture interaction has actually started driving a context. A driver
-    /// checks this to know whether `finish`/`cancel` will do anything.
-    public private(set) var isActive = false
 
     public init(direction: DotMatrixWavefrontDirection) {
         self.direction = direction
@@ -35,11 +32,11 @@ public final class DotMatrixInteractivePopController: NSObject, UIViewController
         guard let session = DotMatrixTransitionSession.begin(context: ctx, direction: direction) else {
             // Engine unavailable / snapshot failed: there's nothing to drive, so cancel the
             // interactive pop immediately (UIKit puts the from-VC back).
+            ctx.cancelInteractiveTransition()
             ctx.completeTransition(false)
             return
         }
         self.session = session
-        isActive = true
     }
 
     /// Scrub the wipe (0 = before/stay, 1 = after/popped). Clamped.
@@ -51,7 +48,6 @@ public final class DotMatrixInteractivePopController: NSObject, UIViewController
     public func finish(duration: TimeInterval) {
         guard let session else { return }
         self.session = nil
-        isActive = false
         session.settle(committed: true, duration: duration)
     }
 
@@ -59,7 +55,6 @@ public final class DotMatrixInteractivePopController: NSObject, UIViewController
     public func cancel(duration: TimeInterval) {
         guard let session else { return }
         self.session = nil
-        isActive = false
         session.settle(committed: false, duration: duration)
     }
 }

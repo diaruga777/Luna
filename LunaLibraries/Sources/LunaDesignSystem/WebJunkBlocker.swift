@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import os
 import WebKit
 
 /// Keeps the inline web preview readable on ad-/donation-/consent-heavy sites:
@@ -99,9 +100,14 @@ public enum WebJunkBlocker {
             store?.compileContentRuleList(
                 forIdentifier: ruleListIdentifier,
                 encodedContentRuleList: rulesJSON
-            ) { compiled, _ in
+            ) { compiled, error in
                 if let compiled {
                     controller.add(compiled)
+                } else if let error {
+                    // A malformed rulesJSON would otherwise silently disable
+                    // all junk blocking.
+                    Logger(subsystem: "luna", category: "webjunk")
+                        .error("content rule compile failed: \(error.localizedDescription)")
                 }
             }
         }

@@ -312,6 +312,9 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     @objc private func reload() {
         tableView.reloadData()
         syncThresholdControl()
+        // A background price refresh can land while the editor is open — keep
+        // the history graph in sync with the rows, not just on (re)appear.
+        refreshGraph()
     }
 
 
@@ -560,10 +563,11 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
         cell.contentConfiguration = config
         cell.accessoryType = .disclosureIndicator
 
-        // Flash the just-added/merged URL at the top.
-        if mode.highlightedURLString == storeListing.urlString {
-            cell.backgroundColor = UIColor.systemYellow.withAlphaComponent(0.18)
-        }
+        // Flash the just-added/merged URL at the top (reset on reuse — a recycled
+        // highlighted cell must not tint an unrelated row).
+        cell.backgroundColor = mode.highlightedURLString == storeListing.urlString
+            ? UIColor.systemYellow.withAlphaComponent(0.18)
+            : nil
         return cell
     }
 
@@ -597,11 +601,16 @@ extension PriceTrackingViewController: UITableViewDataSource, UITableViewDelegat
 }
 
 private extension PriceTrackingViewController {
-    public func refreshDescription(for store: PriceTrackerStore) -> String {
-        guard let refreshed = store.lastRefreshed else { return "Not yet refreshed" }
+    // DateFormatter setup is expensive and this runs per row per reload.
+    static let refreshedFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = .current
         formatter.setLocalizedDateFormatFromTemplate("MMM d, h:mm a")
-        return "Refreshed \(formatter.string(from: refreshed))"
+        return formatter
+    }()
+
+    public func refreshDescription(for store: PriceTrackerStore) -> String {
+        guard let refreshed = store.lastRefreshed else { return "Not yet refreshed" }
+        return "Refreshed \(Self.refreshedFormatter.string(from: refreshed))"
     }
 }

@@ -229,6 +229,7 @@ public final class NavHeaderBar: UIView {
         button.titleLabel?.font = .systemFont(ofSize: 17, weight: bold ? .semibold : .regular)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.tintColor = tint
+        button.addTarget(target, action: action, for: .touchUpInside)
         button.setContentHuggingPriority(.required, for: .horizontal)
         button.setContentCompressionResistancePriority(.required, for: .horizontal)
         button.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.barHeight).isActive = true

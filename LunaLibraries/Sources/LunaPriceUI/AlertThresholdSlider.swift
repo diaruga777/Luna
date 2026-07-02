@@ -14,14 +14,11 @@ import UIKit
 ///
 /// Used identically by the price-tracking editor and the catch-up price-tracker
 /// card, so both render the same and drive the same `alertThresholdFraction`. The
-/// view is presentation-only: it reports changes via `onChanged` (live, while
-/// dragging) and `onCommitted` (on release, when the host should persist), and never
-/// touches the store itself.
+/// view is presentation-only: it updates its own readout live while dragging and
+/// reports the final fraction via `onCommitted` (when the host should persist),
+/// never touching the store itself.
 public final class AlertThresholdSlider: UIView {
 
-    /// Fired continuously as the slider drags, with the live fraction (0.01…0.90).
-    /// The host updates any dependent UI but should NOT persist here.
-    public var onChanged: ((Double) -> Void)?
     /// Fired once the drag ends, with the final fraction. The host persists here.
     public var onCommitted: ((Double) -> Void)?
 
@@ -64,8 +61,10 @@ public final class AlertThresholdSlider: UIView {
         slider.maximumValue = 0.90
         slider.minimumTrackTintColor = GlassStyle.readingAccent
         slider.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
+        // .touchCancel included: a system-cancelled drag (incoming call, gesture
+        // interruption) has still moved the slider and must persist.
         slider.addTarget(self, action: #selector(sliderCommitted),
-                         for: [.touchUpInside, .touchUpOutside])
+                         for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
         readoutLabel.font = .preferredFont(forTextStyle: .subheadline)
         readoutLabel.textColor = .secondaryLabel
@@ -106,7 +105,6 @@ public final class AlertThresholdSlider: UIView {
     @objc private func sliderChanged() {
         let fraction = Double(slider.value)
         updateReadout(fraction: fraction)
-        onChanged?(fraction)
     }
 
     @objc private func sliderCommitted() {

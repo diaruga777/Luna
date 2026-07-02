@@ -165,8 +165,12 @@ final class DotMatrixTransitionSession {
         }
     }
 
-    /// Drive the wipe directly (0 = before, 1 = after) — interactive use.
-    func setProgress(_ p: CGFloat) { overlay.setProgress(p) }
+    /// Drive the wipe directly (0 = before, 1 = after) — interactive use. Keeps the
+    /// context informed so coordinator alongside-animations track the finger.
+    func setProgress(_ p: CGFloat) {
+        overlay.setProgress(p)
+        if ctx.isInteractive { ctx.updateInteractiveTransition(p) }
+    }
 
     /// Animate to the after state over `duration`, then finish the transition committed.
     /// Used by the non-interactive animator (start at 0) and by a committed interactive end.
@@ -192,6 +196,15 @@ final class DotMatrixTransitionSession {
         if !committed && isIncomingNew { toView.removeFromSuperview() }
         hiddenBar?.alpha = restoreBarAlpha
         DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: window)
+        // UIKit's interactive contract requires finish/cancel BEFORE completing,
+        // or coordinator animations and nav-bar internals desync on cancelled swipes.
+        if ctx.isInteractive {
+            if committed {
+                ctx.finishInteractiveTransition()
+            } else {
+                ctx.cancelInteractiveTransition()
+            }
+        }
         ctx.completeTransition(committed)
     }
 }

@@ -210,7 +210,14 @@ public enum WebViewPriceRenderer {
 
         private func awaitNavigation() async {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                self.continuation = continuation
+                // The navigation can finish/fail before this task registers (an
+                // instant provisional failure) — resume immediately then, or the
+                // continuation would never fire and `render` would hang forever.
+                if didResume {
+                    continuation.resume()
+                } else {
+                    self.continuation = continuation
+                }
             }
         }
 

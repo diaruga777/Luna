@@ -219,11 +219,25 @@ public final class PriceGraphView: UIView {
         (text as NSString).draw(at: CGPoint(x: x, y: origin.y), withAttributes: attrs)
     }
 
-    public static func axisDate(_ date: Date) -> String {
+    // Cached: axis labels render inside draw(_:) and the callout on every scrub
+    // frame — a fresh DateFormatter per call is an allocation per frame. Locale
+    // follows .current, matching the editor's refresh timestamps.
+    private static let axisFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US")
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
+        formatter.locale = .current
+        formatter.setLocalizedDateFormatFromTemplate("MMM d")
+        return formatter
+    }()
+
+    private static let calloutFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.setLocalizedDateFormatFromTemplate("MMM d, yyyy")
+        return formatter
+    }()
+
+    private static func axisDate(_ date: Date) -> String {
+        axisFormatter.string(from: date)
     }
 
     // MARK: - Scrubbing
@@ -288,10 +302,7 @@ public final class PriceGraphView: UIView {
         calloutView.frame = CGRect(x: originX, y: 2, width: size.width, height: size.height)
     }
 
-    public static func calloutDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US")
-        formatter.dateFormat = "MMM d, yyyy"
-        return formatter.string(from: date)
+    private static func calloutDate(_ date: Date) -> String {
+        calloutFormatter.string(from: date)
     }
 }

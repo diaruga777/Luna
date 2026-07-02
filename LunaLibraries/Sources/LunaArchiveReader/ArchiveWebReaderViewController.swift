@@ -93,6 +93,10 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// True when the plan includes the `.directUnlock` WKWebView technique (toggle
     /// on): the paywall-vendor content-blocker + DOM cleanup are installed.
     private let usesDirectUnlock: Bool
+    /// The `Referer` to send on the direct-unlock load (a site that unlocks for a
+    /// specific referrer — e.g. WSJ → Drudge Report — or a Google search). The UA is
+    /// left as the real device Safari UA; only the referrer is spoofed.
+    private let directUnlockReferer: String?
     /// Index of the pre-stage currently loaded; advances as each one times out.
     private var currentPreStageIndex = 0
     /// True while loading/extracting a pre-stage page (before any archive.today
@@ -164,6 +168,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // when the experimental toggle is on).
         let plan = BypassPlan.make(for: articleURL, directHTML: nil)
         self.usesDirectUnlock = plan.webPreStages.contains(.directUnlock)
+        self.directUnlockReferer = Self.directUnlockReferer(for: articleURL)
         self.webPreStageURLs = plan.webPreStages.compactMap {
             BypassURLs.loadURL(for: $0, article: articleURL)
         }
@@ -275,7 +280,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             // paywall-vendor content-blocker so the meter scripts can't run.
             isAttemptingDirectBypass = true
             if usesDirectUnlock {
-                PaywallUnlockRules.compiledRuleList { [weak self] list in
+                PaywallUnlockRules.compiledRuleList(for: articleURL) { [weak self] list in
                     guard let self else { return }
                     if let list { self.webView.configuration.userContentController.add(list) }
                     self.loadCurrentPreStage()
@@ -302,7 +307,23 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             category: "archive")
         recordStage("preStage", urlString: url.absoluteString,
                     note: "\(currentPreStageIndex + 1)/\(webPreStageURLs.count)")
-        webView.load(URLRequest(url: url))
+        var request = URLRequest(url: url)
+        // Spoof the site's unlock referrer on the direct-unlock load of the original
+        // page (UA untouched). Only when loading the article's own host.
+        if let referer = directUnlockReferer, url.host == articleURL.host {
+            request.setValue(referer, forHTTPHeaderField: "Referer")
+        }
+        webView.load(request)
+    }
+
+    /// The `Referer` a site's rule says unlocks it (a custom referrer such as Drudge
+    /// Report, or a Google search), or nil. Only the referrer is spoofed — the web
+    /// view keeps its genuine Safari User-Agent.
+    private static func directUnlockReferer(for url: URL) -> String? {
+        guard let rule = SiteUnlockRules.rule(for: url) else { return nil }
+        if let custom = rule.refererCustom { return custom }
+        if rule.referer == "google" { return "https://www.google.com/" }
+        return nil
     }
 
     /// Resolves the specific newest archive.today snapshot via the TimeMap in

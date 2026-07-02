@@ -18,16 +18,14 @@ final class BypassPlanTests: XCTestCase {
         XCTAssertTrue(plan.allowsArchiveToday)
     }
 
-    func testWSJWithToggleOnRunsFirstPartySilentChainThenArchive() {
+    func testWSJWithToggleOnRoutesToBrowserDirectUnlockThenArchive() {
         let url = URL(string: "https://www.wsj.com/articles/x")!
         let plan = BypassPlan.make(
             for: url, directHTML: "<html>subscribe to continue</html>", nonArchiveBypass: true)
-        // The first-party silent reads run before parking for archive.today; WSJ is
-        // not an NYT-family host, so the only web pre-stage is `.directUnlock`.
-        XCTAssertEqual(plan.silent, [
-            .jsonLDBody, .userAgent(.googlebotDesktop), .userAgent(.googlebotMobile),
-            .freshSession, .amp, .waybackRaw,
-        ])
+        // The rule-driven silent request leg is run by the resolver (not emitted as a
+        // strategy), so the plan carries no silent strategies — only the browser-tier
+        // direct unlock before parking for archive.today.
+        XCTAssertTrue(plan.silent.isEmpty)
         XCTAssertEqual(plan.webPreStages, [.directUnlock])
         XCTAssertTrue(plan.allowsArchiveToday)
     }

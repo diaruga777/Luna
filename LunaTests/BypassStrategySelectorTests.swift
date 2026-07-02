@@ -9,20 +9,19 @@ import XCTest
 
 final class BypassStrategySelectorTests: XCTestCase {
     private func url(_ string: String) -> URL { URL(string: string)! }
-    private let firstParty: [BypassStrategy] = BypassStrategySelector.firstPartySilent
     private let locked = "<html><body>subscribe to continue reading</body></html>"
 
     func testNotPaywalledReturnsEmpty() {
         let html = "<html><body><article>" + String(repeating: "Free article. ", count: 100)
             + "</article></body></html>"
-        // Regardless of the toggle, a non-paywall is never bypassed.
+        // Regardless of the toggle, a non-paywall unknown host is never bypassed.
         for on in [true, false] {
             XCTAssertEqual(BypassStrategySelector.strategies(
                 for: url("https://example.com/x"), directHTML: html, nonArchiveBypass: on), [])
         }
     }
 
-    // MARK: - Toggle OFF (default) = long-standing archive-only behavior
+    // MARK: - Toggle OFF (default) = long-standing archive-only behavior (unchanged)
 
     func testDefaultOffGoesStraightToArchive() {
         for article in ["https://www.wsj.com/articles/x", "https://unknown.example/story"] {
@@ -37,45 +36,36 @@ final class BypassStrategySelectorTests: XCTestCase {
             [.trailingDotHost, .archiveToday])
     }
 
-    // MARK: - Toggle ON = first-party silent chain before archive
+    // MARK: - Toggle ON = rule-driven browser-tier direct unlock before archive
 
-    func testOnRunsFirstPartySilentChainThenDirectUnlockThenArchive() {
-        for article in ["https://www.wsj.com/articles/x", "https://unknown.example/story"] {
+    func testOnRuleHostGoesDirectUnlockThenArchive() {
+        for article in ["https://www.wsj.com/articles/x", "https://www.nytimes.com/story"] {
             XCTAssertEqual(
                 BypassStrategySelector.strategies(for: url(article), directHTML: locked, nonArchiveBypass: true),
-                firstParty + [.directUnlock, .archiveToday], article)
+                [.directUnlock, .archiveToday], article)
         }
     }
 
-    func testOnTriesGooglebotBeforeArchiveForWSJ() {
-        let strategies = BypassStrategySelector.strategies(
-            for: url("https://www.wsj.com/articles/x"), directHTML: locked, nonArchiveBypass: true)
-        let gbIndex = strategies.firstIndex(of: .userAgent(.googlebotDesktop))
-        let archiveIndex = strategies.firstIndex(of: .archiveToday)
-        XCTAssertNotNil(gbIndex)
-        XCTAssertNotNil(archiveIndex)
-        XCTAssertLessThan(gbIndex!, archiveIndex!)
-    }
-
-    func testOnNYTAlsoTriesTrailingDotBeforeArchive() {
+    func testOnUnknownHostBehavesLikeOff() {
+        // No unlock rule → identical to OFF (straight to archive), even with the toggle on.
         XCTAssertEqual(
             BypassStrategySelector.strategies(
-                for: url("https://www.nytimes.com/story"), directHTML: locked, nonArchiveBypass: true),
-            firstParty + [.directUnlock, .trailingDotHost, .archiveToday])
+                for: url("https://unknown.example/story"), directHTML: locked, nonArchiveBypass: true),
+            [.archiveToday])
     }
 
-    /// Toggle ON: a rule-listed paywall host with NO generic paywall evidence (a page
-    /// that fetched fine but shows no markers) is still routed through the unlock
+    /// Toggle ON: a rule-listed soft-paywall host with NO generic paywall evidence (a
+    /// page that fetched fine but shows no markers) is still routed through the unlock
     /// flow. Toggle OFF: the same page is left alone (no regression).
-    func testOnKnownPaywallHostWithoutMarkersStillBypasses() {
-        // delish.com is in the reference list but NOT our hard-paywall list, so a no-marker
-        // page yields a `.notPaywalled` gate decision — the exact case the toggle-on
-        // override flips (a hard-paywall host would bypass regardless of the toggle).
+    func testOnRuleHostWithoutMarkersStillBypasses() {
+        // delish.com is in the unlock rule table but NOT our hard-paywall list, so a
+        // no-marker page yields a `.notPaywalled` gate decision — the exact case the
+        // toggle-on override flips.
         let noEvidence = "<html><body><p>" + String(repeating: "short. ", count: 5) + "</p></body></html>"
         let known = url("https://www.delish.com/story")
         XCTAssertEqual(
             BypassStrategySelector.strategies(for: known, directHTML: noEvidence, nonArchiveBypass: true),
-            firstParty + [.directUnlock, .archiveToday])
+            [.directUnlock, .archiveToday])
         XCTAssertEqual(
             BypassStrategySelector.strategies(for: known, directHTML: noEvidence, nonArchiveBypass: false),
             [])

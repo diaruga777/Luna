@@ -80,7 +80,7 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         case .semantic:
             return "When you save something that resembles things you've shared with a friend before, Luna can suggest sharing it with them. Slide all the way left to turn this off."
         case .paywallStrategies:
-            return "Off by default. When on, Luna first tries to unlock a paywalled article directly on your device (search-engine reads, a fresh session, AMP, and web archives) before falling back to the archive reader. This can unlock some hard paywalls the archive can't, but adds a few seconds before the fallback. Turn it off to go straight to the archive reader."
+            return "Off by default. When on, Luna tries to unlock a paywalled article on-device — keeping cookies, blocking the site's metering scripts, spoofing the referrer a site unlocks for, and cleaning the page — before falling back to the archive reader. This unlocks many soft paywalls the archive can't, but adds a few seconds before the fallback. Turn it off to go straight to the archive reader."
         case .archiveOverlay:
             return "Opacity of overlay while we work to unlock web articles"
         case .dotMatrix:
@@ -151,7 +151,7 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         var content = cell.defaultContentConfiguration()
-        content.text = "Try Direct Unlock First"
+        content.text = "Unlock Paywalls On-Device"
         cell.contentConfiguration = content
         cell.accessoryView = makeToggle(
             isOn: ReaderSettings.nonArchiveBypassEnabled,

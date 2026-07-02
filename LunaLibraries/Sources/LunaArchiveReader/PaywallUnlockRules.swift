@@ -4,136 +4,200 @@
 //
 
 import LunaDesignSystem
+import LunaPaywallBypass
 import LunaStorage
 import LunaURLClassification
 import Foundation
 import WebKit
 
-/// The iOS port of the reference paywall rules' two iOS-applicable primitives, used by
-/// the `.directUnlock` WKWebView strategy (only when the user opts into
-/// `ReaderSettings.nonArchiveBypassEnabled`):
+/// The WKWebView browser tier of the paywall-unlock engine (used only when the user
+/// opts into `ReaderSettings.nonArchiveBypassEnabled`). Two iOS-applicable primitives,
+/// both driven by the bundled per-site rule table (`SiteUnlockRules`):
 ///
-///  1. A compiled `WKContentRuleList` that **blocks the paywall/meter vendor
-///     scripts** (Piano/tinypass, Evolok, Zephr, Poool, Pelcro, Pico, Wallkit,
-///     Sophi, Qiota, Cxense, …). Blocking these lets a site's own JS render the
-///     full article while the meter can't run — the single highest-ROL technique,
-///     since one vendor block covers every site that uses that vendor.
-///  2. An injected **DOM-cleanup userscript** that removes leftover paywall
-///     overlays, unhides the clamped/blurred article body, restores page scroll,
-///     and un-lazies images — ported from the rules' general (non-site-specific)
-///     cleanup. Guarded to never touch the archive.today reader.
+///  1. A compiled `WKContentRuleList` that **blocks the metering/paywall scripts** for
+///     the loaded host — the site's own `blockRegex` patterns plus the global vendor
+///     blockers (Piano/tinypass, Zephr, Sophi, Cxense, Poool, Pelcro, …). With the
+///     meter unable to run, the site's own JS renders the full article, which the
+///     reader then extracts.
+///  2. An injected **DOM-cleanup userscript** that removes leftover paywall overlays,
+///     unhides the clamped/blurred body, restores scroll, un-lazies images, and reveals
+///     AMP subscriber sections. Self-guards off archive.today so it never fights the
+///     CAPTCHA flow.
 ///
-/// Plus the reference **list of supported hosts**, used (toggle-on only) to recognize a
-/// paywalled site the generic gate didn't flag, so it still gets the unlock flow.
-///
-/// All of this is inert unless the experimental toggle is on (it only feeds the
-/// `.directUnlock` strategy, which the selector emits only when the toggle is on).
-/// Pure data + a compile helper; the rule JSON / cleanup JS are unit-tested.
+/// Both are inert unless the toggle is on. The rule JSON generation and cleanup JS are
+/// unit-tested; the compiled list is validated on-simulator.
 public enum PaywallUnlockRules {
 
-    // MARK: - Content-blocker (vendor paywall/meter scripts)
+    // MARK: - Content blocker (metering/paywall scripts, per host)
 
-    /// One blockable vendor: a host substring matched against request URLs, the
-    /// WebKit resource types to block, and domains to EXEMPT (the reference rules `@@` exceptions /
-    /// sites that need the vendor for their own content).
-    private struct VendorBlock {
-        let host: String
-        var resourceTypes: [String] = ["script", "raw"]
-        var unlessDomains: [String] = []
+    /// The WebKit resource types a block rule applies to (script + XHR/fetch).
+    private static let blockResourceTypes = "[\"script\",\"raw\"]"
+
+    /// Translates a JS regex source (from the rule table) into the LIMITED regex
+    /// subset `WKContentRuleList` accepts for `url-filter`. Returns ZERO OR MORE
+    /// filters: WKContentRuleList's `url-filter` does NOT support alternation (`|`) or
+    /// grouping, so a pattern like `(a|b)c` is EXPANDED into concrete alternatives
+    /// (`ac`, `bc`). Returns `[]` when the pattern uses a construct the subset can't
+    /// represent even after expansion (`{n,m}`, backreferences, look-around, `\b`,
+    /// group quantifiers) — dropping that one pattern rather than failing the list.
+    public static func urlFilters(fromJSRegexSource source: String) -> [String] {
+        var s = source
+        s = s.replacingOccurrences(of: "\\/", with: "/")        // literal slash
+        s = s.replacingOccurrences(of: "\\d", with: "[0-9]")
+        s = s.replacingOccurrences(of: "\\w", with: "[a-zA-Z0-9_]")
+        s = s.replacingOccurrences(of: "(?:", with: "(")        // non-capturing → capturing
+        // Constructs WKContentRuleList's regex engine rejects even after expansion.
+        // Group quantifiers (`)?`, `)*`, `)+`, e.g. `(.+-)?`) can't be expanded finitely.
+        let unsupported = ["{", "(?=", "(?!", "(?<", "\\b", "\\s", "\\1", "\\2", "\\3", "\\D", "\\W",
+                           ")?", ")*", ")+"]
+        for token in unsupported where s.contains(token) { return [] }
+        // After the conversions above the only backslash escape we allow is `\.`; any
+        // other residual `\x` (incl. escaped parens) is unsupported → drop.
+        if residualHasUnsafeEscape(s) { return [] }
+        // Expand alternations/groups into concrete, alternation-free filters. Cap the
+        // fan-out so a pathological pattern can't explode the rule list.
+        let expanded = expandAlternations(Array(s))
+        return expanded.count <= 24 ? expanded : []
     }
 
-    /// The "General" paywall/meter vendors from `bpc-paywall-filter.txt`. Blocking
-    /// their scripts (and XHR via `raw`) defeats the metering on every site that
-    /// embeds them.
-    private static let vendorBlocks: [VendorBlock] = [
-        VendorBlock(host: "piano.io", unlessDomains: ["hbr.org", "japantimes.co.jp"]),
-        VendorBlock(host: "tinypass.com", unlessDomains: ["ajc.com", "thelogic.co"]),
-        VendorBlock(host: "evolok.net"),
-        VendorBlock(host: "zephr.com"),
-        // Cxense: WSJ/Quebecor need it for their own content, per the reference rules.
-        VendorBlock(host: "cxense.com",
-                    unlessDomains: ["wsj.com", "journaldemontreal.com", "journaldequebec.com"]),
-        VendorBlock(host: "qiota.com"),
-        VendorBlock(host: "sophi.io"),
-        VendorBlock(host: "poool.fr"),
-        VendorBlock(host: "fewcents.co"),
-        VendorBlock(host: "pelcro.com"),
-        VendorBlock(host: "pico.tools"),
-        VendorBlock(host: "wallkit.net"),
-        VendorBlock(host: "hadrianpaywall.com"),
-        VendorBlock(host: "steadyhq.com"),
-        VendorBlock(host: "onecount.net"),
-        VendorBlock(host: "olytics.omeda.com"),
-        VendorBlock(host: "matheranalytics.com"),
-        VendorBlock(host: "newsmemory.com"),
-        VendorBlock(host: "blueconic.net"),
-        VendorBlock(host: "axate.io"),
-        VendorBlock(host: "ensighten.com"),
-        VendorBlock(host: "getsitecontrol.com"),
-        VendorBlock(host: "amplitude.com", resourceTypes: ["raw"]),
-    ]
-
-    /// Path-based blocks (vendor scripts served from the publisher's own host).
-    private struct PathBlock {
-        let pattern: String   // url-filter regex fragment (already escaped)
-        var resourceTypes: [String] = ["script"]
-    }
-    private static let pathBlocks: [PathBlock] = [
-        PathBlock(pattern: "/wp-content/plugins/leaky-paywall/"),
-        PathBlock(pattern: "/wp-json/leaky-paywall/", resourceTypes: ["raw"]),
-        PathBlock(pattern: "-gate-metering"),
-    ]
-
-    public static let contentRuleListIdentifier = "luna-paywall-vendor-block-v1"
-
-    /// The `WKContentRuleList` JSON: one block rule per vendor/path. `url-filter`
-    /// is anchored to a host boundary so `piano.io` can't match `piano.io.evil.com`.
-    public static var contentRuleListJSON: String {
-        var rules: [String] = []
-        for vendor in vendorBlocks {
-            let escapedHost = vendor.host.replacingOccurrences(of: ".", with: "\\\\.")
-            // scheme://(sub.)*host followed by a port/path boundary. WKContentRuleList's
-            // url-filter is a LIMITED regex subset — no `\w`/`\d`, so use explicit
-            // character classes for the optional subdomain labels.
-            let filter = "https?://([a-z0-9-]+\\\\.)*\(escapedHost)[:/]"
-            var trigger = "\"url-filter\":\"\(filter)\",\"resource-type\":\(jsonArray(vendor.resourceTypes))"
-            if !vendor.unlessDomains.isEmpty {
-                // WebKit's `unless-domain` matches the EXACT document domain unless an
-                // entry is `*`-prefixed (then it covers the domain + its subdomains).
-                // Publishers are usually on `www.`, so prefix every exemption with `*`.
-                trigger += ",\"unless-domain\":\(jsonArray(vendor.unlessDomains.map { "*" + $0 }))"
-            }
-            rules.append("{\"trigger\":{\(trigger)},\"action\":{\"type\":\"block\"}}")
+    /// Expands a group-and-alternation regex (no group quantifiers, no unsupported
+    /// escapes) into the set of concrete alternation-free / group-free strings it
+    /// matches structurally. `a(b|c)d` → `["abd","acd"]`. Char classes `[...]` are
+    /// treated as opaque (their `|`/`()` are literal, not structural).
+    static func expandAlternations(_ chars: [Character]) -> [String] {
+        // Top-level `|` → the union of each alternative's expansion.
+        let alternatives = splitTopLevel(chars, on: "|")
+        if alternatives.count > 1 {
+            return alternatives.flatMap { expandAlternations($0) }
         }
-        for path in pathBlocks {
-            let filter = path.pattern.replacingOccurrences(of: ".", with: "\\\\.")
-            rules.append(
-                "{\"trigger\":{\"url-filter\":\"\(filter)\",\"resource-type\":\(jsonArray(path.resourceTypes))},"
-                + "\"action\":{\"type\":\"block\"}}")
+        // A single alternative: expand its first top-level group, if any.
+        guard let (open, close) = firstTopLevelGroup(chars) else {
+            return [String(chars)]   // no group → already concrete
+        }
+        let prefix = String(chars[..<open])
+        let innerExpansions = expandAlternations(Array(chars[(open + 1)..<close]))
+        let suffixExpansions = expandAlternations(Array(chars[(close + 1)...]))
+        var out: [String] = []
+        for inner in innerExpansions {
+            for suffix in suffixExpansions {
+                out.append(prefix + inner + suffix)
+            }
+        }
+        return out
+    }
+
+    /// Splits `chars` on `separator` at nesting depth 0, treating `[...]` classes as
+    /// opaque.
+    private static func splitTopLevel(_ chars: [Character], on separator: Character) -> [[Character]] {
+        var parts: [[Character]] = []
+        var current: [Character] = []
+        var depth = 0
+        var inClass = false
+        for ch in chars {
+            if inClass {
+                current.append(ch)
+                if ch == "]" { inClass = false }
+            } else if ch == "[" {
+                inClass = true; current.append(ch)
+            } else if ch == "(" {
+                depth += 1; current.append(ch)
+            } else if ch == ")" {
+                depth -= 1; current.append(ch)
+            } else if ch == separator, depth == 0 {
+                parts.append(current); current = []
+            } else {
+                current.append(ch)
+            }
+        }
+        parts.append(current)
+        return parts
+    }
+
+    /// The index range of the first top-level `(...)` group in `chars`, or nil.
+    private static func firstTopLevelGroup(_ chars: [Character]) -> (open: Int, close: Int)? {
+        var inClass = false
+        var open: Int?
+        var depth = 0
+        for (i, ch) in chars.enumerated() {
+            if inClass {
+                if ch == "]" { inClass = false }
+            } else if ch == "[" {
+                inClass = true
+            } else if ch == "(" {
+                if open == nil { open = i }
+                depth += 1
+            } else if ch == ")" {
+                depth -= 1
+                if depth == 0, let start = open { return (start, i) }
+            }
+        }
+        return nil
+    }
+
+    /// True if `s` contains a backslash escape other than `\.` (which WKContentRuleList
+    /// accepts). Scans backslashes and checks the following char.
+    private static func residualHasUnsafeEscape(_ s: String) -> Bool {
+        let chars = Array(s)
+        var i = 0
+        while i < chars.count {
+            if chars[i] == "\\" {
+                guard i + 1 < chars.count, chars[i + 1] == "." else { return true }
+                i += 2
+            } else {
+                i += 1
+            }
+        }
+        return false
+    }
+
+    /// The block-rule JSON for `url`: the matched site rule's `blockRegex` +
+    /// `blockJsInline`, plus every global vendor blocker not excluded for this host.
+    /// Patterns the WK subset can't represent are dropped (logged as a count).
+    public static func contentRuleListJSON(for url: URL) -> String {
+        let host = url.host?.lowercased() ?? ""
+        var sources: [String] = []
+        if let rule = SiteUnlockRules.rule(for: url) {
+            sources += rule.blockRegex ?? []
+            if let inline = rule.blockJsInline { sources.append(inline) }
+        }
+        for blocker in SiteUnlockRules.generalBlockers
+        where !blocker.excludedDomains.contains(where: { host == $0 || host.hasSuffix("." + $0) }) {
+            sources.append(blocker.blockRegex)
+        }
+        let filters = sources.flatMap(urlFilters(fromJSRegexSource:))
+        let dropped = sources.filter { urlFilters(fromJSRegexSource: $0).isEmpty }.count
+        if dropped > 0 {
+            SharedDiagnosticLog.record(
+                "unlock: dropped \(dropped)/\(sources.count) unrepresentable block patterns for \(host)",
+                category: "archive")
+        }
+        let rules = filters.map { filter -> String in
+            "{\"trigger\":{\"url-filter\":\"\(jsonEscaped(filter))\",\"resource-type\":\(blockResourceTypes)},"
+            + "\"action\":{\"type\":\"block\"}}"
         }
         return "[" + rules.joined(separator: ",") + "]"
     }
 
-    private static func jsonArray(_ values: [String]) -> String {
-        "[" + values.map { "\"\($0)\"" }.joined(separator: ",") + "]"
+    /// JSON-string-escape a regex (backslashes and quotes) for embedding in the rule.
+    private static func jsonEscaped(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
     }
 
-    /// Compiles (and caches) the content rule list. Calls back on the main thread.
-    private static var cachedRuleList: WKContentRuleList?
-    public static func compiledRuleList(_ completion: @escaping (WKContentRuleList?) -> Void) {
-        if let cachedRuleList {
-            completion(cachedRuleList)
-            return
-        }
+    /// Compiles (and caches) the per-host content rule list. Calls back on the main
+    /// thread with the list, or nil when there's nothing to block or compilation fails
+    /// (in which case the reader proceeds with the DOM-cleanup userscript alone).
+    public static func compiledRuleList(for url: URL, _ completion: @escaping (WKContentRuleList?) -> Void) {
+        let json = contentRuleListJSON(for: url)
+        guard json != "[]" else { completion(nil); return }
+        let identifier = "luna-unlock-" + (url.host?.lowercased() ?? "site")
         WKContentRuleListStore.default().compileContentRuleList(
-            forIdentifier: contentRuleListIdentifier, encodedContentRuleList: contentRuleListJSON
+            forIdentifier: identifier, encodedContentRuleList: json
         ) { list, error in
             if let error {
                 SharedDiagnosticLog.record(
-                    "paywall rules compile error: \(error.localizedDescription)", category: "archive")
+                    "unlock rules compile error for \(identifier): \(error.localizedDescription)",
+                    category: "archive")
             }
-            // Only cache a successful compile so a transient failure can retry.
-            if let list { cachedRuleList = list }
             DispatchQueue.main.async { completion(list) }
         }
     }
@@ -141,8 +205,8 @@ public enum PaywallUnlockRules {
     // MARK: - DOM cleanup userscript
 
     /// Injected at documentStart; re-runs on an interval (covering the reader's poll
-    /// window) to strip paywall overlays, unhide the article, and restore scroll.
-    /// NEVER runs on the archive.today reader (it would fight the CAPTCHA flow).
+    /// window) to strip paywall overlays, unhide the article, restore scroll, and
+    /// reveal AMP subscriber sections. NEVER runs on the archive.today reader.
     public static let domCleanupScript = """
     (function () {
       try {
@@ -159,6 +223,17 @@ public enum PaywallUnlockRules {
         var UNHIDE = ['blurred','blur','blur-sm','blur-md','blur-lg','gradient','fade','faded-content',
           'clipped','cropped','truncated','locked','is-locked','noscroll','no-scroll','scroll-lock',
           'overflow-hidden','modal-open'];
+        function ampUnhide() {
+          document.querySelectorAll('[subscriptions-section="content-not-granted"]')
+            .forEach(function (el) { el.remove(); });
+          document.querySelectorAll('[subscriptions-section="content"]')
+            .forEach(function (el) { el.removeAttribute('subscriptions-section'); });
+          document.querySelectorAll('[amp-access][amp-access-hide]').forEach(function (el) {
+            if (!/error|message/i.test(el.getAttribute('amp-access') || '')) {
+              el.removeAttribute('amp-access-hide');
+            }
+          });
+        }
         function clean() {
           try {
             REMOVE.forEach(function (sel) {
@@ -185,6 +260,7 @@ public enum PaywallUnlockRules {
             });
             document.querySelectorAll('[style*="visibility:hidden"],[style*="visibility: hidden"]')
               .forEach(function (e) { e.style.visibility = 'visible'; });
+            ampUnhide();
           } catch (e) {}
         }
         clean();

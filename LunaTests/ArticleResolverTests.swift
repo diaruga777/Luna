@@ -84,83 +84,36 @@ final class ArticleResolverTests: XCTestCase {
         + #"<script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script>"#
         + "</body></html>"
 
-    /// A `BypassRunning` stub that returns readable HTML ONLY for a designated
-    /// strategy and nil (failure) for every earlier one — so the resolver loop's
-    /// advance-on-failure is asserted deterministically without the network.
-    private final class StubRunner: BypassRunning {
-        let succeedOn: BypassStrategy
-        let readable: ArticleContent
-        let html: String
-        private(set) var attempted: [BypassStrategy] = []
-
-        init(succeedOn: BypassStrategy, readable: ArticleContent, html: String) {
-            self.succeedOn = succeedOn
-            self.readable = readable
-            self.html = html
-        }
-
-        func run(_ strategy: BypassStrategy, url: URL, directHTML: String?) async -> ExtractedArticle? {
-            attempted.append(strategy)
-            return strategy == succeedOn ? ExtractedArticle(content: readable, sourceHTML: html) : nil
-        }
-    }
-
-    /// A paywalled article runs the first-party silent chain IN ORDER and stops at
-    /// the first readable result — here the Googlebot read (the WSJ fix), so the
-    /// later strategies and the archive flow are never reached.
-    func testResolverRunsSilentChainAndStopsAtFirstSuccess() async {
+    /// Toggle ON + a site unlock rule (WSJ → Referer:Drudge): the resolver runs the
+    /// rule's silent request technique. Here the Drudge-referer fetch returns the full
+    /// article, so it wins before any browser-tier / archive fallback.
+    func testResolverSilentRefererUnlockWinsForWSJ() async {
         let articleURL = URL(string: "https://www.wsj.com/articles/x_199845b1.html")!
         let fetcher = MockArticleFetcher()
-        fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML   // direct read = locked
-        let runner = StubRunner(
-            succeedOn: .userAgent(.googlebotDesktop),
-            readable: ArticleContent(title: "Real", blocks: [
-                .init(kind: .paragraph, text: String(repeating: "a", count: 2000), links: []),
-            ]), html: readableHTML("googlebot"))
+        fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML             // direct read = locked
+        fetcher.refererHTMLByURL[articleURL.absoluteString] = readableHTML("drudge")  // referer read = full
 
         let result = await ArticleResolver.resolve(
-            url: articleURL, fetcher: fetcher, runner: runner, nonArchiveBypass: true)
-        if case .readable = result {} else { XCTFail("expected readable, got \(result)") }
-        // jsonLDBody first (failed), then the Googlebot read (succeeded) — and stop.
-        XCTAssertEqual(runner.attempted, [.jsonLDBody, .userAgent(.googlebotDesktop)])
+            url: articleURL, fetcher: fetcher, nonArchiveBypass: true)
+        if case .readable = result {} else { return XCTFail("expected readable, got \(result)") }
+        // The silent leg used a Drudge-referer fetch (WSJ's rule), not a crawler UA.
+        let refererCall = fetcher.calls.first { $0.kind == .referer }
+        XCTAssertEqual(refererCall?.referer, "https://www.drudgereport.com/")
     }
 
-    func testResolverRejectsLockedSilentResultAndAdvances() async {
+    /// Toggle ON + WSJ, but the silent Referer fetch stays locked and there's no
+    /// JSON-LD body: the resolver parks it under its title for the browser-tier /
+    /// archive flow rather than returning a locked page.
+    func testResolverParksWhenSilentRefererStaysLocked() async {
         let articleURL = URL(string: "https://www.wsj.com/articles/x_199845b1.html")!
         let fetcher = MockArticleFetcher()
+        // Both the direct AND the Drudge-referer fetch return the same locked teaser.
         fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML
 
-        // A silent strategy can still return a long-but-locked page; it must be
-        // rejected and the loop must advance to the next strategy.
-        final class LockedThenReadableRunner: BypassRunning {
-            let lockedHTML: String
-            let readable: ExtractedArticle
-            private(set) var attempts = 0
-            init(lockedHTML: String, readable: ExtractedArticle) {
-                self.lockedHTML = lockedHTML
-                self.readable = readable
-            }
-            func run(_ strategy: BypassStrategy, url: URL, directHTML: String?) async -> ExtractedArticle? {
-                attempts += 1
-                // First strategy: a body that's long enough but declares locked → must be rejected.
-                if attempts == 1 {
-                    return ExtractedArticle(content: ArticleContent(title: "Locked", blocks: [
-                        .init(kind: .paragraph, text: String(repeating: "a", count: 2000), links: []),
-                    ]), sourceHTML: lockedHTML)
-                }
-                return readable
-            }
-        }
-        let readable = ExtractedArticle(content: ArticleContent(title: "Real", blocks: [
-            .init(kind: .paragraph, text: String(repeating: "a", count: 2000), links: []),
-        ]), sourceHTML: readableHTML("ok"))
-        let runner = LockedThenReadableRunner(lockedHTML: lockedHTML, readable: readable)
-
         let result = await ArticleResolver.resolve(
-            url: articleURL, fetcher: fetcher, runner: runner, nonArchiveBypass: true)
-        // First silent attempt = long-but-locked (rejected); second = readable (taken).
-        XCTAssertEqual(result, .readable(readable.content, html: readable.sourceHTML))
-        XCTAssertEqual(runner.attempts, 2)
+            url: articleURL, fetcher: fetcher, nonArchiveBypass: true)
+        XCTAssertEqual(result, .paywalled(title: "NYT Headline"))   // lockedHTML's title
+        XCTAssertTrue(fetcher.calls.contains { $0.kind == .referer })
     }
 
     /// When EVERY silent strategy fails (no readable result anywhere) on a host that

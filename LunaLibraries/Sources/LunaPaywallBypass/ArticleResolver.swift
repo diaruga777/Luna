@@ -72,6 +72,29 @@ public enum ArticleResolver {
         // pages, archive.today) live in the plan's web leg and run later in the
         // archive reader. A bounded aggregate deadline keeps the ingest path from
         // serially burning a minute of silent fetches before parking.
+        // Opted-in + a site unlock rule → run the rule's silent request technique
+        // (crawler/custom UA or spoofed Referer) and a forced JSON-LD reconstruction
+        // before parking for the browser tier. Kept out of the strategy enum because
+        // the rule carries arbitrary UA/referer strings the enum can't express.
+        if nonArchiveBypass, let rule = SiteUnlockRules.rule(for: url) {
+            if let html = try? await SiteUnlockSilent.fetch(url: url, rule: rule, fetcher: fetcher),
+               let candidate = await extraction.fetchAndExtract(baseURL: url, fetch: { html }),
+               ArticleExtraction.isReadableArticle(candidate) {
+                await replayLog?(.bypassStrategy(
+                    name: "siteUnlockSilent", runsSilently: true, succeeded: true))
+                return .readable(candidate.content, html: candidate.sourceHTML)
+            }
+            if let directHTML = direct?.sourceHTML,
+               let content = extraction.extractFromJSONLD(html: directHTML, baseURL: url) {
+                let reconstructed = ExtractedArticle(content: content, sourceHTML: directHTML)
+                if ArticleExtraction.isReadableArticle(reconstructed) {
+                    await replayLog?(.bypassStrategy(
+                        name: "jsonLDBody", runsSilently: true, succeeded: true))
+                    return .readable(content, html: directHTML)
+                }
+            }
+        }
+
         let bypassRunner = runner ?? BypassRunner(fetcher: fetcher, extractor: extractor)
         let plan = BypassPlan.make(
             for: url, directHTML: direct?.sourceHTML, nonArchiveBypass: nonArchiveBypass)

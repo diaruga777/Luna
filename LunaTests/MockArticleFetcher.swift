@@ -30,6 +30,10 @@ final class MockArticleFetcher: HTMLFetching {
     private(set) var calls: [Call] = []
     /// HTML returned for a given absolute URL string. A missing entry throws.
     var htmlByURL: [String: String] = [:]
+    /// HTML returned specifically for a referer-spoofed fetch of a URL (so a test can
+    /// serve a readable page to the Drudge/Google referer while the direct read stays
+    /// locked). Falls back to `htmlByURL` when absent.
+    var refererHTMLByURL: [String: String] = [:]
     /// URLs (absolute strings) that should throw a fetch error instead of returning.
     var failingURLs: Set<String> = []
 
@@ -56,6 +60,7 @@ final class MockArticleFetcher: HTMLFetching {
     func fetchHTML(from url: URL, referer: String) async throws -> String {
         calls.append(.init(url: url, userAgent: nil, referer: referer, xForwardedFor: nil,
                            noCookies: false, kind: .referer))
+        if let refererHTML = refererHTMLByURL[url.absoluteString] { return refererHTML }
         return try html(for: url)
     }
 

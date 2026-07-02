@@ -4,11 +4,10 @@
 //
 
 import Foundation
-import LunaSend
 
 /// Minimal ESMTP submission over `MailStream`. Handles both implicit TLS (465)
 /// and STARTTLS (587), AUTH PLAIN with an AUTH LOGIN fallback, multiple
-/// recipients, and a raw RFC 5322 message body (dot-stuffed via `SMTPClient`).
+/// recipients, and a raw RFC 5322 message body (dot-stuffed before `DATA`).
 struct StreamSMTPClient {
 
     struct SMTPError: Error, CustomStringConvertible {
@@ -57,7 +56,7 @@ struct StreamSMTPClient {
         try await command(stream, "DATA", expect: "354", step: "DATA")
         // Chunked so each write gets its own MailStream I/O window — one write
         // of a multi-MB share would trip the per-write timeout on slow uplinks.
-        let stuffed = SMTPClient.dotStuffed(rawMessage)
+        let stuffed = Self.dotStuffed(rawMessage)
         var offset = stuffed.startIndex
         while offset < stuffed.endIndex {
             let end = stuffed.index(offset, offsetBy: 128 * 1024, limitedBy: stuffed.endIndex)
@@ -119,5 +118,20 @@ struct StreamSMTPClient {
             let afterCode = line[line.index(line.startIndex, offsetBy: 3)...].first
             if afterCode != "-" { return (String(line.prefix(3)), line) }
         }
+    }
+
+    /// RFC 5321 §4.5.2: any data line starting with "." gets a "." prepended so
+    /// it can't be mistaken for the end-of-DATA terminator.
+    static func dotStuffed(_ data: Data) -> Data {
+        var output = Data(capacity: data.count)
+        var atLineStart = true
+        for byte in data {
+            if atLineStart && byte == UInt8(ascii: ".") {
+                output.append(UInt8(ascii: "."))
+            }
+            output.append(byte)
+            atLineStart = byte == UInt8(ascii: "\n")
+        }
+        return output
     }
 }

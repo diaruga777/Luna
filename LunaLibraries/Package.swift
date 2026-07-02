@@ -71,7 +71,7 @@ let package = Package(
         .target(name: "LunaStorage", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
         .target(name: "LunaDocuments", dependencies: ["LunaModels"]),
         .target(name: "LunaEpub", dependencies: ["LunaModels"]),
-        .target(name: "LunaSend", dependencies: ["LunaModels", "LunaStorage", "LunaEpub"]),
+        .target(name: "LunaSend", dependencies: ["LunaModels", "LunaStorage", "LunaEpub", "LunaMailAccount"]),
         .target(name: "LunaMail", dependencies: ["LunaModels", "LunaHTMLClassification", "LunaStorage"]),
         .target(name: "LunaMailAccount", dependencies: ["LunaAppConfig", "LunaModels"]),
         // IMAP/SMTP engine for the multi-provider email account, built on

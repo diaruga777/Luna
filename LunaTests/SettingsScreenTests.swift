@@ -36,10 +36,6 @@ final class SettingsScreenTests: XCTestCase {
         snapshotSubscreen(EmailAndKindleSettingsScreen(), named: "settings-email-kindle")
     }
 
-    func testBooxSettingsSnapshot() {
-        snapshotSubscreen(BooxSettingsScreen(), named: "settings-boox")
-    }
-
     func testMediaProviderSettingsSnapshot() {
         snapshotSubscreen(MediaProviderSettingsScreen(), named: "settings-media-provider")
     }
@@ -99,7 +95,6 @@ final class SettingsScreenTests: XCTestCase {
             VoiceSettingsScreen.self,
             ReadingListSettingsScreen.self,
             EmailAndKindleSettingsScreen.self,
-            BooxSettingsScreen.self,
             MediaProviderSettingsScreen.self,
             AutoDownloadSettingsScreen.self,
             ShortcutSettingsScreen.self,
@@ -128,7 +123,8 @@ final class SettingsScreenTests: XCTestCase {
         }
     }
 
-    /// Email & Kindle and Boox both drill into the per-source auto-send screen.
+    /// The Kindle and Boox forwarding rows both drill into the per-source
+    /// auto-send screen.
     func testAutoSendDrilldownNavigation() {
         for (screen, section, row) in autoSendDrilldowns() {
             let nav = UINavigationController(rootViewController: screen)
@@ -146,10 +142,11 @@ final class SettingsScreenTests: XCTestCase {
     // MARK: - Helpers
 
     private func autoSendDrilldowns() -> [(UITableViewController, Int, Int)] {
-        // Section/row indices that push AutoSendBySourceScreen (from the VCs' source).
-        // Email & Kindle: section .kindle (2, after lunaAccount + account), row 0.
-        // Boox: section .send (1), row 0.
-        [(EmailAndKindleSettingsScreen(), 2, 0), (BooxSettingsScreen(), 1, 0)]
+        // Section/row indices that push AutoSendBySourceScreen (from the VC's source).
+        // Sections: lunaAccount(0), kindle(1), booxAccount(2), boox(3), … .
+        // Kindle forwarding: section .kindle (1), row 0.
+        // Boox forwarding: section .boox (3), row 0.
+        [(EmailAndKindleSettingsScreen(), 1, 0), (EmailAndKindleSettingsScreen(), 3, 0)]
     }
 
     private func snapshotSubscreen(_ viewController: UIViewController, named name: String) {

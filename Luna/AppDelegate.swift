@@ -10,6 +10,8 @@ import LunaSemantic
 import LunaSocial
 import LunaSocialUI
 import LunaMailAccount
+import LunaMailTransport
+import LunaSend
 import LunaMediaDownload
 import LunaDesignSystem
 import LunaStorage
@@ -64,6 +66,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         SendToFriendSheet.accountSetupLauncher = { presenter in
             EmailLoginFlow.present(from: presenter)
         }
+
+        // Send-to-Kindle emails go out through the connected email account.
+        // LunaSend sits below LunaMailTransport, so the transport factory is
+        // injected here (extensions leave it nil → Kindle sends are no-ops there).
+        ArticleEmailTransportProvider.make = { MailTransportFactory.make() }
 
         // Modally-presented header screens (LunaDesignSystem sits below
         // LunaTransitions, so the wipe is injected) dismiss through the pixel wipe.

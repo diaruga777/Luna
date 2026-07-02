@@ -47,12 +47,12 @@ Kindle even if the app is never opened).
 
 ## Settings
 
-Merged into `Settings → Email & Kindle` (`EmailAndKindleSettingsScreen`): one
-shared "Email Account" section (provider + Gmail address + app password) powers
-both Send-to-Kindle and import. "Import from Email" section: on/off toggle,
-**"Also Send to Kindle"** toggle (`autoSendToKindle`), add/remove allowed
-senders (swipe to delete). A separate **"Subject Filters"** section adds/removes
-fuzzy subject phrases (swipe to delete).
+Merged into `Settings → Email & Sending` (`EmailAndKindleSettingsScreen`): the
+one connected "Sharing Account" (any provider) powers friend sharing, import,
+AND Send-to-Kindle. "Import from Email" section: on/off toggle, **"Also Send to
+Kindle"** toggle (`autoSendToKindle`), add/remove allowed senders (swipe to
+delete). A separate **"Subject Filters"** section adds/removes fuzzy subject
+phrases (swipe to delete).
 
 ## Background delivery
 

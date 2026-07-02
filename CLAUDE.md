@@ -5,7 +5,7 @@ that share one App Group, one on-disk store (`readingList.json`), and one codeba
 
 - **Luna Reader** (`com.hsanabria.luna.reader`, Xcode target `Luna`) — articles,
   paywalled articles, documents. Scrolling reader (inline split-web frames) + RSVP speed
-  reader; send-to-Kindle (embedded SMTP).
+  reader; send-to-Kindle (emailed through the connected email account).
 - **Luna Downloader** (`com.hsanabria.luna.downloader`, target `LunaDownloader`) —
   social / video / audio links + friend-sharing (CloudKit public-DB, `iCloud.com.hsanabria.luna`).
 - **Luna Price Tracker** (`com.hsanabria.luna.pricetracker`, target `LunaPriceTracker`) —

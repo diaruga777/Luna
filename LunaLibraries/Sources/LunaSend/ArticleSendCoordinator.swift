@@ -6,6 +6,7 @@
 import LunaEpub
 import LunaStorage
 import LunaModels
+import LunaMailAccount
 import Foundation
 import os
 
@@ -42,25 +43,29 @@ public protocol ArticleEmailSending {
     func sendArticle(epubData: Data, fileName: String, title: String) async throws
 }
 
-/// Production sender: MIME message over implicit-TLS SMTP using the settings
-/// and Keychain credentials.
-public final class SMTPArticleEmailSender: ArticleEmailSending {
+/// Supplies the `EmailTransport` for the connected account. LunaSend sits below
+/// LunaMailTransport (which builds the transport), so the app installs this at
+/// launch; it stays nil in contexts that never send (extensions), meaning email
+/// sends fail as not-configured until the app runs.
+public enum ArticleEmailTransportProvider {
+    public static var make: () -> EmailTransport? = { nil }
+}
+
+/// Production sender: builds the article's MIME message and hands it to the
+/// connected email account's transport.
+public final class AccountEmailSender: ArticleEmailSending {
 
     public struct NotConfiguredError: Error {}
 
-    private let credentials: SendCredentialsStoring
-
-    public init(credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared) {
-        self.credentials = credentials
-    }
+    public init() {}
 
     public func sendArticle(epubData: Data, fileName: String, title: String) async throws {
-        guard let password = credentials.smtpPassword(),
-              KindleSendSettings.isConfigured(credentials: credentials)
+        guard let account = EmailAccountStore.shared.account,
+              let transport = ArticleEmailTransportProvider.make()
         else { throw NotConfiguredError() }
 
         let message = MIMEMessage(
-            from: KindleSendSettings.smtpUsername,
+            from: account.address,
             to: KindleSendSettings.kindleAddress,
             subject: title,
             bodyText: "Sent to Kindle by Luna.",
@@ -68,31 +73,25 @@ public final class SMTPArticleEmailSender: ArticleEmailSending {
             attachmentMimeType: "application/epub+zip",
             attachmentData: epubData)
 
-        let transport = TLSConnectionTransport(
-            host: KindleSendSettings.smtpHost, port: KindleSendSettings.port)
-        let client = SMTPClient(transport: transport)
-        try await client.submit(
-            message: message,
-            username: KindleSendSettings.smtpUsername,
-            password: password)
+        try await transport.send(OutgoingEmail(
+            recipients: [KindleSendSettings.kindleAddress],
+            subject: title,
+            rawMIME: message.messageData()))
     }
 }
 
-/// The Kindle destination: SMTP email.
+/// The Kindle destination: email through the connected Luna account.
 public final class KindleDestination: ArticleDestination {
     public let id = ArticleDestinationID.kindle
     public let displayName = "Kindle"
 
-    private let credentials: SendCredentialsStoring
     private let sender: ArticleEmailSending
 
-    public init(credentials: SendCredentialsStoring = KeychainSendCredentialsStore.shared,
-         sender: ArticleEmailSending? = nil) {
-        self.credentials = credentials
-        self.sender = sender ?? SMTPArticleEmailSender(credentials: credentials)
+    public init(sender: ArticleEmailSending? = nil) {
+        self.sender = sender ?? AccountEmailSender()
     }
 
-    public var isConfigured: Bool { KindleSendSettings.isConfigured(credentials: credentials) }
+    public var isConfigured: Bool { KindleSendSettings.isConfigured }
 
     public func sendMode(for item: ReadingListItem) -> ArticleSendMode {
         SourceSendSettings.sendMode(

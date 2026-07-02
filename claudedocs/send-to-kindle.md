@@ -3,8 +3,9 @@
 Background delivery of saved articles to an ereader. The article is rendered to
 EPUB on-device once, then delivered to each configured destination:
 
-- **Kindle** — emailed to the user's `@kindle.com` address through their own SMTP
-  account (Gmail app password or custom host, implicit TLS port 465 only).
+- **Kindle** — emailed to the user's `@kindle.com` address through the connected
+  Luna email account (the same account used for sign-in and friend sharing). That
+  account's address must be on Amazon's approved-sender list.
 - **Boox** — uploaded to the user's Onyx account via the **unofficial** Send2Boox
   service; the device pulls it over WiFi. See "Boox" below.
 
@@ -16,7 +17,7 @@ No UI taps needed once configured.
 target: `id` (`ArticleDestinationID.kindle` / `.boox`), `displayName`,
 `isConfigured`, `sendMode(for: ReadingListItem)` (source-aware), `appIntentsSendMode`
 (the App-Intents/in-app mode, for double-save press detection), and
-`send(epubData:fileName:title:)`. `KindleDestination` wraps `SMTPArticleEmailSender`;
+`send(epubData:fileName:title:)`. `KindleDestination` wraps `AccountEmailSender`;
 `BooxDestination` wraps `Send2BooxClient`. `ArticleSendCoordinator` holds
 `[ArticleDestination]` and is destination-agnostic.
 
@@ -111,14 +112,15 @@ the signed `Date` header (→ switch to a presigned URL if uploads 403).
 - `EpubBuilder.swift` — EPUB 3 from `ArticleContent` (mimetype stored first,
   container.xml, content.opf, nav.xhtml, one chapter.xhtml, embedded jpg/png/gif/webp).
 - `ZipArchiveWriter.swift` — minimal stored-entry ZIP (own CRC32, no deps).
-- `MIMEMessage.swift` — multipart/mixed, base64 EPUB, RFC 2047 subject.
-- `SMTPClient.swift` — `SMTPTransport`; EHLO → AUTH PLAIN (LOGIN fallback) →
-  MAIL/RCPT/DATA → QUIT; `TLSConnectionTransport` = NWConnection implicit TLS
-  (30 s timeout + cancellation). STARTTLS/587 NOT supported.
-- `KindleSendSettings.swift` — Kindle SMTP settings; `SendMode` is a typealias of
-  `ArticleSendMode`.
-- `SendCredentialsStore.swift` — Keychain for the SMTP password AND the Boox token
-  (`smtpPassword`/`booxToken`; in-memory mock for tests).
+- `MIMEMessage.swift` — multipart/mixed, base64 EPUB, RFC 2047 subject. Built by
+  `AccountEmailSender` and handed to the connected account's `EmailTransport`
+  (`ArticleEmailTransportProvider.make`, injected at app launch in `AppDelegate`).
+- `KindleSendSettings.swift` — Kindle address + `sendMode` (a typealias of
+  `ArticleSendMode`); `isConfigured` is true when a Kindle address is set and an
+  email account is connected.
+- `SendCredentialsStore.swift` — Keychain for the Boox token (`booxToken`;
+  in-memory mock for tests). Kindle needs no secret here — it reuses the email
+  account's credential.
 
 ## Model & store
 
@@ -130,9 +132,11 @@ on `.sent`.
 
 ## UI
 
-- Settings → "Email & Kindle" (address/account fields, test) and a separate
-  "Send to Boox" screen (`BooxSettingsScreen`: region, OTP login/logout, test
-  send, unofficial-API disclosure footer). Both expose an **"Auto-Send by
+- Settings → "Email & Sending" (`EmailAndKindleSettingsScreen`): the connected
+  sharing account, a Send-to-Kindle section (Kindle address + test), a
+  Send-to-Boox section (Onyx region, OTP login/logout, test send,
+  unofficial-API disclosure footer), and the import-from-email settings — all on
+  one screen. Both the Kindle and Boox sections expose an **"Auto-Send by
   Source"** disclosure row pushing the shared `AutoSendBySourceScreen`
   (`Luna/Settings/`): App Intents mode + email / share-sheet-&-paste / friend
   toggles + a per-friend list.
@@ -141,7 +145,7 @@ on `.sent`.
 
 ## Tests (`LunaTests/`)
 
-`ZipArchiveWriterTests`, `EpubBuilderTests`, `MIMEMessageTests`, `SMTPClientTests`,
+`ZipArchiveWriterTests`, `EpubBuilderTests`, `MIMEMessageTests`,
 `SavePressPolicyTests` (per-destination eligibility matrix), `ArticleSendCoordinatorTests`
 (multi-destination fan-out + capture-source gating via a mock destination),
 `SourceSendSettingsTests` (per-source resolution + per-friend overrides + legacy

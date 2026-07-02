@@ -20,7 +20,7 @@ Process: eight parallel review agents swept every production module; every findi
 ## Deliberately deferred (unchanged from plan)
 
 - ~~Settings effect-screen duplication and effect-view triplication in LunaContentRendering~~ — moot: the experimental effect playground and its effect views were later removed entirely.
-- SMTP client consolidation (`SMTPClient` vs `StreamSMTPClient`) — drift bugs fixed in place; unifying transports risks the working Kindle path.
+- ~~SMTP client consolidation (`SMTPClient` vs `StreamSMTPClient`)~~ — moot: Kindle now emails through the connected account's transport, so the standalone `SMTPClient` was removed and `StreamSMTPClient` (LunaMailTransport) is the only SMTP path.
 - Unknown-JSON-field passthrough for cross-version field preservation — schema-evolution design work.
 - 0xdead10cc background assertions around coordinated App-Group writes — needs a policy across all writers.
 - `LeadImageExtractor` vs `ArticleExtractor.leadImageURL` conceptual overlap — different mechanisms (regex vs SwiftSoup), consolidation not mechanical.

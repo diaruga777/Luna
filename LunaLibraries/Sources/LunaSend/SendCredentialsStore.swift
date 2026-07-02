@@ -7,13 +7,10 @@ import Foundation
 import os
 import Security
 
-/// Holds the secrets for the ereader send features: the SMTP app password
-/// (Kindle) and the Send2Boox auth token (Boox).
+/// Holds the secret for the Boox send feature: the Send2Boox auth token.
+/// (Kindle sends through the connected email account, so it needs no secret
+/// here.)
 public protocol SendCredentialsStoring {
-    /// The stored SMTP password, if any.
-    func smtpPassword() -> String?
-    /// Stores (or, with nil/empty, deletes) the SMTP password.
-    func setSMTPPassword(_ password: String?)
     /// The stored Send2Boox auth token, if any.
     func booxToken() -> String?
     /// Stores (or, with nil/empty, deletes) the Send2Boox auth token.
@@ -26,15 +23,8 @@ public final class KeychainSendCredentialsStore: SendCredentialsStoring {
 
     public static let shared = KeychainSendCredentialsStore()
 
-    private let smtpService = "com.hsanabria.luna.smtp"
-    private let smtpAccount = "smtp-password"
     private let booxService = "com.hsanabria.luna.boox"
     private let booxAccount = "boox-token"
-
-    public func smtpPassword() -> String? { read(service: smtpService, account: smtpAccount) }
-    public func setSMTPPassword(_ password: String?) {
-        write(password, service: smtpService, account: smtpAccount)
-    }
 
     public func booxToken() -> String? { read(service: booxService, account: booxAccount) }
     public func setBooxToken(_ token: String?) {
@@ -80,15 +70,9 @@ public final class KeychainSendCredentialsStore: SendCredentialsStoring {
 
 /// In-memory stand-in for tests.
 public final class InMemorySendCredentialsStore: SendCredentialsStoring {
-    private var password: String?
     private var token: String?
 
     public init() {}
-
-    public func smtpPassword() -> String? { password }
-    public func setSMTPPassword(_ newPassword: String?) {
-        password = (newPassword?.isEmpty ?? true) ? nil : newPassword
-    }
 
     public func booxToken() -> String? { token }
     public func setBooxToken(_ newToken: String?) {

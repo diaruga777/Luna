@@ -38,40 +38,50 @@ public struct SMTPError: Error, CustomStringConvertible {
 public final class SMTPClient {
 
     private let transport: SMTPTransport
-    /// Hard ceiling on the whole exchange, so a stalled socket can't park a
-    /// receive continuation forever (closing the transport unblocks it).
-    private static let timeoutSeconds: UInt64 = 30
 
     public init(transport: SMTPTransport) {
         self.transport = transport
     }
 
+    /// Hard ceiling on the whole exchange, so a stalled socket can't park a
+    /// receive continuation forever (closing the transport unblocks it).
+    /// Scales with the payload — a fixed 30 s used to kill multi-MB Kindle
+    /// EPUB uploads mid-DATA on slow uplinks: 30 s floor + 1 s per 32 KiB
+    /// (≈8 kB/s worst case), capped at 5 minutes.
+    static func timeoutSeconds(forPayloadBytes bytes: Int) -> UInt64 {
+        min(30 + UInt64(max(bytes, 0)) / (32 * 1024), 300)
+    }
+
     /// Submits one message. `username`/`password` authenticate; the message's
     /// own From/To headers should match `from`/`to`.
     public func submit(message: MIMEMessage, username: String, password: String) async throws {
+        let payload = Self.dotStuffed(message.messageData())
         let watchdog = Task { [transport] in
-            try? await Task.sleep(nanoseconds: Self.timeoutSeconds * 1_000_000_000)
+            try? await Task.sleep(
+                nanoseconds: Self.timeoutSeconds(forPayloadBytes: payload.count) * 1_000_000_000)
             transport.close()
         }
         defer { watchdog.cancel() }
         try await withTaskCancellationHandler {
-            try await performSubmit(message: message, username: username, password: password)
+            try await performSubmit(payload: payload, from: message.from, to: message.to,
+                                    username: username, password: password)
         } onCancel: {
             transport.close()
         }
     }
 
-    private func performSubmit(message: MIMEMessage, username: String, password: String) async throws {
+    private func performSubmit(payload: Data, from: String, to: String,
+                               username: String, password: String) async throws {
         defer { transport.close() }
         try await transport.connect()
 
         try await expect(code: "220", step: "greeting")
         try await command("EHLO luna.local", expecting: "250", step: "EHLO")
         try await authenticate(username: username, password: password)
-        try await command("MAIL FROM:<\(message.from)>", expecting: "250", step: "MAIL FROM")
-        try await command("RCPT TO:<\(message.to)>", expecting: "250", step: "RCPT TO")
+        try await command("MAIL FROM:<\(from)>", expecting: "250", step: "MAIL FROM")
+        try await command("RCPT TO:<\(to)>", expecting: "250", step: "RCPT TO")
         try await command("DATA", expecting: "354", step: "DATA")
-        try await transport.send(Self.dotStuffed(message.messageData()))
+        try await transport.send(payload)
         try await transport.send(Data("\r\n.\r\n".utf8))
         try await expect(code: "250", step: "message body")
         // QUIT reply is best-effort; the message is already accepted.

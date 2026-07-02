@@ -40,9 +40,14 @@ struct StreamSMTPClient {
 
         try await authenticate(stream, username: username, password: password)
 
-        guard let rawMessage, let from, !recipients.isEmpty else {
-            try? await stream.writeLine("QUIT")
+        guard let rawMessage else {
+            try? await stream.writeLine("QUIT")   // verify-only: credentials proven
             return
+        }
+        guard let from, !recipients.isEmpty else {
+            // A message with no sender or no recipients must fail loudly — a
+            // QUIT-and-return here would report a "send" that sent nothing.
+            throw SMTPError(step: "send", reply: "message missing sender or recipients")
         }
 
         try await command(stream, "MAIL FROM:<\(from)>", expect: "250", step: "MAIL FROM")
@@ -50,7 +55,16 @@ struct StreamSMTPClient {
             try await command(stream, "RCPT TO:<\(recipient)>", expect: "250", step: "RCPT TO")
         }
         try await command(stream, "DATA", expect: "354", step: "DATA")
-        try await stream.write(SMTPClient.dotStuffed(rawMessage))
+        // Chunked so each write gets its own MailStream I/O window — one write
+        // of a multi-MB share would trip the per-write timeout on slow uplinks.
+        let stuffed = SMTPClient.dotStuffed(rawMessage)
+        var offset = stuffed.startIndex
+        while offset < stuffed.endIndex {
+            let end = stuffed.index(offset, offsetBy: 128 * 1024, limitedBy: stuffed.endIndex)
+                ?? stuffed.endIndex
+            try await stream.write(Data(stuffed[offset..<end]))
+            offset = end
+        }
         try await stream.write(Data("\r\n.\r\n".utf8))
         try await expect(stream, code: "250", step: "message body")
         try? await stream.writeLine("QUIT")
@@ -68,16 +82,19 @@ struct StreamSMTPClient {
         if try await readReply(stream).code == "235" { return }
 
         try await stream.writeLine("AUTH LOGIN")
-        guard try await readReply(stream).code == "334" else {
-            throw SMTPError(step: "AUTH", reply: "LOGIN not offered")
+        let login = try await readReply(stream)
+        guard login.code == "334" else {
+            throw SMTPError(step: "AUTH", reply: login.lastLine)
         }
         try await stream.writeLine(Data(username.utf8).base64EncodedString())
-        guard try await readReply(stream).code == "334" else {
-            throw SMTPError(step: "AUTH LOGIN username", reply: "rejected")
+        let user = try await readReply(stream)
+        guard user.code == "334" else {
+            throw SMTPError(step: "AUTH LOGIN username", reply: user.lastLine)
         }
         try await stream.writeLine(Data(password.utf8).base64EncodedString())
-        guard try await readReply(stream).code == "235" else {
-            throw SMTPError(step: "AUTH LOGIN password", reply: "rejected")
+        let pass = try await readReply(stream)
+        guard pass.code == "235" else {
+            throw SMTPError(step: "AUTH LOGIN password", reply: pass.lastLine)
         }
     }
 

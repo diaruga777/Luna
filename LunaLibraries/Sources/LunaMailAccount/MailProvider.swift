@@ -161,9 +161,4 @@ public struct MailProvider: Equatable {
                 domains: [])
         }
     }
-
-    /// Providers offered in the picker, in display order.
-    public static var selectable: [MailProvider] {
-        [.gmail, .icloud, .outlook, .yahoo, .generic].map(provider(for:))
-    }
 }

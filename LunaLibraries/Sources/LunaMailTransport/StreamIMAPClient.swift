@@ -135,7 +135,15 @@ struct StreamIMAPClient {
         static func open(host: String, port: Int) async throws -> Session {
             let stream = MailStream(host: host, port: port)
             stream.startTLS() // IMAP is implicit TLS from connect.
-            _ = try await stream.readLine() // server greeting
+            do {
+                _ = try await stream.readLine() // server greeting
+            } catch {
+                // The callers' `defer { session.close() }` only covers failures
+                // AFTER open returns — close here or every failed poll against
+                // an unreachable server leaks an open stream task.
+                stream.close()
+                throw error
+            }
             return Session(stream: stream)
         }
 

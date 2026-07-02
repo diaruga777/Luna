@@ -51,10 +51,17 @@ public struct EmailAccount: Codable, Equatable {
     public var provider: MailProvider { MailProvider.provider(for: providerID) }
 
     /// The `From` header value: `"Name" <addr>` when a display name is set.
+    /// The name is emitted into a quoted-string that the MIME builder copies
+    /// verbatim, so control characters are stripped (a CR/LF would inject
+    /// headers) and `\` / `"` are escaped per RFC 5322.
     public var fromHeader: String {
-        if let name = displayName, !name.trimmingCharacters(in: .whitespaces).isEmpty {
-            return "\"\(name)\" <\(address)>"
-        }
-        return address
+        let cleaned = (displayName ?? "")
+            .components(separatedBy: .controlCharacters).joined()
+            .trimmingCharacters(in: .whitespaces)
+        guard !cleaned.isEmpty else { return address }
+        let escaped = cleaned
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\" <\(address)>"
     }
 }

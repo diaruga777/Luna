@@ -32,16 +32,20 @@ public struct LunaShareMarker: Codable, Equatable {
 
     public static let headerName = "X-Luna-Share"
 
-    /// The header value: base64 (URL-safe padding-free) of the JSON payload.
+    /// The header value: standard base64 (with padding) of the JSON payload.
     public func headerValue() -> String {
         guard let data = try? JSONEncoder().encode(self) else { return "" }
         return data.base64EncodedString()
     }
 
-    /// Parses a marker from an `X-Luna-Share` header value.
+    /// Parses a marker from an `X-Luna-Share` header value. ALL whitespace is
+    /// stripped, not just trimmed: an over-long header is folded onto
+    /// continuation lines at send time, and unfolding leaves interior spaces.
     public static func from(headerValue value: String) -> LunaShareMarker? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let data = Data(base64Encoded: trimmed) else { return nil }
+        let compact = String(value.unicodeScalars.filter {
+            !CharacterSet.whitespacesAndNewlines.contains($0)
+        })
+        guard let data = Data(base64Encoded: compact) else { return nil }
         return try? JSONDecoder().decode(LunaShareMarker.self, from: data)
     }
 

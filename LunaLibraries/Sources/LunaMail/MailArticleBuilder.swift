@@ -138,23 +138,70 @@ public enum MailArticleBuilder {
     /// Decodes RFC 2047 encoded-words (`=?charset?B/Q?text?=`) in a header value.
     public static func decodeEncodedWords(_ value: String) -> String {
         guard value.contains("=?") else { return value }
+        // RFC 2047 §6.2: whitespace between ADJACENT encoded words is not
+        // displayed — senders (Gmail) split long subjects into several words,
+        // which would otherwise decode with stray spaces inside titles.
         var result = value
+        if let regex = try? NSRegularExpression(pattern: #"\?=\s+=\?"#) {
+            result = regex.stringByReplacingMatches(
+                in: result, range: NSRange(result.startIndex..., in: result),
+                withTemplate: "?==?")
+        }
         while let start = result.range(of: "=?"),
               let end = result.range(of: "?=", range: start.upperBound..<result.endIndex) {
             let token = String(result[result.index(start.lowerBound, offsetBy: 2)..<end.lowerBound])
             let parts = token.split(separator: "?", maxSplits: 2, omittingEmptySubsequences: false)
             guard parts.count == 3 else { break }
-            let encoding = parts[1].uppercased()
+            let charset = encoding(forCharset: String(parts[0]))
+            let scheme = parts[1].uppercased()
             let payload = String(parts[2])
             var decoded = payload
-            if encoding == "B", let data = Data(base64Encoded: payload) {
-                decoded = String(decoding: data, as: UTF8.self)
-            } else if encoding == "Q" {
-                decoded = GmailIMAPClient.decodeQuotedPrintable(
-                    payload.replacingOccurrences(of: "_", with: " "))
+            if scheme == "B", let data = Data(base64Encoded: payload) {
+                decoded = String(data: data, encoding: charset)
+                    ?? String(decoding: data, as: UTF8.self)
+            } else if scheme == "Q" {
+                decoded = decodeQEncoded(
+                    payload.replacingOccurrences(of: "_", with: " "), charset: charset)
             }
             result.replaceSubrange(start.lowerBound..<end.upperBound, with: decoded)
         }
         return result
+    }
+
+    /// Byte-level Q decoding (`=XX` hex escapes) interpreted in `charset` —
+    /// decoding the escapes as text first would mangle every non-UTF-8 byte.
+    private static func decodeQEncoded(_ text: String, charset: String.Encoding) -> String {
+        var bytes: [UInt8] = []
+        var iterator = Array(text.utf8).makeIterator()
+        func hexValue(_ byte: UInt8) -> UInt8? {
+            switch byte {
+            case UInt8(ascii: "0")...UInt8(ascii: "9"): return byte - UInt8(ascii: "0")
+            case UInt8(ascii: "A")...UInt8(ascii: "F"): return byte - UInt8(ascii: "A") + 10
+            case UInt8(ascii: "a")...UInt8(ascii: "f"): return byte - UInt8(ascii: "a") + 10
+            default: return nil
+            }
+        }
+        while let byte = iterator.next() {
+            if byte == UInt8(ascii: "="),
+               let high = iterator.next(), let low = iterator.next(),
+               let h = hexValue(high), let l = hexValue(low) {
+                bytes.append(h << 4 | l)
+            } else {
+                bytes.append(byte)
+            }
+        }
+        return String(data: Data(bytes), encoding: charset)
+            ?? String(decoding: Data(bytes), as: UTF8.self)
+    }
+
+    /// Charset token → String.Encoding (an RFC 2231 language suffix is ignored).
+    private static func encoding(forCharset charset: String) -> String.Encoding {
+        let name = charset.lowercased().split(separator: "*").first.map(String.init) ?? ""
+        switch name {
+        case "utf-8", "us-ascii", "": return .utf8
+        case "iso-8859-1", "latin1": return .isoLatin1
+        case "windows-1252", "cp1252": return .windowsCP1252
+        default: return .utf8
+        }
     }
 }

@@ -28,7 +28,10 @@ public struct GraphMailTransport: EmailTransport {
     // MARK: - EmailTransport
 
     public func verifyCredentials() async throws {
-        _ = try await get("https://graph.microsoft.com/v1.0/me")
+        // A mail endpoint, NOT /me: the requested scopes are Mail.*/
+        // MailboxSettings only — /me needs User.Read and would 403 a
+        // perfectly valid token.
+        _ = try await get("https://graph.microsoft.com/v1.0/me/mailFolders/inbox")
     }
 
     public func send(_ email: OutgoingEmail) async throws {
@@ -45,15 +48,33 @@ public struct GraphMailTransport: EmailTransport {
     public func fetchShares(
         after cursor: MailCursor?, extraSenders: [String], extraSubjects: [String]
     ) async throws -> FetchResult {
-        var filter = "isRead eq false and startswith(subject,'From Luna:')"
+        // No isRead filter: the auto-installed Luna inbox rule marks shares read
+        // on arrival (and the user may simply read one first) — an unread-only
+        // query would never return them. The receivedDateTime cursor dedupes.
+        //
+        // Newsletter subject filters can't run server-side (Graph's mail $filter
+        // supports eq/startswith but not contains), so when any exist — and a
+        // cursor is anchored to bound the window — everything since the cursor
+        // is fetched and matched client-side, mirroring the IMAP path's
+        // header-OR-sender-OR-subject semantics.
+        let matchClientSide = !extraSubjects.isEmpty && !(cursor?.token ?? "").isEmpty
+        var clauses: [String] = []
+        if !matchClientSide {
+            var interest = ["startswith(subject,'From Luna:')"]
+            interest += extraSenders.map {
+                "from/emailAddress/address eq '\(Self.odataEscaped($0))'"
+            }
+            clauses.append(
+                interest.count == 1 ? interest[0] : "(" + interest.joined(separator: " or ") + ")")
+        }
         if let token = cursor?.token, !token.isEmpty {
-            filter += " and receivedDateTime gt \(token)"
+            clauses.append("receivedDateTime gt \(token)")
         }
         var components = URLComponents(string: "https://graph.microsoft.com/v1.0/me/messages")!
         components.queryItems = [
             URLQueryItem(name: "$select",
                          value: "id,subject,from,receivedDateTime,body,internetMessageHeaders"),
-            URLQueryItem(name: "$filter", value: filter),
+            URLQueryItem(name: "$filter", value: clauses.joined(separator: " and ")),
             URLQueryItem(name: "$top", value: "25"),
             URLQueryItem(name: "$orderby", value: "receivedDateTime asc"),
         ]
@@ -67,13 +88,46 @@ public struct GraphMailTransport: EmailTransport {
             let headers = wire.headerMap
             let bodyContent = wire.body?.content ?? ""
             let marker = StreamIMAPClient.marker(headers: headers, body: bodyContent)
-            messages.append(FetchedMessage(
+            let message = FetchedMessage(
                 id: wire.id, uid: nil,
                 from: wire.fromAddress, subject: wire.subject ?? "",
                 date: wire.receivedDateTime ?? "", headers: headers,
-                bodyText: bodyContent, marker: marker))
+                bodyText: bodyContent, marker: marker)
+            if matchClientSide {
+                guard Self.matches(message, senders: extraSenders, subjects: extraSubjects) else {
+                    continue
+                }
+            }
+            messages.append(message)
+        }
+        if newestDate.isEmpty, page.value.isEmpty {
+            // First run with nothing of interest yet: anchor the cursor at now
+            // so the client-side subject window above can activate — otherwise
+            // an account with no Luna mail would never establish a cursor.
+            newestDate = ISO8601DateFormatter().string(from: Date())
         }
         return FetchResult(messages: messages, cursor: MailCursor(token: newestDate))
+    }
+
+    /// The IMAP path's interest test: a Luna share marker, a sender match, or a
+    /// subject substring match (both case-insensitive substring, like IMAP
+    /// FROM/SUBJECT search).
+    static func matches(
+        _ message: FetchedMessage, senders: [String], subjects: [String]
+    ) -> Bool {
+        if message.marker != nil { return true }
+        if message.subject.hasPrefix("From Luna:") { return true }
+        let from = message.from.lowercased()
+        if senders.contains(where: { !$0.isEmpty && from.contains($0.lowercased()) }) {
+            return true
+        }
+        let subject = message.subject.lowercased()
+        return subjects.contains(where: { !$0.isEmpty && subject.contains($0.lowercased()) })
+    }
+
+    /// OData string-literal escaping (single quotes double).
+    static func odataEscaped(_ value: String) -> String {
+        value.replacingOccurrences(of: "'", with: "''")
     }
 
     public func markRead(_ messageIDs: [String]) async throws {

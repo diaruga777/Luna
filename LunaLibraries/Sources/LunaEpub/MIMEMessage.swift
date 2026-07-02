@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// An RFC 5322 email with one file attachment, rendered as multipart/mixed.
 /// Line endings are CRLF throughout (dot-stuffing is the SMTP layer's job).
@@ -63,17 +64,12 @@ public struct MIMEMessage {
         return Data((header + body).utf8)
     }
 
-    /// RFC 2047 B-encoding for header text that isn't plain printable ASCII.
+    /// Shared RFC 2047/5322 header encoding (see `MIMEHeaderEncoding`).
     public static func encodedHeaderText(_ text: String) -> String {
-        let isPlainASCII = text.unicodeScalars.allSatisfy { $0.value >= 32 && $0.value < 127 }
-        if isPlainASCII { return text }
-        return "=?UTF-8?B?\(Data(text.utf8).base64EncodedString())?="
+        MIMEHeaderEncoding.encodedHeaderText(text)
     }
 
     private static func rfc5322Date() -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
-        return formatter.string(from: Date())
+        MIMEHeaderEncoding.rfc5322Date()
     }
 }

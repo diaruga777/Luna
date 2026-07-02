@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaModels
 
 /// An inline image referenced from the HTML body by `cid:<contentID>`.
 public struct InlineImage: Equatable {
@@ -28,7 +29,8 @@ public struct InlineImage: Equatable {
 /// ```
 ///
 /// Line endings are CRLF throughout; dot-stuffing is the SMTP layer's job.
-/// Custom headers (notably `X-Luna-Share`) are emitted verbatim.
+/// Custom headers (notably `X-Luna-Share`) are folded when over-long — their
+/// consumers must strip whitespace before decoding (`LunaShareMarker` does).
 public enum EmailMIMEBuilder {
 
     public static func build(
@@ -52,7 +54,7 @@ public enum EmailMIMEBuilder {
         out += "Message-ID: <\(UUID().uuidString)@luna.local>\(crlf)"
         out += "MIME-Version: 1.0\(crlf)"
         for (key, value) in headers.sorted(by: { $0.key < $1.key }) {
-            out += "\(key): \(value)\(crlf)"
+            out += "\(key): \(MIMEHeaderEncoding.foldedRawValue(value))\(crlf)"
         }
         out += "Content-Type: multipart/related; boundary=\"\(related)\"\(crlf)"
         out += crlf
@@ -98,17 +100,12 @@ public enum EmailMIMEBuilder {
                       .endLineWithLineFeed])
     }
 
-    /// RFC 2047 B-encoding for header text that isn't plain printable ASCII.
+    /// Shared RFC 2047/5322 header encoding (see `MIMEHeaderEncoding`).
     static func encodedHeaderText(_ text: String) -> String {
-        let isPlainASCII = text.unicodeScalars.allSatisfy { $0.value >= 32 && $0.value < 127 }
-        if isPlainASCII { return text }
-        return "=?UTF-8?B?\(Data(text.utf8).base64EncodedString())?="
+        MIMEHeaderEncoding.encodedHeaderText(text)
     }
 
     static func rfc5322Date(_ date: Date = Date()) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
-        return formatter.string(from: date)
+        MIMEHeaderEncoding.rfc5322Date(date)
     }
 }

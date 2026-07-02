@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import os
 import Security
 import LunaAppConfig
 
@@ -131,6 +132,12 @@ public final class EmailAccountStore {
         var insert = query
         insert[kSecValueData as String] = Data(value.utf8)
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(insert as CFDictionary, nil)
+        let status = SecItemAdd(insert as CFDictionary, nil)
+        if status != errSecSuccess {
+            // A silently dropped credential shows a "connected" account whose
+            // every send fails as not-configured — leave a trace.
+            Logger(subsystem: "luna", category: "keychain")
+                .error("SecItemAdd failed (\(status)) for \(account, privacy: .public)")
+        }
     }
 }

@@ -70,6 +70,7 @@ public final class PreloadStore {
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
     private let lock = NSLock()
+    private let fileCoordinator = NSFileCoordinator(filePresenter: nil)
     /// Process-local snapshot of the on-disk index, used ONLY by the synchronous
     /// reader-open fast path so a link tap never re-decodes the whole `preloads.json`
     /// on the main thread (it grows with the preload tree). Refreshed whenever THIS
@@ -139,28 +140,39 @@ public final class PreloadStore {
 
     // MARK: - Index access
 
-    private func loadIndex() -> [String: PreloadEntry] {
-        guard let data = try? Data(contentsOf: indexURL),
+    private func loadIndex(at url: URL? = nil) -> [String: PreloadEntry] {
+        guard let data = try? Data(contentsOf: url ?? indexURL),
               let index = try? JSONDecoder().decode([String: PreloadEntry].self, from: data)
         else { return [:] }
         return index
     }
 
-    private func saveIndex(_ index: [String: PreloadEntry]) {
+    private func saveIndex(_ index: [String: PreloadEntry], to url: URL) {
         guard let data = try? JSONEncoder().encode(index) else { return }
-        try? data.write(to: indexURL, options: .atomic)
+        try? data.write(to: url, options: .atomic)
     }
 
-    /// Read-modify-write the index under the lock, reloading fresh each time so an
-    /// extension's concurrent read sees a consistent file.
+    /// Read-modify-write the index under the in-process lock AND an
+    /// `NSFileCoordinator` writing coordination — the app and its extensions all
+    /// mutate this shared index, and an uncoordinated load→save would let the
+    /// last writer clobber the others' owner sets (leaking or over-deleting
+    /// preloaded pages).
     @discardableResult
     private func mutate<T>(_ body: (inout [String: PreloadEntry]) -> T) -> T {
         lock.lock(); defer { lock.unlock() }
-        var index = loadIndex()
-        let result = body(&index)
-        saveIndex(index)
-        cachedIndex = index   // keep the sync fast-path snapshot fresh for this process
-        return result
+        func perform(_ url: URL) -> T {
+            var index = loadIndex(at: url)
+            let result = body(&index)
+            saveIndex(index, to: url)
+            cachedIndex = index   // keep the sync fast-path snapshot fresh for this process
+            return result
+        }
+        var coordResult: T?
+        var coordError: NSError?
+        fileCoordinator.coordinate(writingItemAt: indexURL, options: [], error: &coordError) { url in
+            coordResult = perform(url)
+        }
+        return coordResult ?? perform(indexURL)
     }
 
     /// Index lookup for the synchronous reader-open fast path: serves from the
@@ -304,19 +316,19 @@ public final class PreloadStore {
     /// refresh never creates an unowned entry.
     public func refreshArticle(for url: URL, content: ArticleContent) {
         let key = Self.key(for: url)
-        lock.lock()
-        var index = loadIndex()
-        guard var entry = index[key], entry.kind == .article else { lock.unlock(); return }
-        let file = entry.contentFile ?? "\(key).json"
-        if let data = try? JSONEncoder().encode(content) {
+        let refreshed: Bool = mutate { index in
+            guard var entry = index[key], entry.kind == .article,
+                  let data = try? JSONEncoder().encode(content) else { return false }
+            let file = entry.contentFile ?? "\(key).json"
             try? data.write(to: contentURL(fileName: file), options: .atomic)
             entry.contentFile = file
             entry.updated = Date()
             index[key] = entry
-            saveIndex(index)
+            return true
+        }
+        if refreshed {
             memoryCache.setObject(ContentBox(content), forKey: key as NSString)
         }
-        lock.unlock()
     }
 
     // MARK: - Teardown
@@ -368,9 +380,4 @@ public final class PreloadStore {
         }
     }
 
-    /// All entries (for resume / diagnostics).
-    public func allEntries() -> [PreloadEntry] {
-        lock.lock(); defer { lock.unlock() }
-        return Array(loadIndex().values)
-    }
 }

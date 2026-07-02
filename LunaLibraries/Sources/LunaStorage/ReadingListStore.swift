@@ -313,7 +313,14 @@ public final class ReadingListStore {
         let fileName = "\(itemID.uuidString)-thumb.jpg"
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
-            try? data.write(to: self.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
+            do {
+                try data.write(
+                    to: self.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
+            } catch {
+                SharedDiagnosticLog.record(
+                    "failed to write thumbnail: \(error.localizedDescription)", category: "store")
+                return false
+            }
             all[index].thumbnailFileName = fileName
             return true
         }
@@ -491,10 +498,33 @@ public final class ReadingListStore {
         }
     }
 
-    /// Overwrites the entire list with `items` — used to UNDO a whole catch-up
-    /// session (bumps + read marks) in one shot from a pre-session snapshot.
+    /// Overwrites the entire list with `items`. Destructive to concurrent writers —
+    /// reserved for test seeding; session undo goes through `restoreCatchUpState`.
     public func restore(_ items: [ReadingListItem]) {
         coordinatedMutate { all in all = items }
+    }
+
+    /// Undoes a catch-up session against a pre-session snapshot WITHOUT clobbering
+    /// concurrent writers: snapshot items still present revert exactly what the
+    /// session mutates (read state, bump date, relative order) while keeping any
+    /// concurrent field changes (ingest results, price refreshes); items saved
+    /// since the snapshot — by this app, an extension, or an intent — stay, ahead
+    /// of the restored list; items deleted since are not resurrected.
+    public func restoreCatchUpState(from snapshot: [ReadingListItem]) {
+        let snapshotByID = Dictionary(
+            snapshot.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        coordinatedMutate { all in
+            let currentByID = Dictionary(
+                all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let newcomers = all.filter { snapshotByID[$0.id] == nil }
+            let restored: [ReadingListItem] = snapshot.compactMap { old in
+                guard var current = currentByID[old.id] else { return nil }
+                current.readState = old.readState
+                current.bumpDate = old.bumpDate
+                return current
+            }
+            all = newcomers + restored
+        }
     }
 
     // MARK: - Article content
@@ -503,9 +533,12 @@ public final class ReadingListStore {
         let fileName = "\(item.id.uuidString).json"
         return coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == item.id }) else { return item }
-            if let data = try? JSONEncoder().encode(content) {
-                try? data.write(
-                    to: self.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
+            // Both encode AND write must succeed before the item flips `.ready` —
+            // a ready item whose content file doesn't exist is a blank reader.
+            if let data = try? JSONEncoder().encode(content),
+               (try? data.write(
+                   to: self.articlesDirectory.appendingPathComponent(fileName),
+                   options: .atomic)) != nil {
                 all[index].contentFileName = fileName
                 all[index].title = content.title
                 // This save now owns the images its content references (so they survive
@@ -657,31 +690,65 @@ public final class ReadingListStore {
 
     // MARK: - Private
 
+    /// One row of the shared list file, decoded failably: a structurally corrupt
+    /// row becomes nil instead of failing the whole array (enum version skew is
+    /// already absorbed inside `ReadingListItem.init(from:)`).
+    private struct FailableItem: Decodable {
+        let item: ReadingListItem?
+        init(from decoder: Decoder) throws { self.item = try? ReadingListItem(from: decoder) }
+    }
+
     private static func decodeItems(at url: URL) -> [ReadingListItem] {
-        guard let data = try? Data(contentsOf: url),
-              let items = try? JSONDecoder().decode([ReadingListItem].self, from: data)
-        else { return [] }
-        return items
+        decodeList(at: url).items
+    }
+
+    /// Decodes the shared file. `safeToRewrite` is false only when a NON-EMPTY
+    /// file is entirely unreadable — a mutation must then refuse to write, because
+    /// re-encoding the fallback empty array would destroy every saved item.
+    private static func decodeList(at url: URL) -> (items: [ReadingListItem], safeToRewrite: Bool) {
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return ([], true) }
+        guard let rows = try? JSONDecoder().decode([FailableItem].self, from: data) else {
+            SharedDiagnosticLog.record(
+                "readingList.json unreadable — refusing writes to avoid wiping the list",
+                category: "store")
+            return ([], false)
+        }
+        let items = rows.compactMap(\.item)
+        if items.count < rows.count {
+            SharedDiagnosticLog.record(
+                "skipped \(rows.count - items.count) undecodable reading-list row(s)",
+                category: "store")
+        }
+        return (items, true)
     }
 
     private static func encodeItems(_ items: [ReadingListItem], to url: URL) {
-        if let data = try? JSONEncoder().encode(items) {
-            try? data.write(to: url, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(items)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            SharedDiagnosticLog.record(
+                "failed to write readingList.json: \(error.localizedDescription)",
+                category: "store")
         }
     }
 
     /// Coordinated read-modify-write of the whole list, returning `body`'s value.
     /// Holds the in-process `mutationLock` AND an `NSFileCoordinator` writing
     /// coordination across the entire read+modify+write so other processes can't
-    /// lose this update (or vice versa). Always writes + posts `.readingListChanged`.
+    /// lose this update (or vice versa). Writes + posts `.readingListChanged`
+    /// unless the file is unreadable (see `decodeList` — never wipe the list).
     @discardableResult
     private func coordinatedMutate<T>(_ body: (inout [ReadingListItem]) -> T) -> T {
         mutationLock.lock()
         defer { mutationLock.unlock() }
         func perform(_ url: URL) -> T {
-            var all = Self.decodeItems(at: url)
+            let (decoded, safeToRewrite) = Self.decodeList(at: url)
+            var all = decoded
             let result = body(&all)
-            Self.encodeItems(all, to: url)
+            if safeToRewrite {
+                Self.encodeItems(all, to: url)
+            }
             return result
         }
         var coordResult: T?
@@ -702,8 +769,9 @@ public final class ReadingListStore {
         defer { mutationLock.unlock() }
         var changed = false
         func perform(_ url: URL) {
-            var all = Self.decodeItems(at: url)
-            if body(&all) {
+            let (decoded, safeToRewrite) = Self.decodeList(at: url)
+            var all = decoded
+            if body(&all), safeToRewrite {
                 Self.encodeItems(all, to: url)
                 changed = true
             }

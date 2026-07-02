@@ -25,6 +25,7 @@ public final class ImageReferenceStore {
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
     private let lock = NSLock()
+    private let fileCoordinator = NSFileCoordinator(filePresenter: nil)
 
     public init(containerURL: URL? = nil) {
         self.overrideContainerURL = containerURL
@@ -58,25 +59,38 @@ public final class ImageReferenceStore {
 
     // MARK: - Index access
 
-    private func loadIndex() -> [String: Set<String>] {
-        guard let data = try? Data(contentsOf: indexURL),
+    private func loadIndex(at url: URL) -> [String: Set<String>] {
+        guard let data = try? Data(contentsOf: url),
               let index = try? JSONDecoder().decode([String: Set<String>].self, from: data)
         else { return [:] }
         return index
     }
 
-    private func saveIndex(_ index: [String: Set<String>]) {
+    private func saveIndex(_ index: [String: Set<String>], to url: URL) {
         guard let data = try? JSONEncoder().encode(index) else { return }
-        try? data.write(to: indexURL, options: .atomic)
+        try? data.write(to: url, options: .atomic)
     }
 
+    /// Read-modify-write under the in-process lock AND an `NSFileCoordinator`
+    /// writing coordination: the app, share/action extensions, and intents all
+    /// mutate this shared index, and an uncoordinated load→save would let the
+    /// last writer clobber the others' refcounts (deleting images still owned
+    /// by a live save, or leaking orphans forever).
     @discardableResult
     private func mutate<T>(_ body: (inout [String: Set<String>]) -> T) -> T {
         lock.lock(); defer { lock.unlock() }
-        var index = loadIndex()
-        let result = body(&index)
-        saveIndex(index)
-        return result
+        func perform(_ url: URL) -> T {
+            var index = loadIndex(at: url)
+            let result = body(&index)
+            saveIndex(index, to: url)
+            return result
+        }
+        var coordResult: T?
+        var coordError: NSError?
+        fileCoordinator.coordinate(writingItemAt: indexURL, options: [], error: &coordError) { url in
+            coordResult = perform(url)
+        }
+        return coordResult ?? perform(indexURL)
     }
 
     // MARK: - Ownership

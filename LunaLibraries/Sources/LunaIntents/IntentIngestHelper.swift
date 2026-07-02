@@ -20,23 +20,36 @@ public enum IntentIngestHelper {
     public static func handleSavePressWithTimeout(urlString: String) async -> String? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
         let urlString = url.absoluteString
-        return await withTaskGroup(of: String?.self) { group in
-            group.addTask {
+        // NOT a task group: `withTaskGroup` awaits ALL children before returning,
+        // and the save leg isn't reliably cancellation-responsive (web-archive
+        // capture, image downloads), so a group blows through the 12 s budget.
+        // Race unstructured tasks instead and resume on whichever finishes first;
+        // a timed-out save keeps running and persists its item as pending/queued
+        // for a later retry, exactly as documented above.
+        let resumeLock = NSLock()
+        var resumed = false
+        return await withCheckedContinuation { continuation in
+            @Sendable func finish(_ value: String?) {
+                resumeLock.lock()
+                let first = !resumed
+                resumed = true
+                resumeLock.unlock()
+                if first { continuation.resume(returning: value) }
+            }
+            Task {
                 let result = await ReadingListIngestor.shared.handleSavePress(
                     urlString: urlString, source: .appIntent)
                 switch result {
-                case .saved(let item): return item.urlString
-                case .sentToEreaders(let item): return item.urlString
-                case .ignored: return urlString
+                case .saved(let item), .sentToEreaders(let item):
+                    finish(item.urlString)
+                case .ignored:
+                    finish(urlString)
                 }
             }
-            group.addTask {
+            Task {
                 try? await Task.sleep(nanoseconds: 12_000_000_000)
-                return nil
+                finish(nil)
             }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
         }
     }
 }

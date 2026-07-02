@@ -28,7 +28,11 @@ public final class IncomingMailImporter {
     private let friends: FriendsStore
     private let pending: PendingRequestsStore
     private let accountStore: EmailAccountStore
+    /// Guarded by `runningLock`: `importNewMail` is called concurrently from
+    /// launch, foreground, and background refresh, so the coalescing check and
+    /// set must be one atomic step.
     private var isRunning = false
+    private let runningLock = NSLock()
 
     public init(store: ReadingListStore = .shared,
                 friends: FriendsStore = .shared,
@@ -45,10 +49,18 @@ public final class IncomingMailImporter {
 
     /// Fetches and processes new mail. Safe to call repeatedly; coalesces overlaps.
     public func importNewMail() async {
-        guard isConfigured, !isRunning else { return }
+        guard isConfigured else { return }
         guard let transport = MailTransportFactory.make(store: accountStore) else { return }
-        isRunning = true
-        defer { isRunning = false }
+        runningLock.lock()
+        let alreadyRunning = isRunning
+        if !alreadyRunning { isRunning = true }
+        runningLock.unlock()
+        guard !alreadyRunning else { return }
+        defer {
+            runningLock.lock()
+            isRunning = false
+            runningLock.unlock()
+        }
 
         let cursor = MailCursor(
             uid: IncomingMailSettings.lastUID,

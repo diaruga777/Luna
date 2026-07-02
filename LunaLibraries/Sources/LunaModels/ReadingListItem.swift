@@ -320,6 +320,11 @@ public struct ReadingListItem: Codable, Identifiable {
     }
 
     // Manual decoding so items saved before readState existed still decode.
+    //
+    // Enum-typed fields decode TOLERANTLY (unknown raw value → fallback, never
+    // throw): three separately-updated apps plus their extensions share one
+    // readingList.json, so a newer sibling writing a new enum case must not make
+    // this item — let alone the whole file — undecodable for the others.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -327,7 +332,9 @@ public struct ReadingListItem: Codable, Identifiable {
         title = try container.decodeIfPresent(String.self, forKey: .title)
         dateAdded = try container.decode(Date.self, forKey: .dateAdded)
         bumpDate = try container.decodeIfPresent(Date.self, forKey: .bumpDate)
-        state = try container.decode(State.self, forKey: .state)
+        // Unknown state → .pending: the safe floor (the item is re-ingested
+        // rather than dropped or mislabeled ready).
+        state = Self.tolerant(State.self, container, .state) ?? .pending
         contentFileName = try container.decodeIfPresent(String.self, forKey: .contentFileName)
         originalArchiveFileName = try container.decodeIfPresent(String.self, forKey: .originalArchiveFileName)
         // Pre-webarchive builds stored a reconstructed HTML reader page under this
@@ -338,8 +345,8 @@ public struct ReadingListItem: Codable, Identifiable {
             originalArchiveFileName = try legacy.decodeIfPresent(String.self, forKey: .originalPageFileName)
         }
         lastWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastWordIndex)
-        readState = try container.decodeIfPresent(ReadState.self, forKey: .readState) ?? .unopened
-        lastReaderMode = try container.decodeIfPresent(ReaderMode.self, forKey: .lastReaderMode)
+        readState = Self.tolerant(ReadState.self, container, .readState) ?? .unopened
+        lastReaderMode = Self.tolerant(ReaderMode.self, container, .lastReaderMode)
         lastScrollOffset = try container.decodeIfPresent(Double.self, forKey: .lastScrollOffset)
         lastSpokenWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastSpokenWordIndex)
         eyeTrackedWordIndex = try container.decodeIfPresent(Int.self, forKey: .eyeTrackedWordIndex)
@@ -350,8 +357,8 @@ public struct ReadingListItem: Codable, Identifiable {
         thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
         sharedByUsername = try container.decodeIfPresent(String.self, forKey: .sharedByUsername)
         documentType = try container.decodeIfPresent(String.self, forKey: .documentType)
-        if let states = try container.decodeIfPresent([String: SendState].self, forKey: .sendStates) {
-            sendStates = states
+        if let states = try container.decodeIfPresent([String: String].self, forKey: .sendStates) {
+            sendStates = states.compactMapValues(SendState.init(rawValue:))
         } else {
             // Migrate the pre-multi-destination single `sendState` → "kindle".
             let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
@@ -372,12 +379,21 @@ public struct ReadingListItem: Codable, Identifiable {
             }
         }
         lastSaveAttemptDate = try container.decodeIfPresent(Date.self, forKey: .lastSaveAttemptDate)
-        platform = try container.decodeIfPresent(ContentPlatform.self, forKey: .platform)
+        platform = Self.tolerant(ContentPlatform.self, container, .platform)
         platformItemID = try container.decodeIfPresent(String.self, forKey: .platformItemID)
         mediaCreatorName = try container.decodeIfPresent(String.self, forKey: .mediaCreatorName)
         mediaItemTitle = try container.decodeIfPresent(String.self, forKey: .mediaItemTitle)
-        mediaSourceService = try container.decodeIfPresent(MusicProvider.self, forKey: .mediaSourceService)
-        captureSource = try container.decodeIfPresent(CaptureSource.self, forKey: .captureSource)
+        mediaSourceService = Self.tolerant(MusicProvider.self, container, .mediaSourceService)
+        captureSource = Self.tolerant(CaptureSource.self, container, .captureSource)
         priceTracker = try container.decodeIfPresent(PriceTracker.self, forKey: .priceTracker)
+    }
+
+    /// Decodes a string-backed enum field, mapping an absent key OR an unknown
+    /// raw value (written by a newer sibling app) to nil instead of throwing.
+    private static func tolerant<E: RawRepresentable, Key: CodingKey>(
+        _ type: E.Type, _ container: KeyedDecodingContainer<Key>, _ key: Key
+    ) -> E? where E.RawValue == String {
+        guard let raw = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
+        return E(rawValue: raw)
     }
 }

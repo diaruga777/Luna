@@ -27,7 +27,8 @@ final class CatchUpViewController: UIViewController {
     private let store = ReadingListStore.shared
     private weak var router: ReadingListViewController?
 
-    /// Whole-list snapshot taken at entry; "Undo" restores it in one shot.
+    /// Whole-list snapshot taken at entry; "Undo" merge-restores the session's
+    /// read/bump mutations from it (concurrent saves by other processes survive).
     private let snapshot: [ReadingListItem]
     private var queue: [ReadingListItem]
     private var index = 0
@@ -753,7 +754,7 @@ final class CatchUpViewController: UIViewController {
             isDismissing = true
             pendingAutoDismiss?.cancel()
             pendingAutoDismiss = nil
-            store.restore(snapshot)
+            store.restoreCatchUpState(from: snapshot)
             dismiss(animated: true)
         case .voicePrompt, .deletePrompt:
             break   // the right button is hidden in these phases

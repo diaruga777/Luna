@@ -6,6 +6,7 @@
 import LunaStorage
 import LunaModels
 import LunaDesignSystem
+import LunaTransitions
 import UIKit
 
 /// Diagnostics → Replays: lists every stored `Replay` by its item URL. Tapping a
@@ -133,6 +134,6 @@ final class ReplaysViewController: NavHeaderTableController {
             title: "Export Missing",
             message: "This replay's export file is no longer available.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 }

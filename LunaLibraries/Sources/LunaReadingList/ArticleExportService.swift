@@ -7,6 +7,7 @@ import LunaSend
 import LunaEpub
 import LunaStorage
 import LunaModels
+import LunaTransitions
 import UIKit
 import UniformTypeIdentifiers
 
@@ -77,7 +78,7 @@ public struct ArticleExportService {
                         message: "This article has no readable content to export.",
                         preferredStyle: .alert)
                     alert.addAction(UIAlertAction(title: "OK", style: .default))
-                    presenter.present(alert, animated: true)
+                    DotMatrixModal.present(alert, from: presenter)
                     return
                 }
                 let activity = UIActivityViewController(

@@ -7,6 +7,7 @@ import LunaSocial
 import LunaReadingList
 import LunaModels
 import LunaDesignSystem
+import LunaTransitions
 import UIKit
 
 /// The shared "share this" entry point used by the reading list and the reader:
@@ -35,7 +36,8 @@ public enum SendToFriendSheet {
             deliver(item: item, urlString: urlString, title: title, to: emails, from: presenter)
         }
         let nav = UINavigationController(rootViewController: picker)
-        presenter.present(nav, animated: true)
+        nav.installDotMatrixTransitions()
+        DotMatrixModal.present(nav, from: presenter)
     }
 
     /// Shares the plain URL via the system share sheet (no Luna framing).
@@ -77,7 +79,7 @@ public enum SendToFriendSheet {
                 launcher(presenter)
             })
         }
-        presenter.present(alert, animated: true)
+        DotMatrixModal.present(alert, from: presenter)
     }
 
     private static func presentError(_ error: Error, from presenter: UIViewController) {
@@ -86,6 +88,6 @@ public enum SendToFriendSheet {
             message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription,
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        presenter.present(alert, animated: true)
+        DotMatrixModal.present(alert, from: presenter)
     }
 }

@@ -3,6 +3,7 @@
 //  ReaderKit
 //
 
+import LunaTransitions
 import UIKit
 
 /// The one-time "better voices available" nudge shown the FIRST time the user
@@ -37,6 +38,6 @@ public enum VoiceFirstRunPrompt {
             openVoiceSettings(presenter)
         })
         alert.addAction(UIAlertAction(title: "Not Now", style: .cancel))
-        presenter.present(alert, animated: true)
+        DotMatrixModal.present(alert, from: presenter)
     }
 }

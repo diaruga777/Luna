@@ -295,7 +295,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
     // MARK: - Actions
 
     @objc private func closeTapped() {
-        dismiss(animated: true)
+        DotMatrixModal.dismiss(self)
     }
 
     @objc private func goBackTapped() { webView?.goBack() }
@@ -364,7 +364,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
     private func handleAddOutcome(_ outcome: ProductSearchAddOutcome) {
         switch outcome {
         case .added:
-            dismiss(animated: true)
+            DotMatrixModal.dismiss(self)
         case .noPrice:
             presentPriceMessage(
                 title: "Couldn't find a price",

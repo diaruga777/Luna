@@ -4,6 +4,7 @@
 //
 
 import ContactsUI
+import LunaTransitions
 import UIKit
 
 /// The two ways a screen collects an email recipient — a typed-address alert and
@@ -27,7 +28,7 @@ enum EmailRecipientPrompt {
             guard let raw = alert?.textFields?.first?.text else { return }
             onSubmit(raw)
         })
-        presenter.present(alert, animated: true)
+        DotMatrixModal.present(alert, from: presenter)
     }
 
     /// The email-bearing contact picker. No Contacts permission needed — the

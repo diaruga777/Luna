@@ -533,7 +533,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         } else if let onDone {
             onDone()
         } else {
-            dismiss(animated: true)
+            DotMatrixModal.dismiss(self)
         }
     }
 }

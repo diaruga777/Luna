@@ -24,7 +24,7 @@ extension UITableViewController {
     func presentInfoAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 }
 
@@ -92,7 +92,8 @@ final class SettingsViewController: NavHeaderTableController {
             navigationController?.pushViewController(categories[indexPath.row].make(), animated: true)
         } else {
             let onboarding = OnboardingFlow.makeSetupOnly { [weak self] in
-                self?.dismiss(animated: true)
+                guard let self else { return }
+                DotMatrixModal.dismiss(self)
             }
             onboarding.modalPresentationStyle = .fullScreen
             DotMatrixModal.present(onboarding, from: self)

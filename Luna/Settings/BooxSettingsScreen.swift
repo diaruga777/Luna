@@ -6,6 +6,7 @@
 import LunaReadingListUI
 import LunaSend
 import LunaDesignSystem
+import LunaTransitions
 import UIKit
 
 /// Send-to-Boox settings: region, an OTP login that stores the long-lived
@@ -145,7 +146,7 @@ final class BooxSettingsScreen: NavHeaderTableController {
             guard !identity.isEmpty else { return }
             self?.requestCode(identity: identity)
         })
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     private func requestCode(identity: String) {
@@ -175,7 +176,7 @@ final class BooxSettingsScreen: NavHeaderTableController {
             guard !code.isEmpty else { return }
             self?.completeLogin(identity: identity, code: code)
         })
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     private func completeLogin(identity: String, code: String) {

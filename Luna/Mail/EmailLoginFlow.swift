@@ -7,6 +7,7 @@ import LunaMailAccount
 import LunaMailTransport
 import LunaDesignSystem
 import AuthenticationServices
+import LunaTransitions
 import UIKit
 
 /// The email-account sign-in flow: enter an address → infer the provider →
@@ -19,7 +20,8 @@ public enum EmailLoginFlow {
         let entry = EmailEntryViewController(completion: completion)
         let nav = UINavigationController(rootViewController: entry)
         nav.modalPresentationStyle = .formSheet
-        presenter.present(nav, animated: true)
+        nav.installDotMatrixTransitions()
+        DotMatrixModal.present(nav, from: presenter)
     }
 }
 
@@ -79,7 +81,7 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
         return true
     }
 
-    @objc private func cancel() { dismiss(animated: true) { self.completion?(false) } }
+    @objc private func cancel() { DotMatrixModal.dismiss(self) { self.completion?(false) } }
 
     /// Latched while autodiscovery runs: the return key and Continue button stay
     /// active during the (network) resolve, and repeated taps would push several
@@ -192,13 +194,13 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
     }
 
     private func finish() {
-        dismiss(animated: true) { self.completion?(true) }
+        DotMatrixModal.dismiss(self) { self.completion?(true) }
     }
 
     private func presentError(_ message: String) {
         let alert = UIAlertController(title: "Sign-in failed", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 }
 
@@ -271,7 +273,7 @@ final class CredentialViewController: UIViewController {
                 let transport = try IMAPSMTPTransport(account: account, password: password)
                 try await transport.verifyCredentials()
                 EmailAccountStore.shared.save(account, credential: .appPassword(password))
-                dismiss(animated: true) { self.completion?(true) }
+                DotMatrixModal.dismiss(self) { self.completion?(true) }
             } catch {
                 spinner.stopAnimating()
                 navigationItem.rightBarButtonItem = UIBarButtonItem(
@@ -281,7 +283,7 @@ final class CredentialViewController: UIViewController {
                     message: "Check the address and app password and try again.",
                     preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "OK", style: .default))
-                present(alert, animated: true)
+                DotMatrixModal.present(alert, from: self)
             }
         }
     }

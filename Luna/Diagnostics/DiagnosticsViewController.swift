@@ -5,6 +5,7 @@
 
 import LunaStorage
 import LunaDesignSystem
+import LunaTransitions
 import UIKit
 
 /// Shows the persistent diagnostic log and lets the user share it (as a `.txt`)
@@ -69,7 +70,7 @@ final class DiagnosticsViewController: UIViewController {
         if let navigationController, navigationController.viewControllers.count > 1 {
             navigationController.popViewController(animated: true)
         } else {
-            dismiss(animated: true)
+            DotMatrixModal.dismiss(self)
         }
     }
 
@@ -78,7 +79,9 @@ final class DiagnosticsViewController: UIViewController {
         if let navigationController {
             navigationController.pushViewController(replays, animated: true)
         } else {
-            present(UINavigationController(rootViewController: replays), animated: true)
+            let nav = UINavigationController(rootViewController: replays)
+            nav.installDotMatrixTransitions()
+            DotMatrixModal.present(nav, from: self)
         }
     }
 
@@ -117,12 +120,12 @@ final class DiagnosticsViewController: UIViewController {
             self?.log.clear()
             self?.reload()
         })
-        present(confirm, animated: true)
+        DotMatrixModal.present(confirm, from: self)
     }
 
     private func presentAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 }

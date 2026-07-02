@@ -8,6 +8,7 @@ import LunaYouTubeAPI
 import LunaReaderUI
 import LunaSemantic
 import LunaDesignSystem
+import LunaTransitions
 import UIKit
 import LunaContentRendering
 
@@ -390,6 +391,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         })
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         sheet.popoverPresentationController?.sourceView = view
-        present(sheet, animated: true)
+        DotMatrixModal.present(sheet, from: self)
     }
 }

@@ -5,6 +5,7 @@
 
 import LunaDesignSystem
 import LunaStorage
+import LunaTransitions
 import UIKit
 import WebKit
 
@@ -110,10 +111,10 @@ public final class YouTubePlayerViewController: UIViewController, WKScriptMessag
     ) {
         guard message.name == "player", message.body as? String == "ended" else { return }
         ReadingListStore.shared.markReadState(.read, for: itemID)
-        dismiss(animated: true)
+        DotMatrixModal.dismiss(self)
     }
 
     @objc private func closeTapped() {
-        dismiss(animated: true)
+        DotMatrixModal.dismiss(self)
     }
 }

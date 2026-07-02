@@ -260,7 +260,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             systemItem: .done, primaryAction: UIAction { [weak self] _ in
                 guard let self else { return }
-                if let onClose = self.onClose { onClose() } else { self.dismiss(animated: true) }
+                if let onClose = self.onClose { onClose() } else { DotMatrixModal.dismiss(self) }
             })
         if onOpenInBrowser != nil {
             navigationItem.rightBarButtonItem = UIBarButtonItem(

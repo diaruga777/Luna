@@ -6,6 +6,7 @@
 import LunaReadingListUI
 import LunaMediaDownload
 import LunaDesignSystem
+import LunaTransitions
 import UIKit
 
 /// Per-platform toggles to auto-save a saved post's media to the photo library.
@@ -118,6 +119,6 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
             }
         })
         alert.addAction(UIAlertAction(title: "OK", style: .cancel))
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 }

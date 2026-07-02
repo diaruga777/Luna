@@ -5,6 +5,7 @@
 
 import LunaStorage
 import LunaModels
+import LunaTransitions
 import UIKit
 
 /// Shared "Report a bug" handling: marks the most recent terminated replay for an
@@ -44,6 +45,6 @@ public enum ReplayBugReporter {
             message: "There's no diagnostic replay recorded for this save yet.",
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        presenter.present(alert, animated: true)
+        DotMatrixModal.present(alert, from: presenter)
     }
 }

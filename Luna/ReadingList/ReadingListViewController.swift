@@ -927,10 +927,14 @@ final class ReadingListViewController: UITableViewController {
         ])
         nav.view.layoutIfNeeded()               // force a layout so its content insets resolve now
         nav.view.bringSubviewToFront(overlay)
-        // Focus immediately (not in the fade completion) so the keyboard rises in
-        // parallel with the cross-fade rather than after it.
+        // Focus immediately (not in the wipe completion) so the keyboard rises in
+        // parallel with the transition rather than after it.
         search.focusSearchField()
-        UIView.animate(withDuration: 0.22) { overlay.alpha = 1 }
+        // The overlay replaces the entire list surface (header included), so it gets
+        // the full appear-in-place pixel wipe; disabled ⇒ the original cross-fade.
+        DotMatrixCrossfade.run(in: nav.view, direction: .random) {
+            overlay.alpha = 1
+        }
     }
 
     /// Fades the in-place search overlay out, then removes it. The list's own
@@ -939,9 +943,12 @@ final class ReadingListViewController: UITableViewController {
     private func dismissSearch() {
         guard let search = searchController else { return }
         navigationController?.view.bringSubviewToFront(search.view)
-        UIView.animate(withDuration: 0.28, animations: { search.view.alpha = 0 }) { _ in
+        guard let host = navigationController?.view else { removeSearch(); return }
+        DotMatrixCrossfade.run(in: host, direction: .random, changes: {
+            search.view.alpha = 0
+        }, completion: {
             self.removeSearch()
-        }
+        })
     }
 
     /// Tears the search overlay down immediately (no fade) — used when opening a result
@@ -1378,17 +1385,22 @@ final class ReadingListViewController: UITableViewController {
         let reader = ArchiveWebReaderViewController(articleURL: articleURL, itemID: item.id, store: store)
         let nav = UINavigationController(rootViewController: reader)
         nav.installDotMatrixTransitions()
-        reader.onClose = { [weak nav] in nav?.dismiss(animated: true) }
+        reader.onClose = { [weak nav] in
+            guard let nav else { return }
+            DotMatrixModal.dismiss(nav)
+        }
         reader.onOpenInBrowser = { [weak nav] archiveURL in
             // This is an escape from archive.is's WKWebView-specific bot gate, so
             // it must leave Luna for the system browser — an SFSafari sheet remains
             // inside our presentation and doesn't provide the requested escape.
-            nav?.dismiss(animated: true) {
+            guard let nav else { return }
+            DotMatrixModal.dismiss(nav) {
                 UIApplication.shared.open(archiveURL)
             }
         }
         reader.onExtracted = { [weak self, weak nav, weak presenter] in
-            nav?.dismiss(animated: true) {
+            guard let nav else { return }
+            DotMatrixModal.dismiss(nav) {
                 guard let self, let presenter,
                       let fresh = self.store.item(withID: item.id) else { return }
                 self.open(fresh, presenter: presenter)   // now .ready → native reader

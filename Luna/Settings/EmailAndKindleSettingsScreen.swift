@@ -9,6 +9,7 @@ import LunaMail
 import LunaMailAccount
 import LunaSend
 import LunaDesignSystem
+import LunaTransitions
 import UIKit
 
 /// Email & Kindle settings. The Luma Sharing Account (any provider) powers
@@ -332,7 +333,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             IncomingMailSettings.addSender(text)
             self?.tableView.reloadData()
         })
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     private func promptForSubjectFilter() {
@@ -351,7 +352,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             IncomingMailSettings.addSubjectFilter(text)
             self?.tableView.reloadData()
         })
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     private func presentFilterGuide() {
@@ -371,7 +372,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             })
         }
         alert.addAction(UIAlertAction(title: "Done", style: .cancel))
-        present(alert, animated: true)
+        DotMatrixModal.present(alert, from: self)
     }
 
     private func sendTestEmail() {

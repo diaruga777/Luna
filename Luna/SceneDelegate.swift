@@ -197,8 +197,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     private func showMainUI() {
-        window?.rootViewController = UINavigationController(
-            rootViewController: ReadingListViewController(surface: AppSurfaceConfig.current))
+        guard let window else { return }
+        // Onboarding → main UI is a whole-screen swap: dissolve it through the pixel
+        // wipe (falls back to a plain animated fade when the wipe is off).
+        DotMatrixCrossfade.run(in: window, direction: .random) {
+            window.rootViewController = UINavigationController(
+                rootViewController: ReadingListViewController(surface: AppSurfaceConfig.current))
+            window.layoutIfNeeded()
+        }
         installDotMatrixTransitions()
     }
 

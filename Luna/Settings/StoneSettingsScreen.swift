@@ -5,6 +5,7 @@
 
 import LunaReadingListUI
 import LunaDesignSystem
+import LunaTransitions
 import UIKit
 import PhotosUI
 import AVFoundation
@@ -177,7 +178,7 @@ final class StoneSettingsScreen: UIViewController, UITableViewDataSource, UITabl
         if let navigationController, navigationController.viewControllers.count > 1 {
             navigationController.popViewController(animated: true)
         } else {
-            dismiss(animated: true)
+            DotMatrixModal.dismiss(self)
         }
     }
 

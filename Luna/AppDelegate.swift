@@ -65,6 +65,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             EmailLoginFlow.present(from: presenter)
         }
 
+        // Modally-presented header screens (LunaDesignSystem sits below
+        // LunaTransitions, so the wipe is injected) dismiss through the pixel wipe.
+        NavHeaderTableController.modalDismisser = { DotMatrixModal.dismiss($0) }
+
         // Wire the read-aloud first-run prompt's "Open Settings" to push the
         // Voice settings screen. Setting this hook is what enables the prompt in
         // the main app (extensions leave it nil → the prompt is skipped).

@@ -438,15 +438,20 @@ final class CatchUpViewController: UIViewController {
         let nav = UINavigationController(rootViewController: reader)
         nav.installDotMatrixTransitions()
         nav.modalPresentationStyle = .fullScreen
-        reader.onClose = { [weak nav] in nav?.dismiss(animated: true) }
+        reader.onClose = { [weak nav] in
+            guard let nav else { return }
+            DotMatrixModal.dismiss(nav)
+        }
         // Escape hatch when the embedded web view can't clear archive.today's gate.
         reader.onOpenInBrowser = { [weak nav] archiveURL in
-            nav?.dismiss(animated: true) {
+            guard let nav else { return }
+            DotMatrixModal.dismiss(nav) {
                 UIApplication.shared.open(archiveURL)
             }
         }
         reader.onExtracted = { [weak self, weak nav] in
-            nav?.dismiss(animated: true) { self?.reloadCurrentCard() }
+            guard let nav else { return }
+            DotMatrixModal.dismiss(nav) { self?.reloadCurrentCard() }
         }
         DotMatrixModal.present(nav, from: self)
     }
@@ -759,7 +764,7 @@ final class CatchUpViewController: UIViewController {
             pendingAutoDismiss?.cancel()
             pendingAutoDismiss = nil
             store.restoreCatchUpState(from: snapshot)
-            dismiss(animated: true)
+            DotMatrixModal.dismiss(self)
         case .voicePrompt, .deletePrompt:
             break   // the right button is hidden in these phases
         }
@@ -777,6 +782,6 @@ final class CatchUpViewController: UIViewController {
         for id in pendingDeleteIDs {
             if let item = store.item(withID: id) { store.delete(item) }
         }
-        dismiss(animated: true)
+        DotMatrixModal.dismiss(self)
     }
 }

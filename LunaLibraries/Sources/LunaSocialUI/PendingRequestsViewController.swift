@@ -7,6 +7,7 @@ import LunaSocial
 import LunaReadingList
 import LunaStorage
 import LunaDesignSystem
+import LunaTransitions
 import UIKit
 
 /// The moderation queue for Luna shares from people who aren't friends yet.
@@ -70,7 +71,7 @@ public final class PendingRequestsViewController: NavHeaderTableController {
         })
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         sheet.popoverPresentationController?.sourceView = tableView.cellForRow(at: indexPath)
-        present(sheet, animated: true)
+        DotMatrixModal.present(sheet, from: self)
     }
 
     private func importAndRemove(_ request: PendingRequest) {

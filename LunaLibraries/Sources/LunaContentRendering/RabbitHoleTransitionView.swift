@@ -86,6 +86,12 @@ public final class RabbitHoleTransitionView: UIView {
         var flipV: Float = 0
         var monochrome: Float = 0
         var dissolveOut: Float = 0
+        // MSL rounds RHTransitionUniforms up to its 16-byte alignment (80 bytes);
+        // these pads make the Swift size match so `setFragmentBytes` covers the
+        // full length Metal's argument validation requires.
+        var pad0: Float = 0
+        var pad1: Float = 0
+        var pad2: Float = 0
     }
 
     /// The shared, lazily-built Metal context. Compiling the pipeline is the costly

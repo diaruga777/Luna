@@ -64,11 +64,11 @@ final class BypassStrategySelectorTests: XCTestCase {
             firstParty + [.directUnlock, .trailingDotHost, .archiveToday])
     }
 
-    /// Toggle ON: a BPC-known paywall host with NO generic paywall evidence (a page
+    /// Toggle ON: a rule-listed paywall host with NO generic paywall evidence (a page
     /// that fetched fine but shows no markers) is still routed through the unlock
     /// flow. Toggle OFF: the same page is left alone (no regression).
     func testOnKnownPaywallHostWithoutMarkersStillBypasses() {
-        // delish.com is in the BPC list but NOT our hard-paywall list, so a no-marker
+        // delish.com is in the reference list but NOT our hard-paywall list, so a no-marker
         // page yields a `.notPaywalled` gate decision — the exact case the toggle-on
         // override flips (a hard-paywall host would bypass regardless of the toggle).
         let noEvidence = "<html><body><p>" + String(repeating: "short. ", count: 5) + "</p></body></html>"

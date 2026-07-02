@@ -9,7 +9,7 @@ import LunaURLClassification
 import Foundation
 import WebKit
 
-/// The iOS port of Bypass-Paywalls-Clean's two iOS-applicable primitives, used by
+/// The iOS port of the reference paywall rules' two iOS-applicable primitives, used by
 /// the `.directUnlock` WKWebView strategy (only when the user opts into
 /// `ReaderSettings.nonArchiveBypassEnabled`):
 ///
@@ -20,10 +20,10 @@ import WebKit
 ///     since one vendor block covers every site that uses that vendor.
 ///  2. An injected **DOM-cleanup userscript** that removes leftover paywall
 ///     overlays, unhides the clamped/blurred article body, restores page scroll,
-///     and un-lazies images — ported from BPC's general (non-site-specific)
+///     and un-lazies images — ported from the rules' general (non-site-specific)
 ///     cleanup. Guarded to never touch the archive.today reader.
 ///
-/// Plus the BPC **list of supported hosts**, used (toggle-on only) to recognize a
+/// Plus the reference **list of supported hosts**, used (toggle-on only) to recognize a
 /// paywalled site the generic gate didn't flag, so it still gets the unlock flow.
 ///
 /// All of this is inert unless the experimental toggle is on (it only feeds the
@@ -34,7 +34,7 @@ public enum PaywallUnlockRules {
     // MARK: - Content-blocker (vendor paywall/meter scripts)
 
     /// One blockable vendor: a host substring matched against request URLs, the
-    /// WebKit resource types to block, and domains to EXEMPT (BPC `@@` exceptions /
+    /// WebKit resource types to block, and domains to EXEMPT (the reference rules `@@` exceptions /
     /// sites that need the vendor for their own content).
     private struct VendorBlock {
         let host: String
@@ -50,7 +50,7 @@ public enum PaywallUnlockRules {
         VendorBlock(host: "tinypass.com", unlessDomains: ["ajc.com", "thelogic.co"]),
         VendorBlock(host: "evolok.net"),
         VendorBlock(host: "zephr.com"),
-        // Cxense: WSJ/Quebecor need it for their own content, per BPC.
+        // Cxense: WSJ/Quebecor need it for their own content, per the reference rules.
         VendorBlock(host: "cxense.com",
                     unlessDomains: ["wsj.com", "journaldemontreal.com", "journaldequebec.com"]),
         VendorBlock(host: "qiota.com"),

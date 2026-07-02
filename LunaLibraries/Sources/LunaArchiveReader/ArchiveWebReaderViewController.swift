@@ -160,7 +160,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         self.store = store
         self.recorder = recorder
         // Build the plan once so we know both the pre-stage URLs and whether the
-        // Bypass-Paywalls-Clean `.directUnlock` WKWebView technique is in play (only
+        // the reference paywall rules `.directUnlock` WKWebView technique is in play (only
         // when the experimental toggle is on).
         let plan = BypassPlan.make(for: articleURL, directHTML: nil)
         self.usesDirectUnlock = plan.webPreStages.contains(.directUnlock)
@@ -183,7 +183,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // is registered, so `window.webkit.messageHandlers` also stays absent.
         let contentController = WKUserContentController()
         contentController.addUserScript(Self.safariImpersonationScript())
-        // The Bypass-Paywalls-Clean DOM cleanup (overlay removal / unhide / scroll
+        // The the reference paywall rules DOM cleanup (overlay removal / unhide / scroll
         // restore). It self-guards off archive.today hosts, so it only acts on the
         // `.directUnlock` (and trailing-dot) pages, never the CAPTCHA flow.
         if usesDirectUnlock {

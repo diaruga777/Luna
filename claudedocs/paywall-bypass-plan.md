@@ -8,7 +8,7 @@
 > **Goal:** replace today's narrow bypass ("archive.today WKWebView + NYT
 > trailing-dot pre-stage") with a **data-driven, multi-strategy** pipeline that
 > tries the cheapest, most reliable technique first and degrades gracefully — much
-> closer to how Bypass Paywalls Clean (BPC) actually works.
+> closer to how the reference paywall rules (the reference rules) actually works.
 
 ---
 
@@ -170,14 +170,14 @@ enum RefererOrigin: String, Equatable {
 
 ### 2.2 The per-host rule table (`BypassRuleTable`)
 
-A data-driven table mirroring BPC's `sites.js` — the single source of truth for
+A data-driven table mirroring the rules' `sites.js` — the single source of truth for
 "what do we try for host X, in what order." Keep it a **static Swift literal** (no
 remote config in v1 — that's a future hardening step, see §7). New file
 `ReaderKit/BypassRuleTable.swift`.
 
 ```swift
 /// A per-host bypass rule: the ordered strategies to try and the request tweaks
-/// they need. Modeled on Bypass Paywalls Clean's per-site object so it's easy to
+/// they need. Modeled on the reference paywall rules's per-site object so it's easy to
 /// port their rules. Absent fields mean "default" (strip cookies, normal UA).
 struct BypassRule: Equatable {
     /// Registrable domain this rule matches (apex; also matches subdomains).
@@ -195,7 +195,7 @@ enum BypassRuleTable {
     /// Looks up the rule for a URL's host (apex or subdomain match), or nil.
     static func rule(for url: URL) -> BypassRule? { /* host-suffix match */ }
 
-    /// The seed rule set. Port more from BPC's sites.js over time.
+    /// The seed rule set. Port more from the rules' sites.js over time.
     static let rules: [BypassRule] = [
         BypassRule(domain: "nytimes.com",  strategies: [.trailingDotHost, .waybackRaw, .archiveToday], allowCookies: false, ldJSONSelector: nil),
         BypassRule(domain: "barrons.com",  strategies: [.userAgent(.googlebotDesktop), .amp, .waybackRaw, .archiveToday], allowCookies: false, ldJSONSelector: nil),
@@ -203,7 +203,7 @@ enum BypassRuleTable {
         BypassRule(domain: "ft.com",       strategies: [.userAgent(.googlebotDesktop), .waybackRaw, .archiveToday], allowCookies: false, ldJSONSelector: nil),
         BypassRule(domain: "bloomberg.com",strategies: [.jsonLDBody, .referer(.twitter), .referer(.facebook), .waybackRaw, .archiveToday], allowCookies: false, ldJSONSelector: nil),
         BypassRule(domain: "haaretz.com",  strategies: [.userAgent(.bingbot), .waybackRaw, .archiveToday], allowCookies: false, ldJSONSelector: nil),
-        // …seed ~20 hosts from ArticleFetcher.hardPaywallHosts + BPC's top entries.
+        // …seed ~20 hosts from ArticleFetcher.hardPaywallHosts + the rules' top entries.
     ]
 }
 ```
@@ -221,7 +221,7 @@ enum BypassStrategySelector {
     ///
     /// Order of reasoning:
     /// 1. If the page isn't paywalled at all → return [] (caller already has it).
-    /// 2. If a per-host rule exists → use its strategy list verbatim (BPC parity).
+    /// 2. If a per-host rule exists → use its strategy list verbatim (the reference rules parity).
     /// 3. Otherwise build a generic list from the paywall signals:
     ///    - JSON-LD articleBody present in HTML → lead with .jsonLDBody.
     ///    - content_tier == metered (or no schema lock) → .freshSession, .trailingDotHost.
@@ -233,7 +233,7 @@ enum BypassStrategySelector {
 Selection rules in plain English:
 - **Not paywalled** (`!PaywallDetector.looksPaywalled` and body is readable) → `[]`.
 - **Per-host rule hit** → its `strategies` (already ordered by what works for that
-  publisher). This is where BPC's hard-won per-site knowledge lives.
+  publisher). This is where the rules' hard-won per-site knowledge lives.
 - **Generic fallback** (unknown host, paywalled): always cheap-first —
   `[.jsonLDBody (if HTML has articleBody), .freshSession, .trailingDotHost, .amp, .waybackRaw, .jinaReader, .archiveToday]`. Drop `.jsonLDBody` when the HTML carries no
   ld+json articleBody; drop `.trailingDotHost`/`.freshSession` when schema declares a
@@ -348,9 +348,9 @@ with a fixture) that:
 Then `.jsonLDBody` is a zero-network re-parse of `directHTML`. Run it FIRST in the
 generic paywalled branch (cheapest possible). (Sources:
 developers.google.com structured-data/paywalled-content; schema.org/NewsArticle;
-BPC `ld_json` field + `getArticleJsonScript()`.)
+the reference rules `ld_json` field + `getArticleJsonScript()`.)
 
-**UA strings** (from BPC/iamadamdev source, for `CrawlerAgent`):
+**UA strings** (from the reference rules/iamadamdev source, for `CrawlerAgent`):
 - googlebotDesktop: `Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)` + XFF `66.249.66.1`
 - googlebotMobile: `Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.92 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)` + XFF `66.249.66.1`
 - bingbot: `Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)` (no XFF)
@@ -441,9 +441,9 @@ parameter — widen its type to the protocol.
 
 **Legal (the load-bearing risk):** paywall-bypass tooling is being killed by the
 **News/Media Alliance via DMCA §1201 anti-circumvention** ("trafficking in
-circumvention technology," no safe harbor), not primarily by Apple guidelines. BPC was
+circumvention technology," no safe harbor), not primarily by Apple guidelines. the reference rules was
 removed from Firefox AMO (2023), GitLab (2024), and GitHub + ~3,879 forks (Aug 2024);
-12ft.io was taken offline by its host (Jul 2025). (Sources: TorrentFreak BPC §1201;
+12ft.io was taken offline by its host (Jul 2025). (Sources: TorrentFreak the reference rules §1201;
 github/dmca 2024-08-09 NMA notice; AlternativeTo 12ft.)
 
 **App Store:** Apple's hook is **Guideline 5.2.2** (must be authorized by the
@@ -454,7 +454,7 @@ found, but surviving apps (e.g. Praxis) **carefully position as privacy/ad-block
 ("blocks cookies/JS/ads"), never "we crack paywalls." **Implication for us:**
 - Do the work **on-device** (URLSession transforms + WKWebView) — never proxy/host
   article text on our own server (that's the §1201 "trafficking" exposure that killed
-  12ft/BPC). Redirecting to a third party (archive.today, r.jina.ai, smry) shifts
+  12ft/the reference rules). Redirecting to a third party (archive.today, r.jina.ai, smry) shifts
   liability but makes us dependent on services that keep dying — keep them as *optional
   fallbacks behind a flag*, not the core.
 - Keep marketing/UX framed as a **reader/offline-saver** ("Unlocking article…" is
@@ -527,10 +527,10 @@ HTTP-level techniques:
 - X-Forwarded-For (don't trust): https://www.acunetix.com/vulnerabilities/web/x-forwarded-for-http-header-security-bypass/
 - RSS full-text: https://www.404media.co/404-media-now-has-a-full-text-rss-feed/
 
-Bypass Paywalls Clean / iamadamdev (rule-set source):
-- BPC readable mirror: https://github.com/csns1/bypass-paywalls-chrome-clean-magnolia1234 (sites.js, background.js, contentScript.js)
+the reference paywall rules / iamadamdev (rule-set source):
+- the reference rules readable mirror: https://github.com/csns1/bypass-paywalls-chrome-clean-magnolia1234 (sites.js, background.js, contentScript.js)
 - iamadamdev readable mirror: https://github.com/xxooomg/iamadamdev-bypass-paywalls-chrome
-- BPC current home: https://gitflic.ru/user/magnolia1234
+- the reference rules current home: https://gitflic.ru/user/magnolia1234
 - Overview: https://en.wikipedia.org/wiki/Bypass_Paywalls_Clean
 
 iOS apps / legality:

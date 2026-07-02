@@ -41,7 +41,7 @@ public enum BypassStrategy: Equatable {
     /// vendor scripts blocked (a compiled `WKContentRuleList`) and a DOM-cleanup
     /// userscript injected (remove overlays, unhide the clamped body, restore
     /// scroll). The site's own JS renders the article while the meter can't run, so
-    /// the rendered DOM is extractable. WKWebView-only — the Bypass-Paywalls-Clean
+    /// the rendered DOM is extractable. WKWebView-only — the the reference paywall rules
     /// core technique. Tried before archive.today (only when the user opts in).
     case directUnlock
     /// archive.is snapshot via the interactive WKWebView reader. WKWebView-only,

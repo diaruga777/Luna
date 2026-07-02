@@ -56,7 +56,7 @@ let package = Package(
         .target(name: "LunaPaywallBypass", dependencies: [
             "LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch",
             .product(name: "SwiftSoup", package: "SwiftSoup"),
-        ]),
+        ], resources: [.process("Resources/site_unlock_rules.json")]),
         .target(name: "LunaPriceMetadata"),
         .target(name: "LunaContentRendering"),
         // Shared UIKit transition facade: wraps the LunaContentRendering Metal engine

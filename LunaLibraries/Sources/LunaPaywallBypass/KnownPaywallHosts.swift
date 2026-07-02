@@ -5,7 +5,7 @@
 
 import Foundation
 
-/// The Bypass-Paywalls-Clean supported-host list, used (only when the extra-unlock
+/// The the reference paywall rules supported-host list, used (only when the extra-unlock
 /// toggle is on) to let a site the generic gate didn't flag still enter the unlock
 /// flow. Pure host matching, split out of the WebKit `PaywallUnlockRules` so the
 /// bypass-strategy logic can consult it without depending on the UI layer.

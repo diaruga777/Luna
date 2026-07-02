@@ -42,7 +42,7 @@ public enum SilentStrategy: Equatable {
 /// `WebStrategy` is always a non-terminal pre-stage.
 public enum WebStrategy: Equatable {
     /// Load the ORIGINAL URL in the WKWebView with paywall scripts blocked + a
-    /// DOM-cleanup userscript (the Bypass-Paywalls-Clean technique). The reader's
+    /// DOM-cleanup userscript (the the reference paywall rules technique). The reader's
     /// pre-stage flow installs the content rules + cleanup before loading it.
     case directUnlock
     /// The trailing-dot FQDN variant, loaded in a real browser. Emitted whenever the

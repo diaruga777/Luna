@@ -42,7 +42,6 @@ final class SettingsViewController: NavHeaderTableController {
         Category(title: "Reader", symbol: "textformat.size") { ReaderSettingsScreen() },
         Category(title: "Voice", symbol: "speaker.wave.2") { VoiceSettingsScreen() },
         Category(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
-        Category(title: "Visual Progress", symbol: "eye") { EyeTrackingSettingsScreen() },
         Category(title: "Email & Kindle", symbol: "envelope") { EmailAndKindleSettingsScreen() },
         Category(title: "Send to Boox", symbol: "books.vertical") { BooxSettingsScreen() },
         Category(title: "Music & Podcasts", symbol: "music.note") { MediaProviderSettingsScreen() },
@@ -313,57 +312,6 @@ final class ReadingListSettingsScreen: NavHeaderTableController {
         }
         // Picking up a higher depth resumes preloading for existing saves.
         PreloadCoordinator.shared.resumeIncomplete()
-    }
-}
-
-// MARK: - Eye Tracking
-
-final class EyeTrackingSettingsScreen: NavHeaderTableController {
-    init() { super.init(style: .insetGrouped) }
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func viewDidLoad() {
-        headerTitle = "Eye Tracking"
-        super.viewDidLoad()
-    }
-
-    private enum Row: Int, CaseIterable { case track, highlight }
-
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        Row.allCases.count
-    }
-
-    override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "Tracks your eyes while reading (only while the app is open) to pick up voiceover where you left off.\n\n\"Highlight\" adds a visual accent to the word you're reading."
-    }
-
-    override func tableView(
-        _ tableView: UITableView, cellForRowAt indexPath: IndexPath
-    ) -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration()
-        cell.selectionStyle = .none
-        switch Row(rawValue: indexPath.row)! {
-        case .track:
-            content.text = "Track Reading Position"
-            cell.accessoryView = makeToggle(
-                isOn: ReaderSettings.eyeTrackingEnabled, action: #selector(eyeTrackingToggled(_:)))
-        case .highlight:
-            content.text = "Experimental: Highlight"
-            cell.accessoryView = makeToggle(
-                isOn: ReaderSettings.highlightGazeWord, action: #selector(highlightToggled(_:)))
-        }
-        cell.contentConfiguration = content
-        return cell
-    }
-
-    @objc private func eyeTrackingToggled(_ toggle: UISwitch) {
-        ReaderSettings.eyeTrackingEnabled = toggle.isOn
-        if !toggle.isOn { ReadingListStore.shared.clearAllEyeTracking() }
-    }
-
-    @objc private func highlightToggled(_ toggle: UISwitch) {
-        ReaderSettings.highlightGazeWord = toggle.isOn
     }
 }
 

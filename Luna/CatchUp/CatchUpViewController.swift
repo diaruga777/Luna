@@ -329,7 +329,7 @@ final class CatchUpViewController: UIViewController {
             // while rotating, so the glass header renders at identity scale (no balloon).
             let reader = ReaderViewController(
                 item: item, content: content, forceMode: .scroll,
-                shareProvider: nil, gazeTrackerFactory: nil,
+                shareProvider: nil,
                 persistsModePreference: false, marksOpenedOnLoad: false,
                 inlineControlsHeader: true,
                 inlineHeaderSubtitle: CatchUpCardHeader.text(for: item))

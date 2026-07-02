@@ -15,16 +15,15 @@ public enum ReaderHostFactory {
     public static func make(item: ReadingListItem,
                      content: ArticleContent,
                      shareProvider: ReaderShareProviding? = nil,
-                     gazeTrackerFactory: GazeTrackerFactory? = nil,
                      transition: RabbitHoleTransitioning? = nil) -> UIViewController {
         if ReaderSettings.rabbitHoleReaderEnabled {
             return RabbitHoleReaderViewController(
                 item: item, content: content,
-                shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory,
+                shareProvider: shareProvider,
                 transition: transition)
         }
         return ReaderViewController(
             item: item, content: content,
-            shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory)
+            shareProvider: shareProvider)
     }
 }

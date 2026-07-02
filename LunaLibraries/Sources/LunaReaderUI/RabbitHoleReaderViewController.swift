@@ -27,7 +27,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private let rootItem: ReadingListItem
     private let rootContent: ArticleContent
     private let shareProvider: ReaderShareProviding?
-    private let gazeTrackerFactory: GazeTrackerFactory?
     private let transition: RabbitHoleTransitioning?
     private let store = ReadingListStore.shared
     private let stackStore = RabbitHoleStackStore.shared
@@ -80,12 +79,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     public init(item: ReadingListItem, content: ArticleContent,
                 shareProvider: ReaderShareProviding? = nil,
-                gazeTrackerFactory: GazeTrackerFactory? = nil,
                 transition: RabbitHoleTransitioning? = nil) {
         self.rootItem = item
         self.rootContent = content
         self.shareProvider = shareProvider
-        self.gazeTrackerFactory = gazeTrackerFactory
         self.transition = transition
         super.init(nibName: nil, bundle: nil)
     }
@@ -288,7 +285,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// view loads and chrome (incl. the header) is built now — off the tap path.
     private func makeLayerShell() -> RabbitHoleLayerViewController {
         let layer = RabbitHoleLayerViewController(
-            shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory, layout: layout)
+            shareProvider: shareProvider, layout: layout)
         layer.onLinkActivated = { [weak self, weak layer] url, lineText in
             guard let self, let layer, layer === self.layers.last else { return }
             self.pushLayer(url: url, lineText: lineText, from: layer)

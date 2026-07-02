@@ -41,8 +41,6 @@ public final class ReaderViewController: UIViewController {
 
     /// Sharing affordances (nil in the share extension → no share button/footer).
     private let shareProvider: ReaderShareProviding?
-    /// Gaze-tracker factory (nil in the share extension → no eye tracking).
-    private let gazeTrackerFactory: GazeTrackerFactory?
 
     /// When false, switching modes does NOT write the shared `ReaderSettings`/
     /// per-item mode (used by the action extension, which keeps its own
@@ -77,7 +75,6 @@ public final class ReaderViewController: UIViewController {
     public init(item: ReadingListItem, content: ArticleContent,
          forceMode: ReadingListItem.ReaderMode? = nil,
          shareProvider: ReaderShareProviding? = nil,
-         gazeTrackerFactory: GazeTrackerFactory? = nil,
          persistsModePreference: Bool = true,
          marksOpenedOnLoad: Bool = true,
          inlineControlsHeader: Bool = false,
@@ -86,7 +83,6 @@ public final class ReaderViewController: UIViewController {
         self.item = item
         self.content = content
         self.shareProvider = shareProvider
-        self.gazeTrackerFactory = gazeTrackerFactory
         self.persistsModePreference = persistsModePreference
         self.marksOpenedOnLoad = marksOpenedOnLoad
         self.inlineControlsHeader = inlineControlsHeader
@@ -365,7 +361,7 @@ public final class ReaderViewController: UIViewController {
     private func makeScrollReader() -> ScrollReaderViewController {
         let scroll = ScrollReaderViewController(
             item: item, content: content, audioEnabled: audioOn,
-            shareProvider: shareProvider, gazeTrackerFactory: gazeTrackerFactory,
+            shareProvider: shareProvider,
             resumeWordIndex: resumeWordIndex)
         scroll.onFinishedReading = { [weak self] in self?.markRead() }
         scroll.onShareFooterVisibilityChanged = { [weak self] visible in

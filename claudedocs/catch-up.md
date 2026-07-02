@@ -65,7 +65,7 @@ for the pills.
     so `CatchUpCardView` sets `layer.shouldRasterize` while rotating (`apply`/`performAction`,
     cleared on `springBack` completion) — the glass bakes to a bitmap at identity scale
     and the rotation just transforms that bitmap (reader uses `forceMode: .scroll`,
-    `persistsModePreference: false`, `marksOpenedOnLoad: false`, no share/gaze). The
+    `persistsModePreference: false`, `marksOpenedOnLoad: false`, no share). The
     media card's body is tapped to open → `ReadingListViewController.openItem(_:presentingFrom:)`
     then mark read.
   - Actions: Keep → no-op; Bump → `store.bump(id)` (stamps `bumpDate`, moves to list

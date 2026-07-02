@@ -11,7 +11,7 @@ import UIKit
 
 /// The rendered article plus a map from each block's text to its range in the
 /// attributed string (nil for image/skipped blocks) — used by read-aloud
-/// highlighting and eye tracking to translate between text spaces.
+/// highlighting to translate between text spaces.
 public struct RenderedArticle {
     public let text: NSAttributedString
     public let blockTextRanges: [NSRange?]

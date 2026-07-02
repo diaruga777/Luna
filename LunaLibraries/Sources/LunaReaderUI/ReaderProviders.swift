@@ -24,24 +24,6 @@ public protocol ReaderShareProviding: AnyObject {
     func saveLink(urlString: String)
 }
 
-/// Estimates the last-read word from the front camera. The reader depends only
-/// on this protocol; the concrete `EyeGazeWordTracker` (ARKit/camera) is
-/// injected via `GazeTrackerFactory` by the main app and never compiled into
-/// the share extension.
-public protocol GazeTracking: AnyObject {
-    /// The most recent word-index estimate, if any.
-    var estimatedWordIndex: Int? { get }
-    /// Called (on the main thread) whenever the estimate changes — drives the
-    /// optional live "highlight the word you're looking at" affordance.
-    var onWordIndexChange: ((Int) -> Void)? { get set }
-    /// Stops the camera session.
-    func stop()
-}
-
-/// Builds a gaze tracker for a reader's text view, or returns nil when eye
-/// tracking is off/unsupported (or in the share extension).
-public typealias GazeTrackerFactory = (_ textView: UITextView, _ wordMap: WordMap, _ seedWordIndex: Int?) -> GazeTracking?
-
 /// Drives the visual transition between two RabbitHole layer arrangements (a dive,
 /// a pop, or an interactive overscroll). The reader depends only on this protocol;
 /// the app injects a Metal pixel-mosaic implementation (`LunaContentRendering` can't be
@@ -118,7 +100,6 @@ public protocol RabbitHoleInteractiveTransition: AnyObject {
 /// carry the reading position across a mode switch.
 public protocol ReaderPositionTracking: AnyObject {
     /// Best estimate of the word index currently being read. For the scrolling
-    /// reader with no playback this is the eye-tracked word (when available),
-    /// falling back to the first word fully visible on screen.
+    /// reader with no playback this is the first word fully visible on screen.
     var currentReadingWordIndex: Int? { get }
 }

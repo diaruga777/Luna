@@ -25,8 +25,8 @@ public struct RSVPWord {
 /// Pure logic, no UI — covered by unit tests.
 public struct RSVPEngine {
     public let words: [RSVPWord]
-    /// Source-token index (the whitespace-token space WordMap, read-aloud, and
-    /// gaze tracking share) for each entry of `words`. Splitting long tokens
+    /// Source-token index (the whitespace-token space WordMap and read-aloud
+    /// share) for each entry of `words`. Splitting long tokens
     /// adds frames, so frame indices drift from the shared cross-mode space;
     /// these two maps convert both ways at the RSVP boundary.
     public let sourceTokenIndices: [Int]

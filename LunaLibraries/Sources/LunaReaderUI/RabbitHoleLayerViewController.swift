@@ -46,7 +46,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     public var onBack: (() -> Void)?
 
     private let shareProvider: ReaderShareProviding?
-    private let gazeTrackerFactory: GazeTrackerFactory?
     private let layout: RabbitHoleLayout
     /// Height of the floating header (focused layer only).
     public static let headerHeight: CGFloat = 64
@@ -151,16 +150,13 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// until `configure(descriptor:preloadedContent:)`. The host pre-creates one of
     /// these offscreen so tapping a link never has to build a view controller.
     public init(shareProvider: ReaderShareProviding?,
-         gazeTrackerFactory: GazeTrackerFactory?,
          layout: RabbitHoleLayout) {
         self.descriptor = RabbitHoleLayerDescriptor(urlString: "")
         self.shareProvider = shareProvider
-        self.gazeTrackerFactory = gazeTrackerFactory
         self.layout = layout
         let emptyItem = Self.emptyItem
         self.scrollReader = ScrollReaderViewController(
-            item: emptyItem, content: Self.emptyContent, audioEnabled: false,
-            gazeTrackerFactory: nil)
+            item: emptyItem, content: Self.emptyContent, audioEnabled: false)
         self.rsvpReader = RSVPViewController(item: emptyItem, content: Self.emptyContent)
         self.originalReader = OriginalPageViewController()
         super.init(nibName: nil, bundle: nil)
@@ -661,12 +657,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
         switch mode {
         case .scroll, .highlight, .original:
-            // Deliberately NO gaze tracker here: EyeGazeWordTracker.init starts an
-            // ARFaceTracking camera session synchronously, and a dive builds a fresh
-            // ScrollReader every time — so per-layer trackers stalled the main thread
-            // (the on-device dive hang) and stacked a camera session per layer. Eye
-            // tracking stays available in the standard reader; it's off in this
-            // experimental stacked reader by design.
             scrollReader.configureForReuse(
                 item: transient, content: content, audioEnabled: audioOn)
             scrollReader.onLinkActivatedWithRange = { [weak self] url, range in

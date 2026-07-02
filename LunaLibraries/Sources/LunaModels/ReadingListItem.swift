@@ -80,9 +80,6 @@ public struct ReadingListItem: Codable, Identifiable {
     public var lastScrollOffset: Double?
     /// Read-aloud resume position (word index); non-nil once audio has played.
     public var lastSpokenWordIndex: Int?
-    /// Eye-tracking estimate of the last word read (word index); nil when the
-    /// feature is disabled or unavailable.
-    public var eyeTrackedWordIndex: Int?
     /// Total words in the extracted article (for reading-time estimates).
     public var wordCount: Int?
     /// 0…1 how far the user has gotten (scroll depth or RSVP position).
@@ -211,7 +208,6 @@ public struct ReadingListItem: Codable, Identifiable {
         self.lastReaderMode = nil
         self.lastScrollOffset = nil
         self.lastSpokenWordIndex = nil
-        self.eyeTrackedWordIndex = nil
         self.wordCount = nil
         self.readingProgress = nil
         self.youtubeVideoID = nil
@@ -272,7 +268,6 @@ public struct ReadingListItem: Codable, Identifiable {
         self.lastReaderMode = lastReaderMode
         self.lastScrollOffset = nil
         self.lastSpokenWordIndex = nil
-        self.eyeTrackedWordIndex = nil
         self.wordCount = wordCount
         self.readingProgress = readingProgress
         self.youtubeVideoID = youtubeVideoID
@@ -349,7 +344,6 @@ public struct ReadingListItem: Codable, Identifiable {
         lastReaderMode = Self.tolerant(ReaderMode.self, container, .lastReaderMode)
         lastScrollOffset = try container.decodeIfPresent(Double.self, forKey: .lastScrollOffset)
         lastSpokenWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastSpokenWordIndex)
-        eyeTrackedWordIndex = try container.decodeIfPresent(Int.self, forKey: .eyeTrackedWordIndex)
         wordCount = try container.decodeIfPresent(Int.self, forKey: .wordCount)
         readingProgress = try container.decodeIfPresent(Double.self, forKey: .readingProgress)
         youtubeVideoID = try container.decodeIfPresent(String.self, forKey: .youtubeVideoID)

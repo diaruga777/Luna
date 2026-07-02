@@ -19,7 +19,7 @@ final class RabbitHoleStackStoreTests: XCTestCase {
     @MainActor
     func testConfigureWithWebURLOffersOriginalSegment() {
         let layer = RabbitHoleLayerViewController(
-            shareProvider: nil, gazeTrackerFactory: nil, layout: RabbitHoleLayout())
+            shareProvider: nil, layout: RabbitHoleLayout())
         // Before configure: chrome built off the blank shell's "" placeholder → no Original.
         XCTAssertEqual(layer.modeSegmentCountForTesting, 2)
 
@@ -38,7 +38,7 @@ final class RabbitHoleStackStoreTests: XCTestCase {
     @MainActor
     func testConfigureWithNonWebURLHasNoOriginalSegment() {
         let layer = RabbitHoleLayerViewController(
-            shareProvider: nil, gazeTrackerFactory: nil, layout: RabbitHoleLayout())
+            shareProvider: nil, layout: RabbitHoleLayout())
         let content = ArticleContent(title: "Mail", blocks: [
             .init(kind: .paragraph, text: "Email body.", links: []),
         ])

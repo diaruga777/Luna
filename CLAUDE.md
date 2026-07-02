@@ -61,7 +61,7 @@ truth). The Xcode targets are thin shells: the `Luna/` folder holds the shared a
 (AppDelegate/SceneDelegate), per-app Settings, the main-screen composition
 (ReadingListViewController/CatchUp/Search), composition wiring (AppReaderProviders/
 OnboardingFlow/AppSurfaceConfig), the App Intent **definitions** (`Luna/Intents/*` — business
-logic is in the `LunaIntents` library), and the ARKit gaze tracker — and is shared by ALL
+logic is in the `LunaIntents` library) — and is shared by ALL
 THREE app targets (each picks its surface from its bundle id). The Share/Action extensions
 link only `LunaShareSurface` (+ transitive), `LunaSafari` links nothing (it reads the App
 Group id from its own Info.plist via `SafariAppGroup`). Cross-tier wiring uses injected

@@ -183,12 +183,12 @@ public final class ReadingListStore {
 
     /// Persists the scroll reader's resume position.
     /// One coordinated write for everything a reader persists on close — scroll
-    /// offset, reading progress (monotonic), spoken word, gaze word — instead of
-    /// several back-to-back whole-list read-modify-write cycles on the main
-    /// thread. nil parameters leave their field untouched.
+    /// offset, reading progress (monotonic), spoken word — instead of several
+    /// back-to-back whole-list read-modify-write cycles on the main thread. nil
+    /// parameters leave their field untouched.
     public func saveReaderExitPosition(
         scrollOffset: Double? = nil, readingProgress: Double? = nil,
-        lastSpokenWordIndex: Int? = nil, eyeTrackedWordIndex: Int? = nil,
+        lastSpokenWordIndex: Int? = nil,
         for itemID: UUID
     ) {
         coordinatedUpdate { all in
@@ -207,10 +207,6 @@ public final class ReadingListStore {
             }
             if let lastSpokenWordIndex, all[index].lastSpokenWordIndex != lastSpokenWordIndex {
                 all[index].lastSpokenWordIndex = lastSpokenWordIndex
-                changed = true
-            }
-            if let eyeTrackedWordIndex, all[index].eyeTrackedWordIndex != eyeTrackedWordIndex {
-                all[index].eyeTrackedWordIndex = eyeTrackedWordIndex
                 changed = true
             }
             return changed
@@ -248,27 +244,6 @@ public final class ReadingListStore {
         }
     }
 
-    /// Persists the eye-tracking estimate (nil clears it).
-    public func setEyeTrackedWordIndex(_ wordIndex: Int?, for itemID: UUID) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].eyeTrackedWordIndex != wordIndex else { return false }
-            all[index].eyeTrackedWordIndex = wordIndex
-            return true
-        }
-    }
-
-    /// Disabling eye tracking wipes every stored gaze estimate.
-    public func clearAllEyeTracking() {
-        coordinatedUpdate { all in
-            var changed = false
-            for index in all.indices where all[index].eyeTrackedWordIndex != nil {
-                all[index].eyeTrackedWordIndex = nil
-                changed = true
-            }
-            return changed
-        }
-    }
 
     public func delete(_ item: ReadingListItem) {
         coordinatedMutate { all in

@@ -32,10 +32,6 @@ final class SettingsScreenTests: XCTestCase {
         snapshotSubscreen(ReadingListSettingsScreen(), named: "settings-reading-list")
     }
 
-    func testEyeTrackingSettingsSnapshot() {
-        snapshotSubscreen(EyeTrackingSettingsScreen(), named: "settings-eye-tracking")
-    }
-
     func testEmailAndKindleSettingsSnapshot() {
         snapshotSubscreen(EmailAndKindleSettingsScreen(), named: "settings-email-kindle")
     }
@@ -98,7 +94,6 @@ final class SettingsScreenTests: XCTestCase {
             ReaderSettingsScreen.self,
             VoiceSettingsScreen.self,
             ReadingListSettingsScreen.self,
-            EyeTrackingSettingsScreen.self,
             EmailAndKindleSettingsScreen.self,
             BooxSettingsScreen.self,
             MediaProviderSettingsScreen.self,

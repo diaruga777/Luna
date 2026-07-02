@@ -148,19 +148,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     /// Initial frame from the shared token-space resume sources, in priority
-    /// order: the position carried over from another reader mode, the item's
-    /// persisted position, then the last gaze-tracked word. All three are
-    /// TOKEN indices — `frameIndex(forTokenIndex:)` converts into RSVP frame
-    /// space, which gains an extra frame per long-word split part.
+    /// order: the position carried over from another reader mode, then the item's
+    /// persisted position. Both are TOKEN indices — `frameIndex(forTokenIndex:)`
+    /// converts into RSVP frame space, which gains an extra frame per long-word
+    /// split part.
     private func resolveResumeFrame(carriedOver: Int?) -> Int {
         if let resume = carriedOver, let frame = engine.frameIndex(forTokenIndex: resume) {
             return frame
         }
         if let resume = item.lastWordIndex, let frame = engine.frameIndex(forTokenIndex: resume) {
-            return frame
-        }
-        if ReaderSettings.eyeTrackingEnabled, let gazeIndex = item.eyeTrackedWordIndex,
-           let frame = engine.frameIndex(forTokenIndex: gazeIndex) {
             return frame
         }
         return 0

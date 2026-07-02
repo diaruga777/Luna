@@ -399,7 +399,6 @@ final class ReadingListViewController: UITableViewController {
             let reader = ReaderHostFactory.make(
                 item: transient, content: content,
                 shareProvider: AppReaderShareProvider.shared,
-                gazeTrackerFactory: AppGazeTracker.factory,
                 transition: DotMatrixRabbitHoleTransition())
             navigationController?.pushViewController(reader, animated: true)
         }
@@ -1370,7 +1369,6 @@ final class ReadingListViewController: UITableViewController {
         let reader = ReaderHostFactory.make(
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
-            gazeTrackerFactory: AppGazeTracker.factory,
             transition: DotMatrixRabbitHoleTransition())
         presenter.navigationController?.pushViewController(reader, animated: true)
     }

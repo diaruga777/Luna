@@ -12,8 +12,7 @@ import UIKit
 /// Full-screen scrolling text reader. Tapping an inline link splits the article
 /// open into the inline glass card (`SplitWebOverlayViewController`); long-press
 /// offers save/share. Supports read-aloud with
-/// word highlighting + follow-scroll, remembers the scroll position, and
-/// estimates the last-read word via eye tracking on supported devices.
+/// word highlighting + follow-scroll and remembers the scroll position.
 public final class ScrollReaderViewController: UIViewController, UITextViewDelegate, ReaderPositionTracking,
     UIContextMenuInteractionDelegate, UIGestureRecognizerDelegate {
 
@@ -43,10 +42,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// far enough to count as a deliberate reposition (vs. just opening/closing).
     private var openContentOffsetY: CGFloat?
 
-    /// Gates the gaze estimate so only a stable, multi-word lock — not a single
-    /// noisy sample — is allowed to move the carried reading position.
-    private var gazeLockGate = GazeLockGate()
-
     private var item: ReadingListItem
     private var content: ArticleContent
     private var rendered: RenderedArticle
@@ -69,14 +64,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// True once the FULL article has been rendered + swapped in (Phase 2 done, or
     /// never needed because the prefix already covered the whole article). Until
     /// then `rendered`/`wordMap` describe only the prefix, so position-dependent
-    /// features (RSVP/audio resume, gaze, the share footer) wait for it.
+    /// features (RSVP/audio resume, the share footer) wait for it.
     private var didLoadFullContent = false
     /// Set once Phase 2 has been kicked off so it runs exactly once.
     private var didBeginFullContentLoad = false
-    /// Set once the plain-scroll gaze carry-over observation has been wired, so it's
-    /// started exactly once whether that happens in `viewDidAppear` (short article,
-    /// tracker already present) or in `applyFullContent` (progressive open).
-    private var didStartGazeObservation = false
 
     #if DEBUG
     /// Test hooks for the progressive load: whether the full content has been
@@ -98,10 +89,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var highlightedRange: NSRange?
     private var followPlayback = true
 
-    // Eye tracking (nil unless a gaze factory provided one — never in the sheet).
-    private var gazeTracker: GazeTracking?
-    private let gazeTrackerFactory: GazeTrackerFactory?
-
     /// Sharing affordances; nil → no end-of-article share footer (share sheet).
     private var shareProvider: ReaderShareProviding?
     /// End-of-article share affordance, pinned below the text content (nil when
@@ -117,7 +104,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public init(item: ReadingListItem, content: ArticleContent,
          audioEnabled: Bool = false,
          shareProvider: ReaderShareProviding? = nil,
-         gazeTrackerFactory: GazeTrackerFactory? = nil,
          resumeWordIndex: Int? = nil) {
         self.item = item
         // Bake in any images already cached on disk (keyed by URL hash) BEFORE the
@@ -128,7 +114,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         self.content = resolved
         self.audioEnabled = audioEnabled
         self.shareProvider = shareProvider
-        self.gazeTrackerFactory = gazeTrackerFactory
         self.explicitResumeWordIndex = resumeWordIndex
         // Phase 1: render only a leading prefix so the FIRST layout of the text view
         // is cheap (a couple hundred characters), removing the whole-article glyph
@@ -172,8 +157,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         imageDownloadTask?.cancel()
         speech?.stop()
         speech = nil
-        gazeTracker?.stop()
-        gazeTracker = nil
         contentSizeObservation?.invalidate()
         contentSizeObservation = nil
         removeHighlight()
@@ -194,11 +177,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         didRestoreScroll = false
         didLoadFullContent = false
         didBeginFullContentLoad = false
-        didStartGazeObservation = false
         didStartPlayback = false
         shareFooterVisible = false
         openContentOffsetY = nil
-        gazeLockGate = GazeLockGate()
         highlightedRange = nil
         followPlayback = true
 
@@ -270,19 +251,17 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// scroll, when a position was carried IN from another mode
     /// (`explicitResumeWordIndex`), it must NOT drift just from opening/closing:
     /// it only moves off that carried index when the user scrolled past a
-    /// threshold (→ first fully-visible word) or eye tracking confirmed a
-    /// multi-word lock (→ gaze word). With neither, it returns the carried index
-    /// unchanged — a no-op. See `ReaderResumePositionResolver`.
+    /// threshold (→ first fully-visible word). Otherwise it returns the carried
+    /// index unchanged — a no-op. See `ReaderResumePositionResolver`.
     ///
     /// On a FRESH open (no carried index — e.g. straight from the reading list)
     /// there's no position to protect, so the first switch resumes from where
-    /// the reader actually is: the gaze lock if confirmed, else the first
-    /// fully-visible word.
+    /// the reader actually is: the first fully-visible word.
     public var currentReadingWordIndex: Int? {
         if let speech, let word = speech.currentWordIndex { return word }
 
         guard let resumeIndex = explicitResumeWordIndex else {
-            return gazeLockGate.confirmedIndex ?? firstFullyVisibleWordIndex()
+            return firstFullyVisibleWordIndex()
         }
 
         let scrolled: Bool
@@ -295,7 +274,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         return ReaderResumePositionResolver.reportedWordIndex(
             resumeIndex: resumeIndex,
             scrolledPastThreshold: scrolled,
-            confirmedGazeIndex: gazeLockGate.confirmedIndex,
             firstFullyVisibleIndex: firstFullyVisibleWordIndex())
     }
 
@@ -304,7 +282,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     deinit {
         imageDownloadTask?.cancel()
         speech?.stop()
-        gazeTracker?.stop()
         contentSizeObservation?.invalidate()
     }
 
@@ -397,9 +374,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
         addSimulatorSplitHooksIfNeeded()
 
-        // The resume highlight + gaze tracker both need the FULL word map (a deep
-        // resume word / gaze estimate isn't in the prefix), so install them only once
-        // the full content has landed. For an already-complete prefix that's now.
+        // The resume highlight needs the FULL word map (a deep resume word isn't
+        // in the prefix), so install it only once the full content has landed. For
+        // an already-complete prefix that's now.
         if didLoadFullContent { installPositionDependentFeatures() }
 
         // Hide the text until the saved scroll position is applied, so the
@@ -512,25 +489,13 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         fetchMissingImagesIfNeeded()
     }
 
-    /// Installs the read-aloud resume highlight and the gaze tracker — both of which
-    /// need the FULL word map (a deep resume word / gaze estimate isn't in the prefix).
-    /// Called once the full content is in place; idempotent-safe via the gaze guard.
-    /// If the view has already appeared in plain-scroll mode, also starts the gaze
-    /// carry-over observation (which `viewDidAppear` couldn't, having had no tracker
-    /// yet on a progressive open).
+    /// Installs the read-aloud resume highlight, which needs the FULL word map (a
+    /// deep resume word isn't in the prefix). Called once the full content is in
+    /// place.
     private func installPositionDependentFeatures() {
         if let spokenIndex = item.lastSpokenWordIndex,
            let range = wordMap.attributedRange(forWord: spokenIndex) {
             applyHighlight(range)
-        }
-        if gazeTracker == nil {
-            gazeTracker = gazeTrackerFactory?(textView, wordMap, item.eyeTrackedWordIndex)
-        }
-        // Started playback already (the view appeared) in plain scroll, but the gaze
-        // observation was skipped because the tracker didn't exist yet — start it now.
-        if didStartPlayback, !audioEnabled, gazeTracker != nil, !didStartGazeObservation {
-            didStartGazeObservation = true
-            observeGazeForCarryOver(alsoHighlight: ReaderSettings.highlightGazeWord)
         }
     }
 
@@ -694,25 +659,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             didStartPlayback = true
             if audioEnabled {
                 startSpeech()
-            } else {
-                // Plain scroll: optionally live-highlight the gaze word.
-                SharedDiagnosticLog.record(
-                    "reader opened (scroll): gazeTracker=\(gazeTracker != nil) highlightSetting=\(ReaderSettings.highlightGazeWord)",
-                    category: "gaze")
-                // On a progressive (long-article) open the tracker doesn't exist yet —
-                // `installPositionDependentFeatures` starts the observation once Phase 2
-                // creates it. Here we cover the short-article case (tracker already made).
-                if gazeTracker != nil, !didStartGazeObservation {
-                    didStartGazeObservation = true
-                    observeGazeForCarryOver(alsoHighlight: ReaderSettings.highlightGazeWord)
-                }
             }
         }
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        gazeTracker?.onWordIndexChange = nil
         // Progress is only meaningful against the FULL layout: during the
         // Phase-1 prefix render the content is ~one screen tall, so the ratio
         // would read ~100% and permanently mark a barely-opened article as
@@ -727,7 +679,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             scrollOffset: Double(textView.contentOffset.y),
             readingProgress: progress,
             lastSpokenWordIndex: speech?.currentWordIndex,
-            eyeTrackedWordIndex: gazeTracker?.estimatedWordIndex,
             for: item.id)
     }
 
@@ -778,20 +729,15 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         ])
     }
 
-    /// First word to resume from: where playback left off, else the eye-tracked
-    /// last-read word (only when a gaze tracker is active), else the first word
-    /// currently visible on screen (so playback starts where the reader is
-    /// looking, not the top of the article — matching behavior when eye
-    /// tracking is off/unavailable or in the share sheet).
+    /// First word to resume from: where playback left off, else the first word
+    /// currently visible on screen (so playback starts where the reader is, not
+    /// the top of the article).
     private var resumeWordIndex: Int? {
         if let explicitResumeWordIndex {
             return explicitResumeWordIndex
         }
         if let resume = item.lastSpokenWordIndex {
             return resume
-        }
-        if let gazeTracker {
-            return gazeTracker.estimatedWordIndex ?? item.eyeTrackedWordIndex
         }
         return firstFullyVisibleWordIndex()
     }
@@ -856,30 +802,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // First-ever read-aloud: nudge the user toward higher-quality voices.
         // Non-blocking — playback above has already begun. No-op in extensions.
         VoiceFirstRunPrompt.showIfNeeded(from: self)
-    }
-
-    /// Observes the gaze tracker while in plain scroll mode: every estimate
-    /// feeds the lock gate (so a stable multi-word lock — and only that — may
-    /// move the carried reading position), and, when the live-highlight setting
-    /// is on, also highlights the looked-at word (no auto-scroll — the page
-    /// shouldn't jump as your eyes move).
-    private var gazeHighlightLogCount = 0
-    private func observeGazeForCarryOver(alsoHighlight: Bool) {
-        if alsoHighlight {
-            SharedDiagnosticLog.record("gaze highlight enabled", category: "gaze")
-        }
-        gazeTracker?.onWordIndexChange = { [weak self] index in
-            guard let self else { return }
-            self.gazeLockGate.record(index)
-            // Throttled visibility into whether estimates are flowing.
-            self.gazeHighlightLogCount += 1
-            if self.gazeHighlightLogCount % 20 == 1 {
-                SharedDiagnosticLog.record("gaze word index = \(index)", category: "gaze")
-            }
-            guard alsoHighlight,
-                  let range = self.wordMap.attributedRange(forWord: index) else { return }
-            self.applyHighlight(range)
-        }
     }
 
     @objc private func togglePlayback() {

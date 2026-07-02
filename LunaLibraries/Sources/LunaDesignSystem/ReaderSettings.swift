@@ -20,8 +20,6 @@ public enum ReaderSettings {
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
     private static let wpmKey = "rsvpBaseWPM"
-    private static let eyeTrackingKey = "eyeTrackingEnabled"
-    private static let highlightGazeWordKey = "highlightGazeWord"
     private static let fontScaleKey = "readerFontScale"
     private static let serifKey = "readerSerifFont"
     private static let readingTimeKey = "showReadingTime"
@@ -82,27 +80,11 @@ public enum ReaderSettings {
     public static func migrateFromStandardIfNeeded() {
         guard !defaults.bool(forKey: migratedKey) else { return }
         let standard = UserDefaults.standard
-        for key in [wpmKey, eyeTrackingKey, fontScaleKey, serifKey,
+        for key in [wpmKey, fontScaleKey, serifKey,
                     readingTimeKey, progressKey, lastReaderModeKey] {
             if let value = standard.object(forKey: key) { defaults.set(value, forKey: key) }
         }
         defaults.set(true, forKey: migratedKey)
-    }
-
-    /// Whether gaze tracking may run while reading (and whether stored gaze
-    /// estimates may be used). Defaults to on; only takes effect on devices
-    /// with TrueDepth face tracking.
-    public static var eyeTrackingEnabled: Bool {
-        get { (defaults.object(forKey: eyeTrackingKey) as? Bool) ?? true }
-        set { defaults.set(newValue, forKey: eyeTrackingKey) }
-    }
-
-    /// When on (and eye tracking is active), the scrolling reader highlights the
-    /// word the gaze tracker currently estimates you're looking at. Off by
-    /// default — it's a live, slightly distracting affordance.
-    public static var highlightGazeWord: Bool {
-        get { defaults.bool(forKey: highlightGazeWordKey) }
-        set { defaults.set(newValue, forKey: highlightGazeWordKey) }
     }
 
     /// The reader mode the user last used — the default for new articles that

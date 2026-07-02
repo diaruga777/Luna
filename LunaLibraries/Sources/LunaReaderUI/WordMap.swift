@@ -8,7 +8,7 @@ import Foundation
 
 /// Maps between the article's word stream (the same indices RSVPEngine uses)
 /// and character ranges in the rendered attributed string. Lets read-aloud,
-/// eye tracking, RSVP, and the scroll reader share one "word index" space.
+/// RSVP, and the scroll reader share one "word index" space.
 public struct WordMap {
     /// Attributed-string range for each word, indexed by word index.
     public let wordRanges: [NSRange]

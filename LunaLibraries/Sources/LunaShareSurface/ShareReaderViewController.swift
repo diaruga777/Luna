@@ -15,7 +15,7 @@ import UIKit
 /// Presents the shared article in the EXACT same reader as the main app
 /// (`ReaderViewController` from the shared ReaderKit), scoped to that one
 /// article. It fetches + extracts the page, then shows the chosen mode with no
-/// share affordance and no eye tracking (nil providers). Inline link tapping,
+/// share affordance (nil provider). Inline link tapping,
 /// mode switching, and audio all work; Done exits the extension.
 public final class ShareReaderViewController: UIViewController {
 
@@ -154,11 +154,11 @@ public final class ShareReaderViewController: UIViewController {
         spinner.stopAnimating()
         // A lightweight share provider (friend-share via the App Group queue +
         // link share — no CloudKit in the extension) so the end-of-article share
-        // affordance works; still no eye tracking (nil gaze factory). The reader
-        // marks the (real, shared) item opened/read via ReadingListStore.
+        // affordance works. The reader marks the (real, shared) item opened/read
+        // via ReadingListStore.
         let reader = ReaderViewController(
             item: item, content: content, forceMode: mode.readerMode,
-            shareProvider: ExtensionReaderShareProvider(), gazeTrackerFactory: nil,
+            shareProvider: ExtensionReaderShareProvider(),
             // The action extension keeps its OWN last-used mode, separate from
             // the main app — persist switches locally, don't touch the shared
             // ReaderSettings.

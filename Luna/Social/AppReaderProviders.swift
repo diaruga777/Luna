@@ -6,7 +6,6 @@
 import LunaSocialUI
 import LunaReadingList
 import LunaReaderUI
-import LunaDesignSystem
 import LunaStorage
 import UIKit
 
@@ -63,14 +62,3 @@ public final class AppReaderShareProvider: ReaderShareProviding {
         Task { await ReadingListIngestor.shared.handleSavePress(urlString: urlString) }
     }
 }
-
-/// Main-app gaze-tracker factory: a real `EyeGazeWordTracker` when eye tracking
-/// is enabled, else nil. The extension never uses this (no camera/ARKit).
-public enum AppGazeTracker {
-    public static let factory: GazeTrackerFactory = { textView, wordMap, seed in
-        guard ReaderSettings.eyeTrackingEnabled else { return nil }
-        return EyeGazeWordTracker(textView: textView, wordMap: wordMap, seedWordIndex: seed)
-    }
-}
-
-extension EyeGazeWordTracker: GazeTracking {}

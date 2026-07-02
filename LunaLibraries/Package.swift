@@ -84,7 +84,7 @@ let package = Package(
         .target(name: "LunaSocial", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage"]),
         .target(name: "LunaSemantic", dependencies: ["LunaModels", "LunaStorage", "LunaSocial"]),
         .target(name: "LunaReaderEngine", dependencies: ["LunaModels"]),
-        .target(name: "LunaArchiveReader", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaStorage", "LunaDesignSystem", "LunaTransitions"]),
+        .target(name: "LunaArchiveReader", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaStorage", "LunaDesignSystem", "LunaTransitions"], resources: [.process("Resources/site_cleanup_scripts.json")]),
         .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaTransitions"]),
         .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaReaderUI", "LunaTransitions"]),
         .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms", "LunaTransitions"]),

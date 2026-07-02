@@ -41,7 +41,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
-        case .lunaAccount: return EmailAccountStore.shared.isConfigured ? 2 : 1
+        case .lunaAccount: return EmailAccountStore.shared.isConfigured ? 3 : 1
         case .account: return 1 /* provider */ + accountRows.count
         case .kindle: return 3 /* mode, kindle address, test send */
         case .importMail: return 2 /* enabled, auto-send */ + IncomingMailSettings.allowedSenders.count + 1 /* add */
@@ -86,10 +86,16 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         switch Section(rawValue: indexPath.section)! {
         case .lunaAccount:
             if EmailAccountStore.shared.isConfigured {
-                if indexPath.row == 0 {
+                switch indexPath.row {
+                case 0:
                     content.text = EmailAccountStore.shared.account?.address
                     content.secondaryText = EmailAccountStore.shared.account?.provider.displayName
-                } else {
+                case 1:
+                    content.text = "Inbox Filter"
+                    content.secondaryText = "Keep Luna mail out of your inbox"
+                    cell.accessoryType = .disclosureIndicator
+                    cell.selectionStyle = .default
+                default:
                     content.text = "Sign Out"
                     content.textProperties.color = .systemRed
                     cell.selectionStyle = .default
@@ -182,9 +188,12 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         switch Section(rawValue: indexPath.section)! {
         case .lunaAccount:
             if EmailAccountStore.shared.isConfigured {
-                if indexPath.row == 1 {
+                switch indexPath.row {
+                case 1: presentFilterGuide()
+                case 2:
                     EmailAccountStore.shared.clear()
                     tableView.reloadData()
+                default: break
                 }
             } else {
                 EmailLoginFlow.present(from: self) { [weak self] _ in self?.tableView.reloadData() }
@@ -335,6 +344,26 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             IncomingMailSettings.addSubjectFilter(text)
             self?.tableView.reloadData()
         })
+        present(alert, animated: true)
+    }
+
+    private func presentFilterGuide() {
+        guard let providerID = EmailAccountStore.shared.account?.providerID else { return }
+        if FilterGuide.isAutomatic(providerID) {
+            presentInfoAlert(
+                title: "Filter Active",
+                message: "Luna set up an inbox rule automatically for this account.")
+            return
+        }
+        let alert = UIAlertController(
+            title: "Inbox Filter", message: FilterGuide.instructions(for: providerID),
+            preferredStyle: .alert)
+        if let url = FilterGuide.settingsURL(for: providerID) {
+            alert.addAction(UIAlertAction(title: "Open Filter Settings", style: .default) { _ in
+                UIApplication.shared.open(url)
+            })
+        }
+        alert.addAction(UIAlertAction(title: "Done", style: .cancel))
         present(alert, animated: true)
     }
 

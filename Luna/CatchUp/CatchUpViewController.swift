@@ -8,6 +8,7 @@ import LunaPriceUI
 import LunaReaderUI
 import LunaArchiveReader
 import LunaDesignSystem
+import LunaMailAccount
 import LunaStorage
 import LunaTransitions
 import LunaModels
@@ -104,6 +105,63 @@ final class CatchUpViewController: UIViewController {
             showCard()
             updateChrome()
         }
+        presentEmailSetupCardIfNeeded()
+    }
+
+    /// When no email account is connected, this is the first thing the user sees
+    /// in Catch-Up: a card prompting them to set up email sharing. Overlaid on the
+    /// deck; dismissing it (set up or skip) reveals the normal cards underneath.
+    private func presentEmailSetupCardIfNeeded() {
+        guard !EmailAccountStore.shared.isConfigured, !UITestSeeder.isUITestLaunch else { return }
+
+        let overlay = UIView()
+        overlay.backgroundColor = view.backgroundColor
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: view.topAnchor),
+            overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+
+        let icon = UIImageView(image: UIImage(systemName: "envelope.badge"))
+        icon.tintColor = GlassStyle.readingAccent
+        icon.contentMode = .scaleAspectFit
+        let title = UILabel()
+        title.text = "Set up email sharing"
+        title.font = .systemFont(ofSize: 24, weight: .bold)
+        title.textAlignment = .center
+        title.numberOfLines = 0
+        let body = UILabel()
+        body.text = "Connect your email to send articles to friends and import shares sent to you."
+        body.font = .preferredFont(forTextStyle: .body)
+        body.textColor = .secondaryLabel
+        body.textAlignment = .center
+        body.numberOfLines = 0
+        let setUp = UIButton(configuration: .filled())
+        setUp.setTitle("Set Up Email", for: .normal)
+        setUp.addAction(UIAction { [weak self, weak overlay] _ in
+            guard let self else { return }
+            EmailLoginFlow.present(from: self) { done in if done { overlay?.removeFromSuperview() } }
+        }, for: .touchUpInside)
+        let skip = UIButton(type: .system)
+        skip.setTitle("Not Now", for: .normal)
+        skip.addAction(UIAction { [weak overlay] _ in overlay?.removeFromSuperview() }, for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [icon, title, body, setUp, skip])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 16
+        stack.setCustomSpacing(28, after: body)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        overlay.addSubview(stack)
+        NSLayoutConstraint.activate([
+            icon.heightAnchor.constraint(equalToConstant: 56),
+            stack.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+            stack.leadingAnchor.constraint(equalTo: overlay.layoutMarginsGuide.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: overlay.layoutMarginsGuide.trailingAnchor, constant: -12),
+        ])
     }
 
     override func viewDidAppear(_ animated: Bool) {

@@ -8,6 +8,7 @@
 
 import LunaReadingListUI
 import LunaPriceUI
+import LunaMailAccount
 import LunaStorage
 import LunaModels
 import UIKit
@@ -19,9 +20,16 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UIView.setAnimationsEnabled(false)
+        // Connect a dummy account so Catch-Up exercises the card deck rather than
+        // the "set up email" overlay shown when no account is configured.
+        EmailAccountStore.shared.save(
+            EmailAccount(providerID: .gmail, address: "test@gmail.com",
+                         server: MailProvider.provider(for: .gmail).server),
+            credential: .appPassword("x"))
     }
 
     override func tearDown() {
+        EmailAccountStore.shared.clear()
         UITestSupport.wipeSharedStore()
         super.tearDown()
     }

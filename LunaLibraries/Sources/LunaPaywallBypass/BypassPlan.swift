@@ -50,12 +50,6 @@ public enum WebStrategy: Equatable {
     /// the trick is a client-side origin behaviour that only takes effect in a browser,
     /// so the WKWebView attempt can succeed where the silent URLSession fetch could not.
     case trailingDotHost
-    public var asBypassStrategy: BypassStrategy {
-        switch self {
-        case .directUnlock: return .directUnlock
-        case .trailingDotHost: return .trailingDotHost
-        }
-    }
 }
 
 /// ONE typed, ordered bypass plan, built ONCE by `make(for:directHTML:)` and consumed

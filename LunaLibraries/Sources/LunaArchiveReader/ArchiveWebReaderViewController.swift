@@ -193,6 +193,11 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // `.directUnlock` (and trailing-dot) pages, never the CAPTCHA flow.
         if usesDirectUnlock {
             contentController.addUserScript(PaywallUnlockRules.cleanupUserScript())
+            // A bespoke per-site cleanup snippet on top of the generic one, when we
+            // have one for this host.
+            if let siteScript = SiteCleanupScripts.userScript(for: articleURL) {
+                contentController.addUserScript(siteScript)
+            }
         }
         configuration.userContentController = contentController
         self.webView = WKWebView(frame: .zero, configuration: configuration)

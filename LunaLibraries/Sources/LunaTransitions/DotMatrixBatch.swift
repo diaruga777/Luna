@@ -64,7 +64,7 @@ public enum DotMatrixBatch {
         overlay.isHidden = false
 
         let window = table.window
-        overlay.animateProgress(to: 1, duration: DotMatrixTransitionSettings.totalDuration) {
+        overlay.animateProgress(to: 1, duration: DotMatrixTransitionStyle.totalDuration) {
             DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: window)
             completion?(true)
         }

@@ -89,7 +89,7 @@ public enum DotMatrixCrossfade {
         view.addSubview(overlay)
 
         let window = view.window
-        overlay.animateProgress(to: 1, duration: duration ?? DotMatrixTransitionSettings.totalDuration) {
+        overlay.animateProgress(to: 1, duration: duration ?? DotMatrixTransitionStyle.totalDuration) {
             DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: window)
             completion?()
         }

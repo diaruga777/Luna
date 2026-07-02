@@ -64,7 +64,7 @@ final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
                     chromeBefore.alpha = 0
                 }
             }
-            stage.overlay.animateProgress(to: 1, duration: DotMatrixTransitionSettings.totalDuration) {
+            stage.overlay.animateProgress(to: 1, duration: DotMatrixTransitionStyle.totalDuration) {
                 stage.tearDown()
                 completion()
             }
@@ -79,7 +79,7 @@ final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
             return NullInteractiveTransition()
         }
         return InteractiveHandle(stage: stage,
-                                 settleDuration: DotMatrixTransitionSettings.totalDuration)
+                                 settleDuration: DotMatrixTransitionStyle.totalDuration)
     }
 
     // MARK: - Staging

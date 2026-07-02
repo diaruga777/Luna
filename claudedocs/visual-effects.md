@@ -193,20 +193,19 @@ FrostedGlass / Stone screens) — it resizes a LIVE continuously-re-capturing Me
 effect view, which a frozen snapshot wipe would visibly fight; toasts, spinners,
 gesture snap-backs and other micro-interactions per the rule below.
 
-### Timing model (two waves, `DotMatrixTransitionSettings`)
+### Timing model (two waves, `DotMatrixTransitionStyle`)
 
 The wipe is one `progress` 0→1 ramp over `totalDuration`; the shader normalises its
 timeline by `span = sweep + lag + win`, so the per-cell wall times are `(sweep/span)·total`
 (wave-1 front sweep), `(lag/span)·total` (wave-1 → wave-2 START gap) and `(win/span)·total`
-(one cell's fade). `DotMatrixTransitionSettings` therefore expresses `sweep`/`lag`/`win` as
+(one cell's fade). `DotMatrixTransitionStyle` therefore expresses `sweep`/`lag`/`win` as
 the actual wall-second budgets normalised to sum to 1 and sets `totalDuration` to their sum,
-so each fraction lands on its exact wall duration. **Defaults:** wave 1 = wave 2 = **0.1s**
+so each fraction lands on its exact wall duration. **Fixed values:** wave 1 = wave 2 = **0.1s**
 each (`phase1Duration`/`phase2Duration`, averaged into the shared sweep), the gap between the
-two wave STARTS = **0.2s** (`interWaveDelay`, new tunable — larger than the wave durations, so
-the screen briefly holds the fully-pixelated state between the fronts), per-cell fade from
-`stagger`. All four are sliders in `RabbitHoleTransitionSettingsScreen` ("Wave 1", "Wave 2",
-"Time Between Waves", "Pixel Stagger"). Global — every pixel-wipe (nav/modal/crossfade/reader
-mode-switch) shares it.
+two wave STARTS = **0.2s** (`interWaveDelay` — larger than the wave durations, so the screen
+briefly holds the fully-pixelated state between the fronts), per-cell fade from `stagger`
+(**0.2**). All are hardcoded constants in `DotMatrixTransitionStyle` (LunaDesignSystem).
+Global — every pixel-wipe (nav/modal/crossfade/reader mode-switch) shares it.
 
 ### THE RULE: only changed REGIONS animate — UIVIEW-level, never pixel-by-pixel
 

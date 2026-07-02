@@ -24,7 +24,7 @@ public final class DotMatrixAnimator: NSObject, UIViewControllerAnimatedTransiti
     }
 
     public func transitionDuration(using _: UIViewControllerContextTransitioning?) -> TimeInterval {
-        DotMatrixTransitionSettings.totalDuration
+        DotMatrixTransitionStyle.totalDuration
     }
 
     public func animateTransition(using ctx: UIViewControllerContextTransitioning) {

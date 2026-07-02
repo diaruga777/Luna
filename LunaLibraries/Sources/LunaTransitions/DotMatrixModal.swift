@@ -80,7 +80,7 @@ public enum DotMatrixModal {
 
     /// The modal wipe plays the global two-wave timeline at half its wall duration.
     private static var wipeDuration: TimeInterval {
-        DotMatrixTransitionSettings.totalDuration * 0.5
+        DotMatrixTransitionStyle.totalDuration * 0.5
     }
     /// The modal chrome (dimming) fade — quicker than the shared chrome budget.
     private static let modalChromeFadeDuration: TimeInterval = 0.08

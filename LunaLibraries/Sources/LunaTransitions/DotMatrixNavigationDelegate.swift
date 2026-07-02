@@ -106,7 +106,7 @@ public final class DotMatrixNavigationDelegate: NSObject, UINavigationController
             let fraction = pan.translation(in: nav.view).x / dragWidth
             let velocity = pan.velocity(in: nav.view).x
             let committed = pan.state == .ended && (fraction > 0.4 || velocity > 800)
-            let duration = DotMatrixTransitionSettings.totalDuration
+            let duration = DotMatrixTransitionStyle.totalDuration
             if committed { controller.finish(duration: duration) }
             else { controller.cancel(duration: duration) }
         default:

@@ -2,13 +2,13 @@
 //  RabbitHoleReaderViewController.swift
 //  Luna
 //
-//  Forked, EXPERIMENTAL reader (opt-in via ReaderSettings.rabbitHoleReaderEnabled).
-//  The whole reader is a persistent stack of "layers": layer 0 is the save; tapping a
-//  link pushes a new focused layer on top, leaving previous layers as tappable lips
-//  (title on top, the tapped line on the bottom) plus a leading indent — so you can
-//  rabbit-hole several links deep without losing your place. The trail is persisted
-//  per save and restored on next launch. The standard reader and the existing
-//  SplitWebOverlay inline reader are untouched.
+//  The full-screen reader a save opens into (built by ReaderHostFactory). The whole
+//  reader is a persistent stack of "layers": layer 0 is the save; tapping a link pushes
+//  a new focused layer on top, leaving previous layers as tappable lips (title on top,
+//  the tapped line on the bottom) plus a leading indent — so you can rabbit-hole several
+//  links deep without losing your place. The trail is persisted per save and restored on
+//  next launch. Catch-Up embeds `ReaderViewController` directly; the SplitWebOverlay
+//  inline reader is a separate surface.
 //
 //  Layers rest at integer focus positions (RabbitHoleLayout). Moving between two
 //  positions (dive / pop / interactive overscroll) is rendered by an injected Dot Matrix

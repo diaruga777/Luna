@@ -3,27 +3,20 @@
 //  Luna
 //
 
-import LunaDesignSystem
 import LunaModels
 import UIKit
 
-/// Single decision point for which reader hosts a save when opened full-screen: the
-/// standard `ReaderViewController`, or — when the experimental flag is on — the forked
-/// `RabbitHoleReaderViewController`. Centralised so every call site shares one branch
-/// and the standard reader stays the untouched default.
+/// Single construction point for the full-screen reader a save opens into: the stacked-
+/// layer `RabbitHoleReaderViewController`. Centralised so every call site shares one
+/// entry point and injects the same transition.
 public enum ReaderHostFactory {
     public static func make(item: ReadingListItem,
                      content: ArticleContent,
                      shareProvider: ReaderShareProviding? = nil,
                      transition: RabbitHoleTransitioning? = nil) -> UIViewController {
-        if ReaderSettings.rabbitHoleReaderEnabled {
-            return RabbitHoleReaderViewController(
-                item: item, content: content,
-                shareProvider: shareProvider,
-                transition: transition)
-        }
-        return ReaderViewController(
+        RabbitHoleReaderViewController(
             item: item, content: content,
-            shareProvider: shareProvider)
+            shareProvider: shareProvider,
+            transition: transition)
     }
 }

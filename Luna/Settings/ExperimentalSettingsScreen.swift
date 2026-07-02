@@ -17,10 +17,9 @@ import LunaContentRendering
 final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
-        case rabbitHole, semantic, paywallStrategies, archiveOverlay, dotMatrix, frostedGlass, jellystone, luna, youtube
+        case semantic, paywallStrategies, archiveOverlay, dotMatrix, frostedGlass, jellystone, luna, youtube
     }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
-    private enum RabbitHoleRow: Int, CaseIterable { case toggle, reader, transition }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -48,7 +47,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
-        case .rabbitHole: return RabbitHoleRow.allCases.count
         case .semantic: return 1
         case .paywallStrategies: return 1
         case .archiveOverlay: return 1
@@ -62,7 +60,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .rabbitHole: return "Dot Matrix Transitions"
         case .semantic: return "Suggest Shares Based on Content"
         case .paywallStrategies: return "Extra Paywall Unlock Strategies"
         case .archiveOverlay: return "Archive Reader Cover"
@@ -76,8 +73,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .rabbitHole:
-            return "Off by default. Replaces every transition in the app — screen pushes, modals, and list changes — with a Dot Matrix \"pixel wipe\": the screen dissolves into spaced, rounded dots of where you're going, then sharpens into it, with the wave sweeping the way the motion would. It also opens saves in the experimental RabbitHole inline reader (dive into a link as a stacked layer; overscroll to pull the previous one back). One switch for both; flip it off to return to the standard animations and reader."
         case .semantic:
             return "When you save something that resembles things you've shared with a friend before, Luna can suggest sharing it with them. Slide all the way left to turn this off."
         case .paywallStrategies:
@@ -105,13 +100,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
         switch Section(rawValue: indexPath.section)! {
-        case .rabbitHole:
-            switch RabbitHoleRow(rawValue: indexPath.row)! {
-            case .toggle: return rabbitHoleCell()
-            case .reader: return rabbitHoleReaderCell()
-            case .transition:
-                return disclosureCell(title: "Dot Matrix Transition", symbol: "square.stack.3d.down.right")
-            }
         case .semantic:
             return semanticSensitivityCell()
         case .paywallStrategies:
@@ -129,43 +117,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         case .youtube:
             return youTubeCell(for: YouTubeRow(rawValue: indexPath.row)!)
         }
-    }
-
-    /// The global Dot Matrix pixel-wipe transitions toggle (the RabbitHole READER
-    /// fork is the separate toggle below — they used to be one switch, which made
-    /// the standard scroll reader and the wipes mutually exclusive).
-    private func rabbitHoleCell() -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        cell.selectionStyle = .none
-        var content = cell.defaultContentConfiguration()
-        content.text = "Dot Matrix Transitions"
-        cell.contentConfiguration = content
-        cell.accessoryView = makeToggle(
-            isOn: ReaderSettings.pixelWipeTransitionsEnabled,
-            action: #selector(rabbitHoleToggled(_:)))
-        return cell
-    }
-
-    @objc private func rabbitHoleToggled(_ toggle: UISwitch) {
-        ReaderSettings.pixelWipeTransitionsEnabled = toggle.isOn
-    }
-
-    /// The forked stacked-layer RabbitHole reader (off ⇒ the standard scroll reader,
-    /// which has its own pixel-wiped inline reader).
-    private func rabbitHoleReaderCell() -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        cell.selectionStyle = .none
-        var content = cell.defaultContentConfiguration()
-        content.text = "RabbitHole Reader"
-        cell.contentConfiguration = content
-        cell.accessoryView = makeToggle(
-            isOn: ReaderSettings.rabbitHoleReaderEnabled,
-            action: #selector(rabbitHoleReaderToggled(_:)))
-        return cell
-    }
-
-    @objc private func rabbitHoleReaderToggled(_ toggle: UISwitch) {
-        ReaderSettings.rabbitHoleReaderEnabled = toggle.isOn
     }
 
     /// A toggle that enables the on-device (non-archive) paywall-bypass strategies.
@@ -293,10 +244,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
-        case .rabbitHole:
-            if RabbitHoleRow(rawValue: indexPath.row) == .transition {
-                navigationController?.pushViewController(RabbitHoleTransitionSettingsScreen(), animated: true)
-            }
         case .dotMatrix:
             navigationController?.pushViewController(DotMatrixSettingsScreen(), animated: true)
         case .frostedGlass:

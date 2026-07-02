@@ -20,19 +20,19 @@ import XCTest
 
 final class ReadingListScreenTests: XCTestCase {
 
-    private var priorPixelWipe = false
+    private var priorAnimatedTransitions = true
 
     override func setUp() {
         super.setUp()
-        // The experimental pixel-wipe / RabbitHole toggle is App-Group-persisted and
-        // defaults to on; these tests assert the standard reader + filter chrome, so
-        // pin it off for hermeticity regardless of any value left in the container.
-        priorPixelWipe = ReaderSettings.pixelWipeTransitionsEnabled
-        ReaderSettings.pixelWipeTransitionsEnabled = false
+        // Animated transitions are App-Group-persisted and default to on; these tests
+        // assert the reader + filter chrome, so pin them off for hermeticity regardless
+        // of any value left in the container.
+        priorAnimatedTransitions = AppearanceSettings.animatedTransitionsEnabled
+        AppearanceSettings.animatedTransitionsEnabled = false
     }
 
     override func tearDown() {
-        ReaderSettings.pixelWipeTransitionsEnabled = priorPixelWipe
+        AppearanceSettings.animatedTransitionsEnabled = priorAnimatedTransitions
         UITestSupport.wipeSharedStore()
         super.tearDown()
     }
@@ -185,7 +185,7 @@ final class ReadingListScreenTests: XCTestCase {
 
         viewController.open(target, presenter: viewController)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        XCTAssertTrue(nav.topViewController is ReaderViewController,
+        XCTAssertTrue(nav.topViewController is RabbitHoleReaderViewController,
                       "ready article should push the reader, got \(String(describing: nav.topViewController))")
         _ = window
     }
@@ -227,7 +227,7 @@ final class ReadingListScreenTests: XCTestCase {
         }
         let handled = viewController.openItem(video, presentingFrom: viewController)
         XCTAssertTrue(handled, "openItem should claim a YouTube video")
-        XCTAssertFalse(nav.topViewController is ReaderViewController,
+        XCTAssertFalse(nav.topViewController is RabbitHoleReaderViewController,
                        "a video must not open the text reader")
         viewController.dismiss(animated: false)
         _ = window

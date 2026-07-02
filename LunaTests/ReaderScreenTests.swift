@@ -23,7 +23,7 @@ final class ReaderScreenTests: XCTestCase {
                         state: .ready, wordCount: 480)
     }
 
-    private var priorPixelWipe = false
+    private var priorAnimatedTransitions = true
 
     override func setUp() {
         super.setUp()
@@ -31,15 +31,14 @@ final class ReaderScreenTests: XCTestCase {
         // The RSVP sub-mode is persisted; pin it so snapshots are deterministic
         // regardless of any value left behind by other runs.
         ReaderSettings.rsvpMode = .words
-        // These tests exercise the STANDARD reader. The experimental pixel-wipe /
-        // RabbitHole toggle is App-Group-persisted and defaults to on, so pin it off
-        // for hermeticity (a fresh container would otherwise route to RabbitHole).
-        priorPixelWipe = ReaderSettings.pixelWipeTransitionsEnabled
-        ReaderSettings.pixelWipeTransitionsEnabled = false
+        // Animated transitions are App-Group-persisted and default to on; pin them off
+        // so these snapshots aren't perturbed by an in-flight pixel wipe.
+        priorAnimatedTransitions = AppearanceSettings.animatedTransitionsEnabled
+        AppearanceSettings.animatedTransitionsEnabled = false
     }
 
     override func tearDown() {
-        ReaderSettings.pixelWipeTransitionsEnabled = priorPixelWipe
+        AppearanceSettings.animatedTransitionsEnabled = priorAnimatedTransitions
         super.tearDown()
     }
 

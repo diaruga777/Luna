@@ -5,9 +5,10 @@
 //  Owns the GPU overlay views for the global Dot Matrix "pixel wipe". A single overlay
 //  is prewarmed and parked per window so the costly Metal pipeline compile happens
 //  once, off the tap critical path; transitions borrow it, animate, and return it.
-//  `isEnabled` is the single gate every transition surface checks — the user toggle
-//  AND Metal availability — so a disabled/unsupported state falls straight through to
-//  the original UIKit animation.
+//  `isEnabled` is the single gate every transition surface checks — the user's
+//  animated-transitions preference, the system Reduce Motion setting, and Metal
+//  availability — so a disabled/unsupported state falls straight through to the
+//  original UIKit animation.
 //
 
 import LunaContentRendering
@@ -23,10 +24,13 @@ public final class DotMatrixTransitionCenter {
     /// allocate a transient overlay (cheap — the GPU context is shared).
     private let parked = NSMapTable<UIWindow, RabbitHoleTransitionView>.weakToStrongObjects()
 
-    /// True when the pixel-wipe toggle is on AND Metal is available. The only check
-    /// transition surfaces need; false ⇒ use the stock UIKit animation.
+    /// True when the user's animated-transitions preference is on, Reduce Motion is off,
+    /// AND Metal is available. The only check transition surfaces need; false ⇒ use the
+    /// stock UIKit animation.
     public var isEnabled: Bool {
-        ReaderSettings.pixelWipeTransitionsEnabled && RabbitHoleTransitionView.isSupported
+        AppearanceSettings.animatedTransitionsEnabled
+            && !UIAccessibility.isReduceMotionEnabled
+            && RabbitHoleTransitionView.isSupported
     }
 
     /// Build and park an overlay now so the first transition doesn't pay the Metal

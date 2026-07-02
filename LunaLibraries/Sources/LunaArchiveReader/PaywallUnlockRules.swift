@@ -250,10 +250,36 @@ public enum PaywallUnlockRules {
             }
           });
         }
+        // Substantial article prose inside an element (>= 2 paragraphs over 60
+        // chars); 0 when it holds none. Distinguishes a content wrapper from an
+        // overlay/promo that happens to share a paywall class.
+        function articleChars(el) {
+          var ps = el.querySelectorAll('p'), c = 0, n = 0;
+          for (var i = 0; i < ps.length; i++) {
+            var t = (ps[i].textContent || '').trim().length;
+            if (t > 60) { n++; c += t; }
+          }
+          return n >= 2 ? c : 0;
+        }
+        // Un-hide an element in place (used instead of removing a content wrapper).
+        function reveal(el) {
+          el.style.removeProperty('display');
+          el.style.visibility = 'visible'; el.style.opacity = '1';
+          el.style.maxHeight = 'none'; el.style.height = 'auto';
+          el.style.overflow = 'visible'; el.style.filter = 'none'; el.style.webkitMaskImage = 'none';
+          UNHIDE.forEach(function (c) { if (el.classList) { el.classList.remove(c); } });
+        }
         function clean() {
           try {
             REMOVE.forEach(function (sel) {
-              document.querySelectorAll(sel).forEach(function (el) { el.remove(); });
+              document.querySelectorAll(sel).forEach(function (el) {
+                // Some sites deliver the UNLOCKED article inside the same node the
+                // paywall class names (e.g. a `.paywall` content container). Deleting
+                // it would take the story with it, leaving a de-walled teaser and no
+                // body — so reveal a node that holds real prose, and only remove one
+                // that's a genuine (content-less) overlay.
+                if (articleChars(el) > 400) { reveal(el); } else { el.remove(); }
+              });
             });
             [document.documentElement, document.body].forEach(function (el) {
               if (!el) { return; }

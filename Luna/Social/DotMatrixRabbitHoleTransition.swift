@@ -38,7 +38,7 @@ final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
               in container: UIView, region: CGRect?, contentRegion: CGRect?,
               completion: @escaping () -> Void) {
         guard ensureOverlay(in: container, frame: nil) != nil else {
-            _ = prepare()   // Metal unavailable → apply the state change, instant cut
+            _ = prepare()   // wipe gated off → apply the state change, instant cut
             completion(); return
         }
         // The tap handler does NO heavy work — it only schedules this block. Until it
@@ -100,8 +100,8 @@ final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
     }
 
     /// Configure the overlay (and, for a content-confined wipe, the chrome crossfade
-    /// pair) at progress 0, ready to animate/drive. Returns nil when Metal is
-    /// unavailable or the crops fail — callers fall back to an instant cut.
+    /// pair) at progress 0, ready to animate/drive. Returns nil when the wipe is gated
+    /// off (see `ensureOverlay`) or the crops fail — callers fall back to an instant cut.
     private func stage(before: UIImage, after: UIImage,
                        in container: UIView, region: CGRect?,
                        contentRegion: CGRect?) -> Stage? {
@@ -169,8 +169,15 @@ final class DotMatrixRabbitHoleTransition: RabbitHoleTransitioning {
     /// to `frame` (the sub-rect that pixelates) clamped to `container.bounds`; nil ⇒ the
     /// full bounds. The overlay carries no autoresizing in the framed case: it's
     /// reframed each call and must not stretch with the container.
+    ///
+    /// Returns nil — so callers fall back to a stock, no-wipe result — whenever the wipe
+    /// is gated off: the animated-transitions preference, Reduce Motion, or Metal
+    /// availability (all folded into `DotMatrixTransitionCenter.shared.isEnabled`). The
+    /// check runs on every call (before any cached overlay) so flipping the preference or
+    /// Reduce Motion takes effect on the very next dive/pop.
     @discardableResult
     private func ensureOverlay(in container: UIView, frame: CGRect?) -> RabbitHoleTransitionView? {
+        guard DotMatrixTransitionCenter.shared.isEnabled else { return nil }
         let view: RabbitHoleTransitionView
         if let overlay {
             view = overlay
@@ -229,7 +236,7 @@ private final class InteractiveHandle: RabbitHoleInteractiveTransition {
     }
 }
 
-/// No-op fallback when Metal is unavailable — the host still gets its completion so
+/// No-op fallback when the wipe is gated off — the host still gets its completion so
 /// it can place the final state (an instant cut).
 private final class NullInteractiveTransition: RabbitHoleInteractiveTransition {
     func update(progress: CGFloat) {}

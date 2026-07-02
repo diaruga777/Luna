@@ -84,16 +84,9 @@ A **fullscreen toggle** expands the preview to fill the screen (aspect-fit) and 
 
 Separate from the effects playground above: the **`LunaTransitions`** library wraps the
 `LunaContentRendering` Metal dissolve (`RabbitHoleTransitionView`) into UIKit transition
-helpers, all gated on `DotMatrixTransitionCenter.shared.isEnabled` (user toggle AND Metal
-availability — false ⇒ stock UIKit animation).
-
-> **Two toggles now** (Settings → Experimental): "Dot Matrix Transitions"
-> (`ReaderSettings.pixelWipeTransitionsEnabled`, legacy stored key
-> `rabbitHoleReaderEnabled`, ON by default) gates every wipe; "RabbitHole Reader"
-> (`ReaderSettings.rabbitHoleReaderEnabled`, stored key `rabbitHoleReaderStackEnabled`,
-> OFF by default) picks the forked stacked-layer reader in `ReaderHostFactory`. They
-> used to be ONE switch, which made the standard scroll reader (and its pixel-wiped
-> split-web inline reader) and the wipes mutually exclusive.
+helpers, all gated on `DotMatrixTransitionCenter.shared.isEnabled` — the
+`AppearanceSettings.animatedTransitionsEnabled` preference AND `!UIAccessibility`
+`.isReduceMotionEnabled` AND Metal availability; false ⇒ stock UIKit animation.
 
 Surfaces: `DotMatrixCrossfade` (in-place view change), `DotMatrixBatch` (table row
 updates), `DotMatrixModal` (modal present/dismiss — see below),

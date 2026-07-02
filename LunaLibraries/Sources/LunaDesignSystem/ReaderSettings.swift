@@ -30,34 +30,7 @@ public enum ReaderSettings {
     private static let preloadDepthKey = "linkPreloadDepth"
     private static let accentKey = "readerAccentColor"
     private static let archiveOverlayAlphaKey = "archiveOverlayAlpha"
-    // Stored key kept as "rabbitHoleReaderEnabled" so existing opt-ins survive the
-    // rename of the Swift property to `pixelWipeTransitionsEnabled`.
-    private static let pixelWipeTransitionsKey = "rabbitHoleReaderEnabled"
-    private static let rabbitHoleReaderStackKey = "rabbitHoleReaderStackEnabled"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
-
-    /// Experimental "Pixel Wipe Transitions". When on, every view-controller
-    /// transition, modal present/dismiss, view appear/disappear, and table animation —
-    /// in the app and the action extension — plays as a Dot Matrix pixel-wipe
-    /// wavefront. **On by default**; turn it off to get the stock UIKit animations.
-    /// (The forked RabbitHole READER is a separate switch below — historically this
-    /// one switch controlled both, which made the standard scroll reader and the
-    /// wipes mutually exclusive.)
-    public static var pixelWipeTransitionsEnabled: Bool {
-        get { (defaults.object(forKey: pixelWipeTransitionsKey) as? Bool) ?? true }
-        set { defaults.set(newValue, forKey: pixelWipeTransitionsKey) }
-    }
-
-    /// Experimental forked "RabbitHole" stacked-layer reader: when on, saves open in
-    /// `RabbitHoleReaderViewController` instead of the standard `ReaderViewController`
-    /// (scrolling reader + split-web inline reader). Off by default — the standard
-    /// reader gets the pixel-wipe treatment independently via the switch above.
-    /// (Stored under a NEW key: the legacy "rabbitHoleReaderEnabled" key belongs to
-    /// the transitions switch above, kept for existing opt-ins.)
-    public static var rabbitHoleReaderEnabled: Bool {
-        get { defaults.bool(forKey: rabbitHoleReaderStackKey) }
-        set { defaults.set(newValue, forKey: rabbitHoleReaderStackKey) }
-    }
 
     /// Opacity of the cover over the archive web view (experimental/diagnostic):
     /// 0.99 = effectively hidden (default); lower it to see the archive flow

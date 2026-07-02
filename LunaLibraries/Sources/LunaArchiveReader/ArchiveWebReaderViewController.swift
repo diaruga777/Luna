@@ -194,7 +194,12 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // reliable "this is an embedded web view" tell. No `WKScriptMessageHandler`
         // is registered, so `window.webkit.messageHandlers` also stays absent.
         let contentController = WKUserContentController()
-        contentController.addUserScript(Self.safariImpersonationScript())
+        // `navigator.standalone` impersonation matches MOBILE Safari; skip it for the
+        // referer-unlock sites below, which present a DESKTOP UA (desktop Safari has no
+        // `navigator.standalone`, so defining it would be the inconsistency we're avoiding).
+        if directUnlockReferer == nil {
+            contentController.addUserScript(Self.safariImpersonationScript())
+        }
         // The the reference paywall rules DOM cleanup (overlay removal / unhide / scroll
         // restore). It self-guards off archive.today hosts, so it only acts on the
         // `.directUnlock` (and trailing-dot) pages, never the CAPTCHA flow.
@@ -208,11 +213,15 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         }
         configuration.userContentController = contentController
         self.webView = WKWebView(frame: .zero, configuration: configuration)
-        // Present as real mobile Safari MATCHING THIS DEVICE's iOS version. A
-        // hardcoded/stale UA (e.g. claiming iOS 26 on an iOS 27 device) is a UA/OS
-        // mismatch that Cloudflare's bot check flags → endless re-challenge, where
-        // real Safari (consistent UA) passes.
-        self.webView.customUserAgent = Self.deviceSafariUserAgent
+        // Referer-unlock sites (WSJ/FT) serve the full article to a DESKTOP browser
+        // arriving from the unlock referrer — the mobile site only ever shows a teaser,
+        // which is why the referer worked in desktop Chrome but not on a phone. So
+        // present a real DESKTOP Safari UA there (WKWebView's customUserAgent sets both
+        // the HTTP header AND navigator.userAgent, so it's a consistent desktop client —
+        // not the crawler/UA mismatch DataDome blocks). Every other flow uses the
+        // device's mobile Safari UA (matches archive.today's Cloudflare check).
+        self.webView.customUserAgent = directUnlockReferer != nil
+            ? Self.desktopSafariUserAgent : Self.deviceSafariUserAgent
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -246,6 +255,14 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         return "Mozilla/5.0 (iPhone; CPU iPhone OS \(osToken) like Mac OS X) "
             + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(major).0 Mobile/15E148 Safari/604.1"
     }
+
+    /// A real desktop-Safari (macOS) User-Agent — used for the referer-unlock sites,
+    /// whose desktop pages serve the full article to the unlock referrer while the
+    /// mobile pages don't. A genuine desktop browser UA (not a crawler), applied via
+    /// `customUserAgent` so navigator.userAgent matches it.
+    private static let desktopSafariUserAgent =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 

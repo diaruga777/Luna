@@ -10,7 +10,7 @@
     },
     "condition": {
       "requestDomains": ["wsj.com", "marketwatch.com"],
-      "resourceTypes": ["main_frame", "sub_frame"]
+      "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest", "script"]
     }
   },
   {
@@ -24,7 +24,7 @@
     },
     "condition": {
       "requestDomains": ["ft.com", "investorschronicle.co.uk"],
-      "resourceTypes": ["main_frame", "sub_frame"]
+      "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest", "script"]
     }
   }
 ]

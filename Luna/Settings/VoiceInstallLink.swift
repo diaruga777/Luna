@@ -16,18 +16,10 @@ enum VoiceInstallLink {
     /// Opens the first candidate Settings URL that the system can handle.
     static func open() {
         // Best effort: Accessibility root, then Settings root, then the app page.
-        let candidates = [
+        SystemSettingsLink.openFirstAvailable([
             "App-Prefs:root=ACCESSIBILITY",
             "App-Prefs:",
             UIApplication.openSettingsURLString,
-        ]
-        openFirstAvailable(candidates, at: 0)
-    }
-
-    private static func openFirstAvailable(_ candidates: [String], at index: Int) {
-        guard index < candidates.count, let url = URL(string: candidates[index]) else { return }
-        UIApplication.shared.open(url, options: [:]) { success in
-            if !success { openFirstAvailable(candidates, at: index + 1) }
-        }
+        ])
     }
 }

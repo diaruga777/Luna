@@ -822,15 +822,15 @@ nonisolated(unsafe) private var stoneKey: UInt8 = 0
 
 public extension UIView {
 
-    /// The active Dot Matrix effect on this view, if any.
+    /// The active stone effect on this view, if any.
     internal(set) var stoneEffect: StoneEffectView? {
         get { objc_getAssociatedObject(self, &stoneKey) as? StoneEffectView }
         set { objc_setAssociatedObject(self, &stoneKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
     }
 
-    /// Apply the Dot Matrix effect to this view. The effect view is placed directly
+    /// Apply the stone effect to this view. The effect view is placed directly
     /// over this view (as a sibling) and re-renders this view's content through the
-    /// dot-matrix shader every frame, so animations on this view and its subviews
+    /// stone shader every frame, so animations on this view and its subviews
     /// flow through the effect automatically.
     ///
     /// The source view is NOT hidden (the effect needs it rendering to capture it);
@@ -863,10 +863,9 @@ public extension UIView {
 
         // We intentionally do NOT hide the source view. Hiding sets the layer's
         // `isHidden`, which CARenderer also honours — it would capture nothing.
-        // Instead the effect view sits directly on top. When `gapColor` is opaque
-        // the dots + gaps fully cover the source, so it's not visible on screen;
-        // when `gapColor` is translucent, the source shows faintly through the gaps,
-        // which is the intended "frosted" look. The source still drives layout and
+        // Instead the effect view sits directly on top: the shader's output fully
+        // covers the source (translucency in the effect is the shader's own,
+        // deliberate look). The source still drives layout and
         // animation normally, feeding the capture every frame.
         effect.updateOpaqueState()
 
@@ -898,7 +897,7 @@ public extension UIView {
         return effect
     }
 
-    /// Remove any Dot Matrix effect from this view.
+    /// Remove any stone effect from this view.
     func removeStone() {
         stoneEffect?.remove()
         stoneEffect = nil

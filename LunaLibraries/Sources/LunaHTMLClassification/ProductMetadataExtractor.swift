@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaPriceMetadata
+import LunaURLClassification
 import SwiftSoup
 
 /// The complete metadata for a page already classified as a `.product`. Price is
@@ -339,8 +340,8 @@ public struct AmazonPriceRule: ProductPriceRule {
 
         // Buy-box first (Amazon's price model), then the buy-box-scoped offscreen span —
         // NOT the first `.a-offscreen` on the page (a strikethrough list price).
-        let amount = Self.firstMatch(html, #""priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)"#)
-            ?? Self.firstMatch(html, #""displayPrice"\s*:\s*"([^"]+)""#)
+        let amount = RegexCapture.first(in: html, pattern: #""priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)"#)
+            ?? RegexCapture.first(in: html, pattern: #""displayPrice"\s*:\s*"([^"]+)""#)
             ?? buyBoxOffscreenPrice(document)
         guard let raw = amount, let value = ProductPageDetector.parsePrice(raw), value >= 0 else {
             return nil
@@ -359,7 +360,7 @@ public struct AmazonPriceRule: ProductPriceRule {
     /// A currency code explicitly declared in Amazon's embedded JSON.
     private func declaredCurrency(_ html: String) -> String? {
         for key in ["currencyCode", "priceCurrency"] {
-            if let raw = Self.firstMatch(html, #""\#(key)"\s*:\s*"([A-Za-z]{3})""#),
+            if let raw = RegexCapture.first(in: html, pattern: #""\#(key)"\s*:\s*"([A-Za-z]{3})""#),
                let code = ProductPageDetector.normalizeCurrency(raw) {
                 return code
             }
@@ -385,14 +386,6 @@ public struct AmazonPriceRule: ProductPriceRule {
         return nil
     }
 
-    /// First capture group of `pattern` in `text`, or nil.
-    private static func firstMatch(_ text: String, _ pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let ns = text as NSString
-        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
-              match.numberOfRanges >= 2 else { return nil }
-        return ns.substring(with: match.range(at: 1))
-    }
 }
 
 /// Target: the current price from the `__NEXT_DATA__` app state

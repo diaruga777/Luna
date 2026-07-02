@@ -125,27 +125,15 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
     // MARK: - Adding
 
     private func promptForEmail() {
-        let alert = UIAlertController(title: "Add friend", message: nil, preferredStyle: .alert)
-        alert.addTextField {
-            $0.placeholder = "name@example.com"
-            $0.keyboardType = .emailAddress
-            $0.autocapitalizationType = .none
-        }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Add", style: .default) { [weak self, weak alert] _ in
-            guard let raw = alert?.textFields?.first?.text, Friend.isValidEmail(raw) else { return }
+        EmailRecipientPrompt.presentEmailAlert(from: self, title: "Add friend") { [weak self] raw in
+            guard Friend.isValidEmail(raw) else { return }
             _ = FriendsStore.shared.add(email: raw)
             self?.reload()
-        })
-        present(alert, animated: true)
+        }
     }
 
     private func presentContactPicker() {
-        let picker = CNContactPickerViewController()
-        picker.predicateForEnablingContact = NSPredicate(format: "emailAddresses.@count > 0")
-        picker.displayedPropertyKeys = [CNContactEmailAddressesKey]
-        picker.delegate = self
-        present(picker, animated: true)
+        present(EmailRecipientPrompt.makeContactPicker(delegate: self), animated: true)
     }
 
     public func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {

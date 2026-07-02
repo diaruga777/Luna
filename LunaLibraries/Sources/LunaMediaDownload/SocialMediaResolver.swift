@@ -148,9 +148,8 @@ public struct SocialMediaResolver: SocialMediaResolving {
 /// Shared HTTP constants for media resolution/download.
 public enum MediaDownloadHTTP {
     /// A desktop Safari UA — social pages serve richer/less-walled markup to it.
-    public static let browserUserAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
-        "(KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+    /// Sourced from the one shared constant so the two can't drift.
+    public static let browserUserAgent = WebFetchConstants.safariUserAgent
 }
 
 /// Small, dependency-free Open Graph parser for social pages. Attribute order in

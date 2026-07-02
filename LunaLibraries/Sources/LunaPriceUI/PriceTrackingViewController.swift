@@ -428,7 +428,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             if let report {
                 report(.duplicate)
             } else {
-                presentMessage(title: "Already tracked", message: "This page is already a seller.")
+                presentPriceMessage(title: "Already tracked", message: "This page is already a seller.")
             }
             return
         }
@@ -446,7 +446,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
                     if let report {
                         report(.noPrice)
                     } else {
-                        self.presentMessage(
+                        self.presentPriceMessage(
                             title: "No price found",
                             message: "We couldn't read a price on that page, so it wasn't added.")
                     }
@@ -461,11 +461,6 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         }
     }
 
-    private func presentMessage(title: String, message: String) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        DotMatrixModal.present(alert, from: self)
-    }
 
     // MARK: - Search overlay
 

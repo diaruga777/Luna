@@ -46,21 +46,22 @@ public struct FindYouTubeVideoIntent: AppIntent {
     }
 
     public func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        guard await GoogleAuthClient.shared.isSignedIn else { throw FindError.notSignedIn }
-        let channelName = channel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let videoTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !channelName.isEmpty, !videoTitle.isEmpty else { throw FindError.badQuery }
-        let api = YouTubeAPIClient()
-
-        guard let channelID = try await api.searchChannelID(name: channelName) else {
-            throw FindError.channelNotFound
+        do {
+            _ = try await YouTubeVideoSave.findAndSave(channel: channel, title: title)
+        } catch let failure as YouTubeVideoSave.FindFailure {
+            throw FindError(failure)
         }
-        let candidates = try await api.searchVideos(channelID: channelID, query: videoTitle)
-        guard let match = VideoMatchSelection.bestMatch(title: videoTitle, candidates: candidates)
-        else { throw FindError.videoNotFound }
-
-        let urlString = YouTubeURL.watchURLString(videoID: match.videoID)
-        _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: urlString)
         return .result(value: "Saved to Luna.")
+    }
+}
+
+private extension FindYouTubeVideoIntent.FindError {
+    init(_ failure: YouTubeVideoSave.FindFailure) {
+        switch failure {
+        case .notSignedIn: self = .notSignedIn
+        case .badQuery: self = .badQuery
+        case .channelNotFound: self = .channelNotFound
+        case .videoNotFound: self = .videoNotFound
+        }
     }
 }

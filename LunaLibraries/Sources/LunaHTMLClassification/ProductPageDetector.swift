@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaURLClassification
 import Foundation
 import SwiftSoup
 
@@ -236,17 +237,17 @@ public struct ProductPageDetector {
             ?? "USD"
 
         // 1) `"priceAmount":39.99` — the structured price in Amazon's price model.
-        if let raw = firstMatch(in: html, pattern: #""priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)"#),
+        if let raw = RegexCapture.first(in: html, pattern: #""priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)"#),
            let amount = parsePrice(raw), amount >= 0 {
             return ProductPrice(amount: amount, currency: currency)
         }
         // 2) `"displayPrice":"$39.99"` — the formatted price string.
-        if let raw = firstMatch(in: html, pattern: #""displayPrice"\s*:\s*"([^"]+)""#),
+        if let raw = RegexCapture.first(in: html, pattern: #""displayPrice"\s*:\s*"([^"]+)""#),
            let amount = parsePrice(raw), amount >= 0 {
             return ProductPrice(amount: amount, currency: currency)
         }
         // 3) The visible `.a-price .a-offscreen` span ("$39.99").
-        if let raw = firstMatch(in: html, pattern: #"a-offscreen"\s*>\s*([^<]*[0-9][^<]*)<"#),
+        if let raw = RegexCapture.first(in: html, pattern: #"a-offscreen"\s*>\s*([^<]*[0-9][^<]*)<"#),
            let amount = parsePrice(raw), amount >= 0 {
             return ProductPrice(amount: amount, currency: currency)
         }
@@ -264,7 +265,7 @@ public struct ProductPageDetector {
     /// (`"currencyCode":"AUD"` / `"priceCurrency":"USD"`), if present.
     private static func amazonDeclaredCurrency(html: String) -> String? {
         for key in ["currencyCode", "priceCurrency"] {
-            if let raw = firstMatch(in: html, pattern: #""\#(key)"\s*:\s*"([A-Za-z]{3})""#),
+            if let raw = RegexCapture.first(in: html, pattern: #""\#(key)"\s*:\s*"([A-Za-z]{3})""#),
                let code = normalizeCurrency(raw) {
                 return code
             }
@@ -761,15 +762,6 @@ public struct ProductPageDetector {
     /// is followed by 1–2 digits.
     public static func parsePrice(_ raw: String) -> Decimal? { PriceParsing.parsePrice(raw) }
 
-    /// First capture group of `pattern` in `text`, or nil. Used by the Amazon static
-    /// extractor to read price fragments out of the raw markup.
-    private static func firstMatch(in text: String, pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let ns = text as NSString
-        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
-              match.numberOfRanges >= 2 else { return nil }
-        return ns.substring(with: match.range(at: 1))
-    }
 
     /// Validates/uppercases a currency. Accepts a 3-letter ISO code; maps common
     /// symbols ($, £, €, ¥) to a code; returns nil for anything else.

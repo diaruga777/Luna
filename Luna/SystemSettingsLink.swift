@@ -15,18 +15,19 @@ import UIKit
 enum SystemSettingsLink {
 
     static func open() {
-        let candidates = [
+        openFirstAvailable([
             "App-Prefs:root=APPS",          // Settings → Apps (iOS 18+)
             "App-Prefs:",                   // root Settings
             UIApplication.openSettingsURLString, // app's own page (always works)
-        ]
-        tryOpen(candidates, at: 0)
+        ])
     }
 
-    private static func tryOpen(_ candidates: [String], at index: Int) {
+    /// Opens the first candidate Settings URL the system accepts, in order.
+    /// Shared with `VoiceInstallLink`.
+    static func openFirstAvailable(_ candidates: [String], at index: Int = 0) {
         guard index < candidates.count, let url = URL(string: candidates[index]) else { return }
         UIApplication.shared.open(url, options: [:]) { success in
-            if !success { tryOpen(candidates, at: index + 1) }
+            if !success { openFirstAvailable(candidates, at: index + 1) }
         }
     }
 }

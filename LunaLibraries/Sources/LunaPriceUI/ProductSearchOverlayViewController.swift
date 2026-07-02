@@ -366,22 +366,17 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         case .added:
             dismiss(animated: true)
         case .noPrice:
-            presentMessage(
+            presentPriceMessage(
                 title: "Couldn't find a price",
                 message: "We couldn't find a price on this page, so it wasn't added. "
                     + "Try a product page that shows a price.")
         case .duplicate:
-            presentMessage(
+            presentPriceMessage(
                 title: "Already tracked",
                 message: "This page is already a seller for this product.")
         }
     }
 
-    private func presentMessage(title: String, message: String) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        DotMatrixModal.present(alert, from: self)
-    }
 
     // MARK: - WKNavigationDelegate
 

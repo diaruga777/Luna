@@ -6,6 +6,7 @@
 import LunaAppConfig
 import LunaURLClassification
 import LunaModels
+import LunaStorage
 import Foundation
 
 /// Appends a pending item to the reading-list JSON in the App Group container.
@@ -107,6 +108,12 @@ public enum SharedReadingListAppender {
             if let data = try? JSONSerialization.data(withJSONObject: array) {
                 try? data.write(to: url, options: .atomic)
             }
+        }
+        if let coordError {
+            // A failed coordination silently drops the user's share — leave a trace.
+            SharedDiagnosticLog.record(
+                "share append coordination failed: \(coordError.localizedDescription)",
+                category: "share")
         }
     }
 }

@@ -83,29 +83,27 @@ public final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
     // MARK: - Private
 
     private func append(_ line: String) {
-        guard let data = line.data(using: .utf8) else { return }
-        if !FileManager.default.fileExists(atPath: fileURL.path) {
-            try? data.write(to: fileURL)
-            return
-        }
-        guard let handle = try? FileHandle(forWritingTo: fileURL) else { return }
-        defer { try? handle.close() }
-        _ = try? handle.seekToEnd()
-        try? handle.write(contentsOf: data)
+        // The write AND the trim go through SharedDiagnosticLog's file lock —
+        // both loggers append to the same file in this process, and an
+        // unsynchronized trim (read → atomic rewrite) could drop a line the
+        // other logger appended in between.
+        SharedDiagnosticLog.appendLine(line, to: fileURL)
         trimIfNeeded()
     }
 
     /// Keeps the file bounded: once it passes `maxBytes`, rewrite it with only
     /// its most recent `maxBytes / 2` worth of complete lines.
     private func trimIfNeeded() {
-        guard let size = try? FileManager.default.attributesOfItem(
-            atPath: fileURL.path)[.size] as? Int, size > maxBytes,
-              let existing = try? String(contentsOf: fileURL, encoding: .utf8)
-        else { return }
-        let keep = existing.suffix(maxBytes / 2)
-        // Drop the first (likely partial) line so the file starts cleanly.
-        let trimmed = keep.drop { $0 != "\n" }.dropFirst()
-        try? ("…(trimmed)\n" + trimmed).write(to: fileURL, atomically: true, encoding: .utf8)
+        SharedDiagnosticLog.withFileLock {
+            guard let size = try? FileManager.default.attributesOfItem(
+                atPath: fileURL.path)[.size] as? Int, size > maxBytes,
+                  let existing = try? String(contentsOf: fileURL, encoding: .utf8)
+            else { return }
+            let keep = existing.suffix(maxBytes / 2)
+            // Drop the first (likely partial) line so the file starts cleanly.
+            let trimmed = keep.drop { $0 != "\n" }.dropFirst()
+            try? ("…(trimmed)\n" + trimmed).write(to: fileURL, atomically: true, encoding: .utf8)
+        }
     }
 
     /// Messaging-identity context for the export header, injected by the main

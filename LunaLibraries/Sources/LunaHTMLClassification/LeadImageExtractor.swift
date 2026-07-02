@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaURLClassification
 
 /// Pulls a representative cover/banner image URL out of an article's HTML —
 /// `og:image`, then `twitter:image`, then a `<link rel="image_src">`. Best-effort
@@ -47,12 +48,6 @@ public enum LeadImageExtractor {
     }
 
     private static func firstCapture(_ pattern: String, in html: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
-        else { return nil }
-        let range = NSRange(html.startIndex..., in: html)
-        guard let match = regex.firstMatch(in: html, range: range), match.numberOfRanges > 1,
-              let captured = Range(match.range(at: 1), in: html)
-        else { return nil }
-        return String(html[captured])
+        RegexCapture.first(in: html, pattern: pattern, options: [.caseInsensitive])
     }
 }

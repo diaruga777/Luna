@@ -116,11 +116,16 @@ final class ReplaysViewController: NavHeaderTableController {
         }
     }
 
-    private func formatted(_ date: Date) -> String {
+    // Cached: this runs per row in cellForRowAt and DateFormatter setup is expensive.
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private func formatted(_ date: Date) -> String {
+        Self.dateFormatter.string(from: date)
     }
 
     private func presentMissingExport() {

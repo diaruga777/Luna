@@ -219,11 +219,7 @@ public enum NewsAggregatorUnwrapper {
 
     /// First capture group of `pattern` in `text`, or nil.
     public static func firstMatch(in text: String, pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let ns = text as NSString
-        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
-              match.numberOfRanges >= 2 else { return nil }
-        return ns.substring(with: match.range(at: 1))
+        RegexCapture.first(in: text, pattern: pattern)
     }
 
     /// URL-safe base64 decode (restores `+`/`/` and pads to a multiple of 4).

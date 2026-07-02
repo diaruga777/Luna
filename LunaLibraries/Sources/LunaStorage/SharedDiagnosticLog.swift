@@ -23,17 +23,33 @@ public enum SharedDiagnosticLog {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let line = "\(formatter.string(from: Date())) [\(category)] \(message)\n"
-        guard let data = line.data(using: .utf8), let fileURL = logFileURL() else { return }
+        guard let fileURL = logFileURL() else { return }
+        appendLine(line, to: fileURL)
+    }
+
+    /// Appends a pre-formatted line under the shared file lock. `DiagnosticLog`
+    /// routes its writes (and trim) through this lock too, so the two writers
+    /// in the app process can't race — its trim's read-then-rewrite would
+    /// otherwise drop a line this logger appended concurrently.
+    static func appendLine(_ line: String, to fileURL: URL) {
+        guard let data = line.data(using: .utf8) else { return }
+        withFileLock {
+            if !FileManager.default.fileExists(atPath: fileURL.path) {
+                try? data.write(to: fileURL)
+                return
+            }
+            guard let handle = try? FileHandle(forWritingTo: fileURL) else { return }
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        }
+    }
+
+    /// Runs `body` holding the log-file lock.
+    static func withFileLock<T>(_ body: () -> T) -> T {
         lock.lock()
         defer { lock.unlock() }
-        if !FileManager.default.fileExists(atPath: fileURL.path) {
-            try? data.write(to: fileURL)
-            return
-        }
-        guard let handle = try? FileHandle(forWritingTo: fileURL) else { return }
-        defer { try? handle.close() }
-        _ = try? handle.seekToEnd()
-        try? handle.write(contentsOf: data)
+        return body()
     }
 
     private static func logFileURL() -> URL? {

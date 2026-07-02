@@ -111,20 +111,15 @@ public struct SaveFromAppIntent: AppIntent {
     }
 
     private func saveYouTube(channel: String?, title: String?) async throws {
-        guard await GoogleAuthClient.shared.isSignedIn else { throw SaveError.youTubeNotSignedIn }
-        guard let channel, let title, !channel.isEmpty, !title.isEmpty else {
+        do {
+            _ = try await YouTubeVideoSave.findAndSave(channel: channel ?? "", title: title ?? "")
+        } catch YouTubeVideoSave.FindFailure.notSignedIn {
+            throw SaveError.youTubeNotSignedIn
+        } catch YouTubeVideoSave.FindFailure.badQuery {
             throw SaveError.missingValues
-        }
-        let api = YouTubeAPIClient()
-        guard let channelID = try await api.searchChannelID(name: channel) else {
+        } catch is YouTubeVideoSave.FindFailure {
             throw SaveError.notFound
         }
-        let candidates = try await api.searchVideos(channelID: channelID, query: title)
-        guard let match = VideoMatchSelection.bestMatch(title: title, candidates: candidates) else {
-            throw SaveError.notFound
-        }
-        _ = await IntentIngestHelper.handleSavePressWithTimeout(
-            urlString: YouTubeURL.watchURLString(videoID: match.videoID))
     }
 
     private func saveSearch(_ query: String, resolve: (String) async throws -> URL) async throws {
@@ -135,11 +130,6 @@ public struct SaveFromAppIntent: AppIntent {
 
     private func saveMedia(_ platform: ContentPlatform, creator: String?, title: String?) async throws {
         guard let creator, let title else { throw SaveError.missingValues }
-        let item = ReadingListStore.shared.createURLlessMediaItem(
-            platform: platform, creator: creator, title: title)
-        if let art = await MediaArtFetcher.fetchArtwork(
-            creator: creator, title: title, isPodcast: platform == .podcast) {
-            ReadingListStore.shared.setThumbnail(art, for: item.id)
-        }
+        await MediaItemSave.save(platform: platform, creator: creator, title: title)
     }
 }

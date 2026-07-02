@@ -54,33 +54,46 @@ public enum PaywallUnlockRules {
         // After the conversions above the only backslash escape we allow is `\.`; any
         // other residual `\x` (incl. escaped parens) is unsupported → drop.
         if residualHasUnsafeEscape(s) { return [] }
-        // Expand alternations/groups into concrete, alternation-free filters. Cap the
-        // fan-out so a pathological pattern can't explode the rule list.
+        // Expand alternations/groups into concrete, alternation-free filters. The
+        // cap is enforced INSIDE the expansion (overflow short-circuits), so a
+        // pathological (a|b)(c|d)… pattern can't materialize 2^N strings before
+        // the count is checked.
         let expanded = expandAlternations(Array(s))
-        return expanded.count <= 24 ? expanded : []
+        return expanded.count <= expansionLimit ? expanded : []
     }
+
+    /// Max concrete filters one pattern may expand to; exceeding it drops the pattern.
+    static let expansionLimit = 24
 
     /// Expands a group-and-alternation regex (no group quantifiers, no unsupported
     /// escapes) into the set of concrete alternation-free / group-free strings it
     /// matches structurally. `a(b|c)d` → `["abd","acd"]`. Char classes `[...]` are
-    /// treated as opaque (their `|`/`()` are literal, not structural).
-    static func expandAlternations(_ chars: [Character]) -> [String] {
+    /// treated as opaque (their `|`/`()` are literal, not structural). Stops as
+    /// soon as `limit` is exceeded (the over-limit result is a sentinel for the
+    /// caller to drop the pattern, never 2^N strings in memory).
+    static func expandAlternations(_ chars: [Character], limit: Int = expansionLimit) -> [String] {
         // Top-level `|` → the union of each alternative's expansion.
         let alternatives = splitTopLevel(chars, on: "|")
         if alternatives.count > 1 {
-            return alternatives.flatMap { expandAlternations($0) }
+            var out: [String] = []
+            for alternative in alternatives {
+                out += expandAlternations(alternative, limit: max(limit - out.count, 0))
+                if out.count > limit { return out }
+            }
+            return out
         }
         // A single alternative: expand its first top-level group, if any.
         guard let (open, close) = firstTopLevelGroup(chars) else {
             return [String(chars)]   // no group → already concrete
         }
         let prefix = String(chars[..<open])
-        let innerExpansions = expandAlternations(Array(chars[(open + 1)..<close]))
-        let suffixExpansions = expandAlternations(Array(chars[(close + 1)...]))
+        let innerExpansions = expandAlternations(Array(chars[(open + 1)..<close]), limit: limit)
+        let suffixExpansions = expandAlternations(Array(chars[(close + 1)...]), limit: limit)
         var out: [String] = []
         for inner in innerExpansions {
             for suffix in suffixExpansions {
                 out.append(prefix + inner + suffix)
+                if out.count > limit { return out }
             }
         }
         return out
@@ -164,8 +177,11 @@ public enum PaywallUnlockRules {
         where !blocker.excludedDomains.contains(where: { host == $0 || host.hasSuffix("." + $0) }) {
             sources.append(blocker.blockRegex)
         }
-        let filters = sources.flatMap(urlFilters(fromJSRegexSource:))
-        let dropped = sources.filter { urlFilters(fromJSRegexSource: $0).isEmpty }.count
+        // One pass: per-source results feed both the filter list and the
+        // dropped count (re-running the expansion per source doubled the work).
+        let perSource = sources.map(urlFilters(fromJSRegexSource:))
+        let filters = perSource.flatMap { $0 }
+        let dropped = perSource.filter(\.isEmpty).count
         if dropped > 0 {
             SharedDiagnosticLog.record(
                 "unlock: dropped \(dropped)/\(sources.count) unrepresentable block patterns for \(host)",

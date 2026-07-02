@@ -106,9 +106,15 @@ public final class SemanticIndexStore {
         mutate { state in
             state.itemVectors[itemID.uuidString] = vectors
             if state.itemVectors.count > Self.maxIndexedItems {
-                for key in state.itemVectors.keys {
+                // Deterministic eviction, never the just-stored key: dictionary
+                // key order is hash-randomized, so iterating `keys` could evict
+                // the item we just embedded — which would then be re-embedded
+                // on the next indexing pass, churning forever.
+                let evictable = state.itemVectors.keys
+                    .filter { $0 != itemID.uuidString }
+                    .sorted()
+                for key in evictable.prefix(state.itemVectors.count - Self.maxIndexedItems) {
                     state.itemVectors.removeValue(forKey: key)
-                    if state.itemVectors.count <= Self.maxIndexedItems { break }
                 }
             }
         }

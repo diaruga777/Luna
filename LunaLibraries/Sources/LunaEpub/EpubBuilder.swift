@@ -60,9 +60,14 @@ public struct EpubBuilder {
     private func embeddableImages(
         in content: ArticleContent, imagesDirectory: URL
     ) -> [EmbeddedImage] {
-        content.blocks.compactMap { block in
+        // Deduped by file name: an image reused across blocks (a repeated logo)
+        // must produce ONE zip entry and ONE manifest item — duplicates make
+        // the EPUB invalid and Kindle conversion can reject it.
+        var seen = Set<String>()
+        return content.blocks.compactMap { block in
             guard block.kind == .image,
                   let fileName = block.imageFileName,
+                  seen.insert(fileName).inserted,
                   let mediaType = Self.imageMediaTypes[
                     (fileName as NSString).pathExtension.lowercased()],
                   let data = try? Data(

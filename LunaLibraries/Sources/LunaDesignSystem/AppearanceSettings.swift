@@ -48,4 +48,11 @@ public enum AppearanceSettings {
         get { (defaults.object(forKey: animatedTransitionsKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: animatedTransitionsKey) }
     }
+
+    /// Applies the current `interfaceStyle` override to a window. Call at every
+    /// window-creation site so the whole app (and its transition cover windows)
+    /// honor the chosen theme.
+    public static func apply(to window: UIWindow) {
+        window.overrideUserInterfaceStyle = interfaceStyle.uiStyle
+    }
 }

@@ -72,9 +72,14 @@ final class PaywallUnlockRulesTests: XCTestCase {
     func testCleanupScriptGuardsArchiveHostsAndTargetsPaywalls() {
         let js = PaywallUnlockRules.domCleanupScript
         XCTAssertTrue(js.contains("archive"))          // self-guards off the archive reader
-        XCTAssertTrue(js.contains("paywall"))           // removes paywall containers
+        XCTAssertTrue(js.contains("paywall"))           // targets paywall containers
         XCTAssertTrue(js.contains("setInterval"))       // re-runs over the poll window
         XCTAssertTrue(js.contains("data-src"))          // un-lazies images
         XCTAssertTrue(js.contains("subscriptions-section"))  // reveals AMP subscriber sections
+        // A content wrapper that shares a paywall class (e.g. WSJ's `.paywall`
+        // content container) must be REVEALED, not removed — else the unlocked
+        // article is deleted with the "overlay".
+        XCTAssertTrue(js.contains("articleChars"))      // content-vs-overlay guard
+        XCTAssertTrue(js.contains("reveal"))            // un-hide instead of delete
     }
 }

@@ -23,6 +23,7 @@
 //
 
 import LunaContentRendering
+import LunaDesignSystem
 import UIKit
 
 public enum DotMatrixKeyboardReveal {
@@ -123,6 +124,7 @@ private final class Reveal {
         // Above the keyboard's own window (≈ level 1e7); touch-transparent so the
         // rising keyboard is usable the moment it lands.
         cover = UIWindow(windowScene: scene)
+        AppearanceSettings.apply(to: cover)
         cover.windowLevel = UIWindow.Level(rawValue: 20_000_000)
         cover.isUserInteractionEnabled = false
         cover.backgroundColor = .clear

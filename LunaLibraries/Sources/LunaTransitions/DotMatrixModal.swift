@@ -394,6 +394,7 @@ final class DotMatrixCoverWindow: UIWindow {
         super.init(windowScene: scene)
         windowLevel = UIWindow.Level(UIWindow.Level.normal.rawValue + 50)
         backgroundColor = .clear
+        AppearanceSettings.apply(to: self)
 
         let root = UIViewController()
         root.view.backgroundColor = .clear

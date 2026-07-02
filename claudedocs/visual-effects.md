@@ -88,6 +88,14 @@ helpers, all gated on `DotMatrixTransitionCenter.shared.isEnabled` — the
 `AppearanceSettings.animatedTransitionsEnabled` preference AND `!UIAccessibility`
 `.isReduceMotionEnabled` AND Metal availability; false ⇒ stock UIKit animation.
 
+Both `AppearanceSettings` preferences are user-facing under **Settings → Appearance**
+(`Luna/Settings/AppearanceSettingsScreen.swift`): a **Theme** segmented control
+(System / Light / Dark) that writes `AppearanceSettings.interfaceStyle` and applies it
+live to every connected scene's windows (`AppearanceSettings.apply(to:)`, also called at
+each window-creation site — `SceneDelegate`, the `DotMatrixModal` cover window, and the
+`DotMatrixKeyboardReveal` cover window), and a **Motion** toggle bound to
+`animatedTransitionsEnabled`.
+
 Surfaces: `DotMatrixCrossfade` (in-place view change), `DotMatrixBatch` (table row
 updates), `DotMatrixModal` (modal present/dismiss — see below),
 `DotMatrixTransitionSession` (nav push/pop). The RabbitHole reader's

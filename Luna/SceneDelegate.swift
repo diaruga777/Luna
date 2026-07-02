@@ -12,6 +12,7 @@ import LunaReadingListUI
 import LunaSocialUI
 import LunaReadingList
 import LunaArchiveReader
+import LunaDesignSystem
 import LunaSemantic
 import LunaStorage
 import LunaTransitions
@@ -63,6 +64,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     ) {
         guard let windowScene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: windowScene)
+        AppearanceSettings.apply(to: window)
 
         // DEBUG-only UI-test seeding (no-op unless launched with `-uiTestState`).
         UITestSeeder.applyIfNeeded()

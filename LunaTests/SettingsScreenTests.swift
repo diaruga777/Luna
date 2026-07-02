@@ -52,6 +52,10 @@ final class SettingsScreenTests: XCTestCase {
         snapshotSubscreen(ShortcutSettingsScreen(), named: "settings-shortcut")
     }
 
+    func testAppearanceSettingsSnapshot() {
+        snapshotSubscreen(AppearanceSettingsScreen(), named: "settings-appearance")
+    }
+
     func testExperimentalSettingsSnapshot() {
         snapshotSubscreen(ExperimentalSettingsScreen(), named: "settings-experimental")
     }
@@ -99,6 +103,7 @@ final class SettingsScreenTests: XCTestCase {
             MediaProviderSettingsScreen.self,
             AutoDownloadSettingsScreen.self,
             ShortcutSettingsScreen.self,
+            AppearanceSettingsScreen.self,
             ExperimentalSettingsScreen.self,
             DiagnosticsViewController.self,
         ]

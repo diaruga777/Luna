@@ -47,6 +47,7 @@ final class SettingsViewController: NavHeaderTableController {
         Category(title: "Music & Podcasts", symbol: "music.note") { MediaProviderSettingsScreen() },
         Category(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") { AutoDownloadSettingsScreen() },
         Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
+        Category(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
         Category(title: "Experimental", symbol: "flask") { ExperimentalSettingsScreen() },
         Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
     ]

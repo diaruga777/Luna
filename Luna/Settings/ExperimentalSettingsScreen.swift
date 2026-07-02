@@ -20,7 +20,7 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         case rabbitHole, semantic, paywallStrategies, archiveOverlay, dotMatrix, frostedGlass, jellystone, luna, youtube
     }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
-    private enum RabbitHoleRow: Int, CaseIterable { case toggle, transition }
+    private enum RabbitHoleRow: Int, CaseIterable { case toggle, reader, transition }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -108,6 +108,7 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         case .rabbitHole:
             switch RabbitHoleRow(rawValue: indexPath.row)! {
             case .toggle: return rabbitHoleCell()
+            case .reader: return rabbitHoleReaderCell()
             case .transition:
                 return disclosureCell(title: "Dot Matrix Transition", symbol: "square.stack.3d.down.right")
             }
@@ -130,7 +131,9 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         }
     }
 
-    /// The master toggle: global Dot Matrix pixel-wipe transitions + RabbitHole reader.
+    /// The global Dot Matrix pixel-wipe transitions toggle (the RabbitHole READER
+    /// fork is the separate toggle below — they used to be one switch, which made
+    /// the standard scroll reader and the wipes mutually exclusive).
     private func rabbitHoleCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
@@ -145,6 +148,24 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     @objc private func rabbitHoleToggled(_ toggle: UISwitch) {
         ReaderSettings.pixelWipeTransitionsEnabled = toggle.isOn
+    }
+
+    /// The forked stacked-layer RabbitHole reader (off ⇒ the standard scroll reader,
+    /// which has its own pixel-wiped inline reader).
+    private func rabbitHoleReaderCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = "RabbitHole Reader"
+        cell.contentConfiguration = content
+        cell.accessoryView = makeToggle(
+            isOn: ReaderSettings.rabbitHoleReaderEnabled,
+            action: #selector(rabbitHoleReaderToggled(_:)))
+        return cell
+    }
+
+    @objc private func rabbitHoleReaderToggled(_ toggle: UISwitch) {
+        ReaderSettings.rabbitHoleReaderEnabled = toggle.isOn
     }
 
     /// A toggle that enables the on-device (non-archive) paywall-bypass strategies.

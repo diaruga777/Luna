@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaDesignSystem
 import LunaStorage
 import UIKit
 import WebKit
@@ -40,7 +41,7 @@ public final class PlatformEmbedViewController: UIViewController, WKScriptMessag
         configuration.allowsPictureInPictureMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         if let endedJS = embed.endedWatcherJS {
-            configuration.userContentController.add(self, name: "player")
+            configuration.userContentController.add(WeakScriptMessageHandler(target: self), name: "player")
             configuration.userContentController.addUserScript(WKUserScript(
                 source: endedJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }

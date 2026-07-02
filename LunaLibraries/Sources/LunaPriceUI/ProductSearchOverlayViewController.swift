@@ -169,7 +169,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
     private func configureWebView() {
         let configuration = WebJunkBlocker.makeConfiguration()
         configuration.userContentController.add(
-            self, name: Self.googleShoppingSellerMessageName)
+            WeakScriptMessageHandler(target: self), name: Self.googleShoppingSellerMessageName)
         configuration.userContentController.addUserScript(WKUserScript(
             source: Self.googleShoppingSellerObserver,
             injectionTime: .atDocumentEnd,

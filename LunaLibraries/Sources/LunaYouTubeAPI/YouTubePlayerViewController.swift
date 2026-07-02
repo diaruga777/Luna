@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaDesignSystem
 import LunaStorage
 import UIKit
 import WebKit
@@ -39,7 +40,7 @@ public final class YouTubePlayerViewController: UIViewController, WKScriptMessag
         configuration.allowsInlineMediaPlayback = true
         configuration.allowsPictureInPictureMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
-        configuration.userContentController.add(self, name: "player")
+        configuration.userContentController.add(WeakScriptMessageHandler(target: self), name: "player")
         // The embed page is loaded directly (its own youtube.com origin —
         // loadHTMLString origins get rejected with error 152/153), so the
         // ended signal comes from the page's <video> element.

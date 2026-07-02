@@ -568,10 +568,15 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // A 429 is archive.today's rate-limit. The first one still carries a CAPTCHA
         // that MIGHT be solvable, so let the user try it; only once it has looped
         // (repeated 429s) do we conclude solving won't pass and show the guidance.
+        // Only a MAIN-FRAME 429 from archive.today itself counts: sub-resource 429s
+        // (challenge iframes, trackers) and pre-stage 429s from the article's own
+        // site must not put up the terminal rate-limit message — the latter would
+        // abandon the flow before archive.today was even tried.
         if let http = navigationResponse.response as? HTTPURLResponse {
             SharedDiagnosticLog.record(
                 "archive: response \(http.statusCode) \(http.url?.absoluteString ?? "")", category: "archive")
-            if http.statusCode == 429 {
+            if http.statusCode == 429, navigationResponse.isForMainFrame,
+               let url = http.url, ArticleFetcher.isArchiveTodayURL(url) {
                 challengeCount += 1
                 if challengeCount >= Self.loopThreshold { showRateLimit() }
             }

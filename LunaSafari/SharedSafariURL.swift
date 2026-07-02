@@ -21,4 +21,18 @@ enum SharedSafariURL {
         defaults?.set(urlString, forKey: urlKey)
         defaults?.set(Date().timeIntervalSince1970, forKey: dateKey)
     }
+
+    // The already-unlocked article HTML captured in Safari, handed to the app so it
+    // renders that content instead of re-fetching (which would re-lock). The app reads
+    // these via `SafariContentStore`, matching the URL and a short freshness window.
+    static let unlockedURLKey = "safariUnlockedURL"
+    static let unlockedHTMLKey = "safariUnlockedHTML"
+    static let unlockedDateKey = "safariUnlockedDate"
+
+    static func recordUnlockedContent(_ urlString: String, html: String) {
+        let defaults = UserDefaults(suiteName: appGroupID)
+        defaults?.set(urlString, forKey: unlockedURLKey)
+        defaults?.set(html, forKey: unlockedHTMLKey)
+        defaults?.set(Date().timeIntervalSince1970, forKey: unlockedDateKey)
+    }
 }

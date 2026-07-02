@@ -45,7 +45,8 @@ public final class ReadingListIngestor {
     /// `forceArticle` skips product-page detection entirely, so the URL is ingested
     /// as a normal article even if its page would otherwise be classified as a price
     /// tracker. Used by the "Read instead" override on the price-tracking editor.
-    public func ingest(_ item: ReadingListItem, forceArticle: Bool = false) async {
+    public func ingest(_ item: ReadingListItem, forceArticle: Bool = false,
+                       prefetchedHTML: String? = nil) async {
         guard item.state != .ready, let initialURL = item.url else { return }
 
         lock.lock()
@@ -80,7 +81,8 @@ public final class ReadingListIngestor {
         // without independently repeating the unwrap work.
         let result = await IngestPipeline.processResolved(
             IngestInput(url: url, source: item.effectiveCaptureSource,
-                        documentType: item.sanitizedDocumentType, forceArticle: forceArticle),
+                        documentType: item.sanitizedDocumentType,
+                        prefetchedHTML: prefetchedHTML, forceArticle: forceArticle),
             fetcher: resolveFetcher, extractor: extractor,
             replayLog: replayID.map { id in { [recorder] event in await recorder.record(event, for: id) } })
 
@@ -547,7 +549,8 @@ public final class ReadingListIngestor {
     /// the article to Kindle (when configured); any other press on an existing
     /// URL is ignored. Awaits the resulting work (callers bound it with a timeout).
     @discardableResult
-    public func handleSavePress(urlString: String, source: CaptureSource = .manual) async -> SavePressResult {
+    public func handleSavePress(urlString: String, source: CaptureSource = .manual,
+                                prefetchedHTML: String? = nil) async -> SavePressResult {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }
         let urlString = url.absoluteString
         let existing = store.item(forURLString: urlString)
@@ -562,7 +565,7 @@ public final class ReadingListIngestor {
         switch decision {
         case .saveNew:
             let item = store.add(urlString: urlString, source: source)
-            await ingest(item)
+            await ingest(item, prefetchedHTML: prefetchedHTML)
             return .saved(item)
         case .sendToEreaders(let destinationIDs):
             // The policy only returns this for an existing item.

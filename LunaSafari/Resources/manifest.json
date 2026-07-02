@@ -15,6 +15,14 @@
         "page": "background.html",
         "persistent": false
     },
-    "permissions": ["nativeMessaging", "tabs", "scripting"],
-    "host_permissions": ["<all_urls>"]
+    "permissions": [
+        "nativeMessaging", "tabs", "scripting",
+        "declarativeNetRequest", "declarativeNetRequestWithHostAccess"
+    ],
+    "host_permissions": ["<all_urls>"],
+    "declarative_net_request": {
+        "rule_resources": [
+            { "id": "referer", "enabled": false, "path": "rules_referer.json" }
+        ]
+    }
 }

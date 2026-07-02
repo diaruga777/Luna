@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "Referer", "operation": "set", "value": "https://www.drudgereport.com/" }
+      ]
+    },
+    "condition": {
+      "requestDomains": ["wsj.com", "marketwatch.com"],
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "Referer", "operation": "set", "value": "https://www.google.com/" }
+      ]
+    },
+    "condition": {
+      "requestDomains": ["ft.com", "investorschronicle.co.uk"],
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  }
+]

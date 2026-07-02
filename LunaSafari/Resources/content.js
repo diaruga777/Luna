@@ -37,6 +37,55 @@
         injectReadButton();
     }).catch(function () {});
 
+    // When the "Unlock Paywalls On-Device" toggle is on, reveal the body in Safari
+    // (the Referer rewrite that unlocks the server response is applied declaratively
+    // by the background ruleset; this strips the leftover overlay/clamp so the reader
+    // — and the user, right here in Safari — sees the full article).
+    browser.runtime.sendMessage({ type: "bypassEnabled" }).then(function (resp) {
+        if (resp && resp.enabled) { revealArticle(); }
+    }).catch(function () {});
+
+    // Generic paywall-overlay cleanup (mirrors the app's browser-tier cleanup): remove
+    // common overlay containers, un-blur/un-clamp the body, restore scroll, un-lazy
+    // images. Re-runs briefly to cover late hydration.
+    function revealArticle() {
+        var REMOVE = [
+            "div.paywall", "div.paywall-content", "div.meteredContent", "div#full-paywall",
+            "aside#paywall", "div.subscription-wall", "div#tp-regwall", "div#tp-modal",
+            "div.snippet-promotion", ".snippet-promotion", 'div[id*="-snippet-overlay"]',
+            "div.modal-backdrop", 'div[class*="subscribe-wall"]', 'div[class*="regwall"]',
+            "div.tp-modal", 'div[data-testid*="paywall"]', 'div[class*="PaywallOverlay"]',
+            "div.piano-template"
+        ];
+        var UNHIDE = ["blurred", "blur", "gradient", "fade", "faded-content", "clipped",
+            "cropped", "truncated", "locked", "is-locked", "noscroll", "no-scroll",
+            "scroll-lock", "overflow-hidden", "modal-open"];
+        function clean() {
+            try {
+                REMOVE.forEach(function (sel) {
+                    document.querySelectorAll(sel).forEach(function (el) { el.remove(); });
+                });
+                [document.documentElement, document.body].forEach(function (el) {
+                    if (!el) { return; }
+                    el.style.overflow = ""; el.style.position = ""; el.style.height = "";
+                    UNHIDE.forEach(function (c) { if (el.classList) { el.classList.remove(c); } });
+                });
+                if (document.documentElement) { document.documentElement.style.overflow = "auto"; }
+                UNHIDE.forEach(function (c) {
+                    document.querySelectorAll("." + c).forEach(function (el) {
+                        el.classList.remove(c);
+                        el.style.filter = "none"; el.style.webkitFilter = "none";
+                        el.style.maxHeight = "none"; el.style.overflow = "visible";
+                        el.style.webkitMaskImage = "none";
+                    });
+                });
+            } catch (e) {}
+        }
+        clean();
+        var n = 0;
+        var t = setInterval(function () { clean(); if (++n > 10) { clearInterval(t); } }, 600);
+    }
+
     // A page worth a "Read in Luna" button: an article, not a homepage/search.
     function looksLikeArticle() {
         var ogType = document.querySelector('meta[property="og:type"]');
@@ -97,8 +146,21 @@
             btn.textContent = "Opening Luna…";
             btn.style.opacity = "0.7";
             btn.style.pointerEvents = "none";
-            // A tap is a user gesture, so Safari allows the custom-scheme launch.
-            window.location.href = "lunareader://read?url=" + encodeURIComponent(location.href);
+            var open = function () {
+                // A tap is a user gesture, so Safari allows the custom-scheme launch.
+                window.location.href = "lunareader://read?url=" + encodeURIComponent(location.href);
+            };
+            // Hand the app the already-unlocked page HTML so it renders that content
+            // instead of re-fetching (which could re-lock outside Safari). Skip when
+            // the page is too large for native messaging; the app then fetches the URL.
+            var html = "";
+            try { html = document.documentElement ? document.documentElement.outerHTML : ""; } catch (e) {}
+            if (html && html.length <= 1500000) {
+                browser.runtime.sendMessage({ type: "saveContent", url: location.href, html: html })
+                    .then(open).catch(open);
+            } else {
+                open();
+            }
         });
         (document.body || document.documentElement).appendChild(btn);
     }

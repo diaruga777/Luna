@@ -149,8 +149,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         guard let normalizedURL = URLUnwrapper.ingestURL(from: articleURL) else { return }
         let urlString = normalizedURL.absoluteString
+        // If the Safari extension just handed over the already-unlocked page HTML for
+        // this URL, render that instead of re-fetching (which could re-lock).
+        let prefetchedHTML = SafariContentStore.take(for: articleURL)
         Task { @MainActor in
-            let result = await ReadingListIngestor.shared.handleSavePress(urlString: urlString)
+            let result = await ReadingListIngestor.shared.handleSavePress(
+                urlString: urlString, prefetchedHTML: prefetchedHTML)
             let itemID: UUID?
             switch result {
             case .saved(let item), .sentToEreaders(let item): itemID = item.id

@@ -8,6 +8,22 @@
 
 let lastSent = null;
 
+// Keep the Referer-rewrite ruleset in sync with the app's "Unlock Paywalls" toggle
+// (read from the shared App Group via the native handler). When on, requests to the
+// rule-listed hosts (WSJ/MarketWatch → Drudge, FT/Investors Chronicle → Google) get
+// the referrer those sites unlock for — applied automatically in Safari, no app launch.
+function syncBypassRuleset() {
+    if (!browser.declarativeNetRequest || !browser.declarativeNetRequest.updateEnabledRulesets) { return; }
+    browser.runtime.sendNativeMessage("application.id", { type: "bypassEnabled" })
+        .then(function (resp) {
+            const on = !!(resp && resp.enabled);
+            browser.declarativeNetRequest.updateEnabledRulesets(
+                on ? { enableRulesetIds: ["referer"] } : { disableRulesetIds: ["referer"] }
+            ).catch(function () {});
+        })
+        .catch(function () {});
+}
+
 function report(url) {
     if (!url || !url.startsWith("http")) { return; }
     if (url === lastSent) { return; }
@@ -36,6 +52,7 @@ async function reportActiveTab() {
 }
 
 browser.tabs.onActivated.addListener(reportActiveTab);
+browser.tabs.onActivated.addListener(syncBypassRuleset);
 
 browser.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
     if (!tab || !tab.active) { return; }
@@ -48,11 +65,25 @@ browser.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
 });
 
 browser.runtime.onMessage.addListener(function (message) {
-    if (!message || message.type !== "buttonMode") { return; }
-    // Content script asks when to show its button → fetch the app's setting.
-    return browser.runtime.sendNativeMessage("application.id", { type: "buttonMode" })
-        .then(function (resp) { return { mode: (resp && resp.mode) || "all" }; })
-        .catch(function () { return { mode: "all" }; });
+    if (!message) { return; }
+    // Content scripts can't call sendNativeMessage directly — relay for them.
+    if (message.type === "buttonMode") {
+        return browser.runtime.sendNativeMessage("application.id", { type: "buttonMode" })
+            .then(function (resp) { return { mode: (resp && resp.mode) || "all" }; })
+            .catch(function () { return { mode: "all" }; });
+    }
+    if (message.type === "bypassEnabled") {
+        return browser.runtime.sendNativeMessage("application.id", { type: "bypassEnabled" })
+            .then(function (resp) { return { enabled: !!(resp && resp.enabled) }; })
+            .catch(function () { return { enabled: false }; });
+    }
+    if (message.type === "saveContent") {
+        return browser.runtime.sendNativeMessage("application.id",
+            { type: "saveContent", url: message.url, html: message.html })
+            .then(function () { return { ok: true }; })
+            .catch(function () { return { ok: false }; });
+    }
 });
 
+syncBypassRuleset();
 reportActiveTab();

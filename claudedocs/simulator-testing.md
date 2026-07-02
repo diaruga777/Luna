@@ -47,3 +47,24 @@ verify via the harness. NEVER ship these on device.
   adds **"Split High"/"Split Low"** buttons that call `openSplit` at a high/low screen
   fraction, since the harness can't tap an exact inline link. Use these to verify the
   open animation, header tucking, and the cut landing on the tapped line.
+- **RabbitHole dive/pop** — `RabbitHoleReaderViewController.addSimulatorDiveHooksIfNeeded`
+  adds **"Sim Dive"/"Sim Pop"** buttons driving the same `pushLayer`/`popToLayer` paths a
+  link tap and the header back use, since text-view link glyphs aren't tappable. Use them
+  to verify the dive/pop wipe (content pixelates, header/lip chrome fades).
+
+## Harness gotchas learned the hard way
+
+- **Software keyboard**: sims often have "Connect Hardware Keyboard" ON, so no software
+  keyboard ever appears. Fix: `defaults write com.apple.iphonesimulator
+  ConnectHardwareKeyboard -bool false` (plus the per-device `DevicePreferences` entry),
+  then **shut down and re-boot the device** — a Simulator.app restart alone is not
+  enough. First keyboard use also shows the swipe-typing intro panel instead of the
+  keyboard; its Continue button sits in the swallowed bottom-edge zone.
+- **Touch injection can die wholesale** (every tap silently ignored while screenshots
+  and `simctl openurl` still work), e.g. after Simulator.app restarts. Symptoms: AX
+  trees go stale (describe_screen shows a previous screen). App relaunches don't help;
+  the blitz-iphone MCP server needs a restart.
+- **App-group defaults**: `simctl spawn <udid> defaults write group.com.hsanabria.luna …`
+  writes the wrong domain. Write by container path instead:
+  `GC=$(simctl get_app_container <udid> <bundle> groups | grep group… | awk '{print $2}')`
+  then `defaults write "$GC/Library/Preferences/group.com.hsanabria.luna" key -bool true`.

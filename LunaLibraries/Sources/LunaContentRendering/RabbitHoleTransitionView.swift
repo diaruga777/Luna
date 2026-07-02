@@ -9,8 +9,7 @@
 //  sharpens that back to the final view — see RabbitHoleTransition.metal. All per-frame
 //  work is the GPU draw; only the one-time snapshots happen on the main thread. The
 //  expensive Metal device/queue/pipeline are built once and shared, so a transition
-//  view can be made (and the overlay prewarmed) without recompiling the shader. The
-//  shipping DotMatrixEffectView is untouched.
+//  view can be made (and the overlay prewarmed) without recompiling the shader.
 //
 
 import Metal

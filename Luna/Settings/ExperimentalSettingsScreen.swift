@@ -10,33 +10,18 @@ import LunaSemantic
 import LunaDesignSystem
 import LunaTransitions
 import UIKit
-import LunaContentRendering
 
 /// Experimental features, off by default: on-device semantic sharing
 /// suggestions, and YouTube integration (sign-in, playlist, auto-add).
 final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
-        case semantic, paywallStrategies, archiveOverlay, dotMatrix, frostedGlass, jellystone, luna, youtube
+        case semantic, paywallStrategies, archiveOverlay, youtube
     }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
-
-    #if DEBUG
-    /// Maps a `-openEffect <name>` launch arg to an effect settings screen so the
-    /// simulator harness can deep-link past the (un-automatable) settings toolbar.
-    static func debugEffectScreen(named name: String?) -> UIViewController? {
-        switch name?.lowercased() {
-        case "dotmatrix", "halftone": return DotMatrixSettingsScreen()
-        case "frosted", "frostedglass", "neon": return FrostedGlassSettingsScreen()
-        case "jellystone", "jelly", "seaglass": return StoneSettingsScreen(material: .jellystone)
-        case "luna": return StoneSettingsScreen(material: .luna)
-        default: return nil
-        }
-    }
-    #endif
 
     override func viewDidLoad() {
         headerTitle = "Experimental"
@@ -50,10 +35,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         case .semantic: return 1
         case .paywallStrategies: return 1
         case .archiveOverlay: return 1
-        case .dotMatrix: return 1
-        case .frostedGlass: return 1
-        case .jellystone: return 1
-        case .luna: return 1
         case .youtube: return YouTubeRow.allCases.count
         }
     }
@@ -63,10 +44,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         case .semantic: return "Suggest Shares Based on Content"
         case .paywallStrategies: return "Extra Paywall Unlock Strategies"
         case .archiveOverlay: return "Archive Reader Cover"
-        case .dotMatrix: return "Dot Matrix Effect"
-        case .frostedGlass: return "Frosted Neon Effect"
-        case .jellystone: return "Jellystone Effect"
-        case .luna: return "Luna Effect"
         case .youtube: return "DEV ONLY: YouTube"
         }
     }
@@ -79,18 +56,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
             return "Off by default. When on, Luna tries to unlock a paywalled article on-device — keeping cookies, blocking the site's metering scripts, spoofing the referrer a site unlocks for, and cleaning the page — before falling back to the archive reader. This unlocks many soft paywalls the archive can't, but adds a few seconds before the fallback. Turn it off to go straight to the archive reader."
         case .archiveOverlay:
             return "Opacity of overlay while we work to unlock web articles"
-        case .dotMatrix:
-            return "A real-time dot-matrix shader. Tune its parameters and preview it "
-                + "on your own photos, videos, and GIFs; tap the preview to ripple it in."
-        case .frostedGlass:
-            return "A real-time \"neon lights through frosted glass\" shader, with its own "
-                + "parameters, live preview, and tap-to-ripple wave."
-        case .jellystone:
-            return "A cheerful pastel sea-glass shader — fuzzy translucency fading from a "
-                + "clear rim to a coloured centre. Tune it and preview on your own media."
-        case .luna:
-            return "A milky, semi-transparent luna shader, with its own parameters, live "
-                + "preview, and tap-to-ripple wave."
         case .youtube:
             return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read.\n\nYour email must be whitelisted for this to work while in development."
         }
@@ -106,14 +71,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
             return paywallStrategiesCell()
         case .archiveOverlay:
             return overlayAlphaCell()
-        case .dotMatrix:
-            return dotMatrixCell()
-        case .frostedGlass:
-            return frostedGlassCell()
-        case .jellystone:
-            return disclosureCell(title: "Jellystone Effect", symbol: "circle.hexagongrid.fill")
-        case .luna:
-            return disclosureCell(title: "Luna Effect", symbol: "diamond.fill")
         case .youtube:
             return youTubeCell(for: YouTubeRow(rawValue: indexPath.row)!)
         }
@@ -200,39 +157,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         return cell
     }
 
-    /// Disclosure row that drills into the Dot Matrix effect controls.
-    private func dotMatrixCell() -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration()
-        content.text = "Dot Matrix Effect"
-        content.image = UIImage(systemName: "circle.grid.3x3.fill")
-        cell.contentConfiguration = content
-        cell.accessoryType = .disclosureIndicator
-        return cell
-    }
-
-    /// Disclosure row that drills into the Frosted Neon effect controls.
-    private func frostedGlassCell() -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration()
-        content.text = "Frosted Neon Effect"
-        content.image = UIImage(systemName: "lightspectrum.horizontal")
-        cell.contentConfiguration = content
-        cell.accessoryType = .disclosureIndicator
-        return cell
-    }
-
-    /// A generic disclosure row that drills into an effect's controls.
-    private func disclosureCell(title: String, symbol: String) -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration()
-        content.text = title
-        content.image = UIImage(systemName: symbol)
-        cell.contentConfiguration = content
-        cell.accessoryType = .disclosureIndicator
-        return cell
-    }
-
     private func endCaption(_ text: String) -> UILabel {
         let label = UILabel()
         label.text = text
@@ -244,14 +168,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch Section(rawValue: indexPath.section)! {
-        case .dotMatrix:
-            navigationController?.pushViewController(DotMatrixSettingsScreen(), animated: true)
-        case .frostedGlass:
-            navigationController?.pushViewController(FrostedGlassSettingsScreen(), animated: true)
-        case .jellystone:
-            navigationController?.pushViewController(StoneSettingsScreen(material: .jellystone), animated: true)
-        case .luna:
-            navigationController?.pushViewController(StoneSettingsScreen(material: .luna), animated: true)
         case .youtube:
             switch YouTubeRow(rawValue: indexPath.row)! {
             case .signIn: signInTapped()

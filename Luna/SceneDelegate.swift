@@ -76,13 +76,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
 
         #if DEBUG
-        if let effect = ExperimentalSettingsScreen.debugEffectScreen(
-            named: debugLaunchArgValue(after: "-openEffect")) {
-            window.rootViewController = UINavigationController(rootViewController: effect)
-            self.window = window
-            window.makeKeyAndVisible()
-            return
-        }
         if let archiveArg = debugLaunchArgValue(after: "-openArchive"),
            let archiveURL = URL(string: archiveArg) {
             let item = ReadingListStore.shared.addIfAbsent(urlString: archiveURL.absoluteString)

@@ -20,8 +20,7 @@
 //  along an axis, e.g. right-to-left for a nav push).
 //
 //  Pure GPU: one draw call per frame, all per-fragment. Inputs are the two snapshot
-//  textures + a small uniform struct. Deliberately separate from the shipping
-//  DotMatrixEffect shader so that effect can't regress.
+//  textures + a small uniform struct.
 //
 
 #include <metal_stdlib>

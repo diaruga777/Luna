@@ -48,7 +48,6 @@
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.hsanabria.luna.inboxRefresh</string>
 		<string>com.hsanabria.luna.mailFetch</string>
 		<string>com.hsanabria.luna.priceRefresh</string>
 	</array>

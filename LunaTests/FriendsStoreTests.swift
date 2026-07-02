@@ -25,44 +25,49 @@ final class FriendsStoreTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeCard(username: String = "alice") -> IdentityCard {
-        IdentityCard(
-            uuid: UUID(), username: username, email: nil, phone: nil,
-            encryptionPublicKey: Data(repeating: 1, count: 32),
-            signingPublicKey: Data(repeating: 2, count: 32))
-    }
-
-    func testAddListDelete() {
-        let card = makeCard()
-        store.add(card)
+    func testAddListRemove() {
+        store.add(email: "Alice@Example.com", name: "Alice")
         XCTAssertEqual(store.items().count, 1)
-        XCTAssertEqual(store.friend(withUUID: card.uuid)?.card, card)
+        // Email is normalized (lowercased) and used as the identifier.
+        XCTAssertTrue(store.isFriend("alice@example.com"))
+        XCTAssertEqual(store.friend(withEmail: "alice@example.com")?.displayName, "Alice")
 
-        store.delete(uuid: card.uuid)
+        store.remove(email: "alice@example.com")
         XCTAssertTrue(store.items().isEmpty)
     }
 
-    func testReAddUpdatesProfileWithoutDuplicating() {
-        var card = makeCard(username: "alice")
-        store.add(card)
+    func testReAddUpdatesNameWithoutDuplicating() {
+        store.add(email: "alice@example.com")
         let originalDate = store.items().first?.dateAdded
-
-        card.username = "alice-renamed"
-        card.email = "alice@example.com"
-        card.signingPublicKey = Data(repeating: 9, count: 32)
-        store.add(card)
+        store.add(email: "alice@example.com", name: "Alice Renamed")
 
         let all = store.items()
         XCTAssertEqual(all.count, 1)
-        XCTAssertEqual(all.first?.card.username, "alice-renamed")
-        XCTAssertEqual(all.first?.card.signingPublicKey, Data(repeating: 9, count: 32))
+        XCTAssertEqual(all.first?.name, "Alice Renamed")
         XCTAssertEqual(all.first?.dateAdded, originalDate)
     }
 
+    func testDisplayNameFallsBackToLocalPart() {
+        store.add(email: "bob@example.com")
+        XCTAssertEqual(store.friend(withEmail: "bob@example.com")?.displayName, "bob")
+    }
+
+    func testFirstShareTracking() {
+        store.add(email: "alice@example.com")
+        XCTAssertTrue(store.markReceivedShare(email: "alice@example.com"))  // first
+        XCTAssertFalse(store.markReceivedShare(email: "alice@example.com")) // subsequent
+    }
+
     func testNewestFirstOrdering() {
-        store.add(makeCard(username: "first"))
+        store.add(email: "first@example.com")
         usleep(5000) // distinct dateAdded timestamps
-        store.add(makeCard(username: "second"))
-        XCTAssertEqual(store.items().map(\.card.username), ["second", "first"])
+        store.add(email: "second@example.com")
+        XCTAssertEqual(store.items().map(\.email), ["second@example.com", "first@example.com"])
+    }
+
+    func testEmailValidation() {
+        XCTAssertTrue(Friend.isValidEmail("a@b.com"))
+        XCTAssertFalse(Friend.isValidEmail("not-an-email"))
+        XCTAssertFalse(Friend.isValidEmail("a@b"))
     }
 }

@@ -83,10 +83,4 @@ final class MediaPlatformTests: XCTestCase {
         let again = store.createURLlessMediaItem(platform: .music, creator: "Artist", title: "Song")
         XCTAssertEqual(again.id, item.id)
     }
-
-    func testMediaItemMessageRoundTrip() throws {
-        let body = MessageBody.mediaItem(kind: .podcast, creator: "Show", title: "Episode 1")
-        let decoded = try MessageBody.decoded(from: try body.encoded())
-        XCTAssertEqual(decoded, body)
-    }
 }

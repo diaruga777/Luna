@@ -147,8 +147,9 @@ final class SettingsScreenTests: XCTestCase {
 
     private func autoSendDrilldowns() -> [(UITableViewController, Int, Int)] {
         // Section/row indices that push AutoSendBySourceScreen (from the VCs' source).
-        // Email & Kindle: section .kindle (1), row 0. Boox: section .send (1), row 0.
-        [(EmailAndKindleSettingsScreen(), 1, 0), (BooxSettingsScreen(), 1, 0)]
+        // Email & Kindle: section .kindle (2, after lunaAccount + account), row 0.
+        // Boox: section .send (1), row 0.
+        [(EmailAndKindleSettingsScreen(), 2, 0), (BooxSettingsScreen(), 1, 0)]
     }
 
     private func snapshotSubscreen(_ viewController: UIViewController, named name: String) {

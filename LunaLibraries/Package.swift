@@ -77,7 +77,7 @@ let package = Package(
         // IMAP/SMTP engine for the multi-provider email account, built on
         // URLSessionStreamTask (implicit TLS + STARTTLS for iCloud) — no external
         // deps. Reuses LunaMail's MIME parsers. Linked by the app, not extensions.
-        .target(name: "LunaMailTransport", dependencies: ["LunaMailAccount", "LunaMail"]),
+        .target(name: "LunaMailTransport", dependencies: ["LunaMailAccount", "LunaMail", "LunaSend"]),
         .target(name: "LunaDesignSystem", dependencies: ["LunaAppConfig", "LunaModels"]),
         .target(name: "LunaPlatforms", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaStorage", "LunaDesignSystem"]),
         .target(name: "LunaMediaDownload", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),

@@ -18,6 +18,22 @@ enum DotMatrixSnapshot {
         image(of: view, region: view.bounds, afterScreenUpdates: afterScreenUpdates)
     }
 
+    /// Cut the sub-rect `region` (in the same point space the image was captured in,
+    /// with matching origin) out of an existing snapshot. Exact for pixel-aligned
+    /// regions: the crop happens on the backing CGImage at the image's own scale, so
+    /// the result lines up 1:1 with a region-confined overlay at the same rect —
+    /// cheaper than re-rendering the hierarchy when a full snapshot already exists.
+    static func crop(_ image: UIImage, to region: CGRect) -> UIImage? {
+        guard let cg = image.cgImage else { return nil }
+        let scale = image.scale
+        let pixelRect = CGRect(x: region.origin.x * scale,
+                               y: region.origin.y * scale,
+                               width: region.width * scale,
+                               height: region.height * scale)
+        guard let cropped = cg.cropping(to: pixelRect) else { return nil }
+        return UIImage(cgImage: cropped, scale: scale, orientation: image.imageOrientation)
+    }
+
     /// Snapshot only the sub-rect `region` of `view`'s hierarchy (in `view`'s own
     /// coordinate space). The returned image is `region`-sized: the hierarchy is drawn
     /// through a translated context so the captured pixels line up exactly with that

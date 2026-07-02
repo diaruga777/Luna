@@ -83,9 +83,16 @@ open class NavHeaderTableController: UITableViewController {
     /// The trailing controls. Default: none. Override to supply right-side controls.
     open func makeTrailingControls() -> [UIView] { [] }
 
+    /// Installed at app launch so a modally-presented header screen dismisses
+    /// through the Dot Matrix wipe. LunaDesignSystem sits BELOW LunaTransitions in
+    /// the layering, so the wipe is injected rather than imported; nil ⇒ stock.
+    public static var modalDismisser: ((UIViewController) -> Void)?
+
     @objc open func navHeaderBack() {
         if let navigationController, navigationController.viewControllers.count > 1 {
             navigationController.popViewController(animated: true)
+        } else if let dismisser = Self.modalDismisser {
+            dismisser(self)
         } else {
             dismiss(animated: true)
         }

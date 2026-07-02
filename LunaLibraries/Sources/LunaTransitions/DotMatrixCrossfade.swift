@@ -25,10 +25,17 @@ public enum DotMatrixCrossfade {
     /// there, so everything outside keeps its live views and never pixelates. Pass nil
     /// (default) to wipe the whole `view.bounds` — behaviour identical to before. Use a
     /// `DotMatrixRegion.changedRegion(...)` result here to animate only changed areas.
+    ///
+    /// `chromeFade` (with a `region`) is for changes where the AREA OUTSIDE the region
+    /// also changes but must not pixelate — headers, footers, dimming. The pre-change
+    /// screen is held on a full-`view` snapshot that CROSSFADES to the live after state
+    /// over `DotMatrixModal.chromeFadeDuration` while the region wipes: chrome fades,
+    /// content dissolves. Without it, everything outside the region snaps instantly.
     public static func run(in view: UIView,
                            direction: DotMatrixWavefrontDirection = .random,
                            duration: TimeInterval? = nil,
                            region: CGRect? = nil,
+                           chromeFade: Bool = false,
                            changes: @escaping () -> Void,
                            completion: (() -> Void)? = nil) {
         // The sub-rect to wipe (and snapshot), clamped to the view. A region collapsing
@@ -43,6 +50,11 @@ public enum DotMatrixCrossfade {
             return
         }
 
+        // For the chrome fade, capture the whole pre-change screen while it's still on
+        // screen. Failure just means the chrome snaps instead of fading — not fatal.
+        let beforeFull = chromeFade
+            ? DotMatrixSnapshot.image(of: view, afterScreenUpdates: false) : nil
+
         changes()
         view.layoutIfNeeded()
 
@@ -50,6 +62,21 @@ public enum DotMatrixCrossfade {
               let overlay = DotMatrixTransitionCenter.shared.borrowOverlay(for: view.window) else {
             // Change is already applied; just finish.
             completion?(); return
+        }
+
+        // The held pre-change screen, fading out to reveal the live after-state chrome.
+        // Sits below the overlay, so inside the region only the wipe is visible.
+        if let beforeFull {
+            let chrome = UIImageView(image: beforeFull)
+            chrome.frame = view.bounds
+            chrome.autoresizingMask = []
+            chrome.contentMode = .scaleToFill
+            view.addSubview(chrome)
+            UIView.animate(withDuration: DotMatrixModal.chromeFadeDuration, animations: {
+                chrome.alpha = 0
+            }, completion: { _ in
+                chrome.removeFromSuperview()
+            })
         }
 
         overlay.style = DotMatrixTransitionStyleProvider.style(for: view.traitCollection)

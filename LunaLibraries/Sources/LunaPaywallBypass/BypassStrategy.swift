@@ -85,6 +85,7 @@ public enum CrawlerAgent: Equatable {
     case googlebotDesktop
     case googlebotMobile
     case bingbot
+    case facebookbot
 
     /// The literal User-Agent string to send.
     public var userAgent: String {
@@ -97,16 +98,18 @@ public enum CrawlerAgent: Equatable {
                 + "(compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
         case .bingbot:
             return "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)"
+        case .facebookbot:
+            return "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
         }
     }
 
-    /// A real crawler IP for the `X-Forwarded-For` header (Googlebot only; Bing
-    /// doesn't benefit from an XFF claim).
+    /// A real crawler IP for the `X-Forwarded-For` header (Googlebot only; Bing and
+    /// Facebook don't benefit from an XFF claim).
     public var xForwardedFor: String? {
         switch self {
         case .googlebotDesktop, .googlebotMobile:
             return "66.249.66.1"
-        case .bingbot:
+        case .bingbot, .facebookbot:
             return nil
         }
     }

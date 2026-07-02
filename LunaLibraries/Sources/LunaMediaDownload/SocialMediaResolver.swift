@@ -339,21 +339,7 @@ public enum InstagramMediaParser {
 
     /// Unescapes the JSON/HTML-encoded URLs Instagram embeds in markup.
     public static func unescape(_ string: String) -> String {
-        string
-            .replacingOccurrences(of: "\\u0026", with: "&")
-            .replacingOccurrences(of: "\\/", with: "/")
-            .replacingOccurrences(of: "&amp;", with: "&")
-    }
-
-    private static func firstGroup(in html: String, pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
-            return nil
-        }
-        let range = NSRange(html.startIndex..., in: html)
-        guard let match = regex.firstMatch(in: html, range: range), match.numberOfRanges > 1,
-              let group = Range(match.range(at: 1), in: html) else { return nil }
-        let value = String(html[group])
-        return value.isEmpty ? nil : value
+        LunaMediaDownload.unescape(string)
     }
 }
 
@@ -387,22 +373,24 @@ public enum FacebookMediaParser {
         return []
     }
 
-    /// Unescapes the JSON/HTML-encoded URLs Facebook embeds in markup.
-    public static func unescape(_ string: String) -> String {
-        string
-            .replacingOccurrences(of: "\\u0026", with: "&")
-            .replacingOccurrences(of: "\\/", with: "/")
-            .replacingOccurrences(of: "&amp;", with: "&")
-    }
+}
 
-    private static func firstGroup(in html: String, pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
-            return nil
-        }
-        let range = NSRange(html.startIndex..., in: html)
-        guard let match = regex.firstMatch(in: html, range: range), match.numberOfRanges > 1,
-              let group = Range(match.range(at: 1), in: html) else { return nil }
-        let value = String(html[group])
-        return value.isEmpty ? nil : value
+/// Unescapes the JSON/HTML-encoded URLs social pages embed in markup.
+private func unescape(_ string: String) -> String {
+    string
+        .replacingOccurrences(of: "\\u0026", with: "&")
+        .replacingOccurrences(of: "\\/", with: "/")
+        .replacingOccurrences(of: "&amp;", with: "&")
+}
+
+/// The first capture group of `pattern` in `html`, or nil when absent/empty.
+private func firstGroup(in html: String, pattern: String) -> String? {
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
+        return nil
     }
+    let range = NSRange(html.startIndex..., in: html)
+    guard let match = regex.firstMatch(in: html, range: range), match.numberOfRanges > 1,
+          let group = Range(match.range(at: 1), in: html) else { return nil }
+    let value = String(html[group])
+    return value.isEmpty ? nil : value
 }

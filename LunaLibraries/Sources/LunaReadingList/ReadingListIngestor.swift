@@ -249,7 +249,7 @@ public final class ReadingListIngestor {
         }
         if let matchID = ProductMatcher.bestMatch(for: product, among: existing),
            var matched = store.item(withID: matchID)?.priceTracker {
-            let stores = trackerStores(for: product, fallbackURL: url)
+            let stores = product.trackerStores(fallbackURL: url)
             let newStores = stores.filter { !matched.hasStore(urlString: $0.urlString) }
             guard !newStores.isEmpty else {
                 store.delete(item)
@@ -283,7 +283,7 @@ public final class ReadingListIngestor {
         }
 
         var tracker = PriceTracker(
-            productName: product.name, stores: trackerStores(for: product, fallbackURL: url),
+            productName: product.name, stores: product.trackerStores(fallbackURL: url),
             brand: product.brand, productID: product.productID)
         if let imageURL = product.imageURL,
            let data = await downloadProductImage(imageURL) {
@@ -305,23 +305,6 @@ public final class ReadingListIngestor {
         }
         postPriceTrackerSaved(itemID: item.id, source: item.effectiveCaptureSource,
                               isMerge: false, highlightedURL: nil)
-    }
-
-    private func trackerStores(for product: ProductInfo, fallbackURL: URL) -> [PriceTrackerStore] {
-        let now = Date()
-        let sellerStores = product.sellers.map {
-            PriceTrackerStore(
-                urlString: $0.url.absoluteString,
-                lastPrice: $0.price.amount,
-                currency: $0.price.currency,
-                lastRefreshed: now)
-        }
-        if !sellerStores.isEmpty { return sellerStores }
-        return [PriceTrackerStore(
-            urlString: fallbackURL.absoluteString,
-            lastPrice: product.priceAmount,
-            currency: product.priceCurrency,
-            lastRefreshed: now)]
     }
 
     /// Announces a just-created/merged price tracker from an interactive in-app

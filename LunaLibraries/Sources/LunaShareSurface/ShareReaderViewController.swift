@@ -109,7 +109,7 @@ public final class ShareReaderViewController: UIViewController {
             // A product page: save it as a price tracker silently (the reader can't
             // present the main-app price UI) and confirm — never paywall-treated.
             let tracker = PriceTracker(
-                productName: product.name, stores: trackerStores(for: product, fallbackURL: url),
+                productName: product.name, stores: product.trackerStores(fallbackURL: url),
                 brand: product.brand, productID: product.productID)
             ReadingListStore.shared.savePriceTracker(tracker, for: item.id)
             presentSavedConfirmation(productName: product.name)
@@ -125,23 +125,6 @@ public final class ShareReaderViewController: UIViewController {
         case .failed:
             presentFailure()
         }
-    }
-
-    private func trackerStores(for product: ProductInfo, fallbackURL: URL) -> [PriceTrackerStore] {
-        let now = Date()
-        let sellerStores = product.sellers.map {
-            PriceTrackerStore(
-                urlString: $0.url.absoluteString,
-                lastPrice: $0.price.amount,
-                currency: $0.price.currency,
-                lastRefreshed: now)
-        }
-        if !sellerStores.isEmpty { return sellerStores }
-        return [PriceTrackerStore(
-            urlString: fallbackURL.absoluteString,
-            lastPrice: product.priceAmount,
-            currency: product.priceCurrency,
-            lastRefreshed: now)]
     }
 
     /// Loads the article's archive.today snapshot in a web view so the user can

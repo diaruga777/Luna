@@ -85,11 +85,81 @@ A **fullscreen toggle** expands the preview to fill the screen (aspect-fit) and 
 Separate from the effects playground above: the **`LunaTransitions`** library wraps the
 `LunaContentRendering` Metal dissolve (`RabbitHoleTransitionView`) into UIKit transition
 helpers, all gated on `DotMatrixTransitionCenter.shared.isEnabled` (user toggle AND Metal
-availability — false ⇒ stock UIKit animation). Surfaces: `DotMatrixCrossfade` (in-place
-view change), `DotMatrixBatch` (table row updates), `DotMatrixSegmentedControl`,
-`DotMatrixAppear`, `DotMatrixTransitionSession` (nav push/pop). The RabbitHole reader's
-dive/pop/overscroll uses the `RabbitHoleTransitioning` protocol (`LunaReaderUI`), with the
-app-side Metal impl `Luna/Social/DotMatrixRabbitHoleTransition.swift`.
+availability — false ⇒ stock UIKit animation).
+
+> **Two toggles now** (Settings → Experimental): "Dot Matrix Transitions"
+> (`ReaderSettings.pixelWipeTransitionsEnabled`, legacy stored key
+> `rabbitHoleReaderEnabled`, ON by default) gates every wipe; "RabbitHole Reader"
+> (`ReaderSettings.rabbitHoleReaderEnabled`, stored key `rabbitHoleReaderStackEnabled`,
+> OFF by default) picks the forked stacked-layer reader in `ReaderHostFactory`. They
+> used to be ONE switch, which made the standard scroll reader (and its pixel-wiped
+> split-web inline reader) and the wipes mutually exclusive. Surfaces: `DotMatrixCrossfade` (in-place
+view change), `DotMatrixBatch` (table row updates), `DotMatrixModal` (modal
+present/dismiss — see below), `DotMatrixTransitionSession` (nav push/pop). The RabbitHole
+reader's dive/pop/overscroll uses the `RabbitHoleTransitioning` protocol (`LunaReaderUI`),
+with the app-side Metal impl `Luna/Social/DotMatrixRabbitHoleTransition.swift`.
+
+### Modal present/dismiss (`DotMatrixModal`) — cover-window choreography
+
+Every modal in all three apps (alerts, action sheets, bottom/form sheets, popovers,
+full-screen covers) presents/dismisses through `DotMatrixModal.present(_:from:)` /
+`DotMatrixModal.dismiss(_:)`. It does NOT use a `UIViewControllerTransitioningDelegate`
+(the removed first attempt — the transition container is empty for sheet/alert
+presentations, the dimming/stack-back chrome is private, and `UIAlertController` can't
+take a custom delegate; that's where the old artifacts came from). Instead the
+presentation really happens `animated:false` under an opaque **cover window** (level
+normal+50, below status bar/keyboard) showing a pre-captured screen snapshot, and the
+animation plays on top with real committed pixels:
+
+- **Partial-screen present**: (1) *chrome fade* — everything outside the modal's
+  resolved frame (dimming, sheet stack-back) crossfades between two full-window
+  snapshots over `chromeFadeDuration` (0.12s), never pixelating; (2) *region wipe* —
+  the two-wave dissolve confined to the modal's pixel-aligned frame (the modal-free
+  background is captured by briefly hiding the presentation's chrome view under the
+  cover). Dismiss mirrors it (wipe first, then un-dim fade). A final 0.08s cover fade
+  over the live UI softens anything snapshots can't know (shadows, mid-wipe motion).
+- **Full-screen present/dismiss**: one whole-screen wipe, like a nav push.
+- **Directions** (`DotMatrixModalStyle.automatic`, resolved from REAL post-layout
+  geometry so iPhone/iPad adaptations pick the right feel): full-screen and
+  bottom-anchored-wide modals = *movement* (`.bottomToTop` present / `.topToBottom`
+  dismiss); everything else (alerts, popovers, centred sheets) = *appear-in-place*
+  (`.random` — dots of the final UI materialise at their final position, then a second
+  random wave sharpens them).
+- **Fallbacks** (stock UIKit animation): toggle off / Metal missing, `animated:false`,
+  `UIView.areAnimationsEnabled == false` (tests), no window scene (app extensions),
+  remote out-of-process content that snapshots blank (`UIActivityViewController`,
+  `SFSafariViewController`, PH/document/image pickers — these keep stock animations
+  BY DESIGN), a modal stacked on top at dismiss time. Any mid-flight snapshot failure
+  degrades to an instant cut with the cover fading out — the screen can never be left
+  covered. `NavHeaderTableController.modalDismisser` (LunaDesignSystem sits below
+  LunaTransitions) is injected in AppDelegate so header-screen modal dismissals wipe.
+
+### Inline reader / lightbox opens (content wipes, chrome fades)
+
+`DotMatrixCrossfade.run(... chromeFade: true)` adds a full-view snapshot of the
+pre-change screen that fades out over `chromeFadeDuration` while the region wipes —
+for changes where the area OUTSIDE the region also changes but must only fade:
+
+- **Split-web inline reader** (`SplitWebOverlayViewController`): open/close wipes ONLY
+  the area that becomes the card's content (open card frame below its 68pt header);
+  the card header, peeks, dim, and chevron fade. Snapshots come from the WINDOW (the
+  overlay's own view is transparent at the margins/RSVP backdrop). The interactive
+  peek-drag keeps the live spring (including a drag-committed close — no style switch
+  mid-gesture); ✕/chevron closes wipe. Inner page push/pop wipes via
+  `DotMatrixAnimator` from the overlay's own nav delegate (the wipe overlay lives in
+  the nav container INSIDE the card, so the floating header stays live and static).
+- **Image lightbox** (`ImageLightboxViewController`): the image's final frame
+  materialises appear-in-place; dimming/close button fade. Close mirrors it (the
+  "after" restores the image copy onto its inline source frame). The drag-to-dismiss
+  fling stays live.
+- **Reading-list search overlay** (`ReadingListViewController`): the full-surface
+  in-place overlay show/hide is a plain full-bounds `DotMatrixCrossfade` (it replaces
+  the whole surface, header included).
+
+**Intentional exclusions**: the settings preview stage expand/collapse (DotMatrix /
+FrostedGlass / Stone screens) — it resizes a LIVE continuously-re-capturing Metal
+effect view, which a frozen snapshot wipe would visibly fight; toasts, spinners,
+gesture snap-backs and other micro-interactions per the rule below.
 
 ### Timing model (two waves, `DotMatrixTransitionSettings`)
 

@@ -102,6 +102,13 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// True while loading/extracting a pre-stage page (before any archive.today
     /// navigation).
     private var isAttemptingDirectBypass = false
+    /// True once a bot/verification CAPTCHA was seen on a direct-unlock pre-stage.
+    private var sawPreStageChallenge = false
+    /// True once we've reloaded the article with the site's referer AFTER the user
+    /// cleared a CAPTCHA — the site's own post-CAPTCHA reload drops our custom Referer,
+    /// so we re-issue the request (now carrying the clearance cookie AND the referer).
+    /// Guards against a reload loop.
+    private var didPostChallengeReload = false
     /// Poll ticks spent on the current pre-stage page; past `bypassPollLimit` without
     /// a readable extraction we advance to the next pre-stage (or the archive flow).
     private var bypassPollCount = 0
@@ -775,7 +782,20 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                         "archive: pre-stage CAPTCHA → revealing page for the user", category: "archive")
                 }
                 self.loadingOverlay.isHidden = true
+                self.sawPreStageChallenge = true
                 self.bypassPollCount = 0
+                return
+            }
+            // The CAPTCHA just cleared: the site's own post-CAPTCHA reload dropped our
+            // referer, so re-issue the article request ONCE — now with the clearance
+            // cookie set AND the referer the site unlocks for (e.g. WSJ → Drudge).
+            if self.sawPreStageChallenge, !self.didPostChallengeReload,
+               self.directUnlockReferer != nil {
+                self.didPostChallengeReload = true
+                SharedDiagnosticLog.record(
+                    "archive: CAPTCHA cleared → reloading article with referer", category: "archive")
+                self.loadingOverlay.isHidden = false
+                self.loadCurrentPreStage()   // reloads the article URL with the referer header
                 return
             }
             // An automated step — keep the page covered and run the timeout.

@@ -70,11 +70,23 @@ public enum DotMatrixModalStyle {
 public enum DotMatrixModal {
 
     /// How long the non-pixelating chrome (dimming, stack-back) takes to fade — the
-    /// same "chrome fades, content wipes" budget other region-confined surfaces use.
+    /// "chrome fades, content wipes" budget shared by the region-confined surfaces
+    /// (inline reader, lightbox, RabbitHole chrome).
     public static let chromeFadeDuration: TimeInterval = 0.12
+
+    // Modals run on a compressed timing set — deliberately FASTER than every other
+    // wipe: an alert or sheet blocks input, so it has to land quickly, while nav/
+    // reader wipes can afford the full configured timeline.
+
+    /// The modal wipe plays the global two-wave timeline at half its wall duration.
+    private static var wipeDuration: TimeInterval {
+        DotMatrixTransitionSettings.totalDuration * 0.5
+    }
+    /// The modal chrome (dimming) fade — quicker than the shared chrome budget.
+    private static let modalChromeFadeDuration: TimeInterval = 0.08
     /// The final cover fade over the live UI. Softens anything the snapshots can't
     /// know about (shadows outside the region, content that moved mid-wipe).
-    private static let revealFadeDuration: TimeInterval = 0.08
+    private static let revealFadeDuration: TimeInterval = 0.06
 
     // MARK: - Present
 
@@ -117,7 +129,7 @@ public enum DotMatrixModal {
                 }
                 install(overlay, frame: window.bounds, in: cover, traits: window.traitCollection,
                         direction: directions.present, before: beforeFull, after: after)
-                overlay.animateProgress(to: 1, duration: DotMatrixTransitionSettings.totalDuration) {
+                overlay.animateProgress(to: 1, duration: wipeDuration) {
                     teardown(cover, overlay: overlay, window: window, fade: true, completion: completion)
                 }
                 return
@@ -140,13 +152,13 @@ public enum DotMatrixModal {
 
             // Phase 1 — chrome fade: old screen → modal-free new background.
             cover.backView.image = background
-            UIView.animate(withDuration: chromeFadeDuration, animations: {
+            UIView.animate(withDuration: modalChromeFadeDuration, animations: {
                 cover.frontView.alpha = 0
             }, completion: { _ in
                 // Phase 2 — region wipe: background → modal, confined to its frame.
                 install(overlay, frame: region, in: cover, traits: window.traitCollection,
                         direction: directions.present, before: beforeRegion, after: afterRegion)
-                overlay.animateProgress(to: 1, duration: DotMatrixTransitionSettings.totalDuration) {
+                overlay.animateProgress(to: 1, duration: wipeDuration) {
                     teardown(cover, overlay: overlay, window: window, fade: true, completion: completion)
                 }
             })
@@ -210,7 +222,7 @@ public enum DotMatrixModal {
                 }
                 install(overlay, frame: window.bounds, in: cover, traits: window.traitCollection,
                         direction: directions.dismiss, before: beforeFull, after: after)
-                overlay.animateProgress(to: 1, duration: DotMatrixTransitionSettings.totalDuration) {
+                overlay.animateProgress(to: 1, duration: wipeDuration) {
                     teardown(cover, overlay: overlay, window: window, fade: true, completion: completion)
                 }
                 return
@@ -226,7 +238,7 @@ public enum DotMatrixModal {
             }
             install(overlay, frame: region, in: cover, traits: window.traitCollection,
                     direction: directions.dismiss, before: beforeRegion, after: backgroundRegion)
-            overlay.animateProgress(to: 1, duration: DotMatrixTransitionSettings.totalDuration) {
+            overlay.animateProgress(to: 1, duration: wipeDuration) {
                 // Phase 2 — chrome fade: swap to the modal-free image (pixel-identical
                 // to what's on screen: outside the region the two snapshots match, and
                 // the overlay's final frame IS the background region), then fade the
@@ -235,7 +247,7 @@ public enum DotMatrixModal {
                 cover.frontView.alpha = 1
                 cover.backView.image = nil
                 DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: window)
-                UIView.animate(withDuration: chromeFadeDuration, animations: {
+                UIView.animate(withDuration: modalChromeFadeDuration, animations: {
                     cover.rootViewController?.view.alpha = 0
                 }, completion: { _ in
                     teardown(cover, overlay: nil, window: window, fade: false, completion: completion)
@@ -346,6 +358,9 @@ public enum DotMatrixModal {
             if let overlay {
                 DotMatrixTransitionCenter.shared.returnOverlay(overlay, for: window)
             }
+            if DotMatrixKeyboardReveal.activeCover === cover {
+                DotMatrixKeyboardReveal.activeCover = nil
+            }
             cover.isHidden = true
             cover.rootViewController = nil
             completion?()
@@ -361,12 +376,19 @@ public enum DotMatrixModal {
 /// window (below the status bar and keyboard, which stay live), is never key, and
 /// swallows touches for the wipe's duration like any transition. `frontView` fades
 /// over `backView` for the chrome phases; the Metal overlay is added above both.
-private final class DotMatrixCoverWindow: UIWindow {
+final class DotMatrixCoverWindow: UIWindow {
 
     let backView = UIImageView()
     let frontView = UIImageView()
 
     var contentView: UIView { rootViewController?.view ?? self }
+
+    /// The full-window image currently showing — what a keyboard patch must copy so
+    /// its pixels match the screen (see `DotMatrixKeyboardReveal.activeCover`).
+    func visibleImage() -> UIImage? {
+        if frontView.alpha > 0.5, let image = frontView.image { return image }
+        return backView.image ?? frontView.image
+    }
 
     init(scene: UIWindowScene, front: UIImage) {
         super.init(windowScene: scene)
@@ -384,6 +406,8 @@ private final class DotMatrixCoverWindow: UIWindow {
         }
         frontView.image = front
         isHidden = false
+        // A keyboard rising during this choreography copies OUR pixels for its patch.
+        DotMatrixKeyboardReveal.activeCover = self
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }

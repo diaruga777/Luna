@@ -86,6 +86,7 @@ public final class RabbitHoleTransitionView: UIView {
         var direction: Float = 0
         var flipV: Float = 0
         var monochrome: Float = 0
+        var dissolveOut: Float = 0
     }
 
     /// The shared, lazily-built Metal context. Compiling the pipeline is the costly
@@ -96,6 +97,17 @@ public final class RabbitHoleTransitionView: UIView {
     public var style = RabbitHoleTransitionStyle() { didSet { renderFrame() } }
     /// Which way the wavefronts sweep. Set per call (push, pop, fade…) before animating.
     public var direction: DotMatrixWavefrontDirection = .random { didSet { renderFrame() } }
+    /// Dissolve-out mode: the BEFORE texture pixelates into dots over TRANSPARENT gaps
+    /// and fades away, revealing whatever LIVE content sits beneath the view — for
+    /// content that can't be snapshotted (the keyboard). The after texture is unused
+    /// (pass the before image to `configure` for both). Reset when the overlay is
+    /// returned to the transition centre.
+    public var dissolvesOut: Bool = false {
+        didSet {
+            metalLayer.isOpaque = !dissolvesOut
+            renderFrame()
+        }
+    }
 
     private let device: MTLDevice
     private let queue: MTLCommandQueue
@@ -139,6 +151,15 @@ public final class RabbitHoleTransitionView: UIView {
         desc.vertexFunction = vfn
         desc.fragmentFunction = ffn
         desc.colorAttachments[0].pixelFormat = .bgra8Unorm
+        // Premultiplied-alpha blending for the dissolve-out mode; a no-op for the
+        // opaque wipes (their fragments always come back with alpha 1).
+        desc.colorAttachments[0].isBlendingEnabled = true
+        desc.colorAttachments[0].rgbBlendOperation = .add
+        desc.colorAttachments[0].alphaBlendOperation = .add
+        desc.colorAttachments[0].sourceRGBBlendFactor = .one
+        desc.colorAttachments[0].sourceAlphaBlendFactor = .one
+        desc.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+        desc.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
         guard let pipeline = try? device.makeRenderPipelineState(descriptor: desc) else { return nil }
         return GPU(device: device, queue: queue, pipeline: pipeline)
     }
@@ -256,12 +277,14 @@ public final class RabbitHoleTransitionView: UIView {
         u.direction = Float(direction.rawValue)
         u.flipV = 0   // CGContext-drawn texture is already top-left origin
         u.monochrome = style.monochrome ? 1 : 0
+        u.dissolveOut = dissolvesOut ? 1 : 0
 
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        pass.colorAttachments[0].clearColor = MTLClearColor(
+            red: 0, green: 0, blue: 0, alpha: dissolvesOut ? 0 : 1)
 
         guard let cmd = queue.makeCommandBuffer(),
               let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }

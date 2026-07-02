@@ -69,6 +69,15 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // LunaTransitions, so the wipe is injected) dismiss through the pixel wipe.
         NavHeaderTableController.modalDismisser = { DotMatrixModal.dismiss($0) }
 
+        // The keyboard's appearance dissolves in as dots too (its window can't be
+        // snapshotted, so the reveal dissolves the pre-keyboard pixels OUT instead).
+        DotMatrixKeyboardReveal.install {
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap(\.windows)
+                .first { $0.isKeyWindow }
+        }
+
         // Wire the read-aloud first-run prompt's "Open Settings" to push the
         // Voice settings screen. Setting this hook is what enables the prompt in
         // the main app (extensions leave it nil → the prompt is skipped).

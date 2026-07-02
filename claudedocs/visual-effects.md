@@ -93,10 +93,12 @@ availability — false ⇒ stock UIKit animation).
 > (`ReaderSettings.rabbitHoleReaderEnabled`, stored key `rabbitHoleReaderStackEnabled`,
 > OFF by default) picks the forked stacked-layer reader in `ReaderHostFactory`. They
 > used to be ONE switch, which made the standard scroll reader (and its pixel-wiped
-> split-web inline reader) and the wipes mutually exclusive. Surfaces: `DotMatrixCrossfade` (in-place
-view change), `DotMatrixBatch` (table row updates), `DotMatrixModal` (modal
-present/dismiss — see below), `DotMatrixTransitionSession` (nav push/pop). The RabbitHole
-reader's dive/pop/overscroll uses the `RabbitHoleTransitioning` protocol (`LunaReaderUI`),
+> split-web inline reader) and the wipes mutually exclusive.
+
+Surfaces: `DotMatrixCrossfade` (in-place view change), `DotMatrixBatch` (table row
+updates), `DotMatrixModal` (modal present/dismiss — see below),
+`DotMatrixTransitionSession` (nav push/pop). The RabbitHole reader's
+dive/pop/overscroll uses the `RabbitHoleTransitioning` protocol (`LunaReaderUI`),
 with the app-side Metal impl `Luna/Social/DotMatrixRabbitHoleTransition.swift`.
 
 ### Modal present/dismiss (`DotMatrixModal`) — cover-window choreography
@@ -125,6 +127,10 @@ animation plays on top with real committed pixels:
   dismiss); everything else (alerts, popovers, centred sheets) = *appear-in-place*
   (`.random` — dots of the final UI materialise at their final position, then a second
   random wave sharpens them).
+- **Timing**: modals are deliberately FASTER than every other wipe (they block input):
+  the wipe plays the global timeline at HALF wall duration (`wipeDuration`), chrome
+  fade 0.08s (`modalChromeFadeDuration`), reveal fade 0.06s. Other surfaces keep the
+  full configured timeline + the shared 0.12s `chromeFadeDuration`.
 - **Fallbacks** (stock UIKit animation): toggle off / Metal missing, `animated:false`,
   `UIView.areAnimationsEnabled == false` (tests), no window scene (app extensions),
   remote out-of-process content that snapshots blank (`UIActivityViewController`,
@@ -155,6 +161,31 @@ for changes where the area OUTSIDE the region also changes but must only fade:
 - **Reading-list search overlay** (`ReadingListViewController`): the full-surface
   in-place overlay show/hide is a plain full-bounds `DotMatrixCrossfade` (it replaces
   the whole surface, header included).
+
+### RabbitHole dive/pop: content wipes, chrome fades (`contentRegion`)
+
+`RabbitHoleTransitioning.play/begin` take a `contentRegion` alongside `region`: only
+the DESTINATION focused layer's content area (its card below the 64pt floating header
+— `RabbitHoleReaderViewController.destinationContentRegion`) PIXELATES; the rest of
+the changed region (layer headers, lips, moving card chrome) CROSSFADES on a pair of
+before/after image views under the overlay (`DotMatrixRabbitHoleTransition.Stage`),
+tracking the finger 1:1 in the interactive overscroll/edge pops. nil ⇒ the whole
+region pixelates (old behaviour; the extension-side default overloads pass nil).
+
+### Keyboard appearance (`DotMatrixKeyboardReveal` + the engine's dissolve-out mode)
+
+The keyboard is out-of-process and CANNOT be snapshotted, so its wipe runs backwards:
+`RabbitHoleTransitionView.dissolvesOut` pixelates the BEFORE texture into dots over
+TRANSPARENT gaps and fades them away (premultiplied blending; `returnOverlay` resets
+the mode), revealing whatever LIVE content sits beneath the layer. On
+`keyboardWillShow` a touch-transparent patch window ABOVE the keyboard's window
+(level 2e7) holds the pre-keyboard pixels — copied from the modal cover's image when
+one is up (`DotMatrixKeyboardReveal.activeCover`), else the live window — the
+keyboard rises invisibly beneath it, and on `keyboardDidShow` the patch dissolves out
+in 0.15s (bottom-to-top wave). Frame CHANGES while visible, hardware-keyboard bars
+and floating iPad keyboards are ignored; a hide mid-reveal tears down instantly.
+Installed once in AppDelegate via `DotMatrixKeyboardReveal.install(windowProvider:)`
+(a closure, so the library stays extension-safe).
 
 **Intentional exclusions**: the settings preview stage expand/collapse (DotMatrix /
 FrostedGlass / Stone screens) — it resizes a LIVE continuously-re-capturing Metal

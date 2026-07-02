@@ -9,7 +9,7 @@
 
 import UIKit
 
-enum DotMatrixSnapshot {
+public enum DotMatrixSnapshot {
     /// Snapshot `view`'s own hierarchy at its current bounds. `afterScreenUpdates`
     /// true flushes pending layout first (use for the post-change "after" image);
     /// false captures the already-committed state (use for the "before" image, with
@@ -23,7 +23,7 @@ enum DotMatrixSnapshot {
     /// regions: the crop happens on the backing CGImage at the image's own scale, so
     /// the result lines up 1:1 with a region-confined overlay at the same rect —
     /// cheaper than re-rendering the hierarchy when a full snapshot already exists.
-    static func crop(_ image: UIImage, to region: CGRect) -> UIImage? {
+    public static func crop(_ image: UIImage, to region: CGRect) -> UIImage? {
         guard let cg = image.cgImage else { return nil }
         let scale = image.scale
         let pixelRect = CGRect(x: region.origin.x * scale,

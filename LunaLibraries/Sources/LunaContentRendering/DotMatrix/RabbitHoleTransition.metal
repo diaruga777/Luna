@@ -43,6 +43,8 @@ struct RHTransitionUniforms {
     float  direction;     // 0 random, 1 L→R, 2 R→L, 3 T→B, 4 B→T
     float  flipV;         // 0/1 sample with vertical flip (texture origin fix)
     float  monochrome;    // 0 colour, 1 greyscale
+    float  dissolveOut;   // 1 ⇒ A dissolves to TRANSPARENT dots (reveals live content
+                          // beneath the layer, e.g. the keyboard) instead of to B
 };
 
 struct RHVSOut {
@@ -83,6 +85,7 @@ fragment float4 rh_transition_fragment(RHVSOut in [[stage_in]],
         a.a = 1.0; return a;
     }
     if (U.progress >= 1.0) {
+        if (U.dissolveOut > 0.5) { return float4(0.0); }   // fully revealed
         float4 b = texB.sample(s, sampleUV);
         if (U.monochrome > 0.5) b.rgb = rh_mono(b.rgb);
         b.a = 1.0; return b;
@@ -158,6 +161,17 @@ fragment float4 rh_transition_fragment(RHVSOut in [[stage_in]],
 
     float local1 = clamp((U.progress - t1) / winN, 0.0, 1.0);
     float local2 = clamp((U.progress - t2) / winN, 0.0, 1.0);
+
+    // Dissolve-out: A → pixelated dots of A over TRANSPARENT gaps → gone. Alpha is
+    // premultiplied (the pipeline blends over whatever live content sits beneath the
+    // layer — this is how the keyboard, which can't be snapshotted, gets revealed).
+    if (U.dissolveOut > 0.5) {
+        float4 pixA = texA.sample(s, cellSampleUV);
+        if (U.monochrome > 0.5) pixA.rgb = rh_mono(pixA.rgb);
+        float3 rgb = mix(rawA.rgb, pixA.rgb, local1);
+        float alpha = mix(1.0, dotMask, local1) * (1.0 - local2);
+        return float4(rgb * alpha, alpha);
+    }
 
     // Composite: A → pixelated dot → B.
     float4 c = mix(rawA, pix, local1);

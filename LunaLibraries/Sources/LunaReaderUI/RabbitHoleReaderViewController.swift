@@ -126,6 +126,48 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         NotificationCenter.default.addObserver(
             self, selector: #selector(persist),
             name: UIApplication.didEnterBackgroundNotification, object: nil)
+
+        addSimulatorDiveHooksIfNeeded()
+    }
+
+    /// Sim-only alternative tap targets for the dive/pop transitions: the automation
+    /// harness can't tap text-view link glyphs (see claudedocs/simulator-testing.md),
+    /// so these buttons drive the same `pushLayer`/`popToLayer` paths a link tap and
+    /// the header back button use. Never ships on device.
+    private func addSimulatorDiveHooksIfNeeded() {
+        #if targetEnvironment(simulator)
+        // Suppressed during deterministic UI-test launches (matches UITestLaunch.isActive,
+        // which lives in the app target — inlined here to avoid an upward dependency).
+        let uiTestArgs = ["-uiTestState", "-uiTestScreen", "-uiTestOnboardingStep"]
+        if ProcessInfo.processInfo.arguments.contains(where: uiTestArgs.contains) { return }
+        func hookButton(_ title: String, action: @escaping () -> Void) -> UIButton {
+            var config = UIButton.Configuration.filled()
+            config.title = title
+            config.baseBackgroundColor = .systemPurple
+            let button = UIButton(configuration: config)
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.layer.zPosition = 500   // above the layer cards, below the wipe overlay
+            button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+            view.addSubview(button)
+            return button
+        }
+        let dive = hookButton("Sim Dive") { [weak self] in
+            guard let self, let focused = self.layers[safe: self.focus],
+                  let url = URL(string: "https://en.wikipedia.org/wiki/Swift_(programming_language)")
+            else { return }
+            self.pushLayer(url: url, lineText: "Sim Dive", from: focused)
+        }
+        let pop = hookButton("Sim Pop") { [weak self] in
+            guard let self, self.topIndex > 0 else { return }
+            self.popToLayer(self.topIndex - 1)
+        }
+        NSLayoutConstraint.activate([
+            dive.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            dive.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -24),
+            pop.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            pop.topAnchor.constraint(equalTo: dive.bottomAnchor, constant: 12),
+        ])
+        #endif
     }
 
     public override func viewDidAppear(_ animated: Bool) {
@@ -345,6 +387,18 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         return region
     }
 
+    /// The CONTENT area (the card below its floating header) of the layer that will
+    /// be focused once the transition lands, at its final placement — the only part of
+    /// the screen the wipe pixelates. Header/lip/card chrome inside the changed region
+    /// crossfades instead (see `RabbitHoleTransitioning`'s `contentRegion`).
+    private func destinationContentRegion(focus f: Int) -> CGRect {
+        let p = layout.placement(layerIndex: f, focusedIndex: f,
+                                 bounds: view.bounds, safeArea: view.safeAreaInsets)
+        let content = RabbitHoleLayerViewController.contentWipeRegion(
+            in: CGRect(origin: .zero, size: p.cardFrame.size))
+        return content.offsetBy(dx: p.cardFrame.minX, dy: p.cardFrame.minY).integral
+    }
+
     // MARK: - Dive / pop
 
     private func pushLayer(url: URL, lineText: String?, from focused: RabbitHoleLayerViewController) {
@@ -366,7 +420,9 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         // lip on a depth-2 push) are excluded so they stay perfectly static.
         let region = changedRegion(fromFocus: focus, fromCount: layers.count,
                                    toFocus: focus + 1, toCount: layers.count + 1)
-        runTransition(region: region, applyState: { [weak self] in
+        runTransition(region: region,
+                      contentRegion: destinationContentRegion(focus: focus + 1),
+                      applyState: { [weak self] in
             guard let self else { return }
             self.addLayer(RabbitHoleLayerDescriptor(urlString: url.absoluteString),
                           preloadedContent: preloaded)
@@ -397,7 +453,9 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         // ancestor lips are excluded from the wipe.
         let region = changedRegion(fromFocus: focus, fromCount: layers.count,
                                    toFocus: index, toCount: index + 1)
-        runTransition(region: region, applyState: { [weak self] in
+        runTransition(region: region,
+                      contentRegion: destinationContentRegion(focus: index),
+                      applyState: { [weak self] in
             guard let self else { return }
             self.trimLayers(above: index)
             self.focus = index
@@ -426,6 +484,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// just the changed area: the overlay and both snapshots cover only that sub-rect, so
     /// unchanged regions (e.g. the layer-0 lip) keep their live views and never pixelate.
     private func runTransition(region: CGRect? = nil,
+                               contentRegion: CGRect? = nil,
                                applyState: @escaping () -> Void,
                                completion: @escaping () -> Void) {
         guard let transition else {   // no Metal → instant cut
@@ -449,7 +508,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             self.view.layoutIfNeeded()
             let after = self.snapshot(region: region, afterScreenUpdates: true)
             return (before, after)
-        }, in: view, region: region) { [weak self] in
+        }, in: view, region: region, contentRegion: contentRegion) { [weak self] in
             self?.transitionInFlight = false
             completion()
         }
@@ -543,7 +602,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         view.layoutIfNeeded()
         let after = snapshot(region: region, afterScreenUpdates: true)   // re-focused parent must render fresh
         applyFocus()                     // restore the live before state
-        interactive = transition.begin(before: before, after: after, in: view, region: region)
+        interactive = transition.begin(before: before, after: after, in: view, region: region,
+                                       contentRegion: destinationContentRegion(focus: topIndex - 1))
     }
 
     private func endOverscroll() {
@@ -611,7 +671,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         view.layoutIfNeeded()
         let after = snapshot(region: region, afterScreenUpdates: true)
         applyFocus()   // restore the live before state
-        interactive = transition.begin(before: before, after: after, in: view, region: region)
+        interactive = transition.begin(before: before, after: after, in: view, region: region,
+                                       contentRegion: destinationContentRegion(focus: topIndex - 1))
     }
 
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,

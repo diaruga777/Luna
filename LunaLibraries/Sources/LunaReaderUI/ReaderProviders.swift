@@ -70,28 +70,38 @@ public protocol RabbitHoleTransitioning: AnyObject {
     /// Pass nil ⇒ a full-`container.bounds` wipe (full-`bounds`-sized images), identical
     /// to before. The host computes the region from a UIView-level changed-region diff so
     /// genuinely-unchanged chrome (e.g. layer-0 lips) stays perfectly static.
+    ///
+    /// `contentRegion` (in `container`'s coordinate space, a sub-rect of the region)
+    /// splits the region in two: only `contentRegion` PIXELATES; the rest of the region
+    /// — layer headers, lips, moving card chrome — CROSSFADES between the before/after
+    /// images instead. The host passes the destination focused layer's content area
+    /// (its card below the floating header) so header/footer chrome never pixelates.
+    /// nil ⇒ the whole region pixelates (the pre-contentRegion behaviour).
     func play(prepare: @escaping () -> (before: UIImage, after: UIImage),
-              in container: UIView, region: CGRect?, completion: @escaping () -> Void)
+              in container: UIView, region: CGRect?, contentRegion: CGRect?,
+              completion: @escaping () -> Void)
     /// Begin an interactive wipe; drive the returned handle with `update(progress:)`
     /// (0 = before, 1 = after) and end it with `finish(committed:completion:)`.
     ///
-    /// `region` confines the wipe exactly as in `play(prepare:in:region:completion:)`:
-    /// the `before`/`after` images are that-region-sized and the overlay is framed to it;
-    /// nil ⇒ a full-`container.bounds` wipe.
+    /// `region` and `contentRegion` behave exactly as in
+    /// `play(prepare:in:region:contentRegion:completion:)`; interactively, the chrome
+    /// crossfade outside `contentRegion` tracks `update(progress:)` finger-for-finger.
     func begin(before: UIImage, after: UIImage,
-               in container: UIView, region: CGRect?) -> RabbitHoleInteractiveTransition
+               in container: UIView, region: CGRect?, contentRegion: CGRect?)
+        -> RabbitHoleInteractiveTransition
 }
 
 public extension RabbitHoleTransitioning {
     /// Full-screen convenience: wipe the whole `container.bounds` (the pre-region API).
     func play(prepare: @escaping () -> (before: UIImage, after: UIImage),
               in container: UIView, completion: @escaping () -> Void) {
-        play(prepare: prepare, in: container, region: nil, completion: completion)
+        play(prepare: prepare, in: container, region: nil, contentRegion: nil,
+             completion: completion)
     }
     /// Full-screen convenience: begin a whole-`container.bounds` interactive wipe.
     func begin(before: UIImage, after: UIImage,
                in container: UIView) -> RabbitHoleInteractiveTransition {
-        begin(before: before, after: after, in: container, region: nil)
+        begin(before: before, after: after, in: container, region: nil, contentRegion: nil)
     }
 }
 

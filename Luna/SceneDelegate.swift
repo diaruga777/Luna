@@ -21,7 +21,8 @@ import UIKit
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// Per-app (private defaults) flag: each Luna app shows onboarding once.
-    private static let onboardingCompleteKey = "hasCompletedOnboarding"
+    /// Shared with AppDelegate (notification-authorization gating).
+    static let onboardingCompleteKey = "hasCompletedOnboarding"
 
     var window: UIWindow?
 

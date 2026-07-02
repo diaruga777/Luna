@@ -159,7 +159,7 @@ enum UITestFixtures {
                              title: "Shared By A Friend", daysAgo: 2, sharedBy: "alex"))
 
         // Document
-        var doc = ReadingListItem(
+        let doc = ReadingListItem(
             seed: "doc-pdf", urlString: "lunadoc://report.pdf",
             title: "Quarterly Report.pdf", dateAdded: ago(days: 4),
             state: .ready, wordCount: 1200, documentType: "pdf", captureSource: .shareSheet)

@@ -20,7 +20,6 @@ import Foundation
 /// Apps that need no model response (Safari) accept a nil or empty string and fall
 /// back to the tracked page URL. If the model errors or finds nothing it returns an
 /// empty/"none" string, which is treated as "nothing to save".
-/// Returns the share-suggestion token (see LunaSafariPageIntent).
 public struct SaveFromAppIntent: AppIntent {
     public init() {}
     public static let title: LocalizedStringResource = "Save from App"
@@ -112,7 +111,7 @@ public struct SaveFromAppIntent: AppIntent {
     }
 
     private func saveYouTube(channel: String?, title: String?) async throws {
-        guard GoogleAuthClient.shared.isSignedIn else { throw SaveError.youTubeNotSignedIn }
+        guard await GoogleAuthClient.shared.isSignedIn else { throw SaveError.youTubeNotSignedIn }
         guard let channel, let title, !channel.isEmpty, !title.isEmpty else {
             throw SaveError.missingValues
         }

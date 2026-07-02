@@ -113,7 +113,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // for already-onboarded users, ensure authorization (new users get the
         // prompt during onboarding's notifications step, with context).
         UNUserNotificationCenter.current().delegate = self
-        if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
+        if UserDefaults.standard.bool(forKey: SceneDelegate.onboardingCompleteKey) {
             NotificationManager.requestAuthorization()
         }
 
@@ -168,13 +168,17 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         guard let task else { return }
         DiagnosticLog.shared.record("mail-fetch task fired", category: "mail")
         scheduleMailFetch() // chain the next one (~twice daily)
-        let work = Task {
-            await IncomingMailImporter.shared.importNewMail()
-            task.setTaskCompleted(success: true)
-        }
+        // Expiration handler installed BEFORE the work starts, and an expired
+        // run reports failure — mirrors handlePriceRefresh, so the scheduler's
+        // model of this task stays honest.
+        var work: Task<Void, Never>?
         task.expirationHandler = {
             DiagnosticLog.shared.record("mail-fetch task expired", category: "mail")
-            work.cancel()
+            work?.cancel()
+        }
+        work = Task {
+            await IncomingMailImporter.shared.importNewMail()
+            task.setTaskCompleted(success: !Task.isCancelled)
         }
     }
 

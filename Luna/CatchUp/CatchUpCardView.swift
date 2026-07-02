@@ -25,6 +25,9 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
     /// Fired once the card commits to an action (after the fly-off animation starts).
     var onAction: ((Action) -> Void)?
 
+    /// Latched by the first fly-off so a racing second tap/swipe can't commit twice.
+    private var didCommit = false
+
     /// A LOCKED card (a paywalled item awaiting its archive unlock): the left
     /// action becomes **Unlock** (not Keep), and Bump (left-then-up) is disabled.
     /// Right is still Archive. Set before the card is shown.
@@ -259,6 +262,12 @@ final class CatchUpCardView: UIView, UIGestureRecognizerDelegate {
             onAction?(.unlock)
             return
         }
+        // One commit per card: the buttons stay tappable during the 0.3 s fly-off,
+        // and a second tap (or a swipe racing a tap) would run two animations whose
+        // completions both fire onAction — silently acting on the NEXT, never-shown
+        // card as well.
+        guard !didCommit else { return }
+        didCommit = true
         // Stays rasterized through the fly-off (rotated the whole way, then removed).
         setRasterizedDuringRotation(true)
         let width = superview?.bounds.width ?? UIScreen.main.bounds.width

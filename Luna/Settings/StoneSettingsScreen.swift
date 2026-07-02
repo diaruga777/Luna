@@ -48,65 +48,70 @@ final class StoneSettingsScreen: UIViewController, UITableViewDataSource, UITabl
 
     // MARK: Slider groups
 
+    // SliderSpec closures capture the value-type `settings` store, NOT self:
+    // these arrays are stored on self, so a self capture would be a permanent
+    // retain cycle — the screen (and any CADisplayLink/AVPlayer it started for
+    // the live preview) would never deinit.
+
     // Body section = these sliders, then the stone Tint colour cell.
     private lazy var bodySliders: [SliderSpec] = [
         SliderSpec(title: "Frost Blur", range: StoneSettings.blurRange,
-                   get: { self.settings.blurRadius }, set: { self.settings.blurRadius = $0 },
+                   get: { [settings] in settings.blurRadius }, set: { [settings] in settings.blurRadius = $0 },
                    format: { String(format: "%.0f pt", $0) }),
         SliderSpec(title: "Grain", range: StoneSettings.grainRange,
-                   get: { self.settings.grain }, set: { self.settings.grain = $0 }),
+                   get: { [settings] in settings.grain }, set: { [settings] in settings.grain = $0 }),
         SliderSpec(title: "Refraction", range: StoneSettings.distortionRange,
-                   get: { self.settings.distortion }, set: { self.settings.distortion = $0 },
+                   get: { [settings] in settings.distortion }, set: { [settings] in settings.distortion = $0 },
                    format: { String(format: "%.0f pt", $0) }),
         SliderSpec(title: "Translucency", range: StoneSettings.translucencyRange,
-                   get: { self.settings.translucency }, set: { self.settings.translucency = $0 }),
+                   get: { [settings] in settings.translucency }, set: { [settings] in settings.translucency = $0 }),
         SliderSpec(title: "Surface Scale", range: StoneSettings.surfaceScaleRange,
-                   get: { self.settings.surfaceScale }, set: { self.settings.surfaceScale = $0 },
+                   get: { [settings] in settings.surfaceScale }, set: { [settings] in settings.surfaceScale = $0 },
                    format: { String(format: "%.0f pt", $0) }),
     ]
 
     private lazy var toneSliders: [SliderSpec] = [
         SliderSpec(title: "Saturation", range: StoneSettings.saturationRange,
-                   get: { self.settings.saturation }, set: { self.settings.saturation = $0 },
+                   get: { [settings] in settings.saturation }, set: { [settings] in settings.saturation = $0 },
                    format: { String(format: "%.2f×", $0) }),
         SliderSpec(title: "Brightness", range: StoneSettings.brightnessRange,
-                   get: { self.settings.brightness }, set: { self.settings.brightness = $0 },
+                   get: { [settings] in settings.brightness }, set: { [settings] in settings.brightness = $0 },
                    format: { String(format: "%.2f×", $0) }),
     ]
 
     private lazy var stylizeSliders: [SliderSpec] = [
         SliderSpec(title: "Chromatic Aberration", range: StoneSettings.chromaticRange,
-                   get: { self.settings.chromaticAberration }, set: { self.settings.chromaticAberration = $0 },
+                   get: { [settings] in settings.chromaticAberration }, set: { [settings] in settings.chromaticAberration = $0 },
                    format: { $0 < 0.1 ? "Off" : String(format: "%.1f px", $0) }),
         SliderSpec(title: "Scanlines", range: StoneSettings.scanlineStrengthRange,
-                   get: { self.settings.scanlineStrength }, set: { self.settings.scanlineStrength = $0 },
+                   get: { [settings] in settings.scanlineStrength }, set: { [settings] in settings.scanlineStrength = $0 },
                    format: { $0 < 0.01 ? "Off" : String(format: "%.0f%%", $0 * 100) }),
         SliderSpec(title: "Scanline Spacing", range: StoneSettings.scanlineSpacingRange,
-                   get: { self.settings.scanlineSpacing }, set: { self.settings.scanlineSpacing = $0 },
+                   get: { [settings] in settings.scanlineSpacing }, set: { [settings] in settings.scanlineSpacing = $0 },
                    format: { String(format: "%.0f px", $0) }),
     ]
 
     private lazy var rippleSliders: [SliderSpec] = [
         SliderSpec(title: "Push Distance", range: StoneSettings.ripplePushRange,
-                   get: { self.settings.ripplePush }, set: { self.settings.ripplePush = $0 },
+                   get: { [settings] in settings.ripplePush }, set: { [settings] in settings.ripplePush = $0 },
                    format: { String(format: "%.0f pt", $0) }),
         SliderSpec(title: "Wave Speed", range: StoneSettings.rippleSpeedRange,
-                   get: { self.settings.rippleSpeed }, set: { self.settings.rippleSpeed = $0 },
+                   get: { [settings] in settings.rippleSpeed }, set: { [settings] in settings.rippleSpeed = $0 },
                    format: { String(format: "%.0f pt/s", $0) }),
         SliderSpec(title: "Ring Width", range: StoneSettings.rippleWidthRange,
-                   get: { self.settings.rippleWidth }, set: { self.settings.rippleWidth = $0 },
+                   get: { [settings] in settings.rippleWidth }, set: { [settings] in settings.rippleWidth = $0 },
                    format: { String(format: "%.0f pt", $0) }),
         SliderSpec(title: "Reveal Edge", range: StoneSettings.rippleEdgeRange,
-                   get: { self.settings.rippleEdge }, set: { self.settings.rippleEdge = $0 },
+                   get: { [settings] in settings.rippleEdge }, set: { [settings] in settings.rippleEdge = $0 },
                    format: { String(format: "%.0f pt", $0) }),
         SliderSpec(title: "Dispersion λ", range: StoneSettings.rippleWavelengthRange,
-                   get: { self.settings.rippleWavelength }, set: { self.settings.rippleWavelength = $0 },
+                   get: { [settings] in settings.rippleWavelength }, set: { [settings] in settings.rippleWavelength = $0 },
                    format: { $0 < 1 ? "Off" : String(format: "%.0f pt", $0) }),
         SliderSpec(title: "Dispersion Decay", range: StoneSettings.rippleDecayRange,
-                   get: { self.settings.rippleDecay }, set: { self.settings.rippleDecay = $0 },
+                   get: { [settings] in settings.rippleDecay }, set: { [settings] in settings.rippleDecay = $0 },
                    format: { String(format: "%.0f pt", $0) }),
         SliderSpec(title: "Duration", range: StoneSettings.rippleDurationRange,
-                   get: { self.settings.rippleDuration }, set: { self.settings.rippleDuration = $0 },
+                   get: { [settings] in settings.rippleDuration }, set: { [settings] in settings.rippleDuration = $0 },
                    format: { $0 < 0.01 ? "Auto" : String(format: "%.2f s", $0) }),
     ]
 
@@ -315,7 +320,7 @@ final class StoneSettingsScreen: UIViewController, UITableViewDataSource, UITabl
     private func revealAngleCell() -> UITableViewCell {
         sliderCell(SliderSpec(
             title: "Reveal Angle", range: StoneSettings.revealAngleRange,
-            get: { self.settings.revealAngle }, set: { self.settings.revealAngle = $0 },
+            get: { [settings] in settings.revealAngle }, set: { [settings] in settings.revealAngle = $0 },
             format: { String(format: "%.0f°", $0 * 180 / .pi) }))
     }
 

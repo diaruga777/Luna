@@ -130,7 +130,9 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                                  text: KeychainSendCredentialsStore.shared.smtpPassword() ?? "",
                                  field: .password, secure: true)
             case .kindleAddress:
-                break
+                // Not an account row (`accountRows` never contains it) — it
+                // renders in the .kindle section below.
+                assertionFailure("kindleAddress is not an account row")
             }
 
         case .kindle:
@@ -262,7 +264,12 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         textField.keyboardType = secure ? .default : .emailAddress
         textField.textAlignment = .right
         textField.textColor = .secondaryLabel
-        textField.addTarget(self, action: #selector(fieldEdited(_:)), for: .editingChanged)
+        // The password commits on end-of-editing only: it persists to the
+        // Keychain, and a round-trip per keystroke (plus a duplicate write on
+        // commit) is wasteful. The UserDefaults-backed fields stay live.
+        if field != .password {
+            textField.addTarget(self, action: #selector(fieldEdited(_:)), for: .editingChanged)
+        }
         textField.addTarget(self, action: #selector(fieldEdited(_:)), for: .editingDidEnd)
 
         nameLabel.translatesAutoresizingMaskIntoConstraints = false

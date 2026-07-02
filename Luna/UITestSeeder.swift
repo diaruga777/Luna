@@ -123,8 +123,8 @@ enum UITestSeeder {
     /// sections) so a seeded launch always starts on the All filter with the default
     /// collapsed set — neither a prior run nor a prior test can carry state in.
     static func resetReadingListDefaults() {
-        UserDefaults.standard.removeObject(forKey: "readingListFilter")
-        UserDefaults.standard.removeObject(forKey: "readingListCollapsedSections")
+        UserDefaults.standard.removeObject(forKey: ReadingListViewController.filterDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: ReadingListViewController.collapsedDefaultsKey)
     }
 
     /// The value following `key` in the launch arguments (`-key value`), or nil.

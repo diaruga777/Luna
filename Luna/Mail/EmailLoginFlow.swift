@@ -81,7 +81,13 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
 
     @objc private func cancel() { dismiss(animated: true) { self.completion?(false) } }
 
+    /// Latched while autodiscovery runs: the return key and Continue button stay
+    /// active during the (network) resolve, and repeated taps would push several
+    /// credential screens onto the stack.
+    private var isResolving = false
+
     @objc private func continueTapped() {
+        guard !isResolving else { return }
         let address = (field.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard address.contains("@"), address.contains(".") else {
             field.shake()
@@ -94,8 +100,10 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
             return
         }
         // App-password providers (and generic, resolved below).
+        isResolving = true
         Task { @MainActor in
-            let server = try await resolveServer(providerID: providerID, address: address)
+            defer { isResolving = false }
+            let server = await resolveServer(providerID: providerID, address: address)
             let account = EmailAccount(
                 providerID: providerID, address: address, displayName: nil, server: server)
             let credential = CredentialViewController(account: account, completion: completion)
@@ -105,7 +113,7 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
 
     /// Resolves IMAP/SMTP settings: the registry entry for known providers, or
     /// ISPDB autodiscovery (falling back to Gmail-like defaults) for custom domains.
-    private func resolveServer(providerID: MailProvider.ID, address: String) async throws -> MailServerConfig {
+    private func resolveServer(providerID: MailProvider.ID, address: String) async -> MailServerConfig {
         if let server = MailProvider.provider(for: providerID).server { return server }
         if let domain = ProviderInference.domain(of: address),
            let discovered = await ProviderInference.autodiscover(domain: domain) {

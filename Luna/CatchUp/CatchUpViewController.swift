@@ -275,10 +275,14 @@ final class CatchUpViewController: UIViewController {
             primaryButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
             secondaryButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             secondaryButton.bottomAnchor.constraint(equalTo: primaryButton.bottomAnchor),
-            secondaryButton.leadingAnchor.constraint(equalTo: primaryButton.trailingAnchor, constant: 12),
             primaryButton.widthAnchor.constraint(equalTo: secondaryButton.widthAnchor),
             cardArea.bottomAnchor.constraint(equalTo: primaryButton.topAnchor, constant: -16),
         ])
+        // The secondary button's leading edge is owned exclusively by the
+        // split/full-width pair that `setBottomButtons` toggles — an extra
+        // always-on copy here would conflict with the Done screen's full-width
+        // state and break an arbitrary constraint.
+        primaryLeadingToSecondary?.isActive = true
     }
 
     // MARK: - Cards

@@ -79,8 +79,10 @@ final class ReadingListViewController: UITableViewController {
         ReadingListSectioning.rendersAsReader(item)
     }
 
-    private static let filterDefaultsKey = "readingListFilter"
-    private static let collapsedDefaultsKey = "readingListCollapsedSections"
+    // Internal (not private): UITestSeeder resets these between runs — a key
+    // rename must not silently reintroduce cross-run state bleed.
+    static let filterDefaultsKey = "readingListFilter"
+    static let collapsedDefaultsKey = "readingListCollapsedSections"
 
     private var filter: ListFilter {
         get {
@@ -304,18 +306,22 @@ final class ReadingListViewController: UITableViewController {
 
         guard pasteboard.hasURLs, let url = pasteboard.url else {
             // Pasteboard changed to something with no URL — drop any stale row.
-            if pasteboardCandidate != nil || evaluatingPasteboardURL != nil {
-                pasteboardCandidate = nil
-                evaluatingPasteboardURL = nil
-                reload()
-            }
+            dropPasteboardRow()
+            return
+        }
+        // A non-ingestable or already-saved copy also invalidates whatever the
+        // row was showing — the pasteboard no longer holds that URL.
+        guard let normalizedURL = URLUnwrapper.ingestURL(from: url.absoluteString) else {
+            dropPasteboardRow()
+            return
+        }
+        let urlString = normalizedURL.absoluteString
+        guard store.item(forURLString: urlString) == nil else {
+            dropPasteboardRow()
             return
         }
         // Show a spinner row immediately, then fill it in once the preview
         // (content + thumbnail) resolves.
-        guard let normalizedURL = URLUnwrapper.ingestURL(from: url.absoluteString) else { return }
-        let urlString = normalizedURL.absoluteString
-        guard store.item(forURLString: urlString) == nil else { return }
         pasteboardCandidate = nil
         evaluatingPasteboardURL = urlString
         reload()
@@ -324,9 +330,33 @@ final class ReadingListViewController: UITableViewController {
             await MainActor.run {
                 guard let self, self.evaluatingPasteboardURL == urlString else { return }
                 self.evaluatingPasteboardURL = nil
-                self.pasteboardCandidate = candidate
+                // Only suggest what THIS app's surface can show: saving an
+                // article from the Price Tracker app would store it fine but
+                // make it vanish from this list — a save that looks discarded.
+                self.pasteboardCandidate = candidate.flatMap {
+                    self.surfaceAllows($0) ? $0 : nil
+                }
                 self.reload()
             }
+        }
+    }
+
+    /// Whether a saved `candidate` would actually appear on this app's surface.
+    /// The combined list (surface == nil) shows everything.
+    private func surfaceAllows(_ candidate: PasteboardCandidate) -> Bool {
+        guard let surface else { return true }
+        switch surface {
+        case .reader: return !candidate.isVideo && candidate.platform == nil
+        case .downloader: return candidate.isVideo || candidate.platform != nil
+        case .priceTracker: return false // the suggester never detects products
+        }
+    }
+
+    private func dropPasteboardRow() {
+        if pasteboardCandidate != nil || evaluatingPasteboardURL != nil {
+            pasteboardCandidate = nil
+            evaluatingPasteboardURL = nil
+            reload()
         }
     }
 
@@ -997,7 +1027,7 @@ final class ReadingListViewController: UITableViewController {
         navigationController?.pushViewController(SettingsViewController(), animated: true)
     }
 
-    @objc private func deleteAllArchiveTapped() {
+    @objc private func deleteAllArchiveTapped(_ sender: UIButton) {
         let archived = groups.first { $0.section == .archive }?.items ?? []
         guard !archived.isEmpty else { return }
         let alert = UIAlertController(
@@ -1007,6 +1037,10 @@ final class ReadingListViewController: UITableViewController {
             self?.store.deleteItems(ids: Set(archived.map(\.id)))
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        // Anchor the sheet: all targets build for iPad too, where an
+        // unanchored action sheet raises NSGenericException.
+        alert.popoverPresentationController?.sourceView = sender
+        alert.popoverPresentationController?.sourceRect = sender.bounds
         DotMatrixModal.present(alert, from: self)
     }
 

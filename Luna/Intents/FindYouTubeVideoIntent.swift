@@ -46,7 +46,7 @@ public struct FindYouTubeVideoIntent: AppIntent {
     }
 
     public func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        guard GoogleAuthClient.shared.isSignedIn else { throw FindError.notSignedIn }
+        guard await GoogleAuthClient.shared.isSignedIn else { throw FindError.notSignedIn }
         let channelName = channel.trimmingCharacters(in: .whitespacesAndNewlines)
         let videoTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !channelName.isEmpty, !videoTitle.isEmpty else { throw FindError.badQuery }
@@ -61,7 +61,6 @@ public struct FindYouTubeVideoIntent: AppIntent {
 
         let urlString = YouTubeURL.watchURLString(videoID: match.videoID)
         _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: urlString)
-        // Return the share-suggestion token (see LunaSafariPageIntent).
         return .result(value: "Saved to Luna.")
     }
 }

@@ -81,10 +81,6 @@ final class SearchViewController: UIViewController, UITableViewDataSource, UITab
         SemanticIndexer.shared.scheduleRun()
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        searchField.becomeFirstResponder()
-    }
 
     /// Focuses the field (shows the keyboard). Called by the host after the
     /// cross-fade in, since this VC's view is hosted manually (appearance callbacks

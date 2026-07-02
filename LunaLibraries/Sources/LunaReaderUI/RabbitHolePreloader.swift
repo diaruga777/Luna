@@ -48,7 +48,7 @@ enum RabbitHolePreloader {
         let enriched = await ArticleImageDownloader.download(
             content, itemID: owner, store: .shared, refererURL: url)
         PreloadStore.shared.record(
-            url: url, rootID: owner, kind: .article, depthRemaining: 0,
+            url: url, rootID: owner, kind: .article,
             content: enriched, children: enriched.outboundURLs)
         return enriched
     }

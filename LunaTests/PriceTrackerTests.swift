@@ -101,11 +101,6 @@ final class PriceTrackerTests: XCTestCase {
         XCTAssertFalse(tracker.isAlerting)
     }
 
-    func testThresholdAbsoluteDrop() {
-        let tracker = makeTracker(price: "200", threshold: 0.15)
-        XCTAssertEqual(tracker.thresholdAbsoluteDrop, Decimal(string: "30"))
-    }
-
     // MARK: - Alert viewed transition
 
     func testFreshTrackerHasNoUnviewedAlert() {

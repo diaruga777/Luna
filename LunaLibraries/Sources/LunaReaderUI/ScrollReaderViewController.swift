@@ -27,9 +27,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Same tap as `onLinkActivated`, but includes the exact text range UIKit already
     /// resolved for the tapped link. RabbitHole uses it to avoid rescanning links on tap.
     public var onLinkActivatedWithRange: ((_ url: URL, _ range: NSRange) -> Void)?
-    /// Visible/near-visible inline links changed. Optional because computing link
-    /// geometry during scroll is only worth paying for hosts that actively need it.
-    public var onVisibleLinkURLsChanged: (([URL]) -> Void)?
 
     /// Fired when the end-of-article share footer scrolls into / out of view, so the
     /// host can fade its floating share button (the footer already offers sharing).
@@ -80,7 +77,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// started exactly once whether that happens in `viewDidAppear` (short article,
     /// tracker already present) or in `applyFullContent` (progressive open).
     private var didStartGazeObservation = false
-    private var lastVisibleLinkKeys: Set<String> = []
 
     #if DEBUG
     /// Test hooks for the progressive load: whether the full content has been
@@ -203,7 +199,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         shareFooterVisible = false
         openContentOffsetY = nil
         gazeLockGate = GazeLockGate()
-        lastVisibleLinkKeys = []
         highlightedRange = nil
         followPlayback = true
 
@@ -437,7 +432,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             applyInitialScrollPosition()
             revealContent()
         }
-        publishVisibleLinkURLsIfNeeded()
     }
 
     // MARK: - Progressive (two-phase) load
@@ -516,7 +510,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         attachShareFooterIfNeeded()
         layoutShareView()
         fetchMissingImagesIfNeeded()
-        publishVisibleLinkURLsIfNeeded(force: true)
     }
 
     /// Installs the read-aloud resume highlight and the gaze tracker — both of which
@@ -715,7 +708,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 }
             }
         }
-        publishVisibleLinkURLsIfNeeded()
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
@@ -943,7 +935,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         checkFinishedReading()
         updateShareFooterVisibility()
-        publishVisibleLinkURLsIfNeeded()
         if scrollView.isTracking || scrollView.isDragging {
             // User-driven scroll: stop auto-follow; drop the resume highlight
             // only when nothing is actively playing.
@@ -952,48 +943,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             }
             followPlayback = false
         }
-    }
-
-    /// Links in and near the viewport, in document order. Only computed when a host
-    /// explicitly subscribes via `onVisibleLinkURLsChanged`; otherwise scroll stays on
-    /// the normal cheap path.
-    private func visibleLinkURLs() -> [URL] {
-        guard isViewLoaded, textView.bounds.width > 0, textView.textStorage.length > 0 else { return [] }
-        textView.layoutManager.ensureLayout(for: textView.textContainer)
-        let viewport = CGRect(
-            x: 0,
-            y: textView.contentOffset.y - textView.bounds.height,
-            width: textView.bounds.width,
-            height: textView.bounds.height * 3)
-        var urls: [URL] = []
-        var seen = Set<String>()
-        let full = NSRange(location: 0, length: textView.textStorage.length)
-        textView.textStorage.enumerateAttribute(.link, in: full) { value, range, _ in
-            let url: URL?
-            if let u = value as? URL { url = u }
-            else if let s = value as? String { url = URL(string: s) }
-            else { url = nil }
-            guard let url else { return }
-            let key = PreloadStore.key(for: url)
-            guard seen.insert(key).inserted else { return }
-            let glyphRange = textView.layoutManager.glyphRange(
-                forCharacterRange: range, actualCharacterRange: nil)
-            var rect = textView.layoutManager.boundingRect(
-                forGlyphRange: glyphRange, in: textView.textContainer)
-            rect.origin.x += textView.textContainerInset.left
-            rect.origin.y += textView.textContainerInset.top
-            if rect.intersects(viewport) { urls.append(url) }
-        }
-        return urls
-    }
-
-    private func publishVisibleLinkURLsIfNeeded(force: Bool = false) {
-        guard onVisibleLinkURLsChanged != nil else { return }
-        let urls = visibleLinkURLs()
-        let keys = Set(urls.map { PreloadStore.key(for: $0) })
-        guard force || keys != lastVisibleLinkKeys else { return }
-        lastVisibleLinkKeys = keys
-        onVisibleLinkURLsChanged?(urls)
     }
 
     /// Notifies the host when the end-of-article share footer is at least partly

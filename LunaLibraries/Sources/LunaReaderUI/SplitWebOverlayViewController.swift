@@ -296,8 +296,7 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
     }
 
     private func makePage(url: URL) -> InlineReaderPageViewController {
-        let page = InlineReaderPageViewController(
-            url: url, shareProvider: shareProvider, headerHeight: Self.headerHeight)
+        let page = InlineReaderPageViewController(url: url, headerHeight: Self.headerHeight)
         page.onLinkActivated = { [weak self] linkURL in self?.pushPage(url: linkURL) }
         page.onBecameArticle = { [weak self] in self?.syncHeaderToTopPage() }
         return page

@@ -1473,9 +1473,9 @@ final class ReadingListViewController: UITableViewController {
 
     /// Sends any reading-list item (article, media, or price tracker) to chosen
     /// recipients as a Luna email.
-    private func presentSend(_ item: ReadingListItem, from sourceView: UIView) {
+    private func presentSend(_ item: ReadingListItem) {
         SendToFriendSheet.present(
-            from: self, sourceView: sourceView, item: item,
+            from: self, item: item,
             urlString: item.urlString, title: item.title)
     }
 
@@ -1568,11 +1568,7 @@ final class ReadingListViewController: UITableViewController {
             title: "Send to Friend…",
             image: UIImage(systemName: "person.2")
         ) { [weak self] _ in
-            guard let self else { return }
-            let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-            SendToFriendSheet.present(
-                from: self, sourceView: sourceView, item: item,
-                urlString: item.urlString, title: item.title)
+            self?.presentSend(item)
         }
         let sendToKindle = UIAction(
             title: "Send to Kindle",
@@ -1611,26 +1607,12 @@ final class ReadingListViewController: UITableViewController {
         // Videos: share to friends + delete. Documents: ereaders + read +
         // delete. Articles: everything. Each ereader row shows only when
         // that destination is set up.
-        let sendMediaToFriend = UIAction(
-            title: "Send to Friend…",
-            image: UIImage(systemName: "person.2")
-        ) { [weak self] _ in
-            guard let self else { return }
-            let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-            self.presentSend(item, from: sourceView)
-        }
 
         // Price trackers get a focused menu: share the tracker to a friend,
         // archive/unarchive it (archived = hidden + excluded from refresh), delete.
         if let tracker = item.priceTracker {
             var trackerChildren: [UIAction] = []
-            trackerChildren.append(UIAction(
-                title: "Send to Friend…", image: UIImage(systemName: "person.2")
-            ) { [weak self] _ in
-                guard let self else { return }
-                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-                self.presentSend(item, from: sourceView)
-            })
+            trackerChildren.append(sendToFriend)
             let archiveTitle = tracker.isArchived ? "Unarchive Tracker" : "Archive Tracker"
             let archiveIcon = tracker.isArchived ? "tray.and.arrow.up" : "archivebox"
             trackerChildren.append(UIAction(
@@ -1653,10 +1635,8 @@ final class ReadingListViewController: UITableViewController {
                 self?.store.bump(item.id)
             })
         }
-        if item.canShareToFriends {
+        if item.canShareToFriends || item.isURLlessMedia {
             children.append(sendToFriend)
-        } else if item.isURLlessMedia {
-            children.append(sendMediaToFriend)
         }
         // Any item that kept a real web URL (articles AND platform items like
         // Reddit/Spotify/X) can share that link.
@@ -1734,7 +1714,7 @@ final class ReadingListViewController: UITableViewController {
         if item.canShareToFriends {
             children.append(UIAction(title: "Send to Friend…", image: UIImage(systemName: "person.2")) { _ in
                 SendToFriendSheet.present(
-                    from: presenter, sourceView: sourceView, item: item,
+                    from: presenter, item: item,
                     urlString: item.urlString, title: item.title)
             })
         }

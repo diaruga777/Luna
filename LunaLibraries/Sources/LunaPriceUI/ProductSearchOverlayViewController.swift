@@ -78,11 +78,6 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
 
     private var webView: WKWebView?
 
-    /// Pins the bottom bar above the keyboard (high priority); a safe-area cap keeps
-    /// it above the home indicator when the keyboard is down. Auto Layout so the bar
-    /// animates with the keyboard — the URL field is never covered while typing.
-    private var bottomBarBottomCap: NSLayoutConstraint?
-
     /// Per-URL debounce so auto-suggest fires at most once per page.
     private var suggestionDebouncer = ProductSuggestionDebouncer()
     /// True while a "Use this page?" alert is on screen, so a finishing navigation
@@ -259,7 +254,6 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         aboveKeyboard.priority = .required
         let cap = bottomBar.bottomAnchor.constraint(
             lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8)
-        bottomBarBottomCap = cap
         NSLayoutConstraint.activate([
             bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.cardInset),
             bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Self.cardInset),

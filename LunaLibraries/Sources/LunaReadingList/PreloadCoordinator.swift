@@ -183,15 +183,15 @@ public final class PreloadCoordinator {
             let enriched = await ArticleImageDownloader.download(
                 content, itemID: rootID, store: readingListStore, refererURL: url)
             let children = Self.outboundURLs(from: enriched)
-            store.record(url: url, rootID: rootID, kind: .article, depthRemaining: levelsLeft,
+            store.record(url: url, rootID: rootID, kind: .article,
                          content: enriched, children: children)
             return children
         case let .social(platform, itemID), let .video(platform, itemID):
-            store.record(url: url, rootID: rootID, kind: .platform, depthRemaining: levelsLeft,
+            store.record(url: url, rootID: rootID, kind: .platform,
                          platform: PreloadPlatform(platform: platform.rawValue, itemID: itemID))
             return []
         case let .audio(platform, _, itemID):
-            store.record(url: url, rootID: rootID, kind: .platform, depthRemaining: levelsLeft,
+            store.record(url: url, rootID: rootID, kind: .platform,
                          platform: PreloadPlatform(platform: platform.rawValue, itemID: itemID))
             return []
         case .product, .needsArchive, .document, .failed:
@@ -199,7 +199,7 @@ public final class PreloadCoordinator {
             // paywall the silent bypass couldn't crack, a document, or a failure. Record
             // as unrepresentable so we don't re-crawl and the viewer falls back to a
             // live load. (Web-archive snapshotting is deferred — see preload-plan.md.)
-            store.record(url: url, rootID: rootID, kind: .unrepresentable, depthRemaining: levelsLeft)
+            store.record(url: url, rootID: rootID, kind: .unrepresentable)
             return []
         }
     }

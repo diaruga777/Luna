@@ -44,7 +44,7 @@ final class DiagnosticsViewController: UIViewController {
         let isRoot = navigationController?.viewControllers.first === self || navigationController == nil
         if isRoot {
             header.setLeadingControls([NavHeaderBar.textButton(
-                title: "Done", target: self, action: #selector(done), bold: true)])
+                title: "Done", target: self, action: #selector(headerBack), bold: true)])
         } else {
             header.setLeadingControls([NavHeaderBar.backButton(target: self, action: #selector(headerBack))])
         }
@@ -82,13 +82,6 @@ final class DiagnosticsViewController: UIViewController {
         }
     }
 
-    @objc private func done() {
-        if let navigationController, navigationController.viewControllers.count > 1 {
-            navigationController.popViewController(animated: true)
-        } else {
-            dismiss(animated: true)
-        }
-    }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)

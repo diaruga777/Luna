@@ -43,12 +43,6 @@ public extension NavHeaderBar {
         layer.zPosition = 1
     }
 
-    /// The header's total height for a given top safe-area inset (used to set content
-    /// insets). The header spans the safe-area top plus the 44pt bar row.
-    static func totalHeight(topSafeAreaInset: CGFloat) -> CGFloat {
-        topSafeAreaInset + barHeight
-    }
-
     /// Mounts this header into a plain `UIViewController`, pinned to the top edge of its
     /// `view` and spanning down to the bar row (its bottom anchor — which the caller pins
     /// the screen's content below). The header's height is `safe-area top + bar row`.

@@ -277,14 +277,6 @@ public final class ReadingListStore {
         }
     }
 
-    /// Removes every finished article (and its cached content) in one pass.
-    public func deleteAllRead() {
-        coordinatedMutate { all in
-            for item in all where item.readState == .read { self.removeFiles(for: item) }
-            all.removeAll { $0.readState == .read }
-        }
-    }
-
     /// Removes a set of items (and their cached content) in one pass — used to clear
     /// the whole Archive section at once.
     public func deleteItems(ids: Set<UUID>) {
@@ -357,16 +349,6 @@ public final class ReadingListStore {
                 return false
             }
             all[index].thumbnailFileName = fileName
-            return true
-        }
-    }
-
-    /// Records which friend shared this item to us (set once, on acceptance).
-    public func setSharedBy(_ username: String, for itemID: UUID) {
-        coordinatedUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].sharedByUsername != username else { return false }
-            all[index].sharedByUsername = username
             return true
         }
     }

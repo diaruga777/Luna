@@ -14,9 +14,6 @@ import AVFoundation
 /// `willSpeakRangeOfSpeechString` callbacks, so the reader's word-by-word
 /// highlighting keeps working unchanged for every engine.
 public protocol SpeechEngine {
-    /// Which kind this engine implements.
-    var kind: VoiceEngineKind { get }
-
     /// Whether the engine can actually produce speech right now (model present /
     /// suitable voice installed). Checked at play time so the controller can fall
     /// back to a safe engine.
@@ -36,17 +33,8 @@ public extension SpeechEngine {
     }
 }
 
-/// Builds the concrete engine for a kind, used by `SpeechController` and RSVP.
+/// Resolves the concrete engine, used by `SpeechController` and RSVP.
 public enum SpeechEngineFactory {
-    /// Returns an engine for `kind`. The returned engine is NOT guaranteed
-    /// available — callers must consult `isAvailable` and fall back.
-    public static func make(_ kind: VoiceEngineKind) -> SpeechEngine {
-        switch kind {
-        case .basic: return BasicSpeechEngine()
-        case .appleEnhanced: return AppleEnhancedEngine()
-        }
-    }
-
     /// Resolves the engine to read aloud with: the enhanced Apple voice when the
     /// user has installed one, otherwise the always-available basic system voice.
     /// The result is always usable. Behaves identically in the app and its
@@ -62,7 +50,6 @@ public enum SpeechEngineFactory {
 /// The original behavior: the system default voice via `AVSpeechSynthesizer`.
 /// Always available.
 public struct BasicSpeechEngine: SpeechEngine {
-    public let kind: VoiceEngineKind = .basic
     public var isAvailable: Bool { true }
 
     public func configure(_ utterance: AVSpeechUtterance, rate: Float) {
@@ -80,7 +67,6 @@ public struct BasicSpeechEngine: SpeechEngine {
 /// iOS Settings → Accessibility → Spoken Content → Voices (apps cannot download
 /// Apple voices programmatically).
 public struct AppleEnhancedEngine: SpeechEngine {
-    public let kind: VoiceEngineKind = .appleEnhanced
     public var isAvailable: Bool { Self.hasInstalledEnhancedVoice }
 
     public func configure(_ utterance: AVSpeechUtterance, rate: Float) {

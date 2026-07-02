@@ -108,12 +108,11 @@ public final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
         try? ("…(trimmed)\n" + trimmed).write(to: fileURL, atomically: true, encoding: .utf8)
     }
 
-    /// Messaging-identity + CloudKit-container context for the export header,
-    /// injected by the main app at launch (the social layer lives above storage,
-    /// so it's threaded in rather than referenced directly). Default to placeholders
-    /// in contexts that don't set them (extensions, tests).
+    /// Messaging-identity context for the export header, injected by the main
+    /// app at launch (the mail layer lives above storage, so it's threaded in
+    /// rather than referenced directly). Defaults to a placeholder in contexts
+    /// that don't set it (extensions, tests).
     public static var exportIdentityProvider: () -> String = { "none" }
-    public static var exportCloudKitContainer: () -> String = { "—" }
 
     /// Device, build, and identity context, prepended to exports.
     private func header() -> String {
@@ -127,7 +126,6 @@ public final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
         App: \(version) (\(build))
         OS: \(systemDescription())
         Identity UUID: \(identity)
-        CloudKit container: \(Self.exportCloudKitContainer()) (public DB)
         Exported: \(exportedAt)
         ----------------------------------------
 

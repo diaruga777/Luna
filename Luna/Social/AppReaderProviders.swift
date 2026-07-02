@@ -37,7 +37,7 @@ public final class AppReaderShareProvider: ReaderShareProviding {
             onPickFriend: { [weak presenter] in
                 guard let presenter else { return }
                 SendToFriendSheet.present(
-                    from: presenter, sourceView: sourceView, item: item,
+                    from: presenter, item: item,
                     urlString: urlString, title: title)
             },
             onShareLink: { [weak presenter] in

@@ -53,19 +53,14 @@ public struct RabbitHoleLayout {
         public var chromeAlpha: CGFloat
         /// Whole card opacity (fades the card out only once fully tucked offscreen).
         public var cardAlpha: CGFloat
-        /// True while the layer should accept touches (focused content + visible
-        /// ancestor lips). Tucked / fully-emerging layers are inert.
-        public var interactive: Bool
-
         public init(cardFrame: CGRect, z: CGFloat, depth: Int, role: Role,
-                    chromeAlpha: CGFloat, cardAlpha: CGFloat, interactive: Bool) {
+                    chromeAlpha: CGFloat, cardAlpha: CGFloat) {
             self.cardFrame = cardFrame
             self.z = z
             self.depth = depth
             self.role = role
             self.chromeAlpha = chromeAlpha
             self.cardAlpha = cardAlpha
-            self.interactive = interactive
         }
     }
 
@@ -105,7 +100,6 @@ public struct RabbitHoleLayout {
             depth: min(max(i, 0), 4),
             role: role,
             chromeAlpha: delta >= 1 ? 1 : 0,          // lips on for ancestors only
-            cardAlpha: role == .tucked ? 0 : 1,
-            interactive: role == .focused || role == .ancestor)
+            cardAlpha: role == .tucked ? 0 : 1)
     }
 }

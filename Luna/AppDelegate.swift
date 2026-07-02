@@ -59,18 +59,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             EmailAccountStore.shared.account?.address ?? "none"
         }
 
-        // The confirmation toast lives in LunaDesignSystem (below LunaTransitions), so
-        // its Dot Matrix wipe is injected here. The pill assembles dot-by-dot on appear
-        // and dissolves back out in place on dismiss — the same wipe both ways. Each helper
-        // falls back to a clean fade when the pixel-wipe is off / unavailable (the helpers
-        // handle that gate internally); the pixelate-out also removes the pill on landing.
-        Toast.appearanceAnimator = { pill in
-            DotMatrixAppear.pixelateIn(pill)
-        }
-        Toast.disappearanceAnimator = { pill in
-            DotMatrixDisappear.pixelateOut(pill)
-        }
-
         // Let the share sheet launch the email-account login flow when no account
         // is connected yet.
         SendToFriendSheet.accountSetupLauncher = { presenter in

@@ -11,11 +11,10 @@ import Foundation
 public enum PreloadKind: String, Codable {
     case article          // reader content persisted as <key>.json
     case platform         // a social/video/audio URL — store the descriptor only
-    case webArchive       // a non-reader page snapshot persisted as <key>.webarchive
     case unrepresentable  // paywalled (silent bypass failed) / failed — no content
 }
 
-public enum PreloadState: String, Codable { case pending, loaded, failed }
+public enum PreloadState: String, Codable { case loaded, failed }
 
 /// The platform descriptor for a `.platform` preload (so the viewer can show it
 /// without re-recognizing).
@@ -38,13 +37,10 @@ public struct PreloadEntry: Codable, Equatable {
     /// Root SAVE item UUID strings whose preload subtree reaches this URL. The
     /// refcount is `owners.count`; the entry's files are deleted when it hits zero.
     public var owners: Set<String>
-    /// Hashed keys of outbound links discovered on this page (for subtree teardown
-    /// and resume). Empty for non-article kinds.
+    /// Hashed keys of outbound links discovered on this page (for subtree
+    /// teardown). Empty for non-article kinds.
     public var children: [String]
-    /// How many more levels we still intend to crawl from here (for resume).
-    public var depthRemaining: Int
     public var state: PreloadState
-    public var updated: Date
 }
 
 /// The shared, URL-keyed, refcounted cache of preloaded link pages. **Physically
@@ -246,43 +242,30 @@ public final class PreloadStore {
     // MARK: - Writes
 
     /// Records a loaded/failed preload result for `url`, owned by `rootID`, returning
-    /// the stored entry. `content`/`platform`/`archiveData` are persisted per `kind`.
+    /// the stored entry. `content`/`platform` are persisted per `kind`.
     @discardableResult
     public func record(
-        url: URL, rootID: UUID, kind: PreloadKind, depthRemaining: Int,
+        url: URL, rootID: UUID, kind: PreloadKind,
         content: ArticleContent? = nil, platform: PreloadPlatform? = nil,
-        archiveData: Data? = nil, children: [URL] = []
+        children: [URL] = []
     ) -> PreloadEntry {
         let key = Self.key(for: url)
         var contentFile: String?
-        switch kind {
-        case .article:
-            if let content, let data = try? JSONEncoder().encode(content) {
-                contentFile = "\(key).json"
-                try? data.write(to: contentURL(fileName: "\(key).json"), options: .atomic)
-            }
-        case .webArchive:
-            if let archiveData {
-                contentFile = "\(key).webarchive"
-                try? archiveData.write(to: contentURL(fileName: "\(key).webarchive"), options: .atomic)
-            }
-        case .platform, .unrepresentable:
-            break
+        if kind == .article, let content, let data = try? JSONEncoder().encode(content) {
+            contentFile = "\(key).json"
+            try? data.write(to: contentURL(fileName: "\(key).json"), options: .atomic)
         }
         let childKeys = children.map { Self.key(for: $0) }
         let entry: PreloadEntry = mutate { index in
             var entry = index[key] ?? PreloadEntry(
                 urlString: Self.canonicalString(for: url), kind: kind, contentFile: contentFile,
-                platform: platform, owners: [], children: childKeys,
-                depthRemaining: depthRemaining, state: .loaded, updated: Date())
+                platform: platform, owners: [], children: childKeys, state: .loaded)
             entry.kind = kind
             if contentFile != nil { entry.contentFile = contentFile }
             if platform != nil { entry.platform = platform }
             entry.children = childKeys
-            entry.depthRemaining = max(entry.depthRemaining, depthRemaining)
             entry.state = (kind == .unrepresentable) ? .failed : .loaded
             entry.owners.insert(rootID.uuidString)
-            entry.updated = Date()
             index[key] = entry
             return entry
         }
@@ -322,7 +305,6 @@ public final class PreloadStore {
             let file = entry.contentFile ?? "\(key).json"
             try? data.write(to: contentURL(fileName: file), options: .atomic)
             entry.contentFile = file
-            entry.updated = Date()
             index[key] = entry
             return true
         }

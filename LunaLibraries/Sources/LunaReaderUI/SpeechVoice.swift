@@ -21,14 +21,4 @@ public enum SpeechVoice {
         return AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
         #endif
     }
-
-    /// The best installed voice (premium > enhanced > default) for the user's
-    /// language. Retained for callers not yet migrated to `SpeechEngine`.
-    public static var best: AVSpeechSynthesisVoice? {
-        #if targetEnvironment(simulator)
-        return nil
-        #else
-        return AppleEnhancedEngine.bestEnhancedVoice ?? systemDefault
-        #endif
-    }
 }

@@ -9,6 +9,6 @@ import Testing
 
 @Test func platformRecognitionUsesAValidatedYouTubeID() {
     let url = URL(string: "https://youtu.be/dQw4w9WgXcQ")!
-    #expect(URLClassification.platform(for: url)?.platform == .youtube)
     #expect(URLClassification.youTubeVideoID(in: url) == "dQw4w9WgXcQ")
+    #expect(URLClassification.youTubeVideoID(in: URL(string: "https://youtu.be/short")!) == nil)
 }

@@ -25,7 +25,6 @@ import WebKit
 public final class InlineReaderPageViewController: UIViewController, WKNavigationDelegate {
 
     public let url: URL
-    private let shareProvider: ReaderShareProviding?
     private let headerHeight: CGFloat
 
     /// Hands a link tapped inside the embedded reader to the host, which pushes it
@@ -59,9 +58,8 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     /// nil when the page wasn't in the preload cache (memory or disk).
     private let preloadedContent: ArticleContent?
 
-    public init(url: URL, shareProvider: ReaderShareProviding?, headerHeight: CGFloat) {
+    public init(url: URL, headerHeight: CGFloat) {
         self.url = url
-        self.shareProvider = shareProvider
         self.headerHeight = headerHeight
         // Synchronous preload check FIRST (in-memory hit, else a size-bounded disk
         // decode): if this link was preloaded, we have its content right now and can

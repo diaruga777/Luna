@@ -83,12 +83,6 @@ open class NavHeaderTableController: UITableViewController {
     /// The trailing controls. Default: none. Override to supply right-side controls.
     open func makeTrailingControls() -> [UIView] { [] }
 
-    /// Refreshes both control clusters from the subclass hooks (e.g. after state changes).
-    public func reloadHeaderControls() {
-        header.setLeadingControls(makeLeadingControls())
-        header.setTrailingControls(makeTrailingControls())
-    }
-
     @objc open func navHeaderBack() {
         if let navigationController, navigationController.viewControllers.count > 1 {
             navigationController.popViewController(animated: true)

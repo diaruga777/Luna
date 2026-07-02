@@ -21,7 +21,6 @@ enum FrostedGlassSettings {
     static let glowRadiusRange: ClosedRange<Double> = 0...50
     static let saturationRange: ClosedRange<Double> = 0...3
     static let brightnessRange: ClosedRange<Double> = 0.4...2
-    static let tintAlphaRange: ClosedRange<Double> = 0...1
 
     // Ripple transition ranges.
     static let ripplePushRange: ClosedRange<Double> = 0...120

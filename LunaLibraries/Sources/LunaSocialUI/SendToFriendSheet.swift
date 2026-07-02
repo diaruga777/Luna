@@ -22,7 +22,6 @@ public enum SendToFriendSheet {
     /// the item's rich content), or a bare URL when no item is available.
     public static func present(
         from presenter: UIViewController,
-        sourceView: UIView? = nil,
         item: ReadingListItem? = nil,
         urlString: String,
         title: String?

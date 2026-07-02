@@ -43,7 +43,7 @@ final class PreloadStoreTests: XCTestCase {
 
     func testRecordAndReadBackArticle() {
         let u = url("https://example.com/a")
-        store.record(url: u, rootID: UUID(), kind: .article, depthRemaining: 1, content: article("A"))
+        store.record(url: u, rootID: UUID(), kind: .article, content: article("A"))
         XCTAssertEqual(store.articleContent(for: u)?.title, "A")
         XCTAssertEqual(store.entry(for: u)?.kind, .article)
     }
@@ -53,7 +53,7 @@ final class PreloadStoreTests: XCTestCase {
     /// `record` warms the in-memory cache so the very first tap is a synchronous hit.
     func testRecordWarmsSynchronousCache() {
         let u = url("https://example.com/sync")
-        store.record(url: u, rootID: UUID(), kind: .article, depthRemaining: 0, content: article("Sync"))
+        store.record(url: u, rootID: UUID(), kind: .article, content: article("Sync"))
         XCTAssertEqual(store.synchronousArticleContent(for: u)?.title, "Sync")
     }
 
@@ -61,7 +61,7 @@ final class PreloadStoreTests: XCTestCase {
     /// preloaded article synchronously by decoding from disk and warming memory.
     func testSynchronousReadFromDiskOnColdMemory() {
         let u = url("https://example.com/cold")
-        store.record(url: u, rootID: UUID(), kind: .article, depthRemaining: 0, content: article("Cold"))
+        store.record(url: u, rootID: UUID(), kind: .article, content: article("Cold"))
         // A new store instance over the same container has an empty in-memory cache.
         let fresh = PreloadStore(containerURL: dir)
         XCTAssertEqual(fresh.synchronousArticleContent(for: u)?.title, "Cold")
@@ -78,7 +78,7 @@ final class PreloadStoreTests: XCTestCase {
     func testReleaseEvictsSynchronousCache() {
         let u = url("https://example.com/evict")
         let root = UUID()
-        store.record(url: u, rootID: root, kind: .article, depthRemaining: 0, content: article("E"))
+        store.record(url: u, rootID: root, kind: .article, content: article("E"))
         XCTAssertNotNil(store.synchronousArticleContent(for: u))
         store.releaseTree(rootID: root)
         XCTAssertNil(store.synchronousArticleContent(for: u))
@@ -87,8 +87,8 @@ final class PreloadStoreTests: XCTestCase {
     func testRefcountKeepsSharedCopyUntilLastOwnerReleased() {
         let u = url("https://example.com/shared")
         let root1 = UUID(), root2 = UUID()
-        store.record(url: u, rootID: root1, kind: .article, depthRemaining: 1, content: article("S"))
-        store.record(url: u, rootID: root2, kind: .article, depthRemaining: 1, content: article("S"))
+        store.record(url: u, rootID: root1, kind: .article, content: article("S"))
+        store.record(url: u, rootID: root2, kind: .article, content: article("S"))
         XCTAssertEqual(store.entry(for: u)?.owners.count, 2)
         let file = store.contentURL(fileName: store.entry(for: u)!.contentFile!)
 
@@ -106,14 +106,14 @@ final class PreloadStoreTests: XCTestCase {
     func testAddOwnerForDedup() {
         let u = url("https://example.com/x")
         let root1 = UUID(), root2 = UUID()
-        store.record(url: u, rootID: root1, kind: .article, depthRemaining: 1, content: article("X"))
+        store.record(url: u, rootID: root1, kind: .article, content: article("X"))
         let entry = store.addOwner(root2, toKey: PreloadStore.key(for: u))
         XCTAssertEqual(entry?.owners, [root1.uuidString, root2.uuidString])
     }
 
     func testUnrepresentableStoresNoFile() {
         let u = url("https://paywall.example/x")
-        let e = store.record(url: u, rootID: UUID(), kind: .unrepresentable, depthRemaining: 1)
+        let e = store.record(url: u, rootID: UUID(), kind: .unrepresentable)
         XCTAssertEqual(e.state, .failed)
         XCTAssertNil(e.contentFile)
         XCTAssertNil(store.articleContent(for: u))
@@ -149,7 +149,7 @@ final class PreloadStoreTests: XCTestCase {
     func testSessionOnlyOwnedEntryDeletedOnRelease() {
         let u = url("https://example.com/speculative")
         let session = UUID()
-        store.record(url: u, rootID: session, kind: .article, depthRemaining: 0, content: article("S"))
+        store.record(url: u, rootID: session, kind: .article, content: article("S"))
         XCTAssertNotNil(store.articleContent(for: u))
         // Exiting the reader releases the session → the purely-speculative page is gone.
         store.releaseTree(rootID: session)
@@ -160,8 +160,8 @@ final class PreloadStoreTests: XCTestCase {
         let u = url("https://example.com/durable")
         let root = UUID(), session = UUID()
         // A within-depth page is owned by BOTH the durable root and the session.
-        store.record(url: u, rootID: root, kind: .article, depthRemaining: 1, content: article("D"))
-        store.record(url: u, rootID: session, kind: .article, depthRemaining: 1, content: article("D"))
+        store.record(url: u, rootID: root, kind: .article, content: article("D"))
+        store.record(url: u, rootID: session, kind: .article, content: article("D"))
         store.releaseTree(rootID: session)
         // Session gone, durable root remains → page survives.
         XCTAssertEqual(store.entry(for: u)?.owners, [root.uuidString])
@@ -194,7 +194,7 @@ final class PreloadStoreTests: XCTestCase {
         makeImageFile("img-pre.jpg")
         let u = url("https://example.com/withimage")
         let root = UUID()
-        store.record(url: u, rootID: root, kind: .article, depthRemaining: 0,
+        store.record(url: u, rootID: root, kind: .article,
                      content: articleWithImage("img-pre.jpg"))
         XCTAssertTrue(imageExists("img-pre.jpg"))
         store.releaseTree(rootID: root)
@@ -206,9 +206,9 @@ final class PreloadStoreTests: XCTestCase {
         let a = url("https://example.com/a"), b = url("https://example.com/b")
         let r1 = UUID(), r2 = UUID()
         // Two distinct preloaded pages reference the same downloaded image.
-        store.record(url: a, rootID: r1, kind: .article, depthRemaining: 0,
+        store.record(url: a, rootID: r1, kind: .article,
                      content: articleWithImage("img-shared.jpg"))
-        store.record(url: b, rootID: r2, kind: .article, depthRemaining: 0,
+        store.record(url: b, rootID: r2, kind: .article,
                      content: articleWithImage("img-shared.jpg"))
         store.releaseTree(rootID: r1)
         XCTAssertTrue(imageExists("img-shared.jpg"))   // page B still owns it

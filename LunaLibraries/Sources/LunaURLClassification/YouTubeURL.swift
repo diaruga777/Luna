@@ -33,13 +33,4 @@ public enum YouTubeURL {
     public static func thumbnailURL(videoID: String) -> URL? {
         URL(string: "https://img.youtube.com/vi/\(videoID)/hqdefault.jpg")
     }
-
-    /// Video IDs are 11 URL-safe-base64-ish characters; reject anything odd.
-    private static func validated(_ candidate: String?) -> String? {
-        guard let candidate,
-              candidate.count == 11,
-              candidate.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
-        else { return nil }
-        return candidate
-    }
 }

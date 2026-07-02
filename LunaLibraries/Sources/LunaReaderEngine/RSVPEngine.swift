@@ -25,16 +25,27 @@ public struct RSVPWord {
 /// Pure logic, no UI — covered by unit tests.
 public struct RSVPEngine {
     public let words: [RSVPWord]
+    /// Source-token index (the whitespace-token space WordMap, read-aloud, and
+    /// gaze tracking share) for each entry of `words`. Splitting long tokens
+    /// adds frames, so frame indices drift from the shared cross-mode space;
+    /// these two maps convert both ways at the RSVP boundary.
+    public let sourceTokenIndices: [Int]
+    /// First frame index for each source token.
+    public let firstFrameIndexByToken: [Int]
 
     /// `maxCharactersPerWord` splits over-long words into multiple frames that
     /// fit the focal column (default `.max` = never split; used by tests).
     public init(content: ArticleContent, maxCharactersPerWord: Int = .max) {
         var words: [RSVPWord] = []
+        var sourceTokenIndices: [Int] = []
+        var firstFrameIndexByToken: [Int] = []
+        var tokenCounter = 0
         for block in content.blocks {
             let tokens = Self.tokensWithURLs(in: block)
             for (tokenIndex, token) in tokens.enumerated() {
                 let isLastToken = tokenIndex == tokens.count - 1
                 let parts = WordSplitter.split(token.text, maxCharacters: maxCharactersPerWord)
+                firstFrameIndexByToken.append(words.count)
                 for (partIndex, part) in parts.enumerated() {
                     let isLastPart = partIndex == parts.count - 1
                     // Only the final part carries the token's sentence/paragraph
@@ -42,10 +53,26 @@ public struct RSVPEngine {
                     // Every part inherits the token's link.
                     words.append(Self.makeWord(
                         part, isLastInBlock: isLastToken && isLastPart, url: token.url))
+                    sourceTokenIndices.append(tokenCounter)
                 }
+                tokenCounter += 1
             }
         }
         self.words = words
+        self.sourceTokenIndices = sourceTokenIndices
+        self.firstFrameIndexByToken = firstFrameIndexByToken
+    }
+
+    /// Frame to start on for a position expressed in the shared token space.
+    public func frameIndex(forTokenIndex token: Int) -> Int? {
+        guard firstFrameIndexByToken.indices.contains(token) else { return nil }
+        return firstFrameIndexByToken[token]
+    }
+
+    /// The shared-token-space position of a frame.
+    public func tokenIndex(forFrameIndex frame: Int) -> Int? {
+        guard sourceTokenIndices.indices.contains(frame) else { return nil }
+        return sourceTokenIndices[frame]
     }
 
     /// Whitespace-separated tokens with their link (if the token's UTF-16 range

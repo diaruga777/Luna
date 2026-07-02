@@ -188,6 +188,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         self.audioEnabled = audioEnabled
         self.shareProvider = shareProvider
         self.explicitResumeWordIndex = resumeWordIndex
+        // The lazy shareView latches its first resolution (nil when built for a
+        // provider-less shell) and bakes in the old item's friend suggestion —
+        // rebuild it for the new item/provider.
+        shareView?.removeFromSuperview()
+        shareView = makeShareView()
 
         didFinishReading = false
         didRestoreScroll = false
@@ -716,18 +721,22 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         gazeTracker?.onWordIndexChange = nil
-        store.setLastScrollOffset(Double(textView.contentOffset.y), for: item.id)
-        if textView.contentSize.height > 0 {
+        // Progress is only meaningful against the FULL layout: during the
+        // Phase-1 prefix render the content is ~one screen tall, so the ratio
+        // would read ~100% and permanently mark a barely-opened article as
+        // finished (same guard as checkFinishedReading). One batched write —
+        // this runs on the main thread during dismissal.
+        var progress: Double?
+        if didLoadFullContent, textView.contentSize.height > 0 {
             let visibleBottom = textView.contentOffset.y + textView.bounds.height
-            store.setReadingProgress(
-                Double(visibleBottom / textView.contentSize.height), for: item.id)
+            progress = Double(visibleBottom / textView.contentSize.height)
         }
-        if let position = speech?.currentWordIndex {
-            store.setLastSpokenWordIndex(position, for: item.id)
-        }
-        if let gazeIndex = gazeTracker?.estimatedWordIndex {
-            store.setEyeTrackedWordIndex(gazeIndex, for: item.id)
-        }
+        store.saveReaderExitPosition(
+            scrollOffset: Double(textView.contentOffset.y),
+            readingProgress: progress,
+            lastSpokenWordIndex: speech?.currentWordIndex,
+            eyeTrackedWordIndex: gazeTracker?.estimatedWordIndex,
+            for: item.id)
     }
 
     // MARK: - Playback UI

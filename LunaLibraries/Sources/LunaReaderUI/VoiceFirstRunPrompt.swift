@@ -19,10 +19,13 @@ public enum VoiceFirstRunPrompt {
     /// from `presenter`. Left `nil` in extensions, which disables the prompt.
     public static var openVoiceSettings: ((_ presenter: UIViewController) -> Void)?
 
-    /// Shows the prompt once, if it hasn't been shown and the app wired a
-    /// settings hook. Safe to call on every read-aloud start.
+    /// Shows the prompt once, if it hasn't been shown, the app wired a settings
+    /// hook, and the user actually IS on the standard voice — someone already
+    /// reading with an installed enhanced voice must not be told otherwise.
+    /// Safe to call on every read-aloud start.
     public static func showIfNeeded(from presenter: UIViewController) {
-        guard let openVoiceSettings, !VoiceModelStore.hasSeenVoicePrompt else { return }
+        guard let openVoiceSettings, !VoiceModelStore.hasSeenVoicePrompt,
+              !VoiceModelStore.isAppleEnhancedInstalled else { return }
         VoiceModelStore.hasSeenVoicePrompt = true
 
         let alert = UIAlertController(

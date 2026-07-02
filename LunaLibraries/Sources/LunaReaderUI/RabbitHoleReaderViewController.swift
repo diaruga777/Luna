@@ -497,7 +497,9 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             let raw = max((pan.translation(in: view).y - overscrollBaseline) * overscrollEdge, 0)
             let pull = raw / (raw + 240)
             let velocity = pan.velocity(in: view).y * overscrollEdge
-            let committed = pull > 0.32 || velocity > 900
+            // Only a RELEASED gesture commits — a system-cancelled one (incoming
+            // call, interruption) must settle back, same as the edge-pop twin.
+            let committed = pan.state == .ended && (pull > 0.32 || velocity > 900)
             endOverscroll()
             if committed {
                 // Apply the pop now, hidden under the still-present overlay; the wipe

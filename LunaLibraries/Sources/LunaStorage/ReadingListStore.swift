@@ -182,6 +182,41 @@ public final class ReadingListStore {
     }
 
     /// Persists the scroll reader's resume position.
+    /// One coordinated write for everything a reader persists on close — scroll
+    /// offset, reading progress (monotonic), spoken word, gaze word — instead of
+    /// several back-to-back whole-list read-modify-write cycles on the main
+    /// thread. nil parameters leave their field untouched.
+    public func saveReaderExitPosition(
+        scrollOffset: Double? = nil, readingProgress: Double? = nil,
+        lastSpokenWordIndex: Int? = nil, eyeTrackedWordIndex: Int? = nil,
+        for itemID: UUID
+    ) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            var changed = false
+            if let scrollOffset, all[index].lastScrollOffset != scrollOffset {
+                all[index].lastScrollOffset = scrollOffset
+                changed = true
+            }
+            if let readingProgress {
+                let clamped = min(max(readingProgress, 0), 1)
+                if clamped > (all[index].readingProgress ?? 0) {
+                    all[index].readingProgress = clamped
+                    changed = true
+                }
+            }
+            if let lastSpokenWordIndex, all[index].lastSpokenWordIndex != lastSpokenWordIndex {
+                all[index].lastSpokenWordIndex = lastSpokenWordIndex
+                changed = true
+            }
+            if let eyeTrackedWordIndex, all[index].eyeTrackedWordIndex != eyeTrackedWordIndex {
+                all[index].eyeTrackedWordIndex = eyeTrackedWordIndex
+                changed = true
+            }
+            return changed
+        }
+    }
+
     public func setLastScrollOffset(_ offset: Double, for itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),

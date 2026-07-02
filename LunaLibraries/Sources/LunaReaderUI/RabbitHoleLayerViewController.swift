@@ -457,6 +457,10 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         audioButton.configuration?.image = UIImage(
             systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash")
         guard isArticle else { return }
+        // The re-embed restores from `descriptor.scrollOffset`, which is only
+        // written on dive/pop/background — capture the live position first or
+        // the article jumps back to the last-persisted one.
+        syncScrollOffset()
         embedReader(mode: readerMode, forceReembed: true)
     }
 
@@ -478,6 +482,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     public func setMode(_ mode: ReadingListItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }
+        // The new mode's reader resumes from `descriptor.scrollOffset`; sync it
+        // now (the crossfade embeds synchronously, before any persist runs).
+        syncScrollOffset()
         // Keep the control's live selection on the new mode (it's already there when this
         // came from `modeChanged`; a no-op then, but needed for programmatic mode changes).
         // The control's OWN selection move uses UIKit's stock selection animation — no
@@ -761,5 +768,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         finishLoading()
     }
     public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
-                 withError error: Error) { finishLoading() }
+                 withError error: Error) {
+        finishLoading()
+        // The navigation never committed, so the card is a permanently blank
+        // themed rectangle — surface the error state (the watchdog can't: it
+        // only fires while webView is nil). NSURLErrorCancelled is a redirect
+        // or an intentional stop, not a dead load.
+        if articleContent == nil, (error as NSError).code != NSURLErrorCancelled {
+            showLoadError()
+        }
+    }
 }

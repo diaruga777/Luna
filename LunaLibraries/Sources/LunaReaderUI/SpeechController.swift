@@ -137,11 +137,18 @@ public final class SpeechController: NSObject {
     /// Jumps to the start of the current paragraph, or the previous one when
     /// already at its start.
     public func skipBackward() {
-        let target = utteranceStartOffset > 0 || lastSpokenAttributedRange != nil
-            ? speakableIndex
-            : max(0, speakableIndex - 1)
-        jump(toSpeakableIndex: utteranceStartOffset == 0 && target == speakableIndex
-            ? max(0, speakableIndex - 1) : target)
+        // "Already at the start" must be judged from how far speech has gotten
+        // INTO the current block, not from `utteranceStartOffset` — the normal
+        // utterance begins at offset 0, which would misread every mid-paragraph
+        // skip as "at the start" and overshoot to the previous paragraph.
+        let spokenIntoBlock: Bool = {
+            if utteranceStartOffset > 0 { return true }
+            guard let range = lastSpokenAttributedRange,
+                  let position = blockPosition(forAttributedLocation: range.location),
+                  position.speakableIndex == speakableIndex else { return false }
+            return position.offsetInBlock > 0
+        }()
+        jump(toSpeakableIndex: spokenIntoBlock ? speakableIndex : max(0, speakableIndex - 1))
     }
 
     public func cycleRate() {

@@ -144,18 +144,26 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             content: content, maxCharactersPerWord: Self.targetCharactersAcross)
         self.chunks = ChunkPlanner.chunks(words: self.engine.words)
         super.init(nibName: nil, bundle: nil)
-        if let resume = resumeWordIndex, engine.words.indices.contains(resume) {
-            // Carried over from another reader mode — start exactly there.
-            currentIndex = resume
-        } else if let resume = item.lastWordIndex, engine.words.indices.contains(resume) {
-            currentIndex = resume
-        } else if ReaderSettings.eyeTrackingEnabled,
-                  let gazeIndex = item.eyeTrackedWordIndex,
-                  engine.words.indices.contains(gazeIndex) {
-            // First RSVP entry for this article: pick up from the last word the
-            // eyes were tracked on.
-            currentIndex = gazeIndex
+        currentIndex = resolveResumeFrame(carriedOver: resumeWordIndex)
+    }
+
+    /// Initial frame from the shared token-space resume sources, in priority
+    /// order: the position carried over from another reader mode, the item's
+    /// persisted position, then the last gaze-tracked word. All three are
+    /// TOKEN indices — `frameIndex(forTokenIndex:)` converts into RSVP frame
+    /// space, which gains an extra frame per long-word split part.
+    private func resolveResumeFrame(carriedOver: Int?) -> Int {
+        if let resume = carriedOver, let frame = engine.frameIndex(forTokenIndex: resume) {
+            return frame
         }
+        if let resume = item.lastWordIndex, let frame = engine.frameIndex(forTokenIndex: resume) {
+            return frame
+        }
+        if ReaderSettings.eyeTrackingEnabled, let gazeIndex = item.eyeTrackedWordIndex,
+           let frame = engine.frameIndex(forTokenIndex: gazeIndex) {
+            return frame
+        }
+        return 0
     }
 
     /// Reuses an already-built RSVP shell with new article content. RabbitHole calls
@@ -186,21 +194,18 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         self.isPlaying = false
         self.didRevealShare = false
 
-        if let resume = resumeWordIndex, engine.words.indices.contains(resume) {
-            currentIndex = resume
-        } else if let resume = item.lastWordIndex, engine.words.indices.contains(resume) {
-            currentIndex = resume
-        } else if ReaderSettings.eyeTrackingEnabled,
-                  let gazeIndex = item.eyeTrackedWordIndex,
-                  engine.words.indices.contains(gazeIndex) {
-            currentIndex = gazeIndex
-        }
+        currentIndex = resolveResumeFrame(carriedOver: resumeWordIndex)
         if displayMode == .phrases { currentChunkIndex = chunkIndex(forWord: currentIndex) }
 
         guard isViewLoaded else { return }
         subModeControl.selectedSegmentIndex = displayMode == .phrases ? 1 : 0
         scrubber.maximumValue = Float(max(engine.words.count - 1, 1))
         scrubber.value = Float(currentIndex)
+        // The share view bakes in the previous item's friend suggestion —
+        // rebuild it for the new item/provider.
+        shareView.removeFromSuperview()
+        shareView = makeShareView()
+        installShareView()
         shareView.isHidden = true
         shareView.alpha = 0
         applyDisplayMode()
@@ -212,7 +217,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
     /// The focal word currently displayed — carried to other modes on a switch.
-    public var currentReadingWordIndex: Int? { currentIndex }
+    public var currentReadingWordIndex: Int? {
+        // Reported in the shared token space (see resolveResumeFrame).
+        engine.tokenIndex(forFrameIndex: currentIndex) ?? currentIndex
+    }
 
     /// Picks the monospaced font size so `targetCharactersAcross` characters
     /// fit beside the focal column. The right side binds: a word that long has
@@ -559,18 +567,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
         // Hidden until the reader finishes; sits above the controls so it never
         // obscures them.
-        shareView.isHidden = true
-        shareView.alpha = 0
-        shareView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(shareView)
+        installShareView()
 
         NSLayoutConstraint.activate([
             controlsStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
             controlsStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
             controlsStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
-            shareView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            shareView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            shareView.bottomAnchor.constraint(equalTo: controlsStack.topAnchor, constant: -16),
             speedRow.heightAnchor.constraint(equalToConstant: 64),
             buttonRow.leadingAnchor.constraint(greaterThanOrEqualTo: speedRow.leadingAnchor, constant: 8),
             buttonRow.trailingAnchor.constraint(lessThanOrEqualTo: speedRow.trailingAnchor, constant: -8),
@@ -629,14 +631,21 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     // MARK: - Phrase helpers
 
     /// Index of the chunk containing `wordIndex`. Chunks tile the whole word
-    /// space contiguously, so any in-range word resolves; a past-the-end index
-    /// clamps to the last chunk.
+    /// space contiguously in sorted order, so binary search resolves any
+    /// in-range word (this runs per spoken word — a linear scan made read-aloud
+    /// O(words × chunks) on long articles); an out-of-range index clamps.
     private func chunkIndex(forWord wordIndex: Int) -> Int {
         guard !chunks.isEmpty else { return 0 }
-        if let index = chunks.firstIndex(where: { $0.wordRange.contains(wordIndex) }) {
-            return index
+        var low = 0, high = chunks.count - 1
+        while low < high {
+            let mid = (low + high) / 2
+            if chunks[mid].wordRange.upperBound <= wordIndex {
+                low = mid + 1
+            } else {
+                high = mid
+            }
         }
-        return wordIndex <= 0 ? 0 : chunks.count - 1
+        return chunks[low].wordRange.contains(wordIndex) || wordIndex > 0 ? low : 0
     }
 
     // MARK: - Display
@@ -975,7 +984,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     private func saveProgress() {
-        store.setLastWordIndex(currentIndex, for: item.id)
+        // Persisted in the shared token space (see resolveResumeFrame).
+        store.setLastWordIndex(
+            engine.tokenIndex(forFrameIndex: currentIndex) ?? currentIndex, for: item.id)
         if engine.words.count > 1 {
             store.setReadingProgress(
                 Double(currentIndex) / Double(engine.words.count - 1), for: item.id)
@@ -983,6 +994,19 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     // MARK: - End-of-article share
+
+    /// Adds `shareView` to the hierarchy, hidden, pinned above the controls.
+    private func installShareView() {
+        shareView.isHidden = true
+        shareView.alpha = 0
+        shareView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(shareView)
+        NSLayoutConstraint.activate([
+            shareView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            shareView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            shareView.bottomAnchor.constraint(equalTo: controlsStack.topAnchor, constant: -16),
+        ])
+    }
 
     private func makeShareView() -> ArticleShareView {
         let suggestionName = shareProvider?.suggestedFriendName(forURLString: item.urlString)

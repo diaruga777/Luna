@@ -741,17 +741,50 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     ///   stopped working / a paywall is still up / the service didn't render) →
     ///   advance to the next pre-stage, or fall back to archive.today when exhausted.
     private func checkDirectBypassStage() {
-        bypassPollCount += 1
-        if bypassPollCount > Self.bypassPollLimit {
-            advanceToNextPreStage()
-            return
-        }
         // The pre-stage uses semantic extraction as its readiness test too: a long
         // status page must not become an article merely because it has verbose text.
-        let probe = "(function(){return document.querySelector('article, [itemprop=articleBody], main article, [class*=article-body], #CONTENT') ? 'content-root' : (document.body ? document.body.innerText : '');})()"
+        // It ALSO detects a bot/verification CAPTCHA on the original site (DataDome,
+        // reCAPTCHA, Cloudflare, hCaptcha) so the overlay can be lifted for the user
+        // to solve it — the same courtesy the archive.today flow gives.
+        let probe = """
+        (function () {
+            if (document.querySelector(
+                'iframe[src*="captcha-delivery.com"], iframe[src*="geo.captcha-delivery"], '
+                + '#captcha__frame, iframe[src*="recaptcha"], iframe[src*="challenges.cloudflare.com"], '
+                + 'iframe[src*="hcaptcha.com"], .g-recaptcha, [data-sitekey], .cf-turnstile, '
+                + '#cf-challenge-running')) { return 'challenge'; }
+            var t = document.body ? document.body.innerText : '';
+            if (/verification required|verify (you are|you're)( a)? human|complete the security check|please verify you are (a )?human|checking your browser|why do i have to complete a captcha/i.test(t)) {
+                return 'challenge';
+            }
+            if (document.querySelector('article, [itemprop=articleBody], main article, [class*=article-body], #CONTENT')) {
+                return 'content-root';
+            }
+            return t;
+        })()
+        """
         webView.evaluateJavaScript(probe) { [weak self] result, _ in
             guard let self, self.isAttemptingDirectBypass, !self.didExtract, !self.isExtracting else { return }
             let text = (result as? String) ?? ""
+            // A CAPTCHA is up on the site itself → reveal the page so the user can
+            // solve it, and PAUSE the pre-stage timeout while they do (so it doesn't
+            // give up and fall through to archive.today mid-solve).
+            if text == "challenge" {
+                if !self.loadingOverlay.isHidden {
+                    SharedDiagnosticLog.record(
+                        "archive: pre-stage CAPTCHA → revealing page for the user", category: "archive")
+                }
+                self.loadingOverlay.isHidden = true
+                self.bypassPollCount = 0
+                return
+            }
+            // An automated step — keep the page covered and run the timeout.
+            self.loadingOverlay.isHidden = false
+            self.bypassPollCount += 1
+            if self.bypassPollCount > Self.bypassPollLimit {
+                self.advanceToNextPreStage()
+                return
+            }
             if Self.isJavaScriptRequiredGate(text: text) {
                 SharedDiagnosticLog.record(
                     "archive: pre-stage is a JS-required gate → advancing", category: "archive")
@@ -893,6 +926,9 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                     }
                     self.didExtract = true
                     self.pollTimer?.invalidate()
+                    // Reveal the unlocked page so the user reads it (the main app keeps
+                    // the loaded article up; extensions finish via `onExtracted`).
+                    self.loadingOverlay.isHidden = true
                     _ = self.store.saveContent(content, for: item)
                     SharedDiagnosticLog.record(
                         "archive: extracted + saved (bodyLen=\(content.bodyTextLength))", category: "archive")

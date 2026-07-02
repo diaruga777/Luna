@@ -4,6 +4,7 @@
 //
 
 import LunaDesignSystem
+import LunaTransitions
 import UIKit
 
 /// A frameless, zoomable image viewer. It starts at the inline attachment's frame
@@ -76,13 +77,27 @@ public final class ImageLightboxViewController: UIViewController, UIScrollViewDe
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         restingFrame = fittedFrame(in: view.bounds.inset(by: UIEdgeInsets(top: 56, left: 16, bottom: 40, right: 16)))
-        UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut]) {
+        let applyOpenState = {
             self.dimmingView.alpha = 1
             self.scrollView.frame = self.restingFrame
             self.imageView.frame = self.scrollView.bounds
             self.closeButton.frame = CGRect(x: self.restingFrame.minX - 6, y: self.restingFrame.minY - 46, width: 44, height: 44)
             self.closeButton.alpha = 1
         }
+        // Dot Matrix open (appear-in-place): the image's FINAL frame materialises as
+        // random dots that sharpen, while the dimming and close button just fade via
+        // the chrome layer. Captured from the window, so the "before" is the real
+        // reader (the presentation is committed and still pixel-identical to it).
+        if DotMatrixTransitionCenter.shared.isEnabled, let window = view.window {
+            let region = view.convert(restingFrame, to: window).integral
+            DotMatrixCrossfade.run(in: window, direction: .random, region: region,
+                                   chromeFade: true, changes: {
+                applyOpenState()
+                window.layoutIfNeeded()
+            })
+            return
+        }
+        UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut], animations: applyOpenState)
     }
 
     public func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
@@ -97,12 +112,30 @@ public final class ImageLightboxViewController: UIViewController, UIScrollViewDe
 
     private func dismissToSource() {
         scrollView.setZoomScale(1, animated: false)
-        UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseIn]) {
+        let applyClosedState = {
             self.dimmingView.alpha = 0
             self.closeButton.alpha = 0
             self.scrollView.frame = self.sourceFrame
             self.imageView.frame = self.scrollView.bounds
-        } completion: { _ in
+        }
+        // Dot Matrix close — the open's mirror: the image dissolves back into the
+        // reader content behind it (its frame is the wipe region) while the dimming
+        // fades out. The "after" restores the image copy onto its inline source
+        // frame, so the unanimated dismissal underneath is invisible.
+        if DotMatrixTransitionCenter.shared.isEnabled, !isDismissing, let window = view.window {
+            isDismissing = true
+            let region = view.convert(scrollView.frame, to: window).integral
+            DotMatrixCrossfade.run(in: window, direction: .random, region: region,
+                                   chromeFade: true, changes: {
+                applyClosedState()
+                window.layoutIfNeeded()
+            }, completion: {
+                self.dismiss(animated: false)
+            })
+            return
+        }
+        UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseIn],
+                       animations: applyClosedState) { _ in
             self.dismiss(animated: false)
         }
     }

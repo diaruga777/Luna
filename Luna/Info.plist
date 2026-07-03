@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>LunaMicrosoftClientID</key>
-	<string></string>
+	<string>592c7c13-5ce7-4d75-a398-2527212398ff</string>
 	<key>LunaAppGroupID</key>
 	<string>$(APP_GROUP_ID)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

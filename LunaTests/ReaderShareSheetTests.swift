@@ -13,27 +13,27 @@ final class ReaderShareSheetTests: XCTestCase {
     func testRowsIncludeSuggestedFriendWhenPresent() {
         let rows = ReaderShareSheet.rows(
             suggestedFriendName: "alice", includeEbook: true,
-            onSendToSuggested: {}, onPickFriend: {}, onShareLink: {}, onShareEbook: {})
-        XCTAssertEqual(rows.count, 4)
+            onSendToSuggested: {}, onPickFriend: {}, onShareLink: {}, onCopyLink: {}, onShareEbook: {})
+        XCTAssertEqual(rows.count, 5)
         XCTAssertEqual(rows.first?.title, "Send to alice")
         XCTAssertTrue(rows.first?.isPrimary ?? false)
-        XCTAssertEqual(rows.map(\.title), ["Send to alice", "Send to a Friend…", "Share Link…", "Share eBook…"])
+        XCTAssertEqual(rows.map(\.title), ["Send to alice", "Send to a Friend…", "Share Link…", "Copy Link", "Share eBook…"])
     }
 
     func testRowsOmitSuggestedFriendWhenAbsent() {
         let rows = ReaderShareSheet.rows(
             suggestedFriendName: nil, includeEbook: true,
-            onSendToSuggested: {}, onPickFriend: {}, onShareLink: {}, onShareEbook: {})
-        XCTAssertEqual(rows.count, 3)
-        XCTAssertEqual(rows.map(\.title), ["Send to a Friend…", "Share Link…", "Share eBook…"])
+            onSendToSuggested: {}, onPickFriend: {}, onShareLink: {}, onCopyLink: {}, onShareEbook: {})
+        XCTAssertEqual(rows.count, 4)
+        XCTAssertEqual(rows.map(\.title), ["Send to a Friend…", "Share Link…", "Copy Link", "Share eBook…"])
         XCTAssertFalse(rows.contains { $0.isPrimary })
     }
 
     func testEbookRowOmittedForMedia() {
         let rows = ReaderShareSheet.rows(
             suggestedFriendName: nil, includeEbook: false,
-            onSendToSuggested: {}, onPickFriend: {}, onShareLink: {}, onShareEbook: {})
-        XCTAssertEqual(rows.map(\.title), ["Send to a Friend…", "Share Link…"])
+            onSendToSuggested: {}, onPickFriend: {}, onShareLink: {}, onCopyLink: {}, onShareEbook: {})
+        XCTAssertEqual(rows.map(\.title), ["Send to a Friend…", "Share Link…", "Copy Link"])
         XCTAssertFalse(rows.contains { $0.title.contains("eBook") })
     }
 
@@ -44,8 +44,9 @@ final class ReaderShareSheetTests: XCTestCase {
             onSendToSuggested: { fired.append("suggested") },
             onPickFriend: { fired.append("pick") },
             onShareLink: { fired.append("link") },
+            onCopyLink: { fired.append("copy") },
             onShareEbook: { fired.append("ebook") })
         for row in rows { row.action() }
-        XCTAssertEqual(fired, ["suggested", "pick", "link", "ebook"])
+        XCTAssertEqual(fired, ["suggested", "pick", "link", "copy", "ebook"])
     }
 }

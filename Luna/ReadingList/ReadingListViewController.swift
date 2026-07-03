@@ -1644,6 +1644,13 @@ final class ReadingListViewController: UITableViewController {
             SendToFriendSheet.shareLink(
                 urlString: item.urlString, from: self, sourceView: sourceView)
         }
+        let copyLink = UIAction(
+            title: "Copy Link",
+            image: UIImage(systemName: "doc.on.doc")
+        ) { [weak self] _ in
+            guard let self else { return }
+            SendToFriendSheet.copyLink(urlString: item.urlString, from: self)
+        }
         let delete = UIAction(
             title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
         ) { [weak self] _ in
@@ -1687,6 +1694,7 @@ final class ReadingListViewController: UITableViewController {
         // Reddit/Spotify/X) can share that link.
         if item.isShareable {
             children.append(shareLink)
+            children.append(copyLink)
         }
         // X / Instagram / TikTok posts: download the post's media to Photos.
         if MediaDownloadablePlatform.supports(item.urlString) {
@@ -1766,6 +1774,9 @@ final class ReadingListViewController: UITableViewController {
         if item.isShareable {
             children.append(UIAction(title: "Share Link…", image: UIImage(systemName: "link")) { _ in
                 SendToFriendSheet.shareLink(urlString: item.urlString, from: presenter, sourceView: sourceView)
+            })
+            children.append(UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { _ in
+                SendToFriendSheet.copyLink(urlString: item.urlString, from: presenter)
             })
         }
         if !item.isPlatformItem {

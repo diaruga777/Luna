@@ -44,6 +44,10 @@ public final class AppReaderShareProvider: ReaderShareProviding {
                 SendToFriendSheet.shareLink(
                     urlString: urlString, from: presenter, sourceView: sourceView)
             },
+            onCopyLink: { [weak presenter] in
+                guard let presenter else { return }
+                SendToFriendSheet.copyLink(urlString: urlString, from: presenter)
+            },
             onShareEbook: { [weak presenter] in
                 guard let presenter, let item else { return }
                 ArticleExportService().presentShareSheet(

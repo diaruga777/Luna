@@ -932,8 +932,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             activity.popoverPresentationController?.sourceView = self.textView
             self.present(activity, animated: true)
         }
+        let copy = UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { _ in
+            UIPasteboard.general.string = url.absoluteString
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
         // Only offer Save when there's a provider to save through.
-        let custom = shareProvider != nil ? [save, share] : [share]
+        let custom = shareProvider != nil ? [save, share, copy] : [share, copy]
         return UITextItem.MenuConfiguration(menu: UIMenu(children: custom + defaultMenu.children))
     }
 

@@ -17,6 +17,10 @@ import Foundation
 ///  - imports **Luna shares** (messages carrying the `X-Luna-Share` marker) —
 ///    auto-importing those from accepted friends, and queuing those from
 ///    strangers into the pending-requests moderation list;
+///  - imports **"From Luna:" shares whose marker couldn't be recovered** —
+///    resolves the embedded original-content URL silently (no CAPTCHA) first,
+///    falling back to the rendered email body (title prefix stripped) only if
+///    that URL is missing or can't be unlocked that way;
 ///  - imports **matched newsletters** (the existing sender/subject filters) as
 ///    articles.
 /// Luna mail is marked read as it's processed.
@@ -79,6 +83,9 @@ public final class IncomingMailImporter {
                     if await handleLunaShare(marker, message: message) {
                         toMarkRead.append(message.id)
                     }
+                } else if Self.isLunaShareSubject(message.subject) {
+                    await importUnmarkedLunaShare(message)
+                    toMarkRead.append(message.id)
                 } else {
                     importNewsletter(message)
                     toMarkRead.append(message.id)
@@ -147,11 +154,65 @@ public final class IncomingMailImporter {
             "incoming mail: queued pending request from \(senderEmail)", category: "mail")
     }
 
+    // MARK: - "From Luna:" shares without a recoverable marker
+
+    /// A "From Luna:" share whose `X-Luna-Share` marker couldn't be recovered
+    /// (the header stripped by the provider, or — for a long article — the
+    /// hidden HTML marker block clipped by the mail fetch size cap). Tries the
+    /// embedded original-content URL first, through the same silent
+    /// (non-CAPTCHA) resolution every other save uses, so the reader gets the
+    /// real article rather than Luna's own rendered copy; only falls back to
+    /// the rendered email body when the URL is missing or the page can't be
+    /// unlocked without a CAPTCHA.
+    private func importUnmarkedLunaShare(_ message: FetchedMessage) async {
+        if let originalURL = Self.urls(in: message.bodyText).first {
+            guard let item = store.addIfAbsent(urlString: originalURL.absoluteString, source: .email)
+            else { return } // Already saved via this URL elsewhere.
+
+            if let sender = MailArticleBuilder.senderName(from: message.from) {
+                store.setChannelName(sender, for: item.id)
+            }
+            await ReadingListIngestor.shared.ingest(item)
+            if store.item(withID: item.id)?.state == .ready { return }
+            // Silent resolution failed — drop the stub and fall back to the
+            // rendered email content below.
+            store.delete(item)
+        }
+        importFromBody(message, subjectOverride: Self.titleStrippingLunaPrefix(message.subject))
+    }
+
+    /// Whether the (decoded) subject carries Luna's own share prefix
+    /// (`FilterGuide.subjectMatch`) — both mail transports always search for
+    /// it, regardless of the user's configured sender/subject filters.
+    static func isLunaShareSubject(_ subject: String) -> Bool {
+        MailArticleBuilder.decodeEncodedWords(subject).hasPrefix(FilterGuide.subjectMatch)
+    }
+
+    /// The subject with the "From Luna: " prefix removed (decoding RFC 2047
+    /// encoded-words first, since the raw header may still be encoded), so a
+    /// save's title never carries it.
+    static func titleStrippingLunaPrefix(_ subject: String) -> String {
+        let decoded = MailArticleBuilder.decodeEncodedWords(subject)
+        guard decoded.hasPrefix(FilterGuide.subjectMatch) else { return decoded }
+        return String(decoded.dropFirst(FilterGuide.subjectMatch.count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Newsletters (existing sender/subject filters)
 
     private func importNewsletter(_ message: FetchedMessage) {
+        importFromBody(message, subjectOverride: nil)
+    }
+
+    /// Saves an email using its own rendered body as the article content — the
+    /// generic newsletter path, and the "From Luna:" fallback when the
+    /// original-content URL is missing or couldn't be unlocked without user
+    /// interaction. `subjectOverride`, when set, replaces the raw subject
+    /// (with the "From Luna: " prefix already stripped) so the saved title
+    /// never carries it.
+    private func importFromBody(_ message: FetchedMessage, subjectOverride: String?) {
         let incoming = IncomingMessage(
-            uid: message.uid ?? 0, from: message.from, subject: message.subject,
+            uid: message.uid ?? 0, from: message.from, subject: subjectOverride ?? message.subject,
             date: message.date, contentType: message.headers["content-type"] ?? "",
             transferEncoding: message.headers["content-transfer-encoding"] ?? "",
             body: message.bodyText, urls: Self.urls(in: message.bodyText))

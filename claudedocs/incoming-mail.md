@@ -36,11 +36,27 @@ Kindle even if the app is never opened).
   substring, e.g. "Money Stuff"), `autoSendToKindle`, and the dedupe cursor
   `lastUID` + `uidValidity`.
 - **`IncomingMailImporter`** (`.shared`): if configured, fetches new mail and
-  saves each message **as an article** (the email body IS the content;
-  `lunamail://<uid>` item + `saveContent`), falling back to the first URL when
-  there's no usable body. Items are tagged `captureSource: .email`; auto-send is
-  then handled by `ArticleSendCoordinator.articleBecameReady` per the
-  destination's email-source setting (Kindle's reuses `autoSendToKindle`; see
+  routes each message by whether it's a Luna share (carries the
+  `X-Luna-Share` marker, recovered from the header or a hidden HTML body
+  block — see `social-sharing.md`) vs. a generic newsletter match
+  (`allowedSenders`/`subjectFilters`):
+  - **Marked Luna share**: imported straight from `marker.url` through the
+    normal silent ingest pipeline (real article/video/product/etc., not the
+    rendered email).
+  - **"From Luna:" subject but no recoverable marker** (provider stripped the
+    header, or a long article's trailing marker block got clipped by the mail
+    fetch size cap) — `importUnmarkedLunaShare`: extracts the original-content
+    URL embedded in the body and tries the same silent (non-CAPTCHA)
+    resolution; only when that URL is missing or the page needs an
+    interactive CAPTCHA does it fall back to saving the email's own rendered
+    body as an article. Either way the "From Luna: " subject prefix is
+    stripped before it can reach a saved title.
+  - **Everything else (generic newsletter match)**: saved **as an article**
+    (the email body IS the content; `lunamail://<uid>` item + `saveContent`),
+    falling back to the first URL when there's no usable body.
+  Items are tagged `captureSource: .email`; auto-send is then handled by
+  `ArticleSendCoordinator.articleBecameReady` per the destination's
+  email-source setting (Kindle's reuses `autoSendToKindle`; see
   send-to-kindle.md → "Auto-send by capture source"). Advances the cursor.
   Coalesces overlapping runs. `isConfigured` = enabled + (senders OR subject
   filters) + Gmail account + app password.

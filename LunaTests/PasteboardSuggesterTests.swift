@@ -6,6 +6,7 @@
 import LunaReadingList
 import LunaYouTubeAPI
 import LunaStorage
+import LunaFetch
 import XCTest
 @testable import Luna
 
@@ -47,6 +48,12 @@ final class PasteboardSuggesterTests: XCTestCase {
         return PasteboardSuggester(store: store, youTubeMetadataFetcher: mock)
     }
 
+    private func suggester(fetcher: HTMLFetching) -> PasteboardSuggester {
+        PasteboardSuggester(
+            store: store, fetcher: fetcher,
+            youTubeMetadataFetcher: MockYouTubeMetadataFetcher(metadata: nil))
+    }
+
     func testNonHTTPURLIsRejected() async {
         let result = await suggester().evaluate(urlString: "ftp://example.com/file")
         XCTAssertNil(result)
@@ -79,6 +86,25 @@ final class PasteboardSuggesterTests: XCTestCase {
         let result = await suggester(youtubeTitle: nil)
             .evaluate(urlString: "https://youtu.be/dQw4w9WgXcQ")
         XCTAssertNil(result)
+    }
+
+    func testHardPaywallPasteboardCandidateRequiresUnlockAndCarriesNoTeaserContent() async {
+        let url = "https://www.wsj.com/articles/locked-story"
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[url] = """
+        <html><head><title>WSJ Headline</title>
+        <script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script>
+        </head><body>
+        <article><p>The free preview paragraph is visible, but the real body is locked.</p></article>
+        </body></html>
+        """
+
+        let result = await suggester(fetcher: fetcher).evaluate(urlString: url)
+
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.title, "WSJ Headline")
+        XCTAssertTrue(result?.requiresUnlock ?? false)
+        XCTAssertNil(result?.content, "locked pasteboard rows must not persist or preview teaser content")
     }
 
     /// Bug 2 regression: a Facebook `fbrpc://` deep link on the pasteboard must be

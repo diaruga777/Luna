@@ -8,6 +8,7 @@ import LunaPlatforms
 import LunaStorage
 import LunaFetch
 import LunaHTMLClassification
+import LunaIngest
 import LunaURLClassification
 import LunaModels
 import UIKit
@@ -26,17 +27,22 @@ public struct PasteboardCandidate {
     public let content: ArticleContent?
     /// Set for a recognized non-YouTube platform URL (X, Bluesky, …).
     public let platform: ContentPlatform?
+    /// True when the URL is a paywalled article that must go through the normal
+    /// saved-item WKWebView unlock flow before any reader preview exists.
+    public let requiresUnlock: Bool
     /// Best-effort preview thumbnail (cover art / video still / platform art).
     public let thumbnail: UIImage?
 
     public init(urlString: String, title: String, channelName: String?, videoID: String?,
-         content: ArticleContent?, platform: ContentPlatform? = nil, thumbnail: UIImage? = nil) {
+         content: ArticleContent?, platform: ContentPlatform? = nil,
+         requiresUnlock: Bool = false, thumbnail: UIImage? = nil) {
         self.urlString = urlString
         self.title = title
         self.channelName = channelName
         self.videoID = videoID
         self.content = content
         self.platform = platform
+        self.requiresUnlock = requiresUnlock
         self.thumbnail = thumbnail
     }
 
@@ -57,13 +63,15 @@ public final class PasteboardSuggester: PasteboardSuggesting {
     public static let shared = PasteboardSuggester()
 
     private let store: ReadingListStore
-    private let fetcher = ArticleFetcher()
+    private let fetcher: HTMLFetching
     private let extractor = ArticleExtractor()
     private let youTubeMetadataFetcher: YouTubeMetadataFetching
 
     public init(store: ReadingListStore = .shared,
+         fetcher: HTMLFetching = ArticleFetcher(),
          youTubeMetadataFetcher: YouTubeMetadataFetching = YouTubeOEmbedFetcher()) {
         self.store = store
+        self.fetcher = fetcher
         self.youTubeMetadataFetcher = youTubeMetadataFetcher
     }
 
@@ -98,18 +106,30 @@ public final class PasteboardSuggester: PasteboardSuggesting {
                 thumbnail: art)
         }
 
-        guard let html = try? await fetcher.fetchHTML(from: url),
-              let content = try? extractor.extract(html: html, baseURL: url),
-              !content.blocks.isEmpty
-        else { return nil }
-        let cover = await coverImage(html: html, baseURL: url)
-        // Eagerly preload this clipboard candidate's linked pages (text + images) so an
-        // open/save is instant offline. Bounded to the current clipboard link and
-        // Wi-Fi-gated; harmlessly re-triggered (deduped) if the same URL is re-evaluated.
-        PreloadCoordinator.shared.preloadPasteboard(content: content, sourceURL: url)
-        return PasteboardCandidate(
-            urlString: normalizedURLString, title: content.title,
-            channelName: nil, videoID: nil, content: content, thumbnail: cover)
+        guard let html = try? await fetcher.fetchHTML(from: url) else { return nil }
+        let outcome = await IngestPipeline.process(
+            IngestInput(url: url, source: .paste, prefetchedHTML: html),
+            fetcher: fetcher, extractor: extractor)
+        switch outcome {
+        case let .article(content, _):
+            guard !content.blocks.isEmpty else { return nil }
+            let cover = await coverImage(html: html, baseURL: url)
+            // Eagerly preload this clipboard candidate's linked pages (text + images) so an
+            // open/save is instant offline. Bounded to the current clipboard link and
+            // Wi-Fi-gated; harmlessly re-triggered (deduped) if the same URL is re-evaluated.
+            PreloadCoordinator.shared.preloadPasteboard(content: content, sourceURL: url)
+            return PasteboardCandidate(
+                urlString: normalizedURLString, title: content.title,
+                channelName: nil, videoID: nil, content: content, thumbnail: cover)
+        case let .needsArchive(title):
+            let fallbackTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return PasteboardCandidate(
+                urlString: normalizedURLString,
+                title: fallbackTitle.isEmpty ? normalizedURLString : fallbackTitle,
+                channelName: nil, videoID: nil, content: nil, requiresUnlock: true)
+        default:
+            return nil
+        }
     }
 
     /// Whether `urlString` is already in the reading list, matching exactly, by

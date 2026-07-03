@@ -389,12 +389,33 @@ final class ReadingListViewController: UITableViewController {
         transient.youtubeVideoID = candidate.videoID
         transient.channelName = candidate.channelName
         transient.platform = candidate.platform
-        transient.state = .ready
+        transient.state = candidate.requiresUnlock ? .needsCaptcha : .ready
 
         if candidate.isVideo {
             openVideo(transient, from: self)
         } else if let platform = candidate.platform {
             openPlatformItem(transient, platform: platform, from: self)
+        } else if candidate.requiresUnlock {
+            pasteboardCandidate = nil
+            evaluatingPasteboardURL = nil
+            reload()
+            Task { [weak self] in
+                let result = await ReadingListIngestor.shared.handleSavePress(
+                    urlString: candidate.urlString, source: .paste)
+                await MainActor.run {
+                    guard let self else { return }
+                    let resultItem: ReadingListItem?
+                    switch result {
+                    case .saved(let saved), .sentToEreaders(let saved): resultItem = saved
+                    case .ignored: resultItem = nil
+                    }
+                    let item = resultItem
+                        .flatMap { self.store.item(withID: $0.id) }
+                        ?? self.store.item(forURLString: candidate.urlString)
+                    guard let item else { return }
+                    self.open(item, presenter: self)
+                }
+            }
         } else if let content = candidate.content {
             let reader = ReaderHostFactory.make(
                 item: transient, content: content,
@@ -464,7 +485,7 @@ final class ReadingListViewController: UITableViewController {
     private func displayItem(for candidate: PasteboardCandidate) -> ReadingListItem {
         var item = ReadingListItem(urlString: candidate.urlString)
         item.title = candidate.title
-        item.state = .ready
+        item.state = candidate.requiresUnlock ? .needsCaptcha : .ready
         item.youtubeVideoID = candidate.videoID
         item.channelName = candidate.channelName
         item.platform = candidate.platform
@@ -1201,7 +1222,8 @@ final class ReadingListViewController: UITableViewController {
             // ready. A trailing Save button saves explicitly (tap just previews).
             let thumbnail: ReadingListItemCell.Thumbnail
             if let candidate = pasteboardCandidate {
-                if let image = candidate.thumbnail { thumbnail = .image(image) }
+                if candidate.requiresUnlock { thumbnail = .logo(assetName: nil, glyph: "lock.fill") }
+                else if let image = candidate.thumbnail { thumbnail = .image(image) }
                 else if let platform = candidate.platform,
                         let module = PlatformRegistry.shared.module(for: platform) {
                     thumbnail = .logo(assetName: platform.logoAssetName, glyph: module.glyphSymbolName)

@@ -31,6 +31,33 @@ public enum SendToFriendSheet {
             promptAccountSetup(from: presenter)
             return
         }
+        let recentRecipients = RecentFriendRecipientsStore.shared.items(limit: 5)
+        guard !recentRecipients.isEmpty else {
+            presentFriendPicker(from: presenter, item: item, urlString: urlString, title: title)
+            return
+        }
+        presentRecentRecipients(
+            recentRecipients, from: presenter, item: item, urlString: urlString, title: title)
+    }
+
+    /// Copies the URL directly to the clipboard.
+    public static func copyLink(urlString: String, from presenter: UIViewController) {
+        UIPasteboard.general.string = urlString
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        let alert = UIAlertController(title: "Copied Link", message: nil, preferredStyle: .alert)
+        DotMatrixModal.present(alert, from: presenter)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak alert] in
+            guard let alert, alert.presentingViewController != nil else { return }
+            alert.dismiss(animated: true)
+        }
+    }
+
+    private static func presentFriendPicker(
+        from presenter: UIViewController,
+        item: ReadingListItem?,
+        urlString: String,
+        title: String?
+    ) {
         let picker = RecipientPickerViewController { emails in
             guard !emails.isEmpty else { return }
             deliver(item: item, urlString: urlString, title: title, to: emails, from: presenter)
@@ -38,6 +65,27 @@ public enum SendToFriendSheet {
         let nav = UINavigationController(rootViewController: picker)
         nav.installDotMatrixTransitions()
         DotMatrixModal.present(nav, from: presenter)
+    }
+
+    private static func presentRecentRecipients(
+        _ recipients: [RecentFriendRecipientsStore.Recipient],
+        from presenter: UIViewController,
+        item: ReadingListItem?,
+        urlString: String,
+        title: String?
+    ) {
+        let sheet = UIAlertController(title: "Send to Friend", message: nil, preferredStyle: .actionSheet)
+        for recipient in recipients {
+            sheet.addAction(UIAlertAction(title: recipient.email, style: .default) { _ in
+                deliver(item: item, urlString: urlString, title: title, to: [recipient.email], from: presenter)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "Other…", style: .default) { _ in
+            presentFriendPicker(from: presenter, item: item, urlString: urlString, title: title)
+        })
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        sheet.popoverPresentationController?.sourceView = presenter.view
+        DotMatrixModal.present(sheet, from: presenter)
     }
 
     /// Shares the plain URL via the system share sheet (no Luna framing).

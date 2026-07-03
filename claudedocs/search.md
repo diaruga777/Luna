@@ -26,7 +26,7 @@ The list's nav bar is hidden **synchronously up front** (`setNavigationBarHidden
 1. Bump `queryToken`. Run `stringMatches` synchronously → set `results` → reload (instant).
 2. Dispatch `semanticMatches(excluding: stringResultIDs)` on a **serial** `semanticQueue` (the NL model isn't reentrant). On completion, if `queryToken` is unchanged (no newer keystroke), append the de-duped semantic hits and reload. Stale results for superseded queries are dropped by the token check.
 
-Opening a result uses `ReadingListViewController.open(_:presenter: searchVC)` (reader pushes on the search nav; video/platform/archive present from search). Long-press / sim row-actions menu = `searchResultMenu`: **always Bump to Top**, **never Edit List**; Send to Friend / Share Link / Kindle / Boox / Unarchive / Delete as applicable; `onChange` re-runs the search after a mutation. Excludes eBook-share and media-to-Photos (those draw on the list itself).
+Opening a result uses `ReadingListViewController.open(_:presenter: searchVC)` (reader pushes on the search nav; video/platform/archive present from search). Long-press / sim row-actions menu = `searchResultMenu`: **always Bump to Top**, **never Edit List**; Send to Friend / Share Link / Copy Link / Kindle / Boox / Unarchive / Delete as applicable; `onChange` re-runs the search after a mutation. Excludes eBook-share and media-to-Photos (those draw on the list itself).
 
 ## Semantic index (powers search)
 

@@ -59,13 +59,14 @@ recipient's Luna app recognizes and offers to import.
 - **`PendingRequestsViewController`** — the moderation queue. Tapping a
   request offers "Add Friend & Import" (adds sender to `FriendsStore` +
   imports), "Import Once" (imports without adding as a friend), or "Delete".
-- **`RecipientPickerViewController`** — used from the reader share sheet /
-  reading-list context menu to pick send targets: multi-select from friends,
-  "Enter email address…", or "Add from Contacts". Returns the chosen addresses
-  to `EmailShareCenter`.
-- **`SendToFriendSheet`** / **`ReaderShareSheet`** — present the recipient
-  picker from the reading-list long-press menu and the reader's share button
-  respectively.
+- **`RecipientPickerViewController`** — the full recipient picker: multi-select
+  from friends, "Enter email address…", or "Add from Contacts". Returns the
+  chosen addresses to `EmailShareCenter`.
+- **`RecentFriendRecipientsStore`** — records successful sent-to addresses in
+  App Group JSON (`recentFriendRecipients.json`), newest first, for quick send.
+- **`SendToFriendSheet`** / **`ReaderShareSheet`** — "Send to Friend" first
+  shows a bottom sheet with up to 5 recent sent-to emails plus "Other…" for the
+  full picker. With no past sends, it skips straight to the full picker.
 
 ## Notifications
 

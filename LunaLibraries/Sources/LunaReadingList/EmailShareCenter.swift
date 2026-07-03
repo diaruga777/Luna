@@ -22,13 +22,16 @@ public final class EmailShareCenter {
     private let store: ReadingListStore
     private let accountStore: EmailAccountStore
     private let friends: FriendsStore
+    private let recentRecipients: RecentFriendRecipientsStore
 
     public init(store: ReadingListStore = .shared,
                 accountStore: EmailAccountStore = .shared,
-                friends: FriendsStore = .shared) {
+                friends: FriendsStore = .shared,
+                recentRecipients: RecentFriendRecipientsStore = .shared) {
         self.store = store
         self.accountStore = accountStore
         self.friends = friends
+        self.recentRecipients = recentRecipients
     }
 
     public enum ShareError: Error, LocalizedError {
@@ -90,6 +93,7 @@ public final class EmailShareCenter {
 
         // Record every recipient as a friend (accepted — the user chose them).
         for email in recipients { friends.add(email: email) }
+        recentRecipients.recordSent(to: recipients)
     }
 
     // MARK: - Body building

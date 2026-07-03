@@ -40,6 +40,7 @@ public final class ReaderShareSheet: UIViewController {
         onSendToSuggested: @escaping () -> Void,
         onPickFriend: @escaping () -> Void,
         onShareLink: @escaping () -> Void,
+        onCopyLink: @escaping () -> Void,
         onShareEbook: @escaping () -> Void
     ) -> [Row] {
         var rows: [Row] = []
@@ -54,6 +55,9 @@ public final class ReaderShareSheet: UIViewController {
         rows.append(Row(
             title: "Share Link…", systemImage: "link",
             isPrimary: false, action: onShareLink))
+        rows.append(Row(
+            title: "Copy Link", systemImage: "doc.on.doc",
+            isPrimary: false, action: onCopyLink))
         // eBook export only applies to readable articles, not media / platform posts.
         if includeEbook {
             rows.append(Row(

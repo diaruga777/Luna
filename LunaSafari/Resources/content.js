@@ -112,6 +112,7 @@
 
     // A page worth a "Read in Luna" button: an article, not a homepage/search.
     function looksLikeArticle() {
+        if (isRedditHost()) { return redditLooksLikeArticle(); }
         var ogType = document.querySelector('meta[property="og:type"]');
         if (ogType && /article/i.test(ogType.getAttribute("content") || "")) { return true; }
         if (document.querySelector("article")) { return true; }
@@ -121,6 +122,50 @@
             textLength += (paragraphs[i].innerText || "").length;
         }
         return textLength > 1500 && !!document.querySelector("h1");
+    }
+
+    // Mirrors RedditLink.isReddit (Swift) — keep in sync.
+    function isRedditHost() {
+        var host = (location.hostname || "").toLowerCase();
+        return host === "reddit.com" || host.slice(-".reddit.com".length) === ".reddit.com"
+            || host === "redd.it";
+    }
+
+    // The base-36 post id from a `/r/<sub>/comments/<id>/…` permalink, or the
+    // `redd.it/<id>` shortlink id. Mirrors RedditLink.postID (Swift). Any other
+    // reddit.com page — the homepage, a subreddit/user listing, search — has no
+    // post id and is a scrolling feed of many posts' worth of text, never a
+    // single readable article.
+    function redditPostID() {
+        var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
+        var commentsIndex = segments.indexOf("comments");
+        if (commentsIndex >= 0 && commentsIndex + 1 < segments.length) { return segments[commentsIndex + 1]; }
+        if (location.hostname.toLowerCase() === "redd.it") { return segments[0] || null; }
+        return null;
+    }
+
+    // Reddit posts are social content, not articles — EXCEPT a text post whose
+    // own body (title + selftext, comments never counted) is substantial enough
+    // to actually be "reading material" rather than a link/discussion prompt.
+    // List/scroll pages (home, subreddits, user pages, search) never qualify:
+    // their high net character count comes from many posts' previews/comments,
+    // not one readable post.
+    function redditLooksLikeArticle() {
+        if (!redditPostID()) { return false; }
+        return redditPostBodyText().length >= REDDIT_POST_BODY_THRESHOLD;
+    }
+
+    // The text of just the primary post — new Reddit renders it as a single
+    // <shreddit-post> custom element (comments are separate sibling elements,
+    // never nested inside it); old Reddit's permalink page holds just the OP's
+    // `.thing.link` above `.commentarea`. Either way this never touches comments.
+    var REDDIT_POST_BODY_THRESHOLD = 1200;
+    function redditPostBodyText() {
+        var post = document.querySelector("shreddit-post");
+        if (post) { return (post.innerText || post.textContent || "").trim(); }
+        var oldPost = document.querySelector("#siteTable .thing.link, div.thing.link");
+        if (oldPost) { return (oldPost.innerText || oldPost.textContent || "").trim(); }
+        return "";
     }
 
     // Mirrors PaywallDetector: schema.org isAccessibleForFree / content_tier, plus

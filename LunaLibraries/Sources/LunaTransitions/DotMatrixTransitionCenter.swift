@@ -34,13 +34,49 @@ public final class DotMatrixTransitionCenter {
     }
 
     /// Build and park an overlay now so the first transition doesn't pay the Metal
-    /// setup cost. Safe to call repeatedly; a no-op when Metal is unavailable.
+    /// setup, texture-upload, CAMetalLayer drawable, or first command-buffer cost.
+    /// Safe to call repeatedly; a no-op when Metal is unavailable.
     public func prewarm(in window: UIWindow) {
         guard RabbitHoleTransitionView.isSupported, parked.object(forKey: window) == nil,
               let view = RabbitHoleTransitionView.make() else { return }
+        warmFirstFrame(of: view, in: window)
         view.isHidden = true
+        view.alpha = 1
+        view.frame = .zero
+        view.clearTextures()
+        view.removeFromSuperview()
         parked.setObject(view, forKey: window)
     }
+
+    /// Render one tiny real frame through the same path used by transitions. Merely
+    /// constructing the overlay compiles the pipeline, but the first visible wipe was
+    /// still paying for layer attachment, texture creation, drawable allocation, and
+    /// the first command buffer. Doing that work after launch makes the first user
+    /// transition as smooth as the second.
+    private func warmFirstFrame(of view: RabbitHoleTransitionView, in window: UIWindow) {
+        guard let image = Self.warmupImage else { return }
+        view.style = DotMatrixTransitionStyleProvider.style(for: window.traitCollection)
+        view.direction = .random
+        view.dissolvesOut = false
+        view.frame = CGRect(x: 0, y: 0, width: 2, height: 2)
+        view.alpha = 0.001
+        view.isHidden = false
+        window.addSubview(view)
+        view.configure(before: image, after: image)
+        window.layoutIfNeeded()
+        view.setProgress(0.5)
+    }
+
+    private static let warmupImage: UIImage? = {
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.scale = min(UIScreen.main.scale, 2)
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2), format: format)
+            .image { context in
+                UIColor.black.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+            }
+    }()
 
     /// Borrow an overlay for a transition (reusing the window's parked one if free),
     /// or nil when Metal is unavailable. The caller owns parenting until it returns it.

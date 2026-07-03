@@ -132,6 +132,16 @@ Installed once in AppDelegate via `DotMatrixKeyboardReveal.install(windowProvide
 `prewarmKeyboard()` ~1s post-launch to pay the process's one-time keyboard bring-up
 cost off any tap path.
 
+### First-transition warmup
+
+`SceneDelegate.installDotMatrixTransitions()` calls
+`DotMatrixTransitionCenter.prewarm(in:)` once the root window exists. Prewarm does more
+than build and park a `RabbitHoleTransitionView`: it briefly attaches the overlay to
+the real window, uploads a tiny texture pair, lays out its `CAMetalLayer`, requests a
+drawable, and commits a tiny first render before parking it. That keeps the first
+user-visible dotmatrix transition from paying Metal/layer/drawable first-use costs on
+the tap path; later transitions reuse the warmed parked overlay as before.
+
 **Intentional exclusions**: toasts, spinners, gesture snap-backs and other
 micro-interactions per the rule below.
 

@@ -118,9 +118,11 @@ TRANSPARENT gaps and fades them away (premultiplied blending; `returnOverlay` re
 the mode), revealing whatever LIVE content sits beneath the layer. On
 `keyboardWillShow` a touch-transparent patch window ABOVE the keyboard's window
 (level 2e7) holds the pre-keyboard pixels — copied from the modal cover's image when
-one is up (`DotMatrixKeyboardReveal.activeCover`), else the live window — the
-keyboard rises invisibly beneath it, and on `keyboardDidShow` the patch dissolves out
-in 0.15s (bottom-to-top wave). A keyboard rising during a `DotMatrixModal` present (a
+one is up (`DotMatrixKeyboardReveal.activeCover`), else the live window. A plain
+snapshot view holds those pixels until the Metal layer has painted its progress-0
+frame, so a missing first drawable cannot expose a bare keyboard. The keyboard rises
+invisibly beneath it, and on `keyboardDidShow` the Metal patch dissolves out in
+0.15s (bottom-to-top wave). A keyboard rising during a `DotMatrixModal` present (a
 modal text field auto-focusing) instead holds under its patch until
 `modalWipeDidStart()` so its dots run in step with the modal's wipe (1s fallback if
 the choreography bails). Frame CHANGES while visible, hardware-keyboard bars

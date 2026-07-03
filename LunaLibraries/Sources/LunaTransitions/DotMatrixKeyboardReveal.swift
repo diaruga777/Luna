@@ -138,6 +138,7 @@ public enum DotMatrixKeyboardReveal {
 private final class Reveal {
 
     private let cover: UIWindow
+    private let placeholder: UIImageView
     private let overlay: RabbitHoleTransitionView
     private weak var appWindow: UIWindow?
     private let dissolveDuration: TimeInterval
@@ -160,6 +161,7 @@ private final class Reveal {
         // Above the keyboard's own window (≈ level 1e7); touch-transparent so the
         // rising keyboard is usable the moment it lands.
         cover = UIWindow(windowScene: scene)
+        cover.frame = scene.coordinateSpace.bounds
         AppearanceSettings.apply(to: cover)
         cover.windowLevel = UIWindow.Level(rawValue: 20_000_000)
         cover.isUserInteractionEnabled = false
@@ -167,6 +169,12 @@ private final class Reveal {
         let root = UIViewController()
         root.view.backgroundColor = .clear
         cover.rootViewController = root
+
+        placeholder = UIImageView(image: patch)
+        placeholder.frame = frame
+        placeholder.autoresizingMask = []
+        placeholder.contentMode = .scaleToFill
+        root.view.addSubview(placeholder)
 
         overlay.dissolvesOut = true
         overlay.style = DotMatrixTransitionStyleProvider.style(for: cover.traitCollection)
@@ -178,6 +186,7 @@ private final class Reveal {
         overlay.isHidden = false
         root.view.addSubview(overlay)
         cover.isHidden = false
+        cover.layoutIfNeeded()
 
         // If keyboardDidShow never arrives (edge cases), dissolve anyway once the
         // system slide must have finished.
@@ -199,6 +208,13 @@ private final class Reveal {
         guard !dissolving, !finished else { return }
         dissolving = true
         fallback?.cancel()
+        // Keep the keyboard covered with a cheap UIImageView while the reveal is
+        // armed. Once the dissolve starts, force the Metal layer to have a progress-0
+        // drawable before removing that placeholder; otherwise a missing first
+        // drawable reads as a bare, unanimated keyboard pop.
+        cover.layoutIfNeeded()
+        overlay.setProgress(0)
+        placeholder.removeFromSuperview()
         overlay.animateProgress(to: 1, duration: dissolveDuration) { [weak self] in
             self?.finish()
         }

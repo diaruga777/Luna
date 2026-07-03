@@ -55,10 +55,15 @@ public enum MicrosoftOAuth {
         return PKCE(verifier: verifier, challenge: codeChallenge(forVerifier: verifier))
     }
 
-    /// The authorization URL to open in `ASWebAuthenticationSession`.
-    public static func authorizationURL(clientID: String, challenge: String) -> URL? {
+    /// The authorization URL to open in `ASWebAuthenticationSession`. When a
+    /// `loginHint` (the address the user already typed) is supplied, it is passed
+    /// as `login_hint` so Microsoft pre-fills the account field in the webview and
+    /// the user doesn't have to re-enter their email.
+    public static func authorizationURL(
+        clientID: String, challenge: String, loginHint: String? = nil
+    ) -> URL? {
         var components = URLComponents(string: authorizeEndpoint)
-        components?.queryItems = [
+        var items = [
             URLQueryItem(name: "client_id", value: clientID),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
@@ -67,6 +72,10 @@ public enum MicrosoftOAuth {
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "prompt", value: "select_account"),
         ]
+        if let hint = loginHint?.trimmingCharacters(in: .whitespacesAndNewlines), !hint.isEmpty {
+            items.append(URLQueryItem(name: "login_hint", value: hint))
+        }
+        components?.queryItems = items
         return components?.url
     }
 

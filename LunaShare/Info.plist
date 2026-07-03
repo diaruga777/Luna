@@ -4,8 +4,6 @@
 <dict>
 	<key>LunaAppGroupID</key>
 	<string>$(APP_GROUP_ID)</string>
-	<key>LunaICloudContainerID</key>
-	<string>$(ICLOUD_CONTAINER_ID)</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>INSendMessageIntent</string>

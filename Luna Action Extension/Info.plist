@@ -4,8 +4,6 @@
 <dict>
 	<key>LunaAppGroupID</key>
 	<string>$(APP_GROUP_ID)</string>
-	<key>LunaICloudContainerID</key>
-	<string>$(ICLOUD_CONTAINER_ID)</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Luna saves photos, GIFs, and videos you download from social posts to your photo library.</string>
 	<key>NSExtension</key>

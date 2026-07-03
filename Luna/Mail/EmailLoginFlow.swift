@@ -56,6 +56,12 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
         field.borderStyle = .roundedRect
         field.delegate = self
         field.translatesAutoresizingMaskIntoConstraints = false
+        // Capture the value as it changes so keyboard AutoFill and password-manager
+        // fills — which arrive through the editing-change path (and can drop the
+        // field's own `text` when their extension UI backgrounds the app) — stick
+        // even though we only read the address lazily when Continue is tapped.
+        field.addTarget(self, action: #selector(addressEdited), for: .editingChanged)
+        field.addTarget(self, action: #selector(addressEdited), for: .editingDidEnd)
 
         hint.text = "Luna sends and reads shared articles through your own email account."
         hint.font = .preferredFont(forTextStyle: .footnote)
@@ -81,6 +87,15 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
         return true
     }
 
+    /// Mirror of the field's text, kept current via `.editingChanged` so an
+    /// AutoFilled value survives even if the field is cleared on return from a
+    /// password-manager extension.
+    private var enteredAddress = ""
+
+    @objc private func addressEdited() {
+        if let text = field.text, !text.isEmpty { enteredAddress = text }
+    }
+
     @objc private func cancel() { DotMatrixModal.dismiss(self) { self.completion?(false) } }
 
     /// Latched while autodiscovery runs: the return key and Continue button stay
@@ -90,7 +105,11 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
 
     @objc private func continueTapped() {
         guard !isResolving else { return }
-        let address = (field.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // Prefer the live field, but fall back to the AutoFill-captured value in
+        // case the field's text was dropped when a password manager filled it.
+        let typed = field.text ?? ""
+        let source = typed.isEmpty ? enteredAddress : typed
+        let address = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard address.contains("@"), address.contains(".") else {
             field.shake()
             return
@@ -140,7 +159,8 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
             return
         }
         let pkce = MicrosoftOAuth.makePKCE()
-        guard let url = MicrosoftOAuth.authorizationURL(clientID: clientID, challenge: pkce.challenge)
+        guard let url = MicrosoftOAuth.authorizationURL(
+            clientID: clientID, challenge: pkce.challenge, loginHint: address)
         else { presentError("Couldn't start Outlook sign-in."); return }
 
         let session = ASWebAuthenticationSession(
@@ -152,6 +172,10 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
                     .queryItems?.first(where: { $0.name == "code" })?.value
             else { return }
             Task { @MainActor in
+                // The webview is gone but the token exchange + inbox-filter setup
+                // still run. Cover the (button-bearing) entry screen with a
+                // full-screen dot-matrix spinner so nothing is tappable meanwhile.
+                self.showLoadingCover()
                 await self.exchangeOutlookCode(code, verifier: pkce.verifier,
                                                clientID: clientID, address: address)
             }
@@ -189,12 +213,51 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
             }
             finish()
         } catch {
+            hideLoadingCover()
             presentError("Outlook sign-in failed. Please try again.")
         }
     }
 
     private func finish() {
         DotMatrixModal.dismiss(self) { self.completion?(true) }
+    }
+
+    // MARK: - Full-screen loading cover
+
+    private var loadingCover: UIView?
+
+    /// A button-free, full-screen cover with a centered dot-matrix spinner. It's
+    /// added to the navigation controller's view so it also hides the Cancel /
+    /// Continue bar buttons — while the OAuth code is exchanged and the account is
+    /// set up, nothing on screen can be tapped. Torn down with the modal on success.
+    private func showLoadingCover() {
+        guard loadingCover == nil else { return }
+        field.resignFirstResponder()
+        let host = navigationController?.view ?? view!
+        let cover = UIView()
+        cover.backgroundColor = .systemBackground
+        cover.isUserInteractionEnabled = true
+        cover.translatesAutoresizingMaskIntoConstraints = false
+
+        let spinner = DotMatrixSpinnerView(side: 40)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        cover.addSubview(spinner)
+        host.addSubview(cover)
+        NSLayoutConstraint.activate([
+            cover.topAnchor.constraint(equalTo: host.topAnchor),
+            cover.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+            cover.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            cover.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            spinner.centerXAnchor.constraint(equalTo: cover.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: cover.centerYAnchor),
+        ])
+        spinner.startAnimating()
+        loadingCover = cover
+    }
+
+    private func hideLoadingCover() {
+        loadingCover?.removeFromSuperview()
+        loadingCover = nil
     }
 
     private func presentError(_ message: String) {

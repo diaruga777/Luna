@@ -24,6 +24,28 @@ final class MicrosoftOAuthTests: XCTestCase {
         XCTAssertEqual(value("code_challenge"), pkce.challenge)
         XCTAssertTrue(value("scope")?.contains("Mail.Send") == true)
         XCTAssertTrue(value("scope")?.contains("offline_access") == true)
+        // No hint given → no login_hint item.
+        XCTAssertNil(value("login_hint"))
+    }
+
+    func testAuthorizationURLPassesLoginHint() throws {
+        let pkce = MicrosoftOAuth.makePKCE()
+        let url = try XCTUnwrap(
+            MicrosoftOAuth.authorizationURL(
+                clientID: "abc-123", challenge: pkce.challenge, loginHint: "user@outlook.com"))
+        let items = try XCTUnwrap(
+            URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(items.first { $0.name == "login_hint" }?.value, "user@outlook.com")
+    }
+
+    func testAuthorizationURLOmitsBlankLoginHint() throws {
+        let pkce = MicrosoftOAuth.makePKCE()
+        let url = try XCTUnwrap(
+            MicrosoftOAuth.authorizationURL(
+                clientID: "abc-123", challenge: pkce.challenge, loginHint: "   "))
+        let items = try XCTUnwrap(
+            URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertNil(items.first { $0.name == "login_hint" }?.value)
     }
 
     func testPKCEChallengeIsURLSafeBase64() {

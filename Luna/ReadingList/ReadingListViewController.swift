@@ -1406,6 +1406,11 @@ final class ReadingListViewController: UITableViewController {
             DotMatrixModal.dismiss(nav) {
                 guard let self, let presenter,
                       let fresh = self.store.item(withID: item.id) else { return }
+                // Archive/direct-unlock extraction happens in LunaArchiveReader, below
+                // the thumbnail helper's module, so it saves text first and lets the app
+                // process backfill the row cover. Without this nudge, the cover appears
+                // only on the next launch/foreground backfill pass.
+                self.ingestor.backfillMissingThumbnails()
                 self.open(fresh, presenter: presenter)   // now .ready → native reader
             }
         }

@@ -450,7 +450,6 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // for debugging. 0.99 = effectively opaque.
         loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(
             CGFloat(ReaderSettings.archiveOverlayAlpha))
-        loadingOverlay.isUserInteractionEnabled = false
         loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
 
         overlaySpinner.color = GlassStyle.readingAccent

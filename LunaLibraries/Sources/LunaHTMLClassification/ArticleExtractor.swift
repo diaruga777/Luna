@@ -155,7 +155,7 @@ public struct ArticleExtractor {
         [id*=comment], [class*=disqus], [class*=conversation], [class*=discussion], \
         [data-module*=comment], [data-testid*=comment], \
         [class*=newsletter], [class*=subscribe], [class*=Subscribe], [class*=promo], \
-        [class*=paywall], [class*=Paywall], [class*=breadcrumb], \
+        [class*=AuthorModule], [class*=author-module], [class*=breadcrumb], \
         [class*=cookie], [class*=advert], [class*=popup], \
         [class*=recommend], [class*=trending], [class*=more-stories], \
         [class*=video], [id*=video], [class*=player], [id*=player], \
@@ -164,6 +164,7 @@ public struct ArticleExtractor {
         for element in try document.select(strippedSelectors) {
             try element.remove()
         }
+        try removePaywallJunk(in: document)
         try removeVisuallyHiddenElements(in: document)
 
         let container = try bestContainer(in: document)
@@ -172,6 +173,24 @@ public struct ArticleExtractor {
             blocks = try extractBlocks(from: body, baseURL: baseURL)
         }
         return trimTrailingJunk(blocks)
+    }
+
+    /// Removes actual subscription walls while preserving unlocked article bodies
+    /// that still carry a stale paywall class. WSJ renders the readable post-unlock
+    /// body inside `.paywall ... PaywalledContent`; deleting every paywall-class node
+    /// erases most of the story and leaves nearby author boilerplate to win scoring.
+    private func removePaywallJunk(in document: Document) throws {
+        for element in try document.select("[class*=paywall], [class*=Paywall]") {
+            if isArticleHeavyPaywallWrapper(element) { continue }
+            try element.remove()
+        }
+    }
+
+    private func isArticleHeavyPaywallWrapper(_ element: Element) -> Bool {
+        let paragraphCount = paragraphLikeElements(in: element).filter {
+            ((try? $0.text().count) ?? 0) > 40
+        }.count
+        return paragraphCount >= 4 && paragraphTextLength(in: element) >= 800
     }
 
     /// Removes screen-reader-only / off-screen elements. Archived pages (and

@@ -450,6 +450,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // for debugging. 0.99 = effectively opaque.
         loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(
             CGFloat(ReaderSettings.archiveOverlayAlpha))
+        loadingOverlay.isUserInteractionEnabled = false
         loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
 
         overlaySpinner.color = GlassStyle.readingAccent
@@ -777,6 +778,16 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             if (document.querySelector('article, [itemprop=articleBody], main article, [class*=article-body], #CONTENT')) {
                 return 'content-root';
             }
+            // A referer-unlocked site (WSJ) can render the full article body without any
+            // of the recognized article-container selectors, so a selector-only readiness
+            // test never fires and the flow times out into archive.today even though the
+            // real text is right there under the overlay. Treat substantial paragraph
+            // prose under an <h1> as ready too (mirrors the Safari extension's
+            // `looksLikeArticle`); the whole-document extraction + readable-length gate
+            // downstream are still the final authority, so a short teaser is rejected.
+            var ps = document.querySelectorAll('p'), textLen = 0;
+            for (var i = 0; i < ps.length; i++) { textLen += (ps[i].innerText || '').length; }
+            if (textLen > 1500 && document.querySelector('h1')) { return 'content-root'; }
             return t;
         })()
         """
@@ -923,7 +934,20 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private func extractAndSave() {
         guard let itemID else { isExtracting = false; return }
         let baseURL = articleURL
-        let snapshotHTML = """
+        // For the direct-unlock pre-stage the loaded page IS the real article, so hand
+        // the WHOLE document to the extractor — exactly what the proven Safari hand-off
+        // does. Pre-selecting a single `article`/`#CONTENT` node is fragile on sites
+        // (WSJ) that wrap teaser cards in their OWN `<article>` — `querySelector` returns
+        // that first, tiny node, whose body never clears the readable threshold, so the
+        // real article is never recognized. It also drops the `<head>` (JSON-LD
+        // `articleBody`, og:image) the extractor falls back on. The archive.today snapshot
+        // flow keeps the node isolation, which walls off archive.today's own page chrome.
+        let wholeDocument = isAttemptingDirectBypass
+        let snapshotHTML = wholeDocument ? """
+        (function () {
+            return document.documentElement ? document.documentElement.outerHTML : null;
+        })()
+        """ : """
         (function () {
             var root = document.querySelector('article, [itemprop="articleBody"], main article, [class*="article-body"], #CONTENT');
             if (!root) { return null; }

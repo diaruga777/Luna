@@ -116,6 +116,36 @@ final class ArticleResolverTests: XCTestCase {
         XCTAssertTrue(fetcher.calls.contains { $0.kind == .referer })
     }
 
+    /// A full, readable article body that ALSO still carries the publisher's
+    /// schema.org lock — the shape of the Safari "Read in Luna" hand-off, where the
+    /// body was unlocked client-side but the stale `isAccessibleForFree:false` remains
+    /// in the page's JSON-LD.
+    private func readableButLockedHTML(_ marker: String) -> String {
+        let paragraph = "<p>" + String(repeating: "An ordinary readable sentence about \(marker). ", count: 30) + "</p>"
+        return "<html><head><title>Real \(marker)</title>"
+            + #"<script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script>"#
+            + "</head><body><article>\(paragraph)\(paragraph)</article></body></html>"
+    }
+
+    /// The Safari hand-off supplies an already-unlocked article DOM whose own JSON-LD
+    /// still declares a lock. Untrusted, that stale signal re-rejects the very content
+    /// the user was reading (parking it for the archive dance); a TRUSTED prefetch
+    /// accepts it on body length alone.
+    func testTrustedSafariPrefetchBypassesStaleSchemaLock() async {
+        let articleURL = URL(string: "https://www.wsj.com/articles/unlocked_199845b1.html")!
+        let html = readableButLockedHTML("wsj")
+
+        let parked = await ArticleResolver.resolve(
+            url: articleURL, prefetchedHTML: html, fetcher: MockArticleFetcher(),
+            nonArchiveBypass: true, trustsPrefetchedHTML: false)
+        if case .readable = parked { XCTFail("untrusted prefetch must not bypass the schema lock") }
+
+        let result = await ArticleResolver.resolve(
+            url: articleURL, prefetchedHTML: html, fetcher: MockArticleFetcher(),
+            nonArchiveBypass: true, trustsPrefetchedHTML: true)
+        if case .readable = result {} else { XCTFail("trusted prefetch should be readable, got \(result)") }
+    }
+
     /// When EVERY silent strategy fails (no readable result anywhere) on a host that
     /// carries a title, the resolver parks it as `.paywalled(title)` — it does NOT
     /// stop early or return readable. The archive fallback also fails here.

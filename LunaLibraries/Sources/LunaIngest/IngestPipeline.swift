@@ -29,19 +29,27 @@ public struct IngestInput {
     public let prefetchedHTML: String?
     /// The "Read instead" override — forces the article path even for a product page.
     public let forceArticle: Bool
+    /// The `prefetchedHTML` is the already-unlocked, on-screen article DOM captured in
+    /// Safari (the "Read in Luna" hand-off), so the publisher's stale schema.org lock
+    /// (`isAccessibleForFree:false`, still in the page's JSON-LD after a client-side
+    /// unlock) must NOT re-reject it as paywalled. Only the Safari hand-off sets this;
+    /// every other prefetch (share sheet, product pages) keeps the full paywall gate.
+    public let trustsPrefetchedHTML: Bool
 
     public init(
         url: URL,
         source: CaptureSource,
         documentType: String? = nil,
         prefetchedHTML: String? = nil,
-        forceArticle: Bool = false
+        forceArticle: Bool = false,
+        trustsPrefetchedHTML: Bool = false
     ) {
         self.url = url
         self.source = source
         self.documentType = documentType
         self.prefetchedHTML = prefetchedHTML
         self.forceArticle = forceArticle
+        self.trustsPrefetchedHTML = trustsPrefetchedHTML
     }
 }
 
@@ -292,7 +300,8 @@ public enum IngestPipeline {
         // silent bypass strategies the gate allows.
         let resolution = await ArticleResolver.resolve(
             url: url, prefetchedHTML: directHTML, fetcher: fetcher,
-            extractor: extractor, runner: runner, replayLog: replayLog)
+            extractor: extractor, runner: runner, replayLog: replayLog,
+            trustsPrefetchedHTML: input.trustsPrefetchedHTML)
 
         switch resolution {
         case let .readable(content, html):

@@ -4,6 +4,7 @@
 //
 
 import LunaHTMLClassification
+import LunaModels
 import XCTest
 @testable import Luna
 
@@ -212,6 +213,45 @@ final class ArticleExtractorTests: XCTestCase {
                        "comment thread leaked into extraction")
         XCTAssertFalse(content.wholeText.contains("Subscribe to read"),
                        "subscription gate leaked into extraction")
+    }
+
+    /// WSJ's browser-unlocked article can keep the real body inside an element whose
+    /// class still says `paywall` / `PaywalledContent`. That wrapper is not a gate
+    /// anymore; stripping it leaves only the free intro and nearby author bios.
+    func testUnlockedWSJPaywalledContentWrapperIsKept() throws {
+        let intro = """
+        <p>The dispute over how to tame artificial intelligence has moved into a new phase,
+        with researchers, courts and companies all drawing fresh boundaries.</p>
+        <p>The first skirmish is over, but the larger fight about AI safety is accelerating.</p>
+        """
+        let paywalledBody = (1...9).map { index in
+            "<p>Inside the unlocked article body paragraph \(index), policy makers and "
+            + "engineers describe concrete tradeoffs in governing powerful AI systems "
+            + "while preserving enough detail to read like real reported prose.</p>"
+        }.joined()
+        let authorBios = (1...5).map { index in
+            "<p>Author bio \(index): This reporter covers technology companies and "
+            + "regulatory debates for the newsroom.</p>"
+        }.joined()
+        let html = """
+        <html><head><title>AI Policy Fight</title></head><body>
+        <article>
+          <h1>The Anthropic Fable Ban Is Over</h1>
+          <div class="article-container">
+            \(intro)
+            <div class="paywall css-1u1nl00-PaywalledContent">\(paywalledBody)</div>
+          </div>
+        </article>
+        <div class="AuthorModule css-authors">\(authorBios)</div>
+        </body></html>
+        """
+
+        let content = try extractor.extract(html: html, baseURL: URL(string: "https://www.wsj.com/tech/ai/story")!)
+        XCTAssertTrue(content.wholeText.contains("Inside the unlocked article body paragraph 9"),
+                      "unlocked WSJ body was stripped as paywall junk")
+        XCTAssertGreaterThan(content.bodyTextLength, ArticleContent.readableBodyThreshold)
+        XCTAssertFalse(content.wholeText.contains("Author bio"),
+                       "author boilerplate should not replace or trail the article body")
     }
 
     /// archive.today rewrites the captured page so every body paragraph is a

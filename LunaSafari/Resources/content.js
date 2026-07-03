@@ -177,8 +177,7 @@
             // Hand the app the already-unlocked page HTML so it renders that content
             // instead of re-fetching (which could re-lock outside Safari). Skip when
             // the page is too large for native messaging; the app then fetches the URL.
-            var html = "";
-            try { html = document.documentElement ? document.documentElement.outerHTML : ""; } catch (e) {}
+            var html = capturedHTML();
             if (html && html.length <= 1500000) {
                 browser.runtime.sendMessage({ type: "saveContent", url: location.href, html: html })
                     .then(open).catch(open);
@@ -187,6 +186,32 @@
             }
         });
         (document.body || document.documentElement).appendChild(btn);
+    }
+
+    // The unlocked article HTML to hand the app, trimmed to fit native messaging's
+    // size budget. A raw `documentElement.outerHTML` of a modern news page (WSJ) is
+    // dominated by inline <script>/<style>/<svg> and easily exceeds the 1.5 MB cap —
+    // which silently dropped the hand-off, so the app re-fetched the URL and re-locked.
+    // Dropping those non-article nodes shrinks it by an order of magnitude while keeping
+    // the rendered body AND the JSON-LD (`application/ld+json`) `articleBody` the app's
+    // extractor falls back on. Falls back to the raw outerHTML if the clone fails.
+    function capturedHTML() {
+        try {
+            var root = document.documentElement;
+            if (!root) { return ""; }
+            var clone = root.cloneNode(true);
+            var drop = clone.querySelectorAll(
+                'script:not([type="application/ld+json"]), style, noscript, svg, '
+                + 'iframe, template, link, canvas');
+            for (var i = 0; i < drop.length; i++) {
+                var el = drop[i];
+                if (el.parentNode) { el.parentNode.removeChild(el); }
+            }
+            return "<!doctype html>" + clone.outerHTML;
+        } catch (e) {
+            try { return document.documentElement ? document.documentElement.outerHTML : ""; }
+            catch (e2) { return ""; }
+        }
     }
 
     function applyStyle(el, style) {

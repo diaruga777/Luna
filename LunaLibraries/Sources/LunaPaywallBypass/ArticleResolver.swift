@@ -52,7 +52,8 @@ public enum ArticleResolver {
         extractor: ArticleExtractor = ArticleExtractor(),
         runner: BypassRunning? = nil,
         replayLog: ((EventKind) async -> Void)? = nil,
-        nonArchiveBypass: Bool = BypassSettings.nonArchiveBypassEnabled
+        nonArchiveBypass: Bool = BypassSettings.nonArchiveBypassEnabled,
+        trustsPrefetchedHTML: Bool = false
     ) async -> ArticleResolution {
         let extraction = ArticleExtraction(extractor: extractor)
         // Reuse the caller's already-fetched direct HTML when supplied (the shared
@@ -61,9 +62,17 @@ public enum ArticleResolver {
             if let prefetchedHTML { return prefetchedHTML }
             return try await fetcher.fetchHTML(from: url)
         }
-        // Skip everything else when the direct read already succeeded.
-        if let direct, ArticleExtraction.isReadableArticle(direct) {
-            return .readable(direct.content, html: direct.sourceHTML)
+        // Skip everything else when the direct read already succeeded. A TRUSTED
+        // prefetch (the Safari "Read in Luna" hand-off, which captured the already-
+        // unlocked on-screen article) is accepted on body length alone: the page's
+        // stale schema.org lock would otherwise re-reject the very content the user is
+        // looking at, sending them back through the whole archive dance.
+        if let direct {
+            let trustedUnlock = trustsPrefetchedHTML && prefetchedHTML != nil
+                && direct.content.bodyTextLength >= ArticleContent.readableBodyThreshold
+            if trustedUnlock || ArticleExtraction.isReadableArticle(direct) {
+                return .readable(direct.content, html: direct.sourceHTML)
+            }
         }
 
         // Build the ONE typed bypass plan (per-host rule, else the generic

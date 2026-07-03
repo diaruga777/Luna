@@ -150,7 +150,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let prefetchedHTML = SafariContentStore.take(for: articleURL)
         Task { @MainActor in
             let result = await ReadingListIngestor.shared.handleSavePress(
-                urlString: urlString, prefetchedHTML: prefetchedHTML)
+                urlString: urlString, prefetchedHTML: prefetchedHTML,
+                // The Safari extension only captures the article body AFTER unlocking it
+                // on-screen, so trust it past the (now-stale) publisher paywall signal.
+                trustsPrefetchedHTML: prefetchedHTML != nil)
             let itemID: UUID?
             switch result {
             case .saved(let item), .sentToEreaders(let item): itemID = item.id

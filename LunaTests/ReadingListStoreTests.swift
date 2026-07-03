@@ -108,7 +108,50 @@ final class ReadingListStoreTests: XCTestCase {
         XCTAssertEqual(items.count, 1)
         XCTAssertTrue(items.first?.sendStates.isEmpty ?? false)
         XCTAssertTrue(items.first?.datesSent.isEmpty ?? false)
+        XCTAssertTrue(items.first?.sendFailureCounts.isEmpty ?? false)
+        XCTAssertTrue(items.first?.sendNextAttemptDates.isEmpty ?? false)
+        XCTAssertTrue(items.first?.sendLastErrors.isEmpty ?? false)
+        XCTAssertTrue(items.first?.pendingSendFailureNotices.isEmpty ?? false)
         XCTAssertNil(items.first?.lastSaveAttemptDate)
+    }
+
+    func testSendRetryMetadataPersistsAndClearsOnSent() {
+        let item = store.add(urlString: "https://example.com/retry")
+        let next = Date(timeIntervalSinceReferenceDate: 700_000_100)
+
+        store.scheduleSendRetry(
+            for: item.id, destination: ArticleDestinationID.kindle,
+            failureCount: 2, nextAttemptDate: next, errorMessage: "network")
+
+        var fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.sendState(for: ArticleDestinationID.kindle), .queued)
+        XCTAssertEqual(fresh?.sendFailureCounts[ArticleDestinationID.kindle], 2)
+        XCTAssertEqual(fresh?.sendNextAttemptDates[ArticleDestinationID.kindle], next)
+        XCTAssertEqual(fresh?.sendLastErrors[ArticleDestinationID.kindle], "network")
+
+        store.setSendState(.sent, for: item.id, destination: ArticleDestinationID.kindle)
+        fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.sendState(for: ArticleDestinationID.kindle), .sent)
+        XCTAssertNil(fresh?.sendFailureCounts[ArticleDestinationID.kindle])
+        XCTAssertNil(fresh?.sendNextAttemptDates[ArticleDestinationID.kindle])
+        XCTAssertNil(fresh?.sendLastErrors[ArticleDestinationID.kindle])
+    }
+
+    func testTerminalSendFailureNoticeIsConsumedOnce() {
+        let item = store.add(urlString: "https://example.com/fail")
+        store.markSendTerminalFailure(
+            for: item.id, destination: ArticleDestinationID.boox,
+            errorMessage: "auth failed", failureCount: 3)
+
+        let notices = store.consumePendingSendFailureNotices()
+        XCTAssertEqual(notices.count, 1)
+        XCTAssertEqual(notices.first?.itemID, item.id)
+        XCTAssertEqual(notices.first?.destinationID, ArticleDestinationID.boox)
+        XCTAssertEqual(notices.first?.errorMessage, "auth failed")
+        XCTAssertEqual(
+            store.item(withID: item.id)?.pendingSendFailureNotices[ArticleDestinationID.boox],
+            nil)
+        XCTAssertTrue(store.consumePendingSendFailureNotices().isEmpty)
     }
 
     func testLegacySingleSendStateMigratesToKindle() throws {

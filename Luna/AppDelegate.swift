@@ -121,6 +121,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Retry any items whose content download didn't finish (e.g. saved from the
         // background intent without network time).
         ReadingListIngestor.shared.ingestAllPending()
+        ArticleSendCoordinator.shared.retryPendingSends()
 
         // Local notifications: show as banners while open (delegate below) and,
         // for already-onboarded users, ensure authorization (new users get the
@@ -161,6 +162,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
+        ArticleSendCoordinator.shared.retryPendingSends()
         scheduleMailFetch()
         schedulePriceRefresh(reason: "entered background")
     }
@@ -191,6 +193,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         }
         work = Task {
             await IncomingMailImporter.shared.importNewMail()
+            ArticleSendCoordinator.shared.retryPendingSends()
             task.setTaskCompleted(success: !Task.isCancelled)
         }
     }
@@ -273,6 +276,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         DiagnosticLog.shared.record("price refresh: background task started", category: "price")
         let work = Task { [weak self] in
             let outcomes = await PriceRefreshCoordinator.shared.refreshAndNotify()
+            ArticleSendCoordinator.shared.retryPendingSends()
             let completed = !Task.isCancelled
             task.setTaskCompleted(success: completed)
             DiagnosticLog.shared.record(

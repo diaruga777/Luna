@@ -76,10 +76,19 @@ shown only when that destination is configured.
 - `send(_:toDestinationID:)` — explicit single-destination send (context menu).
 - `articleBecameReady(_:)` (called by the ingestor post-`saveContent`) — per
   destination, fires queued sends and, in `allSaves` mode, everything new.
-- `retryPendingSends()` — pull-to-refresh; per destination retries `.queued`/`.failed`.
+- `retryPendingSends()` — launch, foreground, pull-to-refresh, background entry,
+  and the existing overnight mail/price BG tasks all sweep `.queued` sends whose
+  backoff has elapsed.
 - `sendTestDocument(toDestinationID:)` — backs each settings test row.
 - EPUB built once per delivery; in-flight dedup keyed `"<itemID>|<destID>"`;
   `.queued` written first so a mid-send process death is retried.
+- Soft failures stay `.queued`, with per-destination `sendFailureCounts`,
+  `sendNextAttemptDates`, and `sendLastErrors` persisted on the reading-list row.
+  Backoff starts at 15 minutes and doubles up to 12 hours; after 5 soft failures,
+  or immediately for hard setup/auth failures, the row becomes `.failed`.
+- Terminal send failures set `pendingSendFailureNotices`; the reading list consumes
+  that flag and shows a one-shot bottom pill immediately if foregrounded, or on the
+  next launch/foreground presentation if the failure happened in a background wakeup.
 
 ## Boox (Send2Boox — unofficial)
 

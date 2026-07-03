@@ -17,6 +17,7 @@ import LunaSemantic
 import LunaStorage
 import LunaTransitions
 import LunaURLClassification
+import LunaSend
 import UIKit
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -171,6 +172,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
         ReadingListIngestor.shared.ingestAllPending()
+        ArticleSendCoordinator.shared.retryPendingSends()
         Task { await IncomingMailImporter.shared.importNewMail() }
         SemanticIndexer.shared.scheduleRun()
         // Resume any link preloading left incomplete (interrupted save / new depth).

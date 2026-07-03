@@ -149,6 +149,7 @@ final class ReadingListViewController: UITableViewController {
 
     /// Non-blocking bottom pill for media-download progress/result (created lazily).
     private weak var mediaDownloadStatus: MediaDownloadStatusView?
+    private var isPresentingSendFailureNotice = false
 
     /// The "catch up" button, on the large-title row; its red dot badge shows when there
     /// are unread items to catch up on.
@@ -253,6 +254,7 @@ final class ReadingListViewController: UITableViewController {
         // "open the app" follow-up share notifications; first-share prompts that
         // deep-link to settings are left intact.
         NotificationManager.clearShareNotifications()
+        presentPendingSendFailureNoticeIfNeeded()
     }
 
     override func viewSafeAreaInsetsDidChange() {
@@ -434,6 +436,7 @@ final class ReadingListViewController: UITableViewController {
         updateCatchUpButton()
         groups = buildGroups()
         tableView.reloadData()
+        presentPendingSendFailureNoticeIfNeeded()
     }
 
     /// Builds the non-empty grouped model (sections × items, in display order) for the
@@ -1846,6 +1849,29 @@ final class ReadingListViewController: UITableViewController {
         ])
         mediaDownloadStatus = status
         return status
+    }
+
+    private func presentPendingSendFailureNoticeIfNeeded() {
+        guard viewIfLoaded?.window != nil, !isPresentingSendFailureNotice else { return }
+        guard store.items().contains(where: {
+            $0.pendingSendFailureNotices.contains(where: { $0.value })
+        }) else { return }
+
+        isPresentingSendFailureNotice = true
+        let notices = store.consumePendingSendFailureNotices()
+        guard let first = notices.first else {
+            isPresentingSendFailureNotice = false
+            return
+        }
+        let name = ReadingListSubtitle.destinationNames[first.destinationID] ?? first.destinationID
+        let extra = notices.count > 1 ? " (+\(notices.count - 1) more)" : ""
+        mediaDownloadStatusView().showResult(
+            message: "Couldn't send to \(name)\(extra)",
+            success: false)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
+            self?.isPresentingSendFailureNotice = false
+            self?.presentPendingSendFailureNoticeIfNeeded()
+        }
     }
 
     /// Explicit send of one article to one ereader destination (the long-press

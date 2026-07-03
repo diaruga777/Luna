@@ -47,14 +47,14 @@ public struct ReadingListItem: Codable, Identifiable {
         case original
     }
 
-    /// Send-to-Kindle delivery status. Absent means never requested.
+    /// Ereader delivery status. Absent means never requested.
     public enum SendState: String, Codable {
         /// Send requested but not yet delivered (e.g. article still ingesting,
-        /// or the app died mid-send). Retried on pull-to-refresh.
+        /// the app died mid-send, or a soft failure is waiting for backoff).
         case queued
         /// Delivered to the SMTP server.
         case sent
-        /// Delivery failed. Retried on pull-to-refresh.
+        /// Terminal delivery failure. A hard failure, or enough soft failures.
         case failed
     }
 
@@ -103,6 +103,15 @@ public struct ReadingListItem: Codable, Identifiable {
     /// When the article was last delivered to each destination (the once-per-day
     /// resend guard), keyed by destination id.
     public var datesSent: [String: Date]
+    /// Soft-failure count for each destination's current queued send.
+    public var sendFailureCounts: [String: Int]
+    /// Earliest retry time for each destination's queued send.
+    public var sendNextAttemptDates: [String: Date]
+    /// Last delivery error detail for each destination, used for diagnostics and
+    /// the one-shot terminal-failure toast.
+    public var sendLastErrors: [String: String]
+    /// Terminal send failures that still need to be surfaced to the user.
+    public var pendingSendFailureNotices: [String: Bool]
     /// When the user last pressed save for this URL while it was already in the
     /// list (the double-save-to-send detection window).
     public var lastSaveAttemptDate: Date?
@@ -217,6 +226,10 @@ public struct ReadingListItem: Codable, Identifiable {
         self.documentType = nil
         self.sendStates = [:]
         self.datesSent = [:]
+        self.sendFailureCounts = [:]
+        self.sendNextAttemptDates = [:]
+        self.sendLastErrors = [:]
+        self.pendingSendFailureNotices = [:]
         self.lastSaveAttemptDate = nil
         self.platform = nil
         self.platformItemID = nil
@@ -277,6 +290,10 @@ public struct ReadingListItem: Codable, Identifiable {
         self.documentType = documentType
         self.sendStates = [:]
         self.datesSent = [:]
+        self.sendFailureCounts = [:]
+        self.sendNextAttemptDates = [:]
+        self.sendLastErrors = [:]
+        self.pendingSendFailureNotices = [:]
         self.lastSaveAttemptDate = nil
         self.platform = platform
         self.platformItemID = platformItemID
@@ -372,6 +389,10 @@ public struct ReadingListItem: Codable, Identifiable {
                 datesSent = [:]
             }
         }
+        sendFailureCounts = try container.decodeIfPresent([String: Int].self, forKey: .sendFailureCounts) ?? [:]
+        sendNextAttemptDates = try container.decodeIfPresent([String: Date].self, forKey: .sendNextAttemptDates) ?? [:]
+        sendLastErrors = try container.decodeIfPresent([String: String].self, forKey: .sendLastErrors) ?? [:]
+        pendingSendFailureNotices = try container.decodeIfPresent([String: Bool].self, forKey: .pendingSendFailureNotices) ?? [:]
         lastSaveAttemptDate = try container.decodeIfPresent(Date.self, forKey: .lastSaveAttemptDate)
         platform = Self.tolerant(ContentPlatform.self, container, .platform)
         platformItemID = try container.decodeIfPresent(String.self, forKey: .platformItemID)

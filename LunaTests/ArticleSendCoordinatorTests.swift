@@ -12,6 +12,9 @@ import XCTest
 /// A configurable in-memory destination that records sends.
 private final class MockDestination: ArticleDestination {
     struct SendFailure: Error {}
+    struct AuthFailure: Error, CustomStringConvertible {
+        var description: String { "AUTH failed" }
+    }
 
     let id: String
     let displayName = "Mock"
@@ -20,6 +23,7 @@ private final class MockDestination: ArticleDestination {
     /// Optional per-source override; when nil, `mode` applies to every source.
     var modeForSource: ((CaptureSource) -> ArticleSendMode)?
     var shouldFail = false
+    var shouldHardFail = false
     private(set) var sentTitles: [String] = []
 
     init(id: String) { self.id = id }
@@ -33,6 +37,7 @@ private final class MockDestination: ArticleDestination {
     var appIntentsSendMode: ArticleSendMode { mode }
 
     func send(epubData: Data, fileName: String, title: String) async throws {
+        if shouldHardFail { throw AuthFailure() }
         if shouldFail { throw SendFailure() }
         XCTAssertFalse(epubData.isEmpty)
         XCTAssertTrue(fileName.hasSuffix(".epub"))
@@ -47,6 +52,7 @@ final class ArticleSendCoordinatorTests: XCTestCase {
     private var kindle: MockDestination!
     private var boox: MockDestination!
     private var coordinator: ArticleSendCoordinator!
+    private var currentDate: Date!
 
     override func setUp() {
         super.setUp()
@@ -56,7 +62,12 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         store = ReadingListStore(containerURL: scratchDirectory)
         kindle = MockDestination(id: ArticleDestinationID.kindle)
         boox = MockDestination(id: ArticleDestinationID.boox)
-        coordinator = ArticleSendCoordinator(store: store, destinations: [kindle, boox])
+        currentDate = Date(timeIntervalSinceReferenceDate: 1_000)
+        coordinator = ArticleSendCoordinator(
+            store: store,
+            destinations: [kindle, boox],
+            retryPolicy: .init(maxSoftFailures: 3, initialDelay: 60, maxDelay: 300),
+            now: { self.currentDate })
     }
 
     override func tearDown() {
@@ -101,12 +112,26 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         XCTAssertNotNil(store.item(withID: item.id)?.dateSent(for: kindle.id))
     }
 
-    func testFailedSendMarksFailed() async {
+    func testSoftFailureQueuesRetryWithBackoff() async {
         kindle.shouldFail = true
         let item = makeReadyItem()
         await coordinator.send(item, toDestinationID: kindle.id)
-        XCTAssertEqual(sendState(item, kindle.id), .failed)
+        let fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.sendState(for: kindle.id), .queued)
+        XCTAssertEqual(fresh?.sendFailureCounts[kindle.id], 1)
+        XCTAssertEqual(
+            fresh?.sendNextAttemptDates[kindle.id],
+            currentDate.addingTimeInterval(60))
         XCTAssertNil(store.item(withID: item.id)?.dateSent(for: kindle.id))
+    }
+
+    func testHardFailureMarksFailedAndQueuesNotice() async {
+        kindle.shouldHardFail = true
+        let item = makeReadyItem()
+        await coordinator.send(item, toDestinationID: kindle.id)
+        let fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.sendState(for: kindle.id), .failed)
+        XCTAssertEqual(fresh?.pendingSendFailureNotices[kindle.id], true)
     }
 
     func testExplicitSendTargetsOnlyOneDestination() async {
@@ -171,15 +196,42 @@ final class ArticleSendCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.doubleSaveDestinationIDs(), [boox.id])
     }
 
-    func testRetryPendingSendsRetriesQueuedAndFailedPerDestination() async {
+    func testRetryPendingSendsRetriesQueuedWhenBackoffElapsed() async {
         let queued = makeReadyItem("https://example.com/queued")
         store.setSendState(.queued, for: queued.id, destination: kindle.id)
-        let failed = makeReadyItem("https://example.com/failed")
-        store.setSendState(.failed, for: failed.id, destination: boox.id)
+        let waiting = makeReadyItem("https://example.com/waiting")
+        store.scheduleSendRetry(
+            for: waiting.id, destination: boox.id, failureCount: 1,
+            nextAttemptDate: currentDate.addingTimeInterval(60),
+            errorMessage: "network")
 
         coordinator.retryPendingSends()
         try? await Task.sleep(nanoseconds: 500_000_000)
         XCTAssertEqual(sendState(queued, kindle.id), .sent)
-        XCTAssertEqual(sendState(failed, boox.id), .sent)
+        XCTAssertEqual(sendState(waiting, boox.id), .queued)
+        XCTAssertTrue(boox.sentTitles.isEmpty)
+
+        currentDate = currentDate.addingTimeInterval(61)
+        coordinator.retryPendingSends()
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(sendState(waiting, boox.id), .sent)
+    }
+
+    func testEnoughSoftFailuresGiveUp() async {
+        kindle.shouldFail = true
+        let item = makeReadyItem()
+
+        await coordinator.send(item, toDestinationID: kindle.id)
+        currentDate = currentDate.addingTimeInterval(61)
+        coordinator.retryPendingSends()
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        currentDate = currentDate.addingTimeInterval(121)
+        coordinator.retryPendingSends()
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        let fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.sendState(for: kindle.id), .failed)
+        XCTAssertEqual(fresh?.sendFailureCounts[kindle.id], 3)
+        XCTAssertEqual(fresh?.pendingSendFailureNotices[kindle.id], true)
     }
 }

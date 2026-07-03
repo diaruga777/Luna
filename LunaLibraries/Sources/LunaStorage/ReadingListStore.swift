@@ -281,8 +281,89 @@ public final class ReadingListStore {
             all[index].sendStates[destination] = sendState
             if sendState == .sent {
                 all[index].datesSent[destination] = Date()
+                all[index].sendFailureCounts[destination] = nil
+                all[index].sendNextAttemptDates[destination] = nil
+                all[index].sendLastErrors[destination] = nil
+                all[index].pendingSendFailureNotices[destination] = nil
             }
             return true
+        }
+    }
+
+    /// Marks a send as actively queued/in-flight without clearing accumulated
+    /// retry metadata. If the app is killed mid-send, the queued state is retried
+    /// on a later sweep.
+    public func markSendAttemptStarted(for itemID: UUID, destination: String) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            all[index].sendStates[destination] = .queued
+            return true
+        }
+    }
+
+    /// Persists a soft delivery failure and its next backoff window.
+    public func scheduleSendRetry(
+        for itemID: UUID, destination: String, failureCount: Int,
+        nextAttemptDate: Date, errorMessage: String
+    ) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            all[index].sendStates[destination] = .queued
+            all[index].sendFailureCounts[destination] = failureCount
+            all[index].sendNextAttemptDates[destination] = nextAttemptDate
+            all[index].sendLastErrors[destination] = errorMessage
+            all[index].pendingSendFailureNotices[destination] = nil
+            return true
+        }
+    }
+
+    /// Persists a terminal send failure and records that the UI should surface it
+    /// once on the next launch/foreground presentation.
+    public func markSendTerminalFailure(
+        for itemID: UUID, destination: String, errorMessage: String,
+        failureCount: Int? = nil
+    ) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            all[index].sendStates[destination] = .failed
+            if let failureCount {
+                all[index].sendFailureCounts[destination] = failureCount
+            }
+            all[index].sendNextAttemptDates[destination] = nil
+            all[index].sendLastErrors[destination] = errorMessage
+            all[index].pendingSendFailureNotices[destination] = true
+            return true
+        }
+    }
+
+    public struct SendFailureNotice: Equatable {
+        public let itemID: UUID
+        public let destinationID: String
+        public let title: String
+        public let errorMessage: String
+    }
+
+    /// Returns and clears terminal send-failure notices so each hard/give-up error
+    /// is shown once, even if it happened during a background wakeup.
+    public func consumePendingSendFailureNotices() -> [SendFailureNotice] {
+        coordinatedMutate { all in
+            var notices: [SendFailureNotice] = []
+            for index in all.indices {
+                let destinations = all[index].pendingSendFailureNotices
+                    .filter { $0.value }
+                    .map(\.key)
+                    .sorted()
+                guard !destinations.isEmpty else { continue }
+                for destination in destinations {
+                    notices.append(SendFailureNotice(
+                        itemID: all[index].id,
+                        destinationID: destination,
+                        title: all[index].title ?? all[index].urlString,
+                        errorMessage: all[index].sendLastErrors[destination] ?? "Unknown error"))
+                    all[index].pendingSendFailureNotices[destination] = nil
+                }
+            }
+            return notices
         }
     }
 

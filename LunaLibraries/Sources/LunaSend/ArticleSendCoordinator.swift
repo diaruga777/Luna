@@ -113,18 +113,49 @@ public final class ArticleSendCoordinator {
 
     public static let shared = ArticleSendCoordinator()
 
+    public struct RetryPolicy {
+        public let maxSoftFailures: Int
+        public let initialDelay: TimeInterval
+        public let maxDelay: TimeInterval
+
+        public init(
+            maxSoftFailures: Int = 5,
+            initialDelay: TimeInterval = 15 * 60,
+            maxDelay: TimeInterval = 12 * 60 * 60
+        ) {
+            self.maxSoftFailures = max(1, maxSoftFailures)
+            self.initialDelay = initialDelay
+            self.maxDelay = maxDelay
+        }
+
+        func delay(afterSoftFailureCount count: Int) -> TimeInterval {
+            let exponent = max(0, count - 1)
+            let multiplier = pow(2.0, Double(exponent))
+            return min(maxDelay, initialDelay * multiplier)
+        }
+    }
+
     private let logger = Logger(subsystem: "com.hsanabria.luna", category: "send")
     private let store: ReadingListStore
     private let destinations: [ArticleDestination]
+    private let retryPolicy: RetryPolicy
+    private let now: () -> Date
 
     /// In-flight "<itemID>|<destinationID>" keys, to avoid duplicate concurrent
     /// deliveries of the same item to the same destination.
     private var inFlight = Set<String>()
     private let lock = NSLock()
 
-    public init(store: ReadingListStore = .shared, destinations: [ArticleDestination]? = nil) {
+    public init(
+        store: ReadingListStore = .shared,
+        destinations: [ArticleDestination]? = nil,
+        retryPolicy: RetryPolicy = RetryPolicy(),
+        now: @escaping () -> Date = Date.init
+    ) {
         self.store = store
         self.destinations = destinations ?? [KindleDestination(), BooxDestination()]
+        self.retryPolicy = retryPolicy
+        self.now = now
     }
 
     private func destination(id: String) -> ArticleDestination? {
@@ -150,7 +181,7 @@ public final class ArticleSendCoordinator {
     /// No-op when that destination isn't configured.
     public func send(_ item: ReadingListItem, toDestinationID id: String) async {
         guard let destination = destination(id: id) else { return }
-        await sendBuildingEPUB(item, to: destination)
+        await sendBuildingEPUB(item, to: destination, respectBackoff: false)
     }
 
     /// Called by the ingestor when an article becomes ready: per destination,
@@ -163,17 +194,20 @@ public final class ArticleSendCoordinator {
             let shouldSend = state == .queued
                 || (destination.sendMode(for: item) == .allSaves && state == nil)
             guard shouldSend else { continue }
-            Task { await self.sendBuildingEPUB(item, to: destination) }
+            Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
         }
     }
 
-    /// Retries queued/failed sends across all destinations (pull-to-refresh).
+    /// Retries queued sends whose backoff has elapsed across all destinations.
     public func retryPendingSends() {
         for item in store.items() {
             for destination in destinations where destination.isConfigured {
                 let state = item.sendState(for: destination.id)
-                guard state == .queued || state == .failed else { continue }
-                Task { await self.sendBuildingEPUB(item, to: destination) }
+                guard state == .queued else { continue }
+                guard shouldAttempt(item, destinationID: destination.id, respectBackoff: true) else {
+                    continue
+                }
+                Task { await self.sendBuildingEPUB(item, to: destination, respectBackoff: true) }
             }
         }
     }
@@ -181,20 +215,37 @@ public final class ArticleSendCoordinator {
     // MARK: - Delivery
 
     /// Builds the EPUB (once) and delivers to one destination.
-    private func sendBuildingEPUB(_ item: ReadingListItem, to destination: ArticleDestination) async {
+    private func sendBuildingEPUB(
+        _ item: ReadingListItem, to destination: ArticleDestination, respectBackoff: Bool
+    ) async {
         guard destination.isConfigured else { return }
         guard let fresh = store.item(withID: item.id) else { return }
         guard !fresh.isPlatformItem else { return } // platform items have no article EPUB
+        guard shouldAttempt(fresh, destinationID: destination.id, respectBackoff: respectBackoff) else {
+            return
+        }
 
         guard fresh.state == .ready else {
             store.setSendState(.queued, for: fresh.id, destination: destination.id)
             return
         }
         guard let built = buildEPUB(for: fresh) else {
-            store.setSendState(.failed, for: fresh.id, destination: destination.id)
+            store.markSendTerminalFailure(
+                for: fresh.id, destination: destination.id,
+                errorMessage: "Couldn't build the EPUB attachment.")
             return
         }
         await deliver(itemID: fresh.id, built: built, to: destination)
+    }
+
+    private func shouldAttempt(
+        _ item: ReadingListItem, destinationID: String, respectBackoff: Bool
+    ) -> Bool {
+        guard item.sendState(for: destinationID) != .failed else { return false }
+        guard respectBackoff, let next = item.sendNextAttemptDates[destinationID] else {
+            return true
+        }
+        return next <= now()
     }
 
     private struct BuiltEPUB {
@@ -225,17 +276,67 @@ public final class ArticleSendCoordinator {
             lock.unlock()
         }
 
-        // Queued first: if the process dies mid-send, pull-to-refresh retries.
-        store.setSendState(.queued, for: itemID, destination: destination.id)
+        // Queued first: if the process dies mid-send, launch/background sweeps retry.
+        store.markSendAttemptStarted(for: itemID, destination: destination.id)
         do {
             try await destination.send(
                 epubData: built.data, fileName: built.fileName, title: built.title)
             store.setSendState(.sent, for: itemID, destination: destination.id)
             logger.info("Sent to \(destination.displayName, privacy: .public): \(built.title, privacy: .public)")
         } catch {
-            store.setSendState(.failed, for: itemID, destination: destination.id)
+            recordFailure(error, itemID: itemID, built: built, destination: destination)
             logger.error("Send to \(destination.displayName, privacy: .public) failed for \(built.title, privacy: .public): \(String(describing: error), privacy: .public)")
         }
+    }
+
+    private func recordFailure(
+        _ error: Error, itemID: UUID, built: BuiltEPUB, destination: ArticleDestination
+    ) {
+        let message = Self.userVisibleErrorMessage(error)
+        guard !Self.isHardFailure(error),
+              let item = store.item(withID: itemID)
+        else {
+            store.markSendTerminalFailure(
+                for: itemID, destination: destination.id, errorMessage: message)
+            return
+        }
+
+        let failureCount = (item.sendFailureCounts[destination.id] ?? 0) + 1
+        guard failureCount < retryPolicy.maxSoftFailures else {
+            store.markSendTerminalFailure(
+                for: itemID, destination: destination.id,
+                errorMessage: "\(message) Luna gave up after \(failureCount) attempts.",
+                failureCount: failureCount)
+            return
+        }
+
+        let delay = retryPolicy.delay(afterSoftFailureCount: failureCount)
+        let nextAttempt = now().addingTimeInterval(delay)
+        store.scheduleSendRetry(
+            for: itemID, destination: destination.id, failureCount: failureCount,
+            nextAttemptDate: nextAttempt, errorMessage: message)
+        logger.info("Scheduled retry \(failureCount, privacy: .public) for \(destination.displayName, privacy: .public) in \(delay, privacy: .public)s: \(built.title, privacy: .public)")
+    }
+
+    private static func isHardFailure(_ error: Error) -> Bool {
+        if error is AccountEmailSender.NotConfiguredError { return true }
+        if error is Send2BooxClient.NotConfiguredError { return true }
+        let text = String(describing: error).lowercased()
+        return text.contains("auth")
+            || text.contains("not signed in")
+            || text.contains("missing microsoft client id")
+            || text.contains("token refresh failed")
+            || text.contains("message missing sender or recipients")
+            || text.contains("http 401")
+            || text.contains("http 403")
+            || text.contains("(401)")
+            || text.contains("(403)")
+    }
+
+    private static func userVisibleErrorMessage(_ error: Error) -> String {
+        let message = String(describing: error)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? "Delivery failed." : message
     }
 
     /// Sends a minimal test document to one destination so the user can verify

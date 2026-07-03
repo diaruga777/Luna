@@ -1410,7 +1410,7 @@ final class ReadingListViewController: UITableViewController {
                 // the thumbnail helper's module, so it saves text first and lets the app
                 // process backfill the row cover. Without this nudge, the cover appears
                 // only on the next launch/foreground backfill pass.
-                self.ingestor.backfillMissingThumbnails()
+                ReadingListIngestor.shared.backfillMissingThumbnails()
                 self.open(fresh, presenter: presenter)   // now .ready → native reader
             }
         }

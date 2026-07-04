@@ -32,19 +32,22 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
         public var mediaKind: MediaKind
         public var message: String
         public var thumbnailFileName: String?
+        public var actionURLString: String?
 
         public init(
             phase: Phase,
             progress: Double,
             mediaKind: MediaKind,
             message: String,
-            thumbnailFileName: String? = nil
+            thumbnailFileName: String? = nil,
+            actionURLString: String? = nil
         ) {
             self.phase = phase
             self.progress = min(1, max(0, progress))
             self.mediaKind = mediaKind
             self.message = message
             self.thumbnailFileName = thumbnailFileName
+            self.actionURLString = actionURLString
         }
     }
 

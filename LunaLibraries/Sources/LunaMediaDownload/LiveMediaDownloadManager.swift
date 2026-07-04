@@ -19,6 +19,8 @@ public final class LiveMediaDownloadManager: NSObject {
     public static let shared = LiveMediaDownloadManager()
 
     private static let sessionIdentifier = "com.hsanabria.luna.mediaDownload.background"
+    private static let failureDismissalDelay: TimeInterval = 14
+    private static let maxTransientAttempts = 2
     private let store = JobStore()
     private let saver: PhotoLibrarySaving
     private var backgroundCompletionHandler: (() -> Void)?
@@ -45,7 +47,11 @@ public final class LiveMediaDownloadManager: NSObject {
         else { return false }
 
         guard await saver.requestAddAuthorization() else {
-            await startFailedActivity(urlString: urlString, title: title, message: MediaDownloadError.permissionDenied.message)
+            await startFailedActivity(
+                urlString: urlString,
+                title: title,
+                message: MediaDownloadError.permissionDenied.message,
+                errorKind: .photosPermission)
             return false
         }
 
@@ -68,22 +74,21 @@ public final class LiveMediaDownloadManager: NSObject {
             progress: 0,
             thumbnailFileName: nil,
             fileExtension: nil,
-            errorMessage: nil
+            errorMessage: nil,
+            errorKind: nil,
+            resolveAttempts: 0,
+            mediaAttempts: 0
         )
         store.upsert(job)
         await startActivity(for: job)
 
         guard let resolve = Self.resolveRequest(for: sourceURL) else {
-            job.fail(message: MediaDownloadError.unsupported.message)
-            store.upsert(job)
-            await updateActivity(for: job)
+            await failJob(job, message: MediaDownloadError.unsupported.message)
             return false
         }
         job.resolveKind = resolve.kind
         store.upsert(job)
-        let task = session.downloadTask(with: resolve.request)
-        task.taskDescription = "\(job.id)|resolve"
-        task.resume()
+        startTask(resolve.request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
         return true
     }
 
@@ -110,9 +115,7 @@ public final class LiveMediaDownloadManager: NSObject {
         if sourceURL.host?.lowercased().contains("tiktok") == true {
             request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
         }
-        let task = session.downloadTask(with: request)
-        task.taskDescription = "\(job.id)|media"
-        task.resume()
+        startTask(request, jobID: job.id, role: .media, attempt: job.mediaAttempts)
     }
 
     public func attachBackgroundCompletionHandler(_ completionHandler: @escaping () -> Void) {
@@ -129,6 +132,12 @@ public final class LiveMediaDownloadManager: NSObject {
     private static func title(for url: URL) -> String {
         if let host = url.host(percentEncoded: false), !host.isEmpty { return host }
         return "Media download"
+    }
+
+    private func startTask(_ request: URLRequest, jobID: String, role: TaskRole, attempt: Int) {
+        let task = session.downloadTask(with: request)
+        task.taskDescription = "\(jobID)|\(role.rawValue)|\(attempt)"
+        task.resume()
     }
 
     private static func resolveRequest(for url: URL) -> (request: URLRequest, kind: String)? {
@@ -228,9 +237,11 @@ public final class LiveMediaDownloadManager: NSObject {
         var job = job
         let http = response as? HTTPURLResponse
         if let http, !(200..<300).contains(http.statusCode) {
-            job.fail(message: MediaDownloadError.downloadFailed.message)
-            store.upsert(job)
-            Task { await updateActivity(for: job) }
+            Task {
+                await retryOrFail(
+                    job: job, role: .media, response: response,
+                    message: MediaDownloadError.downloadFailed.message)
+            }
             return
         }
 
@@ -251,9 +262,7 @@ public final class LiveMediaDownloadManager: NSObject {
             Task { await updateActivity(for: job) }
             Task { await save(job: job, fileURL: destination, kind: kind) }
         } catch {
-            job.fail(message: MediaDownloadError.downloadFailed.message)
-            store.upsert(job)
-            Task { await updateActivity(for: job) }
+            Task { await failJob(job, message: MediaDownloadError.downloadFailed.message) }
         }
     }
 
@@ -261,16 +270,16 @@ public final class LiveMediaDownloadManager: NSObject {
         var job = job
         let http = response as? HTTPURLResponse
         if let http, !(200..<300).contains(http.statusCode) {
-            job.fail(message: MediaDownloadError.noMedia.message)
-            store.upsert(job)
-            Task { await updateActivity(for: job) }
+            Task {
+                await retryOrFail(
+                    job: job, role: .resolve, response: response,
+                    message: MediaDownloadError.noMedia.message)
+            }
             return
         }
         guard let data = try? Data(contentsOf: location),
               let asset = resolvedAsset(from: data, job: job) else {
-            job.fail(message: MediaDownloadError.noMedia.message)
-            store.upsert(job)
-            Task { await updateActivity(for: job) }
+            Task { await failJob(job, message: MediaDownloadError.noMedia.message) }
             return
         }
         startMediaDownload(for: job, asset: asset)
@@ -289,10 +298,84 @@ public final class LiveMediaDownloadManager: NSObject {
             await endActivity(for: job)
             store.remove(job.id)
         } catch {
-            job.fail(message: MediaDownloadError.saveFailed.message)
-            store.upsert(job)
-            await updateActivity(for: job)
+            await failJob(job, message: MediaDownloadError.saveFailed.message)
         }
+    }
+
+    private func retryOrFail(
+        job: LiveMediaDownloadJob,
+        role: TaskRole,
+        response: URLResponse?,
+        error: Error? = nil,
+        message: String
+    ) async {
+        guard isTransient(response: response, error: error),
+              var retryJob = store.job(id: job.id)
+        else {
+            await failJob(job, message: message)
+            return
+        }
+
+        switch role {
+        case .resolve:
+            guard retryJob.resolveAttempts + 1 < Self.maxTransientAttempts,
+                  let url = URL(string: retryJob.sourceURLString),
+                  let resolve = Self.resolveRequest(for: url)
+            else {
+                await failJob(retryJob, message: message)
+                return
+            }
+            retryJob.resolveAttempts += 1
+            retryJob.errorMessage = nil
+            store.upsert(retryJob)
+            startTask(resolve.request, jobID: retryJob.id, role: .resolve, attempt: retryJob.resolveAttempts)
+        case .media:
+            guard retryJob.mediaAttempts + 1 < Self.maxTransientAttempts,
+                  let assetURLString = retryJob.assetURLString,
+                  let assetURL = URL(string: assetURLString),
+                  let sourceURL = URL(string: retryJob.sourceURLString)
+            else {
+                await failJob(retryJob, message: message)
+                return
+            }
+            retryJob.mediaAttempts += 1
+            retryJob.errorMessage = nil
+            store.upsert(retryJob)
+            var request = URLRequest(url: assetURL, timeoutInterval: 60)
+            request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+            if sourceURL.host?.lowercased().contains("tiktok") == true {
+                request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
+            }
+            startTask(request, jobID: retryJob.id, role: .media, attempt: retryJob.mediaAttempts)
+        }
+    }
+
+    private func isTransient(response: URLResponse?, error: Error?) -> Bool {
+        if let http = response as? HTTPURLResponse {
+            return http.statusCode == 408 || http.statusCode == 429 || (500..<600).contains(http.statusCode)
+        }
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .timedOut, .networkConnectionLost, .cannotFindHost, .cannotConnectToHost,
+             .dnsLookupFailed, .notConnectedToInternet, .internationalRoamingOff,
+             .callIsActive, .dataNotAllowed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func failJob(
+        _ job: LiveMediaDownloadJob,
+        message: String,
+        errorKind: LiveMediaDownloadJob.ErrorKind = .download
+    ) async {
+        var job = job
+        job.fail(message: message, kind: errorKind)
+        store.upsert(job)
+        await updateActivity(for: job)
+        await endActivity(for: job, dismissalDelay: Self.failureDismissalDelay)
+        store.remove(job.id)
     }
 }
 
@@ -306,8 +389,9 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
     ) {
         guard totalBytesExpectedToWrite > 0,
               let description = downloadTask.taskDescription,
-              let (jobID, role) = Self.taskParts(description),
-              role == "media",
+              let parts = Self.taskParts(description),
+              parts.role == .media,
+              let jobID = parts.jobID,
               var job = store.job(id: jobID)
         else { return }
         job.phase = .downloading
@@ -322,10 +406,11 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
         didFinishDownloadingTo location: URL
     ) {
         guard let description = downloadTask.taskDescription,
-              let (jobID, role) = Self.taskParts(description),
+              let parts = Self.taskParts(description),
+              let jobID = parts.jobID,
               let job = store.job(id: jobID)
         else { return }
-        if role == "resolve" {
+        if parts.role == .resolve {
             finishResolve(job: job, downloadedTo: location, response: downloadTask.response)
         } else {
             finish(job: job, downloadedTo: location, response: downloadTask.response)
@@ -339,12 +424,18 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
     ) {
         guard let error,
               let description = task.taskDescription,
-              let (jobID, _) = Self.taskParts(description),
+              let parts = Self.taskParts(description),
+              let jobID = parts.jobID,
               var job = store.job(id: jobID)
         else { return }
-        job.fail(message: MediaDownloadError.downloadFailed.message)
-        store.upsert(job)
-        Task { await updateActivity(for: job) }
+        Task {
+            await retryOrFail(
+                job: job,
+                role: parts.role ?? .media,
+                response: task.response,
+                error: error,
+                message: MediaDownloadError.downloadFailed.message)
+        }
     }
 
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
@@ -356,10 +447,15 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
 }
 
 private extension LiveMediaDownloadManager {
-    static func taskParts(_ description: String) -> (String, String)? {
-        let parts = description.split(separator: "|", maxSplits: 1).map(String.init)
-        guard parts.count == 2 else { return nil }
-        return (parts[0], parts[1])
+    enum TaskRole: String {
+        case resolve
+        case media
+    }
+
+    static func taskParts(_ description: String) -> (jobID: String?, role: TaskRole?, attempt: Int?)? {
+        let parts = description.split(separator: "|").map(String.init)
+        guard parts.count >= 2 else { return nil }
+        return (parts[0], TaskRole(rawValue: parts[1]), parts.dropFirst(2).first.flatMap(Int.init))
     }
 }
 
@@ -398,7 +494,12 @@ private extension LiveMediaDownloadManager {
         #endif
     }
 
-    func startFailedActivity(urlString: String, title: String?, message: String) async {
+    func startFailedActivity(
+        urlString: String,
+        title: String?,
+        message: String,
+        errorKind: LiveMediaDownloadJob.ErrorKind = .download
+    ) async {
         var job = LiveMediaDownloadJob(
             id: UUID().uuidString,
             sourceURLString: urlString,
@@ -410,11 +511,14 @@ private extension LiveMediaDownloadManager {
             progress: 0,
             thumbnailFileName: nil,
             fileExtension: nil,
-            errorMessage: message
+            errorMessage: message,
+            errorKind: errorKind,
+            resolveAttempts: 0,
+            mediaAttempts: 0
         )
-        job.fail(message: message)
+        job.fail(message: message, kind: errorKind)
         await startActivity(for: job)
-        await endActivity(for: job)
+        await endActivity(for: job, dismissalDelay: Self.failureDismissalDelay)
     }
 
     func updateActivity(for job: LiveMediaDownloadJob) async {
@@ -428,13 +532,13 @@ private extension LiveMediaDownloadManager {
         #endif
     }
 
-    func endActivity(for job: LiveMediaDownloadJob) async {
+    func endActivity(for job: LiveMediaDownloadJob, dismissalDelay: TimeInterval = 20) async {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *) else { return }
         let state = activityState(for: job)
         for activity in Activity<LiveMediaDownloadAttributes>.activities
             where activity.attributes.jobID == job.id {
-            await activity.end(using: state, dismissalPolicy: .after(Date(timeIntervalSinceNow: 20)))
+            await activity.end(using: state, dismissalPolicy: .after(Date(timeIntervalSinceNow: dismissalDelay)))
         }
         #endif
     }
@@ -455,7 +559,8 @@ private extension LiveMediaDownloadManager {
             progress: job.progress,
             mediaKind: .init(rawJobValue: job.mediaKind),
             message: message,
-            thumbnailFileName: job.thumbnailFileName
+            thumbnailFileName: job.thumbnailFileName,
+            actionURLString: job.errorKind == .photosPermission ? "lunareader://settings/photos" : nil
         )
     }
     #endif
@@ -470,6 +575,11 @@ private struct LiveMediaDownloadJob: Codable, Equatable {
         case failed
     }
 
+    enum ErrorKind: String, Codable {
+        case download
+        case photosPermission
+    }
+
     var id: String
     var sourceURLString: String
     var assetURLString: String?
@@ -481,6 +591,9 @@ private struct LiveMediaDownloadJob: Codable, Equatable {
     var thumbnailFileName: String?
     var fileExtension: String?
     var errorMessage: String?
+    var errorKind: ErrorKind?
+    var resolveAttempts: Int
+    var mediaAttempts: Int
 
     var isTerminal: Bool { phase == .finished || phase == .failed }
 
@@ -492,9 +605,10 @@ private struct LiveMediaDownloadJob: Codable, Equatable {
         }
     }
 
-    mutating func fail(message: String) {
+    mutating func fail(message: String, kind: ErrorKind = .download) {
         phase = .failed
         errorMessage = message
+        errorKind = kind
     }
 }
 

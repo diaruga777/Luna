@@ -26,7 +26,14 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                         Text(context.attributes.title)
                             .font(.headline)
                             .lineLimit(1)
-                        ProgressView(value: context.state.progress)
+                        if context.state.phase == .failed {
+                            Text(context.state.message)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .lineLimit(2)
+                        } else {
+                            ProgressView(value: context.state.progress)
+                        }
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -37,10 +44,16 @@ struct LunaDownloaderLiveActivityWidget: Widget {
             } compactLeading: {
                 ThumbnailView(state: context.state)
             } compactTrailing: {
-                Text("\(Int(context.state.progress * 100))%")
-                    .font(.caption2.monospacedDigit())
+                if context.state.phase == .failed {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                } else {
+                    Text("\(Int(context.state.progress * 100))%")
+                        .font(.caption2.monospacedDigit())
+                }
             } minimal: {
-                Image(systemName: "arrow.down.circle")
+                Image(systemName: context.state.phase == .failed ? "exclamationmark.triangle.fill" : "arrow.down.circle")
+                    .foregroundStyle(context.state.phase == .failed ? .red : .primary)
             }
         }
     }
@@ -60,10 +73,19 @@ private struct DownloadActivityView: View {
                     .lineLimit(1)
                 Text(context.state.message)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                ProgressView(value: context.state.progress)
-                    .tint(.accentColor)
+                    .foregroundStyle(context.state.phase == .failed ? .red : .secondary)
+                    .lineLimit(2)
+                if context.state.phase == .failed {
+                    if let actionURL = context.state.actionURLString.flatMap(URL.init(string:)) {
+                        Link(destination: actionURL) {
+                            Label("Open Photos Settings", systemImage: "gearshape")
+                                .font(.caption.weight(.semibold))
+                        }
+                    }
+                } else {
+                    ProgressView(value: context.state.progress)
+                        .tint(.accentColor)
+                }
             }
         }
         .padding(.vertical, 4)
@@ -81,9 +103,9 @@ private struct ThumbnailView: View {
                     .scaledToFill()
             } else {
                 Rectangle()
-                    .fill(.secondary.opacity(0.18))
-                Image(systemName: "photo")
-                    .foregroundStyle(.secondary)
+                    .fill(state.phase == .failed ? .red.opacity(0.12) : .secondary.opacity(0.18))
+                Image(systemName: state.phase == .failed ? "exclamationmark.triangle.fill" : "photo")
+                    .foregroundStyle(state.phase == .failed ? .red : .secondary)
             }
             Badge(kind: state.mediaKind)
                 .padding(5)

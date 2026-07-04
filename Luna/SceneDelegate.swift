@@ -132,6 +132,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// Dispatches an incoming URL: a `lunareader://read` link opens the reader.
     private func route(_ url: URL) {
+        if url.scheme == "lunareader", url.host == "settings", url.path == "/photos" {
+            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(settingsURL)
+            }
+            return
+        }
         if let articleURL = LunaDeepLink.articleURL(from: url) {
             openReader(articleURL: articleURL)
         }

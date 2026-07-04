@@ -126,11 +126,16 @@ public enum EmailContentRenderer {
         }
         header += "<div style=\"font-size:13px;margin-bottom:16px\">"
             + "<a href=\"\(attr(originalURL))\" style=\"color:#2b6cb0\">\(escape(originalURL))</a></div>"
+        // Placed right alongside the original-source link, near the very start of the
+        // body — NOT after `bodyHTML` — so a long article can't push it past the mail
+        // fetch size cap on the receive side (`StreamIMAPClient.maxFetchBytes`), which
+        // would otherwise clip the marker off a truncated fetch.
+        header += marker.hiddenHTMLBlock()
         header += "<hr style=\"border:none;border-top:1px solid #eee;margin:0 0 16px\">"
 
         return "<!doctype html><html><body style=\"margin:0;padding:16px;"
             + "font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111;"
-            + "max-width:640px\">\(header)\(bodyHTML)\(marker.hiddenHTMLBlock())</body></html>"
+            + "max-width:640px\">\(header)\(bodyHTML)</body></html>"
     }
 
     private static func plainDocument(title: String, originalURL: String, body: String) -> String {

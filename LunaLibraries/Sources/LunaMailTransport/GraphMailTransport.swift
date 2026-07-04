@@ -58,32 +58,44 @@ public struct GraphMailTransport: EmailTransport {
         // is fetched and matched client-side, mirroring the IMAP path's
         // header-OR-sender-OR-subject semantics.
         let matchClientSide = !extraSubjects.isEmpty && !(cursor?.token ?? "").isEmpty
-        var clauses: [String] = []
+        var interest = [String]()
         if !matchClientSide {
-            var interest = ["startswith(subject,'\(Self.odataEscaped(FilterGuide.subjectMatch))')"]
+            interest = ["startswith(subject,'\(Self.odataEscaped(FilterGuide.subjectMatch))')"]
             interest += extraSenders.map {
                 "from/emailAddress/address eq '\(Self.odataEscaped($0))'"
             }
-            clauses.append(
-                interest.count == 1 ? interest[0] : "(" + interest.joined(separator: " or ") + ")")
         }
-        if let token = cursor?.token, !token.isEmpty {
-            clauses.append("receivedDateTime gt \(token)")
-        }
-        var components = URLComponents(string: "https://graph.microsoft.com/v1.0/me/messages")!
-        components.queryItems = [
-            URLQueryItem(name: "$select",
-                         value: "id,subject,from,receivedDateTime,body,internetMessageHeaders"),
-            URLQueryItem(name: "$filter", value: clauses.joined(separator: " and ")),
-            URLQueryItem(name: "$top", value: "25"),
-            URLQueryItem(name: "$orderby", value: "receivedDateTime asc"),
-        ]
-        let data = try await get(components.url!.absoluteString)
+        let dateClause = (cursor?.token).flatMap { $0.isEmpty ? nil : "receivedDateTime gt \($0)" }
 
-        let page = try JSONDecoder().decode(MessagesPage.self, from: data)
+        // One request PER interest clause rather than OR-ing them into a single
+        // $filter: Graph's mail API throws InefficientFilter when an OR'd
+        // multi-property filter is combined with $orderby (unlike Azure AD's
+        // directory-object endpoints, ConsistencyLevel/$count doesn't help
+        // here — there's no "advanced query" mode for /me/messages). Each
+        // single-clause request stays filter+orderby on an indexed property,
+        // which Graph accepts; results are merged/deduped by id below —
+        // mirroring the IMAP path's per-clause unioned searches.
+        var byID: [String: MessageWire] = [:]
+        for clause in (matchClientSide ? [nil] : interest.map { Optional($0) }) {
+            var clauses = [String]()
+            if let clause { clauses.append(clause) }
+            if let dateClause { clauses.append(dateClause) }
+            var components = URLComponents(string: "https://graph.microsoft.com/v1.0/me/messages")!
+            components.queryItems = [
+                URLQueryItem(name: "$select",
+                             value: "id,subject,from,receivedDateTime,body,internetMessageHeaders"),
+                URLQueryItem(name: "$filter", value: clauses.joined(separator: " and ")),
+                URLQueryItem(name: "$top", value: "25"),
+                URLQueryItem(name: "$orderby", value: "receivedDateTime asc"),
+            ]
+            let data = try await get(components.url!.absoluteString)
+            let page = try JSONDecoder().decode(MessagesPage.self, from: data)
+            for wire in page.value { byID[wire.id] = wire }
+        }
+
         var messages: [FetchedMessage] = []
         var newestDate = cursor?.token ?? ""
-        for wire in page.value {
+        for wire in byID.values.sorted(by: { ($0.receivedDateTime ?? "") < ($1.receivedDateTime ?? "") }) {
             newestDate = max(newestDate, wire.receivedDateTime ?? "")
             let headers = wire.headerMap
             let bodyContent = wire.body?.content ?? ""
@@ -100,7 +112,7 @@ public struct GraphMailTransport: EmailTransport {
             }
             messages.append(message)
         }
-        if newestDate.isEmpty, page.value.isEmpty {
+        if newestDate.isEmpty, byID.isEmpty {
             // First run with nothing of interest yet: anchor the cursor at now
             // so the client-side subject window above can activate — otherwise
             // an account with no Luna mail would never establish a cursor.

@@ -110,7 +110,7 @@ final class SettingsScreenTests: XCTestCase {
 
         // Use a fresh navigation stack per row so each push is independent (avoids
         // pop timing issues in a hosted, animation-disabled stack).
-        for (row, expectedClass) in expected.enumerated() {
+        for (row, expectedClass): (Int, AnyClass) in expected.enumerated() {
             let settings = SettingsViewController()
             let nav = UINavigationController(rootViewController: settings)
             let window = UITestSupport.host(nav)

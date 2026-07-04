@@ -21,6 +21,7 @@ public final class LiveMediaDownloadManager: NSObject {
     private static let sessionIdentifier = "com.hsanabria.luna.mediaDownload.background"
     private static let failureDismissalDelay: TimeInterval = 14
     private static let maxTransientAttempts = 2
+    private static let suspensionGracePeriod: TimeInterval = 5
     private let store = JobStore()
     private let saver: PhotoLibrarySaving
     private var backgroundCompletionHandler: (() -> Void)?
@@ -41,6 +42,8 @@ public final class LiveMediaDownloadManager: NSObject {
 
     @discardableResult
     public func start(urlString: String, title: String? = nil) async -> Bool {
+        await reapExpiredSuspensions()
+
         guard MediaDownloadablePlatform.supports(urlString),
               let sourceURL = URL(string: urlString),
               !AutoDownloadSettings.wasDownloaded(urlString)
@@ -77,7 +80,8 @@ public final class LiveMediaDownloadManager: NSObject {
             errorMessage: nil,
             errorKind: nil,
             resolveAttempts: 0,
-            mediaAttempts: 0
+            mediaAttempts: 0,
+            suspendDeadline: nil
         )
         store.upsert(job)
         await startActivity(for: job)
@@ -121,11 +125,73 @@ public final class LiveMediaDownloadManager: NSObject {
     public func attachBackgroundCompletionHandler(_ completionHandler: @escaping () -> Void) {
         backgroundCompletionHandler = completionHandler
         _ = session
+        Task { await reapExpiredSuspensions() }
     }
 
     public func resumeLiveActivities() {
+        Task { await reapExpiredSuspensions() }
         for job in store.jobs().filter({ !$0.isTerminal }) {
             Task { await updateActivity(for: job) }
+        }
+    }
+
+    public func suspend(jobID: String) async {
+        await reapExpiredSuspensions()
+        guard var job = store.job(id: jobID),
+              job.phase == .downloading || job.phase == .resolving
+        else { return }
+
+        job.phase = .suspended
+        job.suspendDeadline = Date().addingTimeInterval(Self.suspensionGracePeriod)
+        store.upsert(job)
+        await updateActivity(for: job)
+        await cancelTasks(jobID: jobID)
+
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(Self.suspensionGracePeriod * 1_000_000_000))
+            await self.reapExpiredSuspensions()
+        }
+    }
+
+    public func resume(jobID: String) async {
+        guard var job = store.job(id: jobID), job.phase == .suspended else { return }
+        if let deadline = job.suspendDeadline, deadline <= Date() {
+            await tearDownSuspendedJob(job)
+            return
+        }
+
+        job.suspendDeadline = nil
+        job.errorMessage = nil
+        job.errorKind = nil
+        if let assetURLString = job.assetURLString,
+           let assetURL = URL(string: assetURLString),
+           let sourceURL = URL(string: job.sourceURLString) {
+            job.phase = .downloading
+            store.upsert(job)
+            await updateActivity(for: job)
+            var request = URLRequest(url: assetURL, timeoutInterval: 60)
+            request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+            if sourceURL.host?.lowercased().contains("tiktok") == true {
+                request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
+            }
+            startTask(request, jobID: job.id, role: .media, attempt: job.mediaAttempts)
+        } else if let sourceURL = URL(string: job.sourceURLString),
+                  let resolve = Self.resolveRequest(for: sourceURL) {
+            job.phase = .resolving
+            job.resolveKind = resolve.kind
+            store.upsert(job)
+            await updateActivity(for: job)
+            startTask(resolve.request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+        } else {
+            await tearDownSuspendedJob(job)
+        }
+    }
+
+    public func reapExpiredSuspensions() async {
+        let now = Date()
+        for job in store.jobs()
+            where job.phase == .suspended && (job.suspendDeadline ?? .distantPast) <= now {
+            await tearDownSuspendedJob(job)
         }
     }
 
@@ -138,6 +204,18 @@ public final class LiveMediaDownloadManager: NSObject {
         let task = session.downloadTask(with: request)
         task.taskDescription = "\(jobID)|\(role.rawValue)|\(attempt)"
         task.resume()
+    }
+
+    private func cancelTasks(jobID: String) async {
+        await withCheckedContinuation { continuation in
+            session.getAllTasks { tasks in
+                let prefix = "\(jobID)|"
+                for task in tasks where task.taskDescription?.hasPrefix(prefix) == true {
+                    task.cancel()
+                }
+                continuation.resume()
+            }
+        }
     }
 
     private static func resolveRequest(for url: URL) -> (request: URLRequest, kind: String)? {
@@ -235,6 +313,7 @@ public final class LiveMediaDownloadManager: NSObject {
 
     private func finish(job: LiveMediaDownloadJob, downloadedTo location: URL, response: URLResponse?) {
         var job = job
+        guard job.phase != .suspended else { return }
         let http = response as? HTTPURLResponse
         if let http, !(200..<300).contains(http.statusCode) {
             Task {
@@ -268,6 +347,7 @@ public final class LiveMediaDownloadManager: NSObject {
 
     private func finishResolve(job: LiveMediaDownloadJob, downloadedTo location: URL, response: URLResponse?) {
         var job = job
+        guard job.phase != .suspended else { return }
         let http = response as? HTTPURLResponse
         if let http, !(200..<300).contains(http.statusCode) {
             Task {
@@ -287,6 +367,7 @@ public final class LiveMediaDownloadManager: NSObject {
 
     private func save(job: LiveMediaDownloadJob, fileURL: URL, kind: MediaAsset.Kind) async {
         var job = job
+        guard job.phase != .suspended else { return }
         do {
             try await saver.save(fileURL: fileURL, kind: kind)
             AutoDownloadSettings.markDownloaded(job.sourceURLString)
@@ -377,6 +458,13 @@ public final class LiveMediaDownloadManager: NSObject {
         await endActivity(for: job, dismissalDelay: Self.failureDismissalDelay)
         store.remove(job.id)
     }
+
+    private func tearDownSuspendedJob(_ job: LiveMediaDownloadJob) async {
+        await cancelTasks(jobID: job.id)
+        await endActivity(for: job, dismissalDelay: 0)
+        store.removeFiles(for: job)
+        store.remove(job.id)
+    }
 }
 
 extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
@@ -392,7 +480,8 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
               let parts = Self.taskParts(description),
               parts.role == .media,
               let jobID = parts.jobID,
-              var job = store.job(id: jobID)
+              var job = store.job(id: jobID),
+              job.phase != .suspended
         else { return }
         job.phase = .downloading
         job.progress = min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
@@ -410,6 +499,7 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
               let jobID = parts.jobID,
               let job = store.job(id: jobID)
         else { return }
+        guard job.phase != .suspended else { return }
         if parts.role == .resolve {
             finishResolve(job: job, downloadedTo: location, response: downloadTask.response)
         } else {
@@ -428,6 +518,7 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
               let jobID = parts.jobID,
               var job = store.job(id: jobID)
         else { return }
+        guard job.phase != .suspended else { return }
         Task {
             await retryOrFail(
                 job: job,
@@ -473,6 +564,7 @@ private extension LiveMediaDownloadAttributes.ContentState.Phase {
         switch jobPhase {
         case .resolving: self = .resolving
         case .downloading: self = .downloading
+        case .suspended: self = .suspended
         case .saving: self = .saving
         case .finished: self = .finished
         case .failed: self = .failed
@@ -514,7 +606,8 @@ private extension LiveMediaDownloadManager {
             errorMessage: message,
             errorKind: errorKind,
             resolveAttempts: 0,
-            mediaAttempts: 0
+            mediaAttempts: 0,
+            suspendDeadline: nil
         )
         job.fail(message: message, kind: errorKind)
         await startActivity(for: job)
@@ -550,6 +643,7 @@ private extension LiveMediaDownloadManager {
         switch job.phase {
         case .resolving: message = "Preparing download"
         case .downloading: message = "Downloading"
+        case .suspended: message = "Paused. Resume within 5 seconds."
         case .saving: message = "Saving to Photos"
         case .finished: message = "Saved to Photos"
         case .failed: message = job.errorMessage ?? "Download failed"
@@ -560,7 +654,8 @@ private extension LiveMediaDownloadManager {
             mediaKind: .init(rawJobValue: job.mediaKind),
             message: message,
             thumbnailFileName: job.thumbnailFileName,
-            actionURLString: job.errorKind == .photosPermission ? "lunareader://settings/photos" : nil
+            actionURLString: job.errorKind == .photosPermission ? "lunareader://settings/photos" : nil,
+            suspendDeadline: job.suspendDeadline
         )
     }
     #endif
@@ -570,6 +665,7 @@ private struct LiveMediaDownloadJob: Codable, Equatable {
     enum Phase: String, Codable {
         case resolving
         case downloading
+        case suspended
         case saving
         case finished
         case failed
@@ -594,6 +690,7 @@ private struct LiveMediaDownloadJob: Codable, Equatable {
     var errorKind: ErrorKind?
     var resolveAttempts: Int
     var mediaAttempts: Int
+    var suspendDeadline: Date?
 
     var isTerminal: Bool { phase == .finished || phase == .failed }
 
@@ -609,6 +706,7 @@ private struct LiveMediaDownloadJob: Codable, Equatable {
         phase = .failed
         errorMessage = message
         errorKind = kind
+        suspendDeadline = nil
     }
 }
 
@@ -681,6 +779,21 @@ private final class JobStore {
             let jobs = current.filter { $0.id != id }
             if let data = try? JSONEncoder().encode(jobs) {
                 try? data.write(to: Self.jobsURL, options: .atomic)
+            }
+        }
+    }
+
+    func removeFiles(for job: LiveMediaDownloadJob) {
+        lock.withLock {
+            let fileManager = FileManager.default
+            let urls = (try? fileManager.contentsOfDirectory(
+                at: Self.directory,
+                includingPropertiesForKeys: nil)) ?? []
+            for url in urls where url.lastPathComponent.hasPrefix("\(job.id).") {
+                try? fileManager.removeItem(at: url)
+            }
+            if let thumbnailFileName = job.thumbnailFileName {
+                try? fileManager.removeItem(at: Self.thumbnailURL(fileName: thumbnailFileName))
             }
         }
     }

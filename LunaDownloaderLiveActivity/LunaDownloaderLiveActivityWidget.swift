@@ -4,10 +4,49 @@
 //
 
 import ActivityKit
+import AppIntents
 import LunaMediaDownload
 import SwiftUI
 import UIKit
 import WidgetKit
+
+struct SuspendLiveMediaDownloadIntent: AppIntent {
+    static var title: LocalizedStringResource = "Cancel Download"
+    static var description = IntentDescription("Pauses the active Luna download briefly before canceling it.")
+
+    @Parameter(title: "Download ID")
+    var jobID: String
+
+    init() {}
+
+    init(jobID: String) {
+        self.jobID = jobID
+    }
+
+    func perform() async throws -> some IntentResult {
+        await LiveMediaDownloadManager.shared.suspend(jobID: jobID)
+        return .result()
+    }
+}
+
+struct ResumeLiveMediaDownloadIntent: AppIntent {
+    static var title: LocalizedStringResource = "Resume Download"
+    static var description = IntentDescription("Resumes a paused Luna download.")
+
+    @Parameter(title: "Download ID")
+    var jobID: String
+
+    init() {}
+
+    init(jobID: String) {
+        self.jobID = jobID
+    }
+
+    func perform() async throws -> some IntentResult {
+        await LiveMediaDownloadManager.shared.resume(jobID: jobID)
+        return .result()
+    }
+}
 
 struct LunaDownloaderLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
@@ -37,9 +76,13 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(context.state.message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        Text(context.state.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                        ActivityControlButton(context: context)
+                    }
                 }
             } compactLeading: {
                 ThumbnailView(state: context.state)
@@ -47,6 +90,8 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                 if context.state.phase == .failed {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
+                } else if context.state.phase == .suspended {
+                    Image(systemName: "arrow.clockwise.circle.fill")
                 } else {
                     Text("\(Int(context.state.progress * 100))%")
                         .font(.caption2.monospacedDigit())
@@ -83,12 +128,42 @@ private struct DownloadActivityView: View {
                         }
                     }
                 } else {
-                    ProgressView(value: context.state.progress)
-                        .tint(.accentColor)
+                    HStack(spacing: 10) {
+                        ProgressView(value: context.state.progress)
+                            .tint(.accentColor)
+                        ActivityControlButton(context: context)
+                    }
                 }
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct ActivityControlButton: View {
+    let context: ActivityViewContext<LiveMediaDownloadAttributes>
+
+    var body: some View {
+        switch context.state.phase {
+        case .resolving, .downloading:
+            Button(intent: SuspendLiveMediaDownloadIntent(jobID: context.attributes.jobID)) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel download")
+        case .suspended:
+            Button(intent: ResumeLiveMediaDownloadIntent(jobID: context.attributes.jobID)) {
+                Image(systemName: "arrow.clockwise.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color.accentColor)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Resume download")
+        default:
+            EmptyView()
+        }
     }
 }
 

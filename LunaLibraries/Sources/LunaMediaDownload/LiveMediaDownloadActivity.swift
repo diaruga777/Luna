@@ -22,6 +22,7 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
         public enum Phase: String, Codable, Hashable {
             case resolving
             case downloading
+            case suspended
             case saving
             case finished
             case failed
@@ -33,6 +34,7 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
         public var message: String
         public var thumbnailFileName: String?
         public var actionURLString: String?
+        public var suspendDeadline: Date?
 
         public init(
             phase: Phase,
@@ -40,7 +42,8 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
             mediaKind: MediaKind,
             message: String,
             thumbnailFileName: String? = nil,
-            actionURLString: String? = nil
+            actionURLString: String? = nil,
+            suspendDeadline: Date? = nil
         ) {
             self.phase = phase
             self.progress = min(1, max(0, progress))
@@ -48,6 +51,7 @@ public struct LiveMediaDownloadAttributes: ActivityAttributes {
             self.message = message
             self.thumbnailFileName = thumbnailFileName
             self.actionURLString = actionURLString
+            self.suspendDeadline = suspendDeadline
         }
     }
 

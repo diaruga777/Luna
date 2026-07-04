@@ -253,7 +253,7 @@ final class ReadingListScreenTests: XCTestCase {
         let (viewController, nav, window) = hostedList()
         // The settings control now lives in the in-content NavHeaderBar (not the nav
         // bar); exercise the same action seam by its selector.
-        viewController.perform(Selector(("settingsTapped")))
+        viewController.perform(#selector(ReadingListViewController.settingsTapped))
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertTrue(nav.topViewController is SettingsViewController,
                       "settings button should push SettingsViewController")
@@ -263,7 +263,7 @@ final class ReadingListScreenTests: XCTestCase {
     func testFriendsButtonPushesFriends() {
         UITestSupport.seedSharedStore(.empty)
         let (viewController, nav, window) = hostedList()
-        viewController.perform(Selector(("friendsTapped")))
+        viewController.perform(#selector(ReadingListViewController.friendsTapped))
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertTrue(nav.topViewController is FriendsViewController,
                       "friends button should push FriendsViewController")
@@ -273,9 +273,7 @@ final class ReadingListScreenTests: XCTestCase {
     func testCatchUpButtonPresentsCatchUp() {
         UITestSupport.seedSharedStore(.catchUpEligible)
         let (viewController, _, window) = hostedList()
-        // The catch-up button action is private; exercise the same presentation seam
-        // by performing its selector.
-        viewController.perform(Selector(("catchUpTapped")))
+        viewController.perform(#selector(ReadingListViewController.catchUpTapped))
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         XCTAssertTrue(viewController.presentedViewController is CatchUpViewController,
                       "catch-up button should present the card stack")

@@ -763,7 +763,7 @@ final class ReadingListViewController: UITableViewController {
         refreshControl?.endRefreshing()
     }
 
-    @objc private func friendsTapped() {
+    @objc func friendsTapped() {
         navigationController?.pushViewController(FriendsViewController(), animated: true)
     }
 
@@ -819,7 +819,7 @@ final class ReadingListViewController: UITableViewController {
             adjustedTopInset: scrollView.adjustedContentInset.top)
     }
 
-    @objc private func catchUpTapped() {
+    @objc func catchUpTapped() {
         let catchUp = CatchUpViewController(unread: catchUpQueue(), router: self)
         DotMatrixModal.present(catchUp, from: self)
     }
@@ -1058,7 +1058,7 @@ final class ReadingListViewController: UITableViewController {
         URLUnwrapper.ingestURL(from: entered, allowBareHost: true)?.absoluteString
     }
 
-    @objc private func settingsTapped() {
+    @objc func settingsTapped() {
         navigationController?.pushViewController(SettingsViewController(), animated: true)
     }
 

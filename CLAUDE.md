@@ -81,9 +81,21 @@ The full `LunaTests` suite runs from the command line on an **iOS 26.x simulator
 DD=<a derivedDataPath>
 SIM=<a booted iOS 26.x simulator UDID>   # e.g. xcrun simctl list devices | grep -A8 'iOS 26'
 xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
-  -configuration Debug -derivedDataPath "$DD"
+  -configuration Debug -derivedDataPath "$DD" DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO
 ```
 
+- **`DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO` works around a confirmed Xcode 26
+  swift-build bug (swiftlang/swift-build#975).** Its target-dependency-graph
+  validator emits spurious `'X' is missing a dependency on 'Y' because dependency
+  scan … discovered a dependency` warnings against `LunaLibraries` package targets
+  during test builds only — every flagged dependency is already declared correctly
+  in `Package.swift` (verified directly: adding the "missing" edges didn't change
+  the warning set at all). The setting is real (confirmed by reading swift-build's
+  source) but only takes effect from a build-invocation-level override — neither
+  the project's own `buildSettings` nor its `baseConfigurationReference` xcconfig
+  reach local-package task planning, so it can't be fixed by editing project files
+  and must be passed on the command line (or via `-xcconfig`) instead. Omitting it
+  is harmless — the warnings don't fail the build — but this keeps output clean.
 - **The `Embedded binary is not signed with the same certificate as the parent app`
   error is permanently fixed.** The Luna app target has a **"Re-sign embedded
   extensions (debug)"** build phase (after Embed Foundation Extensions) that re-signs
@@ -112,7 +124,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   extraction tests were aligned to the 1200 threshold. If snapshots fail again on a
   *different* device, re-record there rather than treating it as a regression.
 - For a compile-only check (fast, no run): `xcodebuild build-for-testing -scheme Luna
-  -destination 'generic/platform=iOS Simulator'`.
+  -destination 'generic/platform=iOS Simulator' DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO`.
 
 # Swift Project — Blitz AI Agent Guide
 

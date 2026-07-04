@@ -122,6 +122,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // background intent without network time).
         ReadingListIngestor.shared.ingestAllPending()
         ArticleSendCoordinator.shared.retryPendingSends()
+        LiveMediaDownloadManager.shared.resumeLiveActivities()
 
         // Local notifications: show as banners while open (delegate below) and,
         // for already-onboarded users, ensure authorization (new users get the
@@ -163,8 +164,17 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         ArticleSendCoordinator.shared.retryPendingSends()
+        LiveMediaDownloadManager.shared.resumeLiveActivities()
         scheduleMailFetch()
         schedulePriceRefresh(reason: "entered background")
+    }
+
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        LiveMediaDownloadManager.shared.attachBackgroundCompletionHandler(completionHandler)
     }
 
     private func scheduleMailFetch() {

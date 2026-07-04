@@ -9,6 +9,7 @@ import LunaPlatforms
 import LunaStorage
 import LunaURLClassification
 import LunaModels
+import LunaMediaDownload
 import AppIntents
 import Foundation
 
@@ -79,12 +80,12 @@ public struct SaveFromAppIntent: AppIntent {
                 platform: finderPlatform, handle: fields.first ?? "",
                 content: fields.dropFirst().first, timestamp: fields.dropFirst(2).first)
             else { throw SaveError.notFound }
-            _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
+            return .result(value: await saveAndDownloadReturnValue(url.absoluteString))
         case nil:
             // Safari / unknown: a link in the response, else the tracked page URL.
             let link = fields.first { $0.hasPrefix("http") } ?? SafariURLStore.lastURL
             guard let link, link.hasPrefix("http") else { throw SaveError.notFound }
-            _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: link)
+            return .result(value: await saveAndDownloadReturnValue(link))
         }
         return .result(value: "Saved to Luna.")
     }
@@ -131,5 +132,15 @@ public struct SaveFromAppIntent: AppIntent {
     private func saveMedia(_ platform: ContentPlatform, creator: String?, title: String?) async throws {
         guard let creator, let title else { throw SaveError.missingValues }
         await MediaItemSave.save(platform: platform, creator: creator, title: title)
+    }
+
+    private func saveAndDownloadReturnValue(_ urlString: String) async -> String {
+        _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: urlString)
+        guard MediaDownloadablePlatform.supports(urlString) else { return "Saved to Luna." }
+        if MediaAutoDownloader.isEnabled(forURLString: urlString) {
+            _ = await LiveMediaDownloadManager.shared.start(urlString: urlString)
+            return "Saved to Luna."
+        }
+        return "4:\(urlString)"
     }
 }

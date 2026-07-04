@@ -453,10 +453,10 @@ public final class ShareViewController: UIViewController {
         }
     }
 
-    /// When auto-download is on for the shared link's platform, the extension STAYS
-    /// alive showing a "Saving media…" spinner until the download finishes, then the
-    /// "Saved" checkmark, then dismisses — so the download completes before the
-    /// process is killed. Otherwise it just saves and dismisses normally.
+    /// When auto-download is on for the shared link's platform, hand the media
+    /// download to the system background-transfer service and Live Activity before
+    /// dismissing. The extension process is intentionally NOT the owner of the
+    /// transfer; it may be killed as soon as this request completes.
     public func autoDownloadThenComplete(urlString: String) {
         cancelLoadWatchdog()
         guard MediaAutoDownloader.isEnabled(forURLString: urlString) else {
@@ -465,9 +465,9 @@ public final class ShareViewController: UIViewController {
         }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let downloading = self.showDownloadingBadge()
+            let downloading = self.showDownloadingBadge(text: "Starting download…")
             Task {
-                _ = await MediaAutoDownloader.runIfEnabledAwaiting(forURLString: urlString)
+                _ = await MediaAutoDownloader.startLiveActivityIfEnabled(forURLString: urlString)
                 await MainActor.run {
                     downloading.removeFromSuperview()
                     self.showSavedBadge()

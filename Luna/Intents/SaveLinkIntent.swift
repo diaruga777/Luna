@@ -4,6 +4,7 @@
 //
 
 import LunaIntents
+import LunaMediaDownload
 import AppIntents
 import Foundation
 
@@ -24,6 +25,14 @@ public struct SaveLinkIntent: AppIntent {
         // http article, so an `fbrpc://…` URL passed here saves the article.
         let savedURL = await IntentIngestHelper.handleSavePressWithTimeout(
             urlString: url.absoluteString)
-        return .result(value: savedURL)
+        let mediaURL = savedURL ?? url.absoluteString
+        guard MediaDownloadablePlatform.supports(mediaURL) else {
+            return .result(value: savedURL)
+        }
+        if MediaAutoDownloader.isEnabled(forURLString: mediaURL) {
+            _ = await LiveMediaDownloadManager.shared.start(urlString: mediaURL)
+            return .result(value: savedURL)
+        }
+        return .result(value: "4:\(mediaURL)")
     }
 }

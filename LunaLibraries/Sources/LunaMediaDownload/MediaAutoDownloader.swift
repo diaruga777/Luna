@@ -40,4 +40,13 @@ public enum MediaAutoDownloader {
             return false
         }
     }
+
+    /// Starts a system-owned background transfer + Live Activity and returns once
+    /// the work has been handed off. This is the path for processes with short
+    /// lifetimes (Shortcuts/App Intents and share/action extensions).
+    @discardableResult
+    public static func startLiveActivityIfEnabled(forURLString urlString: String) async -> Bool {
+        guard isEnabled(forURLString: urlString) else { return false }
+        return await LiveMediaDownloadManager.shared.start(urlString: urlString)
+    }
 }

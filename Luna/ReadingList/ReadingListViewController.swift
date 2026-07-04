@@ -1807,41 +1807,22 @@ final class ReadingListViewController: UITableViewController {
         return UIMenu(children: children)
     }
 
-    /// Downloads the first media item of an X/Instagram/TikTok post to the photo
-    /// library. Progress + result show in a non-blocking bottom status pill (the
-    /// list stays interactive and the pill never appears over the reader), and the
-    /// work continues if the app is backgrounded (a background task assertion).
+    /// Hands the first media item of an X/Instagram/TikTok/Facebook post to the
+    /// background media downloader. The Live Activity/background URLSession own
+    /// the durable transfer; this pill is only immediate in-app feedback.
     private func downloadMediaToPhotos(_ item: ReadingListItem) {
-        guard let url = URL(string: item.urlString) else { return }
         let status = mediaDownloadStatusView()
         status.startProgress()
-
-        var backgroundTask = UIBackgroundTaskIdentifier.invalid
-        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "media-download") {
-            UIApplication.shared.endBackgroundTask(backgroundTask)
-            backgroundTask = .invalid
-        }
-        let endBackground = {
-            if backgroundTask != .invalid {
-                UIApplication.shared.endBackgroundTask(backgroundTask)
-                backgroundTask = .invalid
-            }
-        }
-
         Task { [weak self] in
-            do {
-                _ = try await MediaDownloadService().downloadFirstMediaToPhotos(from: url) { progress in
-                    Task { @MainActor in self?.mediaDownloadStatus?.update(progress: progress) }
-                }
-                await MainActor.run {
-                    self?.mediaDownloadStatus?.showResult(message: "Saved to Photos", success: true)
-                    endBackground()
-                }
-            } catch {
-                let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
-                await MainActor.run {
-                    self?.mediaDownloadStatus?.showResult(message: message, success: false)
-                    endBackground()
+            let started = await LiveMediaDownloadManager.shared.start(
+                urlString: item.urlString, title: item.title)
+            await MainActor.run {
+                if started {
+                    self?.mediaDownloadStatus?.update(progress: 0.05)
+                    self?.mediaDownloadStatus?.showResult(message: "Download started", success: true)
+                } else {
+                    self?.mediaDownloadStatus?.showResult(
+                        message: "Couldn't start the media download.", success: false)
                 }
             }
         }

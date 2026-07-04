@@ -337,7 +337,7 @@ final class CatchUpViewController: UIViewController {
             body = reader.view
             currentReaderChild = reader
             bodyTop = card.contentContainer.topAnchor
-            defer { reader.didMove(toParent: self) }
+            reader.didMove(toParent: self)
         } else {
             let header = CatchUpCardHeader(item: item)
             header.translatesAutoresizingMaskIntoConstraints = false

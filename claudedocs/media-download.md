@@ -1,9 +1,10 @@
-# Social Media Download to Photos
+# Social Media Download
 
 Downloads still images, GIFs, and videos from **X, Instagram, TikTok, and Facebook** posts and
-saves them to the user's photo library (PhotoKit). If a post has multiple media items,
-the **first** is taken. Mirrors public web downloaders (twittervideodownloader,
-snapinsta, …) with keyless, client-side extraction.
+either saves them to the user's photo library (PhotoKit) or hands the completed file to
+system share/save UI. If a post has multiple media items, the **first** is taken. Mirrors
+public web downloaders (twittervideodownloader, snapinsta, …) with keyless, client-side
+extraction.
 
 ## Entry points
 
@@ -41,6 +42,14 @@ snapinsta, …) with keyless, client-side extraction.
    tappable and the pill is a subview of the list so it never appears over the reader.
    The download + save continues if the app is backgrounded (a `beginBackgroundTask`
    assertion around the work).
+3. **Downloader App Clip** — `LunaDownloaderClip` launches from a web URL whose query
+   carries the source media URL (`url`, `source`, `sourceURL`, or `u`). It uses
+   `MediaDownloadService.downloadFirstMediaToFile(from:onProgress:)`, so it never
+   requests Photos access or calls PhotoKit. The clip shows a simple foreground progress
+   screen and, once the file is ready, immediately presents `UIActivityViewController`
+   with the downloaded file URL so the user can save or send it through system services.
+   If automatic presentation is interrupted, the completion screen exposes a share button
+   backed by the same activity controller.
 
 ## Core (`ReaderKit/MediaDownload/`, shared by app + action ext)
 

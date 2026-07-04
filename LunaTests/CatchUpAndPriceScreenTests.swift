@@ -134,7 +134,7 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         XCTAssertTrue(nav.topViewController is PriceTrackingViewController)
         // The header controls now live in the in-content NavHeaderBar (not the nav bar);
         // exercise the same back action seam by its selector.
-        editor.perform(Selector(("leftButtonTapped")))
+        editor.perform(#selector(PriceTrackingViewController.leftButtonTapped))
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertTrue(nav.topViewController === list, "Back should pop back to the reading list")
         XCTAssertNotNil(ReadingListStore.shared.item(withID: tracker.id),
@@ -182,7 +182,7 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         editor.loadViewIfNeeded()
 
         // "Read instead" now lives in the in-content NavHeaderBar; drive its action seam.
-        editor.perform(Selector(("readInsteadTapped")))
+        editor.perform(#selector(PriceTrackingViewController.readInsteadTapped))
         // The pop is an animated `popViewController`; under full-suite load it can need
         // more than one run-loop turn to settle, so poll (bounded) instead of a fixed wait.
         let popDeadline = Date().addingTimeInterval(2.0)
@@ -218,7 +218,7 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         editor.loadViewIfNeeded()
 
         // "Read instead" now lives in the in-content NavHeaderBar; drive its action seam.
-        editor.perform(Selector(("readInsteadTapped")))
+        editor.perform(#selector(PriceTrackingViewController.readInsteadTapped))
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         let after = ReadingListStore.shared.item(withID: item.id)?.priceTracker
         XCTAssertNotNil(after, "merge revert must keep the existing tracker")
@@ -245,7 +245,7 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         let inAppEditor = PriceTrackingViewController(mode: .creation(itemID: tracker.id, host: .inApp))
         nav.pushViewController(inAppEditor, animated: false)
         inAppEditor.loadViewIfNeeded()
-        inAppEditor.perform(Selector(("leftButtonTapped")))
+        inAppEditor.perform(#selector(PriceTrackingViewController.leftButtonTapped))
         let popDeadline = Date().addingTimeInterval(2.0)
         while nav.topViewController !== list && Date() < popDeadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
@@ -257,7 +257,7 @@ final class CatchUpAndPriceScreenTests: XCTestCase {
         var didCallOnDone = false
         extEditor.onDone = { didCallOnDone = true }
         extEditor.loadViewIfNeeded()
-        extEditor.perform(Selector(("leftButtonTapped")))
+        extEditor.perform(#selector(PriceTrackingViewController.leftButtonTapped))
         XCTAssertTrue(didCallOnDone, "extension host Done invokes the onDone completion")
         _ = window
     }

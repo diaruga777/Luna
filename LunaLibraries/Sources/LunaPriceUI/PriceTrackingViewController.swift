@@ -492,7 +492,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// Top-left button: pops back to the reading list (in-app) or dismisses/completes
     /// the hosting extension (extension). The tracker is already saved and every edit
     /// persists as it's made, so this just leaves the screen.
-    @objc private func leftButtonTapped() {
+    @objc public func leftButtonTapped() {
         dismissOrPop()
     }
 
@@ -503,7 +503,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     ///   existing tracker, leaving it otherwise intact) and save that one URL as an
     ///   article.
     /// Then leave the screen. Never shown for the existing entry.
-    @objc private func readInsteadTapped() {
+    @objc public func readInsteadTapped() {
         // The re-save is injected (extension-safe): a per-instance handler wins, else
         // the static default the main app installs. ShareKit holds no `ReadingListIngestor`.
         let saveAsArticle = saveAsArticleOverride ?? Self.defaultSaveAsArticle

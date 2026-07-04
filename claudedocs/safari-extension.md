@@ -21,10 +21,10 @@ background.js (tabs.onActivated / tabs.onUpdated)
 
 Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product embedded in Luna.app/PlugIns. Resources flatten into the appex root (Safari requires manifest.json at bundle root on iOS).
 
-## "Read in Luna" button (deep-link into the app)
+## "Read in Luna" / "Download in Luna" button
 
-A second role of the same extension (presented as an **iOS 27+** feature): a "Read in Luna"
-button on article pages that opens the page in
+The same extension also presents an **iOS 27+** page button: "Read in Luna" on article
+pages, or "Download in Luna" on recognized Downloader-platform pages.
 
 `LunaSafari/Resources/content.js` is injected **programmatically** by `background.js`
 (`scripting.executeScript` on every `tabs.onUpdated`/`status:complete` http(s) page),
@@ -34,8 +34,8 @@ gotcha**: the manifest `description` must stay **≤ ~112 chars** — a 127-char
 failed App Store validation with the opaque code 90849 (NOT content_scripts/scripting, which
 were red herrings).
 
-Flow:
-1. content.js asks background `{type:"buttonMode"}`; background relays to the native handler,
+Article flow:
+1. content.js asks background `{type:"buttonContext"}`; background relays to the native handler,
    which returns the app's `SafariSuggestionMode` (`never` / `all` / `onlyLocked`, default
    `all`) from the App Group (`SafariSuggestionSettings`, key `safariSuggestionMode`).
 2. If `never`, or the page isn't an article (`looksLikeArticle`: og:type=article / `<article>`
@@ -51,9 +51,25 @@ the in-app archive reader, a ready article into the native reader. The "Locked O
 the in-app paywall handling share one detector (`PaywallDetector`), so a reader logged in via
 their browser sees a full article and isn't flagged.
 
+Downloader-platform flow:
+1. content.js asks background `{type:"buttonContext"}`; background relays to the native
+   handler, which returns the same suggestion mode plus:
+   - `isDownloaderHost` — true only for the `*.downloader.safari` extension bundle.
+   - `downloaderAppClipURL` — `LunaDownloaderAppClipURL` from `LunaSafari/Info.plist`.
+2. Before article heuristics run, content.js recognizes Downloader-platform hosts mirrored
+   from `PlatformRecognizer` (YouTube, X/Twitter, Bluesky, Reddit, TikTok, Instagram,
+   Facebook, Spotify, Apple Music, Apple Podcasts). These pages are never classified as
+   articles by text length, even when a caption/comment body is long.
+3. On a recognized platform URL, the button says "Download in Luna". If this is the
+   Downloader app's own Safari extension, it opens the installed app through the existing
+   `lunareader://read?url=...` route. If this is Reader/PriceTracker's Safari extension, it
+   routes to `LunaDownloaderAppClipURL?url=<source>`. If `LunaDownloaderAppClipURL` is empty
+   (the default until the production App Clip invocation URL exists), Reader/PriceTracker
+   extensions do not show the button for platform pages.
+
 The setting lives in Settings → Shortcut & Safari ("Read in Luna Button" — a 3-segment
-control). `background.js` relays `buttonMode` (the only message besides URL tracking);
-content scripts can't call `sendNativeMessage` directly.
+control). `background.js` relays `buttonContext`/`buttonMode`; content scripts can't call
+`sendNativeMessage` directly.
 
 ## Enabling (simulator/device)
 

@@ -1,7 +1,6 @@
-// Luna Safari content script. Injects a "Read in Luna" button on article pages
-// (per the app's visibility setting); tapping it deep-links the page into the
-// Luna app, which opens the right viewer — including the in-app archive.today
-// flow for paywalled articles. The extension does NO archive.today handling.
+// Luna Safari content script. Injects a Luna button on article pages (per the
+// app's visibility setting) or known Downloader-platform pages. Article taps
+// deep-link into the reader; platform taps open the Downloader app/clip.
 
 (function () {
     "use strict";
@@ -29,12 +28,18 @@
         "unlock this article", "this article is reserved for subscribers"
     ];
 
-    browser.runtime.sendMessage({ type: "buttonMode" }).then(function (resp) {
+    browser.runtime.sendMessage({ type: "buttonContext" }).then(function (resp) {
         var mode = (resp && resp.mode) || "all";
         if (mode === "never") { return; }
+        var platform = recognizedPlatformPage();
+        if (platform) {
+            var downloadTarget = downloadTargetFor(resp);
+            if (downloadTarget) { injectLunaButton(downloadTarget); }
+            return;
+        }
         if (!looksLikeArticle()) { return; }
         if (mode === "onlyLocked" && !looksPaywalled()) { return; }
-        injectReadButton();
+        injectLunaButton(readTarget());
     }).catch(function () {});
 
     // When the "Unlock Paywalls On-Device" toggle is on, reveal the body in Safari
@@ -112,7 +117,6 @@
 
     // A page worth a "Read in Luna" button: an article, not a homepage/search.
     function looksLikeArticle() {
-        if (isRedditHost()) { return redditLooksLikeArticle(); }
         var ogType = document.querySelector('meta[property="og:type"]');
         if (ogType && /article/i.test(ogType.getAttribute("content") || "")) { return true; }
         if (document.querySelector("article")) { return true; }
@@ -122,50 +126,6 @@
             textLength += (paragraphs[i].innerText || "").length;
         }
         return textLength > 1500 && !!document.querySelector("h1");
-    }
-
-    // Mirrors RedditLink.isReddit (Swift) — keep in sync.
-    function isRedditHost() {
-        var host = (location.hostname || "").toLowerCase();
-        return host === "reddit.com" || host.slice(-".reddit.com".length) === ".reddit.com"
-            || host === "redd.it";
-    }
-
-    // The base-36 post id from a `/r/<sub>/comments/<id>/…` permalink, or the
-    // `redd.it/<id>` shortlink id. Mirrors RedditLink.postID (Swift). Any other
-    // reddit.com page — the homepage, a subreddit/user listing, search — has no
-    // post id and is a scrolling feed of many posts' worth of text, never a
-    // single readable article.
-    function redditPostID() {
-        var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
-        var commentsIndex = segments.indexOf("comments");
-        if (commentsIndex >= 0 && commentsIndex + 1 < segments.length) { return segments[commentsIndex + 1]; }
-        if (location.hostname.toLowerCase() === "redd.it") { return segments[0] || null; }
-        return null;
-    }
-
-    // Reddit posts are social content, not articles — EXCEPT a text post whose
-    // own body (title + selftext, comments never counted) is substantial enough
-    // to actually be "reading material" rather than a link/discussion prompt.
-    // List/scroll pages (home, subreddits, user pages, search) never qualify:
-    // their high net character count comes from many posts' previews/comments,
-    // not one readable post.
-    function redditLooksLikeArticle() {
-        if (!redditPostID()) { return false; }
-        return redditPostBodyText().length >= REDDIT_POST_BODY_THRESHOLD;
-    }
-
-    // The text of just the primary post — new Reddit renders it as a single
-    // <shreddit-post> custom element (comments are separate sibling elements,
-    // never nested inside it); old Reddit's permalink page holds just the OP's
-    // `.thing.link` above `.commentarea`. Either way this never touches comments.
-    var REDDIT_POST_BODY_THRESHOLD = 1200;
-    function redditPostBodyText() {
-        var post = document.querySelector("shreddit-post");
-        if (post) { return (post.innerText || post.textContent || "").trim(); }
-        var oldPost = document.querySelector("#siteTable .thing.link, div.thing.link");
-        if (oldPost) { return (oldPost.innerText || oldPost.textContent || "").trim(); }
-        return "";
     }
 
     // Mirrors PaywallDetector: schema.org isAccessibleForFree / content_tier, plus
@@ -189,7 +149,7 @@
         return false;
     }
 
-    function injectReadButton() {
+    function injectLunaButton(target) {
         if (document.getElementById("queue-read-button")) { return; }
         // A <div role="button"> (not a <button>) so the host page's `button {…}`
         // CSS can't clamp its height and cut off the pill. Explicit resets +
@@ -197,7 +157,7 @@
         var btn = document.createElement("div");
         btn.id = "queue-read-button";
         btn.setAttribute("role", "button");
-        btn.appendChild(document.createTextNode("📖  Read in Luna"));
+        btn.appendChild(document.createTextNode(target.label));
         applyStyle(btn, {
             position: "fixed", right: "16px",
             bottom: "calc(20px + env(safe-area-inset-bottom))",
@@ -216,9 +176,12 @@
             btn.style.opacity = "0.7";
             btn.style.pointerEvents = "none";
             var open = function () {
-                // A tap is a user gesture, so Safari allows the custom-scheme launch.
-                window.location.href = "lunareader://read?url=" + encodeURIComponent(location.href);
+                window.location.href = target.url();
             };
+            if (!target.captureContent) {
+                open();
+                return;
+            }
             // Hand the app the already-unlocked page HTML so it renders that content
             // instead of re-fetching (which could re-lock outside Safari). Skip when
             // the page is too large for native messaging; the app then fetches the URL.
@@ -231,6 +194,84 @@
             }
         });
         (document.body || document.documentElement).appendChild(btn);
+    }
+
+    function readTarget() {
+        return {
+            label: "📖  Read in Luna",
+            captureContent: true,
+            url: function () {
+                // A tap is a user gesture, so Safari allows the custom-scheme launch.
+                return "lunareader://read?url=" + encodeURIComponent(location.href);
+            }
+        };
+    }
+
+    function downloadTargetFor(context) {
+        if (context && context.isDownloaderHost) {
+            return {
+                label: "Download in Luna",
+                captureContent: false,
+                url: function () {
+                    return "lunareader://read?url=" + encodeURIComponent(location.href);
+                }
+            };
+        }
+        var appClipBaseURL = context && (context.downloaderAppClipURL || "");
+        if (!appClipBaseURL) { return null; }
+        return {
+            label: "Download in Luna",
+            captureContent: false,
+            url: function () { return urlWithSource(appClipBaseURL, location.href); }
+        };
+    }
+
+    function urlWithSource(baseURL, sourceURL) {
+        try {
+            var url = new URL(baseURL);
+            url.searchParams.set("url", sourceURL);
+            return url.toString();
+        } catch (e) {
+            var join = baseURL.indexOf("?") >= 0 ? "&" : "?";
+            return baseURL + join + "url=" + encodeURIComponent(sourceURL);
+        }
+    }
+
+    // Mirrors PlatformRecognizer for Downloader-relevant web platforms. These
+    // pages are not article candidates, even when captions/comments push body
+    // text over the reader threshold.
+    function recognizedPlatformPage() {
+        var host = (location.hostname || "").toLowerCase();
+        var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
+        if (hostMatches(host, ["youtube.com", "youtube-nocookie.com"]) && youtubeVideoID()) { return "youtube"; }
+        if (host === "youtu.be" && segments[0]) { return "youtube"; }
+        if (hostMatches(host, ["x.com", "twitter.com"])) { return "x"; }
+        if (host === "bsky.app" && segments.indexOf("post") >= 0) { return "bluesky"; }
+        if (hostMatches(host, ["reddit.com"]) || host === "redd.it") { return "reddit"; }
+        if (hostMatches(host, ["tiktok.com"])) { return "tiktok"; }
+        if (hostMatches(host, ["instagram.com", "instagr.am"])) { return "instagram"; }
+        if (hostMatches(host, ["facebook.com", "fb.com"]) || host === "fb.watch") { return "facebook"; }
+        if (hostMatches(host, ["spotify.com"]) && ["track", "album", "artist", "episode", "show"].indexOf(segments[0]) >= 0) {
+            return "spotify";
+        }
+        if (host === "music.apple.com") { return "appleMusic"; }
+        if (host === "podcasts.apple.com") { return "applePodcasts"; }
+        return null;
+    }
+
+    function hostMatches(host, roots) {
+        for (var i = 0; i < roots.length; i++) {
+            if (host === roots[i] || host.slice(-("." + roots[i]).length) === "." + roots[i]) { return true; }
+        }
+        return false;
+    }
+
+    function youtubeVideoID() {
+        var params = new URLSearchParams(location.search || "");
+        if (params.get("v")) { return params.get("v"); }
+        var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
+        if (["shorts", "embed", "live"].indexOf(segments[0]) >= 0 && segments[1]) { return segments[1]; }
+        return null;
     }
 
     // The unlocked article HTML to hand the app, trimmed to fit native messaging's

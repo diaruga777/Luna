@@ -1,10 +1,10 @@
 // Tracks the active tab's URL (for the SaveLink intent), injects the content
-// script on web pages, and relays the "Read in Luna" button-visibility setting
-// from the native app to the content script.
+// script on web pages, and relays the Luna button settings/destinations from
+// the native app to the content script.
 //
-// The content script only deep-links into the Luna app (lunareader://read?url=…)
-// — Luna does all the archive.today / paywall handling in-app — so the extension
-// itself no longer touches archive.today.
+// The article path deep-links into the Luna app (lunareader://read?url=…), where
+// Luna does all archive.today / paywall handling in-app. Platform pages route to
+// the Downloader app/clip, so the extension itself never touches archive.today.
 
 let lastSent = null;
 
@@ -67,10 +67,18 @@ browser.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
 browser.runtime.onMessage.addListener(function (message) {
     if (!message) { return; }
     // Content scripts can't call sendNativeMessage directly — relay for them.
-    if (message.type === "buttonMode") {
-        return browser.runtime.sendNativeMessage("application.id", { type: "buttonMode" })
-            .then(function (resp) { return { mode: (resp && resp.mode) || "all" }; })
-            .catch(function () { return { mode: "all" }; });
+    if (message.type === "buttonContext" || message.type === "buttonMode") {
+        return browser.runtime.sendNativeMessage("application.id", { type: "buttonContext" })
+            .then(function (resp) {
+                return {
+                    mode: (resp && resp.mode) || "all",
+                    isDownloaderHost: !!(resp && resp.isDownloaderHost),
+                    downloaderAppClipURL: (resp && resp.downloaderAppClipURL) || ""
+                };
+            })
+            .catch(function () {
+                return { mode: "all", isDownloaderHost: false, downloaderAppClipURL: "" };
+            });
     }
     if (message.type === "bypassEnabled") {
         return browser.runtime.sendNativeMessage("application.id", { type: "bypassEnabled" })

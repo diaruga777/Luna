@@ -43,7 +43,10 @@ Article flow:
    (`looksPaywalled` — a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree`
    + `content_tier`), it does nothing.
 3. Otherwise it injects a Luna-indigo (`#5856D6`) "Read in Luna" capsule button. Tapping it
-   navigates to `lunareader://read?url=<encoded>` — the app's `LunaDeepLink`.
+   prefers `LunaReaderAppClipURL?url=<source>` from `LunaSafari/Info.plist`; that URL is
+   filled in after App Store Connect has the Reader App Clip experience and should open the
+   full Reader app when installed or the Reader App Clip otherwise. Until that value exists,
+   it falls back to `lunareader://read?url=<encoded>` — the app's `LunaDeepLink`.
 
 App side: `SceneDelegate.openReader` ingests the URL (`handleSavePress`) then opens it via
 `ReadingListViewController.open(_:presenter:)` — so a paywalled article opens straight into
@@ -55,6 +58,7 @@ Downloader-platform flow:
 1. content.js asks background `{type:"buttonContext"}`; background relays to the native
    handler, which returns the same suggestion mode plus:
    - `isDownloaderHost` — true only for the `*.downloader.safari` extension bundle.
+   - `readerAppClipURL` — `LunaReaderAppClipURL` from `LunaSafari/Info.plist`.
    - `downloaderAppClipURL` — `LunaDownloaderAppClipURL` from `LunaSafari/Info.plist`.
 2. Before article heuristics run, content.js recognizes Downloader-platform hosts mirrored
    from `PlatformRecognizer` (YouTube, X/Twitter, Bluesky, Reddit, TikTok, Instagram,

@@ -88,9 +88,16 @@ public enum SendToFriendSheet {
         DotMatrixModal.present(sheet, from: presenter)
     }
 
-    /// Shares the plain URL via the system share sheet (no Luna framing).
-    public static func shareLink(urlString: String, from presenter: UIViewController, sourceView: UIView?) {
-        let shared: Any = URL(string: urlString) ?? urlString
+    /// Shares a URL via the system share sheet. `sharedURLString` lets callers hand
+    /// out an App Clip invocation URL while keeping Copy Link on the plain URL.
+    public static func shareLink(
+        urlString: String,
+        sharedURLString: String? = nil,
+        from presenter: UIViewController,
+        sourceView: UIView?
+    ) {
+        let urlToShare = sharedURLString ?? urlString
+        let shared: Any = URL(string: urlToShare) ?? urlToShare
         let activity = UIActivityViewController(activityItems: [shared], applicationActivities: nil)
         activity.popoverPresentationController?.sourceView = sourceView ?? presenter.view
         presenter.present(activity, animated: true)

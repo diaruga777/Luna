@@ -5,8 +5,10 @@
 
 import LunaSocialUI
 import LunaReadingList
+import LunaModels
 import LunaReaderUI
 import LunaStorage
+import LunaURLClassification
 import UIKit
 
 /// Main-app sharing provider: pick recipients and send a Luna email (via
@@ -42,7 +44,9 @@ public final class AppReaderShareProvider: ReaderShareProviding {
             onShareLink: { [weak presenter] in
                 guard let presenter else { return }
                 SendToFriendSheet.shareLink(
-                    urlString: urlString, from: presenter, sourceView: sourceView)
+                    urlString: urlString,
+                    sharedURLString: Self.appClipShareURLString(for: urlString, item: item),
+                    from: presenter, sourceView: sourceView)
             },
             onCopyLink: { [weak presenter] in
                 guard let presenter else { return }
@@ -64,5 +68,12 @@ public final class AppReaderShareProvider: ReaderShareProviding {
 
     public func saveLink(urlString: String) {
         Task { await ReadingListIngestor.shared.handleSavePress(urlString: urlString) }
+    }
+
+    private static func appClipShareURLString(for urlString: String, item: ReadingListItem?) -> String? {
+        LunaAppClipInvocationURL.shareURL(
+            for: urlString,
+            destination: item?.isPlatformItem == true ? .downloader : .reader
+        )?.absoluteString
     }
 }

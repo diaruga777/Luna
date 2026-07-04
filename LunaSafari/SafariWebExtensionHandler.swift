@@ -14,7 +14,8 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private static let appGroupID = SafariAppGroup.id
     private static let suggestionModeKey = "safariSuggestionMode"
     private static let bypassEnabledKey = "nonArchiveBypassEnabled"
-    private static let appClipURLKey = "LunaDownloaderAppClipURL"
+    private static let readerAppClipURLKey = "LunaReaderAppClipURL"
+    private static let downloaderAppClipURLKey = "LunaDownloaderAppClipURL"
 
     func beginRequest(with context: NSExtensionContext) {
         let item = context.inputItems.first as? NSExtensionItem
@@ -27,6 +28,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             payload["mode"] = UserDefaults(suiteName: Self.appGroupID)?
                 .string(forKey: Self.suggestionModeKey) ?? "all"
             payload["isDownloaderHost"] = Self.isDownloaderHost
+            payload["readerAppClipURL"] = Self.readerAppClipURL
             payload["downloaderAppClipURL"] = Self.downloaderAppClipURL
         case "bypassEnabled":
             // The "Unlock Paywalls On-Device" toggle — gates the Safari auto-bypass.
@@ -56,7 +58,15 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     private static var downloaderAppClipURL: String {
-        guard let raw = Bundle.main.object(forInfoDictionaryKey: Self.appClipURLKey) as? String else {
+        appClipURL(forInfoDictionaryKey: downloaderAppClipURLKey)
+    }
+
+    private static var readerAppClipURL: String {
+        appClipURL(forInfoDictionaryKey: readerAppClipURLKey)
+    }
+
+    private static func appClipURL(forInfoDictionaryKey key: String) -> String {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
             return ""
         }
         return raw.trimmingCharacters(in: .whitespacesAndNewlines)

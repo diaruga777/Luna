@@ -73,11 +73,17 @@ browser.runtime.onMessage.addListener(function (message) {
                 return {
                     mode: (resp && resp.mode) || "all",
                     isDownloaderHost: !!(resp && resp.isDownloaderHost),
+                    readerAppClipURL: (resp && resp.readerAppClipURL) || "",
                     downloaderAppClipURL: (resp && resp.downloaderAppClipURL) || ""
                 };
             })
             .catch(function () {
-                return { mode: "all", isDownloaderHost: false, downloaderAppClipURL: "" };
+                return {
+                    mode: "all",
+                    isDownloaderHost: false,
+                    readerAppClipURL: "",
+                    downloaderAppClipURL: ""
+                };
             });
     }
     if (message.type === "bypassEnabled") {

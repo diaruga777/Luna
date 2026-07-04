@@ -1642,7 +1642,9 @@ final class ReadingListViewController: UITableViewController {
             guard let self else { return }
             let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
             SendToFriendSheet.shareLink(
-                urlString: item.urlString, from: self, sourceView: sourceView)
+                urlString: item.urlString,
+                sharedURLString: self.appClipShareURLString(for: item),
+                from: self, sourceView: sourceView)
         }
         let copyLink = UIAction(
             title: "Copy Link",
@@ -1773,7 +1775,11 @@ final class ReadingListViewController: UITableViewController {
         }
         if item.isShareable {
             children.append(UIAction(title: "Share Link…", image: UIImage(systemName: "link")) { _ in
-                SendToFriendSheet.shareLink(urlString: item.urlString, from: presenter, sourceView: sourceView)
+                SendToFriendSheet.shareLink(
+                    urlString: item.urlString,
+                    sharedURLString: self.appClipShareURLString(for: item),
+                    from: presenter,
+                    sourceView: sourceView)
             })
             children.append(UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { _ in
                 SendToFriendSheet.copyLink(urlString: item.urlString, from: presenter)
@@ -1805,6 +1811,13 @@ final class ReadingListViewController: UITableViewController {
             onChange()
         })
         return UIMenu(children: children)
+    }
+
+    private func appClipShareURLString(for item: ReadingListItem) -> String? {
+        LunaAppClipInvocationURL.shareURL(
+            for: item.urlString,
+            destination: item.isPlatformItem ? .downloader : .reader
+        )?.absoluteString
     }
 
     /// Hands the first media item of an X/Instagram/TikTok/Facebook post to the

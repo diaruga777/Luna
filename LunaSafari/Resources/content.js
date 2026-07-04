@@ -39,7 +39,7 @@
         }
         if (!looksLikeArticle()) { return; }
         if (mode === "onlyLocked" && !looksPaywalled()) { return; }
-        injectLunaButton(readTarget());
+        injectLunaButton(readTarget(resp));
     }).catch(function () {});
 
     // When the "Unlock Paywalls On-Device" toggle is on, reveal the body in Safari
@@ -196,12 +196,15 @@
         (document.body || document.documentElement).appendChild(btn);
     }
 
-    function readTarget() {
+    function readTarget(context) {
+        var appClipBaseURL = context && (context.readerAppClipURL || "");
         return {
             label: "📖  Read in Luna",
             captureContent: true,
             url: function () {
-                // A tap is a user gesture, so Safari allows the custom-scheme launch.
+                if (appClipBaseURL) { return urlWithSource(appClipBaseURL, location.href); }
+                // Pre-submission fallback: a tap is a user gesture, so Safari allows
+                // the custom-scheme launch when the Reader app is installed.
                 return "lunareader://read?url=" + encodeURIComponent(location.href);
             }
         };

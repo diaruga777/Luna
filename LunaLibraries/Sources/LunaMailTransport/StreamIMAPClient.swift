@@ -60,9 +60,17 @@ struct StreamIMAPClient {
 
         let start = afterUID + 1
         var matched = Set<Int>()
-        // Luna shares — server-side match on the presence of our header.
+        // Luna shares — server-side match on the presence of our header. Also
+        // fall back to the human-readable subject prefix: Gmail's IMAP SEARCH
+        // is backed by its own index rather than a literal RFC 3501 header
+        // scan and can silently miss custom (X-*) headers, so the header
+        // search alone isn't reliable — mirrors GraphMailTransport.matches's
+        // subject-prefix fallback.
         matched.formUnion(try await search(
             session, "UID SEARCH UID \(start):* HEADER \(GmailIMAPClient.quoted(LunaShareMarker.headerName)) \"\"",
+            afterUID: afterUID))
+        matched.formUnion(try await search(
+            session, "UID SEARCH UID \(start):* SUBJECT \(GmailIMAPClient.quoted(FilterGuide.subjectMatch))",
             afterUID: afterUID))
         for sender in senders {
             matched.formUnion(try await search(

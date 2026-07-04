@@ -22,6 +22,12 @@ final class FilterGuideTests: XCTestCase {
         }
     }
 
+    func testSubjectMatchUsesZeroWidthNonJoiner() {
+        XCTAssertEqual(FilterGuide.subjectInvisibleMarker.unicodeScalars.map(\.value), [0x200C])
+        XCTAssertEqual(FilterGuide.subjectMatch, "via Lu\(FilterGuide.subjectInvisibleMarker)na:")
+        XCTAssertEqual(FilterGuide.subjectPrefix, "\(FilterGuide.subjectMatch) ")
+    }
+
     func testSettingsURLsForConsumerProviders() {
         XCTAssertNotNil(FilterGuide.settingsURL(for: .gmail))
         XCTAssertNotNil(FilterGuide.settingsURL(for: .icloud))

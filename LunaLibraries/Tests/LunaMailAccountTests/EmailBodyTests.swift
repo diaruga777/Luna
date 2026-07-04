@@ -12,13 +12,13 @@ final class EmailBodyTests: XCTestCase {
     func testSubjectFormatting() {
         XCTAssertEqual(
             EmailContentRenderer.subject(title: "Hello", url: "https://x.com"),
-            "From Luna: Hello")
+            "\(FilterGuide.subjectPrefix)Hello")
         XCTAssertEqual(
             EmailContentRenderer.subject(title: "  ", url: "https://x.com"),
-            "From Luna: https://x.com")
+            "\(FilterGuide.subjectPrefix)https://x.com")
         XCTAssertEqual(
             EmailContentRenderer.subject(title: nil, url: "https://x.com"),
-            "From Luna: https://x.com")
+            "\(FilterGuide.subjectPrefix)https://x.com")
     }
 
     func testArticleRenderCarriesMarkerAndImages() {
@@ -35,7 +35,7 @@ final class EmailBodyTests: XCTestCase {
         let body = EmailContentRenderer.renderArticle(
             content, originalURL: "https://ex.com/a", marker: marker)
 
-        XCTAssertEqual(body.subject, "From Luna: My Article")
+        XCTAssertEqual(body.subject, "\(FilterGuide.subjectPrefix)My Article")
         XCTAssertTrue(body.html.contains("My Article"))
         XCTAssertTrue(body.html.contains("https://ex.com/a"))
         XCTAssertTrue(body.html.contains("Jane"))
@@ -75,15 +75,16 @@ final class EmailBodyTests: XCTestCase {
 
     func testMIMEBuilderStructure() {
         let marker = LunaShareMarker(url: "https://ex.com/a", title: "T", kind: "article")
+        let subject = "\(FilterGuide.subjectPrefix)T"
         let raw = EmailMIMEBuilder.build(
-            from: "\"Me\" <me@ex.com>", to: ["you@ex.com"], subject: "From Luna: T",
+            from: "\"Me\" <me@ex.com>", to: ["you@ex.com"], subject: subject,
             plainBody: "plain text", htmlBody: "<html><body>hi</body></html>",
             inlineImages: [InlineImage(contentID: "img-0", mimeType: "image/jpeg",
                                        data: Data([0xFF, 0xD8, 0xFF]))],
             headers: [LunaShareMarker.headerName: marker.headerValue()])
         let text = String(decoding: raw, as: UTF8.self)
 
-        XCTAssertTrue(text.contains("Subject: From Luna: T"))
+        XCTAssertTrue(text.contains("Subject: \(MIMEHeaderEncoding.encodedHeaderText(subject))"))
         XCTAssertTrue(text.contains("To: you@ex.com"))
         XCTAssertTrue(text.contains("\(LunaShareMarker.headerName): \(marker.headerValue())"))
         XCTAssertTrue(text.contains("multipart/related"))

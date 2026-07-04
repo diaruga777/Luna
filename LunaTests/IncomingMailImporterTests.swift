@@ -4,12 +4,18 @@
 //
 
 import XCTest
+import LunaMailAccount
 @testable import LunaReadingList
 
 final class IncomingMailImporterTests: XCTestCase {
 
     func testIsLunaShareSubjectTrueForPrefix() {
-        XCTAssertTrue(IncomingMailImporter.isLunaShareSubject("From Luna: A Great Article"))
+        XCTAssertTrue(IncomingMailImporter.isLunaShareSubject(
+            "\(FilterGuide.subjectPrefix)A Great Article"))
+    }
+
+    func testIsLunaShareSubjectFalseForOldReadablePrefix() {
+        XCTAssertFalse(IncomingMailImporter.isLunaShareSubject("From Luna: A Great Article"))
     }
 
     func testIsLunaShareSubjectFalseForOrdinaryNewsletter() {
@@ -17,13 +23,14 @@ final class IncomingMailImporterTests: XCTestCase {
     }
 
     func testIsLunaShareSubjectDecodesEncodedWordsFirst() {
-        // "=?UTF-8?B?RnJvbSBMdW5hOiBIZWxsbw==?=" → "From Luna: Hello"
-        XCTAssertTrue(IncomingMailImporter.isLunaShareSubject("=?UTF-8?B?RnJvbSBMdW5hOiBIZWxsbw==?="))
+        // "=?UTF-8?B?dmlhIEx14oCMbmE6IEhlbGxv?=" -> "via Lu\u{200C}na: Hello"
+        XCTAssertTrue(IncomingMailImporter.isLunaShareSubject("=?UTF-8?B?dmlhIEx14oCMbmE6IEhlbGxv?="))
     }
 
     func testTitleStrippingLunaPrefixRemovesPrefixAndTrims() {
         XCTAssertEqual(
-            IncomingMailImporter.titleStrippingLunaPrefix("From Luna: A Great Article"),
+            IncomingMailImporter.titleStrippingLunaPrefix(
+                "\(FilterGuide.subjectPrefix)A Great Article"),
             "A Great Article")
     }
 
@@ -37,7 +44,8 @@ final class IncomingMailImporterTests: XCTestCase {
         // EmailContentRenderer.subject falls back to the URL when the share
         // has no title — the stripped title should just be the bare URL.
         XCTAssertEqual(
-            IncomingMailImporter.titleStrippingLunaPrefix("From Luna: https://example.com/article"),
+            IncomingMailImporter.titleStrippingLunaPrefix(
+                "\(FilterGuide.subjectPrefix)https://example.com/article"),
             "https://example.com/article")
     }
 }

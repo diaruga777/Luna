@@ -12,8 +12,14 @@ import Foundation
 /// and (for generic IMAP) an importable Sieve script.
 public enum FilterGuide {
 
+    /// The invisible character in Luna's share subject prefix.
+    public static let subjectInvisibleMarker = "\u{200C}"
+
     /// The subject all Luna shares carry — the simplest thing to match on.
-    public static let subjectMatch = "From Luna:"
+    public static let subjectMatch = "via Lu\(subjectInvisibleMarker)na:"
+
+    /// The outgoing subject prefix, including the human separator after the marker.
+    public static let subjectPrefix = "\(subjectMatch) "
 
     /// Whether Luna creates the filter itself for this provider.
     public static func isAutomatic(_ id: MailProvider.ID) -> Bool {

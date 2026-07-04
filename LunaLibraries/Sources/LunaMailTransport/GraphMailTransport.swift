@@ -60,7 +60,7 @@ public struct GraphMailTransport: EmailTransport {
         let matchClientSide = !extraSubjects.isEmpty && !(cursor?.token ?? "").isEmpty
         var clauses: [String] = []
         if !matchClientSide {
-            var interest = ["startswith(subject,'From Luna:')"]
+            var interest = ["startswith(subject,'\(Self.odataEscaped(FilterGuide.subjectMatch))')"]
             interest += extraSenders.map {
                 "from/emailAddress/address eq '\(Self.odataEscaped($0))'"
             }
@@ -116,7 +116,7 @@ public struct GraphMailTransport: EmailTransport {
         _ message: FetchedMessage, senders: [String], subjects: [String]
     ) -> Bool {
         if message.marker != nil { return true }
-        if message.subject.hasPrefix("From Luna:") { return true }
+        if message.subject.hasPrefix(FilterGuide.subjectMatch) { return true }
         let from = message.from.lowercased()
         if senders.contains(where: { !$0.isEmpty && from.contains($0.lowercased()) }) {
             return true
@@ -153,7 +153,7 @@ public struct GraphMailTransport: EmailTransport {
             "displayName": "Luna",
             "sequence": 1,
             "isEnabled": true,
-            "conditions": ["subjectContains": ["From Luna:"]],
+            "conditions": ["subjectContains": [FilterGuide.subjectMatch]],
             "actions": ["markAsRead": true, "stopProcessingRules": true],
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: rule)

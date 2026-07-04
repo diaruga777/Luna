@@ -17,7 +17,7 @@ import Foundation
 ///  - imports **Luna shares** (messages carrying the `X-Luna-Share` marker) —
 ///    auto-importing those from accepted friends, and queuing those from
 ///    strangers into the pending-requests moderation list;
-///  - imports **"From Luna:" shares whose marker couldn't be recovered** —
+///  - imports **Luna-prefixed shares whose marker couldn't be recovered** —
 ///    resolves the embedded original-content URL silently (no CAPTCHA) first,
 ///    falling back to the rendered email body (title prefix stripped) only if
 ///    that URL is missing or can't be unlocked that way;
@@ -154,9 +154,9 @@ public final class IncomingMailImporter {
             "incoming mail: queued pending request from \(senderEmail)", category: "mail")
     }
 
-    // MARK: - "From Luna:" shares without a recoverable marker
+    // MARK: - Luna-prefixed shares without a recoverable marker
 
-    /// A "From Luna:" share whose `X-Luna-Share` marker couldn't be recovered
+    /// A Luna-prefixed share whose `X-Luna-Share` marker couldn't be recovered
     /// (the header stripped by the provider, or — for a long article — the
     /// hidden HTML marker block clipped by the mail fetch size cap). Tries the
     /// embedded original-content URL first, through the same silent
@@ -188,7 +188,7 @@ public final class IncomingMailImporter {
         MailArticleBuilder.decodeEncodedWords(subject).hasPrefix(FilterGuide.subjectMatch)
     }
 
-    /// The subject with the "From Luna: " prefix removed (decoding RFC 2047
+    /// The subject with Luna's share prefix removed (decoding RFC 2047
     /// encoded-words first, since the raw header may still be encoded), so a
     /// save's title never carries it.
     static func titleStrippingLunaPrefix(_ subject: String) -> String {
@@ -205,10 +205,10 @@ public final class IncomingMailImporter {
     }
 
     /// Saves an email using its own rendered body as the article content — the
-    /// generic newsletter path, and the "From Luna:" fallback when the
+    /// generic newsletter path, and the Luna-prefix fallback when the
     /// original-content URL is missing or couldn't be unlocked without user
     /// interaction. `subjectOverride`, when set, replaces the raw subject
-    /// (with the "From Luna: " prefix already stripped) so the saved title
+    /// (with Luna's subject prefix already stripped) so the saved title
     /// never carries it.
     private func importFromBody(_ message: FetchedMessage, subjectOverride: String?) {
         let incoming = IncomingMessage(

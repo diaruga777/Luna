@@ -43,14 +43,14 @@ Kindle even if the app is never opened).
   - **Marked Luna share**: imported straight from `marker.url` through the
     normal silent ingest pipeline (real article/video/product/etc., not the
     rendered email).
-  - **"From Luna:" subject but no recoverable marker** (provider stripped the
-    header, or a long article's trailing marker block got clipped by the mail
-    fetch size cap) — `importUnmarkedLunaShare`: extracts the original-content
-    URL embedded in the body and tries the same silent (non-CAPTCHA)
-    resolution; only when that URL is missing or the page needs an
-    interactive CAPTCHA does it fall back to saving the email's own rendered
-    body as an article. Either way the "From Luna: " subject prefix is
-    stripped before it can reach a saved title.
+  - **`via Lu\u{200C}na:` subject but no recoverable marker** (provider stripped
+    the header, or a long article's trailing marker block got clipped by the
+    mail fetch size cap) — `importUnmarkedLunaShare`: extracts the
+    original-content URL embedded in the body and tries the same silent
+    (non-CAPTCHA) resolution; only when that URL is missing or the page needs
+    an interactive CAPTCHA does it fall back to saving the email's own rendered
+    body as an article. Either way the Luna subject prefix is stripped before
+    it can reach a saved title.
   - **Everything else (generic newsletter match)**: saved **as an article**
     (the email body IS the content; `lunamail://<uid>` item + `saveContent`),
     falling back to the first URL when there's no usable body.

@@ -38,10 +38,10 @@ public struct RenderedEmailBody: Equatable {
 /// inline images keyed by the CIDs this returns.
 public enum EmailContentRenderer {
 
-    /// Subject line: `From Luna: {title}`, falling back to the URL.
+    /// Subject line: `via Lu\u{200C}na: {title}`, falling back to the URL.
     public static func subject(title: String?, url: String) -> String {
         let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return "From Luna: \(trimmed.isEmpty ? url : trimmed)"
+        return "\(FilterGuide.subjectPrefix)\(trimmed.isEmpty ? url : trimmed)"
     }
 
     /// Full article body: banner + original-content link + rendered blocks.

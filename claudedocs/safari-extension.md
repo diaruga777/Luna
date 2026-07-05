@@ -21,12 +21,21 @@ background.js (tabs.onActivated / tabs.onUpdated)
 
 Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product embedded in Luna.app/PlugIns. Resources flatten into the appex root (Safari requires manifest.json at bundle root on iOS).
 
-## "Read in Luna" / "Download in Luna" button
+## "Read in Luna" / "Download in Luna" / "Track in Luna" button
 
-The same extension also presents a page button: "Read in Luna" on article pages, or
-"Download in Luna" on recognized Downloader-platform pages. This is independent from
+The same extension also presents a page button: "Read in Luna" on article pages,
+"Download in Luna" on recognized Downloader-platform pages, or "Track in Luna" on
+recognized product pages. This is independent from
 the iOS 27+ Action Button shortcut setup; keep it available on earlier iOS versions
 as long as the Safari web extension and deep-link/App Clip path work there.
+
+**Installed-app detection.** Each app writes a `lunaInstalled.<surface>` marker into
+the App Group at launch (`Luna/Settings/InstalledAppMarkers.swift`, called from
+AppDelegate). The native handler reports `readerInstalled` / `priceTrackerInstalled`
+in the `buttonContext` reply: true when the marker is set OR when the extension's own
+host IS that app (bundle-id suffix — the host is installed by definition). Markers can
+go stale after an uninstall (App Group data outlives any one app); treated as
+best-effort.
 
 `LunaSafari/Resources/content.js` is injected **programmatically** by `background.js`
 (`scripting.executeScript` on every `tabs.onUpdated`/`status:complete` http(s) page),
@@ -72,6 +81,33 @@ Downloader-platform flow:
    routes to `LunaDownloaderAppClipURL?url=<source>`. If `LunaDownloaderAppClipURL` is empty
    (the default until the production App Clip invocation URL exists), Reader/PriceTracker
    extensions do not show the button for platform pages.
+
+Product-page flow:
+1. content.js mirrors `ProductPageDetector` (`looksLikeProductPage`): Tier 1 — a
+   JSON-LD `Product` offer price / OpenGraph `product:price` meta / microdata
+   `itemprop=price` is decisive alone; Tier 2 — ≥2 retail signals (og:type=product,
+   add-to-cart affordance, rating signal, retail URL shape). The Swift detector's
+   embedded-app-state-JSON price signal is deliberately not mirrored (visibility
+   heuristic only; the app re-classifies on save). Checked after the platform check
+   and BEFORE the article heuristics, so a wordy retail page never shows "Read in Luna".
+2. On a product page the button says "Track in Luna". With Price Tracker installed
+   it opens `lunareader://read?url=<source>` (all three apps register the scheme; the
+   ingest pipeline classifies the URL into a tracker in the shared store, so it
+   surfaces in Price Tracker either way). Without it, the button opens
+   `LunaPriceTrackerAppStoreURL` from `LunaSafari/Info.plist` (Price Tracker's App
+   Store page — fill in once the app is live); while that key is empty, no button is
+   shown on product pages when Price Tracker isn't installed.
+
+Paywall unlock ("Unlock Paywalls On-Device") gating + toast:
+- The native handler answers `bypassEnabled` true only when the toggle is on AND
+  Luna Reader is installed (marker or reader-host extension) — unlocking is a Reader
+  feature. This gates both the declarative Referer ruleset (background.js) and the
+  in-page overlay cleanup (content.js `revealArticle`).
+- When a reveal actually unlocks something (page had paywall markers, or the cleanup
+  removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),
+  content.js shows a brief "Unlocked with Luna" toast: an indigo capsule centered
+  above the button's corner (bottom ≈84px + safe area, so the two never overlap),
+  fading out after ~3s. The "Read in Luna" button still appears independently.
 
 The setting lives in Settings → Shortcut & Safari ("Read in Luna Button" — a 3-segment
 control). On pre-iOS 27 builds this screen shows only the Safari-button setting; the

@@ -36,12 +36,14 @@ public enum SharedDiagnosticLog {
         withFileLock {
             if !FileManager.default.fileExists(atPath: fileURL.path) {
                 try? data.write(to: fileURL)
+                BackupPolicy.excludeFromBackups(fileURL)
                 return
             }
             guard let handle = try? FileHandle(forWritingTo: fileURL) else { return }
             defer { try? handle.close() }
             _ = try? handle.seekToEnd()
             try? handle.write(contentsOf: data)
+            BackupPolicy.excludeFromBackups(fileURL)
         }
     }
 

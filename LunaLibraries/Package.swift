@@ -71,14 +71,14 @@ let package = Package(
         .target(name: "LunaEpub", dependencies: ["LunaModels"]),
         .target(name: "LunaSend", dependencies: ["LunaModels", "LunaStorage", "LunaEpub", "LunaMailAccount", "LunaAppConfig", "LunaURLClassification"]),
         .target(name: "LunaMail", dependencies: ["LunaModels", "LunaHTMLClassification", "LunaStorage", "LunaPriceMetadata", "LunaURLClassification", .product(name: "SwiftSoup", package: "SwiftSoup")]),
-        .target(name: "LunaMailAccount", dependencies: ["LunaAppConfig", "LunaModels"]),
+        .target(name: "LunaMailAccount", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage"]),
         // IMAP/SMTP engine for the multi-provider email account, built on
         // URLSessionStreamTask (implicit TLS + STARTTLS for iCloud) — no external
         // deps. Reuses LunaMail's MIME parsers. Linked by the app, not extensions.
         .target(name: "LunaMailTransport", dependencies: ["LunaMailAccount", "LunaMail", "LunaSend", "LunaAppConfig", "LunaHTMLClassification", "LunaModels", "LunaPriceMetadata", "LunaURLClassification", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaDesignSystem", dependencies: ["LunaAppConfig", "LunaModels"]),
         .target(name: "LunaPlatforms", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaStorage", "LunaDesignSystem", "LunaTransitions", "LunaAppConfig", "LunaContentRendering", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
-        .target(name: "LunaMediaDownload", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
+        .target(name: "LunaMediaDownload", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaStorage"]),
         .target(name: "LunaSocial", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification"]),
         .target(name: "LunaSemantic", dependencies: ["LunaModels", "LunaStorage", "LunaSocial", "LunaAppConfig", "LunaURLClassification"]),
         .target(name: "LunaReaderEngine", dependencies: ["LunaModels"]),

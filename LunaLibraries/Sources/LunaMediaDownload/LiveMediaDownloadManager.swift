@@ -4,6 +4,7 @@
 //
 
 import LunaAppConfig
+import LunaStorage
 import LunaURLClassification
 import AVFoundation
 import Foundation
@@ -719,6 +720,7 @@ private final class JobStore {
             forSecurityApplicationGroupIdentifier: AppConfig.appGroupID) ?? fallback
         let dir = base.appendingPathComponent("LiveMediaDownloads", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        BackupPolicy.excludeFromBackups(dir)
         return dir
     }
 

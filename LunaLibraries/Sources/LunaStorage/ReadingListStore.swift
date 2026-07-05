@@ -78,12 +78,15 @@ public final class ReadingListStore {
     }
 
     private var listFileURL: URL {
-        containerURL.appendingPathComponent("readingList.json")
+        let url = containerURL.appendingPathComponent("readingList.json")
+        BackupPolicy.includeInBackups(url)
+        return url
     }
 
     public var articlesDirectory: URL {
         let dir = containerURL.appendingPathComponent("Articles", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        BackupPolicy.includeInBackups(dir)
         return dir
     }
 
@@ -93,6 +96,7 @@ public final class ReadingListStore {
     public var originalArchivesDirectory: URL {
         let dir = containerURL.appendingPathComponent("OriginalArchives", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        BackupPolicy.includeInBackups(dir)
         return dir
     }
 
@@ -435,8 +439,9 @@ public final class ReadingListStore {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             do {
-                try data.write(
-                    to: self.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
+                let url = self.articlesDirectory.appendingPathComponent(fileName)
+                try data.write(to: url, options: .atomic)
+                BackupPolicy.includeInBackups(url)
             } catch {
                 SharedDiagnosticLog.record(
                     "failed to write thumbnail: \(error.localizedDescription)", category: "store")
@@ -647,9 +652,9 @@ public final class ReadingListStore {
             // Both encode AND write must succeed before the item flips `.ready` —
             // a ready item whose content file doesn't exist is a blank reader.
             if let data = try? JSONEncoder().encode(content),
-               (try? data.write(
-                   to: self.articlesDirectory.appendingPathComponent(fileName),
-                   options: .atomic)) != nil {
+               (try? data.write(to: self.articlesDirectory.appendingPathComponent(fileName),
+                                options: .atomic)) != nil {
+                BackupPolicy.includeInBackups(self.articlesDirectory.appendingPathComponent(fileName))
                 all[index].contentFileName = fileName
                 all[index].title = content.title
                 // This save now owns the images its content references (so they survive
@@ -716,8 +721,9 @@ public final class ReadingListStore {
                 guard let content = contents[seeded[index].id] else { continue }
                 let fileName = "\(seeded[index].id.uuidString).json"
                 if let data = try? JSONEncoder().encode(content) {
-                    try? data.write(
-                        to: articlesDir.appendingPathComponent(fileName), options: .atomic)
+                    let fileURL = articlesDir.appendingPathComponent(fileName)
+                    try? data.write(to: fileURL, options: .atomic)
+                    BackupPolicy.includeInBackups(fileURL)
                     seeded[index].contentFileName = fileName
                 }
             }
@@ -758,6 +764,7 @@ public final class ReadingListStore {
         let url = originalArchivesDirectory.appendingPathComponent(fileName)
         do {
             try data.write(to: url, options: .atomic)
+            BackupPolicy.includeInBackups(url)
         } catch {
             return
         }
@@ -847,6 +854,7 @@ public final class ReadingListStore {
         do {
             let data = try JSONEncoder().encode(items)
             try data.write(to: url, options: .atomic)
+            BackupPolicy.includeInBackups(url)
         } catch {
             SharedDiagnosticLog.record(
                 "failed to write readingList.json: \(error.localizedDescription)",
@@ -904,6 +912,7 @@ public final class ReadingListStore {
             var all = decoded
             if body(&all), safeToRewrite {
                 Self.encodeItems(all, to: url)
+                BackupPolicy.includeInBackups(url)
                 changed = true
                 cachedItems = all
                 cacheToken = currentFileStatToken()

@@ -6,7 +6,7 @@
 import AuthenticationServices
 import CryptoKit
 import Foundation
-import Security
+import LunaStorage
 import UIKit
 
 /// Google OAuth for the YouTube Data API: sign-in, token refresh, sign-out.
@@ -130,7 +130,7 @@ public final class GoogleAuthClient: NSObject, GoogleAuthProviding,
     }
 
     public func signOut() {
-        SecItemDelete(baseQuery as CFDictionary)
+        CredentialKeychain.delete(service: keychainService, account: keychainAccount)
     }
 
     // MARK: - Token endpoint
@@ -205,32 +205,15 @@ public final class GoogleAuthClient: NSObject, GoogleAuthProviding,
 
     // MARK: - Keychain
 
-    private var baseQuery: [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: keychainAccount,
-        ]
-    }
-
     private func loadTokens() -> StoredTokens? {
-        var query = baseQuery
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data
-        else { return nil }
+        guard let data = CredentialKeychain.readData(
+            service: keychainService, account: keychainAccount) else { return nil }
         return try? JSONDecoder().decode(StoredTokens.self, from: data)
     }
 
     private func saveTokens(_ tokens: StoredTokens) {
         guard let data = try? JSONEncoder().encode(tokens) else { return }
-        SecItemDelete(baseQuery as CFDictionary)
-        var query = baseQuery
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(query as CFDictionary, nil)
+        CredentialKeychain.write(data, service: keychainService, account: keychainAccount)
     }
 
     // MARK: - ASWebAuthenticationPresentationContextProviding

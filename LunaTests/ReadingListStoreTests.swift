@@ -37,6 +37,26 @@ final class ReadingListStoreTests: XCTestCase {
         XCTAssertFalse(store.items().contains { $0.id == item.id })
     }
 
+    /// The in-memory cache is validated against the file's (mtime, size), not owned
+    /// exclusively by this store instance — a write from another process (the
+    /// SaveLink intent, a share/action extension) must still be visible on the next
+    /// `items()` call.
+    func testCachePicksUpExternalFileWrites() throws {
+        let item = store.add(urlString: "https://example.com/cache-a")
+        XCTAssertEqual(store.items().count, 1)
+
+        // Simulate a write from another process straight to the shared file,
+        // bypassing this `store` instance's cache entirely.
+        let externalItem = ReadingListItem(urlString: "https://example.com/cache-b")
+        let combined = try JSONEncoder().encode([item, externalItem])
+        try combined.write(
+            to: scratchDirectory.appendingPathComponent("readingList.json"), options: .atomic)
+
+        let items = store.items()
+        XCTAssertEqual(items.count, 2)
+        XCTAssertTrue(items.contains { $0.urlString == "https://example.com/cache-b" })
+    }
+
     func testAddIsIdempotentPerURL() {
         let first = store.add(urlString: "https://example.com/same")
         let second = store.add(urlString: "https://example.com/same")

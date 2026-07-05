@@ -15,7 +15,11 @@ public extension Notification.Name {
 
 /// Persists the reading list as JSON in the shared App Group container so both
 /// the app and the SaveLink intent (which may run while the app is backgrounded)
-/// see the same data. Reads fresh from disk on every operation — simple over fast.
+/// see the same data. `items()` serves a validated in-memory cache instead of
+/// decoding the file on every call (see `cachedItems`/`cacheToken` below); every
+/// mutation refreshes the cache from the array it just wrote (or read, if the
+/// write was skipped as a no-op), so this process never has to re-read its own
+/// writes.
 public final class ReadingListStore {
     public static let shared = ReadingListStore()
 
@@ -24,7 +28,8 @@ public final class ReadingListStore {
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
 
-    /// Serializes read-modify-write mutations WITHIN this process.
+    /// Serializes read-modify-write mutations WITHIN this process. Also guards
+    /// `cachedItems`/`cacheToken` — cache reads/writes never happen outside this lock.
     private let mutationLock = NSLock()
     /// Serializes read-modify-write mutations ACROSS processes (app, SaveLink
     /// intent, share/action extensions all write `readingList.json`): without it,
@@ -37,6 +42,25 @@ public final class ReadingListStore {
     /// a saved item owns the images its content references, so deleting the item frees
     /// them — unless another save or preloaded page still references the same image.
     private let imageReferences: ImageReferenceStore
+
+    /// In-memory cache of the decoded list, valid only while `cacheToken` matches the
+    /// file's current (modification date, size). Filled by `items()` on a cache miss
+    /// and refreshed by every mutation from the array it just confirmed on disk —
+    /// guarded entirely by `mutationLock`.
+    private var cachedItems: [ReadingListItem]?
+    private var cacheToken: FileStatToken?
+
+    /// A cheap proxy for "has the file changed since we last read it" — cross-process
+    /// writers (the app's other processes: SaveLink intent, share/action extensions)
+    /// don't share this in-process cache, so every `items()` call re-stats the file and
+    /// only trusts the cache when the stat still matches. A same-mtime, same-size write
+    /// from another process within the filesystem's timestamp granularity is the
+    /// accepted trade-off — rare, harmless, and covered by that write's own
+    /// `.readingListChanged` notification driving a reload through the normal path.
+    private struct FileStatToken: Equatable {
+        let modificationDate: Date
+        let size: Int
+    }
 
     /// The shared store uses the App Group container; tests pass a scratch
     /// directory so they never touch (or wipe) real user data.
@@ -77,6 +101,12 @@ public final class ReadingListStore {
     /// All items in saved order — newest first (new items prepend), reorderable
     /// by the user.
     public func items() -> [ReadingListItem] {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        let token = currentFileStatToken()
+        if let cachedItems, token != nil, token == cacheToken {
+            return cachedItems
+        }
         var result: [ReadingListItem] = []
         var coordError: NSError?
         var ran = false
@@ -85,6 +115,8 @@ public final class ReadingListStore {
             result = Self.decodeItems(at: url)
         }
         if !ran { result = Self.decodeItems(at: listFileURL) }
+        cachedItems = result
+        cacheToken = token
         return result
     }
 
@@ -775,6 +807,16 @@ public final class ReadingListStore {
         decodeList(at: url).items
     }
 
+    /// nil when the file doesn't exist (or its attributes can't be read) — such a
+    /// token never matches a previously cached one, so the next read decodes fresh.
+    private func currentFileStatToken() -> FileStatToken? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: listFileURL.path),
+              let modificationDate = attributes[.modificationDate] as? Date,
+              let size = attributes[.size] as? Int
+        else { return nil }
+        return FileStatToken(modificationDate: modificationDate, size: size)
+    }
+
     /// Decodes the shared file. `safeToRewrite` is false only when a NON-EMPTY
     /// file is entirely unreadable — a mutation must then refuse to write, because
     /// re-encoding the fallback empty array would destroy every saved item.
@@ -821,6 +863,8 @@ public final class ReadingListStore {
             let result = body(&all)
             if safeToRewrite {
                 Self.encodeItems(all, to: url)
+                cachedItems = all
+                cacheToken = currentFileStatToken()
             }
             return result
         }
@@ -847,6 +891,8 @@ public final class ReadingListStore {
             if body(&all), safeToRewrite {
                 Self.encodeItems(all, to: url)
                 changed = true
+                cachedItems = all
+                cacheToken = currentFileStatToken()
             }
         }
         var coordError: NSError?

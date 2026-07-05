@@ -10,7 +10,7 @@ import Foundation
 
 public extension Notification.Name {
     /// Posted whenever the reading list changes (add/update/delete).
-    public static let readingListChanged = Notification.Name("readingListChanged")
+    static let readingListChanged = Notification.Name("readingListChanged")
 }
 
 /// Persists the reading list as JSON in the shared App Group container so both

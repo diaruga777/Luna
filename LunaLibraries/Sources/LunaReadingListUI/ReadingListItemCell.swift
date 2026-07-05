@@ -40,8 +40,12 @@ public final class ReadingListItemCell: UITableViewCell {
         case loading
         /// Fetched art on disk at this path.
         case art(path: String)
+        /// Fetched art for a locked item; dim it and overlay a lock.
+        case lockedArt(path: String)
         /// An already-loaded image (e.g. a pasteboard preview thumbnail).
         case image(UIImage)
+        /// An already-loaded image for a locked item; dim it and overlay a lock.
+        case lockedImage(UIImage)
         /// Fetch finished with no art — show the platform logo (or SF glyph).
         case logo(assetName: String?, glyph: String)
     }
@@ -56,6 +60,8 @@ public final class ReadingListItemCell: UITableViewCell {
     private let subtitleLabel = UILabel()
     private let thumbContainer = UIView()
     private let thumbImageView = UIImageView()
+    private let lockedDimView = UIView()
+    private let lockedImageView = UIImageView()
     private let spinner = DotMatrixSpinnerView()
     private let trailingButton = UIButton(type: .system)
     /// Simulator-only: a small bottom-left hit target that opens the row's
@@ -96,6 +102,23 @@ public final class ReadingListItemCell: UITableViewCell {
         thumbImageView.clipsToBounds = true
         thumbImageView.translatesAutoresizingMaskIntoConstraints = false
         thumbContainer.addSubview(thumbImageView)
+        lockedDimView.backgroundColor = UIColor.black.withAlphaComponent(0.28)
+        lockedDimView.isHidden = true
+        lockedDimView.isUserInteractionEnabled = false
+        lockedDimView.translatesAutoresizingMaskIntoConstraints = false
+        thumbContainer.addSubview(lockedDimView)
+        lockedImageView.image = UIImage(systemName: "lock.fill")?
+            .withConfiguration(UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold))
+            .withRenderingMode(.alwaysTemplate)
+        lockedImageView.tintColor = .white
+        lockedImageView.layer.shadowColor = UIColor.black.cgColor
+        lockedImageView.layer.shadowOpacity = 0.45
+        lockedImageView.layer.shadowRadius = 2
+        lockedImageView.layer.shadowOffset = CGSize(width: 0, height: 1)
+        lockedImageView.isHidden = true
+        lockedImageView.isUserInteractionEnabled = false
+        lockedImageView.translatesAutoresizingMaskIntoConstraints = false
+        thumbContainer.addSubview(lockedImageView)
         spinner.translatesAutoresizingMaskIntoConstraints = false
         spinner.hidesWhenStopped = true
         thumbContainer.addSubview(spinner)
@@ -123,6 +146,12 @@ public final class ReadingListItemCell: UITableViewCell {
             thumbImageView.trailingAnchor.constraint(equalTo: thumbContainer.trailingAnchor),
             thumbImageView.topAnchor.constraint(equalTo: thumbContainer.topAnchor),
             thumbImageView.bottomAnchor.constraint(equalTo: thumbContainer.bottomAnchor),
+            lockedDimView.leadingAnchor.constraint(equalTo: thumbContainer.leadingAnchor),
+            lockedDimView.trailingAnchor.constraint(equalTo: thumbContainer.trailingAnchor),
+            lockedDimView.topAnchor.constraint(equalTo: thumbContainer.topAnchor),
+            lockedDimView.bottomAnchor.constraint(equalTo: thumbContainer.bottomAnchor),
+            lockedImageView.centerXAnchor.constraint(equalTo: thumbContainer.centerXAnchor),
+            lockedImageView.centerYAnchor.constraint(equalTo: thumbContainer.centerYAnchor),
             spinner.centerXAnchor.constraint(equalTo: thumbContainer.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: thumbContainer.centerYAnchor),
         ])
@@ -156,6 +185,7 @@ public final class ReadingListItemCell: UITableViewCell {
         reuseKey = nil
         loadToken &+= 1   // invalidate any in-flight async decode
         thumbImageView.image = nil
+        setLockedOverlayVisible(false)
         spinner.stopAnimating()
         onTrailingButton = nil
         setSimulatorMenu(nil)
@@ -171,6 +201,7 @@ public final class ReadingListItemCell: UITableViewCell {
         titleLabel.text = title
         titleLabel.textColor = titleColor
         subtitleLabel.attributedText = subtitle
+        setLockedOverlayVisible(false)
 
         // A trailing tappable button (pasteboard "Save") takes the accessory slot;
         // otherwise the usual chevron. The list runs in permanent edit mode, so the
@@ -202,23 +233,17 @@ public final class ReadingListItemCell: UITableViewCell {
             thumbImageView.image = nil
             spinner.startAnimating()
         case .art(let path):
-            thumbContainer.isHidden = false
-            // Cache hit: the bitmap is already decoded — show it synchronously, before
-            // the cell is displayed, with no spinner. Only a true miss spins + decodes.
-            if let cached = Self.decodedCache.object(forKey: path as NSString) {
-                spinner.stopAnimating()
-                applyArt(cached)
-            } else {
-                thumbImageView.image = nil
-                spinner.startAnimating()
-                loadArt(path: path, token: loadToken)
-            }
+            configureArt(path: path, locked: false)
+        case .lockedArt(let path):
+            configureArt(path: path, locked: true)
         case .image(let image):
             thumbContainer.isHidden = false
             spinner.stopAnimating()
-            thumbImageView.tintColor = nil
-            thumbImageView.contentMode = Self.contentMode(for: image.size)
-            thumbImageView.image = image
+            applyArt(image, locked: false)
+        case .lockedImage(let image):
+            thumbContainer.isHidden = false
+            spinner.stopAnimating()
+            applyArt(image, locked: true)
         case .logo(let assetName, let glyph):
             thumbContainer.isHidden = false
             spinner.stopAnimating()
@@ -229,6 +254,7 @@ public final class ReadingListItemCell: UITableViewCell {
     @objc private func trailingButtonTapped() { onTrailingButton?() }
 
     private func showLogo(assetName: String?, glyph: String) {
+        setLockedOverlayVisible(false)
         // Full-color brand logo (untinted) when bundled, else a tinted SF glyph.
         if let assetName, let logo = UIImage(named: assetName) {
             thumbImageView.image = logo
@@ -242,18 +268,39 @@ public final class ReadingListItemCell: UITableViewCell {
         }
     }
 
+    private func configureArt(path: String, locked: Bool) {
+        thumbContainer.isHidden = false
+        setLockedOverlayVisible(locked)
+        // Cache hit: the bitmap is already decoded — show it synchronously, before
+        // the cell is displayed, with no spinner. Only a true miss spins + decodes.
+        if let cached = Self.decodedCache.object(forKey: path as NSString) {
+            spinner.stopAnimating()
+            applyArt(cached, locked: locked)
+        } else {
+            thumbImageView.image = nil
+            spinner.startAnimating()
+            loadArt(path: path, token: loadToken, locked: locked)
+        }
+    }
+
     /// Sets `image` as the art (no spinner, correct content mode/tint). Main-thread.
-    private func applyArt(_ image: UIImage) {
+    private func applyArt(_ image: UIImage, locked: Bool = false) {
         spinner.stopAnimating()
         thumbImageView.tintColor = nil
         thumbImageView.contentMode = Self.contentMode(for: image.size)
         thumbImageView.image = image
+        setLockedOverlayVisible(locked)
+    }
+
+    private func setLockedOverlayVisible(_ visible: Bool) {
+        lockedDimView.isHidden = !visible
+        lockedImageView.isHidden = !visible
     }
 
     /// Cache miss only: decode (downsampled) off the main thread, populate the cache,
     /// then land the result iff this cell hasn't been reconfigured/recycled since
     /// (`loadToken` unchanged). Downsampling means we never hold the full-size bitmap.
-    private func loadArt(path: String, token: UInt64) {
+    private func loadArt(path: String, token: UInt64, locked: Bool) {
         // Read the screen scale on the main thread; the detached decode must not touch
         // main-actor UIKit state.
         let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : 2
@@ -267,7 +314,7 @@ public final class ReadingListItemCell: UITableViewCell {
                 guard let self, self.loadToken == token else { return }
                 self.spinner.stopAnimating()
                 guard let image else { return }
-                self.applyArt(image)
+                self.applyArt(image, locked: locked)
             }
         }
     }

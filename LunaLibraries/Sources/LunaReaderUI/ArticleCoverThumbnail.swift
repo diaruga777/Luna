@@ -37,11 +37,12 @@ public enum ArticleCoverThumbnail {
         return await fetchImage(imageURL, refererURL: baseURL)
     }
 
-    /// Idempotently gives `item` a cover thumbnail if it is a `.ready` web article
-    /// that is missing one. No-op for anything that already has a thumbnail, isn't a
-    /// plain web article (videos/platforms/docs/trackers fill their own thumbnail at
-    /// ingest), or has no resolvable cover. Writes via `store.setThumbnail`, so it is
-    /// app-group-coordinated and safe to call repeatedly.
+    /// Idempotently gives `item` a cover thumbnail if it is a ready or locked web
+    /// article that is missing one. No-op for anything that already has a thumbnail,
+    /// isn't a plain web article (videos/platforms/docs/trackers fill their own
+    /// thumbnail at ingest), or has no resolvable cover. Writes via
+    /// `store.setThumbnail`, so it is app-group-coordinated and safe to call
+    /// repeatedly.
     ///
     /// Cover source, cheapest first:
     /// 1. The article's lead inline image, if it was already downloaded to disk
@@ -51,7 +52,7 @@ public enum ArticleCoverThumbnail {
     public static func backfillThumbnail(for item: ReadingListItem, store: ReadingListStore) async {
         // Already has a thumbnail, or isn't a plain web article — nothing to do.
         guard item.thumbnailFileName == nil,
-              item.state == .ready,
+              item.state == .ready || item.state == .needsCaptcha,
               item.platform == nil,
               item.priceTracker == nil,
               item.sanitizedDocumentType == nil,

@@ -123,10 +123,12 @@ public final class PasteboardSuggester: PasteboardSuggesting {
                 channelName: nil, videoID: nil, content: content, thumbnail: cover)
         case let .needsArchive(title):
             let fallbackTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cover = await coverImage(html: html, baseURL: url)
             return PasteboardCandidate(
                 urlString: normalizedURLString,
                 title: fallbackTitle.isEmpty ? normalizedURLString : fallbackTitle,
-                channelName: nil, videoID: nil, content: nil, requiresUnlock: true)
+                channelName: nil, videoID: nil, content: nil,
+                requiresUnlock: true, thumbnail: cover)
         default:
             return nil
         }

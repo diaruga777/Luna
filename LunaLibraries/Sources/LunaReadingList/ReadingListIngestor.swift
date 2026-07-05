@@ -444,14 +444,14 @@ public final class ReadingListIngestor {
     /// resolvable cover), so an un-coverable page isn't re-fetched on every pass.
     @MainActor private var thumbnailBackfillAttempted: Set<UUID> = []
 
-    /// Repairs every ready web article that has no row thumbnail — the action/share
-    /// extension persists article content WITHOUT fetching the page's cover image
-    /// (it's short-lived and sandbox-limited), so those rows arrive thumbnail-less
-    /// even though the in-app/App-Intent path always gets one. This runs in the app
-    /// process (full network) and brings them in line: a downloaded lead image is
-    /// reused as-is, otherwise the page's `og:image` is fetched once. Idempotent —
-    /// items that already have a thumbnail are skipped — so it also backfills any
-    /// historical rows saved before thumbnails existed.
+    /// Repairs ready and locked web articles that have no row thumbnail — the
+    /// action/share extension persists article content WITHOUT fetching the page's
+    /// cover image (it's short-lived and sandbox-limited), and locked rows can often
+    /// still expose `og:image` before unlock. This runs in the app process (full
+    /// network) and brings them in line: a downloaded lead image is reused as-is,
+    /// otherwise the page's `og:image` is fetched once. Idempotent — items that
+    /// already have a thumbnail are skipped — so it also backfills any historical
+    /// rows saved before thumbnails existed.
     public func backfillMissingThumbnails() {
         Task { @MainActor in
             guard !isBackfillingThumbnails else { return }
@@ -459,7 +459,7 @@ public final class ReadingListIngestor {
             defer { isBackfillingThumbnails = false }
 
             let candidates = store.items().filter { item in
-                item.state == .ready
+                (item.state == .ready || item.state == .needsCaptcha)
                     && item.thumbnailFileName == nil
                     && item.platform == nil                       // videos/platforms own their thumbnail
                     && item.priceTracker == nil                   // trackers own their image

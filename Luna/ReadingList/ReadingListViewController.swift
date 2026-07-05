@@ -1264,9 +1264,13 @@ final class ReadingListViewController: UITableViewController {
             // ready. A trailing Save button saves explicitly (tap just previews).
             let thumbnail: ReadingListItemCell.Thumbnail
             if let candidate = pasteboardCandidate {
-                if candidate.requiresUnlock { thumbnail = .logo(assetName: nil, glyph: "lock.fill") }
-                else if let image = candidate.thumbnail { thumbnail = .image(image) }
-                else if let platform = candidate.platform,
+                if candidate.requiresUnlock, let image = candidate.thumbnail {
+                    thumbnail = .lockedImage(image)
+                } else if candidate.requiresUnlock {
+                    thumbnail = .logo(assetName: nil, glyph: "lock.fill")
+                } else if let image = candidate.thumbnail {
+                    thumbnail = .image(image)
+                } else if let platform = candidate.platform,
                         let module = PlatformRegistry.shared.module(for: platform) {
                     thumbnail = .logo(assetName: platform.logoAssetName, glyph: module.glyphSymbolName)
                 } else { thumbnail = .none }
@@ -1591,7 +1595,8 @@ final class ReadingListViewController: UITableViewController {
         for item: ReadingListItem, isPasteboard: Bool
     ) -> ReadingListItemCell.Thumbnail {
         if let fileName = item.thumbnailFileName {
-            return .art(path: store.articlesDirectory.appendingPathComponent(fileName).path)
+            let path = store.articlesDirectory.appendingPathComponent(fileName).path
+            return item.state == .needsCaptcha ? .lockedArt(path: path) : .art(path: path)
         }
         // A paywalled article awaiting a user-solved CAPTCHA isn't fetching — show a
         // lock to signal it needs a tap to unlock, not a spinner.

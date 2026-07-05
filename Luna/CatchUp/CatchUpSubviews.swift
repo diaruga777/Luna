@@ -307,8 +307,13 @@ final class CatchUpMediaCardBody: UIView {
     @objc private func tapped() { onTap() }
 
     private func configureThumbnail(_ imageView: UIImageView, item: ReadingListItem, store: ReadingListStore) {
+        // Downsampled decode (not the full-size `UIImage(contentsOfFile:)` this used
+        // to do) — one card is shown at a time here, but a full-resolution cover photo
+        // is still wasteful to hold decoded for a card-width well.
         if let fileName = item.thumbnailFileName,
-           let image = UIImage(contentsOfFile: store.articlesDirectory.appendingPathComponent(fileName).path) {
+           let image = ImageDownsampling.decode(
+                path: store.articlesDirectory.appendingPathComponent(fileName).path,
+                scale: UIScreen.main.scale, maxPixelSize: 1200) {
             imageView.image = image
             return
         }
@@ -561,9 +566,12 @@ final class CatchUpPriceTrackerCardBody: UIView {
     private static func configureThumbnail(
         _ imageView: UIImageView, tracker: PriceTracker, store: ReadingListStore
     ) {
+        // Downsampled decode: the thumbnail well here is a fixed 64×64 point square,
+        // so there's no reason to decode (and briefly hold) a full-size product photo.
         if let fileName = tracker.imageFileName,
-           let data = try? Data(contentsOf: store.articlesDirectory.appendingPathComponent(fileName)),
-           let image = UIImage(data: data) {
+           let image = ImageDownsampling.decode(
+                path: store.articlesDirectory.appendingPathComponent(fileName).path,
+                scale: UIScreen.main.scale, maxPixelSize: 64 * 2 * UIScreen.main.scale) {
             imageView.image = image
             return
         }

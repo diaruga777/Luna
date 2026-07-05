@@ -337,7 +337,7 @@ final class CatchUpViewController: UIViewController {
             body = reader.view
             currentReaderChild = reader
             bodyTop = card.contentContainer.topAnchor
-            defer { reader.didMove(toParent: self) }
+            reader.didMove(toParent: self)
         } else {
             let header = CatchUpCardHeader(item: item)
             header.translatesAutoresizingMaskIntoConstraints = false
@@ -779,8 +779,10 @@ final class CatchUpViewController: UIViewController {
         pendingAutoDismiss?.cancel()
         pendingAutoDismiss = nil
 
-        for id in pendingDeleteIDs {
-            if let item = store.item(withID: id) { store.delete(item) }
+        // One coordinated store cycle + one notification for the whole batch,
+        // instead of a fetch + delete per pending id.
+        if !pendingDeleteIDs.isEmpty {
+            store.deleteItems(ids: Set(pendingDeleteIDs))
         }
         DotMatrixModal.dismiss(self)
     }

@@ -113,7 +113,20 @@ no nav bar of its own beyond Done.
 
 ## Reader share sheet (the share button) — Feature C
 
-The reader's nav-bar/footer Share button routes through `ReaderShareProviding.presentShareSheet`. In the main app, `AppReaderShareProvider` presents `Luna/Social/ReaderShareSheet.swift` — a medium-detent `UISheetPresentationController` with up to five options: **Send to {suggested friend}** (one tap, shown only when a streak/semantic suggestion exists), **Send to a Friend…** (`SendToFriendSheet.present` — recent-recipient bottom sheet, or the full picker when there are no past sends), **Share Link…** (`SendToFriendSheet.shareLink`), **Copy Link** (`SendToFriendSheet.copyLink`), **Share eBook…** (`ArticleExportService.presentShareSheet`, see article-export.md). Rows are a pure `ReaderShareSheet.rows(…)` list (testable visibility/actions); tapping dismisses the sheet then runs the action.
+The reader's nav-bar/footer Share button routes through `ReaderShareProviding.presentShareSheet`. In the main app, `AppReaderShareProvider` presents `Luna/Social/ReaderShareSheet.swift` — a medium-detent `UISheetPresentationController` with up to five options: **Send to {suggested friend}** (one tap, shown only when a streak/semantic suggestion exists), **Send to a Friend…** (`SendToFriendSheet.present` — recent-recipient bottom sheet, or the full picker when there are no past sends), **Share Link…** (`SendToFriendSheet.shareLink`), **Copy Link** (`SendToFriendSheet.copyLink`), **Share eBook…** (`ArticleExportService.presentShareSheet`, see article-export.md). Share Link hands the system share sheet a Reader/Downloader App Clip invocation URL from `LunaReaderAppClipURL` / `LunaDownloaderAppClipURL` when configured; Copy Link always copies the plain source URL. Rows are a pure `ReaderShareSheet.rows(…)` list (testable visibility/actions); tapping dismisses the sheet then runs the action.
+
+## Reader App Clip
+
+`LunaReaderClip` is an App Clip target embedded by the Reader app. It accepts the same
+invocation shape as the Downloader clip (`?url=`, `?source=`, `?sourceURL=`, `?u=`, or a
+fragment) via `LunaAppClipInvocationURL.sourceURL(from:)`, runs the shared
+`IngestPipeline`, and presents the normal `ReaderViewController` with `forceMode: .scroll`,
+`persistsModePreference: false`, `marksOpenedOnLoad: false`, and `shareProvider: nil`.
+That keeps the clip read-only: no saved-list writes, no Save affordance, and no reader share
+button (iOS does not provide an API for an app/app clip to launch its own share extension as
+a share target). The live web URL is a normal shareable `ReadingListItem`, so the standard
+Original-mode capability path (`canHaveOriginalArchive` → live-page fallback) still appends
+Original alongside Scroll and RSVP.
 
 ## Share-sheet reader experience
 

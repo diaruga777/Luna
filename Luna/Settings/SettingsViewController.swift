@@ -38,18 +38,27 @@ final class SettingsViewController: NavHeaderTableController {
         let make: () -> UIViewController
     }
 
-    private let categories: [Category] = [
-        Category(title: "Reader", symbol: "textformat.size") { ReaderSettingsScreen() },
-        Category(title: "Voice", symbol: "speaker.wave.2") { VoiceSettingsScreen() },
-        Category(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
-        Category(title: "Email & Sending", symbol: "envelope") { EmailAndKindleSettingsScreen() },
-        Category(title: "Music & Podcasts", symbol: "music.note") { MediaProviderSettingsScreen() },
-        Category(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") { AutoDownloadSettingsScreen() },
-        Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
-        Category(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
-        Category(title: "Experimental", symbol: "flask") { ExperimentalSettingsScreen() },
-        Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
-    ]
+    private let categories: [Category] = {
+        var categories = [
+            Category(title: "Reader", symbol: "textformat.size") { ReaderSettingsScreen() },
+            Category(title: "Voice", symbol: "speaker.wave.2") { VoiceSettingsScreen() },
+            Category(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
+            Category(title: "Email & Sending", symbol: "envelope") { EmailAndKindleSettingsScreen() },
+            Category(title: "Music & Podcasts", symbol: "music.note") { MediaProviderSettingsScreen() },
+            Category(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") { AutoDownloadSettingsScreen() },
+        ]
+        if #available(iOS 27.0, *) {
+            categories.append(Category(title: "Shortcut & Safari", symbol: "safari") {
+                ShortcutSettingsScreen()
+            })
+        }
+        categories.append(contentsOf: [
+            Category(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
+            Category(title: "Experimental", symbol: "flask") { ExperimentalSettingsScreen() },
+            Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
+        ])
+        return categories
+    }()
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -88,6 +97,7 @@ final class SettingsViewController: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         if indexPath.section == 0 {
+            guard categories.indices.contains(indexPath.row) else { return }
             navigationController?.pushViewController(categories[indexPath.row].make(), animated: true)
         } else {
             let onboarding = OnboardingFlow.make { [weak self] in
@@ -328,6 +338,9 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
+        if #unavailable(iOS 27.0) {
+            assertionFailure("ShortcutSettingsScreen must only be presented on iOS 27 or later.")
+        }
         headerTitle = "Shortcut & Safari"
         super.viewDidLoad()
         refreshSafariStatus()
@@ -354,9 +367,6 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
                 + "articles via the in-app reader. Choose when it appears."
         case .shortcut:
             let base = "Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
-            if #unavailable(iOS 27.0) {
-                return "⚠️ One-press Safari saving requires iOS 27 or later.\n\n" + base
-            }
             return base
         }
     }

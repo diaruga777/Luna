@@ -6,7 +6,12 @@
 import Foundation
 
 /// One saved weblink in the reading list.
-public struct ReadingListItem: Codable, Identifiable {
+///
+/// `Equatable` (synthesized — every stored field is a value type, and the enum
+/// fields below get automatic Equatable as enums with no associated values) lets
+/// `ReadingListStore` detect a mutation that changed nothing and skip the
+/// re-encode + `.readingListChanged` notification.
+public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// Lifecycle of the item's downloaded content.
     public enum State: String, Codable {
         /// Saved but content not yet downloaded/extracted.

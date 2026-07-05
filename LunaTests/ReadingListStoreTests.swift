@@ -6,6 +6,7 @@
 import LunaSend
 import LunaStorage
 import LunaModels
+import Security
 import XCTest
 @testable import Luna
 
@@ -37,11 +38,84 @@ final class ReadingListStoreTests: XCTestCase {
         XCTAssertFalse(store.items().contains { $0.id == item.id })
     }
 
+    func testReadingListFileIsBackupEligible() throws {
+        _ = store.add(urlString: "https://example.com/backup")
+        let fileURL = scratchDirectory.appendingPathComponent("readingList.json")
+        let values = try fileURL.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(values.isExcludedFromBackup, false)
+    }
+
+    func testPreloadDirectoryIsExcludedFromBackup() throws {
+        let preloads = PreloadStore(containerURL: scratchDirectory)
+        _ = preloads.record(
+            url: try XCTUnwrap(URL(string: "https://example.com/preload")),
+            rootID: UUID(),
+            kind: .unrepresentable
+        )
+        let directory = scratchDirectory.appendingPathComponent("Preloads", isDirectory: true)
+        let values = try directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(values.isExcludedFromBackup, true)
+    }
+
+    func testCredentialKeychainQueriesUseSynchronizableMigratableItems() {
+        let query = CredentialKeychain.baseQuery(
+            service: "service", account: "account", synchronizable: true)
+        XCTAssertEqual(query[kSecAttrSynchronizable as String] as? Bool, true)
+        XCTAssertEqual(CredentialKeychain.accessibleClass as String, kSecAttrAccessibleAfterFirstUnlock as String)
+    }
+
+    /// The in-memory cache is validated against the file's (mtime, size), not owned
+    /// exclusively by this store instance — a write from another process (the
+    /// SaveLink intent, a share/action extension) must still be visible on the next
+    /// `items()` call.
+    func testCachePicksUpExternalFileWrites() throws {
+        let item = store.add(urlString: "https://example.com/cache-a")
+        XCTAssertEqual(store.items().count, 1)
+
+        // Simulate a write from another process straight to the shared file,
+        // bypassing this `store` instance's cache entirely.
+        let externalItem = ReadingListItem(urlString: "https://example.com/cache-b")
+        let combined = try JSONEncoder().encode([item, externalItem])
+        try combined.write(
+            to: scratchDirectory.appendingPathComponent("readingList.json"), options: .atomic)
+
+        let items = store.items()
+        XCTAssertEqual(items.count, 2)
+        XCTAssertTrue(items.contains { $0.urlString == "https://example.com/cache-b" })
+    }
+
     func testAddIsIdempotentPerURL() {
         let first = store.add(urlString: "https://example.com/same")
         let second = store.add(urlString: "https://example.com/same")
         XCTAssertEqual(first.id, second.id)
         XCTAssertEqual(store.items().filter { $0.urlString == "https://example.com/same" }.count, 1)
+    }
+
+    /// `add` on an already-saved URL is a no-op (returns the existing item without
+    /// modifying the array) — `coordinatedMutate` must skip the re-encode AND the
+    /// `.readingListChanged` post, since nothing changed for observers to react to.
+    func testNoOpAddDoesNotPostChangeNotification() {
+        // Drain the real (first-save) notification before watching for the no-op's
+        // absence, so it can't be mistaken for a notification from the no-op below.
+        let setupPosted = expectation(forNotification: .readingListChanged, object: nil) { _ in true }
+        _ = store.add(urlString: "https://example.com/noop")
+        wait(for: [setupPosted], timeout: 2.0)
+
+        let notPosted = expectation(forNotification: .readingListChanged, object: nil) { _ in true }
+        notPosted.isInverted = true
+
+        _ = store.add(urlString: "https://example.com/noop") // existing URL — no-op
+
+        wait(for: [notPosted], timeout: 0.5)
+    }
+
+    /// Sanity check alongside the no-op test above: an actual mutation still posts.
+    func testRealMutationStillPostsChangeNotification() {
+        let posted = expectation(forNotification: .readingListChanged, object: nil) { _ in true }
+
+        _ = store.add(urlString: "https://example.com/real-change")
+
+        wait(for: [posted], timeout: 2.0)
     }
 
     func testRecordSaveAttemptReturnsPreviousPressTime() {
@@ -169,6 +243,39 @@ final class ReadingListStoreTests: XCTestCase {
         XCTAssertEqual(
             item?.dateSent(for: ArticleDestinationID.kindle),
             Date(timeIntervalSinceReferenceDate: 700000500))
+    }
+
+    /// `saveReaderExitPosition`'s `lastWordIndex` lets the RSVP reader persist word
+    /// index + reading progress in one coordinated cycle instead of two separate
+    /// store calls.
+    func testSaveReaderExitPositionPersistsLastWordIndexInOneBatch() {
+        let item = store.add(urlString: "https://example.com/rsvp")
+
+        store.saveReaderExitPosition(readingProgress: 0.5, lastWordIndex: 120, for: item.id)
+
+        let fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.lastWordIndex, 120)
+        XCTAssertEqual(fresh?.readingProgress, 0.5)
+    }
+
+    /// Same skip-if-unchanged semantics as the other targeted setters: calling
+    /// again with identical values must not write or notify.
+    func testSaveReaderExitPositionSkipsWriteWhenUnchanged() {
+        let item = store.add(urlString: "https://example.com/rsvp-unchanged")
+
+        // Drain the real (first-save) notification before watching for the
+        // no-op's absence, so it can't be mistaken for one from the no-op below.
+        let setupPosted = expectation(forNotification: .readingListChanged, object: nil) { _ in true }
+        store.saveReaderExitPosition(readingProgress: 0.4, lastWordIndex: 80, for: item.id)
+        wait(for: [setupPosted], timeout: 2.0)
+
+        let notPosted = expectation(forNotification: .readingListChanged, object: nil) { _ in true }
+        notPosted.isInverted = true
+
+        // Same reading progress (not an increase) and same word index — a no-op.
+        store.saveReaderExitPosition(readingProgress: 0.4, lastWordIndex: 80, for: item.id)
+
+        wait(for: [notPosted], timeout: 0.5)
     }
 
     func testSaveAndLoadContentRoundTrip() {

@@ -107,6 +107,7 @@ public final class PreloadStore {
     private var preloadsDirectory: URL {
         let dir = containerURL.appendingPathComponent("Preloads", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        BackupPolicy.excludeFromBackups(dir)
         return dir
     }
 
@@ -146,6 +147,7 @@ public final class PreloadStore {
     private func saveIndex(_ index: [String: PreloadEntry], to url: URL) {
         guard let data = try? JSONEncoder().encode(index) else { return }
         try? data.write(to: url, options: .atomic)
+        BackupPolicy.excludeFromBackups(preloadsDirectory)
     }
 
     /// Read-modify-write the index under the in-process lock AND an
@@ -253,7 +255,9 @@ public final class PreloadStore {
         var contentFile: String?
         if kind == .article, let content, let data = try? JSONEncoder().encode(content) {
             contentFile = "\(key).json"
-            try? data.write(to: contentURL(fileName: "\(key).json"), options: .atomic)
+            let fileURL = contentURL(fileName: "\(key).json")
+            try? data.write(to: fileURL, options: .atomic)
+            BackupPolicy.excludeFromBackups(fileURL)
         }
         let childKeys = children.map { Self.key(for: $0) }
         let entry: PreloadEntry = mutate { index in
@@ -303,7 +307,9 @@ public final class PreloadStore {
             guard var entry = index[key], entry.kind == .article,
                   let data = try? JSONEncoder().encode(content) else { return false }
             let file = entry.contentFile ?? "\(key).json"
-            try? data.write(to: contentURL(fileName: file), options: .atomic)
+            let fileURL = contentURL(fileName: file)
+            try? data.write(to: fileURL, options: .atomic)
+            BackupPolicy.excludeFromBackups(fileURL)
             entry.contentFile = file
             index[key] = entry
             return true

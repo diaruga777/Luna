@@ -5,7 +5,6 @@
 
 import LunaModels
 import LunaDesignSystem
-import ImageIO
 import UIKit
 
 /// A reading-list row with a title, a metadata subtitle, and a thumbnail that
@@ -277,22 +276,8 @@ public final class ReadingListItemCell: UITableViewCell {
     /// container's longest side, in pixels) so a large cover image isn't held at full
     /// resolution for a 96×54 well. `nil` if the file is missing/undecodable.
     nonisolated private static func decodeThumbnail(path: String, scale: CGFloat) -> UIImage? {
-        let url = URL(fileURLWithPath: path)
-        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else {
-            return nil
-        }
         let maxPixel = max(thumbSize.width, thumbSize.height) * 2 * scale
-        let thumbnailOptions = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-        ] as CFDictionary
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
-            return nil
-        }
-        return UIImage(cgImage: cgImage, scale: scale, orientation: .up)
+        return ImageDownsampling.decode(path: path, scale: scale, maxPixelSize: maxPixel)
     }
 
     /// Aspect-fit unless the image is more extreme than 2× the container ratio in

@@ -4,6 +4,10 @@
 <dict>
 	<key>LunaAppGroupID</key>
 	<string>$(APP_GROUP_ID)</string>
+	<key>LunaReaderAppClipURL</key>
+	<string></string>
+	<key>LunaDownloaderAppClipURL</key>
+	<string></string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>

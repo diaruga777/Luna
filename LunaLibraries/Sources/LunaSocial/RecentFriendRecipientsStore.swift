@@ -41,7 +41,9 @@ public final class RecentFriendRecipientsStore {
             ?? fileManager.containerURL(
                 forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
             ?? fileManager.temporaryDirectory
-        return container.appendingPathComponent("recentFriendRecipients.json")
+        let url = container.appendingPathComponent("recentFriendRecipients.json")
+        BackupPolicy.includeInBackups(url)
+        return url
     }
 
     /// Newest recipients first.
@@ -75,7 +77,9 @@ public final class RecentFriendRecipientsStore {
 
     private func save(_ recipients: [Recipient]) {
         if let data = try? JSONEncoder().encode(recipients) {
-            try? data.write(to: fileURL, options: .atomic)
+            let url = fileURL
+            try? data.write(to: url, options: .atomic)
+            BackupPolicy.includeInBackups(url)
         }
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .recentFriendRecipientsChanged, object: nil)

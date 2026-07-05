@@ -10,12 +10,16 @@ import Foundation
 
 public extension Notification.Name {
     /// Posted whenever the reading list changes (add/update/delete).
-    public static let readingListChanged = Notification.Name("readingListChanged")
+    static let readingListChanged = Notification.Name("readingListChanged")
 }
 
 /// Persists the reading list as JSON in the shared App Group container so both
 /// the app and the SaveLink intent (which may run while the app is backgrounded)
-/// see the same data. Reads fresh from disk on every operation — simple over fast.
+/// see the same data. `items()` serves a validated in-memory cache instead of
+/// decoding the file on every call (see `cachedItems`/`cacheToken` below); every
+/// mutation refreshes the cache from the array it just wrote (or read, if the
+/// write was skipped as a no-op), so this process never has to re-read its own
+/// writes.
 public final class ReadingListStore {
     public static let shared = ReadingListStore()
 
@@ -24,7 +28,8 @@ public final class ReadingListStore {
     private let fileManager = FileManager.default
     private let overrideContainerURL: URL?
 
-    /// Serializes read-modify-write mutations WITHIN this process.
+    /// Serializes read-modify-write mutations WITHIN this process. Also guards
+    /// `cachedItems`/`cacheToken` — cache reads/writes never happen outside this lock.
     private let mutationLock = NSLock()
     /// Serializes read-modify-write mutations ACROSS processes (app, SaveLink
     /// intent, share/action extensions all write `readingList.json`): without it,
@@ -37,6 +42,25 @@ public final class ReadingListStore {
     /// a saved item owns the images its content references, so deleting the item frees
     /// them — unless another save or preloaded page still references the same image.
     private let imageReferences: ImageReferenceStore
+
+    /// In-memory cache of the decoded list, valid only while `cacheToken` matches the
+    /// file's current (modification date, size). Filled by `items()` on a cache miss
+    /// and refreshed by every mutation from the array it just confirmed on disk —
+    /// guarded entirely by `mutationLock`.
+    private var cachedItems: [ReadingListItem]?
+    private var cacheToken: FileStatToken?
+
+    /// A cheap proxy for "has the file changed since we last read it" — cross-process
+    /// writers (the app's other processes: SaveLink intent, share/action extensions)
+    /// don't share this in-process cache, so every `items()` call re-stats the file and
+    /// only trusts the cache when the stat still matches. A same-mtime, same-size write
+    /// from another process within the filesystem's timestamp granularity is the
+    /// accepted trade-off — rare, harmless, and covered by that write's own
+    /// `.readingListChanged` notification driving a reload through the normal path.
+    private struct FileStatToken: Equatable {
+        let modificationDate: Date
+        let size: Int
+    }
 
     /// The shared store uses the App Group container; tests pass a scratch
     /// directory so they never touch (or wipe) real user data.
@@ -54,12 +78,15 @@ public final class ReadingListStore {
     }
 
     private var listFileURL: URL {
-        containerURL.appendingPathComponent("readingList.json")
+        let url = containerURL.appendingPathComponent("readingList.json")
+        BackupPolicy.includeInBackups(url)
+        return url
     }
 
     public var articlesDirectory: URL {
         let dir = containerURL.appendingPathComponent("Articles", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        BackupPolicy.includeInBackups(dir)
         return dir
     }
 
@@ -69,6 +96,7 @@ public final class ReadingListStore {
     public var originalArchivesDirectory: URL {
         let dir = containerURL.appendingPathComponent("OriginalArchives", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        BackupPolicy.includeInBackups(dir)
         return dir
     }
 
@@ -77,6 +105,12 @@ public final class ReadingListStore {
     /// All items in saved order — newest first (new items prepend), reorderable
     /// by the user.
     public func items() -> [ReadingListItem] {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        let token = currentFileStatToken()
+        if let cachedItems, token != nil, token == cacheToken {
+            return cachedItems
+        }
         var result: [ReadingListItem] = []
         var coordError: NSError?
         var ran = false
@@ -85,6 +119,8 @@ public final class ReadingListStore {
             result = Self.decodeItems(at: url)
         }
         if !ran { result = Self.decodeItems(at: listFileURL) }
+        cachedItems = result
+        cacheToken = token
         return result
     }
 
@@ -181,14 +217,16 @@ public final class ReadingListStore {
         }
     }
 
-    /// Persists the scroll reader's resume position.
+    /// Persists a reader's resume position on exit.
     /// One coordinated write for everything a reader persists on close — scroll
-    /// offset, reading progress (monotonic), spoken word — instead of several
-    /// back-to-back whole-list read-modify-write cycles on the main thread. nil
-    /// parameters leave their field untouched.
+    /// offset, reading progress (monotonic), spoken word, RSVP word index —
+    /// instead of several back-to-back whole-list read-modify-write cycles on the
+    /// main thread. nil parameters leave their field untouched; `lastWordIndex`
+    /// lets the RSVP reader batch its exit save the same way the scroll reader
+    /// does (`setLastWordIndex` remains for callers that persist it alone).
     public func saveReaderExitPosition(
         scrollOffset: Double? = nil, readingProgress: Double? = nil,
-        lastSpokenWordIndex: Int? = nil,
+        lastSpokenWordIndex: Int? = nil, lastWordIndex: Int? = nil,
         for itemID: UUID
     ) {
         coordinatedUpdate { all in
@@ -207,6 +245,10 @@ public final class ReadingListStore {
             }
             if let lastSpokenWordIndex, all[index].lastSpokenWordIndex != lastSpokenWordIndex {
                 all[index].lastSpokenWordIndex = lastSpokenWordIndex
+                changed = true
+            }
+            if let lastWordIndex, all[index].lastWordIndex != lastWordIndex {
+                all[index].lastWordIndex = lastWordIndex
                 changed = true
             }
             return changed
@@ -397,8 +439,9 @@ public final class ReadingListStore {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             do {
-                try data.write(
-                    to: self.articlesDirectory.appendingPathComponent(fileName), options: .atomic)
+                let url = self.articlesDirectory.appendingPathComponent(fileName)
+                try data.write(to: url, options: .atomic)
+                BackupPolicy.includeInBackups(url)
             } catch {
                 SharedDiagnosticLog.record(
                     "failed to write thumbnail: \(error.localizedDescription)", category: "store")
@@ -609,9 +652,9 @@ public final class ReadingListStore {
             // Both encode AND write must succeed before the item flips `.ready` —
             // a ready item whose content file doesn't exist is a blank reader.
             if let data = try? JSONEncoder().encode(content),
-               (try? data.write(
-                   to: self.articlesDirectory.appendingPathComponent(fileName),
-                   options: .atomic)) != nil {
+               (try? data.write(to: self.articlesDirectory.appendingPathComponent(fileName),
+                                options: .atomic)) != nil {
+                BackupPolicy.includeInBackups(self.articlesDirectory.appendingPathComponent(fileName))
                 all[index].contentFileName = fileName
                 all[index].title = content.title
                 // This save now owns the images its content references (so they survive
@@ -678,8 +721,9 @@ public final class ReadingListStore {
                 guard let content = contents[seeded[index].id] else { continue }
                 let fileName = "\(seeded[index].id.uuidString).json"
                 if let data = try? JSONEncoder().encode(content) {
-                    try? data.write(
-                        to: articlesDir.appendingPathComponent(fileName), options: .atomic)
+                    let fileURL = articlesDir.appendingPathComponent(fileName)
+                    try? data.write(to: fileURL, options: .atomic)
+                    BackupPolicy.includeInBackups(fileURL)
                     seeded[index].contentFileName = fileName
                 }
             }
@@ -720,6 +764,7 @@ public final class ReadingListStore {
         let url = originalArchivesDirectory.appendingPathComponent(fileName)
         do {
             try data.write(to: url, options: .atomic)
+            BackupPolicy.includeInBackups(url)
         } catch {
             return
         }
@@ -775,6 +820,16 @@ public final class ReadingListStore {
         decodeList(at: url).items
     }
 
+    /// nil when the file doesn't exist (or its attributes can't be read) — such a
+    /// token never matches a previously cached one, so the next read decodes fresh.
+    private func currentFileStatToken() -> FileStatToken? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: listFileURL.path),
+              let modificationDate = attributes[.modificationDate] as? Date,
+              let size = attributes[.size] as? Int
+        else { return nil }
+        return FileStatToken(modificationDate: modificationDate, size: size)
+    }
+
     /// Decodes the shared file. `safeToRewrite` is false only when a NON-EMPTY
     /// file is entirely unreadable — a mutation must then refuse to write, because
     /// re-encoding the fallback empty array would destroy every saved item.
@@ -799,6 +854,7 @@ public final class ReadingListStore {
         do {
             let data = try JSONEncoder().encode(items)
             try data.write(to: url, options: .atomic)
+            BackupPolicy.includeInBackups(url)
         } catch {
             SharedDiagnosticLog.record(
                 "failed to write readingList.json: \(error.localizedDescription)",
@@ -809,19 +865,29 @@ public final class ReadingListStore {
     /// Coordinated read-modify-write of the whole list, returning `body`'s value.
     /// Holds the in-process `mutationLock` AND an `NSFileCoordinator` writing
     /// coordination across the entire read+modify+write so other processes can't
-    /// lose this update (or vice versa). Writes + posts `.readingListChanged`
-    /// unless the file is unreadable (see `decodeList` — never wipe the list).
+    /// lose this update (or vice versa). Writes + posts `.readingListChanged` only
+    /// when `body` actually changed the array (e.g. `add` returning an existing
+    /// item, or `savePriceTracker` on a missing id are no-ops) — comparing against
+    /// `ReadingListItem: Equatable` — and never when the file is unreadable (see
+    /// `decodeList` — never wipe the list).
     @discardableResult
     private func coordinatedMutate<T>(_ body: (inout [ReadingListItem]) -> T) -> T {
         mutationLock.lock()
         defer { mutationLock.unlock() }
+        var wrote = false
         func perform(_ url: URL) -> T {
             let (decoded, safeToRewrite) = Self.decodeList(at: url)
             var all = decoded
             let result = body(&all)
-            if safeToRewrite {
+            guard safeToRewrite else { return result }
+            if all != decoded {
                 Self.encodeItems(all, to: url)
+                wrote = true
             }
+            // Either way, disk truth is now known (the just-written `all`, or the
+            // unchanged `decoded` we just read) — refresh the cache from it.
+            cachedItems = all
+            cacheToken = currentFileStatToken()
             return result
         }
         var coordResult: T?
@@ -830,7 +896,7 @@ public final class ReadingListStore {
             coordResult = perform(url)
         }
         let result = coordResult ?? perform(listFileURL)
-        postChanged()
+        if wrote { postChanged() }
         return result
     }
 
@@ -846,7 +912,10 @@ public final class ReadingListStore {
             var all = decoded
             if body(&all), safeToRewrite {
                 Self.encodeItems(all, to: url)
+                BackupPolicy.includeInBackups(url)
                 changed = true
+                cachedItems = all
+                cacheToken = currentFileStatToken()
             }
         }
         var coordError: NSError?

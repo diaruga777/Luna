@@ -45,6 +45,7 @@ final class SettingsScreenTests: XCTestCase {
     }
 
     func testShortcutSettingsSnapshot() {
+        guard #available(iOS 27.0, *) else { return }
         snapshotSubscreen(ShortcutSettingsScreen(), named: "settings-shortcut")
     }
 
@@ -90,18 +91,22 @@ final class SettingsScreenTests: XCTestCase {
     /// Drives `didSelectRowAt` for every row in section 0 and asserts the pushed
     /// view controller's class matches the expected subscreen, in order.
     func testSettingsRowsPushExpectedSubscreens() {
-        let expected: [AnyClass] = [
+        var expected: [AnyClass] = [
             ReaderSettingsScreen.self,
             VoiceSettingsScreen.self,
             ReadingListSettingsScreen.self,
             EmailAndKindleSettingsScreen.self,
             MediaProviderSettingsScreen.self,
             AutoDownloadSettingsScreen.self,
-            ShortcutSettingsScreen.self,
+        ]
+        if #available(iOS 27.0, *) {
+            expected.append(ShortcutSettingsScreen.self)
+        }
+        expected.append(contentsOf: [
             AppearanceSettingsScreen.self,
             ExperimentalSettingsScreen.self,
             DiagnosticsViewController.self,
-        ]
+        ])
         // Validate the row count once against a single instance.
         let probe = SettingsViewController()
         _ = UITestSupport.host(UINavigationController(rootViewController: probe))
@@ -110,7 +115,7 @@ final class SettingsScreenTests: XCTestCase {
 
         // Use a fresh navigation stack per row so each push is independent (avoids
         // pop timing issues in a hosted, animation-disabled stack).
-        for (row, expectedClass) in expected.enumerated() {
+        for (row, expectedClass): (Int, AnyClass) in expected.enumerated() {
             let settings = SettingsViewController()
             let nav = UINavigationController(rootViewController: settings)
             let window = UITestSupport.host(nav)

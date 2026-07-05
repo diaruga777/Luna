@@ -5,6 +5,7 @@
 
 import LunaURLClassification
 import LunaModels
+import LunaStorage
 import Foundation
 
 /// A single downloadable media item resolved from a social post.
@@ -91,6 +92,7 @@ public enum MediaDownloadStorage {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("MediaDownloads", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        BackupPolicy.excludeFromBackups(dir)
         return dir
     }
 

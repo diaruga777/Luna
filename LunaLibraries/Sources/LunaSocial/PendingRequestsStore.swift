@@ -60,7 +60,9 @@ public final class PendingRequestsStore {
             ?? fileManager.containerURL(
                 forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
             ?? fileManager.temporaryDirectory
-        return container.appendingPathComponent("pendingRequests.json")
+        let url = container.appendingPathComponent("pendingRequests.json")
+        BackupPolicy.includeInBackups(url)
+        return url
     }
 
     /// All pending requests, newest first.
@@ -100,7 +102,9 @@ public final class PendingRequestsStore {
 
     private func save(_ requests: [PendingRequest]) {
         if let data = try? JSONEncoder().encode(requests) {
-            try? data.write(to: fileURL, options: .atomic)
+            let url = fileURL
+            try? data.write(to: url, options: .atomic)
+            BackupPolicy.includeInBackups(url)
         }
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .pendingRequestsChanged, object: nil)

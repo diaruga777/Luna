@@ -284,7 +284,18 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             return
         }
         DiagnosticLog.shared.record("price refresh: background task started", category: "price")
-        let work = Task { [weak self] in
+        // Expiration handler installed BEFORE the work starts, and an expired run
+        // reports failure — mirrors handleMailFetch, so an expiration landing
+        // immediately never finds the task without a handler.
+        var work: Task<Void, Never>?
+        task.expirationHandler = {
+            // The refresher persists each tracker as it finishes and processes
+            // stalest-first, so a cancelled run still made progress.
+            DiagnosticLog.shared.record("price refresh: background task expired", category: "price")
+            work?.cancel()
+            self.schedulePriceRefresh(reason: "background expiration")
+        }
+        work = Task { [weak self] in
             let outcomes = await PriceRefreshCoordinator.shared.refreshAndNotify()
             ArticleSendCoordinator.shared.retryPendingSends()
             let completed = !Task.isCancelled
@@ -293,13 +304,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 "price refresh: background task completed success=\(completed), processed=\(outcomes.count)",
                 category: "price")
             self?.schedulePriceRefresh(reason: "background completion")
-        }
-        task.expirationHandler = {
-            // The refresher persists each tracker as it finishes and processes
-            // stalest-first, so a cancelled run still made progress.
-            DiagnosticLog.shared.record("price refresh: background task expired", category: "price")
-            work.cancel()
-            self.schedulePriceRefresh(reason: "background expiration")
         }
     }
 

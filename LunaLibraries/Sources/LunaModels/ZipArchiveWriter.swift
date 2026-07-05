@@ -109,7 +109,7 @@ public struct ZipArchiveWriter {
 }
 
 private extension Data {
-    public mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
+    mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
         var little = value.littleEndian
         Swift.withUnsafeBytes(of: &little) { append(contentsOf: $0) }
     }

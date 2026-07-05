@@ -225,7 +225,7 @@ final class ReadingListViewController: UITableViewController {
         tableView.dropDelegate = self
 
         NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: .readingListChanged, object: nil)
+            self, selector: #selector(scheduleReload), name: .readingListChanged, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(checkPasteboard),
             name: UIApplication.didBecomeActiveNotification, object: nil)
@@ -427,16 +427,35 @@ final class ReadingListViewController: UITableViewController {
         }
     }
 
+    /// `.readingListChanged` fires once per store mutation — ingest of one item can
+    /// post several in a row. Dedupe a notification burst to a single `reload()` per
+    /// main-runloop pass instead of reloading (and re-reading the store) once per
+    /// notification.
+    private var reloadPending = false
+
+    @objc private func scheduleReload() {
+        guard !reloadPending else { return }
+        reloadPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.reloadPending = false
+            self.reload()
+        }
+    }
+
     @objc private func reload() {
         // A reorder we just persisted fires this notification; ignore it so the
         // drop animation isn't interrupted by a full reloadData.
         if isApplyingReorder || isAnimatingRowChange { return }
 
-        updateFilterVisibility()
-        updateCatchUpButton()
-        groups = buildGroups()
+        // One store read for the whole reload, passed through to every helper below
+        // instead of each one re-reading the store itself.
+        let items = store.items()
+        updateFilterVisibility(items: items)
+        updateCatchUpButton(items: items)
+        groups = buildGroups(items: items)
         tableView.reloadData()
-        presentPendingSendFailureNoticeIfNeeded()
+        presentPendingSendFailureNoticeIfNeeded(items: items)
     }
 
     /// Builds the non-empty grouped model (sections × items, in display order) for the
@@ -445,7 +464,10 @@ final class ReadingListViewController: UITableViewController {
     /// actually change (see `filterChanged`). May clear a now-saved pasteboard candidate
     /// as a side effect (mirrors the old `reload`).
     private func buildGroups() -> [(section: Section, items: [ReadingListItem])] {
-        let unfiltered = store.items()
+        buildGroups(items: store.items())
+    }
+
+    private func buildGroups(items unfiltered: [ReadingListItem]) -> [(section: Section, items: [ReadingListItem])] {
         // A concrete surface restricts the whole list to its single category (other
         // categories live in the same store but surface in their own app); the combined
         // list (surface == nil) honours the user-selected filter segment.
@@ -499,7 +521,10 @@ final class ReadingListViewController: UITableViewController {
     /// whichever of Articles / Media / Price apply to the present list. The Price
     /// segment is only included when a non-archived tracker exists.
     private func visibleFilters() -> [ListFilter] {
-        let items = store.items()
+        visibleFilters(items: store.items())
+    }
+
+    private func visibleFilters(items: [ReadingListItem]) -> [ListFilter] {
         var filters: [ListFilter] = [.all, .articles]
         if ReadingListSectioning.hasMediaAndLinks(items: items) {
             filters.append(.mediaAndLinks)
@@ -697,10 +722,14 @@ final class ReadingListViewController: UITableViewController {
     /// kinds (reader / media / price tracker); otherwise it's meaningless. Rebuilds
     /// the segments to match the kinds present and resets a now-invalid selection.
     private func updateFilterVisibility() {
+        updateFilterVisibility(items: store.items())
+    }
+
+    private func updateFilterVisibility(items: [ReadingListItem]) {
         // A concrete surface is single-category, so the filter segments are meaningless —
         // never show them. Only the combined list (surface == nil) offers the filter.
         let shouldShow = surface == nil
-            && ReadingListSectioning.shouldShowFilter(items: store.items())
+            && ReadingListSectioning.shouldShowFilter(items: items)
         guard shouldShow else {
             if filter != .all { filter = .all }
             if filterRowVisible {
@@ -712,7 +741,7 @@ final class ReadingListViewController: UITableViewController {
             return
         }
 
-        let filters = visibleFilters()
+        let filters = visibleFilters(items: items)
         // A selected filter no longer offered (its kind vanished) resets to All.
         if !filters.contains(filter) { filter = .all }
 
@@ -763,7 +792,7 @@ final class ReadingListViewController: UITableViewController {
         refreshControl?.endRefreshing()
     }
 
-    @objc private func friendsTapped() {
+    @objc func friendsTapped() {
         navigationController?.pushViewController(FriendsViewController(), animated: true)
     }
 
@@ -806,9 +835,13 @@ final class ReadingListViewController: UITableViewController {
     /// there's an unarchived LOCKED (paywalled, awaiting unlock) save — regardless of
     /// count. Hides the whole button in edit mode.
     private func updateCatchUpButton() {
+        updateCatchUpButton(items: store.items())
+    }
+
+    private func updateCatchUpButton(items: [ReadingListItem]) {
         // Badge while there's catch-up worth doing, or until the email account is set up.
         let needsEmailSetup = !EmailAccountStore.shared.isConfigured
-        catchUpBadge.isHidden = !(ReadingListSectioning.shouldShowCatchUpDot(items: store.items())
+        catchUpBadge.isHidden = !(ReadingListSectioning.shouldShowCatchUpDot(items: items)
             || needsEmailSetup)
         catchUpButton.isHidden = isEditing
     }
@@ -819,7 +852,7 @@ final class ReadingListViewController: UITableViewController {
             adjustedTopInset: scrollView.adjustedContentInset.top)
     }
 
-    @objc private func catchUpTapped() {
+    @objc func catchUpTapped() {
         let catchUp = CatchUpViewController(unread: catchUpQueue(), router: self)
         DotMatrixModal.present(catchUp, from: self)
     }
@@ -1018,7 +1051,9 @@ final class ReadingListViewController: UITableViewController {
     @objc private func deleteSelectedTapped() {
         guard let selected = tableView.indexPathsForSelectedRows, !selected.isEmpty else { return }
         let items = selected.map { item(at: $0) }   // capture before any mutation
-        for item in items { store.delete(item) }     // each posts .readingListChanged → reload
+        // One coordinated store cycle + one notification for the whole batch,
+        // instead of N per-item deletes.
+        store.deleteItems(ids: Set(items.map(\.id)))
         setEditing(false, animated: true)
     }
 
@@ -1058,7 +1093,7 @@ final class ReadingListViewController: UITableViewController {
         URLUnwrapper.ingestURL(from: entered, allowBareHost: true)?.absoluteString
     }
 
-    @objc private func settingsTapped() {
+    @objc func settingsTapped() {
         navigationController?.pushViewController(SettingsViewController(), animated: true)
     }
 
@@ -1107,8 +1142,12 @@ final class ReadingListViewController: UITableViewController {
             }
         } completion: { [weak self] _ in
             self?.isAnimatingRowChange = false
-            // A delete can change whether the Articles / Media & Links filter applies.
+            // A delete can change whether the Articles / Media & Links filter applies,
+            // and whether the catch-up badge should still show (both notification-driven
+            // updates that a swallowed `.readingListChanged` — suppressed above while
+            // isAnimatingRowChange was true — would otherwise have applied).
             self?.updateFilterVisibility()
+            self?.updateCatchUpButton()
         }
     }
 
@@ -1298,11 +1337,13 @@ final class ReadingListViewController: UITableViewController {
                 attributes: [.foregroundColor: UIColor.systemRed]))
         }
 
+        // `.art(path:)` decodes downsampled off the main thread (with an
+        // NSCache-backed synchronous path on a re-seen row) instead of the
+        // full-size, main-thread `Data(contentsOf:)` + `UIImage(data:)` decode
+        // this used to do per cell.
         let thumbnail: ReadingListItemCell.Thumbnail
-        if let fileName = tracker.imageFileName,
-           let data = try? Data(contentsOf: store.articlesDirectory.appendingPathComponent(fileName)),
-           let image = UIImage(data: data) {
-            thumbnail = .image(image)
+        if let fileName = tracker.imageFileName {
+            thumbnail = .art(path: store.articlesDirectory.appendingPathComponent(fileName).path)
         } else {
             thumbnail = .logo(assetName: nil, glyph: alerting ? "tag.fill" : "tag")
         }
@@ -1642,7 +1683,9 @@ final class ReadingListViewController: UITableViewController {
             guard let self else { return }
             let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
             SendToFriendSheet.shareLink(
-                urlString: item.urlString, from: self, sourceView: sourceView)
+                urlString: item.urlString,
+                sharedURLString: self.appClipShareURLString(for: item),
+                from: self, sourceView: sourceView)
         }
         let copyLink = UIAction(
             title: "Copy Link",
@@ -1773,7 +1816,11 @@ final class ReadingListViewController: UITableViewController {
         }
         if item.isShareable {
             children.append(UIAction(title: "Share Link…", image: UIImage(systemName: "link")) { _ in
-                SendToFriendSheet.shareLink(urlString: item.urlString, from: presenter, sourceView: sourceView)
+                SendToFriendSheet.shareLink(
+                    urlString: item.urlString,
+                    sharedURLString: self.appClipShareURLString(for: item),
+                    from: presenter,
+                    sourceView: sourceView)
             })
             children.append(UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { _ in
                 SendToFriendSheet.copyLink(urlString: item.urlString, from: presenter)
@@ -1805,6 +1852,13 @@ final class ReadingListViewController: UITableViewController {
             onChange()
         })
         return UIMenu(children: children)
+    }
+
+    private func appClipShareURLString(for item: ReadingListItem) -> String? {
+        LunaAppClipInvocationURL.shareURL(
+            for: item.urlString,
+            destination: item.isPlatformItem ? .downloader : .reader
+        )?.absoluteString
     }
 
     /// Hands the first media item of an X/Instagram/TikTok/Facebook post to the
@@ -1844,8 +1898,12 @@ final class ReadingListViewController: UITableViewController {
     }
 
     private func presentPendingSendFailureNoticeIfNeeded() {
+        presentPendingSendFailureNoticeIfNeeded(items: store.items())
+    }
+
+    private func presentPendingSendFailureNoticeIfNeeded(items: [ReadingListItem]) {
         guard viewIfLoaded?.window != nil, !isPresentingSendFailureNotice else { return }
-        guard store.items().contains(where: {
+        guard items.contains(where: {
             $0.pendingSendFailureNotices.contains(where: { $0.value })
         }) else { return }
 

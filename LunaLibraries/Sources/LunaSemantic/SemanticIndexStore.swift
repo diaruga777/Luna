@@ -36,7 +36,9 @@ public final class SemanticIndexStore {
         let container = overrideContainerURL
             ?? fileManager.containerURL(forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
             ?? fileManager.temporaryDirectory
-        return container.appendingPathComponent("semanticIndex.json")
+        let url = container.appendingPathComponent("semanticIndex.json")
+        BackupPolicy.excludeFromBackups(url)
+        return url
     }
 
     // MARK: - Cheap operations
@@ -135,7 +137,9 @@ public final class SemanticIndexStore {
         var state = loadState()
         body(&state)
         if let data = try? JSONEncoder().encode(state) {
-            try? data.write(to: fileURL, options: .atomic)
+            let url = fileURL
+            try? data.write(to: url, options: .atomic)
+            BackupPolicy.excludeFromBackups(url)
         }
     }
 }

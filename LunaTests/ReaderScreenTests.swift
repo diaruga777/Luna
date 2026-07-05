@@ -10,6 +10,7 @@
 import LunaReaderUI
 import LunaDesignSystem
 import LunaModels
+import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
@@ -140,7 +141,95 @@ final class ReaderScreenTests: XCTestCase {
         _ = window
     }
 
+    func testScrollReaderFinishesWhenScrolledToEnd() {
+        var didFinish = false
+        let reader = ScrollReaderViewController(item: item, content: longScrollArticleContent())
+        reader.onFinishedReading = { didFinish = true }
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        if !reader.didLoadFullContentForTesting {
+            reader.prepareFullContent()
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while !reader.didLoadFullContentForTesting, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertTrue(reader.didLoadFullContentForTesting)
+
+        guard let textView = findTextView(in: reader.view) else {
+            XCTFail("Scroll reader should contain its text view")
+            return
+        }
+        let maxOffset = max(
+            -textView.adjustedContentInset.top,
+            textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        textView.contentOffset.y = maxOffset
+        reader.scrollViewDidScroll(textView)
+
+        XCTAssertTrue(didFinish, "Scrolling to the full article end should mark the article read")
+    }
+
+    func testRSVPSkipToEndFinishesReading() {
+        var didFinish = false
+        let reader = RSVPViewController(item: item, content: shortArticleContent())
+        reader.onFinishedReading = { didFinish = true }
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let skipForward = findControl(in: reader.view, accessibilityLabel: "Skip forward 25 words")
+        XCTAssertNotNil(skipForward)
+        skipForward?.sendActions(for: .touchUpInside)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        XCTAssertTrue(didFinish, "Skipping onto the final RSVP word should mark the article read")
+    }
+
+    /// A continuous scrubber drag (`.valueChanged`, UISlider's default continuous
+    /// mode) must not write to the store — only the gesture's end
+    /// (touch up/cancel) persists, in one batched call.
+    func testRSVPScrubOnlyPersistsOnTouchUp() {
+        let content = shortArticleContent()
+        // `add` inserts a real item into the shared store (needed so the reader's
+        // save calls have a matching row to mutate) without disturbing any other
+        // items already there; it's removed again below.
+        let scrubItem = ReadingListStore.shared.add(urlString: "https://example.com/rsvp-scrub-\(UUID().uuidString)")
+        defer { ReadingListStore.shared.delete(scrubItem) }
+
+        let reader = RSVPViewController(item: scrubItem, content: content)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        guard let slider = findSlider(in: reader.view) else {
+            XCTFail("RSVP reader should contain its scrubber")
+            return
+        }
+        let initialWordIndex = ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex
+
+        slider.value = 5
+        slider.sendActions(for: .valueChanged)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex, initialWordIndex,
+                       "A continuous scrub tick must not persist to the store")
+
+        slider.sendActions(for: .touchUpInside)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex, 5,
+                       "Ending the scrub gesture should persist the new word index")
+    }
+
     // MARK: - Helpers
+
+    private func findSlider(in view: UIView) -> UISlider? {
+        if let slider = view as? UISlider { return slider }
+        for subview in view.subviews {
+            if let found = findSlider(in: subview) { return found }
+        }
+        return nil
+    }
 
     private func makeReader(forceMode: ReadingListItem.ReaderMode) -> ReaderViewController {
         ReaderViewController(
@@ -156,5 +245,40 @@ final class ReaderScreenTests: XCTestCase {
             if let found = findSegmentedControl(in: subview) { return found }
         }
         return nil
+    }
+
+    private func findControl(in view: UIView, accessibilityLabel: String) -> UIControl? {
+        if let control = view as? UIControl, control.accessibilityLabel == accessibilityLabel {
+            return control
+        }
+        for subview in view.subviews {
+            if let found = findControl(in: subview, accessibilityLabel: accessibilityLabel) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private func shortArticleContent() -> ArticleContent {
+        ArticleContent(title: "Short RSVP Fixture", blocks: [
+            .init(kind: .paragraph, text: "one two three four five six seven eight nine ten", links: []),
+        ])
+    }
+
+    private func findTextView(in view: UIView) -> UITextView? {
+        if let textView = view as? UITextView { return textView }
+        for subview in view.subviews {
+            if let found = findTextView(in: subview) { return found }
+        }
+        return nil
+    }
+
+    private func longScrollArticleContent() -> ArticleContent {
+        let sentence = "This paragraph is long enough to exceed the progressive prefix and make the scroll reader genuinely scroll. "
+        return ArticleContent(title: "Medium Scroll Fixture", blocks: [
+            .init(kind: .paragraph, text: String(repeating: sentence, count: 20), links: []),
+            .init(kind: .paragraph, text: String(repeating: sentence, count: 20), links: []),
+            .init(kind: .paragraph, text: String(repeating: sentence, count: 20), links: []),
+        ])
     }
 }

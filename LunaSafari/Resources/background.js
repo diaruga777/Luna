@@ -2,9 +2,10 @@
 // script on web pages, and relays the Luna button settings/destinations from
 // the native app to the content script.
 //
-// The article path deep-links into the Luna app (lunareader://read?url=…), where
+// The article path deep-links into the Reader app (lunareader://read?url=…), where
 // Luna does all archive.today / paywall handling in-app. Platform pages route to
-// the Downloader app/clip, so the extension itself never touches archive.today.
+// the Downloader app/clip (lunadownloader://), product pages to Price Tracker
+// (lunapricetracker://), so the extension itself never touches archive.today.
 
 let lastSent = null;
 
@@ -74,6 +75,7 @@ browser.runtime.onMessage.addListener(function (message) {
                     mode: (resp && resp.mode) || "all",
                     isDownloaderHost: !!(resp && resp.isDownloaderHost),
                     readerInstalled: !!(resp && resp.readerInstalled),
+                    downloaderInstalled: !!(resp && resp.downloaderInstalled),
                     priceTrackerInstalled: !!(resp && resp.priceTrackerInstalled),
                     readerAppClipURL: (resp && resp.readerAppClipURL) || "",
                     downloaderAppClipURL: (resp && resp.downloaderAppClipURL) || "",
@@ -85,6 +87,7 @@ browser.runtime.onMessage.addListener(function (message) {
                     mode: "all",
                     isDownloaderHost: false,
                     readerInstalled: false,
+                    downloaderInstalled: false,
                     priceTrackerInstalled: false,
                     readerAppClipURL: "",
                     downloaderAppClipURL: "",

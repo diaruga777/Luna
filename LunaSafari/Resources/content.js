@@ -47,7 +47,8 @@
         }
         if (!looksLikeArticle()) { return; }
         if (mode === "onlyLocked" && !looksPaywalled()) { return; }
-        injectLunaButton(readTarget(resp));
+        var target = readTarget(resp);
+        if (target) { injectLunaButton(target); }
     }).catch(function () {});
 
     // When the "Unlock Paywalls On-Device" toggle is on, reveal the body in Safari
@@ -407,27 +408,39 @@
         (document.body || document.documentElement).appendChild(btn);
     }
 
+    // Each app registers ONLY its own scheme (lunareader / lunadownloader /
+    // lunapricetracker), so a deep link opens exactly the app it names — but
+    // also does nothing when that app isn't installed, hence the installed
+    // checks / App Clip and App Store fallbacks below.
     function readTarget(context) {
         var appClipBaseURL = context && (context.readerAppClipURL || "");
+        if (appClipBaseURL) {
+            return {
+                label: "📖  Read in Luna",
+                captureContent: true,
+                url: function () { return urlWithSource(appClipBaseURL, location.href); }
+            };
+        }
+        // Pre-submission fallback: a tap is a user gesture, so Safari allows the
+        // custom-scheme launch — but only Reader registers lunareader://, so
+        // without it (and with no App Clip URL yet) there's nothing to open.
+        if (!(context && context.readerInstalled)) { return null; }
         return {
             label: "📖  Read in Luna",
             captureContent: true,
             url: function () {
-                if (appClipBaseURL) { return urlWithSource(appClipBaseURL, location.href); }
-                // Pre-submission fallback: a tap is a user gesture, so Safari allows
-                // the custom-scheme launch when the Reader app is installed.
                 return "lunareader://read?url=" + encodeURIComponent(location.href);
             }
         };
     }
 
     function downloadTargetFor(context) {
-        if (context && context.isDownloaderHost) {
+        if (context && context.downloaderInstalled) {
             return {
                 label: "Download in Luna",
                 captureContent: false,
                 url: function () {
-                    return "lunareader://read?url=" + encodeURIComponent(location.href);
+                    return "lunadownloader://read?url=" + encodeURIComponent(location.href);
                 }
             };
         }
@@ -451,7 +464,7 @@
                 label: "Track in Luna",
                 captureContent: false,
                 url: function () {
-                    return "lunareader://read?url=" + encodeURIComponent(location.href);
+                    return "lunapricetracker://read?url=" + encodeURIComponent(location.href);
                 }
             };
         }

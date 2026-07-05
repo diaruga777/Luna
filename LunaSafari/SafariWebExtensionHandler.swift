@@ -20,6 +20,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     // Written by each app at launch (`InstalledAppMarkers` in the app shell) so any
     // host's extension knows which sibling Luna apps exist on this device.
     private static let readerInstalledKey = "lunaInstalled.reader"
+    private static let downloaderInstalledKey = "lunaInstalled.downloader"
     private static let priceTrackerInstalledKey = "lunaInstalled.pricetracker"
 
     func beginRequest(with context: NSExtensionContext) {
@@ -36,6 +37,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             payload["readerAppClipURL"] = Self.readerAppClipURL
             payload["downloaderAppClipURL"] = Self.downloaderAppClipURL
             payload["readerInstalled"] = Self.isReaderInstalled
+            payload["downloaderInstalled"] = Self.isDownloaderInstalled
             payload["priceTrackerInstalled"] = Self.isPriceTrackerInstalled
             payload["priceTrackerAppStoreURL"] = Self.priceTrackerAppStoreURL
         case "bypassEnabled":
@@ -75,6 +77,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     /// surfaces the item on its proper surface.
     private static var isReaderInstalled: Bool {
         isHost(appSuffix: ".reader") || installedMarker(readerInstalledKey)
+    }
+
+    private static var isDownloaderInstalled: Bool {
+        isHost(appSuffix: ".downloader") || installedMarker(downloaderInstalledKey)
     }
 
     private static var isPriceTrackerInstalled: Bool {

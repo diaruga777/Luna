@@ -13,6 +13,21 @@ loading indicator: a small self-animating grid of dots (configurable `dimension`
 `side`). It is a plain UIKit/Core Animation view — no Metal — and is used app-wide
 wherever an in-progress spinner is shown.
 
+## Onboarding dot-matrix views (`LunaSocialUI`)
+
+Onboarding extends the motif beyond its push/pop pixel-wipe transitions and exit
+`DotMatrixCrossfade` with two Core-Animation-only views (same technique as the
+spinner — per-dot `CALayer` + `CAKeyframeAnimation`, no Metal, model layers stay
+static so `layer.render(in:)` snapshots are deterministic):
+
+- **`OnboardingDotMatrixBackdrop`** — an ambient panel of dots
+  (`DotMatrixTransitionStyle` geometry ×2) behind every step's icon/illustration,
+  with a slow diagonal shimmer sweep. Static at resting opacity under Reduce Motion.
+- **`OnboardingDotMatrixProgressView`** — "step X of Y" as a dot row pinned above
+  the scroll area: completed/current dots filled in the reading accent (current one
+  pulses; frozen under Reduce Motion), upcoming dots dimmed. Step index/total is
+  threaded from `OnboardingFlow` (3 steps pre-iOS 27, 5 on iOS 27+).
+
 ## Dot Matrix pixel-wipe TRANSITIONS (the facade) — region-confined wipes
 
 The **`LunaTransitions`** library wraps the

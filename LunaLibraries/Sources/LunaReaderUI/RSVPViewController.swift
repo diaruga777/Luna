@@ -285,8 +285,13 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        pause()
-        saveProgress()
+        // `pause()` already saves (a legitimate play→pause save point); only
+        // call it — and skip the redundant extra save — when actually playing.
+        if isPlaying {
+            pause()
+        } else {
+            saveProgress()
+        }
     }
 
     /// Read-aloud uses a non-mixing category so it takes over playback; pairing
@@ -516,6 +521,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         scrubber.value = Float(currentIndex)
         scrubber.minimumTrackTintColor = GlassStyle.readingAccent
         scrubber.addTarget(self, action: #selector(scrubbed), for: .valueChanged)
+        scrubber.addTarget(self, action: #selector(scrubEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
 
         statusLabel.font = .monospacedDigitSystemFont(ofSize: 14, weight: .regular)
         statusLabel.textColor = .secondaryLabel
@@ -910,8 +916,18 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     // MARK: - Controls
 
     @objc private func scrubbed() {
-        pause()
+        // Only pause (and its save) when playback was actually running — a scrub
+        // while already paused shouldn't re-run pause's save/display work, and
+        // continuous `.valueChanged` ticks must not persist at all; the scrub
+        // gesture's end (`scrubEnded`) saves once.
+        if isPlaying { pause() }
         seek(toWord: Int(scrubber.value))
+    }
+
+    /// Fires once when the scrub gesture ends (touch up/cancel) — the single
+    /// persistence point for a scrubber drag, instead of every continuous tick.
+    @objc private func scrubEnded() {
+        saveProgress()
     }
 
     @objc private func skipBack() { skip(by: -Self.skipWordCount) }
@@ -987,13 +1003,13 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     private func saveProgress() {
-        // Persisted in the shared token space (see resolveResumeFrame).
-        store.setLastWordIndex(
-            engine.tokenIndex(forFrameIndex: currentIndex) ?? currentIndex, for: item.id)
-        if engine.words.count > 1 {
-            store.setReadingProgress(
-                Double(currentIndex) / Double(engine.words.count - 1), for: item.id)
-        }
+        // Persisted in the shared token space (see resolveResumeFrame), in ONE
+        // coordinated store cycle instead of two back-to-back mutations.
+        let wordIndex = engine.tokenIndex(forFrameIndex: currentIndex) ?? currentIndex
+        let progress = engine.words.count > 1
+            ? Double(currentIndex) / Double(engine.words.count - 1) : nil
+        store.saveReaderExitPosition(
+            readingProgress: progress, lastWordIndex: wordIndex, for: item.id)
     }
 
     private func finishIfAtEnd() {

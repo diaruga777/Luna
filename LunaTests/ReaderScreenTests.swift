@@ -10,6 +10,7 @@
 import LunaReaderUI
 import LunaDesignSystem
 import LunaModels
+import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
@@ -186,7 +187,49 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertTrue(didFinish, "Skipping onto the final RSVP word should mark the article read")
     }
 
+    /// A continuous scrubber drag (`.valueChanged`, UISlider's default continuous
+    /// mode) must not write to the store — only the gesture's end
+    /// (touch up/cancel) persists, in one batched call.
+    func testRSVPScrubOnlyPersistsOnTouchUp() {
+        let content = shortArticleContent()
+        // `add` inserts a real item into the shared store (needed so the reader's
+        // save calls have a matching row to mutate) without disturbing any other
+        // items already there; it's removed again below.
+        let scrubItem = ReadingListStore.shared.add(urlString: "https://example.com/rsvp-scrub-\(UUID().uuidString)")
+        defer { ReadingListStore.shared.delete(scrubItem) }
+
+        let reader = RSVPViewController(item: scrubItem, content: content)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        guard let slider = findSlider(in: reader.view) else {
+            XCTFail("RSVP reader should contain its scrubber")
+            return
+        }
+        let initialWordIndex = ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex
+
+        slider.value = 5
+        slider.sendActions(for: .valueChanged)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex, initialWordIndex,
+                       "A continuous scrub tick must not persist to the store")
+
+        slider.sendActions(for: .touchUpInside)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex, 5,
+                       "Ending the scrub gesture should persist the new word index")
+    }
+
     // MARK: - Helpers
+
+    private func findSlider(in view: UIView) -> UISlider? {
+        if let slider = view as? UISlider { return slider }
+        for subview in view.subviews {
+            if let found = findSlider(in: subview) { return found }
+        }
+        return nil
+    }
 
     private func makeReader(forceMode: ReadingListItem.ReaderMode) -> ReaderViewController {
         ReaderViewController(

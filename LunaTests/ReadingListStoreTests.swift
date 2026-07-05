@@ -64,6 +64,33 @@ final class ReadingListStoreTests: XCTestCase {
         XCTAssertEqual(store.items().filter { $0.urlString == "https://example.com/same" }.count, 1)
     }
 
+    /// `add` on an already-saved URL is a no-op (returns the existing item without
+    /// modifying the array) — `coordinatedMutate` must skip the re-encode AND the
+    /// `.readingListChanged` post, since nothing changed for observers to react to.
+    func testNoOpAddDoesNotPostChangeNotification() {
+        // Drain the real (first-save) notification before watching for the no-op's
+        // absence, so it can't be mistaken for a notification from the no-op below.
+        let setupPosted = expectation(forNotification: .readingListChanged, object: nil) { _ in true }
+        _ = store.add(urlString: "https://example.com/noop")
+        wait(for: [setupPosted], timeout: 2.0)
+
+        let notPosted = expectation(forNotification: .readingListChanged, object: nil) { _ in true }
+        notPosted.isInverted = true
+
+        _ = store.add(urlString: "https://example.com/noop") // existing URL — no-op
+
+        wait(for: [notPosted], timeout: 0.5)
+    }
+
+    /// Sanity check alongside the no-op test above: an actual mutation still posts.
+    func testRealMutationStillPostsChangeNotification() {
+        let posted = expectation(forNotification: .readingListChanged, object: nil) { _ in true }
+
+        _ = store.add(urlString: "https://example.com/real-change")
+
+        wait(for: [posted], timeout: 2.0)
+    }
+
     func testRecordSaveAttemptReturnsPreviousPressTime() {
         let item = store.add(urlString: "https://example.com/press")
 

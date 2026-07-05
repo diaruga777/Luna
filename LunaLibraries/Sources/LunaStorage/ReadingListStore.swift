@@ -851,21 +851,29 @@ public final class ReadingListStore {
     /// Coordinated read-modify-write of the whole list, returning `body`'s value.
     /// Holds the in-process `mutationLock` AND an `NSFileCoordinator` writing
     /// coordination across the entire read+modify+write so other processes can't
-    /// lose this update (or vice versa). Writes + posts `.readingListChanged`
-    /// unless the file is unreadable (see `decodeList` — never wipe the list).
+    /// lose this update (or vice versa). Writes + posts `.readingListChanged` only
+    /// when `body` actually changed the array (e.g. `add` returning an existing
+    /// item, or `savePriceTracker` on a missing id are no-ops) — comparing against
+    /// `ReadingListItem: Equatable` — and never when the file is unreadable (see
+    /// `decodeList` — never wipe the list).
     @discardableResult
     private func coordinatedMutate<T>(_ body: (inout [ReadingListItem]) -> T) -> T {
         mutationLock.lock()
         defer { mutationLock.unlock() }
+        var wrote = false
         func perform(_ url: URL) -> T {
             let (decoded, safeToRewrite) = Self.decodeList(at: url)
             var all = decoded
             let result = body(&all)
-            if safeToRewrite {
+            guard safeToRewrite else { return result }
+            if all != decoded {
                 Self.encodeItems(all, to: url)
-                cachedItems = all
-                cacheToken = currentFileStatToken()
+                wrote = true
             }
+            // Either way, disk truth is now known (the just-written `all`, or the
+            // unchanged `decoded` we just read) — refresh the cache from it.
+            cachedItems = all
+            cacheToken = currentFileStatToken()
             return result
         }
         var coordResult: T?
@@ -874,7 +882,7 @@ public final class ReadingListStore {
             coordResult = perform(url)
         }
         let result = coordResult ?? perform(listFileURL)
-        postChanged()
+        if wrote { postChanged() }
         return result
     }
 

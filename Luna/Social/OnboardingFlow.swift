@@ -24,10 +24,11 @@ public enum OnboardingFlow {
         return nav
     }
 
-    /// Re-runs the same onboarding (used by the Settings "Replay Onboarding"
-    /// button). Nothing is destructive, so it's identical to `make`.
-    public static func makeSetupOnly(onFinished: @escaping () -> Void) -> UIViewController {
-        make(onFinished: onFinished)
+    /// How many steps the flow shows on this OS — drives the per-step progress dots.
+    /// Email and notifications always; Safari + shortcut need iOS 27+; the
+    /// action-extension step is always last.
+    private static var totalSteps: Int {
+        if #available(iOS 27.0, *) { return 5 } else { return 3 }
     }
 
     #if DEBUG
@@ -64,6 +65,7 @@ public enum OnboardingFlow {
             },
             continueTitle: "Skip",
             animation: nil,
+            progress: .init(index: 0, total: totalSteps),
             onContinue: proceed)
     }
 
@@ -89,6 +91,7 @@ public enum OnboardingFlow {
             },
             continueTitle: "Not Now",
             animation: .notification,
+            progress: .init(index: 1, total: totalSteps),
             onContinue: proceed)
     }
 
@@ -102,6 +105,7 @@ public enum OnboardingFlow {
             primary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
             continueTitle: "Continue",
             animation: .settingsToggle,
+            progress: .init(index: 2, total: totalSteps),
             onContinue: { [weak nav] in
                 nav?.pushViewController(shortcutStep(nav: nav, onFinished: onFinished), animated: true)
             })
@@ -118,6 +122,7 @@ public enum OnboardingFlow {
             secondary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
             continueTitle: "Continue",
             animation: .actionButton,
+            progress: .init(index: 3, total: totalSteps),
             onContinue: { [weak nav] in
                 nav?.pushViewController(actionExtensionStep(onFinished: onFinished), animated: true)
             })
@@ -132,6 +137,7 @@ public enum OnboardingFlow {
             primary: nil,
             continueTitle: "Done",
             animation: .actionExtension,
+            progress: .init(index: totalSteps - 1, total: totalSteps),
             onContinue: onFinished)
     }
 }

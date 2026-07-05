@@ -21,6 +21,17 @@ public final class OnboardingStepViewController: UIViewController {
         }
     }
 
+    /// This step's position in the flow, shown as a dot-matrix progress row.
+    public struct Progress {
+        public let index: Int
+        public let total: Int
+
+        public init(index: Int, total: Int) {
+            self.index = index
+            self.total = total
+        }
+    }
+
     private let symbolName: String
     private let stepTitle: String
     private let body: String
@@ -31,6 +42,7 @@ public final class OnboardingStepViewController: UIViewController {
     /// When set, a looping illustration of the iOS change replaces the static icon.
     private let animationKind: OnboardingAnimationView.Kind?
     private var animationView: OnboardingAnimationView?
+    private let progress: Progress?
 
     private let primaryButton = UIButton(type: .system)
     private let secondaryButton = UIButton(type: .system)
@@ -38,6 +50,7 @@ public final class OnboardingStepViewController: UIViewController {
     public init(symbol: String, title: String, body: String,
          primary: PrimaryAction?, secondary: PrimaryAction? = nil, continueTitle: String,
          animation: OnboardingAnimationView.Kind? = nil,
+         progress: Progress? = nil,
          onContinue: @escaping () -> Void) {
         self.symbolName = symbol
         self.stepTitle = title
@@ -46,6 +59,7 @@ public final class OnboardingStepViewController: UIViewController {
         self.secondaryAction = secondary
         self.continueTitle = continueTitle
         self.animationKind = animation
+        self.progress = progress
         self.onContinue = onContinue
         super.init(nibName: nil, bundle: nil)
     }
@@ -70,7 +84,29 @@ public final class OnboardingStepViewController: UIViewController {
             icon.contentMode = .center
             topVisual = icon
         }
-        let icon = topVisual
+
+        // The visual sits on an ambient dot-matrix panel — every step (including
+        // the static-icon email step) shares the app's dot-matrix motif.
+        let visualPanel = UIView()
+        let backdrop = OnboardingDotMatrixBackdrop()
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        visualPanel.addSubview(backdrop)
+        topVisual.translatesAutoresizingMaskIntoConstraints = false
+        visualPanel.addSubview(topVisual)
+        // Panel height: the visual plus breathing room, but never smaller than a
+        // presentable dot panel (matters for the email step's small static icon).
+        let panelHugsVisual = visualPanel.heightAnchor.constraint(equalTo: topVisual.heightAnchor, constant: 32)
+        panelHugsVisual.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            backdrop.topAnchor.constraint(equalTo: visualPanel.topAnchor),
+            backdrop.bottomAnchor.constraint(equalTo: visualPanel.bottomAnchor),
+            backdrop.leadingAnchor.constraint(equalTo: visualPanel.leadingAnchor),
+            backdrop.trailingAnchor.constraint(equalTo: visualPanel.trailingAnchor),
+            topVisual.centerXAnchor.constraint(equalTo: visualPanel.centerXAnchor),
+            topVisual.centerYAnchor.constraint(equalTo: visualPanel.centerYAnchor),
+            panelHugsVisual,
+            visualPanel.heightAnchor.constraint(greaterThanOrEqualToConstant: 140),
+        ])
 
         let titleLabel = UILabel()
         titleLabel.text = stepTitle
@@ -85,10 +121,10 @@ public final class OnboardingStepViewController: UIViewController {
         bodyLabel.textAlignment = .center
         bodyLabel.numberOfLines = 0
 
-        let topStack = UIStackView(arrangedSubviews: [icon, titleLabel, bodyLabel])
+        let topStack = UIStackView(arrangedSubviews: [visualPanel, titleLabel, bodyLabel])
         topStack.axis = .vertical
         topStack.spacing = 16
-        topStack.setCustomSpacing(24, after: icon)
+        topStack.setCustomSpacing(24, after: visualPanel)
 
         let buttonStack = UIStackView()
         buttonStack.axis = .vertical
@@ -132,6 +168,22 @@ public final class OnboardingStepViewController: UIViewController {
         buttonStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(buttonStack)
 
+        // Step-progress dots, pinned above the scroll area so they never scroll away.
+        var scrollTopAnchor = view.safeAreaLayoutGuide.topAnchor
+        var scrollTopInset: CGFloat = 12
+        if let progress {
+            let progressView = OnboardingDotMatrixProgressView(
+                currentIndex: progress.index, totalSteps: progress.total)
+            progressView.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(progressView)
+            NSLayoutConstraint.activate([
+                progressView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+                progressView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            ])
+            scrollTopAnchor = progressView.bottomAnchor
+            scrollTopInset = 8
+        }
+
         let scroll = UIScrollView()
         scroll.showsVerticalScrollIndicator = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -150,7 +202,7 @@ public final class OnboardingStepViewController: UIViewController {
             buttonStack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             buttonStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -20),
 
-            scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            scroll.topAnchor.constraint(equalTo: scrollTopAnchor, constant: scrollTopInset),
             scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: buttonStack.topAnchor, constant: -16),

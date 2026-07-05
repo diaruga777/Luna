@@ -16,6 +16,11 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private static let bypassEnabledKey = "nonArchiveBypassEnabled"
     private static let readerAppClipURLKey = "LunaReaderAppClipURL"
     private static let downloaderAppClipURLKey = "LunaDownloaderAppClipURL"
+    private static let priceTrackerAppStoreURLKey = "LunaPriceTrackerAppStoreURL"
+    // Written by each app at launch (`InstalledAppMarkers` in the app shell) so any
+    // host's extension knows which sibling Luna apps exist on this device.
+    private static let readerInstalledKey = "lunaInstalled.reader"
+    private static let priceTrackerInstalledKey = "lunaInstalled.pricetracker"
 
     func beginRequest(with context: NSExtensionContext) {
         let item = context.inputItems.first as? NSExtensionItem
@@ -30,10 +35,16 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             payload["isDownloaderHost"] = Self.isDownloaderHost
             payload["readerAppClipURL"] = Self.readerAppClipURL
             payload["downloaderAppClipURL"] = Self.downloaderAppClipURL
+            payload["readerInstalled"] = Self.isReaderInstalled
+            payload["priceTrackerInstalled"] = Self.isPriceTrackerInstalled
+            payload["priceTrackerAppStoreURL"] = Self.priceTrackerAppStoreURL
         case "bypassEnabled":
             // The "Unlock Paywalls On-Device" toggle — gates the Safari auto-bypass.
-            payload["enabled"] = UserDefaults(suiteName: Self.appGroupID)?
-                .bool(forKey: Self.bypassEnabledKey) ?? false
+            // Unlocking is a Reader feature: without Luna Reader installed the
+            // unlocked article has nowhere to open, so the bypass stays off.
+            payload["enabled"] = Self.isReaderInstalled
+                && (UserDefaults(suiteName: Self.appGroupID)?
+                    .bool(forKey: Self.bypassEnabledKey) ?? false)
         case "saveContent":
             // The content script hands over the already-unlocked article HTML so the
             // app can render it as prefetched content (never re-fetching a page that
@@ -54,18 +65,43 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     private static var isDownloaderHost: Bool {
-        (Bundle.main.bundleIdentifier ?? "").hasSuffix(".downloader.safari")
+        isHost(appSuffix: ".downloader")
+    }
+
+    /// The extension's own host app is installed by definition; sibling apps are
+    /// known from the launch markers each app writes into the App Group. A marker
+    /// can go stale after an uninstall (App Group data outlives the app), in which
+    /// case the deep link still lands in a remaining Luna app and the shared store
+    /// surfaces the item on its proper surface.
+    private static var isReaderInstalled: Bool {
+        isHost(appSuffix: ".reader") || installedMarker(readerInstalledKey)
+    }
+
+    private static var isPriceTrackerInstalled: Bool {
+        isHost(appSuffix: ".pricetracker") || installedMarker(priceTrackerInstalledKey)
+    }
+
+    private static func isHost(appSuffix: String) -> Bool {
+        (Bundle.main.bundleIdentifier ?? "").hasSuffix(appSuffix + ".safari")
+    }
+
+    private static func installedMarker(_ key: String) -> Bool {
+        UserDefaults(suiteName: appGroupID)?.bool(forKey: key) ?? false
     }
 
     private static var downloaderAppClipURL: String {
-        appClipURL(forInfoDictionaryKey: downloaderAppClipURLKey)
+        infoPlistURL(forKey: downloaderAppClipURLKey)
     }
 
     private static var readerAppClipURL: String {
-        appClipURL(forInfoDictionaryKey: readerAppClipURLKey)
+        infoPlistURL(forKey: readerAppClipURLKey)
     }
 
-    private static func appClipURL(forInfoDictionaryKey key: String) -> String {
+    private static var priceTrackerAppStoreURL: String {
+        infoPlistURL(forKey: priceTrackerAppStoreURLKey)
+    }
+
+    private static func infoPlistURL(forKey key: String) -> String {
         guard let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
             return ""
         }

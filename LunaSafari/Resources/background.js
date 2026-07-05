@@ -73,16 +73,22 @@ browser.runtime.onMessage.addListener(function (message) {
                 return {
                     mode: (resp && resp.mode) || "all",
                     isDownloaderHost: !!(resp && resp.isDownloaderHost),
+                    readerInstalled: !!(resp && resp.readerInstalled),
+                    priceTrackerInstalled: !!(resp && resp.priceTrackerInstalled),
                     readerAppClipURL: (resp && resp.readerAppClipURL) || "",
-                    downloaderAppClipURL: (resp && resp.downloaderAppClipURL) || ""
+                    downloaderAppClipURL: (resp && resp.downloaderAppClipURL) || "",
+                    priceTrackerAppStoreURL: (resp && resp.priceTrackerAppStoreURL) || ""
                 };
             })
             .catch(function () {
                 return {
                     mode: "all",
                     isDownloaderHost: false,
+                    readerInstalled: false,
+                    priceTrackerInstalled: false,
                     readerAppClipURL: "",
-                    downloaderAppClipURL: ""
+                    downloaderAppClipURL: "",
+                    priceTrackerAppStoreURL: ""
                 };
             });
     }

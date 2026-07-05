@@ -45,6 +45,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Move reader settings into the App Group so the share-extension reader
         // honors them (WPM, font, highlight color, …).
         ReaderSettings.migrateFromStandardIfNeeded()
+        // Mark this surface installed so any Safari extension host knows which
+        // sibling Luna apps its page buttons can deep-link into.
+        InstalledAppMarkers.recordCurrentApp()
         let account = EmailAccountStore.shared.account?.address ?? "none"
         DiagnosticLog.shared.record("email account: \(account)", category: "mail")
 

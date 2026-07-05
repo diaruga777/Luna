@@ -8,6 +8,8 @@
 	<string></string>
 	<key>LunaDownloaderAppClipURL</key>
 	<string></string>
+	<key>LunaPriceTrackerAppStoreURL</key>
+	<string></string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>

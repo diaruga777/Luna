@@ -25,10 +25,10 @@ public enum OnboardingFlow {
     }
 
     /// How many steps the flow shows on this OS — drives the per-step progress dots.
-    /// Email and notifications always; Safari + shortcut need iOS 27+; the
-    /// action-extension step is always last.
+    /// Email, notifications, Safari extension, and action extension always show;
+    /// only the Action Button shortcut setup is iOS 27+.
     private static var totalSteps: Int {
-        if #available(iOS 27.0, *) { return 5 } else { return 3 }
+        if #available(iOS 27.0, *) { return 5 } else { return 4 }
     }
 
     #if DEBUG
@@ -38,8 +38,8 @@ public enum OnboardingFlow {
         let nav = UINavigationController()
         var steps: [UIViewController] = [emailStep(nav: nav, onFinished: {})]
         steps.append(notificationsStep(nav: nav, onFinished: {}))
+        steps.append(safariStep(nav: nav, onFinished: {}))
         if #available(iOS 27.0, *) {
-            steps.append(safariStep(nav: nav, onFinished: {}))
             steps.append(shortcutStep(nav: nav, onFinished: {}))
         }
         steps.append(actionExtensionStep(onFinished: {}))
@@ -72,14 +72,8 @@ public enum OnboardingFlow {
     private static func notificationsStep(
         nav: UINavigationController, onFinished: @escaping () -> Void
     ) -> UIViewController {
-        // The Safari extension + Action Button save flow needs iOS 27+; on older
-        // versions, notifications is the last step.
         let proceed: () -> Void = { [weak nav] in
-            if #available(iOS 27.0, *) {
-                nav?.pushViewController(safariStep(nav: nav, onFinished: onFinished), animated: true)
-            } else {
-                nav?.pushViewController(actionExtensionStep(onFinished: onFinished), animated: true)
-            }
+            nav?.pushViewController(safariStep(nav: nav, onFinished: onFinished), animated: true)
         }
         return OnboardingStepViewController(
             symbol: "bell.badge",
@@ -107,7 +101,11 @@ public enum OnboardingFlow {
             animation: .settingsToggle,
             progress: .init(index: 2, total: totalSteps),
             onContinue: { [weak nav] in
-                nav?.pushViewController(shortcutStep(nav: nav, onFinished: onFinished), animated: true)
+                if #available(iOS 27.0, *) {
+                    nav?.pushViewController(shortcutStep(nav: nav, onFinished: onFinished), animated: true)
+                } else {
+                    nav?.pushViewController(actionExtensionStep(onFinished: onFinished), animated: true)
+                }
             })
     }
 

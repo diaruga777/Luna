@@ -26,7 +26,7 @@ static so `layer.render(in:)` snapshots are deterministic):
 - **`OnboardingDotMatrixProgressView`** — "step X of Y" as a dot row pinned above
   the scroll area: completed/current dots filled in the reading accent (current one
   pulses; frozen under Reduce Motion), upcoming dots dimmed. Step index/total is
-  threaded from `OnboardingFlow` (3 steps pre-iOS 27, 5 on iOS 27+).
+  threaded from `OnboardingFlow` (4 steps pre-iOS 27, 5 on iOS 27+).
 
 ## Dot Matrix pixel-wipe TRANSITIONS (the facade) — region-confined wipes
 

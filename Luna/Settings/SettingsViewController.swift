@@ -46,12 +46,8 @@ final class SettingsViewController: NavHeaderTableController {
             Category(title: "Email & Sending", symbol: "envelope") { EmailAndKindleSettingsScreen() },
             Category(title: "Music & Podcasts", symbol: "music.note") { MediaProviderSettingsScreen() },
             Category(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") { AutoDownloadSettingsScreen() },
+            Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
         ]
-        if #available(iOS 27.0, *) {
-            categories.append(Category(title: "Shortcut & Safari", symbol: "safari") {
-                ShortcutSettingsScreen()
-            })
-        }
         categories.append(contentsOf: [
             Category(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
             Category(title: "Experimental", symbol: "flask") { ExperimentalSettingsScreen() },
@@ -333,34 +329,35 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     private enum Section: Int, CaseIterable { case suggestionButton, shortcut }
     private enum Row: Int, CaseIterable { case install, openShortcuts, refreshStatus }
     private var safariStatusText = ""
+    private var visibleSections: [Section] {
+        if #available(iOS 27.0, *) { return Section.allCases }
+        return [.suggestionButton]
+    }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func viewDidLoad() {
-        if #unavailable(iOS 27.0) {
-            assertionFailure("ShortcutSettingsScreen must only be presented on iOS 27 or later.")
-        }
         headerTitle = "Shortcut & Safari"
         super.viewDidLoad()
         refreshSafariStatus()
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
+    override func numberOfSections(in tableView: UITableView) -> Int { visibleSections.count }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        switch Section(rawValue: section)! {
+        switch visibleSections[section] {
         case .suggestionButton: return 1
         case .shortcut: return Row.allCases.count
         }
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        Section(rawValue: section) == .suggestionButton ? "Read in Luna Button" : "Action Button Shortcut"
+        visibleSections[section] == .suggestionButton ? "Read in Luna Button" : "Action Button Shortcut"
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        switch Section(rawValue: section)! {
+        switch visibleSections[section] {
         case .suggestionButton:
             return "When browsing in Safari (with the Luna extension enabled), show a "
                 + "\"Read in Luna\" button to open the page in Luna — unlocking paywalled "
@@ -374,7 +371,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        if Section(rawValue: indexPath.section) == .suggestionButton {
+        if visibleSections[indexPath.section] == .suggestionButton {
             let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
             cell.selectionStyle = .none
             // A full-width segmented control (3 options don't fit beside a label).
@@ -421,7 +418,7 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard Section(rawValue: indexPath.section) == .shortcut else { return }
+        guard visibleSections[indexPath.section] == .shortcut else { return }
         switch Row(rawValue: indexPath.row)! {
         case .install:
             BundledShortcut.presentInstaller(

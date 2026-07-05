@@ -99,10 +99,8 @@ final class SettingsScreenTests: XCTestCase {
             MediaProviderSettingsScreen.self,
             AutoDownloadSettingsScreen.self,
         ]
-        if #available(iOS 27.0, *) {
-            expected.append(ShortcutSettingsScreen.self)
-        }
         expected.append(contentsOf: [
+            ShortcutSettingsScreen.self,
             AppearanceSettingsScreen.self,
             ExperimentalSettingsScreen.self,
             DiagnosticsViewController.self,

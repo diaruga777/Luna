@@ -25,8 +25,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         switch message?["type"] as? String {
         case "buttonMode", "buttonContext":
             // The app stores SafariSuggestionMode's rawValue here (default "all").
-            payload["mode"] = UserDefaults(suiteName: Self.appGroupID)?
-                .string(forKey: Self.suggestionModeKey) ?? "all"
+            payload["mode"] = Self.supportsInPageButton
+                ? (UserDefaults(suiteName: Self.appGroupID)?
+                    .string(forKey: Self.suggestionModeKey) ?? "all")
+                : "never"
             payload["isDownloaderHost"] = Self.isDownloaderHost
             payload["readerAppClipURL"] = Self.readerAppClipURL
             payload["downloaderAppClipURL"] = Self.downloaderAppClipURL
@@ -55,6 +57,10 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private static var isDownloaderHost: Bool {
         (Bundle.main.bundleIdentifier ?? "").hasSuffix(".downloader.safari")
+    }
+
+    private static var supportsInPageButton: Bool {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
     }
 
     private static var downloaderAppClipURL: String {

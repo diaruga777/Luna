@@ -4,9 +4,8 @@
 //
 
 import Foundation
-import os
-import Security
 import LunaAppConfig
+import LunaStorage
 
 /// The stored secret for an account: an app-specific password, or OAuth tokens.
 public enum MailCredential: Equatable {
@@ -21,7 +20,8 @@ public enum MailCredential: Equatable {
 /// the same account. The **secret** goes in the Keychain, keyed by kind.
 ///
 /// The account is created/used in the main app process, so the Keychain items
-/// need no shared access group (matching `KeychainSendCredentialsStore`).
+/// need no shared access group. The secrets are migratable and iCloud-Keychain
+/// synchronizable so device transfer/restore can preserve the connected account.
 public final class EmailAccountStore {
 
     public static let shared = EmailAccountStore()
@@ -73,18 +73,19 @@ public final class EmailAccountStore {
     /// Removes the account and its credential, then posts `accountChanged`.
     public func clear() {
         defaults.removeObject(forKey: accountKey)
-        writeSecret(nil, account: appPasswordAccount)
-        writeSecret(nil, account: oauthAccount)
+        CredentialKeychain.delete(service: service, account: appPasswordAccount)
+        CredentialKeychain.delete(service: service, account: oauthAccount)
         NotificationCenter.default.post(name: Self.accountChanged, object: nil)
     }
 
     // MARK: - Credential (Keychain)
 
     public var credential: MailCredential? {
-        if let password = readSecret(account: appPasswordAccount), !password.isEmpty {
+        if let password = CredentialKeychain.read(service: service, account: appPasswordAccount),
+           !password.isEmpty {
             return .appPassword(password)
         }
-        if let json = readSecret(account: oauthAccount),
+        if let json = CredentialKeychain.read(service: service, account: oauthAccount),
            let data = json.data(using: .utf8),
            let tokens = try? JSONDecoder().decode(OAuthTokens.self, from: data) {
             return .oauth(tokens)
@@ -95,49 +96,14 @@ public final class EmailAccountStore {
     private func setCredential(_ credential: MailCredential) {
         switch credential {
         case .appPassword(let password):
-            writeSecret(password, account: appPasswordAccount)
-            writeSecret(nil, account: oauthAccount)
+            CredentialKeychain.write(password, service: service, account: appPasswordAccount)
+            CredentialKeychain.delete(service: service, account: oauthAccount)
         case .oauth(let tokens):
             if let data = try? JSONEncoder().encode(tokens) {
-                writeSecret(String(decoding: data, as: UTF8.self), account: oauthAccount)
+                CredentialKeychain.write(
+                    String(decoding: data, as: UTF8.self), service: service, account: oauthAccount)
             }
-            writeSecret(nil, account: appPasswordAccount)
-        }
-    }
-
-    // MARK: - Keychain primitives
-
-    private func baseQuery(account: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-    }
-
-    private func readSecret(account: String) -> String? {
-        var query = baseQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(decoding: data, as: UTF8.self)
-    }
-
-    private func writeSecret(_ value: String?, account: String) {
-        let query = baseQuery(account: account)
-        SecItemDelete(query as CFDictionary)
-        guard let value, !value.isEmpty else { return }
-        var insert = query
-        insert[kSecValueData as String] = Data(value.utf8)
-        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        let status = SecItemAdd(insert as CFDictionary, nil)
-        if status != errSecSuccess {
-            // A silently dropped credential shows a "connected" account whose
-            // every send fails as not-configured — leave a trace.
-            Logger(subsystem: "luna", category: "keychain")
-                .error("SecItemAdd failed (\(status)) for \(account, privacy: .public)")
+            CredentialKeychain.delete(service: service, account: appPasswordAccount)
         }
     }
 }

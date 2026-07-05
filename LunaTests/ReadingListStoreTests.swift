@@ -6,6 +6,7 @@
 import LunaSend
 import LunaStorage
 import LunaModels
+import Security
 import XCTest
 @testable import Luna
 
@@ -35,6 +36,32 @@ final class ReadingListStoreTests: XCTestCase {
 
         store.delete(item)
         XCTAssertFalse(store.items().contains { $0.id == item.id })
+    }
+
+    func testReadingListFileIsBackupEligible() throws {
+        _ = store.add(urlString: "https://example.com/backup")
+        let fileURL = scratchDirectory.appendingPathComponent("readingList.json")
+        let values = try fileURL.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(values.isExcludedFromBackup, false)
+    }
+
+    func testPreloadDirectoryIsExcludedFromBackup() throws {
+        let preloads = PreloadStore(containerURL: scratchDirectory)
+        _ = preloads.record(
+            url: try XCTUnwrap(URL(string: "https://example.com/preload")),
+            rootID: UUID(),
+            kind: .unrepresentable
+        )
+        let directory = scratchDirectory.appendingPathComponent("Preloads", isDirectory: true)
+        let values = try directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
+        XCTAssertEqual(values.isExcludedFromBackup, true)
+    }
+
+    func testCredentialKeychainQueriesUseSynchronizableMigratableItems() {
+        let query = CredentialKeychain.baseQuery(
+            service: "service", account: "account", synchronizable: true)
+        XCTAssertEqual(query[kSecAttrSynchronizable as String] as? Bool, true)
+        XCTAssertEqual(CredentialKeychain.accessibleClass as String, kSecAttrAccessibleAfterFirstUnlock as String)
     }
 
     /// The in-memory cache is validated against the file's (mtime, size), not owned

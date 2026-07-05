@@ -24,7 +24,9 @@ Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product 
 ## "Read in Luna" / "Download in Luna" button
 
 The same extension also presents an **iOS 27+** page button: "Read in Luna" on article
-pages, or "Download in Luna" on recognized Downloader-platform pages.
+pages, or "Download in Luna" on recognized Downloader-platform pages. The native
+handler returns `mode: "never"` below iOS 27, and the app hides Settings → Shortcut &
+Safari below iOS 27, so unsupported devices do not see dead Action Button/Safari-button UX.
 
 `LunaSafari/Resources/content.js` is injected **programmatically** by `background.js`
 (`scripting.executeScript` on every `tabs.onUpdated`/`status:complete` http(s) page),
@@ -72,8 +74,8 @@ Downloader-platform flow:
    extensions do not show the button for platform pages.
 
 The setting lives in Settings → Shortcut & Safari ("Read in Luna Button" — a 3-segment
-control). `background.js` relays `buttonContext`/`buttonMode`; content scripts can't call
-`sendNativeMessage` directly.
+control) on iOS 27+. `background.js` relays `buttonContext`/`buttonMode`; content scripts
+can't call `sendNativeMessage` directly.
 
 ## Enabling (simulator/device)
 

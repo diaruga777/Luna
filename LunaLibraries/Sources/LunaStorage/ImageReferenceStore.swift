@@ -42,6 +42,7 @@ public final class ImageReferenceStore {
     private var articlesDirectory: URL {
         let dir = containerURL.appendingPathComponent("Articles", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        BackupPolicy.includeInBackups(dir)
         return dir
     }
 

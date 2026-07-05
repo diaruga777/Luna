@@ -129,7 +129,10 @@ the signed `Date` header (→ switch to a presigned URL if uploads 403).
   email account is connected.
 - `SendCredentialsStore.swift` — Keychain for the Boox token (`booxToken`;
   in-memory mock for tests). Kindle needs no secret here — it reuses the email
-  account's credential.
+  account's credential. Boox, email-account, and YouTube OAuth secrets go through
+  `CredentialKeychain`: `kSecAttrAccessibleAfterFirstUnlock` (migratable, not
+  `ThisDeviceOnly`) plus `kSecAttrSynchronizable=true`, so encrypted device restore
+  and iCloud Keychain can preserve them when the user's system settings allow it.
 
 ## Model & store
 

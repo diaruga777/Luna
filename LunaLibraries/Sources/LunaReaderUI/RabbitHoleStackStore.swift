@@ -37,6 +37,7 @@ public final class RabbitHoleStackStore {
     private var directory: URL {
         let dir = containerURL.appendingPathComponent("RabbitHole", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        BackupPolicy.includeInBackups(dir)
         return dir
     }
 
@@ -55,7 +56,9 @@ public final class RabbitHoleStackStore {
     public func save(_ stack: RabbitHoleStack, forRootID id: UUID) {
         guard stack.layers.count > 1 else { clear(forRootID: id); return }
         guard let data = try? JSONEncoder().encode(stack) else { return }
-        try? data.write(to: fileURL(forRootID: id), options: .atomic)
+        let url = fileURL(forRootID: id)
+        try? data.write(to: url, options: .atomic)
+        BackupPolicy.includeInBackups(url)
     }
 
     public func clear(forRootID id: UUID) {

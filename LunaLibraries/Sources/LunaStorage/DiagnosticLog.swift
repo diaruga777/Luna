@@ -73,6 +73,7 @@ public final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
             .appendingPathComponent("clip-diagnostics.txt")
         try? FileManager.default.removeItem(at: destination)
         try (header() + body).write(to: destination, atomically: true, encoding: .utf8)
+        BackupPolicy.excludeFromBackups(destination)
         return destination
     }
 
@@ -103,6 +104,7 @@ public final class DiagnosticLog: DiagnosticLogging, @unchecked Sendable {
             // Drop the first (likely partial) line so the file starts cleanly.
             let trimmed = keep.drop { $0 != "\n" }.dropFirst()
             try? ("…(trimmed)\n" + trimmed).write(to: fileURL, atomically: true, encoding: .utf8)
+            BackupPolicy.excludeFromBackups(fileURL)
         }
     }
 

@@ -67,6 +67,7 @@ public struct ReplayDiskStore: ReplayStoring {
         Self.lock.lock()
         defer { Self.lock.unlock() }
         try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        BackupPolicy.excludeFromBackups(directory)
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

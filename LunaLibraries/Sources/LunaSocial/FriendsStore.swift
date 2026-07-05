@@ -81,7 +81,9 @@ public final class FriendsStore {
             ?? fileManager.containerURL(
                 forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
             ?? fileManager.temporaryDirectory
-        return container.appendingPathComponent("friends.json")
+        let url = container.appendingPathComponent("friends.json")
+        BackupPolicy.includeInBackups(url)
+        return url
     }
 
     /// All friends, newest first.
@@ -158,7 +160,9 @@ public final class FriendsStore {
 
     private func save(_ friends: [Friend]) {
         if let data = try? JSONEncoder().encode(friends) {
-            try? data.write(to: fileURL, options: .atomic)
+            let url = fileURL
+            try? data.write(to: url, options: .atomic)
+            BackupPolicy.includeInBackups(url)
         }
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .friendsListChanged, object: nil)

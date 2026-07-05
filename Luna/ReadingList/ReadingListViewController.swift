@@ -225,7 +225,7 @@ final class ReadingListViewController: UITableViewController {
         tableView.dropDelegate = self
 
         NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: .readingListChanged, object: nil)
+            self, selector: #selector(scheduleReload), name: .readingListChanged, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(checkPasteboard),
             name: UIApplication.didBecomeActiveNotification, object: nil)
@@ -427,16 +427,35 @@ final class ReadingListViewController: UITableViewController {
         }
     }
 
+    /// `.readingListChanged` fires once per store mutation — ingest of one item can
+    /// post several in a row. Dedupe a notification burst to a single `reload()` per
+    /// main-runloop pass instead of reloading (and re-reading the store) once per
+    /// notification.
+    private var reloadPending = false
+
+    @objc private func scheduleReload() {
+        guard !reloadPending else { return }
+        reloadPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.reloadPending = false
+            self.reload()
+        }
+    }
+
     @objc private func reload() {
         // A reorder we just persisted fires this notification; ignore it so the
         // drop animation isn't interrupted by a full reloadData.
         if isApplyingReorder || isAnimatingRowChange { return }
 
-        updateFilterVisibility()
-        updateCatchUpButton()
-        groups = buildGroups()
+        // One store read for the whole reload, passed through to every helper below
+        // instead of each one re-reading the store itself.
+        let items = store.items()
+        updateFilterVisibility(items: items)
+        updateCatchUpButton(items: items)
+        groups = buildGroups(items: items)
         tableView.reloadData()
-        presentPendingSendFailureNoticeIfNeeded()
+        presentPendingSendFailureNoticeIfNeeded(items: items)
     }
 
     /// Builds the non-empty grouped model (sections × items, in display order) for the
@@ -445,7 +464,10 @@ final class ReadingListViewController: UITableViewController {
     /// actually change (see `filterChanged`). May clear a now-saved pasteboard candidate
     /// as a side effect (mirrors the old `reload`).
     private func buildGroups() -> [(section: Section, items: [ReadingListItem])] {
-        let unfiltered = store.items()
+        buildGroups(items: store.items())
+    }
+
+    private func buildGroups(items unfiltered: [ReadingListItem]) -> [(section: Section, items: [ReadingListItem])] {
         // A concrete surface restricts the whole list to its single category (other
         // categories live in the same store but surface in their own app); the combined
         // list (surface == nil) honours the user-selected filter segment.
@@ -499,7 +521,10 @@ final class ReadingListViewController: UITableViewController {
     /// whichever of Articles / Media / Price apply to the present list. The Price
     /// segment is only included when a non-archived tracker exists.
     private func visibleFilters() -> [ListFilter] {
-        let items = store.items()
+        visibleFilters(items: store.items())
+    }
+
+    private func visibleFilters(items: [ReadingListItem]) -> [ListFilter] {
         var filters: [ListFilter] = [.all, .articles]
         if ReadingListSectioning.hasMediaAndLinks(items: items) {
             filters.append(.mediaAndLinks)
@@ -697,10 +722,14 @@ final class ReadingListViewController: UITableViewController {
     /// kinds (reader / media / price tracker); otherwise it's meaningless. Rebuilds
     /// the segments to match the kinds present and resets a now-invalid selection.
     private func updateFilterVisibility() {
+        updateFilterVisibility(items: store.items())
+    }
+
+    private func updateFilterVisibility(items: [ReadingListItem]) {
         // A concrete surface is single-category, so the filter segments are meaningless —
         // never show them. Only the combined list (surface == nil) offers the filter.
         let shouldShow = surface == nil
-            && ReadingListSectioning.shouldShowFilter(items: store.items())
+            && ReadingListSectioning.shouldShowFilter(items: items)
         guard shouldShow else {
             if filter != .all { filter = .all }
             if filterRowVisible {
@@ -712,7 +741,7 @@ final class ReadingListViewController: UITableViewController {
             return
         }
 
-        let filters = visibleFilters()
+        let filters = visibleFilters(items: items)
         // A selected filter no longer offered (its kind vanished) resets to All.
         if !filters.contains(filter) { filter = .all }
 
@@ -806,9 +835,13 @@ final class ReadingListViewController: UITableViewController {
     /// there's an unarchived LOCKED (paywalled, awaiting unlock) save — regardless of
     /// count. Hides the whole button in edit mode.
     private func updateCatchUpButton() {
+        updateCatchUpButton(items: store.items())
+    }
+
+    private func updateCatchUpButton(items: [ReadingListItem]) {
         // Badge while there's catch-up worth doing, or until the email account is set up.
         let needsEmailSetup = !EmailAccountStore.shared.isConfigured
-        catchUpBadge.isHidden = !(ReadingListSectioning.shouldShowCatchUpDot(items: store.items())
+        catchUpBadge.isHidden = !(ReadingListSectioning.shouldShowCatchUpDot(items: items)
             || needsEmailSetup)
         catchUpButton.isHidden = isEditing
     }
@@ -1107,8 +1140,12 @@ final class ReadingListViewController: UITableViewController {
             }
         } completion: { [weak self] _ in
             self?.isAnimatingRowChange = false
-            // A delete can change whether the Articles / Media & Links filter applies.
+            // A delete can change whether the Articles / Media & Links filter applies,
+            // and whether the catch-up badge should still show (both notification-driven
+            // updates that a swallowed `.readingListChanged` — suppressed above while
+            // isAnimatingRowChange was true — would otherwise have applied).
             self?.updateFilterVisibility()
+            self?.updateCatchUpButton()
         }
     }
 
@@ -1859,8 +1896,12 @@ final class ReadingListViewController: UITableViewController {
     }
 
     private func presentPendingSendFailureNoticeIfNeeded() {
+        presentPendingSendFailureNoticeIfNeeded(items: store.items())
+    }
+
+    private func presentPendingSendFailureNoticeIfNeeded(items: [ReadingListItem]) {
         guard viewIfLoaded?.window != nil, !isPresentingSendFailureNotice else { return }
-        guard store.items().contains(where: {
+        guard items.contains(where: {
             $0.pendingSendFailureNotices.contains(where: { $0.value })
         }) else { return }
 

@@ -130,9 +130,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         route(url)
     }
 
-    /// Dispatches an incoming URL: a `lunareader://read` link opens the reader.
+    /// Dispatches an incoming URL: a `<luna scheme>://read` link opens the reader.
+    /// Each app registers only its own scheme, but parsing accepts any of them.
     private func route(_ url: URL) {
-        if url.scheme == "lunareader", url.host == "settings", url.path == "/photos" {
+        if let scheme = url.scheme, LunaDeepLink.allSchemes.contains(scheme),
+           url.host == "settings", url.path == "/photos" {
             if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(settingsURL)
             }

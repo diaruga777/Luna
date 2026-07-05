@@ -136,7 +136,7 @@ Fixed behavior: the **share extension** (`com.apple.share-services`) always save
 
 All three reader modes, audio (foreground only), and the inline split-web link viewer work; a Done button exits the extension. Resume starts from the first fully-visible word (`ScrollReaderViewController.firstFullyVisibleWordIndex`).
 
-**Deep links**: `lunareader://read?url=…` (`LunaDeepLink`) opens the app and loads that article in the reader (`SceneDelegate.openReader`). The in-app "Share Link…" shares this link. (A custom scheme opens the app only when installed; App-Store fallback would need a Universal Link.)
+**Deep links**: `lunareader://read?url=…` (`LunaDeepLink`) opens the app and loads that article in the reader (`SceneDelegate.openReader`). Schemes are per-app now — `lunareader://` (Reader), `lunadownloader://` (Downloader), `lunapricetracker://` (Price Tracker), via the per-target `LUNA_URL_SCHEME` build setting — and parsing accepts any of the three. The in-app "Share Link…" shares this link. (A custom scheme opens the app only when installed; App-Store fallback would need a Universal Link.)
 
 ## Inline images
 

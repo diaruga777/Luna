@@ -16,12 +16,15 @@
 	<string>Luna saves photos, GIFs, and videos you download from social posts to your photo library.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
+		<!-- $(LUNA_URL_SCHEME) is set per app target (lunareader / lunadownloader /
+		     lunapricetracker) so each app registers ONLY its own scheme even though
+		     all three share this Info.plist. -->
 		<dict>
 			<key>CFBundleURLName</key>
 			<string>com.hsanabria.luna.friend</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>lunareader</string>
+				<string>$(LUNA_URL_SCHEME)</string>
 			</array>
 		</dict>
 		<dict>
@@ -29,7 +32,7 @@
 			<string>com.hsanabria.luna.read</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>lunareader</string>
+				<string>$(LUNA_URL_SCHEME)</string>
 			</array>
 		</dict>
 	</array>

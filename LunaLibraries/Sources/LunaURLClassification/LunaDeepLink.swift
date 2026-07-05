@@ -5,17 +5,50 @@
 
 import Foundation
 
-/// The `lunareader://` app-link scheme for opening a shared article straight
-/// into the reader. Shape: `lunareader://read?url=<percent-encoded article URL>`.
+/// The per-app `luna*://` link schemes for opening a shared link straight into
+/// one specific Luna app. Shape: `<scheme>://read?url=<percent-encoded URL>`.
+///
+/// Each app registers ONLY its own scheme (`$(LUNA_URL_SCHEME)` in the shared
+/// Info.plist, set per app target), so a link targets exactly one app:
+/// - `lunareader://` — Luna Reader
+/// - `lunadownloader://` — Luna Downloader
+/// - `lunapricetracker://` — Luna Price Tracker
+///
+/// Parsing accepts ANY of the three: the OS only delivers schemes the running
+/// app registered, and a link saved through any app lands in the shared store
+/// on its proper surface regardless.
 ///
 /// NOTE: a custom scheme opens the app when it's installed, but cannot itself
 /// fall back to the App Store when it isn't (only a Universal Link can). See
 /// the share flow + docs for that limitation.
 public enum LunaDeepLink {
-    public static let scheme = "lunareader"
+    /// Luna Reader's scheme — also the historical scheme every app registered
+    /// before the split, so older links keep opening Reader.
+    public static let readerScheme = "lunareader"
+    public static let downloaderScheme = "lunadownloader"
+    public static let priceTrackerScheme = "lunapricetracker"
+    public static let allSchemes = [readerScheme, downloaderScheme, priceTrackerScheme]
 
-    /// A `lunareader://read?url=…` link wrapping an article URL.
-    public static func readLink(forArticleURL articleURL: String) -> URL? {
+    /// The scheme THIS bundle registers (its Info.plist `CFBundleURLTypes`),
+    /// falling back to Reader's. Lets shared library code build links that
+    /// reopen the app it is running in (e.g. a Live Activity action URL).
+    public static var ownScheme: String {
+        let urlTypes = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+        for urlType in urlTypes {
+            if let scheme = (urlType["CFBundleURLSchemes"] as? [String])?.first,
+               !scheme.isEmpty {
+                return scheme
+            }
+        }
+        return readerScheme
+    }
+
+    /// A `<scheme>://read?url=…` link wrapping a source URL. Defaults to the
+    /// Reader app; pass another app's scheme to target it instead.
+    public static func readLink(
+        forArticleURL articleURL: String, scheme: String = readerScheme
+    ) -> URL? {
         var components = URLComponents()
         components.scheme = scheme
         components.host = "read"
@@ -23,10 +56,11 @@ public enum LunaDeepLink {
         return components.url
     }
 
-    /// Extracts the wrapped article URL from a `lunareader://read?url=…` link,
-    /// or nil if `url` isn't one.
+    /// Extracts the wrapped source URL from a `<any Luna scheme>://read?url=…`
+    /// link, or nil if `url` isn't one.
     public static func articleURL(from url: URL) -> String? {
-        guard url.scheme == scheme, url.host == "read" else { return nil }
+        guard let scheme = url.scheme, allSchemes.contains(scheme),
+              url.host == "read" else { return nil }
         return URLComponents(url: url, resolvingAgainstBaseURL: false)?
             .queryItems?.first(where: { $0.name == "url" })?.value
     }

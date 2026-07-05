@@ -655,7 +655,10 @@ private extension LiveMediaDownloadManager {
             mediaKind: .init(rawJobValue: job.mediaKind),
             message: message,
             thumbnailFileName: job.thumbnailFileName,
-            actionURLString: job.errorKind == .photosPermission ? "lunareader://settings/photos" : nil,
+            // Reopen the app this download is running in — each app registers
+            // only its own scheme now, so this can't hardcode Reader's.
+            actionURLString: job.errorKind == .photosPermission
+                ? "\(LunaDeepLink.ownScheme)://settings/photos" : nil,
             suspendDeadline: job.suspendDeadline
         )
     }

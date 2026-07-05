@@ -28,6 +28,20 @@ static so `layer.render(in:)` snapshots are deterministic):
   pulses; frozen under Reduce Motion), upcoming dots dimmed. Step index/total is
   threaded from `OnboardingFlow` (4 steps pre-iOS 27, 5 on iOS 27+).
 
+## Moon-horizon progress bar (`MoonHorizonProgressBar` / `MoonHorizonProgressView`)
+
+`LunaLibraries/Sources/LunaDesignSystem/MoonHorizonProgress.swift` is the shared
+determinate progress treatment: a full-width, very slightly curved lunar horizon.
+Sunlight creeps along it left→right — a bright sun point marks the head, a thin warm
+line of illumination trails it, the horizon ahead stays dark (a barely-there line).
+`MoonHorizonStyle` holds the shared quad-Bézier geometry + dynamic palette (pale gold
+on dark, deeper amber on light). Two renderers over the same geometry:
+`MoonHorizonProgressBar` (UIKit, CAShapeLayers, `setProgress(_:animated:)`) and
+`MoonHorizonProgressView` (SwiftUI, plain `Shape`s so WidgetKit renders it). Used by
+every download progress bar: the Downloader Live Activity (lock screen + Dynamic
+Island bottom region), the action extension's saved-media screen, the reading list's
+bottom status pill, and the Downloader App Clip.
+
 ## Dot Matrix pixel-wipe TRANSITIONS (the facade) — region-confined wipes
 
 The **`LunaTransitions`** library wraps the

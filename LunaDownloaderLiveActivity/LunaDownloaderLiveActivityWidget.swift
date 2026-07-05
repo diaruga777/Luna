@@ -5,6 +5,7 @@
 
 import ActivityKit
 import AppIntents
+import LunaDesignSystem
 import LunaMediaDownload
 import SwiftUI
 import UIKit
@@ -70,18 +71,22 @@ struct LunaDownloaderLiveActivityWidget: Widget {
                                 .font(.caption)
                                 .foregroundStyle(.red)
                                 .lineLimit(2)
-                        } else {
-                            ProgressView(value: context.state.progress)
                         }
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack(spacing: 10) {
-                        Text(context.state.message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: 0)
-                        ActivityControlButton(context: context)
+                    VStack(spacing: 4) {
+                        if context.state.phase != .failed {
+                            MoonHorizonProgressView(progress: context.state.progress)
+                                .frame(height: 20)
+                        }
+                        HStack(spacing: 10) {
+                            Text(context.state.message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer(minLength: 0)
+                            ActivityControlButton(context: context)
+                        }
                     }
                 }
             } compactLeading: {
@@ -108,32 +113,37 @@ private struct DownloadActivityView: View {
     let context: ActivityViewContext<LiveMediaDownloadAttributes>
 
     var body: some View {
-        HStack(spacing: 12) {
-            ThumbnailView(state: context.state)
-                .frame(width: 64, height: 64)
+        VStack(spacing: 4) {
+            HStack(spacing: 12) {
+                ThumbnailView(state: context.state)
+                    .frame(width: 64, height: 64)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(context.attributes.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(context.state.message)
-                    .font(.subheadline)
-                    .foregroundStyle(context.state.phase == .failed ? .red : .secondary)
-                    .lineLimit(2)
-                if context.state.phase == .failed {
-                    if let actionURL = context.state.actionURLString.flatMap(URL.init(string:)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(context.attributes.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(context.state.message)
+                        .font(.subheadline)
+                        .foregroundStyle(context.state.phase == .failed ? .red : .secondary)
+                        .lineLimit(2)
+                    if context.state.phase == .failed,
+                       let actionURL = context.state.actionURLString.flatMap(URL.init(string:)) {
                         Link(destination: actionURL) {
                             Label("Open Photos Settings", systemImage: "gearshape")
                                 .font(.caption.weight(.semibold))
                         }
                     }
-                } else {
-                    HStack(spacing: 10) {
-                        ProgressView(value: context.state.progress)
-                            .tint(.accentColor)
-                        ActivityControlButton(context: context)
-                    }
                 }
+
+                if context.state.phase != .failed {
+                    Spacer(minLength: 0)
+                    ActivityControlButton(context: context)
+                }
+            }
+            // The moon horizon spans the full width of the activity, below the row.
+            if context.state.phase != .failed {
+                MoonHorizonProgressView(progress: context.state.progress)
+                    .frame(height: 24)
             }
         }
         .padding(.vertical, 4)

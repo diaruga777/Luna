@@ -1051,7 +1051,9 @@ final class ReadingListViewController: UITableViewController {
     @objc private func deleteSelectedTapped() {
         guard let selected = tableView.indexPathsForSelectedRows, !selected.isEmpty else { return }
         let items = selected.map { item(at: $0) }   // capture before any mutation
-        for item in items { store.delete(item) }     // each posts .readingListChanged → reload
+        // One coordinated store cycle + one notification for the whole batch,
+        // instead of N per-item deletes.
+        store.deleteItems(ids: Set(items.map(\.id)))
         setEditing(false, animated: true)
     }
 

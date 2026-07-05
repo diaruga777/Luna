@@ -90,7 +90,7 @@ final class SettingsViewController: NavHeaderTableController {
         if indexPath.section == 0 {
             navigationController?.pushViewController(categories[indexPath.row].make(), animated: true)
         } else {
-            let onboarding = OnboardingFlow.makeSetupOnly { [weak self] in
+            let onboarding = OnboardingFlow.make { [weak self] in
                 guard let self else { return }
                 DotMatrixModal.dismiss(self)
             }

@@ -189,7 +189,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func uiTestRootViewController() -> UIViewController? {
         #if DEBUG
-        if UITestSeeder.requestedOnboardingStep != nil {
+        if UITestSeeder.requestsOnboarding {
             return OnboardingFlow.make { [weak self] in self?.showMainUI() }
         }
         if let screen = UITestSeeder.requestedScreen {

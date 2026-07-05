@@ -9,7 +9,8 @@ import UIKit
 
 /// Launch-argument-driven, DEBUG-only seeding for UI tests and the screenshot
 /// harness. When the app is launched with `-uiTestState <name>` (and, optionally,
-/// `-uiTestOnboardingStep <index>`), this wipes the App Group reading-list store and
+/// `-uiTestOnboardingStep` to open the onboarding flow), this wipes the App Group
+/// reading-list store and
 /// seeds it with the named `UITestState` fixture, then forces deterministic
 /// conditions: animations off, no first-run prompts. Production code paths are
 /// unchanged when the argument is absent — `isActive` is false and every method
@@ -61,15 +62,16 @@ enum UITestSeeder {
     }
     #endif
 
-    /// The onboarding step the harness wants to land on, if requested. When present,
-    /// the app should show onboarding (regardless of stored identity) starting at
-    /// this step index; absent means show the main reading list.
-    static var requestedOnboardingStep: Int? {
+    /// Whether the harness asked for the onboarding flow. When true, the app shows
+    /// onboarding from its first step (regardless of stored identity); false means
+    /// show the main reading list. (The launch arg still takes a value for
+    /// compatibility with existing harness invocations, but only its presence
+    /// matters — onboarding always starts at the first step.)
+    static var requestsOnboarding: Bool {
         #if DEBUG
-        guard let raw = argumentValue(for: onboardingStepArg) else { return nil }
-        return Int(raw)
+        return argumentValue(for: onboardingStepArg) != nil
         #else
-        return nil
+        return false
         #endif
     }
 

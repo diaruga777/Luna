@@ -1298,11 +1298,13 @@ final class ReadingListViewController: UITableViewController {
                 attributes: [.foregroundColor: UIColor.systemRed]))
         }
 
+        // `.art(path:)` decodes downsampled off the main thread (with an
+        // NSCache-backed synchronous path on a re-seen row) instead of the
+        // full-size, main-thread `Data(contentsOf:)` + `UIImage(data:)` decode
+        // this used to do per cell.
         let thumbnail: ReadingListItemCell.Thumbnail
-        if let fileName = tracker.imageFileName,
-           let data = try? Data(contentsOf: store.articlesDirectory.appendingPathComponent(fileName)),
-           let image = UIImage(data: data) {
-            thumbnail = .image(image)
+        if let fileName = tracker.imageFileName {
+            thumbnail = .art(path: store.articlesDirectory.appendingPathComponent(fileName).path)
         } else {
             thumbnail = .logo(assetName: nil, glyph: alerting ? "tag.fill" : "tag")
         }

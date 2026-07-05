@@ -213,14 +213,16 @@ public final class ReadingListStore {
         }
     }
 
-    /// Persists the scroll reader's resume position.
+    /// Persists a reader's resume position on exit.
     /// One coordinated write for everything a reader persists on close — scroll
-    /// offset, reading progress (monotonic), spoken word — instead of several
-    /// back-to-back whole-list read-modify-write cycles on the main thread. nil
-    /// parameters leave their field untouched.
+    /// offset, reading progress (monotonic), spoken word, RSVP word index —
+    /// instead of several back-to-back whole-list read-modify-write cycles on the
+    /// main thread. nil parameters leave their field untouched; `lastWordIndex`
+    /// lets the RSVP reader batch its exit save the same way the scroll reader
+    /// does (`setLastWordIndex` remains for callers that persist it alone).
     public func saveReaderExitPosition(
         scrollOffset: Double? = nil, readingProgress: Double? = nil,
-        lastSpokenWordIndex: Int? = nil,
+        lastSpokenWordIndex: Int? = nil, lastWordIndex: Int? = nil,
         for itemID: UUID
     ) {
         coordinatedUpdate { all in
@@ -239,6 +241,10 @@ public final class ReadingListStore {
             }
             if let lastSpokenWordIndex, all[index].lastSpokenWordIndex != lastSpokenWordIndex {
                 all[index].lastSpokenWordIndex = lastSpokenWordIndex
+                changed = true
+            }
+            if let lastWordIndex, all[index].lastWordIndex != lastWordIndex {
+                all[index].lastWordIndex = lastWordIndex
                 changed = true
             }
             return changed

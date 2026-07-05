@@ -218,6 +218,39 @@ final class ReadingListStoreTests: XCTestCase {
             Date(timeIntervalSinceReferenceDate: 700000500))
     }
 
+    /// `saveReaderExitPosition`'s `lastWordIndex` lets the RSVP reader persist word
+    /// index + reading progress in one coordinated cycle instead of two separate
+    /// store calls.
+    func testSaveReaderExitPositionPersistsLastWordIndexInOneBatch() {
+        let item = store.add(urlString: "https://example.com/rsvp")
+
+        store.saveReaderExitPosition(readingProgress: 0.5, lastWordIndex: 120, for: item.id)
+
+        let fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.lastWordIndex, 120)
+        XCTAssertEqual(fresh?.readingProgress, 0.5)
+    }
+
+    /// Same skip-if-unchanged semantics as the other targeted setters: calling
+    /// again with identical values must not write or notify.
+    func testSaveReaderExitPositionSkipsWriteWhenUnchanged() {
+        let item = store.add(urlString: "https://example.com/rsvp-unchanged")
+
+        // Drain the real (first-save) notification before watching for the
+        // no-op's absence, so it can't be mistaken for one from the no-op below.
+        let setupPosted = expectation(forNotification: .readingListChanged, object: nil) { _ in true }
+        store.saveReaderExitPosition(readingProgress: 0.4, lastWordIndex: 80, for: item.id)
+        wait(for: [setupPosted], timeout: 2.0)
+
+        let notPosted = expectation(forNotification: .readingListChanged, object: nil) { _ in true }
+        notPosted.isInverted = true
+
+        // Same reading progress (not an increase) and same word index — a no-op.
+        store.saveReaderExitPosition(readingProgress: 0.4, lastWordIndex: 80, for: item.id)
+
+        wait(for: [notPosted], timeout: 0.5)
+    }
+
     func testSaveAndLoadContentRoundTrip() {
         let item = store.add(urlString: "https://example.com/content")
         let content = ArticleContent(

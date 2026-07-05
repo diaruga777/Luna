@@ -1,5 +1,15 @@
 # Luna performance & bug review — implementation plan (2026-07-05)
 
+> **STATUS: COMPLETE.** All items landed on `main` as one commit per item:
+> item 1 `e6d2f17` (finish-detection, pre-existing work verified by review),
+> item 2 `7f824d6` (store cache), item 3 `0de4a5c` (skip unchanged writes),
+> item 4 `0c617fe` (batched exit-write API), item 5 `61a97c6` (RSVP scrub),
+> item 6 `177b180` (async thumbnails; shared `ImageDownsampling` helper in
+> LunaDesignSystem), item 7 `2a090ae` (reload coalescing + single store read),
+> item 8 `f601c5d` (batch deletes), items 9+10 `65ad880`.
+> Full `LunaTests` suite green after the batch: 929 tests, 2 intentional
+> skips, 0 failures (iPhone 17 / iOS 26.2 simulator).
+
 Reviewed by: Fable (full manual pass over the launch path, main screen, store,
 readers, catch-up, transitions, ingest, search; leak sweeps over timers,
 observers, script handlers, closures). This plan is the implementation contract

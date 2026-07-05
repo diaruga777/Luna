@@ -458,6 +458,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         UIView.performWithoutAnimation {
             textView.attributedText = full.text
             textView.layoutManager.ensureLayout(for: textView.textContainer)
+            textView.layoutIfNeeded()
             // The prefix is a strict prefix, so the leading layout is identical and the
             // captured offset still points at the same line — restore it directly.
             // (Clamp so it can't exceed the — now larger — scrollable range.)
@@ -487,6 +488,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         attachShareFooterIfNeeded()
         layoutShareView()
         fetchMissingImagesIfNeeded()
+        checkFinishedReading()
+        updateShareFooterVisibility()
     }
 
     /// Installs the read-aloud resume highlight, which needs the FULL word map (a
@@ -538,7 +541,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             self.textView.attributedText = self.rendered.text
             self.textView.setContentOffset(offset, animated: false)
             self.textView.layoutManager.ensureLayout(for: self.textView.textContainer)
+            self.textView.layoutIfNeeded()
             self.layoutShareView()
+            self.checkFinishedReading()
+            self.updateShareFooterVisibility()
             SharedDiagnosticLog.record("reader: refreshed inline image attachments", category: "images")
         }
     }

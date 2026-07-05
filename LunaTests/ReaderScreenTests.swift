@@ -140,6 +140,52 @@ final class ReaderScreenTests: XCTestCase {
         _ = window
     }
 
+    func testScrollReaderFinishesWhenScrolledToEnd() {
+        var didFinish = false
+        let reader = ScrollReaderViewController(item: item, content: longScrollArticleContent())
+        reader.onFinishedReading = { didFinish = true }
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        if !reader.didLoadFullContentForTesting {
+            reader.prepareFullContent()
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while !reader.didLoadFullContentForTesting, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertTrue(reader.didLoadFullContentForTesting)
+
+        guard let textView = findTextView(in: reader.view) else {
+            XCTFail("Scroll reader should contain its text view")
+            return
+        }
+        let maxOffset = max(
+            -textView.adjustedContentInset.top,
+            textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        textView.contentOffset.y = maxOffset
+        reader.scrollViewDidScroll(textView)
+
+        XCTAssertTrue(didFinish, "Scrolling to the full article end should mark the article read")
+    }
+
+    func testRSVPSkipToEndFinishesReading() {
+        var didFinish = false
+        let reader = RSVPViewController(item: item, content: shortArticleContent())
+        reader.onFinishedReading = { didFinish = true }
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        let skipForward = findControl(in: reader.view, accessibilityLabel: "Skip forward 25 words")
+        XCTAssertNotNil(skipForward)
+        skipForward?.sendActions(for: .touchUpInside)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        XCTAssertTrue(didFinish, "Skipping onto the final RSVP word should mark the article read")
+    }
+
     // MARK: - Helpers
 
     private func makeReader(forceMode: ReadingListItem.ReaderMode) -> ReaderViewController {
@@ -156,5 +202,40 @@ final class ReaderScreenTests: XCTestCase {
             if let found = findSegmentedControl(in: subview) { return found }
         }
         return nil
+    }
+
+    private func findControl(in view: UIView, accessibilityLabel: String) -> UIControl? {
+        if let control = view as? UIControl, control.accessibilityLabel == accessibilityLabel {
+            return control
+        }
+        for subview in view.subviews {
+            if let found = findControl(in: subview, accessibilityLabel: accessibilityLabel) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private func shortArticleContent() -> ArticleContent {
+        ArticleContent(title: "Short RSVP Fixture", blocks: [
+            .init(kind: .paragraph, text: "one two three four five six seven eight nine ten", links: []),
+        ])
+    }
+
+    private func findTextView(in view: UIView) -> UITextView? {
+        if let textView = view as? UITextView { return textView }
+        for subview in view.subviews {
+            if let found = findTextView(in: subview) { return found }
+        }
+        return nil
+    }
+
+    private func longScrollArticleContent() -> ArticleContent {
+        let sentence = "This paragraph is long enough to exceed the progressive prefix and make the scroll reader genuinely scroll. "
+        return ArticleContent(title: "Medium Scroll Fixture", blocks: [
+            .init(kind: .paragraph, text: String(repeating: sentence, count: 20), links: []),
+            .init(kind: .paragraph, text: String(repeating: sentence, count: 20), links: []),
+            .init(kind: .paragraph, text: String(repeating: sentence, count: 20), links: []),
+        ])
     }
 }

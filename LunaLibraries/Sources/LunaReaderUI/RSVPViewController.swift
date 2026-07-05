@@ -94,6 +94,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// Revealed (above the controls) when the reader reaches the end.
     private lazy var shareView = makeShareView()
     private var didRevealShare = false
+    private var didFinishReading = false
     private let statusLabel = UILabel()
     private let wpmDownButton = UIButton(type: .system)
     private let wpmUpButton = UIButton(type: .system)
@@ -189,6 +190,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         self.currentChunkIndex = 0
         self.isPlaying = false
         self.didRevealShare = false
+        self.didFinishReading = false
 
         currentIndex = resolveResumeFrame(carriedOver: resumeWordIndex)
         if displayMode == .phrases { currentChunkIndex = chunkIndex(forWord: currentIndex) }
@@ -207,6 +209,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         applyDisplayMode()
         refreshDisplay()
         updateStatus()
+        finishIfAtEnd()
         view.setNeedsLayout()
     }
 
@@ -268,6 +271,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         if displayMode == .phrases { currentChunkIndex = chunkIndex(forWord: currentIndex) }
         refreshDisplay()
         updateStatus()
+        finishIfAtEnd()
     }
 
     public override func viewDidLayoutSubviews() {
@@ -896,6 +900,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     /// Common end-of-article handling for both sub-modes.
     private func finish() {
+        guard !didFinishReading else { return }
+        didFinishReading = true
         pause()
         revealShareView()
         onFinishedReading?()
@@ -962,6 +968,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         refreshDisplay()
         scrubber.value = Float(currentIndex)
         updateStatus()
+        finishIfAtEnd()
     }
 
     @objc private func wpmDown() { adjustWPM(by: -25) }
@@ -987,6 +994,18 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             store.setReadingProgress(
                 Double(currentIndex) / Double(engine.words.count - 1), for: item.id)
         }
+    }
+
+    private func finishIfAtEnd() {
+        guard !engine.words.isEmpty else { return }
+        let reachedEnd: Bool
+        if displayMode == .phrases, !chunks.isEmpty {
+            reachedEnd = currentChunkIndex >= chunks.count - 1
+        } else {
+            reachedEnd = currentIndex >= engine.words.count - 1
+        }
+        guard reachedEnd else { return }
+        finish()
     }
 
     // MARK: - End-of-article share

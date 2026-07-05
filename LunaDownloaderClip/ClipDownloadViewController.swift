@@ -3,6 +3,7 @@
 //  LunaDownloaderClip
 //
 
+import LunaDesignSystem
 import LunaMediaDownload
 import UIKit
 
@@ -22,7 +23,7 @@ final class ClipDownloadViewController: UIViewController {
 
     private let titleLabel = UILabel()
     private let detailLabel = UILabel()
-    private let progressView = UIProgressView(progressViewStyle: .default)
+    private let progressView = MoonHorizonProgressBar()
     private let actionButton = UIButton(type: .system)
     private let retryButton = UIButton(type: .system)
     private var lastSourceURL: URL?
@@ -53,7 +54,7 @@ final class ClipDownloadViewController: UIViewController {
     private func startDownload(_ sourceURL: URL) {
         task?.cancel()
         lastSourceURL = sourceURL
-        progressView.progress = 0
+        progressView.setProgress(0, animated: false)
         update(.downloading(sourceURL))
 
         task = Task { [service] in
@@ -87,8 +88,6 @@ final class ClipDownloadViewController: UIViewController {
         detailLabel.adjustsFontForContentSizeCategory = true
         detailLabel.textColor = .secondaryLabel
         detailLabel.numberOfLines = 0
-
-        progressView.observedProgress = nil
 
         var actionConfiguration = UIButton.Configuration.filled()
         actionConfiguration.image = UIImage(systemName: "square.and.arrow.up")

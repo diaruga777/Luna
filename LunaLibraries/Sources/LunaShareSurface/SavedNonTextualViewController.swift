@@ -79,7 +79,7 @@ public final class SavedNonTextualViewController: UIViewController {
     // file exists. A status label carries errors. All hold layout space from load.
     private let downloadButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
-    private let downloadProgress = UIProgressView(progressViewStyle: .default)
+    private let downloadProgress = MoonHorizonProgressBar()
     private let downloadStatus = UILabel()
 
     public init(articleURLString: String, content: NonTextualContent, onDone: @escaping () -> Void) {
@@ -238,7 +238,6 @@ public final class SavedNonTextualViewController: UIViewController {
         // Hold layout space (visible but disabled) so the row height is stable.
 
         downloadProgress.isHidden = true
-        downloadProgress.progressTintColor = GlassStyle.readingAccent
 
         downloadStatus.isHidden = true
         downloadStatus.font = .preferredFont(forTextStyle: .subheadline)
@@ -291,7 +290,7 @@ public final class SavedNonTextualViewController: UIViewController {
             playOverlay.isHidden = true
             previewPlaceholder.isHidden = true
             downloadButton.isHidden = true
-            downloadProgress.progress = 0
+            downloadProgress.setProgress(0, animated: false)
             downloadProgress.isHidden = false
             saveButton.isEnabled = false
             downloadStatus.text = "Downloading…"

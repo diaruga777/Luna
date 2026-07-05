@@ -16,7 +16,7 @@ public final class MediaDownloadStatusView: UIView {
     private let pill = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let icon = UIImageView()
     private let label = UILabel()
-    private let progress = UIProgressView(progressViewStyle: .default)
+    private let progress = MoonHorizonProgressBar()
     private var hideWorkItem: DispatchWorkItem?
 
     public init() {
@@ -41,7 +41,6 @@ public final class MediaDownloadStatusView: UIView {
         label.font = .systemFont(ofSize: 15, weight: .semibold)
         label.textColor = .label
 
-        progress.progressTintColor = GlassStyle.readingAccent
         progress.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         let row = UIStackView(arrangedSubviews: [icon, label, progress])
@@ -74,7 +73,7 @@ public final class MediaDownloadStatusView: UIView {
         icon.tintColor = GlassStyle.readingAccent
         label.text = "Saving media…"
         progress.isHidden = false
-        progress.progress = 0
+        progress.setProgress(0, animated: false)
         reveal()
     }
 

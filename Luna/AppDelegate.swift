@@ -166,6 +166,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
+        // Action Button onboarding: only advances if we were backgrounded right
+        // after "Install Shortcut" (the user is presumably in the Shortcuts app).
+        ActionButtonOnboardingStore.shared.handleAppBackgrounded(
+            forSurface: AppSurfaceConfig.current.storageIdentifier)
         ArticleSendCoordinator.shared.retryPendingSends()
         LiveMediaDownloadManager.shared.resumeLiveActivities()
         scheduleMailFetch()

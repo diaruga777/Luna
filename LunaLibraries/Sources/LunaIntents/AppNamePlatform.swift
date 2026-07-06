@@ -12,16 +12,26 @@ import Foundation
 public enum AppNamePlatform {
 
     /// Whether the current app is one Luna knows how to save from — a recognized
-    /// content platform, or Safari (whose plain page URL is saved directly). Unknown
-    /// apps are unsupported; the screen-prompt intent returns "unsupported" for them.
+    /// content platform, Safari (whose plain page URL is saved directly), or the
+    /// Shortcuts app (the Action Button onboarding shortcut's own first run — no
+    /// content to save, `SaveFromAppIntent` intercepts it before any save logic
+    /// runs). Unknown apps are unsupported; the screen-prompt intent returns
+    /// "unsupported" for them.
     public static func isSupported(forAppName app: String) -> Bool {
-        platform(forAppName: app) != nil || isSafari(forAppName: app)
+        platform(forAppName: app) != nil || isSafari(forAppName: app) || isShortcuts(forAppName: app)
     }
 
     /// Whether the app is Safari (supported, but needs no model prompt — the tracked
     /// page URL is saved instead).
     public static func isSafari(forAppName app: String) -> Bool {
         app.lowercased().contains("safari")
+    }
+
+    /// Whether the app is Shortcuts (supported, but needs no model prompt — the
+    /// Action Button onboarding shortcut's first run carries no content of its
+    /// own; see `ActionButtonOnboardingStore.handleSaveIntentInvoked`).
+    public static func isShortcuts(forAppName app: String) -> Bool {
+        app.lowercased().contains("shortcuts")
     }
 
     /// The platform for an app name, or nil (Safari / unknown → plain URL).

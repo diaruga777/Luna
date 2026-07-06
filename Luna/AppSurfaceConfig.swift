@@ -22,3 +22,19 @@ enum AppSurfaceConfig {
         return .reader
     }
 }
+
+extension AppSurface {
+    /// Bare per-surface identifier (`"reader"` / `"downloader"` / `"pricetracker"`)
+    /// — the same suffix convention as `InstalledAppMarkers.key(for:)` — used as
+    /// the raw key segment for LunaStorage's per-surface onboarding stores.
+    /// `AppSurface` lives in `LunaReadingListUI`, which already depends on
+    /// `LunaStorage`, so those stores take this bare string rather than the enum
+    /// itself (importing `LunaReadingListUI` back into `LunaStorage` would cycle).
+    var storageIdentifier: String {
+        switch self {
+        case .reader: return "reader"
+        case .downloader: return "downloader"
+        case .priceTracker: return "pricetracker"
+        }
+    }
+}

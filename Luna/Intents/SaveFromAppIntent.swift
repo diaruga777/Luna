@@ -54,6 +54,24 @@ public struct SaveFromAppIntent: AppIntent {
 
     public func perform() async throws -> some IntentResult & ReturnsValue<String> {
         guard let app else { throw SaveError.missingValues }
+
+        // Before any save work: let the Action Button onboarding state machine
+        // hijack this invocation if it's mid-flight for this surface. Its first
+        // interception fires from the Shortcuts app (the freshly-imported
+        // shortcut's own first run); its second fires from wherever the Action
+        // Button was actually pressed, once real setup is complete.
+        let surface = AppSurfaceConfig.current.storageIdentifier
+        switch ActionButtonOnboardingStore.shared.handleSaveIntentInvoked(
+            appName: app, isCurrentAppLuna: Self.isCurrentAppLuna(comparedTo: app), forSurface: surface
+        ) {
+        case .returnOpenLunaToken:
+            return .result(value: ActionButtonOnboardingStore.openLunaToken)
+        case .returnEmpty:
+            return .result(value: "")
+        case .none:
+            break
+        }
+
         let fields = Self.parseFields(from: details)
         let platform = AppNamePlatform.platform(forAppName: app)
 
@@ -99,6 +117,23 @@ public struct SaveFromAppIntent: AppIntent {
         return trimmed.components(separatedBy: " ; ")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+
+    /// Whether the "current app" reported by Shortcuts (`Get Current App`) is THIS
+    /// Luna app — i.e. the Action Button was pressed while Luna itself was
+    /// frontmost, so there's no need to bounce the user back to it. Compared
+    /// case-insensitively against the running bundle's display/bundle name, plus a
+    /// generic "Luna"-prefix match (covers "Luna", "Luna Reader", "Luna Downloader",
+    /// "Luna Price Tracker" regardless of exactly how Shortcuts reports the name).
+    private static func isCurrentAppLuna(comparedTo appName: String) -> Bool {
+        let name = appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !name.isEmpty else { return false }
+        if name.hasPrefix("luna") { return true }
+        let displayName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)?
+            .lowercased()
+        let bundleName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String)?
+            .lowercased()
+        return name == displayName || name == bundleName
     }
 
     private static func finderPlatform(for platform: ContentPlatform?) -> SocialPostFinder.Platform? {

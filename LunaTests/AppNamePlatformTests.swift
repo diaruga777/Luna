@@ -44,4 +44,23 @@ final class AppNamePlatformTests: XCTestCase {
         XCTAssertFalse(AppNamePlatform.isSafari(forAppName: "YouTube"))
         XCTAssertNil(AppNamePlatform.screenPrompt(forAppName: "Safari"))
     }
+
+    // MARK: - Shortcuts (Action Button onboarding's own first run)
+
+    func testShortcutsIsSupportedButPromptless() {
+        XCTAssertTrue(AppNamePlatform.isShortcuts(forAppName: "Shortcuts"))
+        XCTAssertTrue(AppNamePlatform.isSupported(forAppName: "Shortcuts"))
+        XCTAssertNil(AppNamePlatform.screenPrompt(forAppName: "Shortcuts"))
+        XCTAssertNil(AppNamePlatform.platform(forAppName: "Shortcuts"))
+    }
+
+    func testShortcutsMatchIsCaseInsensitive() {
+        XCTAssertTrue(AppNamePlatform.isShortcuts(forAppName: "shortcuts"))
+        XCTAssertTrue(AppNamePlatform.isShortcuts(forAppName: "SHORTCUTS"))
+    }
+
+    func testShortcutsDoesNotMatchOtherApps() {
+        XCTAssertFalse(AppNamePlatform.isShortcuts(forAppName: "YouTube"))
+        XCTAssertFalse(AppNamePlatform.isShortcuts(forAppName: "Safari"))
+    }
 }

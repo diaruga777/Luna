@@ -64,6 +64,15 @@ final class LunaDeepLinkTests: XCTestCase {
         XCTAssertNil(LunaDeepLink.articleURL(from: url))
     }
 
+    func testArticleURLRejectsBareSchemeWithNoHost() {
+        // The Safari-extension takeover overlay's "Back to Luna" link is a bare
+        // `<scheme>://` with no host/path (see LunaSafari/Resources/background.js) —
+        // it must be tolerated as "nothing to route", never crash or ingest junk.
+        let url = URL(string: "lunareader://")!
+        XCTAssertNil(url.host)
+        XCTAssertNil(LunaDeepLink.articleURL(from: url))
+    }
+
     func testSchemeConstantsAreStable() {
         // The schemes are registered in Info.plist ($(LUNA_URL_SCHEME), set per
         // app target) and mirrored in the Safari extension's content script;

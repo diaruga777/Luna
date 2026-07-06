@@ -128,6 +128,9 @@
 		7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
 		79583DFF2FE0BAD100C775CA /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */; };
 		79583E0B2FE0BAD200C775CA /* Luna Action Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 79583DFC2FE0BAD100C775CA /* Luna Action Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		79E9C2FE2FFAF84100329B57 /* Luna Reader.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9C2FD2FFAF84100329B57 /* Luna Reader.icon */; };
+		79E9C2FF2FFAF84100329B57 /* Luna Reader.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9C2FD2FFAF84100329B57 /* Luna Reader.icon */; };
+		79E9C3002FFAF84100329B57 /* Luna Reader.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9C2FD2FFAF84100329B57 /* Luna Reader.icon */; };
 		7A2A261BD9A78CDAD99A8432 /* LunaPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunaPriceMetadata */; };
 		7AF7216F62048B1A8C59F9E6 /* LunaPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunaPlatforms */; };
 		7D74667CBC09543524AD4E59 /* LunaArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LunaArchiveReader */; };
@@ -438,6 +441,7 @@
 		7222BE8C519159B489DB3C0C /* LunaPriceTrackerSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFC2FE0BAD100C775CA /* Luna Action Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Luna Action Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
+		79E9C2FD2FFAF84100329B57 /* Luna Reader.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "Luna Reader.icon"; sourceTree = "<group>"; };
 		AA0200000000000000000001 /* Luna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Luna.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000002 /* LunaSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000003 /* LunaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -982,6 +986,7 @@
 				AA0900000000000000000002 /* Products */,
 				795840BB2FE0BD8600C775CA /* Recovered References */,
 				88C0217468B4933DA5C3084F /* LunaReaderClip */,
+				79E9C2FD2FFAF84100329B57 /* Luna Reader.icon */,
 			);
 			sourceTree = "<group>";
 		};
@@ -1737,6 +1742,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				79E9C2FF2FFAF84100329B57 /* Luna Reader.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1765,6 +1771,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				79E9C3002FFAF84100329B57 /* Luna Reader.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1772,6 +1779,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				79E9C2FE2FFAF84100329B57 /* Luna Reader.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2092,8 +2100,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1;
 				LUNA_URL_SCHEME = lunadownloader;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2122,8 +2130,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1;
 				LUNA_URL_SCHEME = lunapricetracker;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2735,7 +2743,7 @@
 		AAC300000000000000000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Luna/Luna.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -2752,8 +2760,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1;
 				LUNA_URL_SCHEME = lunareader;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2765,7 +2773,7 @@
 		AAC400000000000000000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Luna/Luna.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -2782,8 +2790,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1;
 				LUNA_URL_SCHEME = lunareader;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).reader";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2955,8 +2963,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1;
 				LUNA_URL_SCHEME = lunadownloader;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).downloader";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -3097,8 +3105,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1;
 				LUNA_URL_SCHEME = lunapricetracker;
+				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(PRODUCT_BUNDLE_PREFIX).pricetracker";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

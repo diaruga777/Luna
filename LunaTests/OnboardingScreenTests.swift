@@ -17,11 +17,15 @@ final class OnboardingScreenTests: XCTestCase {
         UIView.setAnimationsEnabled(false)
     }
 
-    /// Snapshots each onboarding step in flow order. Step 0 is the email step;
-    /// the rest are the device-setup steps.
+    /// Snapshots each onboarding step in flow order: email, Safari extension,
+    /// Action Button shortcut install, Action Button setup, then the pre-27/
+    /// Safari-skipped action-extension step. The Action Button pair and the
+    /// action-extension step are mutually exclusive at runtime (chosen by OS
+    /// version / whether Safari got enabled), but their factories build on any OS,
+    /// so `stepViewControllersForTesting()` includes all of them for coverage.
     func testOnboardingStepsSnapshot() {
         let steps = OnboardingFlow.stepViewControllersForTesting()
-        XCTAssertGreaterThanOrEqual(steps.count, 3, "expected at least email + 2 setup steps")
+        XCTAssertGreaterThanOrEqual(steps.count, 5, "expected email + safari + shortcut install + action button + action extension")
         for (index, step) in steps.enumerated() {
             SnapshotTesting.assertSnapshot(of: step, named: "onboarding-step-\(index)")
         }

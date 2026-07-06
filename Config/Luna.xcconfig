@@ -19,3 +19,9 @@ APP_GROUP_ID = group.$(PRODUCT_BUNDLE_PREFIX)
 
 // Human-visible app name prefix, e.g. "Luna Reader".
 DISPLAY_NAME_PREFIX = Luna
+
+// Lets the onboarding PiP guide-video clips (see Luna/OnboardingGuideVideo.swift)
+// keep playing in Picture-in-Picture after the user leaves Luna for Safari or
+// Settings. Project-level base config, so it reaches all 3 app targets (and is
+// harmlessly inert on the extension targets, which never start playback).
+INFOPLIST_KEY_UIBackgroundModes = audio

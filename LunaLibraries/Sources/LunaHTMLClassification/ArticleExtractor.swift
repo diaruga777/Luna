@@ -56,6 +56,14 @@ public struct ArticleExtractor {
             chosen = refined
         }
 
+        // A basic-layer win hasn't been through any trailing-junk trimming (it only
+        // strips structural chrome tags), so a comment thread on a page whose refined
+        // pass wasn't substantial enough to win arbitration can still leak through.
+        // Applying just the (safest, unconditional) comment-tier terminator here — not
+        // the recirc tier or reverse trim, which lean on refined's junk-class stripping
+        // to avoid false positives — catches that case for every chosen layer.
+        chosen = applyTerminatorHardStop(chosen, commentTierOnly: true)
+
         // Some sites ship the article body as JSON-LD metadata while the DOM
         // is JS-rendered scaffolding — if that text dwarfs what the DOM gave
         // us, it IS the article (loses inline links/images, gains the text).
@@ -159,7 +167,14 @@ public struct ArticleExtractor {
         [class*=cookie], [class*=advert], [class*=popup], \
         [class*=recommend], [class*=trending], [class*=more-stories], \
         [class*=video], [id*=video], [class*=player], [id*=player], \
-        [aria-live], [role=slider], [role=menu], [role=menubar]
+        [aria-live], [role=slider], [role=menu], [role=menubar], \
+        [class*=outbrain], [class*=taboola], [class*=revcontent], [class*=mgid], \
+        [class*=zergnet], [class*=sponsor], [id*=sponsor], [class*=recirc], [id*=recirc], \
+        [class*=read-next], [class*=read-more], [class*=more-from], \
+        [class*=most-popular], [class*=most-read], [class*=you-may-also-like], \
+        [class*=around-the-web], [class*=tag-list], [class*=pagination], [class*=pager], \
+        [class*=endslate], [class*=livefyre], [class*=coral-], [class*=spot-im], \
+        [class*=syndication], [id*=disqus_thread], #respond
         """
         for element in try document.select(strippedSelectors) {
             try element.remove()
@@ -168,6 +183,7 @@ public struct ArticleExtractor {
         try removeVisuallyHiddenElements(in: document)
 
         let container = try bestContainer(in: document)
+        try cleanConditionally(in: container)
         var blocks = try extractBlocks(from: container, baseURL: baseURL)
         if totalTextLength(blocks) < 200, let body = document.body() {
             blocks = try extractBlocks(from: body, baseURL: baseURL)
@@ -240,35 +256,219 @@ public struct ArticleExtractor {
         return [ArticleContent.Block(kind: .paragraph, text: capped, links: [])]
     }
 
-    /// Footers that survive class-stripping are mostly links and boilerplate:
-    /// peel blocks off the end while they're link-dense or match footer phrases.
+    /// Trailing/embedded boilerplate — comments, ads, recirc rails, newsletter
+    /// promos, trailing image dumps — surviving class-stripping is handled in three
+    /// passes, each modeled on a known readability-library rule:
+    ///   1. inline junk-line removal (any position): mid-article single-line recirc
+    ///      teasers and bare "Advertisement" labels (Readability's `adWords` rule).
+    ///   2. a terminator hard stop (boilerpipe `TerminatingBlocksFinder` /
+    ///      `IgnoreBlocksAfterContentFilter`): once the body has said enough, a short
+    ///      heading/line naming a comment section or recirc rail truncates everything
+    ///      from there on.
+    ///   3. a strengthened reverse trim (trafilatura's list-density rule + a trailing
+    ///      image-dump rule) that pops footer-shaped blocks off the very end.
     private func trimTrailingJunk(_ blocks: [ArticleContent.Block]) -> [ArticleContent.Block] {
-        var trimmed = blocks
-        while let last = trimmed.last, isJunkBlock(last) {
+        var result = removeInlineJunkLines(blocks)
+        result = applyTerminatorHardStop(result, commentTierOnly: false)
+        result = reverseTrim(result)
+        return result
+    }
+
+    // MARK: - Phase 1: inline junk-line removal (any position)
+
+    /// A mid-article single-line recirc teaser ("Related: <link>") reads as a short,
+    /// link-dense line that isn't itself the end of the article — dropping it (rather
+    /// than waiting for the reverse trim, which only looks at the tail) keeps whatever
+    /// follows intact.
+    private let recircLeadIns = [
+        "related:", "read more:", "read also:", "see also:", "more:", "watch:", "also read",
+    ]
+
+    /// Readability's `adWords` rule: a block whose ENTIRE text is a bare ad label.
+    private let bareAdWords: Set<String> = [
+        "advertisement", "advert", "sponsored", "sponsored content", "ad",
+    ]
+
+    private func removeInlineJunkLines(_ blocks: [ArticleContent.Block]) -> [ArticleContent.Block] {
+        blocks.filter { !isMidArticleRecircLine($0) && !isBareAdWordBlock($0) }
+    }
+
+    private func isMidArticleRecircLine(_ block: ArticleContent.Block) -> Bool {
+        guard block.kind != .image, block.text.count < 200, linkDensity(of: block) > 0.6 else {
+            return false
+        }
+        let normalized = block.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return recircLeadIns.contains { normalized.hasPrefix($0) }
+    }
+
+    private func isBareAdWordBlock(_ block: ArticleContent.Block) -> Bool {
+        guard block.kind != .image else { return false }
+        var normalized = block.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        while let last = normalized.last, ".!".contains(last) { normalized.removeLast() }
+        return bareAdWords.contains(normalized)
+    }
+
+    // MARK: - Phase 2, step 1: terminator hard stop
+
+    /// Comment-section markers: truncate unconditionally once they appear after
+    /// substantial body text — a comment thread is never part of the article.
+    private let commentTerminatorPhrases: Set<String> = [
+        "comments", "post a comment", "leave a reply", "add your comment",
+        "join the conversation", "have your say", "reader comments",
+        "show comments", "view comments",
+    ]
+
+    private static let commentCountRegex = try! NSRegularExpression(
+        pattern: "^[0-9]+\\s+comments?\\.?$")
+
+    /// Recirc-rail markers: only truncate if nothing that looks like real article
+    /// prose follows — a false-positive heading match (e.g. a genuine "More on this")
+    /// subheading ahead of more body text) must not eat the rest of the article.
+    private let recircTerminatorPhrases = [
+        "related articles", "related stories", "related coverage",
+        "recommended for you", "you may also like", "more from", "more on",
+        "read next", "up next", "most popular", "most read", "trending",
+        "trending now", "editor's picks", "popular stories", "around the web",
+        "sponsored content", "further reading",
+    ]
+
+    /// Walks blocks in order; once ≥60 words of body text have accumulated, a SHORT
+    /// (<15-word) block matching a terminator pattern truncates it and everything
+    /// after. `commentTierOnly` scopes this to just the safest (comment) tier, for
+    /// the post-arbitration pass applied to every chosen layer, not only refined's.
+    private func applyTerminatorHardStop(
+        _ blocks: [ArticleContent.Block], commentTierOnly: Bool
+    ) -> [ArticleContent.Block] {
+        var cumulativeWords = 0
+        for index in blocks.indices {
+            let block = blocks[index]
+            let words = wordCount(block.text)
+            if cumulativeWords >= 60, words < 15 {
+                if matchesCommentTerminator(block.text) {
+                    return Array(blocks[..<index])
+                }
+                if !commentTierOnly, matchesRecircTerminator(block.text) {
+                    let tail = blocks[(index + 1)...]
+                    if !tail.contains(where: { isStrongParagraph($0, minLength: 140) }) {
+                        return Array(blocks[..<index])
+                    }
+                }
+            }
+            cumulativeWords += words
+        }
+        return blocks
+    }
+
+    private func matchesCommentTerminator(_ text: String) -> Bool {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        if commentTerminatorPhrases.contains(normalized) { return true }
+        let range = NSRange(normalized.startIndex..., in: normalized)
+        return Self.commentCountRegex.firstMatch(in: normalized, range: range) != nil
+    }
+
+    private func matchesRecircTerminator(_ text: String) -> Bool {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return recircTerminatorPhrases.contains { normalized.contains($0) }
+    }
+
+    private func wordCount(_ text: String) -> Int {
+        text.split(whereSeparator: { $0.isWhitespace }).count
+    }
+
+    // MARK: - Phase 2, step 2: reverse trim
+
+    /// Existing footer/boilerplate phrases, plus recirc/newsletter/account phrases
+    /// that show up specifically as the LAST blocks of a page.
+    private let reverseTrimJunkPhrases = [
+        "all rights reserved", "privacy policy", "terms of service",
+        "terms of use", "cookie policy", "subscribe to", "sign up for",
+        "follow us", "originally published", "related articles", "©",
+        "download our app", "get the newsletter", "sign in", "log in",
+        "share this article", "tags:", "topics:",
+    ]
+
+    /// From the end: strip a trailing image dump (a run of ≥2 image blocks with no
+    /// strong paragraph after or between them), then pop footer-shaped blocks one at
+    /// a time, stopping at the first strong paragraph (Readability's sibling-P rule).
+    private func reverseTrim(_ blocks: [ArticleContent.Block]) -> [ArticleContent.Block] {
+        var trimmed = stripTrailingImageRun(blocks)
+        while trimmed.count > 1, isReverseTrimPoppable(trimmed[trimmed.count - 1]) {
             trimmed.removeLast()
         }
         return trimmed
     }
 
-    private func isJunkBlock(_ block: ArticleContent.Block) -> Bool {
+    /// A block clears "strong paragraph" — real prose, not a caption/label/link
+    /// list — at `minLength`: long enough, low link density, ends a sentence. Two
+    /// callers use two different lengths: 140 chars gates whether a recirc terminator
+    /// or a trailing image run may truncate/trim; 80 chars is the (shorter) bar the
+    /// reverse trim stops at, matching Readability's sibling-paragraph rule.
+    private func isStrongParagraph(_ block: ArticleContent.Block, minLength: Int) -> Bool {
+        guard block.kind != .image, block.text.count >= minLength,
+              linkDensity(of: block) < 0.25
+        else { return false }
+        return hasSentenceEndingPunctuation(block.text)
+    }
+
+    /// Finds the maximal trailing run of blocks that are either images or non-strong
+    /// (weak/junk) text — stopping at the first strong (≥140-char) paragraph or the
+    /// hero at index 0 — and removes the whole run if it holds ≥2 images. A run with
+    /// 0 or 1 images is left alone: a single trailing image (a legit closing photo,
+    /// especially one right after the last real paragraph) is never swept by this rule.
+    private func stripTrailingImageRun(_ blocks: [ArticleContent.Block]) -> [ArticleContent.Block] {
+        guard blocks.count > 1 else { return blocks }
+        var zoneStart = blocks.count
+        var index = blocks.count - 1
+        while index > 0 {
+            let block = blocks[index]
+            if block.kind != .image, isStrongParagraph(block, minLength: 140) { break }
+            zoneStart = index
+            index -= 1
+        }
+        guard zoneStart < blocks.count else { return blocks }
+        let imagesInZone = blocks[zoneStart...].filter { $0.kind == .image }.count
+        guard imagesInZone >= 2 else { return blocks }
+        return Array(blocks[..<zoneStart])
+    }
+
+    /// Any image reaching this point already survived `stripTrailingImageRun`
+    /// (a lone trailing image, or one preceded by a strong paragraph), so it's kept.
+    private func isReverseTrimPoppable(_ block: ArticleContent.Block) -> Bool {
         if block.kind == .image { return false }
-        let length = block.text.utf16.count
-        guard length > 0 else { return true }
+        let trimmedText = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedText.isEmpty { return true }
+        if block.kind == .heading { return true } // trailing headings are junk (trafilatura)
 
-        let linkedLength = block.links.reduce(0) { $0 + $1.length }
-        let linkDensity = Double(linkedLength) / Double(length)
-        if linkDensity > 0.7, block.text.count < 400 { return true }
+        let density = linkDensity(of: block)
+        if block.text.count < 200, density > 0.33 { return true }
+        if block.text.count < 400, density > 0.5 { return true }
 
-        let junkPhrases = [
-            "all rights reserved", "privacy policy", "terms of service",
-            "terms of use", "cookie policy", "subscribe to", "sign up for",
-            "follow us", "originally published", "related articles", "©",
-        ]
-        let lowered = block.text.lowercased()
-        if block.text.count < 200, junkPhrases.contains(where: { lowered.contains($0) }) {
+        let lowered = trimmedText.lowercased()
+        if block.text.count < 200, reverseTrimJunkPhrases.contains(where: lowered.contains) {
             return true
         }
+        if block.kind == .listItem, block.text.count < 80, !block.links.isEmpty { return true }
         return false
+    }
+
+    // MARK: - Shared block metrics
+
+    private func linkDensity(of block: ArticleContent.Block) -> Double {
+        let length = block.text.utf16.count
+        guard length > 0 else { return 0 }
+        let linkedLength = block.links.reduce(0) { $0 + $1.length }
+        return Double(linkedLength) / Double(length)
+    }
+
+    /// True when `text`, trimmed of trailing quote/bracket punctuation, ends in a
+    /// sentence terminator — the other half of "strong paragraph".
+    private func hasSentenceEndingPunctuation(_ text: String) -> Bool {
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let last = trimmed.last, "\"')]".contains(last) { trimmed.removeLast() }
+        guard let last = trimmed.last else { return false }
+        return ".!?".contains(last)
     }
 
     // MARK: - Author
@@ -360,6 +560,52 @@ public struct ArticleExtractor {
             coverage = Double(paragraphTextLength(in: container)) / Double(documentParagraphLength)
         }
         return container
+    }
+
+    // MARK: - Conditional container cleaning
+
+    /// A conservative pass (Readability's `cleanConditionally` / trafilatura's
+    /// list-density rule) run on the chosen container BEFORE block emission, so a
+    /// link-farm list or an image grid never becomes a block at all: a `<ul>`/`<ol>`
+    /// that's mostly links and barely any text, or a `<div>`/`<section>` that's an
+    /// image grid with almost no accompanying prose. Anything inside a `<figure>` is
+    /// left alone — a caption belongs with its image. Both gates are deliberately
+    /// tight (total text length, own text length) so a real editorial list or a
+    /// figure-free photo-and-caption block survives untouched.
+    private func cleanConditionally(in container: Element) throws {
+        for list in try container.select("ul, ol") {
+            if isInsideFigure(list) { continue }
+            let text = (try? list.text()) ?? ""
+            guard !text.isEmpty, text.count < 500 else { continue }
+            guard listLinkDensity(of: list, text: text) > 0.8 else { continue }
+            try list.remove()
+        }
+        for element in try container.select("div, section") {
+            if isInsideFigure(element) { continue }
+            let imageCount = (try? element.select("img").count) ?? 0
+            guard imageCount > 1 else { continue }
+            let paragraphCount = (try? element.select("p").count) ?? 0
+            guard Double(paragraphCount) / Double(imageCount) < 0.5 else { continue }
+            let ownText = (try? element.text()) ?? ""
+            guard ownText.count < 200 else { continue }
+            try element.remove()
+        }
+    }
+
+    private func isInsideFigure(_ element: Element) -> Bool {
+        var parent = element.parent()
+        while let current = parent {
+            if current.tagName() == "figure" { return true }
+            parent = current.parent()
+        }
+        return false
+    }
+
+    private func listLinkDensity(of list: Element, text: String) -> Double {
+        guard !text.isEmpty else { return 0 }
+        let linkText = ((try? list.select("a").array()) ?? [])
+            .reduce("") { $0 + (((try? $1.text()) ?? "")) }
+        return Double(linkText.count) / Double(text.count)
     }
 
     private func paragraphTextLength(in element: Element) -> Int {

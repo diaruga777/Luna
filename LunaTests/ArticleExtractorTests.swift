@@ -306,4 +306,135 @@ final class ArticleExtractorTests: XCTestCase {
         XCTAssertTrue(content.blocks.contains { $0.kind == .quote && $0.text == "A quoted passage of text." })
         XCTAssertEqual(content.blocks.filter { $0.kind == .listItem }.count, 2)
     }
+
+    // MARK: - Trailing-junk stripping (comments, recirc, newsletter, image dumps)
+
+    private func fillerArticleParagraphs(count: Int) -> String {
+        (1...count).map { index in
+            "<p>Apple is preparing to raise prices on several products as memory supply "
+            + "tightens across the industry, paragraph number \(index), with enough sentence "
+            + "length to read like genuine reported article prose.</p>"
+        }.joined()
+    }
+
+    /// A run of ≥2 trailing recirc thumbnails with no strong paragraph after or between
+    /// them is trimmed entirely — the hero (from `og:image`) and the real body survive.
+    func testTrimsTrailingImageDumpWithNoStrongParagraphAfter() throws {
+        let html = """
+        <html><head>
+        <meta property="og:image" content="https://cdn.example.com/hero.jpg">
+        </head><body><article>
+        \(fillerArticleParagraphs(count: 6))
+        <img src="/recirc/thumb1.jpg" width="300" height="200" />
+        <img src="/recirc/thumb2.jpg" width="300" height="200" />
+        <img src="/recirc/thumb3.jpg" width="300" height="200" />
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        let images = content.blocks.filter { $0.kind == .image }
+        XCTAssertEqual(images.count, 1, "trailing image dump should be trimmed, keeping only the hero")
+        XCTAssertEqual(images.first?.imageURLString, "https://cdn.example.com/hero.jpg")
+        XCTAssertTrue(content.wholeText.contains("paragraph number 6"), "real body should survive")
+    }
+
+    /// A single trailing image immediately preceded by a strong paragraph is a legit
+    /// closing photo — it must NOT be swept by the image-dump rule.
+    func testKeepsLoneClosingPhotoAfterFinalStrongParagraph() throws {
+        let html = """
+        <html><body><article>
+        \(fillerArticleParagraphs(count: 6))
+        <img src="/photos/closing-shot.jpg" width="800" height="600" />
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        let images = content.blocks.filter { $0.kind == .image }
+        XCTAssertEqual(images.count, 1, "lone closing photo should be kept")
+        XCTAssertEqual(images.first?.imageURLString, "https://example.com/photos/closing-shot.jpg")
+        XCTAssertTrue(content.wholeText.contains("paragraph number 6"))
+    }
+
+    /// A "Related Articles" heading followed by a link list + thumbnails, with no
+    /// strong paragraph after it, is a recirc rail — the terminator hard stop (or the
+    /// reverse trim / conditional list cleaning backing it up) removes all of it.
+    func testRelatedArticlesHeadingTruncatesLinkListAndThumbnails() throws {
+        let html = """
+        <html><body><article>
+        \(fillerArticleParagraphs(count: 6))
+        <h2>Related Articles</h2>
+        <ul>
+        <li><a href="/a">Some other unrelated story headline here</a></li>
+        <li><a href="/b">Another completely different unrelated story headline</a></li>
+        </ul>
+        <img src="/thumbs/a.jpg" width="200" height="150" />
+        <img src="/thumbs/b.jpg" width="200" height="150" />
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertFalse(content.wholeText.contains("Related Articles"))
+        XCTAssertFalse(content.wholeText.contains("Some other unrelated story"))
+        XCTAssertTrue(content.blocks.filter { $0.kind == .image }.isEmpty)
+        XCTAssertTrue(content.wholeText.contains("paragraph number 6"))
+    }
+
+    /// A short "12 Comments" line followed by plain-text comment paragraphs (no
+    /// comment classes at all) after substantial body text is a comment thread — the
+    /// terminator hard stop truncates it even though nothing marks it as a comment
+    /// except the count phrase itself.
+    func testCommentCountTerminatorTruncatesPlainTextCommentThread() throws {
+        let commentParagraphs = (1...5).map { index in
+            "<p>Reader comment \(index): I disagree with this take and here is my opinion "
+            + "about pricing.</p>"
+        }.joined()
+        let html = """
+        <html><body><article>
+        \(fillerArticleParagraphs(count: 6))
+        <p>12 Comments</p>
+        \(commentParagraphs)
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertFalse(content.wholeText.contains("12 Comments"))
+        XCTAssertFalse(content.wholeText.contains("Reader comment"))
+        XCTAssertTrue(content.wholeText.contains("paragraph number 6"))
+    }
+
+    /// A mid-article single-line recirc teaser ("Related: <link>") is dropped in
+    /// place — it must NOT truncate the rest of the article the way an end-of-article
+    /// terminator would.
+    func testMidArticleRecircLineRemovedWithoutTruncatingArticle() throws {
+        let html = """
+        <html><body><article>
+        <p>Apple is preparing to raise prices on several products as memory supply tightens across the industry, paragraph number 1, with enough sentence length to read like genuine reported article prose.</p>
+        <p>Related: <a href="/other-story">Some unrelated headline elsewhere on the site</a></p>
+        <p>Apple is preparing to raise prices on several products as memory supply tightens across the industry, paragraph number 2, with enough sentence length to read like genuine reported article prose.</p>
+        <p>Apple is preparing to raise prices on several products as memory supply tightens across the industry, paragraph number 3, with enough sentence length to read like genuine reported article prose.</p>
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertFalse(content.wholeText.contains("Related:"))
+        XCTAssertFalse(content.wholeText.contains("Some unrelated headline"))
+        XCTAssertTrue(content.wholeText.contains("paragraph number 1"))
+        XCTAssertTrue(content.wholeText.contains("paragraph number 2"))
+        XCTAssertTrue(content.wholeText.contains("paragraph number 3"), "article must not be truncated")
+    }
+
+    /// A legit editorial `<ul>` whose items are long non-link prose with only an
+    /// occasional inline link must survive the conditional list-density cleaning —
+    /// only near-pure link farms are removed.
+    func testEditorialListWithLongLiTextSurvivesConditionalCleaning() throws {
+        let html = """
+        <html><body><article>
+        \(fillerArticleParagraphs(count: 3))
+        <ul>
+        <li>The company's pricing committee weighed three separate proposals before settling on a phased rollout that begins with premium configurations and expands to the base lineup by <a href="/schedule">next quarter</a>.</li>
+        <li>Analysts who reviewed the leaked schedule say the delay reflects supply constraints rather than a change in strategy, according to <a href="/analysts">people familiar with the matter</a>.</li>
+        </ul>
+        <p>Apple is preparing to raise prices on several products as memory supply tightens across the industry, paragraph number 4, with enough sentence length to read like genuine reported article prose.</p>
+        </article></body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertTrue(content.wholeText.contains("pricing committee weighed three separate proposals"))
+        XCTAssertTrue(content.wholeText.contains("Analysts who reviewed the leaked schedule"))
+        XCTAssertEqual(content.blocks.filter { $0.kind == .listItem }.count, 2)
+    }
 }

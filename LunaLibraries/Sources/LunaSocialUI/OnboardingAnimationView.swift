@@ -109,16 +109,19 @@ public final class OnboardingAnimationView: UIView {
     }
 
     private func lunaAppIconImage() -> UIImage? {
+        // The `AppIconImage<App>` imagesets mirror each app's real Home Screen icon
+        // (an `.appiconset`/Icon Composer bundle can't be loaded via `UIImage(named:)`,
+        // so the icon art is duplicated into plain imagesets for in-UI use).
         let identifier = Bundle.main.bundleIdentifier ?? ""
         let appIconName: String
         if identifier.hasSuffix(".downloader") || identifier.hasSuffix(".downloader.appex") {
-            appIconName = "AppIconDownloader"
+            appIconName = "AppIconImageDownloader"
         } else if identifier.hasSuffix(".pricetracker") || identifier.hasSuffix(".pricetracker.appex") {
-            appIconName = "AppIconPriceTracker"
+            appIconName = "AppIconImagePriceTracker"
         } else {
-            appIconName = "AppIconReader"
+            appIconName = "AppIconImageReader"
         }
-        return UIImage(named: appIconName) ?? UIImage(named: "AppIcon") ?? UIImage(named: "luna-app-mark")
+        return UIImage(named: appIconName) ?? UIImage(named: "luna-app-mark")
     }
 
     // MARK: - Notification banner
@@ -131,12 +134,11 @@ public final class OnboardingAnimationView: UIView {
         banner.layer.cornerCurve = .continuous
         banner.translatesAutoresizingMaskIntoConstraints = false
 
-        let appIcon = UIImageView(image: UIImage(systemName: "book.fill"))
-        appIcon.tintColor = .white
-        appIcon.contentMode = .center
-        appIcon.backgroundColor = accent
+        let appIcon = UIImageView(image: lunaAppIconImage())
+        appIcon.contentMode = .scaleAspectFit
         appIcon.layer.cornerRadius = 9
         appIcon.layer.cornerCurve = .continuous
+        appIcon.clipsToBounds = true
         appIcon.translatesAutoresizingMaskIntoConstraints = false
 
         let title = UILabel()
@@ -305,7 +307,9 @@ public final class OnboardingAnimationView: UIView {
             addressBar.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
             addressBar.bottomAnchor.constraint(equalTo: phone.bottomAnchor),
             addressBar.heightAnchor.constraint(equalToConstant: 30),
-            lines.topAnchor.constraint(equalTo: page.topAnchor, constant: 16),
+            // Below the Dynamic Island's expanded extent (top 10 + height 17) so the
+            // page headline never sits under the island.
+            lines.topAnchor.constraint(equalTo: page.topAnchor, constant: 36),
             lines.leadingAnchor.constraint(equalTo: page.leadingAnchor, constant: 12),
             lines.trailingAnchor.constraint(equalTo: page.trailingAnchor, constant: -12),
             urlPill.centerYAnchor.constraint(equalTo: addressBar.centerYAnchor),

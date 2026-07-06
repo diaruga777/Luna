@@ -9,15 +9,14 @@ import LunaTransitions
 import UIKit
 
 /// The reader's share affordance: a custom medium-detent bottom sheet offering
-/// up to four explicit options — send to the suggested friend (one tap), pick a
-/// friend, share the link, or share the article as an EPUB. Replaces the old
+/// explicit options to pick a friend, share the link, copy the link, or share
+/// the article as an EPUB. Replaces the old
 /// `UIAlertController(.actionSheet)`. The rows' actions are injected so the
 /// sheet stays UI-only; `AppReaderShareProvider` wires them to the social /
 /// export stack.
 public final class ReaderShareSheet: UIViewController {
 
-    /// One tappable option. `isPrimary` gives the suggested-friend row an accent
-    /// fill; the rest are plain.
+    /// One tappable option.
     public struct Row {
         public let title: String
         public let systemImage: String
@@ -32,23 +31,15 @@ public final class ReaderShareSheet: UIViewController {
         }
     }
 
-    /// Builds the ordered rows. The suggested-friend row is included only when a
-    /// suggestion name is present — pure, so the ordering/visibility is testable.
+    /// Builds the ordered rows.
     public static func rows(
-        suggestedFriendName: String?,
         includeEbook: Bool,
-        onSendToSuggested: @escaping () -> Void,
         onPickFriend: @escaping () -> Void,
         onShareLink: @escaping () -> Void,
         onCopyLink: @escaping () -> Void,
         onShareEbook: @escaping () -> Void
     ) -> [Row] {
         var rows: [Row] = []
-        if let name = suggestedFriendName {
-            rows.append(Row(
-                title: "Send to \(name)", systemImage: "paperplane.fill",
-                isPrimary: true, action: onSendToSuggested))
-        }
         rows.append(Row(
             title: "Send to a Friend…", systemImage: "person.2",
             isPrimary: false, action: onPickFriend))

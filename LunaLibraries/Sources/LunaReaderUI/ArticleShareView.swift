@@ -6,30 +6,26 @@
 import LunaDesignSystem
 import UIKit
 
-/// End-of-article share affordance: a separator, a prompt, a Share button, and
-/// (when the site has a sharing history) a one-tap "Send to <friend>"
-/// suggestion. Shown at the bottom of the scroll reader and revealed at the end
-/// of the speed readers. The owning view controller wires the actions.
+/// End-of-article share affordance: a separator, a prompt, and a Share button.
+/// Shown at the bottom of the scroll reader and revealed at the end of the speed
+/// readers. The owning view controller wires the actions.
 public final class ArticleShareView: UIView {
 
     private let onShare: () -> Void
-    private let onSendSuggested: () -> Void
     /// Fired when the user picks "Report a bug" from the bug icon's menu (nil → no
     /// bug icon shown). Marks the save's replay user-reported and shares its zip.
     private let onReportBug: (() -> Void)?
 
-    public init(suggestionName: String?, onShare: @escaping () -> Void,
-         onSendSuggested: @escaping () -> Void, onReportBug: (() -> Void)? = nil) {
+    public init(onShare: @escaping () -> Void, onReportBug: (() -> Void)? = nil) {
         self.onShare = onShare
-        self.onSendSuggested = onSendSuggested
         self.onReportBug = onReportBug
         super.init(frame: .zero)
-        build(suggestionName: suggestionName)
+        build()
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
-    private func build(suggestionName: String?) {
+    private func build() {
         let separator = UIView()
         separator.backgroundColor = .separator
         separator.translatesAutoresizingMaskIntoConstraints = false
@@ -58,20 +54,6 @@ public final class ArticleShareView: UIView {
         buttons.axis = .vertical
         buttons.spacing = 10
         buttons.alignment = .fill
-
-        if let suggestionName {
-            var suggestConfig = UIButton.Configuration.tinted()
-            suggestConfig.title = "Send to \(suggestionName)"
-            suggestConfig.image = UIImage(systemName: "person.fill")
-            suggestConfig.imagePadding = 8
-            suggestConfig.baseForegroundColor = GlassStyle.readingAccent
-            suggestConfig.baseBackgroundColor = GlassStyle.readingAccent
-            suggestConfig.cornerStyle = .large
-            let suggestButton = UIButton(configuration: suggestConfig)
-            suggestButton.addAction(
-                UIAction { [weak self] _ in self?.onSendSuggested() }, for: .touchUpInside)
-            buttons.insertArrangedSubview(suggestButton, at: 0)
-        }
 
         let stack = UIStackView(arrangedSubviews: [separator, prompt, buttons])
         stack.axis = .vertical

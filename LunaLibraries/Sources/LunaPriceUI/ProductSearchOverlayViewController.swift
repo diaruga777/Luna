@@ -48,7 +48,7 @@ public enum ProductSearchAddOutcome {
 /// The bottom URL bar is pinned to `view.keyboardLayoutGuide.topAnchor` (high
 /// priority) with a safe-area cap, so it rides up just above the keyboard while the
 /// user types and drops back when the keyboard dismisses — the field stays visible
-/// and usable the whole time (the same pattern as `SearchViewController`).
+/// and usable the whole time.
 public final class ProductSearchOverlayViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegate,
     WKScriptMessageHandler {
 
@@ -248,7 +248,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         // Rise above the keyboard while typing (the guide tracks the real keyboard
         // frame); cap above the bottom safe area when the keyboard is down. High
         // priority so the keyboard guide wins over the cap exactly when the keyboard
-        // is up — matching `SearchViewController`'s pattern.
+        // is up.
         let aboveKeyboard = bottomBar.bottomAnchor.constraint(
             equalTo: view.keyboardLayoutGuide.topAnchor)
         aboveKeyboard.priority = .required

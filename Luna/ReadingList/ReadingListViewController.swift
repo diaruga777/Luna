@@ -138,7 +138,7 @@ final class ReadingListViewController: UITableViewController {
     /// The recreated navigation header bar — a normal content subview (NOT the
     /// UINavigationController nav bar) pinned to the visible top of the table, so it's
     /// captured by the Dot Matrix push/pop wipe like the rest of the content. Holds the
-    /// settings/friends (leading) + add/search (trailing) controls; in edit mode it
+    /// settings/friends (leading) + add (trailing) controls; in edit mode it
     /// swaps to Done / Select All / Delete.
     private let header = NavHeaderBar()
 
@@ -154,11 +154,6 @@ final class ReadingListViewController: UITableViewController {
     /// The "catch up" button, on the large-title row; its red dot badge shows when there
     /// are unread items to catch up on.
     private let catchUpButton = UIButton(type: .system)
-    /// The in-place search overlay cross-faded over the list, if active. Held
-    /// strongly: its view is hosted directly in the nav controller's view WITHOUT
-    /// VC containment — calling `addChild` on a UINavigationController corrupts its
-    /// `children`/stack and makes the list show a back button on return.
-    private var searchController: SearchViewController?
     private let catchUpBadge = UIView()
 
     /// Non-empty groups in display order; rebuilt on every `reload`.
@@ -859,7 +854,7 @@ final class ReadingListViewController: UITableViewController {
 
     // MARK: - Header controls
 
-    /// The normal (non-editing) header: settings + friends (leading); add + search
+    /// The normal (non-editing) header: settings + friends (leading); add
     /// (trailing) in the pinned bar. The large "Reading List" title + catch-up button
     /// live on the scrolling title row of the table header (`makeTableHeader`).
     private func setDefaultHeaderControls() {
@@ -877,9 +872,6 @@ final class ReadingListViewController: UITableViewController {
             NavHeaderBar.imageButton(
                 systemName: "plus", target: self, action: #selector(addTapped),
                 accessibilityLabel: "Add"),
-            NavHeaderBar.imageButton(
-                systemName: "magnifyingglass", target: self, action: #selector(searchTapped),
-                accessibilityLabel: "Search"),
         ])
     }
 
@@ -948,70 +940,6 @@ final class ReadingListViewController: UITableViewController {
         tableHeaderContainer = container
         tableView.tableHeaderView = container
         applyFilterWidth()
-    }
-
-    /// Opens search IN PLACE over the reading list: a child VC cross-faded in (no
-    /// modal page transition — the list fades out, the search field + keyboard fade
-    /// in). Hosted in the navigation controller's view so it covers the nav bar too.
-    @objc private func searchTapped() {
-        // Host the overlay on (and parent it to) the NAVIGATION CONTROLLER: it owns
-        // the view that covers the nav bar, and RLVC is a UITableViewController whose
-        // own `view` is the scrolling table — not a valid host. Parenting to the same
-        // VC that owns the host view avoids UIKit's appearance-forwarding assertion.
-        guard searchController == nil, let nav = navigationController else { return }
-        // The shared nav bar is already hidden (this screen draws its own in-content
-        // header). The search overlay is added to the nav controller's view, so it
-        // covers the table — including our header — for the whole search session.
-        let search = SearchViewController(engine: ReadingListSearchEngine(), presenter: self)
-        search.topSafeAreaInset = nav.view.safeAreaInsets.top   // status bar — correct from first layout
-        search.onExit = { [weak self] in self?.dismissSearch() }
-        search.onOpen = { [weak self] item in
-            guard let self else { return }
-            self.removeSearch()                 // drop the overlay; the open animates normally
-            self.open(item, presenter: self)
-        }
-        searchController = search                // strong ref keeps it alive (no containment)
-        let overlay = search.view!              // loads the view
-        overlay.alpha = 0
-        overlay.translatesAutoresizingMaskIntoConstraints = false
-        nav.view.addSubview(overlay)
-        NSLayoutConstraint.activate([
-            overlay.topAnchor.constraint(equalTo: nav.view.topAnchor),
-            overlay.bottomAnchor.constraint(equalTo: nav.view.bottomAnchor),
-            overlay.leadingAnchor.constraint(equalTo: nav.view.leadingAnchor),
-            overlay.trailingAnchor.constraint(equalTo: nav.view.trailingAnchor),
-        ])
-        nav.view.layoutIfNeeded()               // force a layout so its content insets resolve now
-        nav.view.bringSubviewToFront(overlay)
-        // Focus immediately (not in the wipe completion) so the keyboard rises in
-        // parallel with the transition rather than after it.
-        search.focusSearchField()
-        // The overlay replaces the entire list surface (header included), so it gets
-        // the full appear-in-place pixel wipe; disabled ⇒ the original cross-fade.
-        DotMatrixCrossfade.run(in: nav.view, direction: .random) {
-            overlay.alpha = 1
-        }
-    }
-
-    /// Fades the in-place search overlay out, then removes it. The list's own
-    /// in-content header is revealed intact as the overlay fades (the shared nav bar
-    /// stays hidden throughout).
-    private func dismissSearch() {
-        guard let search = searchController else { return }
-        navigationController?.view.bringSubviewToFront(search.view)
-        guard let host = navigationController?.view else { removeSearch(); return }
-        DotMatrixCrossfade.run(in: host, direction: .random, changes: {
-            search.view.alpha = 0
-        }, completion: {
-            self.removeSearch()
-        })
-    }
-
-    /// Tears the search overlay down immediately (no fade) — used when opening a result
-    /// so the pushed reader animates over the bare list.
-    private func removeSearch() {
-        searchController?.view.removeFromSuperview()
-        searchController = nil
     }
 
     @objc private func doneEditing() { setEditing(false, animated: true) }
@@ -1796,69 +1724,6 @@ final class ReadingListViewController: UITableViewController {
         return UIMenu(children: children + [editList])
     }
 
-    /// The long-press menu for a SEARCH result: the same actions as the list but
-    /// always with "Bump to Top" (re-sorts the list for when the user returns) and
-    /// never "Edit List". Excludes actions that present from / draw on the reading
-    /// list itself (eBook share, media-to-Photos). `onChange` lets search refresh
-    /// after a mutation. Presents sheets from `presenter` (the search screen).
-    func searchResultMenu(
-        for item: ReadingListItem, sourceView: UIView, presenter: UIViewController,
-        onChange: @escaping () -> Void
-    ) -> UIMenu {
-        var children: [UIAction] = []
-        children.append(UIAction(
-            title: "Bump to Top", image: UIImage(systemName: "arrow.up.to.line")
-        ) { [weak self] _ in
-            self?.store.bump(item.id)
-            onChange()
-        })
-        if item.canShareToFriends {
-            children.append(UIAction(title: "Send to Friend…", image: UIImage(systemName: "person.2")) { _ in
-                SendToFriendSheet.present(
-                    from: presenter, item: item,
-                    urlString: item.urlString, title: item.title)
-            })
-        }
-        if item.isShareable {
-            children.append(UIAction(title: "Share Link…", image: UIImage(systemName: "link")) { _ in
-                SendToFriendSheet.shareLink(
-                    urlString: item.urlString,
-                    sharedURLString: self.appClipShareURLString(for: item),
-                    from: presenter,
-                    sourceView: sourceView)
-            })
-            children.append(UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { _ in
-                SendToFriendSheet.copyLink(urlString: item.urlString, from: presenter)
-            })
-        }
-        if !item.isPlatformItem {
-            if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) {
-                children.append(UIAction(title: "Send to Kindle", image: UIImage(systemName: "paperplane")) {
-                    [weak self] _ in self?.sendToEreader(item, destinationID: ArticleDestinationID.kindle)
-                })
-            }
-            if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.boox) {
-                children.append(UIAction(title: "Send to Boox", image: UIImage(systemName: "books.vertical")) {
-                    [weak self] _ in self?.sendToEreader(item, destinationID: ArticleDestinationID.boox)
-                })
-            }
-        }
-        if item.readState == .read {
-            children.append(UIAction(title: "Unarchive", image: UIImage(systemName: "tray.and.arrow.up")) {
-                [weak self] _ in
-                self?.store.markUnread(item.id)
-                onChange()
-            })
-        }
-        children.append(UIAction(
-            title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
-        ) { [weak self] _ in
-            self?.store.delete(item)
-            onChange()
-        })
-        return UIMenu(children: children)
-    }
-
     private func appClipShareURLString(for item: ReadingListItem) -> String? {
         LunaAppClipInvocationURL.shareURL(
             for: item.urlString,
@@ -1946,10 +1811,6 @@ final class ReadingListViewController: UITableViewController {
 
 /// In edit mode, a long-press on any Reading row starts a drag (no handle) and the
 /// drop reorders within the Reading section, persisting the new order.
-/// Reuse of the list's rendering, open behavior, and menu by the search screen.
-/// (`configureItemCell`, `open`, and `searchResultMenu` are defined on the class.)
-extension ReadingListViewController: ReadingListItemPresenting {}
-
 extension ReadingListViewController: UITableViewDragDelegate, UITableViewDropDelegate {
 
     func tableView(

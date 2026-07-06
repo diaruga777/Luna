@@ -11,8 +11,6 @@ import UIKit
 /// (it needs the email account), so the extension doesn't offer it.
 public final class ExtensionReaderShareProvider: ReaderShareProviding {
 
-    public func suggestedFriendName(forURLString urlString: String) -> String? { nil }
-
     public func presentShareSheet(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) {
@@ -22,10 +20,6 @@ public final class ExtensionReaderShareProvider: ReaderShareProviding {
             activityItems: [shared], applicationActivities: nil)
         activity.popoverPresentationController?.sourceView = sourceView
         presenter.present(activity, animated: true)
-    }
-
-    public func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController) {
-        // Sending to friends happens in the main app.
     }
 
     public func saveLink(urlString: String) {

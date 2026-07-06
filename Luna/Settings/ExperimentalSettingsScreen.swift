@@ -6,17 +6,16 @@
 import LunaReadingListUI
 import LunaYouTubeAPI
 import LunaReaderUI
-import LunaSemantic
 import LunaDesignSystem
 import LunaTransitions
 import UIKit
 
-/// Experimental features, off by default: on-device semantic sharing
-/// suggestions, and YouTube integration (sign-in, playlist, auto-add).
+/// Experimental features, off by default: paywall strategy controls and YouTube
+/// integration (sign-in, playlist, auto-add).
 final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
-        case semantic, paywallStrategies, archiveOverlay, youtube
+        case paywallStrategies, archiveOverlay, youtube
     }
     private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
 
@@ -32,7 +31,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch Section(rawValue: section)! {
-        case .semantic: return 1
         case .paywallStrategies: return 1
         case .archiveOverlay: return 1
         case .youtube: return YouTubeRow.allCases.count
@@ -41,7 +39,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .semantic: return "Suggest Shares Based on Content"
         case .paywallStrategies: return "Extra Paywall Unlock Strategies"
         case .archiveOverlay: return "Archive Reader Cover"
         case .youtube: return "DEV ONLY: YouTube"
@@ -50,8 +47,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
-        case .semantic:
-            return "When you save something that resembles things you've shared with a friend before, Luna can suggest sharing it with them. Slide all the way left to turn this off."
         case .paywallStrategies:
             return "Off by default. When on, Luna tries to unlock a paywalled article on-device — keeping cookies, blocking the site's metering scripts, spoofing the referrer a site unlocks for, and cleaning the page — before falling back to the archive reader. This unlocks many soft paywalls the archive can't, but adds a few seconds before the fallback. Turn it off to go straight to the archive reader."
         case .archiveOverlay:
@@ -65,8 +60,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
         switch Section(rawValue: indexPath.section)! {
-        case .semantic:
-            return semanticSensitivityCell()
         case .paywallStrategies:
             return paywallStrategiesCell()
         case .archiveOverlay:
@@ -126,37 +119,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         ReaderSettings.archiveOverlayAlpha = Double(sender.value)
     }
 
-    /// A slider from "Never" (off) to "Often", with no exposed numbers.
-    private func semanticSensitivityCell() -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        cell.selectionStyle = .none
-
-        let slider = UISlider()
-        slider.minimumValue = 0
-        slider.maximumValue = 1
-        slider.value = Float(SemanticSharingSettings.sensitivity)
-        slider.addTarget(self, action: #selector(sensitivityChanged(_:)), for: .valueChanged)
-
-        let endLabels = UIStackView(arrangedSubviews: [
-            endCaption("Never"), UIView(), endCaption("Often"),
-        ])
-        endLabels.axis = .horizontal
-        endLabels.distribution = .fill
-
-        let stack = UIStackView(arrangedSubviews: [slider, endLabels])
-        stack.axis = .vertical
-        stack.spacing = 2
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        cell.contentView.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 10),
-            stack.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -10),
-        ])
-        return cell
-    }
-
     private func endCaption(_ text: String) -> UILabel {
         let label = UILabel()
         label.text = text
@@ -174,15 +136,9 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
             case .playlist: choosePlaylistTapped()
             case .autoAdd: break
             }
-        case .semantic, .paywallStrategies, .archiveOverlay:
+        case .paywallStrategies, .archiveOverlay:
             break
         }
-    }
-
-    @objc private func sensitivityChanged(_ sender: UISlider) {
-        SemanticSharingSettings.sensitivity = Double(sender.value)
-        // Build the index once it's on so live matches have history to compare to.
-        if SemanticSharingSettings.isEnabled { SemanticIndexer.shared.scheduleRun() }
     }
 
     // MARK: - YouTube

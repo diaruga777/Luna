@@ -6,7 +6,6 @@
 import LunaReadingList
 import LunaPriceUI
 import LunaReaderUI
-import LunaSemantic
 import LunaSocial
 import LunaSocialUI
 import LunaMailAccount
@@ -156,9 +155,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
         // Read incoming mail (Luna shares + newsletters) — all surfaces.
         Task { await IncomingMailImporter.shared.importNewMail() }
-        // Semantic search index — main app only (loads an NL model; never in the
-        // memory-limited intent runner). No-op when nothing needs embedding.
-        SemanticIndexer.shared.scheduleRun()
         scheduleMailFetch()
         schedulePriceRefresh(reason: "launch")
         refreshOverduePriceTrackersOnLaunch()

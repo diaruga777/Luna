@@ -289,19 +289,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     private func makeShareView() -> ArticleShareView? {
         guard let shareProvider, item.isShareable else { return nil }
-        let suggestionName = shareProvider.suggestedFriendName(forURLString: item.urlString)
         return ArticleShareView(
-            suggestionName: suggestionName,
             onShare: { [weak self] in
                 guard let self, let shareView = self.shareView else { return }
                 shareProvider.presentShareSheet(
                     urlString: self.item.urlString, title: self.content.title,
                     from: self, sourceView: shareView)
-            },
-            onSendSuggested: { [weak self] in
-                guard let self else { return }
-                shareProvider.sendToSuggestedFriend(
-                    urlString: self.item.urlString, title: self.content.title, from: self)
             },
             onReportBug: { [weak self] in
                 guard let self, let shareView = self.shareView else { return }

@@ -17,8 +17,6 @@ import UIKit
 public final class AppReaderShareProvider: ReaderShareProviding {
     public static let shared = AppReaderShareProvider()
 
-    public func suggestedFriendName(forURLString urlString: String) -> String? { nil }
-
     public func presentShareSheet(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView
     ) {
@@ -32,9 +30,7 @@ public final class AppReaderShareProvider: ReaderShareProviding {
             return
         }
         let rows = ReaderShareSheet.rows(
-            suggestedFriendName: nil,
             includeEbook: isArticle,
-            onSendToSuggested: {},
             onPickFriend: { [weak presenter] in
                 guard let presenter else { return }
                 SendToFriendSheet.present(
@@ -58,12 +54,6 @@ public final class AppReaderShareProvider: ReaderShareProviding {
                     for: item, from: presenter, sourceView: sourceView)
             })
         ReaderShareSheet.present(from: presenter, rows: rows)
-    }
-
-    public func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController) {
-        let item = ReadingListStore.shared.item(forURLString: urlString)
-        SendToFriendSheet.present(
-            from: presenter, item: item, urlString: urlString, title: title)
     }
 
     public func saveLink(urlString: String) {

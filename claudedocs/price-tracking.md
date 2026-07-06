@@ -201,7 +201,7 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
     card) and its `bottomAnchor` is pinned to `view.keyboardLayoutGuide.topAnchor`
     (`.defaultHigh`) with a `lessThanOrEqualTo` `safeAreaLayoutGuide.bottomAnchor` cap —
     so it rides up just above the keyboard while typing and drops back on dismiss, the
-    URL field always visible/usable. Same pattern as `SearchViewController`.
+    URL field always visible/usable.
   - **Auto-suggest (UNIFIED):** on `didFinish` it reads
     `document.documentElement.outerHTML` and runs `ProductPageSuggestion.resolve`
     (`ReaderKit/ProductPageSuggestion.swift`) — the SAME `Classifier.classify == .product`

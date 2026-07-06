@@ -13,7 +13,6 @@ import LunaSocialUI
 import LunaReadingList
 import LunaArchiveReader
 import LunaDesignSystem
-import LunaSemantic
 import LunaStorage
 import LunaTransitions
 import LunaURLClassification
@@ -187,7 +186,6 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         ReadingListIngestor.shared.ingestAllPending()
         ArticleSendCoordinator.shared.retryPendingSends()
         Task { await IncomingMailImporter.shared.importNewMail() }
-        SemanticIndexer.shared.scheduleRun()
         // Resume any link preloading left incomplete (interrupted save / new depth).
         PreloadCoordinator.shared.resumeIncomplete()
         // A notification tapped while the app was backgrounded.

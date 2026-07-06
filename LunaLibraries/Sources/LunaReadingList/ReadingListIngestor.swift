@@ -6,7 +6,6 @@
 import LunaYouTubeAPI
 import LunaReaderUI
 import LunaArchiveReader
-import LunaSemantic
 import LunaMediaDownload
 import LunaPlatforms
 import LunaSend
@@ -606,7 +605,6 @@ public final class ReadingListIngestor {
 
     /// Saves a NEW URL whose article content was already fetched (the pasteboard
     /// preview), persisting it directly so we skip a redundant network fetch.
-    /// Runs the same new-save automation as a fresh save press.
     @discardableResult
     public func saveNewWithContent(
         urlString: String, content: ArticleContent, source: CaptureSource = .manual

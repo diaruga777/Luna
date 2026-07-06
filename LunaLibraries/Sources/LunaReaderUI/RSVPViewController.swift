@@ -1060,19 +1060,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     private func makeShareView() -> ArticleShareView {
-        let suggestionName = shareProvider?.suggestedFriendName(forURLString: item.urlString)
         return ArticleShareView(
-            suggestionName: suggestionName,
             onShare: { [weak self] in
                 guard let self else { return }
                 self.shareProvider?.presentShareSheet(
                     urlString: self.item.urlString, title: self.item.title,
                     from: self, sourceView: self.shareView)
-            },
-            onSendSuggested: { [weak self] in
-                guard let self else { return }
-                self.shareProvider?.sendToSuggestedFriend(
-                    urlString: self.item.urlString, title: self.item.title, from: self)
             })
     }
 

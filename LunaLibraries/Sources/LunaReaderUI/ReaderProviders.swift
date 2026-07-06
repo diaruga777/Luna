@@ -11,14 +11,9 @@ import UIKit
 /// stack (CloudKit), while the share-extension reader passes `nil` (no share
 /// footer, no share button). Keeps the reader free of CloudKit.
 public protocol ReaderShareProviding: AnyObject {
-    /// Display name of a friend to suggest sharing this URL with (the
-    /// end-of-article one-tap), or nil if there's nothing to suggest.
-    func suggestedFriendName(forURLString urlString: String) -> String?
     /// Presents the full "share this article" sheet.
     func presentShareSheet(
         urlString: String, title: String?, from presenter: UIViewController, sourceView: UIView)
-    /// One-tap send to the currently suggested friend.
-    func sendToSuggestedFriend(urlString: String, title: String?, from presenter: UIViewController)
     /// Saves an arbitrary link (e.g. a link long-pressed inside the reader) to
     /// the reading list.
     func saveLink(urlString: String)

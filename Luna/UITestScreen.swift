@@ -34,7 +34,6 @@ enum UITestScreen: String, CaseIterable {
     case friendDetail
     case settings
     case priceTrackingEditor
-    case search
 
     // Readers (built from a deterministic fixture article).
     case readerScroll
@@ -87,16 +86,6 @@ enum UITestScreenBuilder {
             // testable surface). A dedicated detail fixture would need a keychain
             // identity, which the harness doesn't seed.
             return UINavigationController(rootViewController: FriendsViewController())
-
-        case .search:
-            // Search is an overlay the reading list installs over its own nav stack
-            // via the private `searchTapped` seam — reproduce it by hosting the list
-            // and firing that selector once it's on screen.
-            let router = ReadingListViewController()
-            let host = UINavigationController(rootViewController: router)
-            return ActionHostViewController(host: host) { [weak router] in
-                router?.perform(Selector(("searchTapped")))
-            }
 
         case .replays:
             return UINavigationController(rootViewController: ReplaysViewController())

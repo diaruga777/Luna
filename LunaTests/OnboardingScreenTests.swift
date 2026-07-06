@@ -102,6 +102,7 @@ final class OnboardingScreenTests: XCTestCase {
             actionButtonStore: ActionButtonOnboardingStore(defaults: scratchDefaults),
             realSafariStatusStore: .shared,
             baselineSafariEnabled: [:],
+            actionButtonRestoreStates: [:],
             scratchSuiteName: scratchSuiteName)
 
         var finished = false

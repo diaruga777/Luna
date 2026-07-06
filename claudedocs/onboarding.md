@@ -187,20 +187,19 @@ ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers
 ## Replay ("Replay Onboarding" in Settings)
 
 Settings → "Replay Onboarding" (`Luna/Settings/SettingsViewController.swift`) runs the
-**entire** flow — including the email login sub-flow — against a throwaway overlay
-rather than the app's real, persisted state, so a replay behaves exactly like a
-fresh install and is fully traversable/testable without corrupting anything real.
+**entire** flow — including the email login sub-flow — through `OnboardingStores`, so
+it behaves like a fresh install and remains fully traversable/testable from Settings.
 
 - Every step builder in `OnboardingFlow` now takes an `OnboardingStores` (`Luna/Social/
   OnboardingStores.swift`) instead of reaching `EmailAccountStore.shared` /
   `SafariExtensionStatusStore.shared` / `ActionButtonOnboardingStore.shared` directly.
   `OnboardingFlow.make(stores:onFinished:)` defaults to `OnboardingStores.real` (the
   three real singletons — normal first-launch behavior, unchanged).
-- The Settings row instead builds `OnboardingStores.ephemeral()`: all three stores
-  backed by one scratch `UserDefaults(suiteName: "onboarding.replay.<UUID>")` (one
-  suite is enough — each store's keys are already namespaced), plus an in-memory
-  stand-in (`LunaMailAccount.InMemoryCredentialStorage`) for the email credential in
-  place of the Keychain (`EmailAccountStore`'s new `credentialStorage:` seam —
+- The Settings row instead builds `OnboardingStores.ephemeral()`: email account
+  metadata and Safari status are backed by one scratch `UserDefaults(suiteName:
+  "onboarding.replay.<UUID>")`, plus an in-memory stand-in
+  (`LunaMailAccount.InMemoryCredentialStorage`) for the email credential in place of
+  the Keychain (`EmailAccountStore`'s new `credentialStorage:` seam —
   `MailCredentialStorage` — defaults to a `KeychainCredentialStorage` wrapping the
   same `CredentialKeychain` calls it always made, so `.shared`'s behavior is
   unchanged). `EmailLoginFlow.present`/`EmailEntryViewController`/
@@ -213,20 +212,22 @@ fresh install and is fully traversable/testable without corrupting anything real
   value newly flips true relative to that baseline. A replay always starts looking
   fresh even if the extension was already enabled before the replay began, but a user
   who genuinely turns it on mid-replay still advances the flow like a first-time user
-  would.
-- `stores.tearDown()` (`removePersistentDomain(forName:)` on the scratch suite) runs
-  the instant the flow reaches `onFinished` — before the modal is dismissed. The
-  onboarding root has no cancel affordance and is presented `.fullScreen` (not
-  interactively dismissible), so that is the only exit path; if the app were killed
-  mid-replay instead, nothing runs, but the scratch suite was never real state to
-  begin with, so nothing to reconcile.
-- The Action Button state machine's `stateDidChangeNotification` is still posted on
-  the process-wide `NotificationCenter.default` regardless of which `OnboardingStores`
-  instance changed state (that's `ActionButtonOnboardingStore`'s existing behavior,
-  unchanged) — what makes replay isolation still work is that every place the flow
-  *reads* state after the notification fires goes through `stores.actionButtonState(
-  forSurface:)`, not the shared singleton, so it always reads back the value the
-  replay itself wrote.
+  would. `shouldUseActionButtonFlowAfterSafari(forSurface:)` also treats an already-
+  enabled baseline as eligible for the iOS 27 shortcut/action-button screens during
+  replay, so a configured app can still experience those steps again.
+- **Action Button replay bridge**: lifecycle callbacks (`AppDelegate`) and
+  `SaveFromAppIntent` run outside the onboarding view controller and always talk to
+  `ActionButtonOnboardingStore.shared`, so a scratch action-button store cannot
+  observe the real shortcut/action-button round trips. `OnboardingStores.ephemeral()`
+  snapshots the current real per-surface Action Button state, temporarily sets it to
+  `.notStarted`, and then points the replay at the real store. The replay can now
+  transition through install → foreground skip → settings → intent completion like
+  first-run onboarding; `stores.tearDown()` restores the snapshot before the modal is
+  dismissed.
+- `stores.tearDown()` restores any temporarily re-armed Action Button state and then
+  removes the scratch suite with `removePersistentDomain(forName:)`. The onboarding
+  root has no cancel affordance and is presented `.fullScreen` (not interactively
+  dismissible), so finishing the flow is the normal exit path.
 
 ## Manual follow-up (cannot be automated)
 

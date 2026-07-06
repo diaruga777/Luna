@@ -19,7 +19,8 @@ public enum OnboardingFlow {
     /// Returns the onboarding root (a bare navigation controller). `onFinished`
     /// runs after the last step. `stores` defaults to the app's real, persisted
     /// stores; Settings → "Replay Onboarding" passes `.ephemeral()` instead so the
-    /// replay reads/writes a throwaway overlay and never touches real state.
+    /// replay can sandbox account/Safari writes while temporarily re-arming the
+    /// Action Button state machine for lifecycle and App Intent callbacks.
     public static func make(
         stores: OnboardingStores = .real, onFinished: @escaping () -> Void
     ) -> UIViewController {
@@ -132,7 +133,7 @@ public enum OnboardingFlow {
             stores.setSafariTakeoverPending(false, forSurface: surface)
             guide.stopPictureInPicture()
             guard let nav else { return }
-            if #available(iOS 27.0, *), stores.isSafariExtensionEnabled(forSurface: surface) {
+            if #available(iOS 27.0, *), stores.shouldUseActionButtonFlowAfterSafari(forSurface: surface) {
                 nav.pushViewController(
                     shortcutInstallStep(stores: stores, nav: nav, onFinished: onFinished), animated: true)
             } else {

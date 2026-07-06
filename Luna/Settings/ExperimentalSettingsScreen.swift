@@ -4,20 +4,16 @@
 //
 
 import LunaReadingListUI
-import LunaYouTubeAPI
 import LunaReaderUI
 import LunaDesignSystem
 import LunaTransitions
 import UIKit
 
-/// Experimental features, off by default: paywall strategy controls and YouTube
-/// integration (sign-in, playlist, auto-add).
 final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
-        case paywallStrategies, archiveOverlay, youtube
+        case paywallStrategies, archiveOverlay
     }
-    private enum YouTubeRow: Int, CaseIterable { case signIn, playlist, autoAdd }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -33,7 +29,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         switch Section(rawValue: section)! {
         case .paywallStrategies: return 1
         case .archiveOverlay: return 1
-        case .youtube: return YouTubeRow.allCases.count
         }
     }
 
@@ -41,7 +36,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
         switch Section(rawValue: section)! {
         case .paywallStrategies: return "Extra Paywall Unlock Strategies"
         case .archiveOverlay: return "Archive Reader Cover"
-        case .youtube: return "DEV ONLY: YouTube"
         }
     }
 
@@ -51,8 +45,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
             return "Off by default. When on, Luna tries to unlock a paywalled article on-device — keeping cookies, blocking the site's metering scripts, spoofing the referrer a site unlocks for, and cleaning the page — before falling back to the archive reader. This unlocks many soft paywalls the archive can't, but adds a few seconds before the fallback. Turn it off to go straight to the archive reader."
         case .archiveOverlay:
             return "Opacity of overlay while we work to unlock web articles"
-        case .youtube:
-            return "Sign in to find videos by channel and add saved videos to a playlist. Auto-added videos are marked read.\n\nYour email must be whitelisted for this to work while in development."
         }
     }
 
@@ -64,8 +56,6 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
             return paywallStrategiesCell()
         case .archiveOverlay:
             return overlayAlphaCell()
-        case .youtube:
-            return youTubeCell(for: YouTubeRow(rawValue: indexPath.row)!)
         }
     }
 
@@ -129,108 +119,5 @@ final class ExperimentalSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        switch Section(rawValue: indexPath.section)! {
-        case .youtube:
-            switch YouTubeRow(rawValue: indexPath.row)! {
-            case .signIn: signInTapped()
-            case .playlist: choosePlaylistTapped()
-            case .autoAdd: break
-            }
-        case .paywallStrategies, .archiveOverlay:
-            break
-        }
-    }
-
-    // MARK: - YouTube
-
-    private func youTubeCell(for row: YouTubeRow) -> UITableViewCell {
-        let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
-        var content = cell.defaultContentConfiguration()
-        switch row {
-        case .signIn:
-            if GoogleAuthClient.shared.isSignedIn {
-                content.text = "Sign Out of YouTube"
-                content.textProperties.color = .systemRed
-                content.image = UIImage(systemName: "person.crop.circle.badge.checkmark")
-            } else {
-                content.text = "Sign In to YouTube"
-                content.textProperties.color = view.tintColor ?? .systemBlue
-                content.image = UIImage(systemName: "person.crop.circle")
-            }
-        case .playlist:
-            content.text = "Playlist"
-            content.secondaryText = YouTubeSettings.playlistTitle ?? "None selected"
-            content.secondaryTextProperties.color = .secondaryLabel
-            content.image = UIImage(systemName: "text.badge.plus")
-        case .autoAdd:
-            content.text = "Auto-Add Saved Videos"
-            cell.accessoryView = makeToggle(
-                isOn: YouTubeSettings.autoAddToPlaylist, action: #selector(autoAddToggled(_:)))
-            cell.selectionStyle = .none
-        }
-        cell.contentConfiguration = content
-        return cell
-    }
-
-    @objc private func autoAddToggled(_ toggle: UISwitch) {
-        YouTubeSettings.autoAddToPlaylist = toggle.isOn
-    }
-
-    private func signInTapped() {
-        if GoogleAuthClient.shared.isSignedIn {
-            GoogleAuthClient.shared.signOut()
-            tableView.reloadData()
-            return
-        }
-        Task { [weak self] in
-            do {
-                try await GoogleAuthClient.shared.signIn()
-                self?.tableView.reloadData()
-            } catch {
-                self?.presentInfoAlert(title: "Sign-In Failed", message: "\(error)")
-            }
-        }
-    }
-
-    private func choosePlaylistTapped() {
-        guard GoogleAuthClient.shared.isSignedIn else {
-            presentInfoAlert(title: "Sign In First", message: "Sign in to YouTube to pick a playlist.")
-            return
-        }
-        Task { [weak self] in
-            do {
-                let playlists = try await YouTubeAPIClient().listMyPlaylists()
-                self?.presentPlaylistSheet(playlists)
-            } catch {
-                self?.presentInfoAlert(title: "Couldn't Load Playlists", message: "\(error)")
-            }
-        }
-    }
-
-    @MainActor
-    private func presentPlaylistSheet(_ playlists: [YouTubePlaylist]) {
-        let sheet = UIAlertController(title: "Add Videos To", message: nil, preferredStyle: .actionSheet)
-        for playlist in playlists {
-            sheet.addAction(UIAlertAction(title: playlist.title, style: .default) { [weak self] _ in
-                YouTubeSettings.playlistID = playlist.id
-                YouTubeSettings.playlistTitle = playlist.title
-                self?.tableView.reloadData()
-            })
-        }
-        sheet.addAction(UIAlertAction(title: "Create \"Watch Later (Luna)\"", style: .default) { [weak self] _ in
-            Task {
-                do {
-                    let created = try await YouTubeAPIClient().createPlaylist(title: "Watch Later (Luna)")
-                    YouTubeSettings.playlistID = created.id
-                    YouTubeSettings.playlistTitle = created.title
-                    self?.tableView.reloadData()
-                } catch {
-                    self?.presentInfoAlert(title: "Couldn't Create Playlist", message: "\(error)")
-                }
-            }
-        })
-        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        sheet.popoverPresentationController?.sourceView = view
-        DotMatrixModal.present(sheet, from: self)
     }
 }

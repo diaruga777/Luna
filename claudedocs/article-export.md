@@ -2,7 +2,6 @@
 
 A universal, credential-free way to get a saved article onto any ereader/app:
 build the article's EPUB and hand it to the system share sheet. Reaches Apple
-Books, Kobo, reMarkable, Boox, Files, AirDrop, Mail, etc.
 
 ## Key file
 
@@ -28,7 +27,6 @@ The Photos-style in-sheet JPEG/HEIF "Options" toggle is a **private** system
 affordance for `PHAsset` — **not available to third-party apps**. The supported
 equivalent is registering multiple representations on one `NSItemProvider` so the
 receiving app auto-selects the format it supports. Today only EPUB is produced
-(EPUB alone satisfies Apple Books / Kobo / reMarkable / Boox); a future PDF
 representation would register alongside it on the same provider.
 
 ## Tests

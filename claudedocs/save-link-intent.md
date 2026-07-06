@@ -25,7 +25,6 @@ download step.
 - `Luna/Intents/SaveLinkIntent.swift` - "Save Link": required `url: URL`, same
   `handleSavePress` path with the URL exactly as given. Returns the saved URL,
   or a `"4:<url>"` media-download token when needed.
-- `Luna/Intents/FindYouTubeVideoIntent.swift` - see `youtube.md`.
 - Platform search/save intents (see `content-platforms.md`):
   `FindBlueskyPostIntent`, `FindRedditPostIntent` (real search -> URL -> save),
   `SaveMusicItemIntent`/`SavePodcastItemIntent`

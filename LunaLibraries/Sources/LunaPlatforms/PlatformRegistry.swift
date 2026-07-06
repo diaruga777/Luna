@@ -7,8 +7,7 @@ import LunaURLClassification
 import LunaModels
 import Foundation
 
-/// Central list of platform modules. Classification (`detect`) replaces the
-/// hardcoded YouTube `if` in the ingestor; `module(for:)` drives rendering.
+/// Central list of platform modules. Classification and rendering share this registry.
 public final class PlatformRegistry {
 
     public static let shared = PlatformRegistry()
@@ -20,7 +19,6 @@ public final class PlatformRegistry {
     public init(modules: [PlatformModule]? = nil) {
         // Modules are added per platform as they're implemented.
         self.modules = modules ?? [
-            YouTubePlatform(),
             BlueskyPlatform(),
             XPlatform(),
             TikTokPlatform(),

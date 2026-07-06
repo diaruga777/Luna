@@ -11,8 +11,7 @@ import WebKit
 
 /// Generalized in-app embed player (a WKWebView loading a platform's embed URL,
 /// 16:9, with a close button). Optional `Referer` and an "ended" user-script
-/// that marks the item read + dismisses. Generalizes the old
-/// `YouTubePlayerViewController`.
+/// that marks the item read + dismisses.
 public final class PlatformEmbedViewController: UIViewController, WKScriptMessageHandler {
 
     private let embed: PlatformEmbed

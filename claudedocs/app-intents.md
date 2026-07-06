@@ -15,7 +15,6 @@ provider list, `actions` = all discoverable intents).
 
 ## The 10 prominent App Shortcuts (`LunaShortcuts.swift`)
 
-`LunaSafariPageIntent`, `SaveLinkIntent`, `FindYouTubeVideoIntent`,
 `FindBlueskyPostIntent`, `FindRedditPostIntent`, `SaveXPostIntent`,
 `SaveTikTokIntent`, `SaveInstagramPostIntent`, `SaveFromAppIntent`,
 `ScreenAnalysisPromptIntent`. (Save Song / Save Podcast / Save Facebook are
@@ -23,7 +22,6 @@ discoverable in the action search but not in the prominent list.)
 
 ## Per-platform save intents (precise params, not vague search strings)
 
-- **YouTube** (`FindYouTubeVideoIntent`): `channel` + `title` → YouTube Data API
   search (needs sign-in).
 - **Bluesky** (`FindBlueskyPostIntent`): `handle` + `text` → `from:<handle> <text>`
   (`BlueskyPostQuery`).
@@ -49,7 +47,6 @@ discoverable in the action search but not in the prominent list.)
   intercept, routes by the current app to the right per-platform save. `details` is
   the **single** response string the on-device model produced for that app's
   screen; `parseFields` splits it on `" ; "` (trimming, dropping empties;
-  `"none"`/empty → no fields). Per-app field order — YouTube `channel ; title`,
   Bluesky `handle ; phrase`, Reddit `subreddit ; title ; author`, Music/Spotify
   `artist ; title`, Podcasts `show ; episode title`, X/TikTok/Instagram/Facebook
   `handle ; phrase ; date?` (the prompt asks for an exact short quote and appends

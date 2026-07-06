@@ -7,7 +7,6 @@ a thin presenter; no surface hangs.
 The shared core already exists: **`ArticleIngestDecider.decide(...) -> ArticleIngestDecision`**
 (`.article` | `.priceTracker` | `.needsArchive` | `.failed`). That's the right
 idea. The problem is (a) the decider is *not* the whole pipeline — the
-non-textual classification (YouTube/platform/document) lives OUTSIDE it and is
 re-implemented per surface; (b) presentation logic for the same outcome is
 duplicated and inconsistent; (c) no surface that calls the decider directly wraps
 it in a timeout.
@@ -19,11 +18,9 @@ it in a timeout.
 There are SIX entry surfaces. Two distinct pipeline "depths" exist:
 
 - **Full pipeline** = `ReadingListIngestor.ingest(item:)`: news-aggregator unwrap →
-  document gate → **YouTube gate** → **platform gate** → re-save/tracker dedup →
   `ArticleIngestDecider.decide` → outcome-specific store writes + notifications.
 - **Decider only** = `ArticleIngestDecider.decide(url:)`: product detection →
   `ArticleResolver.resolve` (direct + silent bypass + archive) → classify. **No
-  YouTube/platform/document gate. No outer timeout.**
 
 | Surface | Entry point | Pipeline depth | Presents outcomes via |
 |---|---|---|---|
@@ -36,7 +33,6 @@ There are SIX entry surfaces. Two distinct pipeline "depths" exist:
 | Friend share (outgoing via people-row) | `ShareViewController.handleFriendShare` → `PendingFriendShareWriter.enqueue` → main app `drainPendingFriendShares` | none (queue only) | `complete()` immediately |
 
 Outcome→UI in the **main app** (`ReadingListViewController.open(_:presenter:)`,
-lines 992–1023): price tracker → `PriceTrackingViewController`; YouTube/platform/
 media → `openItem` (deep link → embed → in-app Safari); `.needsCaptcha` →
 `ArchiveWebReaderViewController` (extracts → reopens native reader); `.ready` →
 `ReaderViewController`. This is the richest, correct presenter — every other
@@ -45,14 +41,11 @@ surface is a degraded subset of it.
 ### Where they diverge
 
 1. **Non-textual gate lives in the wrong layer.** `ReadingListIngestor.ingest`
-   gates YouTube (`YouTubeURL.videoID`, line 101) and platform (`PlatformRegistry.detect`,
    line 110) BEFORE the decider, and routes them to dedicated metadata ingest that
    *never fails*. But `ArticleIngestDecider.decide` itself contains **zero**
-   YouTube/platform/document handling (`grep` count = 0). So any surface that calls
    the decider directly (the two extensions) must re-implement the gate. The share
    extension does (`NonTextualContent.detect` in `routeSavedOrReader`). **The decider
    has no idea what a video is.** The `reading-list.md` doc *claims* "ProductPageDetector
-   runs inside ArticleIngestDecider after the YouTube/platform checks" — that is FALSE
    of the current decider code; the checks are only in the ingestor. Doc/impl drift.
 
 2. **Action-extension reader has no timeout and (when reached for a non-article)
@@ -70,8 +63,6 @@ surface is a degraded subset of it.
    pipeline is the root cause: the reader trusts it to classify everything, but it
    only classifies article-vs-product-vs-paywall.
 
-3. **`youtube-text-extraction` symptom.** Because the decider doesn't know YouTube,
-   if a YouTube URL reaches `decide` it is treated as an ordinary article: it fetches
    the watch page HTML and runs `ArticleExtractor` over it → junk text / `.failed`.
    The main app never hits this (gated at ingestor line 101); the extensions only
    avoid it via the *separate* `NonTextualContent` gate in `ShareViewController`.
@@ -114,11 +105,9 @@ surface is a degraded subset of it.
 
 ## 2. Problems (summary)
 
-- **P1 — Decider is not the whole pipeline.** YouTube/platform/document
   classification lives in `ReadingListIngestor`, not in the shared decider, so every
   extension surface re-derives it (`NonTextualContent.detect`) and the decider can
   misclassify a video as an article (junk extraction / failure). Root cause of the
-  youtube-text-extraction symptom.
 - **P2 — No mandatory timeout in the decider/its direct callers.**
   `ShareReaderViewController.ingestAndPresent` has none; `ShareViewController`'s
   watchdog only covers attachment *load*, not `decide`. `PriceFetcher` (30 s) +
@@ -134,7 +123,6 @@ surface is a degraded subset of it.
   offers a `.needsArchive` retry/escape that survives process death cleanly.
 - **P5 — Typed-URL paste mangling** of non-http schemes (`addTapped`), no validation.
 - **P6 — Double dedup** across `SocialMessageCenter` and `ReadingListIngestor`.
-- **P7 — Doc drift.** `reading-list.md` claims the YouTube/platform gate is inside
   the decider; it is not.
 
 ---
@@ -181,7 +169,6 @@ enum Outcome {
     case article(ArticleContent, html: String)
     case product(ProductInfo, html: String)       // → price tracker
     case social(ContentPlatform, itemID: String?) // X/Bluesky/Reddit/IG/TikTok/FB
-    case video(youTubeVideoID: String)            // never article-extracted
     case audio(ContentPlatform, MediaItemKey)     // music / podcast
     case document(DocumentType)
     case needsArchive(title: String)              // paywall → archive CAPTCHA
@@ -214,9 +201,7 @@ enum IngestPipeline {
 ```
 
 Crucially: steps 1–2 are pure/cheap and run BEFORE any WKWebView render or archive
-fetch, so a YouTube/social URL returns in milliseconds and can never reach the
 price renderer or the article extractor — killing both the hang and the
-youtube-text-extraction bug at the source. The timeout is a hard `withTaskGroup`
 ceiling around the whole call (the pattern already used in `PriceFetcher` and
 `IntentIngestHelper` — lift it up one level so it covers the entire pipeline once).
 
@@ -263,11 +248,9 @@ P6→dedup once inside the pipeline; P7→doc the real layering.
 
 ## 4. Testability
 
-- **Parity tests (the headline guarantee):** for a fixed input table (a YouTube
   URL, an X post, an Amazon product, a WSJ paywall, a plain article, an `fbrpc://`
   wrapper, a `mailto:` junk URL), assert `IngestPipeline.process` returns the SAME
   `Outcome` regardless of `source`. Today `ArticleIngestDeciderTests` only covers the
-  decider subset; extend to the full pipeline so the YouTube/platform gate parity is
   enforced (it currently is NOT — the gate lives outside the tested decider).
 - **Timeout test:** inject a `PipelineDeps` whose fetcher/renderer never returns;
   assert `process` resolves to `.failed` within `timeout`. No surface can hang.
@@ -293,7 +276,6 @@ enum Outcome {
     case article(ArticleContent, html: String)
     case product(ProductInfo, html: String)
     case social(ContentPlatform, itemID: String?)
-    case video(youTubeVideoID: String)
     case audio(ContentPlatform, MediaItemKey)
     case document(DocumentType)
     case needsArchive(title: String)

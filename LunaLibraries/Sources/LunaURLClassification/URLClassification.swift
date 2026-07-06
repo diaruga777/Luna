@@ -16,21 +16,4 @@ public enum URLClassification {
         return components.url ?? url
     }
 
-    public static func youTubeVideoID(in url: URL) -> String? {
-        guard let host = url.host?.lowercased() else { return nil }
-        if host == "youtu.be" { return validatedVideoID(url.pathComponents.dropFirst().first) }
-        let hosts: Set<String> = ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com", "www.youtube-nocookie.com"]
-        guard hosts.contains(host) else { return nil }
-        let segments = url.pathComponents.dropFirst()
-        switch segments.first {
-        case "watch": return validatedVideoID(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "v" })?.value)
-        case "shorts", "embed", "live", "v": return validatedVideoID(segments.dropFirst().first)
-        default: return nil
-        }
-    }
-
-    private static func validatedVideoID(_ id: String?) -> String? {
-        guard let id, id.count == 11, id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }) else { return nil }
-        return id
-    }
 }

@@ -28,7 +28,7 @@ public struct PlatformURLParts {
     public let segments: [String]
     /// The URL's query items (empty when there are none).
     public let query: [URLQueryItem]
-    /// The full URL, for rules whose id helper works on the whole URL (YouTube).
+    /// The full URL, for rules whose id helper works on the whole URL.
     public let url: URL
 }
 
@@ -80,7 +80,6 @@ public enum PlatformRecognizer {
     /// the URL wins. Spotify's two rows (music, podcast) share a host and split by
     /// path, so the music row must precede the podcast row.
     public static let rules: [PlatformRule] = [
-        youTube,
         x,
         bluesky,
         reddit,
@@ -115,16 +114,6 @@ public enum PlatformRecognizer {
     //
     // Each rule owns the host/path logic for its platform; the recognizer is the
     // single authority every surface classifies through.
-
-    /// YouTube — delegates id extraction to the one extracted recognizer
-    /// (`YouTubeURL`), which owns the broad host coverage and the 11-char id
-    /// validation. A YouTube host with no extractable video id (e.g. a channel
-    /// page) is NOT a video, so the rule declines it.
-    public static let youTube = PlatformRule(
-        platform: .youtube, service: nil,
-        hosts: ["youtube.com", "youtu.be", "youtube-nocookie.com"],
-        recognizes: { YouTubeURL.videoID(from: $0.url.absoluteString) != nil },
-        itemID: { YouTubeURL.videoID(from: $0.url.absoluteString) })
 
     /// X / Twitter — `/<user>/status/<id>` (numeric id only); the platform is
     /// recognized even without a status (id nil), matching the live ladder.

@@ -5,7 +5,7 @@
 
 import Foundation
 
-/// When an ereader destination (Kindle, Boox, …) sends articles automatically.
+/// When a destination sends articles automatically.
 /// Shared by every destination's settings.
 public enum ArticleSendMode: String, CaseIterable {
     /// Never send automatically (long-press / explicit send still works).

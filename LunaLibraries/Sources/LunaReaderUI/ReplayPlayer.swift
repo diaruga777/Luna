@@ -51,9 +51,7 @@ public enum ReplayPlayer {
         case unsupportedSchemaVersion(Int)
         /// The replay's effective URL string couldn't be parsed into a `URL`.
         case invalidURL(String)
-        /// The replay records a source this player can't drive yet (only the article
-        /// path is supported — YouTube/platform/document saves carry a `note`, not a
-        /// resolvable article).
+        /// The replay records a source this player can't drive yet.
         case unsupportedSource(String)
     }
 
@@ -113,15 +111,16 @@ public enum ReplayPlayer {
         return url
     }
 
-    /// A non-article save records a `note` (youtube/platform/document) instead of a
+    /// A non-article save records a `note` instead of a
     /// resolvable article. Returns that note when present so `play` can reject it as
     /// an unsupported source rather than mis-resolving a non-article URL.
     private static func unsupportedSourceNote(in replay: Replay) -> String? {
         for event in replay.events {
             guard case let .note(text) = event.kind else { continue }
             let lowercased = text.lowercased()
-            if lowercased.hasPrefix("youtube") || lowercased.hasPrefix("platform")
-                || lowercased.hasPrefix("document") || lowercased.hasPrefix("product")
+            if lowercased.hasPrefix("platform")
+                || lowercased.hasPrefix("video") || lowercased.hasPrefix("document")
+                || lowercased.hasPrefix("product")
                 || lowercased.hasPrefix("created price tracker")
                 || lowercased.hasPrefix("merged into existing tracker") {
                 return text

@@ -28,14 +28,6 @@ struct LunaShortcuts: AppShortcutsProvider {
             systemImageName: "link.badge.plus"
         )
         AppShortcut(
-            intent: FindYouTubeVideoIntent(),
-            phrases: [
-                "Save a YouTube video with \(.applicationName)",
-            ],
-            shortTitle: "Save YouTube Video",
-            systemImageName: "play.rectangle"
-        )
-        AppShortcut(
             intent: FindBlueskyPostIntent(),
             phrases: [
                 "Save a Bluesky post with \(.applicationName)",

@@ -37,7 +37,6 @@ public enum AppNamePlatform {
     /// The platform for an app name, or nil (Safari / unknown → plain URL).
     public static func platform(forAppName app: String) -> ContentPlatform? {
         let name = app.lowercased()
-        if name.contains("youtube") { return .youtube }
         if name.contains("bluesky") { return .bluesky }
         if name.contains("tiktok") { return .tiktok }
         if name.contains("reddit") { return .reddit }
@@ -62,8 +61,6 @@ public enum AppNamePlatform {
     public static func screenPrompt(forAppName app: String) -> String? {
         guard let platform = platform(forAppName: app) else { return nil }
         switch platform {
-        case .youtube:
-            return "Respond with a single line for the YouTube video on screen, in the exact form \"channel ; title\" (the channel name, then \" ; \", then the video title). If nothing identifiable is on screen, respond with exactly \"none\"."
         case .music:
             return "Respond with a single line for the song on screen, in the exact form \"artist ; title\" (the artist, then \" ; \", then the track title). If nothing identifiable is on screen, respond with exactly \"none\"."
         case .podcast:

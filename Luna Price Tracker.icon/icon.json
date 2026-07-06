@@ -1,0 +1,181 @@
+{
+  "features" : [
+    "refractivity",
+    "specular-location"
+  ],
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.04660,0.12596,0.03633,1.00000",
+      "srgb:0.00000,0.07491,0.00000,1.00000"
+    ]
+  },
+  "groups" : [
+    {
+      "blend-mode" : "hard-light",
+      "blur-material" : 0.3,
+      "hidden" : false,
+      "layers" : [
+        {
+          "fill" : {
+            "linear-gradient" : [
+              "srgb:0.15296,1.00000,0.58697,1.00000",
+              "srgb:0.15602,1.00000,0.95848,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.7897951311568143,
+                "y" : 0.20777415971875723
+              },
+              "stop" : {
+                "x" : 0.17070016362434678,
+                "y" : 0.8353106856927832
+              }
+            }
+          },
+          "image-name" : "PriceTag.svg",
+          "name" : "PriceTag",
+          "position" : {
+            "scale" : 1.75,
+            "translation-in-points" : [
+              0.4288745046264921,
+              47.29702201655675
+            ]
+          }
+        }
+      ],
+      "lighting" : "combined",
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : true,
+        "strength" : -1
+      },
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.6
+      },
+      "specular" : "inside",
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.4
+      }
+    },
+    {
+      "blur-material" : 0.2,
+      "layers" : [
+        {
+          "fill" : {
+            "linear-gradient" : [
+              "srgb:0.00319,0.88148,0.22276,1.00000",
+              "srgb:0.00000,1.00000,0.68256,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 1
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0
+              }
+            }
+          },
+          "image-name" : "Graph.svg",
+          "name" : "Graph",
+          "position" : {
+            "scale" : 1.5,
+            "translation-in-points" : [
+              44.21875,
+              71.546875
+            ]
+          }
+        }
+      ],
+      "lighting" : "combined",
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : false,
+        "strength" : 0.5
+      },
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 2.4
+      },
+      "specular" : "outside",
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    },
+    {
+      "blur-material" : 1,
+      "layers" : [
+        {
+          "fill" : {
+            "linear-gradient" : [
+              "srgb:0.14870,0.64325,0.52304,1.00000",
+              "srgb:0.00078,0.22248,0.05279,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 0
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0.283957788321349
+              }
+            }
+          },
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "Polygon 1.svg",
+          "name" : "Polygon 1",
+          "position" : {
+            "scale" : 1.1,
+            "translation-in-points" : [
+              0,
+              170
+            ]
+          }
+        }
+      ],
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : true,
+        "strength" : 1
+      },
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 4
+      },
+      "specular" : "outside",
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.2
+      }
+    },
+    {
+      "layers" : [
+        {
+          "hidden" : false,
+          "image-name" : "Group 9.svg",
+          "name" : "Group 9"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.6
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

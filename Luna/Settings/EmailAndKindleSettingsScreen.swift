@@ -12,22 +12,15 @@ import LunaDesignSystem
 import LunaTransitions
 import UIKit
 
-/// Email & Sending settings. The Luna Sharing Account (any provider) powers
-/// sending articles to friends, importing shares, and — now — emailing articles
-/// to Kindle. Sections: sharing account, Send-to-Kindle, Send-to-Boox (Onyx
-/// account + forwarding), Import-from-Email.
+/// Email & Sending settings.
 final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
-        case lunaAccount, kindle, booxAccount, boox, importMail, subjectFilters
+        case lunaAccount, kindle, importMail, subjectFilters
     }
 
     /// Field tags for the text fields.
     private enum Field: Int { case kindleAddress = 1 }
-
-    private let credentials = KeychainSendCredentialsStore.shared
-
-    private var isBooxLoggedIn: Bool { !(credentials.booxToken() ?? "").isEmpty }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -44,8 +37,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         switch Section(rawValue: section)! {
         case .lunaAccount: return EmailAccountStore.shared.isConfigured ? 3 : 1
         case .kindle: return 3 /* mode, kindle address, test send */
-        case .booxAccount: return 2 /* region, log in/out */
-        case .boox: return 2 /* forwarding settings, test send */
         case .importMail: return 2 /* enabled, auto-send */ + IncomingMailSettings.allowedSenders.count + 1 /* add */
         case .subjectFilters: return IncomingMailSettings.subjectFilters.count + 1 /* add */
         }
@@ -55,8 +46,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         switch Section(rawValue: section)! {
         case .lunaAccount: return "Sharing Account"
         case .kindle: return "Send to Kindle"
-        case .booxAccount: return "Onyx Account"
-        case .boox: return "Send to Boox"
         case .importMail: return "Import from Email"
         case .subjectFilters: return "Subject Filters"
         }
@@ -68,10 +57,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             return "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to friends and import shares sent to you."
         case .kindle:
             return "Articles are emailed from the connected Luna email account (the section at the top of this screen). That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings), and sending requires the account to be connected."
-        case .booxAccount:
-            return "Boox sending uses Onyx's unofficial Send2Boox service. Log in with the email on your BOOX account; you'll get a code by email."
-        case .boox:
-            return "Saves are uploaded to your Onyx account and your Boox device downloads them over WiFi."
         case .importMail:
             return "New email from matching senders becomes a reading-list item, optionally forwarding to Kindle automatically overnight."
         case .subjectFilters:
@@ -122,42 +107,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                                  text: KindleSendSettings.kindleAddress, field: .kindleAddress)
             default:
                 content.text = "Send Test to Kindle"
-                content.textProperties.color = view.tintColor ?? .systemBlue
-                content.image = UIImage(systemName: "paperplane")
-                cell.selectionStyle = .default
-            }
-
-        case .booxAccount:
-            switch indexPath.row {
-            case 0:
-                content.text = "Region"
-                let control = UISegmentedControl(
-                    items: BooxSendSettings.Region.allCases.map(\.displayName))
-                control.selectedSegmentIndex = BooxSendSettings.Region.allCases
-                    .firstIndex(of: BooxSendSettings.region) ?? 0
-                control.addTarget(self, action: #selector(regionChanged(_:)), for: .valueChanged)
-                cell.accessoryView = control
-            default:
-                if isBooxLoggedIn {
-                    content.text = "Log Out"
-                    content.secondaryText = BooxSendSettings.accountIdentity
-                    content.textProperties.color = .systemRed
-                } else {
-                    content.text = "Log In to Boox"
-                    content.textProperties.color = view.tintColor ?? .systemBlue
-                    content.image = UIImage(systemName: "person.crop.circle")
-                }
-                cell.selectionStyle = .default
-            }
-
-        case .boox:
-            switch indexPath.row {
-            case 0:
-                content.text = "Boox Forwarding Settings"
-                cell.accessoryType = .disclosureIndicator
-                cell.selectionStyle = .default
-            default:
-                content.text = "Send Test to Boox"
                 content.textProperties.color = view.tintColor ?? .systemBlue
                 content.image = UIImage(systemName: "paperplane")
                 cell.selectionStyle = .default
@@ -219,15 +168,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                 animated: true)
         case .kindle where indexPath.row == 2:
             sendTestEmail()
-        case .booxAccount where indexPath.row == 1:
-            isBooxLoggedIn ? logOutBoox() : startBooxLogin()
-        case .boox where indexPath.row == 0:
-            navigationController?.pushViewController(
-                AutoSendBySourceScreen(
-                    destinationID: ArticleDestinationID.boox, destinationName: "Boox"),
-                animated: true)
-        case .boox where indexPath.row == 1:
-            sendBooxTest()
         case .importMail where indexPath.row - 2 == IncomingMailSettings.allowedSenders.count:
             promptForSender()
         case .subjectFilters where indexPath.row == IncomingMailSettings.subjectFilters.count:
@@ -312,85 +252,6 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         case .kindleAddress: KindleSendSettings.kindleAddress = value
         case nil: break
         }
-    }
-
-    // MARK: - Boox account (OTP login)
-
-    @objc private func regionChanged(_ control: UISegmentedControl) {
-        let regions = BooxSendSettings.Region.allCases
-        BooxSendSettings.region = regions[max(0, min(control.selectedSegmentIndex, regions.count - 1))]
-    }
-
-    private func startBooxLogin() {
-        let alert = UIAlertController(
-            title: "Log In to Boox",
-            message: "Enter the email on your BOOX account. We'll send a verification code.",
-            preferredStyle: .alert)
-        alert.addTextField { field in
-            field.placeholder = "you@example.com"
-            field.keyboardType = .emailAddress
-            field.autocapitalizationType = .none
-            field.autocorrectionType = .no
-            field.text = BooxSendSettings.accountIdentity
-        }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Send Code", style: .default) { [weak self, weak alert] _ in
-            let identity = (alert?.textFields?.first?.text ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !identity.isEmpty else { return }
-            self?.requestBooxCode(identity: identity)
-        })
-        DotMatrixModal.present(alert, from: self)
-    }
-
-    private func requestBooxCode(identity: String) {
-        Task { [weak self] in
-            do {
-                try await BooxAuthClient(host: BooxSendSettings.host).requestLoginCode(identity: identity)
-                self?.promptForBooxCode(identity: identity)
-            } catch {
-                self?.presentInfoAlert(title: "Couldn't Send Code", message: "\(error)")
-            }
-        }
-    }
-
-    private func promptForBooxCode(identity: String) {
-        let alert = UIAlertController(
-            title: "Enter Code",
-            message: "Enter the verification code emailed to \(identity).",
-            preferredStyle: .alert)
-        alert.addTextField { field in
-            field.placeholder = "Code"
-            field.keyboardType = .numberPad
-        }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Log In", style: .default) { [weak self, weak alert] _ in
-            let code = (alert?.textFields?.first?.text ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !code.isEmpty else { return }
-            self?.completeBooxLogin(identity: identity, code: code)
-        })
-        DotMatrixModal.present(alert, from: self)
-    }
-
-    private func completeBooxLogin(identity: String, code: String) {
-        Task { [weak self] in
-            do {
-                let token = try await BooxAuthClient(host: BooxSendSettings.host)
-                    .login(identity: identity, code: code)
-                self?.credentials.setBooxToken(token)
-                BooxSendSettings.accountIdentity = identity
-                self?.tableView.reloadData()
-            } catch {
-                self?.presentInfoAlert(title: "Login Failed", message: "\(error)")
-            }
-        }
-    }
-
-    private func logOutBoox() {
-        credentials.setBooxToken(nil)
-        BooxSendSettings.accountIdentity = ""
-        tableView.reloadData()
     }
 
     // MARK: - Import & filters
@@ -483,21 +344,4 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         }
     }
 
-    private func sendBooxTest() {
-        guard ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.boox) else {
-            presentInfoAlert(title: "Not Logged In", message: "Log in to Boox first.")
-            return
-        }
-        Task { [weak self] in
-            do {
-                try await ArticleSendCoordinator.shared.sendTestDocument(
-                    toDestinationID: ArticleDestinationID.boox)
-                self?.presentInfoAlert(
-                    title: "Test Sent",
-                    message: "Check your Boox device after it syncs over WiFi.")
-            } catch {
-                self?.presentInfoAlert(title: "Test Failed", message: "\(error)")
-            }
-        }
-    }
 }

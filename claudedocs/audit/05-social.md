@@ -2,12 +2,10 @@
 
 Scope: recognizing a URL as a social/video/audio platform link and producing a
 no-article item with the right metadata + rendering — NEVER routing it through
-article text extraction. Owner-reported symptom: YouTube links sometimes get
 text-extracted. Recognition must be deterministic and identical on every surface.
 
 Files audited (paths absolute under `/Users/hsp/Desktop/monorepo/production/ios-client/clip`):
 `ReaderKit/PlatformClassifier.swift`, `ReaderKit/NonTextualContent.swift`,
-`ReaderKit/YouTubeURL.swift`, `ReaderKit/ContentPlatform.swift`,
 `ReaderKit/MediaItemKey.swift`, `ReaderKit/ReadingListItem.swift`,
 `ReaderKit/ArticleIngestDecider.swift`, `Luna/Platforms/PlatformRegistry.swift`,
 `Luna/Platforms/PlatformModule.swift`, all `Luna/Platforms/**` modules,
@@ -27,7 +25,6 @@ single authority. It lives in ReaderKit so the app AND both extensions can call 
 It is one big inline `if/else` over `url.host` (lowercased) + path segments, hardcoding
 the host/path patterns for **every** platform:
 
-- YouTube — delegates to `YouTubeURL.videoID` (so all YT hosts handled there).
 - Bluesky — `bsky.app` + `/profile/<author>/post/<rkey>`.
 - X — `x.com`/`twitter.com` (+ subdomains via `matches`) + `/status|statuses/<id>` (numeric id only).
 - TikTok — `*.tiktok.com` + `/video/<numeric id>` (short `vm./vt.` recognized, id nil).
@@ -40,21 +37,14 @@ the host/path patterns for **every** platform:
 Returns `PlatformClassification(platform, itemID?, sourceService?)`. Host helper
 `matches(host, domains...)` does exact-or-suffix subdomain matching. Pure, no network.
 
-### `YouTubeURL` (ReaderKit) — the one extracted recognizer
 
-`YouTubeURL` is a self-contained enum: a `youtubeHosts` set
-(`youtube.com/www/m/music/-nocookie` + `youtu.be`), `videoID(from:)` (handles
 `/watch?v=`, `/shorts|embed|live|v/<id>`, `youtu.be/<id>`), `validated()` (11-char
 id check), plus `watchURLString`, `appURL`, `thumbnailURL`. `PlatformClassifier`
-calls `YouTubeURL.videoID` first — so YT is the only platform whose recognition is
 genuinely shared/extracted rather than re-implemented inline.
 
 ### `NonTextualContent` (ReaderKit) — a thin re-wrapper of the classifier
 
 `NonTextualContent.detect(urlString:)` calls `PlatformClassifier.classify` and maps
-it to an enum: `.youTube(videoID:)` or `.platform(ContentPlatform, itemID:)`. It also
-owns YouTube-only embed derivations (`embedURL` = `/embed/<id>` + playback params,
-`embedReferer`, `staticPreviewImageURL` = `img.youtube.com/.../hqdefault.jpg`). For
 `.platform` cases `embedURL`/`staticPreviewImageURL` are nil. This is what the share
 extension uses to decide "non-textual vs article."
 
@@ -62,7 +52,6 @@ extension uses to decide "non-textual vs article."
 
 `PlatformModule` protocol declares `classify(_:) -> PlatformMatch?` plus rendering
 hooks (`subtitle`, `appDeepLink`, `embed`, `glyphSymbolName`, optional `metadataFetcher`).
-There are 9 concrete modules (`YouTubePlatform`, `XPlatform`, `BlueskyPlatform`,
 `RedditPlatform`, `TikTokPlatform`, `InstagramPlatform`, `FacebookPlatform`,
 `MusicPlatform`, `PodcastPlatform`), each with a `classify` body that re-derives the
 same host/path match via a per-platform `Link` parser (`XLink`, `BlueskyLink`,
@@ -71,22 +60,17 @@ same host/path match via a per-platform `Link` parser (`XLink`, `BlueskyLink`,
 **But `PlatformRegistry.detect` does NOT call any module's `classify`** — it calls
 `PlatformClassifier.classify` and wraps the result (`PlatformRegistry.swift:35-38`).
 `module(for:)` is used only for rendering/metadata dispatch. So every module's
-`classify` is **production-dead code** (only `YouTubePlatform.classify` and the
 modules' `classify` are exercised by unit tests — `PlatformRegistryTests`,
 `PlatformParsersTests` — never on a real save). The per-platform `Link` parsers ARE
 live, but only via the modules' `subtitle`/`metadataFetcher`, not for classification.
 
 Net: there are **three** recognition expressions of the same rules —
 `PlatformClassifier` (live), the 9 module `classify` + their `Link` parsers (dead for
-classification, live for rendering), and `YouTubeURL` (shared, called by both).
 
 ### Data model
 
 `ReadingListItem` (ReaderKit): platform fields are optional + `decodeIfPresent`
 (`platform`, `platformItemID`, `mediaCreatorName`, `mediaItemTitle`,
-`mediaSourceService`, legacy `youtubeVideoID`/`channelName`). Computed
-`contentPlatform` (falls back to `.youtube` for legacy items with a `youtubeVideoID`),
-`isPlatformItem`, `isURLlessMedia`, `isYouTubeVideo`. `ContentPlatform` enum +
 `MusicProvider`. `MediaItemKey` builds the synthetic `lunamusic://`/`lunapodcast://`
 key for URL-less media items.
 
@@ -94,8 +78,6 @@ key for URL-less media items.
 
 | Surface | File:line | Recognizer used | Order vs article extractor | OK? |
 |---|---|---|---|---|
-| Main app ingest | `ReadingListIngestor.swift:101,110` | `YouTubeURL.videoID` then `PlatformRegistry.shared.detect` | both BEFORE `ArticleIngestDecider.decide` (line 151) | ✅ |
-| Paste suggester | `PasteboardSuggester.swift:72,85` | `YouTubeURL.videoID` then `PlatformRegistry.shared.detect`; dedup uses `PlatformClassifier.classify` (112) | both BEFORE article extract (95) | ✅ |
 | Share ext (zero-UI append) | `SharedReadingListAppender.swift:18` | none — writes a raw `pending` JSON dict | classification deferred to main-app ingest | ✅ (deferred) |
 | Share ext (no reader mode) | `ShareViewController.swift:279` | `NonTextualContent.detect` | guards before `ingestArticleThenComplete` | ✅ |
 | Action ext (reader mode) | `ShareViewController.swift:288` | `NonTextualContent.detect` | guards: platform → `presentSavedNonTextual`, else `presentReader` | ✅ |
@@ -110,8 +92,6 @@ key for URL-less media items.
 decision routine used identically by the main-app ingestor AND both share-sheet
 extensions." Its pipeline is: (1) product detection → (2) article resolution +
 bypass → (3) `.article`/`.needsArchive`/`.failed`. **It contains no
-platform/YouTube/non-textual branch** (grep for `NonTextual|PlatformClassifier|
-PlatformRegistry|youtube` inside it returns nothing). Platform recognition is bolted
 on by each caller *before* invoking the decider — and the action-extension reader
 forgets to do so.
 
@@ -125,11 +105,9 @@ forgets to do so.
    decider's own contract claims to be the single point of truth but it only covers
    article/price/paywall. Any caller that hits the decider without first guarding for
    platforms will text-extract a video/post. This is the structural root of the
-   YouTube bug class.
 
 2. **Confirmed divergent surface: `ShareReaderViewController.ingestAndPresent`
    (`:73-104`)** calls `ArticleIngestDecider.decide(url:)` with no `NonTextualContent`
-   / platform guard. A YouTube/social URL reaching this VC is run through article
    extraction and lands as `.article`/`.failed` ("Couldn't Load") instead of a video.
    In the current share flow this VC is reached only via `ShareViewController.routeSavedOrReader`,
    which *does* guard (`:288`) — so the bug is latent there today — but it is *also*
@@ -202,7 +180,6 @@ caring which platform:
 ```swift
 enum PlatformRecognizer {
     static let rules: [PlatformRule] = [
-        .youTube,                                  // wraps YouTubeURL.videoID
         .x, .bluesky, .reddit, .tiktok,
         .instagram, .facebook,
         .spotify, .appleMusic, .applePodcasts,
@@ -268,18 +245,11 @@ platform is one `PlatformRule` + one renderer.
 Recognition is pure (`String -> RecognizedPlatform?`), so the whole table is tested
 by a single data-driven test sweeping real example URLs — positives (host variants,
 path shapes, short links) and negatives (articles, junk). This is where the
-"YouTube wrongly text-extracted" bug should be permanently pinned: one table, asserted
 identical to what every surface sees (because every surface calls the same `recognize`).
 
 Concrete cases to assert (`expected platform`, and `itemID` where deterministic):
 
-- **YouTube** (`.video`): `https://www.youtube.com/watch?v=dQw4w9WgXcQ` →id `dQw4w9WgXcQ`;
-  `https://youtu.be/dQw4w9WgXcQ`; `https://m.youtube.com/watch?v=…`;
-  `https://music.youtube.com/watch?v=…`; `https://www.youtube.com/shorts/<id>`;
-  `https://www.youtube.com/live/<id>`; `https://www.youtube-nocookie.com/embed/<id>`;
   `https://youtu.be/<id>?si=track` (tracking param tolerated); reject
-  `https://www.youtube.com/@channel` (no video id → not a video) and
-  `https://www.youtube.com/feed/subscriptions`.
 - **X** (`.social`): `https://x.com/jack/status/20` →`20`;
   `https://twitter.com/u/status/1234567890123456789`; `https://mobile.twitter.com/u/status/20`;
   `https://x.com/u/statuses/20`; `https://x.com/u/status/20?s=46&t=abc` (id `20`,
@@ -312,13 +282,11 @@ Concrete cases to assert (`expected platform`, and `itemID` where deterministic)
 
 Plus a **parity test** asserting `recognize` is what each surface uses: e.g.
 `ArticleIngestDecider.decide` returns `.platform` (never `.article`) for every
-positive URL above — which directly regresses the action-extension YouTube bug.
 
 Existing tests to fold in / keep: `PlatformClassifierTests` (becomes the table sweep),
 `PlatformParsersTests` + `PlatformRegistryTests` (the `Link`/module tests survive only
 if the parsers still back the table; otherwise delete the dead-`classify` assertions),
 `NonTextualContentTests` (keep the YT embed/preview derivations; drop duplicate
-recognition asserts), `MediaPlatformTests`, `YouTubeURLTests`.
 
 ---
 
@@ -344,10 +312,6 @@ struct PlatformRule {
 
 enum PlatformRecognizer {
     static let rules: [PlatformRule] = [
-        // YouTube reuses the one extracted recognizer — no host list duplicated.
-        PlatformRule(platform: .youtube, service: nil,
-                     hosts: ["youtube.com", "youtu.be", "youtube-nocookie.com"]) { _, _, _ in nil }
-            .overridingID { url in YouTubeURL.videoID(from: url) },
 
         // Adding a platform = appending ONE entry like this:
         PlatformRule(platform: .tiktok, service: nil, hosts: ["tiktok.com"]) { _, segments, _ in

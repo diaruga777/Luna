@@ -89,9 +89,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     public var wordCount: Int?
     /// 0…1 how far the user has gotten (scroll depth or RSVP position).
     public var readingProgress: Double?
-    /// YouTube video ID when this item is a video link rather than an article.
-    public var youtubeVideoID: String?
-    /// YouTube channel name (from oEmbed), shown in the list subtitle.
     public var channelName: String?
     /// Downloaded video thumbnail (inside the Articles directory).
     public var thumbnailFileName: String?
@@ -102,8 +99,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// document with no web URL. The raw file lives at
     /// `Articles/<id>-source.<documentType>`.
     public var documentType: String?
-    /// Per-destination send status (e.g. "kindle", "boox"), keyed by destination
-    /// id. Absent = never requested for that destination.
+    /// Per-destination send status, keyed by destination id. Absent means never requested.
     public var sendStates: [String: SendState]
     /// When the article was last delivered to each destination (the once-per-day
     /// resend guard), keyed by destination id.
@@ -123,7 +119,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
 
     /// The content platform this item belongs to (nil = a plain article/document).
     public var platform: ContentPlatform?
-    /// Platform item id (tweet id, post shortcode, etc.) — generalizes `youtubeVideoID`.
+    /// Platform item id (tweet id, post shortcode, etc.).
     public var platformItemID: String?
     /// Artist (music) or show (podcast).
     public var mediaCreatorName: String?
@@ -149,13 +145,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// Capture source for routing/auto-send, defaulting legacy items to `.manual`.
     public var effectiveCaptureSource: CaptureSource { captureSource ?? .manual }
 
-    public var isYouTubeVideo: Bool { youtubeVideoID != nil || platform == .youtube }
-
-    /// The platform for rendering/routing — falls back to `.youtube` for legacy
-    /// items saved before `platform` existed.
-    public var contentPlatform: ContentPlatform? {
-        platform ?? (youtubeVideoID != nil ? .youtube : nil)
-    }
+    public var contentPlatform: ContentPlatform? { platform }
 
     /// A recognized platform item (vs. a plain article/document).
     public var isPlatformItem: Bool { contentPlatform != nil }
@@ -203,7 +193,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// Only items with a real web URL can be sent to other users.
     public var canShareToFriends: Bool { isShareable }
 
-    /// Send status for one destination (e.g. "kindle", "boox").
+    /// Send status for one destination.
     public func sendState(for destinationID: String) -> SendState? { sendStates[destinationID] }
     /// Last delivery time for one destination.
     public func dateSent(for destinationID: String) -> Date? { datesSent[destinationID] }
@@ -224,7 +214,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.lastSpokenWordIndex = nil
         self.wordCount = nil
         self.readingProgress = nil
-        self.youtubeVideoID = nil
         self.channelName = nil
         self.thumbnailFileName = nil
         self.sharedByUsername = nil
@@ -268,7 +257,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         mediaCreatorName: String? = nil,
         mediaItemTitle: String? = nil,
         mediaSourceService: MusicProvider? = nil,
-        youtubeVideoID: String? = nil,
         channelName: String? = nil,
         captureSource: CaptureSource? = nil,
         priceTracker: PriceTracker? = nil
@@ -288,7 +276,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.lastSpokenWordIndex = nil
         self.wordCount = wordCount
         self.readingProgress = readingProgress
-        self.youtubeVideoID = youtubeVideoID
         self.channelName = channelName
         self.thumbnailFileName = nil
         self.sharedByUsername = sharedByUsername
@@ -368,7 +355,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         lastSpokenWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastSpokenWordIndex)
         wordCount = try container.decodeIfPresent(Int.self, forKey: .wordCount)
         readingProgress = try container.decodeIfPresent(Double.self, forKey: .readingProgress)
-        youtubeVideoID = try container.decodeIfPresent(String.self, forKey: .youtubeVideoID)
         channelName = try container.decodeIfPresent(String.self, forKey: .channelName)
         thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
         sharedByUsername = try container.decodeIfPresent(String.self, forKey: .sharedByUsername)

@@ -17,7 +17,6 @@ Stage 1 builds the determination foundation as NEW pure `ReaderKit` files with c
 .paywalledArticle(hardHost: Bool)          // hardHost ⇒ archive-CAPTCHA-only
 .product(ProductSignal)
 .social(ContentPlatform, itemID: String?)  // x / bluesky / reddit / instagram
-.video(ContentPlatform, itemID: String?)   // youtube / tiktok / facebook video
 .audio(ContentPlatform, MusicProvider?, itemID: String?)  // music / podcast
 .document(type: String)                     // save-time flag, always wins
 .undetermined                               // table miss + heuristics inconclusive
@@ -34,7 +33,6 @@ Stage 1 builds the determination foundation as NEW pure `ReaderKit` files with c
 `enum Classifier` — THE classifier. `classify(url:html:documentType:) -> ContentKind`, two phases in strict order:
 
 1. **Deterministic `[KnownSite]` table FIRST** (URL-only). `documentType` (save-time flag) wins outright. Then `knownSites = platformSites + shopSites + newsSites`:
-   - **platformSites** — a single row gated on `platformHosts` (the union of every `PlatformRule.hosts`, so adding a platform rule extends the gate automatically); the closure defers to `PlatformRecognizer.recognize` and maps the `RecognizedPlatform.kind` to `.video`/`.social`/`.audio`. **Checked FIRST** ⇒ no surface can text-extract a video/post (kills the YouTube-text-extraction bug class). A platform host with no recognizable item (e.g. a YouTube channel page) returns `.undetermined`, never `.video`.
    - **shopSites** — long lists → `.product(.knownShopHost)`: Amazon (all TLDs + `amzn.to`), target/walmart/bestbuy/ebay/etsy/wayfair/homedepot/lowes/costco/ikea/newegg/aliexpress/temu/macys/nordstrom/argos/currys/johnlewis/bunnings.com.au/jbhifi.com.au/… A deterministic shop hit skips the fuzzy heuristic scorer entirely (fewer false positives).
    - **newsSites** — `hardPaywallNewsSites` → `.paywalledArticle(hardHost: true)` (folds in `ArticleFetcher.hardPaywallHosts` + smh.com.au/theage.com.au/afr.com/…); `freeNewsSites` → `.article` fast-path (guardian/bbc/reuters/apnews/wikipedia/techcrunch/theverge/…).
 2. **HTML heuristics** — run ONLY when the table is `.undetermined` AND `html` is supplied (a `nil` html caller stops at phase 1). `heuristicKind`: product → paywall → undetermined, reusing the pure detectors.
@@ -65,15 +63,12 @@ Registry `handlers = [.facebook, .googleNews, .appleNews, .shorteners(redirectSh
 - `struct PlatformURLParts { host; segments; query; url }` — the parsed pieces handed to a rule.
 - `struct PlatformRule { platform; service; hosts: [String]; recognizes(parts) -> Bool; itemID(parts) -> String? }`. `hosts` match exact-or-subdomain. `recognizes` defaults true (host match is enough); a rule can decline a shared host (Spotify splits music vs podcast by path; Bluesky requires a `/post/`).
 
-`rules = [youTube, x, bluesky, reddit, tiktok, instagram, facebook, spotifyMusic, spotifyPodcast, appleMusic, applePodcasts]`; first rule that matches a host AND `recognizes` wins. **Adding a platform = appending one rule.** YouTube reuses `YouTubeURL.videoID` (and declines a host with no extractable id). The rules mirror the live `PlatformClassifier`'s host/path logic exactly. `ContentPlatform.kind: PlatformKind` (`.video`/`.social`/`.audio`) added (additive) for routing.
 
 `PlatformClassifier` / `PlatformRegistry` / `NonTextualContent` are UNCHANGED in Stage 1 (still back the live pipeline); Stage 3 shims them to the recognizer and deletes the dead per-module `classify`.
 
 ### Tests (Stage 1: +30, suite 786 → 816, all green)
 
-- `LunaTests/ClassifierTests.swift` (23) — KnownSite table over named shops/news/social (positives + negatives), platform-first ordering, YouTube channel page ≠ video, URL-only miss → undetermined, heuristic structured/OG product, the stray-`addToCart` article false-positive guard, paywall-locked HTML, no-signal article → undetermined, document-flag-wins, determinism/parity.
 - `LunaTests/URLUnwrapperTests.swift` (14) — offline facebook (fbrpc + l.php shim, fb-target rejected) + google-classic; `.fetch` wrappers left offline; tracking-strip; apple.news fetch (+ News+ exclusive unchanged); google-new batchexecute (mock 2 round-trips); shortener cross-host vs same-host; ordinary URL does no network. Uses a `URLProtocol` mock session.
-- `LunaTests/PlatformRecognizerTests.swift` (13) — data-driven sweep over real example URLs (youtube/x/instagram/tiktok/facebook/reddit/bluesky/spotify/apple) with expected platform + itemID + kind, plus negatives, plus the derived `platformHosts` gate.
 - Fixtures: `LunaTests/Fixtures/classifier-article-stray-addtocart.html`, `classifier-paywall-locked.html` (+ reuses `Fixtures/Products/*`). Fixtures load by file path (`BypassFixtures.html`), not bundled resources.
 
 ## Stage 2 — Processing components (DONE)
@@ -118,7 +113,6 @@ ONE typed plan `{ silent: [SilentStrategy], webPreStages: [WebStrategy], allowsA
 ### Seams left from Stage 1 (still open)
 
 - `URLUnwrapper.unwrapOffline` returns a tracking-stripped URL; `NewsAggregatorUnwrapper.normalizedIncomingURL*` still returns the verbatim target. Stage 3 repoints the 6 sprinkled fbrpc/normalize call-sites + the async `unwrap` choke point to `URLUnwrapper` directly (single shared entry on every surface, closing the `saveNewWithContent` / `handleFriendShare` unwrap gaps), then folds tracking-strip into one `URLCanonicalizer.strip` shared with `canonicalForArchiving`.
-- `Classifier` is not yet wired into `ReadingListIngestor` / `ArticleIngestDecider`. Stage 3 makes the classifier the determination stage (table first, HTML heuristics only when undetermined), strips fetch/price/bypass out of `ArticleIngestDecider`, and folds the four scattered host sets (`hardPaywallHosts`, `archiveTodayHosts`, `youtubeHosts`, inlined platform `matches`) into `knownSites`.
 - `PlatformRecognizer` is standalone; `PlatformClassifier`/`PlatformRegistry`/`NonTextualContent` still run live. Stage 3 shims them to `recognize`, deletes the dead module `classify`, and gates recognition as the FIRST branch of the processing decision so no surface can bypass it.
 - `ProductPageDetector.hasStructuredProductData` was added as the Tier-1-only seam the classifier's tightened product guard uses.
 
@@ -145,7 +139,6 @@ The ONE shared entry: `IngestPipeline.process(_ input: IngestInput, timeout:…,
   classifies EVERYTHING and no surface re-derives it.
 - **Fixed order**: (1) `URLUnwrapper.unwrap` ONCE (offline-first, tracking-stripped —
   every surface unwraps now) → replay `.unwrap`; (2) `Classifier.classify` (deterministic
-  table first; platform/video/audio/document are the FIRST branch ⇒ a YouTube/X/etc. URL
   is decided before any fetch and can NEVER reach article extraction on any surface);
   (3) per-kind processing — product detect (→ `.product`, never paywall-bypassed) → article
   resolve via the gated silent `BypassPlan` → `.article` / `.needsArchive` / `.failed`.
@@ -205,7 +198,6 @@ Every surface builds an `IngestInput`, calls `IngestPipeline.process`, and prese
 
 - **Action-ext spinner-forever** → the overall `process` timeout + the extension-safe
   `render == nil` (no WebView) + the exhaustive presenter (`.failed`/timeout shows an error).
-- **YouTube text-extracted** → platform/video recognition is `Classifier`'s FIRST branch,
   shared by all surfaces — a video returns `.video` before any fetch/extraction.
 - **Amazon never a tracker** → Stage-2 buy-box price rule + single price source, reached via
   the pipeline's product branch (extension-safe static path).
@@ -246,7 +238,6 @@ asserted identically across EVERY `CaptureSource` (the headline parity guarantee
   17.88 USD). Reuses the Stage-2 `Fixtures/Products/*`.
 - **News → `.article` (readable) or `.needsArchive` (hard-paywall stub):** nytimes,
   washingtonpost, wsj, smh.com.au — both variants each. Reuses `Fixtures/Readable/*`.
-- **Social/video/audio → never `.article`:** youtube/tiktok/facebook → `.video`;
   x/instagram/reddit/bluesky → `.social`; spotify/apple → `.audio`. URL-only, decided
   before any fetch. A second test attaches article-shaped HTML to every platform URL
   and asserts none become `.article`.
@@ -263,7 +254,6 @@ asserted identically across EVERY `CaptureSource` (the headline parity guarantee
   `URLUnwrapperTests`). The enum keeps ONLY the pure wrapper parsers that `URLUnwrapper`'s
   registry and `ShareViewController.facebookRedirectTarget` wrap.
 - **Kept (genuine unique use, documented):** `NonTextualContent` is the share extension's
-  non-textual presentation value type (YouTube embed URL / referer / poster); it is no
   longer a recognition shim. `PlatformRegistry` stays as the module registry (`module(for:)`
   drives rendering); its `detect` is a thin convenience over the recognizer.
 
@@ -338,10 +328,8 @@ pipeline). Suite → 852, all green; Release (all extension targets) compiles.
   `ReadingListIngestor.saveAsArticle`) is now an injected closure — a static
   `PriceTrackingViewController.defaultSaveAsArticle` the app installs at launch, a re-append
   in the extension.
-- **Bug 4 — sharing a YouTube link via the SHARE extension fails.** The zero-UI share
   extension routed `.video` straight to auto-download and persisted only a bare URL (no
   platform/videoID), so the saved item was incomplete and the main app had to re-classify.
-  FIX: the driver's `.video`/`.social`/`.audio` cases call `saveYouTubeMetadata` /
   `savePlatformMetadata` — an extension save is now shaped IDENTICALLY to a main-app save.
 - **`.needsArchive` presentation unified.** The action extension used to wrap the
   archive-CAPTCHA reader in `ShareReaderViewController`; the main app showed
@@ -353,12 +341,10 @@ pipeline). Suite → 852, all green; Release (all extension targets) compiles.
 ### Cross-surface parity tests (`LunaTests/SurfaceParityTests.swift`)
 
 Drives the SAME nine example links — amazon, nytimes, wsj, an fbrpc Facebook link, an
-apple.news link, a Google News link, youtube, instagram, x — through the MAIN-APP source AND
 both EXTENSION surfaces (via the real `ShareSurfaceDriver` + `FakeExtensionHost`), with a
 mock fetcher + the Stage-1–4 fixtures, a nil render tier, and an offline-failing
 `URLSession` for the network-unwrap legs (NO live network). Asserts: (1) identical `Outcome`
 across `.manual`/`.shareSheet`/`.appIntent`; (2) identical PRESENTATION INTENT across the
 main-app presenter and the extension driver; (3) the extension persists the classified item
-the same shape (youtube keeps its platform/videoID; amazon becomes a tracker). It FAILS if
 any surface diverges again. (+`ShareSurfaceDriverTests` unit-drives each `Outcome` through
 the fake host.)

@@ -29,9 +29,7 @@ import UIKit
 /// (`host.isActionExtension` / `host.readerMode`), never divergent processing logic
 /// — both call the same pipeline and exhaustive `Outcome` switch here. Every case
 /// persists the classified metadata to the shared store (so an extension save is
-/// shaped identically to a main-app save — the fix for the YouTube-via-share bug,
-/// where a `.video` used to be dropped to a bare URL the main app had to
-/// re-classify). Presentation policy is narrow: the action extension shows its
+/// shaped identically to a main-app save. Presentation policy is narrow: the action extension shows its
 /// reader/saved UI, while the share extension only presents media, price, and
 /// archive-bypass UI.
 @MainActor
@@ -99,13 +97,7 @@ public final class ShareSurfaceDriver {
 
         case let .video(platform, itemID):
             persistPlatform(platform, service: nil, itemID: itemID, url: url)
-            // TikTok and Facebook are video platforms too, but only YouTube has an
-            // inline player. Keeping the original platform here is what enables the
-            // social-media preview/download UI for the other two.
-            let content: NonTextualContent = platform == .youtube
-                ? .youTube(videoID: itemID ?? "")
-                : .platform(platform, itemID: itemID)
-            presentNonTextual(content, url: url)
+            presentNonTextual(.platform(platform, itemID: itemID), url: url)
 
         case let .social(platform, itemID):
             persistPlatform(platform, service: nil, itemID: itemID, url: url)
@@ -159,38 +151,15 @@ public final class ShareSurfaceDriver {
         }
     }
 
-    /// Persists a recognized video/social/audio item's classification (platform + item
-    /// id), so the saved item renders correctly and the main app doesn't re-classify a
-    /// bare URL. YouTube is recorded as a `.youtube` platform item with its video id;
-    /// the main app fills in oEmbed title/thumbnail on next launch.
+    /// Persists a recognized video/social/audio item's classification.
     private func persistPlatform(
         _ platform: ContentPlatform, service: MusicProvider?, itemID: String?, url: URL
     ) {
         guard let saved = store.item(forURLString: url.absoluteString) else { return }
-        if platform == .youtube, let videoID = itemID {
-            _ = store.saveYouTubeMetadata(
-                videoID: videoID, title: saved.title ?? platform.displayName,
-                channelName: nil, thumbnailFileName: nil, for: saved.id)
-            fetchYouTubeThumbnail(videoID: videoID, itemID: saved.id)
-        } else {
-            _ = store.savePlatformMetadata(
-                platform: platform, platformItemID: itemID, title: nil, creator: nil,
-                thumbnailFileName: nil, mediaCreatorName: nil, mediaItemTitle: nil,
-                mediaSourceService: service, for: saved.id)
-        }
-    }
-
-    /// The extension does not run the main app's oEmbed ingestor, so capture the
-    /// stable YouTube poster now instead of leaving this saved video without art.
-    private func fetchYouTubeThumbnail(videoID: String, itemID: UUID) {
-        guard let url = YouTubeURL.thumbnailURL(videoID: videoID) else { return }
-        let store = store
-        Task {
-            guard let (data, response) = try? await URLSession.shared.data(from: url),
-                  let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-                  !data.isEmpty else { return }
-            store.setThumbnail(data, for: itemID)
-        }
+        _ = store.savePlatformMetadata(
+            platform: platform, platformItemID: itemID, title: nil, creator: nil,
+            thumbnailFileName: nil, mediaCreatorName: nil, mediaItemTitle: nil,
+            mediaSourceService: service, for: saved.id)
     }
 
     @discardableResult
@@ -217,8 +186,8 @@ public final class ShareSurfaceDriver {
 
     /// Routes a non-textual outcome. Downloadable social media always opens the
     /// saved-content screen on BOTH extension surfaces so the user can explicitly
-    /// choose the media download. YouTube remains a saved/video preview, and other
-    /// non-downloadable items retain the share extension's silent-save behavior.
+    /// choose the media download. Non-downloadable items retain the share extension's
+    /// silent-save behavior.
     private func presentNonTextual(_ content: NonTextualContent, url: URL) {
         guard let host else { return }
         if host.readerMode != nil || MediaDownloadablePlatform.supports(url.absoluteString) {

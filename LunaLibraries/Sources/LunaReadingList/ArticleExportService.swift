@@ -12,7 +12,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// Builds a shareable EPUB file for a saved article, for the generic "Share
-/// eBook…" path (Apple Books, Kobo, reMarkable, Boox, Files, AirDrop, …). No
+/// eBook…" path. No
 /// credentials or backend — the EPUB is handed to whatever destination the user
 /// picks in the system share sheet.
 ///

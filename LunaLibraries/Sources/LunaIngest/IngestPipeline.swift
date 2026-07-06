@@ -67,8 +67,7 @@ public enum Outcome: Equatable {
     /// A social post (X / Bluesky / Reddit / Instagram). `itemID` may be nil for an
     /// opaque/short link that still classifies as the platform.
     case social(ContentPlatform, itemID: String?)
-    /// A video (YouTube today; TikTok / Facebook video map here too). Never
-    /// article-extracted.
+    /// A video. Never article-extracted.
     case video(ContentPlatform, itemID: String?)
     /// A music track / podcast episode. `service` is the streaming provider when
     /// known.
@@ -117,7 +116,7 @@ public struct IngestResult: Equatable {
 ///      shorteners — offline-first, tracking-stripped (every surface unwraps now).
 ///   2. `Classifier.classify` — deterministic `KnownSite` table first, then HTML
 ///      heuristics. Platform/video/audio recognition is the FIRST branch, so a
-///      YouTube/X/etc. URL is decided before any fetch and can NEVER reach article
+///      platform URL is decided before any fetch and can NEVER reach article
 ///      extraction on any surface.
 ///   3. Per-kind processing — article→extract; paywalledArticle→bypass plan then
 ///      extract, else `.needsArchive`; product→`ProductMetadataExtractor`;
@@ -224,8 +223,7 @@ public enum IngestPipeline {
         }
 
         // (2) Classify deterministically (URL-only). Platform/video/audio/document
-        // are decided here, before any fetch — a YouTube/X/etc. URL can never reach
-        // article extraction.
+        // are decided here, before any fetch, so they can never reach article extraction.
         let kind = Classifier.classify(url: url, documentType: input.documentType)
         switch kind {
         case .document(let type):

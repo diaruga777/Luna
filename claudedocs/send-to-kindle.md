@@ -1,4 +1,3 @@
-# Send to Ereaders (Kindle & Boox)
 
 Background delivery of saved articles to an ereader. The article is rendered to
 EPUB on-device once, then delivered to each configured destination:
@@ -6,19 +5,15 @@ EPUB on-device once, then delivered to each configured destination:
 - **Kindle** — emailed to the user's `@kindle.com` address through the connected
   Luna email account (the same account used for sign-in and friend sharing). That
   account's address must be on Amazon's approved-sender list.
-- **Boox** — uploaded to the user's Onyx account via the **unofficial** Send2Boox
-  service; the device pulls it over WiFi. See "Boox" below.
 
 No UI taps needed once configured.
 
 ## Destinations
 
 `ArticleDestination` (`Luna/Send/ArticleSendCoordinator.swift`) abstracts a
-target: `id` (`ArticleDestinationID.kindle` / `.boox`), `displayName`,
 `isConfigured`, `sendMode(for: ReadingListItem)` (source-aware), `appIntentsSendMode`
 (the App-Intents/in-app mode, for double-save press detection), and
 `send(epubData:fileName:title:)`. `KindleDestination` wraps `AccountEmailSender`;
-`BooxDestination` wraps `Send2BooxClient`. `ArticleSendCoordinator` holds
 `[ArticleDestination]` and is destination-agnostic.
 
 ## Auto-send by capture source
@@ -67,7 +62,6 @@ where the caller supplies `ArticleSendCoordinator.doubleSaveDestinationIDs()`
 (destinations whose `appIntentsSendMode == .doubleSave`). On ingestion,
 `articleBecameReady` consults `destination.sendMode(for: item)` — the item's
 capture source decides whether (and where) it auto-sends. Long-press a
-reading-list row → "Send to Kindle" / "Send to Boox" context-menu rows, each
 shown only when that destination is configured.
 
 ## Coordinator
@@ -90,29 +84,18 @@ shown only when that destination is configured.
   that flag and shows a one-shot bottom pill immediately if foregrounded, or on the
   next launch/foreground presentation if the failure happened in a background wakeup.
 
-## Boox (Send2Boox — unofficial)
 
-Ported from `hrw/onyx-send2boox`. Files in `Luna/Send/Boox/`:
-- `BooxAuthClient.swift` — OTP login: `users/sendMobileCode` (request code) →
   `users/signupByPhoneOrEmail` (code → long-lived token). Token in Keychain.
-- `Send2BooxClient.swift` — `upload(epubData:fileName:title:)`: `users/me` (uid) →
   `users/getDevice` + `im/getSig` (best-effort session pings, mirroring the
   reference) → `config/buckets` (bucket + OSS endpoint) → `config/stss` (OSS STS
   creds) → **signed OSS PUT** of the EPUB to `<uid>/push/<uuid>.epub` →
   `push/saveAndPush` (registers the object; `resourceType` is `"txt"` to match
-  the reference). `BooxDestination` is the `ArticleDestination`.
-- `BooxAPIClient.swift` — `https://{host}/api/1/{path}`; Bearer token; a JSON body
   implies POST; decodes the `{data:…}` envelope. Response models incl. tolerant
   string-or-int `uid`.
-- `OSSRequestSigner.swift` — Alibaba OSS **V1 HMAC-SHA1** request signing
   (StringToSign = VERB\n\nContent-Type\nDate\nCanonicalizedOSSHeaders +
   CanonicalizedResource; `x-oss-security-token` header; virtual-hosted URL).
-- `BooxSendSettings.swift` — `sendMode`, `accountIdentity`, `region`
-  (eur.boox.com / send2boox.com), `isConfigured` (token present).
 
-**CAVEAT (unverified):** Send2Boox is unofficial and the OSS signing is
 reproduced by hand (the reference used the `oss2` SDK). It is NOT validated
-against a live Onyx account/device — gated behind explicit setup with an in-app
 disclosure; a friend tests post-publication. Known risk: `URLSession` may strip
 the signed `Date` header (→ switch to a presigned URL if uploads 403).
 
@@ -127,9 +110,7 @@ the signed `Date` header (→ switch to a presigned URL if uploads 403).
 - `KindleSendSettings.swift` — Kindle address + `sendMode` (a typealias of
   `ArticleSendMode`); `isConfigured` is true when a Kindle address is set and an
   email account is connected.
-- `SendCredentialsStore.swift` — Keychain for the Boox token (`booxToken`;
   in-memory mock for tests). Kindle needs no secret here — it reuses the email
-  account's credential. Boox, email-account, and YouTube OAuth secrets go through
   `CredentialKeychain`: `kSecAttrAccessibleAfterFirstUnlock` (migratable, not
   `ThisDeviceOnly`) plus `kSecAttrSynchronizable=true`, so encrypted device restore
   and iCloud Keychain can preserve them when the user's system settings allow it.
@@ -146,14 +127,11 @@ on `.sent`.
 
 - Settings → "Email & Sending" (`EmailAndKindleSettingsScreen`): the connected
   sharing account, a Send-to-Kindle section (Kindle address + test), a
-  Send-to-Boox section (Onyx region, OTP login/logout, test send,
   unofficial-API disclosure footer), and the import-from-email settings — all on
-  one screen. Both the Kindle and Boox sections expose an **"Auto-Send by
   Source"** disclosure row pushing the shared `AutoSendBySourceScreen`
   (`Luna/Settings/`): App Intents mode + email / share-sheet-&-paste / friend
   toggles + a per-friend list.
 - `ReadingListViewController`: per-destination context-menu rows; subtitle shows
-  `sent to Kindle` / `Boox send failed` / `sending to …` per destination.
 
 ## Tests (`LunaTests/`)
 
@@ -161,6 +139,4 @@ on `.sent`.
 `SavePressPolicyTests` (per-destination eligibility matrix), `ArticleSendCoordinatorTests`
 (multi-destination fan-out + capture-source gating via a mock destination),
 `SourceSendSettingsTests` (per-source resolution + per-friend overrides + legacy
-defaults) and `CaptureSourceCodableTests`, `OSSRequestSignerTests`
-(canonicalization + signing), `BooxClientTests` (auth + upload happy-path via a
 mock `URLProtocol`), plus send-state + legacy-migration cases in `ReadingListStoreTests`.

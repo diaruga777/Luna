@@ -681,8 +681,6 @@
     function recognizedPlatformPage() {
         var host = (location.hostname || "").toLowerCase();
         var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
-        if (hostMatches(host, ["youtube.com", "youtube-nocookie.com"]) && youtubeVideoID()) { return "youtube"; }
-        if (host === "youtu.be" && segments[0]) { return "youtube"; }
         if (hostMatches(host, ["x.com", "twitter.com"])) { return "x"; }
         if (host === "bsky.app" && segments.indexOf("post") >= 0) { return "bluesky"; }
         if (hostMatches(host, ["reddit.com"]) || host === "redd.it") { return "reddit"; }
@@ -702,14 +700,6 @@
             if (host === roots[i] || host.slice(-("." + roots[i]).length) === "." + roots[i]) { return true; }
         }
         return false;
-    }
-
-    function youtubeVideoID() {
-        var params = new URLSearchParams(location.search || "");
-        if (params.get("v")) { return params.get("v"); }
-        var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
-        if (["shorts", "embed", "live"].indexOf(segments[0]) >= 0 && segments[1]) { return segments[1]; }
-        return null;
     }
 
     // The unlocked article HTML to hand the app, trimmed to fit native messaging's

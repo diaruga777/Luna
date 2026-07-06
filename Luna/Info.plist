@@ -38,7 +38,6 @@
 	</array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
-		<string>youtube</string>
 		<string>twitter</string>
 		<string>x</string>
 		<string>bluesky</string>

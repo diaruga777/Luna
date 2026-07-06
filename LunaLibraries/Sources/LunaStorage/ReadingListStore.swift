@@ -452,25 +452,6 @@ public final class ReadingListStore {
         }
     }
 
-    /// Fills in the YouTube metadata produced by ingestion and marks the item
-    /// ready (videos have no article content).
-    public func saveYouTubeMetadata(
-        videoID: String, title: String, channelName: String?,
-        thumbnailFileName: String?, for itemID: UUID
-    ) -> ReadingListItem? {
-        coordinatedMutate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
-            all[index].youtubeVideoID = videoID
-            all[index].platform = .youtube
-            all[index].platformItemID = videoID
-            all[index].title = title
-            all[index].channelName = channelName
-            all[index].thumbnailFileName = thumbnailFileName
-            all[index].state = .ready
-            return all[index]
-        }
-    }
-
     /// Creates (or returns the existing) URL-less music/podcast item from a
     /// synthetic `lunamusic://`/`lunapodcast://` key, marked ready. Used by the
     /// media intents and incoming media shares.
@@ -489,8 +470,7 @@ public final class ReadingListStore {
 
     /// Fills in metadata for a recognized platform item and marks it ready
     /// (platform items have no `ArticleContent`). Best-effort: any field may be
-    /// nil and the item still renders (logo + deep link). Mirrors
-    /// `saveYouTubeMetadata` for the generic platform path.
+    /// nil and the item still renders (logo + deep link).
     public func savePlatformMetadata(
         platform: ContentPlatform, platformItemID: String?, title: String?,
         creator: String?, thumbnailFileName: String?,

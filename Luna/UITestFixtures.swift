@@ -19,8 +19,8 @@ import Foundation
 enum UITestState: String, CaseIterable {
     /// No items at all (empty-state rendering).
     case empty
-    /// One of every save type — articles (ready/locked/failed), document, YouTube,
-    /// each platform post, music, podcast, friend-shared, price trackers.
+    /// One of every save type: articles (ready/locked/failed), document,
+    /// platform posts, music, podcast, friend-shared, price trackers.
     case mixed
     /// 12 unread renderable articles — enough to make catch-up eligible (the dot)
     /// and give the card stack a queue.
@@ -132,7 +132,7 @@ enum UITestFixtures {
             seed: String, url: String, title: String, daysAgo: Int,
             platform: ContentPlatform, creator: String?,
             mediaTitle: String? = nil, source: MusicProvider? = nil,
-            youtubeID: String? = nil, channel: String? = nil
+            channel: String? = nil
         ) -> ReadingListItem {
             ReadingListItem(
                 seed: seed, urlString: url, title: title, dateAdded: ago(days: daysAgo),
@@ -140,7 +140,7 @@ enum UITestFixtures {
                 platform: platform, platformItemID: seed,
                 mediaCreatorName: creator, mediaItemTitle: mediaTitle,
                 mediaSourceService: source,
-                youtubeVideoID: youtubeID, channelName: channel,
+                channelName: channel,
                 captureSource: .shareSheet)
         }
 
@@ -166,10 +166,6 @@ enum UITestFixtures {
         contents[doc.id] = sampleArticleContent(title: "Quarterly Report", author: nil)
         items.append(doc)
 
-        // YouTube
-        items.append(platform(seed: "yt", url: "https://youtube.com/watch?v=dQw4w9WgXcQ",
-                             title: "A YouTube Video", daysAgo: 1, platform: .youtube,
-                             creator: nil, youtubeID: "dQw4w9WgXcQ", channel: "Some Channel"))
         // Platform posts
         items.append(platform(seed: "x", url: "https://x.com/user/status/123",
                              title: "A post on X", daysAgo: 1, platform: .x, creator: "@user"))

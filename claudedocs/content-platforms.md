@@ -1,14 +1,12 @@
 # Content Platforms
 
 Luna accepts and renders links from many platforms beyond plain articles:
-YouTube, X, Bluesky, Reddit, TikTok, Instagram, Facebook, plus provider-agnostic
 **music** and **podcast** items (Spotify / Apple). A recognized platform URL is
 saved as a no-content `.ready` item (NEVER "Couldn't Load") and rendered with a
 platform glyph + creator; tapping runs a launch ladder.
 
 ## Architecture (`Luna/Platforms/`, enums in `ReaderKit/`)
 
-- **`ContentPlatform`** (ReaderKit) — `youtube/x/bluesky/reddit/tiktok/instagram/
   facebook/music/podcast`. `MusicProvider` — `apple/spotify`. (In ReaderKit so
   `ReadingListItem` can store them.)
 - **`PlatformModule`** — per-platform: `classify(urlString) -> PlatformMatch?`,
@@ -19,26 +17,18 @@ platform glyph + creator; tapping runs a launch ladder.
   `TikTokLink.handle`, `BlueskyLink.post(...).author`), or artist/channel for
   Music/Podcast. The reading list shows this in place of the host.
 - **`PlatformRegistry`** — ordered modules; `detect(urlString)` (replaces the old
-  hardcoded YouTube `if`) and `module(for:)`. Registers all nine.
 - **`PlatformEmbedViewController`** — generalized WKWebView embed (16:9, optional
-  Referer + "ended" watcher → mark read). Used by YouTube; available to others.
 - **`InAppBrowser`** — `SFSafariViewController` wrapper, the ultimate fallback.
 - **Row art** is rendered by `ReadingListItemCell` (see reading-list.md): cached
   art aspect-fit, else the platform's bundled brand logo. `ContentPlatform.logoAssetName`
-  → full-color favicon-derived PNGs (`logo-youtube/x/bluesky/reddit/tiktok/instagram/facebook`
   in Assets.xcassets); music/podcast fall back to the SF `glyphSymbolName`.
 
 ## Data model (`ReaderKit/ReadingListItem.swift`)
 
 Added optionals (decodeIfPresent — back-compatible): `platform`, `platformItemID`
-(generalizes `youtubeVideoID`), `mediaCreatorName`, `mediaItemTitle`,
-`mediaSourceService`. Computed: `contentPlatform` (falls back to `.youtube` for
-legacy items), `isPlatformItem`, `isURLlessMedia`. `isYouTubeVideo` now also true
-when `platform == .youtube`.
 
 ## Acceptance & rendering
 
-- **Ingest** (`ReadingListIngestor.ingest`): YouTube branch first (keeps its
   bespoke watch-later/suggestion path), then `PlatformRegistry.detect` →
   `ingestPlatformItem` (best-effort metadata via the module's fetcher →
   `ReadingListStore.savePlatformMetadata`, always `.ready`), then the article
@@ -49,15 +39,12 @@ when `platform == .youtube`.
   → thumbnail. Creator shows via `channelName`/`mediaCreatorName`.
 - **Tap (launch ladder)**: native app deep link (`canOpenURL` → `open` → mark
   read) → in-app embed (`PlatformEmbedViewController`) → `InAppBrowser` (Safari).
-  YouTube uses its existing `openVideo`. Music/podcast use `openMediaItem` (below).
-- Article-only actions (Kindle/Boox/eBook/Speed Read) are hidden for all platform
   items (`!isPlatformItem`); ereader send guards broadened to `isPlatformItem`.
 
 ## Per-platform capability
 
 | Platform | Classify | Metadata | App link | Embed | Search intent |
 |---|---|---|---|---|---|
-| YouTube | `YouTubeURL` | oEmbed (existing) | `youtube://` | yes | `FindYouTubeVideoIntent` |
 | Bluesky | `BlueskyLink` | oEmbed (author) | — | — | `FindBlueskyPostIntent` (keyless searchPosts) |
 | X | `XLink` | fxtwitter (author/text) | `twitter://status?id=` | — | none (no free search) |
 | TikTok | `TikTokLink` | oEmbed (author/title/thumb) | — | — | none |
@@ -94,7 +81,6 @@ the existing `readingListItem` path (recipient re-classifies via the registry).
 
 ## Info.plist
 
-`LSApplicationQueriesSchemes`: `youtube, twitter, x, bluesky, reddit, spotify,
 music, podcasts, tiktok, snssdk1233, instagram, fb` (so `canOpenURL` works).
 
 ## Bundled Shortcut (manual)

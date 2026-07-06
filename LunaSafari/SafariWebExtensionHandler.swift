@@ -55,6 +55,14 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                let html = message?["html"] as? String {
                 SharedSafariURL.recordUnlockedContent(urlString, html: html)
             }
+        case "onboardingStatus":
+            // background.js asks this once at script load. Records that this
+            // extension is now enabled/running, and — if the app left a takeover
+            // pending for this surface (its Safari onboarding step is on screen) —
+            // consumes it one-shot and tells the page to show the takeover overlay.
+            let (takeover, scheme) = SharedOnboardingStatus.recordEnabledAndConsumeTakeover()
+            payload["takeover"] = takeover
+            payload["scheme"] = scheme
         default:
             if let urlString = message?["url"] as? String, urlString.hasPrefix("http") {
                 SharedSafariURL.record(urlString)

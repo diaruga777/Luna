@@ -158,6 +158,46 @@ control). On pre-iOS 27 builds this screen shows only the Safari-button setting;
 Action Button shortcut setup section is hidden. `background.js` relays
 `buttonContext`/`buttonMode`; content scripts can't call `sendNativeMessage` directly.
 
+## Onboarding takeover: "You're all set!"
+
+While Luna's Safari-onboarding step is on screen (waiting for the user to enable
+the extension in Settings), the app sets a one-shot per-surface takeover-pending
+flag via `LunaStorage.SafariExtensionStatusStore.setTakeoverPending(true,
+forSurface:)`. Once the extension actually runs (any native message reaches
+`SafariWebExtensionHandler`, though `background.js` asks explicitly at script
+load), the handoff completes:
+
+```
+background.js (script load) → sendNativeMessage {type: "onboardingStatus"}
+  → SafariWebExtensionHandler "onboardingStatus" case
+  → SharedOnboardingStatus.recordEnabledAndConsumeTakeover()
+    - writes safariExtensionEnabled.<surface> = now (App Group)
+    - reads + clears onboarding.safariTakeoverPending.<surface> (App Group)
+  → responds {takeover: true/false, scheme: "<lunareader|lunadownloader|lunapricetracker>"}
+  → background.js: if takeover, inject a full-page overlay on the active tab
+```
+
+- `LunaSafari/SharedOnboardingStatus.swift` derives THIS extension's surface +
+  scheme from its own bundle id suffix (`<host>.reader|.downloader|.pricetracker.safari`
+  — mirrors `SafariWebExtensionHandler`'s existing `isHost(appSuffix:)` pattern) and
+  owns the key literals (`safariExtensionEnabled.<surface>`,
+  `onboarding.safariTakeoverPending.<surface>`), duplicated from the app-side
+  `LunaStorage.SafariExtensionStatusStore` (no shared framework in this target).
+- The overlay (`background.js`'s `lunaTakeoverOverlayScript`, injected via
+  `browser.scripting.executeScript({ func, args })` on the active tab — same
+  programmatic-injection approach as `content.js`) is a fixed, full-viewport,
+  max-z-index Luna-indigo (`#5856D6`) panel: "You're all set!" headline, "The Luna
+  extension is enabled." subline, and a real `<a href="<scheme>://">Back to
+  Luna</a>` tap target — it never auto-navigates (that could fight the user's own
+  navigation or get blocked as a redirect). If no eligible active tab exists yet
+  (e.g. `about:` page), the scheme is stashed in `pendingTakeoverScheme` and
+  retried exactly once on the next `tabs.onUpdated` "complete" event.
+- The bare `<scheme>://` link (no host/path) is intentionally minimal — the app's
+  `scene(_:openURLContexts:)` → `LunaDeepLink.articleURL(from:)` requires
+  `host == "read"`, so a bare scheme is a no-op route (verified in
+  `LunaDeepLinkTests.testArticleURLRejectsBareSchemeWithNoHost`), never crashing or
+  ingesting junk.
+
 ## Enabling (simulator/device)
 
 Settings → Apps → Safari → Extensions → Luna → enable + allow all websites. Verify via Luna app Settings screen ("Safari extension status" shows last tracked URL).

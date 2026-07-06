@@ -240,6 +240,7 @@ public final class OnboardingStepViewController: UIViewController {
 
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        animationView?.stop()
         if let foregroundObserver {
             NotificationCenter.default.removeObserver(foregroundObserver)
         }

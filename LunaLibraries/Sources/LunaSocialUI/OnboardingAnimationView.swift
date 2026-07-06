@@ -15,7 +15,7 @@ public final class OnboardingAnimationView: UIView {
     public enum Kind {
         case notification         // a banner sliding in
         case actionButton         // the Action Button pressed → Dynamic Island confirmation
-        case actionExtension      // Safari → Share → "Read in Luna" action → reader
+        case actionExtension      // Safari → Share → "Save to Luna" action → reader
         case safariExtension      // Safari → page-menu → Manage Extensions → enable Luna
         case shortcutInstall      // Share sheet → Shortcuts app → install bundled shortcut
         case actionButtonSettings // Settings > Action Button → pick Shortcut → "Send To Luna"
@@ -67,6 +67,7 @@ public final class OnboardingAnimationView: UIView {
     /// Begins (or restarts) the looping animation. Safe to call repeatedly.
     public func start() {
         buildIfNeeded()
+        resetAnimationTree()
         switch kind {
         case .notification: animateNotification()
         case .actionButton: animateActionButton()
@@ -75,6 +76,21 @@ public final class OnboardingAnimationView: UIView {
         case .shortcutInstall: animateShortcutInstall()
         case .actionButtonSettings: animateActionButtonSettings()
         }
+    }
+
+    /// Stops any repeating UIKit animations before a step is hidden or restarted.
+    /// Re-entering onboarding from Safari/Settings can otherwise stack multiple
+    /// keyframe loops on the same phone mockup.
+    public func stop() {
+        resetAnimationTree()
+    }
+
+    private func resetAnimationTree() {
+        func clear(_ view: UIView) {
+            view.layer.removeAllAnimations()
+            view.subviews.forEach(clear)
+        }
+        clear(self)
     }
 
     private func buildIfNeeded() {
@@ -90,6 +106,19 @@ public final class OnboardingAnimationView: UIView {
         }
         setNeedsLayout()
         layoutIfNeeded()
+    }
+
+    private func lunaAppIconImage() -> UIImage? {
+        let identifier = Bundle.main.bundleIdentifier ?? ""
+        let appIconName: String
+        if identifier.hasSuffix(".downloader") || identifier.hasSuffix(".downloader.appex") {
+            appIconName = "AppIconDownloader"
+        } else if identifier.hasSuffix(".pricetracker") || identifier.hasSuffix(".pricetracker.appex") {
+            appIconName = "AppIconPriceTracker"
+        } else {
+            appIconName = "AppIconReader"
+        }
+        return UIImage(named: appIconName) ?? UIImage(named: "AppIcon") ?? UIImage(named: "luna-app-mark")
     }
 
     // MARK: - Notification banner
@@ -160,7 +189,7 @@ public final class OnboardingAnimationView: UIView {
 
     private let pressRipple = UIView()
     private let island = UIView()
-    private let islandIcon = UIImageView(image: UIImage(named: "luna-app-mark"))
+    private let islandIcon = UIImageView()
     private let islandCheck = UIImageView(image: UIImage(
         systemName: "checkmark.circle.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)))
     private var islandWidthConstraint: NSLayoutConstraint!
@@ -237,6 +266,7 @@ public final class OnboardingAnimationView: UIView {
         island.backgroundColor = .black
         island.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(island)
+        islandIcon.image = lunaAppIconImage()
         islandIcon.contentMode = .scaleAspectFit
         islandIcon.layer.cornerRadius = 2
         islandIcon.layer.cornerCurve = .continuous
@@ -364,7 +394,7 @@ public final class OnboardingAnimationView: UIView {
         }
     }
 
-    // MARK: - Action extension (Safari → Share → "Read in Luna" → reader)
+    // MARK: - Action extension (Safari → Share → "Save to Luna" → reader)
 
     private let axShareRipple = UIView()
     private let axShareSheet = UIView()
@@ -629,11 +659,11 @@ public final class OnboardingAnimationView: UIView {
         return axActionRow(icon: icon, trailing: labelPlaceholder)
     }
 
-    /// The Luna action-extension row: the app's Q mark (leading) and real
-    /// "Luna it" text (trailing), tinted in the app accent. This is the row the
+    /// The Luna action-extension row: the app's current icon (leading) and real
+    /// "Save to Luna" text (trailing), tinted in the app accent. This is the row the
     /// animation scrolls to and taps — so it gets the one bit of literal text.
     private func axQueueActionRow() -> UIView {
-        let icon = UIImageView(image: UIImage(named: "luna-app-mark"))
+        let icon = UIImageView(image: lunaAppIconImage())
         icon.contentMode = .scaleAspectFit
         icon.layer.cornerRadius = 5
         icon.layer.cornerCurve = .continuous
@@ -642,7 +672,7 @@ public final class OnboardingAnimationView: UIView {
         icon.widthAnchor.constraint(equalToConstant: 20).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 20).isActive = true
         let label = UILabel()
-        label.text = "Luna it"
+        label.text = "Save to Luna"
         label.font = .systemFont(ofSize: 12, weight: .semibold)
         label.textColor = accent
         return axActionRow(icon: icon, trailing: label)
@@ -670,7 +700,7 @@ public final class OnboardingAnimationView: UIView {
         layoutIfNeeded()
         let sheetDrop = CGAffineTransform(translationX: 0, y: axShareSheet.bounds.height + 8)
         let cardDrop = CGAffineTransform(translationX: 0, y: axActionCard.bounds.height + 8)
-        // Scroll the list up so "Read in Luna" (the 5th of 6 rows) comes into view.
+        // Scroll the list up so "Save to Luna" (the 5th of 6 rows) comes into view.
         let listScroll = CGAffineTransform(translationX: 0, y: -64)
 
         func reset() {
@@ -697,14 +727,14 @@ public final class OnboardingAnimationView: UIView {
             UIView.addKeyframe(withRelativeStartTime: 0.08, relativeDuration: 0.14) {
                 self.axShareSheet.transform = .identity
             }
-            // Scroll to the "Read in Luna" action. The highlight is anchored to the
+            // Scroll to the "Save to Luna" action. The highlight is anchored to the
             // row's pre-scroll layout frame, so it must take the SAME transform to
             // stay aligned with the (transformed) row.
             UIView.addKeyframe(withRelativeStartTime: 0.34, relativeDuration: 0.14) {
                 self.axRowList.transform = listScroll
                 self.axReadHighlight.transform = listScroll
             }
-            // Tap it (highlight on the "Read in Luna" row).
+            // Tap it (highlight on the "Save to Luna" row).
             UIView.addKeyframe(withRelativeStartTime: 0.50, relativeDuration: 0.06) {
                 self.axReadHighlight.alpha = 1
             }
@@ -896,7 +926,7 @@ public final class OnboardingAnimationView: UIView {
         extTitle.translatesAutoresizingMaskIntoConstraints = false
         sxExtShell.addSubview(extTitle)
 
-        let lunaIcon = UIImageView(image: UIImage(named: "luna-app-mark"))
+        let lunaIcon = UIImageView(image: lunaAppIconImage())
         lunaIcon.contentMode = .scaleAspectFit
         lunaIcon.layer.cornerRadius = 5
         lunaIcon.layer.cornerCurve = .continuous
@@ -1460,7 +1490,7 @@ public final class OnboardingAnimationView: UIView {
         sheetGrabberView.backgroundColor = UIColor.white.withAlphaComponent(0.3)
         absOptionsSheet.addSubview(sheetGrabberView)
 
-        let lunaIcon = UIImageView(image: UIImage(named: "luna-app-mark"))
+        let lunaIcon = UIImageView(image: lunaAppIconImage())
         lunaIcon.contentMode = .scaleAspectFit
         lunaIcon.layer.cornerRadius = 5
         lunaIcon.layer.cornerCurve = .continuous

@@ -36,9 +36,8 @@ public enum OnboardingFlow {
         return nav
     }
 
-    /// Email, Safari extension, and — on iOS 27+, once the extension is on — an
-    /// Action Button shortcut install + setup pair; pre-27 (or if the user skips
-    /// past Safari without enabling it) a single final action-extension step
+    /// Email, Safari extension, and — on iOS 27+ — an Action Button shortcut
+    /// install + setup pair; pre-27 uses a single final action-extension step
     /// instead. 4 steps on iOS 27+, 3 otherwise.
     private static var totalSteps: Int {
         if #available(iOS 27.0, *) { return 4 }
@@ -133,7 +132,7 @@ public enum OnboardingFlow {
             stores.setSafariTakeoverPending(false, forSurface: surface)
             guide.stopPictureInPicture()
             guard let nav else { return }
-            if #available(iOS 27.0, *), stores.shouldUseActionButtonFlowAfterSafari(forSurface: surface) {
+            if #available(iOS 27.0, *) {
                 nav.pushViewController(
                     shortcutInstallStep(stores: stores, nav: nav, onFinished: onFinished), animated: true)
             } else {
@@ -305,7 +304,7 @@ public enum OnboardingFlow {
         return step
     }
 
-    /// Pre-27 (or Safari-skipped) final step: how the Share-sheet "Read in Luna"
+    /// Pre-27 final step: how the Share-sheet "Save to Luna"
     /// action extension works.
     private static func actionExtensionStep(onFinished: @escaping () -> Void) -> UIViewController {
         OnboardingStepViewController(

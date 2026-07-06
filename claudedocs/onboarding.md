@@ -15,14 +15,17 @@
    video's PiP, and opens a Wikipedia URL so the user can exercise the extension
    from Safari's page menu (aA → Manage Extensions → Luna on).
 3. Branches here:
-   - **iOS 27+, once the extension is enabled**: **shortcut install**
+   - **iOS 27+**: **shortcut install**
      (`shortcutInstallStep`, index 2) → **Action Button setup**
-     (`actionButtonStep`, index 3). 4 steps total.
-   - **Pre-27, or the user skipped past Safari without enabling it**: a single
-     final **action extension** step (`actionExtensionStep`, index
-     `totalSteps - 1`) explaining the Share-sheet "Read in Luna" action. 3 steps
-     total (this is the path exercised on the iOS 26.2 sim, since
-     `#available(iOS 27.0, *)` is false there at runtime).
+     (`actionButtonStep`, index 3). 4 steps total. This route no longer depends
+     on the Safari extension's App Group "enabled" marker being freshly written:
+     that marker can lag if the user enabled the extension before onboarding or
+     has not opened a new page since toggling it on, but iOS 27 users still need
+     the shortcut/action-button setup.
+   - **Pre-27**: a single final **action extension** step
+     (`actionExtensionStep`, index `totalSteps - 1`) explaining the Share-sheet
+     "Save to Luna" action. 3 steps total (this is the path exercised on the iOS
+     26.2 sim, since `#available(iOS 27.0, *)` is false there at runtime).
 
 `totalSteps` is a computed property (`4` under `#available(iOS 27.0, *)`, else
 `3`) rather than a stored constant, since the branch is a runtime check.
@@ -97,10 +100,11 @@ setup. The onboarding UI drives/observes it as follows:
 `OnboardingGuideVideo` wraps a small, muted, looping "how to" clip:
 
 - Loads a bundled mp4 (`Luna/Resources/SafariExtensionGuide.mp4` /
-  `Luna/Resources/ActionButtonGuide.mp4`), builds an `AVMutableComposition` that
-  repeats the (few-second) clip until the total exceeds 5 minutes, so a slow user
-  still has it looping when they act — repetition happens at load time; the
-  bundled files themselves stay tiny (tens of KB, not a multi-minute asset).
+  `Luna/Resources/ActionButtonGuide.mp4`) into an `AVQueuePlayer` with
+  `AVPlayerLooper`. The bundled files stay tiny (tens of KB) and the player is
+  ready immediately; do not rebuild a long `AVMutableComposition` here, because
+  that can delay the next onboarding page and leave PiP showing only a static
+  poster if the user taps "Open Safari" / "Open Settings" quickly.
 - `playerView` (an `AVPlayerLayer`-backed view) is installed **behind** the live
   `OnboardingAnimationView` illustration via
   `OnboardingStepViewController.installBackdropView(_:)` — pinned to the
@@ -211,10 +215,10 @@ it behaves like a fresh install and remains fully traversable/testable from Sett
   created, then reports enabled once the scratch overlay itself is set OR the real
   value newly flips true relative to that baseline. A replay always starts looking
   fresh even if the extension was already enabled before the replay began, but a user
-  who genuinely turns it on mid-replay still advances the flow like a first-time user
-  would. `shouldUseActionButtonFlowAfterSafari(forSurface:)` also treats an already-
-  enabled baseline as eligible for the iOS 27 shortcut/action-button screens during
-  replay, so a configured app can still experience those steps again.
+  who genuinely turns it on mid-replay still advances the flow like a first-time
+  user would. iOS 27 routing now goes to the shortcut/action-button screens
+  regardless of this marker; the read-through rule remains useful for foreground
+  auto-advance and replay fidelity.
 - **Action Button replay bridge**: lifecycle callbacks (`AppDelegate`) and
   `SaveFromAppIntent` run outside the onboarding view controller and always talk to
   `ActionButtonOnboardingStore.shared`, so a scratch action-button store cannot

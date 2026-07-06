@@ -14,9 +14,9 @@ import UIKit
 /// keeps floating over whatever app they land in.
 ///
 /// The bundled clip (`Luna/Resources/<resourceName>.mp4`) is only a handful of
-/// seconds; loading builds an `AVMutableComposition` that repeats it enough times to
-/// clear five minutes, so a user who dawdles before returning still has the loop
-/// running (repetition at load time, rather than shipping a multi-minute asset).
+/// seconds; `AVPlayerLooper` repeats it without building a long composition up
+/// front, so the next onboarding screen can appear immediately and PiP has a
+/// moving player item as soon as the user leaves Luna.
 final class OnboardingGuideVideo: NSObject {
 
     /// Hosts the `AVPlayerLayer`. A plain `UIView` subclass so it composes with
@@ -30,12 +30,9 @@ final class OnboardingGuideVideo: NSObject {
     /// `OnboardingStepViewController.installBackdropView(_:)`.
     let playerView: UIView
 
-    private let player = AVPlayer()
+    private let player = AVQueuePlayer()
+    private var looper: AVPlayerLooper?
     private var pipController: AVPictureInPictureController?
-
-    /// How long the looped composition should run in total — long enough that a
-    /// slow user still has it playing by the time they act on it.
-    private static let minimumDuration = CMTime(seconds: 5 * 60, preferredTimescale: 600)
 
     /// - Parameter resourceName: bundled mp4 base name (without extension), expected
     ///   under `Luna/Resources/`. Silently does nothing if the resource is missing —
@@ -57,9 +54,9 @@ final class OnboardingGuideVideo: NSObject {
             pipController = pip
         }
 
-        guard let url = Bundle.main.url(forResource: resourceName, withExtension: "mp4") else { return }
-        Task { [player] in
-            await Self.loadLoopingItem(from: url, into: player)
+        if let url = Bundle.main.url(forResource: resourceName, withExtension: "mp4") {
+            let item = AVPlayerItem(url: url)
+            looper = AVPlayerLooper(player: player, templateItem: item)
         }
     }
 
@@ -78,6 +75,7 @@ final class OnboardingGuideVideo: NSObject {
               !pipController.isPictureInPictureActive
         else { return }
         configureAudioSession()
+        player.play()
         pipController.startPictureInPicture()
     }
 
@@ -93,30 +91,4 @@ final class OnboardingGuideVideo: NSObject {
         try? AVAudioSession.sharedInstance().setActive(true)
     }
 
-    /// Builds a looping composition from `url` (repeating its single track until the
-    /// total exceeds `minimumDuration`) and swaps it into `player`.
-    private static func loadLoopingItem(from url: URL, into player: AVPlayer) async {
-        let asset = AVURLAsset(url: url)
-        guard let duration = try? await asset.load(.duration), duration.seconds > 0,
-              let assetTrack = try? await asset.loadTracks(withMediaType: .video).first
-        else { return }
-
-        let composition = AVMutableComposition()
-        guard let compositionTrack = composition.addMutableTrack(
-            withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
-        else { return }
-
-        let range = CMTimeRange(start: .zero, duration: duration)
-        var inserted = CMTime.zero
-        while inserted < minimumDuration {
-            try? compositionTrack.insertTimeRange(range, of: assetTrack, at: inserted)
-            inserted = inserted + duration
-        }
-
-        let item = AVPlayerItem(asset: composition)
-        await MainActor.run {
-            player.replaceCurrentItem(with: item)
-            player.play()
-        }
-    }
 }

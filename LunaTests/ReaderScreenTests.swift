@@ -218,6 +218,74 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertEqual(fresh?.readingProgress, 1)
     }
 
+    func testReaderHostUnmarksScrollCompletionWhenUserScrollsBack() {
+        let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/scroll-unfinish-\(UUID().uuidString)")
+        defer { ReadingListStore.shared.delete(storeItem) }
+        let reader = ReaderViewController(
+            item: storeItem, content: longScrollArticleContent(), forceMode: .scroll,
+            persistsModePreference: false, marksOpenedOnLoad: true,
+            inlineControlsHeader: true)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+        guard let scroll = reader.children.compactMap({ $0 as? ScrollReaderViewController }).first,
+              let textView = findTextView(in: scroll.view) else {
+            XCTFail("Reader host should contain a scroll reader")
+            return
+        }
+        scroll.prepareFullContent()
+        let deadline = Date().addingTimeInterval(5)
+        while !scroll.didLoadFullContentForTesting, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+
+        textView.contentOffset.y = max(
+            -textView.adjustedContentInset.top,
+            textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        scroll.scrollViewDidScroll(textView)
+        textView.contentOffset.y = 0
+        scroll.scrollViewDidScroll(textView)
+
+        let fresh = ReadingListStore.shared.item(withID: storeItem.id)
+        XCTAssertEqual(fresh?.readState, .opened)
+        XCTAssertNil(fresh?.readingProgress)
+    }
+
+    func testReaderHostDoesNotUnmarkScrollArticleThatWasReadOnEntry() {
+        let added = ReadingListStore.shared.add(urlString: "https://example.com/scroll-read-entry-\(UUID().uuidString)")
+        ReadingListStore.shared.markFinishedReading(added.id)
+        let storeItem = ReadingListStore.shared.item(withID: added.id)!
+        defer { ReadingListStore.shared.delete(storeItem) }
+        let reader = ReaderViewController(
+            item: storeItem, content: longScrollArticleContent(), forceMode: .scroll,
+            persistsModePreference: false, marksOpenedOnLoad: true,
+            inlineControlsHeader: true)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+        guard let scroll = reader.children.compactMap({ $0 as? ScrollReaderViewController }).first,
+              let textView = findTextView(in: scroll.view) else {
+            XCTFail("Reader host should contain a scroll reader")
+            return
+        }
+        scroll.prepareFullContent()
+        let deadline = Date().addingTimeInterval(5)
+        while !scroll.didLoadFullContentForTesting, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+
+        textView.contentOffset.y = max(
+            -textView.adjustedContentInset.top,
+            textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        scroll.scrollViewDidScroll(textView)
+        textView.contentOffset.y = 0
+        scroll.scrollViewDidScroll(textView)
+
+        let fresh = ReadingListStore.shared.item(withID: storeItem.id)
+        XCTAssertEqual(fresh?.readState, .read)
+        XCTAssertEqual(fresh?.readingProgress, 1)
+    }
+
     func testReaderHostMarksRSVPCompletionReadAndArchived() {
         let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/rsvp-finish-\(UUID().uuidString)")
         defer { ReadingListStore.shared.delete(storeItem) }
@@ -240,6 +308,33 @@ final class ReaderScreenTests: XCTestCase {
         let fresh = ReadingListStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .read)
         XCTAssertEqual(fresh?.readingProgress, 1)
+    }
+
+    func testReaderHostUnmarksRSVPCompletionWhenUserPagesBack() {
+        let storeItem = ReadingListStore.shared.add(urlString: "https://example.com/rsvp-unfinish-\(UUID().uuidString)")
+        defer { ReadingListStore.shared.delete(storeItem) }
+        let reader = ReaderViewController(
+            item: storeItem, content: shortArticleContent(), forceMode: .rsvp,
+            persistsModePreference: false, marksOpenedOnLoad: true,
+            inlineControlsHeader: true)
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+        guard let rsvp = reader.children.compactMap({ $0 as? RSVPViewController }).first,
+              let skipForward = findControl(in: rsvp.view, accessibilityLabel: "Skip forward 25 words"),
+              let skipBack = findControl(in: rsvp.view, accessibilityLabel: "Skip back 25 words") else {
+            XCTFail("Reader host should contain an RSVP reader with skip controls")
+            return
+        }
+
+        skipForward.sendActions(for: .touchUpInside)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        skipBack.sendActions(for: .touchUpInside)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+
+        let fresh = ReadingListStore.shared.item(withID: storeItem.id)
+        XCTAssertEqual(fresh?.readState, .opened)
+        XCTAssertNil(fresh?.readingProgress)
     }
 
     /// A continuous scrubber drag (`.valueChanged`, UISlider's default continuous

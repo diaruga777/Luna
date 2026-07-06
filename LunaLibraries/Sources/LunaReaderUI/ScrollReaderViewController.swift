@@ -18,6 +18,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     /// Fired once when the user reaches the end of the article.
     public var onFinishedReading: (() -> Void)?
+    /// Fired when a reader that had reached the end moves back before it.
+    public var onMovedAwayFromEnd: (() -> Void)?
 
     /// When set, a tapped inline link is handed to this closure instead of opening
     /// a new inline split overlay — used by the inline reader to push the link onto
@@ -890,11 +892,15 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // Never decide "finished" against the PREFIX content size — a long article
         // whose prefix happens to fit one screen would be wrongly marked read before
         // Phase 2 expands it. Wait for the full content.
-        guard didLoadFullContent, !didFinishReading, textView.contentSize.height > 0 else { return }
+        guard didLoadFullContent, textView.contentSize.height > 0 else { return }
         let visibleBottom = textView.contentOffset.y + textView.bounds.height
-        if visibleBottom >= textView.contentSize.height - 40 {
+        let reachedEnd = visibleBottom >= textView.contentSize.height - 40
+        if reachedEnd, !didFinishReading {
             didFinishReading = true
             onFinishedReading?()
+        } else if !reachedEnd, didFinishReading {
+            didFinishReading = false
+            onMovedAwayFromEnd?()
         }
     }
 

@@ -24,6 +24,9 @@ public final class ReaderViewController: UIViewController {
     private let store = ReadingListStore.shared
     private var mode: ReadingListItem.ReaderMode
     private var audioOn = false
+    private let readStateOnEntry: ReadingListItem.ReadState
+    private let readingProgressOnEntry: Double?
+    private var didAutoMarkFinishedThisSession = false
     private var currentChild: UIViewController?
     /// Reading position carried from the outgoing child to the next on a mode
     /// switch (nil on first open → each child uses its own persisted default).
@@ -82,6 +85,8 @@ public final class ReaderViewController: UIViewController {
          onModeChange: ((ReadingListItem.ReaderMode) -> Void)? = nil) {
         self.item = item
         self.content = content
+        self.readStateOnEntry = item.readState
+        self.readingProgressOnEntry = item.readingProgress
         self.shareProvider = shareProvider
         self.persistsModePreference = persistsModePreference
         self.marksOpenedOnLoad = marksOpenedOnLoad
@@ -334,6 +339,7 @@ public final class ReaderViewController: UIViewController {
                 initialDisplayMode: opensRSVPInPhrases ? .phrases : nil)
             opensRSVPInPhrases = false
             rsvp.onFinishedReading = { [weak self] in self?.markRead() }
+            rsvp.onMovedAwayFromEnd = { [weak self] in self?.unmarkReadIfAutoMarkedThisSession() }
             child = rsvp
         case .original:
             child = OriginalPageViewController(item: item, store: store)
@@ -364,6 +370,7 @@ public final class ReaderViewController: UIViewController {
             shareProvider: shareProvider,
             resumeWordIndex: resumeWordIndex)
         scroll.onFinishedReading = { [weak self] in self?.markRead() }
+        scroll.onMovedAwayFromEnd = { [weak self] in self?.unmarkReadIfAutoMarkedThisSession() }
         scroll.onShareFooterVisibilityChanged = { [weak self] visible in
             self?.setFloatingShareHidden(visible)
         }
@@ -377,6 +384,17 @@ public final class ReaderViewController: UIViewController {
     }
 
     private func markRead() {
+        if readStateOnEntry != .read {
+            didAutoMarkFinishedThisSession = true
+        }
         store.markFinishedReading(item.id)
+    }
+
+    private func unmarkReadIfAutoMarkedThisSession() {
+        guard didAutoMarkFinishedThisSession, readStateOnEntry != .read else { return }
+        didAutoMarkFinishedThisSession = false
+        let restoredState: ReadingListItem.ReadState = marksOpenedOnLoad ? .opened : readStateOnEntry
+        store.restoreFinishedReadingState(
+            readState: restoredState, readingProgress: readingProgressOnEntry, for: item.id)
     }
 }

@@ -28,6 +28,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     /// Fired once when playback reaches the last word.
     public var onFinishedReading: (() -> Void)?
+    /// Fired when a reader that had reached the end moves back before it.
+    public var onMovedAwayFromEnd: (() -> Void)?
 
     /// When set, the link pill hands the tapped link to this closure instead of
     /// presenting a new inline split overlay — used by the inline reader to push the
@@ -988,7 +990,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         refreshDisplay()
         scrubber.value = Float(currentIndex)
         updateStatus()
-        finishIfAtEnd()
+        updateFinishedReadingState()
     }
 
     @objc private func wpmDown() { adjustWPM(by: -25) }
@@ -1016,16 +1018,30 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             readingProgress: progress, lastWordIndex: wordIndex, for: item.id)
     }
 
-    private func finishIfAtEnd() {
-        guard !engine.words.isEmpty else { return }
-        let reachedEnd: Bool
+    private func isAtEnd() -> Bool {
+        guard !engine.words.isEmpty else { return false }
         if displayMode == .phrases, !chunks.isEmpty {
-            reachedEnd = currentChunkIndex >= chunks.count - 1
+            return currentChunkIndex >= chunks.count - 1
         } else {
-            reachedEnd = currentIndex >= engine.words.count - 1
+            return currentIndex >= engine.words.count - 1
         }
-        guard reachedEnd else { return }
+    }
+
+    private func finishIfAtEnd() {
+        guard isAtEnd() else { return }
         finish()
+    }
+
+    private func updateFinishedReadingState() {
+        if isAtEnd() {
+            finish()
+        } else if didFinishReading {
+            didFinishReading = false
+            didRevealShare = false
+            shareView.isHidden = true
+            shareView.alpha = 0
+            onMovedAwayFromEnd?()
+        }
     }
 
     // MARK: - End-of-article share

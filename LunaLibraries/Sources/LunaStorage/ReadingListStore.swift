@@ -547,6 +547,30 @@ public final class ReadingListStore {
         }
     }
 
+    /// Reverts the transient "finished in this viewer session" state when the
+    /// reader moves back before the end. This intentionally allows a downgrade,
+    /// unlike `markReadState`, but callers provide the exact state/progress they
+    /// are restoring.
+    public func restoreFinishedReadingState(
+        readState: ReadingListItem.ReadState,
+        readingProgress: Double?,
+        for itemID: UUID
+    ) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            var changed = false
+            if all[index].readState != readState {
+                all[index].readState = readState
+                changed = true
+            }
+            if all[index].readingProgress != readingProgress {
+                all[index].readingProgress = readingProgress
+                changed = true
+            }
+            return changed
+        }
+    }
+
     /// Forces an item back to unread (the Archive-section "Unarchive" action) — a
     /// deliberate downgrade that `markReadState`'s forward-only guard disallows.
     public func markUnread(_ itemID: UUID) {

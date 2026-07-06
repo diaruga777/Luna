@@ -289,6 +289,19 @@ final class ReadingListStoreTests: XCTestCase {
         XCTAssertEqual(fresh?.readingProgress, 1)
     }
 
+    func testRestoreFinishedReadingStateRestoresReadStateAndProgress() {
+        let item = store.add(urlString: "https://example.com/finished-restore")
+        store.markReadState(.opened, for: item.id)
+        store.saveReaderExitPosition(readingProgress: 0.35, for: item.id)
+        store.markFinishedReading(item.id)
+
+        store.restoreFinishedReadingState(readState: .opened, readingProgress: 0.35, for: item.id)
+
+        let fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.readState, .opened)
+        XCTAssertEqual(fresh?.readingProgress, 0.35)
+    }
+
     func testSaveAndLoadContentRoundTrip() {
         let item = store.add(urlString: "https://example.com/content")
         let content = ArticleContent(

@@ -46,7 +46,7 @@ struct LunaSafariPageIntent: AppIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    func perform() async throws -> some IntentResult {
         let isSafari = app?.localizedCaseInsensitiveContains("safari") ?? true
         guard isSafari else { throw LunaError.notInSafari }
 
@@ -58,6 +58,6 @@ struct LunaSafariPageIntent: AppIntent {
         }
 
         _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: tracked)
-        return .result(value: "Saved to Luna.")
+        return .result()
     }
 }

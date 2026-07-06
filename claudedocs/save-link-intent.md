@@ -3,10 +3,13 @@
 Press the Action Button while reading in Safari -> the current page is saved to
 the reading list, no UI, no app switch.
 
-## Return Value
+## Return Values
 
-Save intents return a simple status string such as `"Saved to Luna."`. They no
-longer return or consume friend-share suggestion tokens.
+The former friend-share suggestion tokens are gone. Save intents that only save
+content now return no value. Intents that still need Shortcut control flow keep
+their explicit return values, such as `SaveLinkIntent` / `SaveFromAppIntent`
+returning a media-download token (`"4:<url>"`) when the shortcut should offer a
+download step.
 
 ## Key Files
 
@@ -16,16 +19,16 @@ longer return or consume friend-share suggestion tokens.
   present it's a fuzzy prefix check (`URLPrefixMatch`:
   scheme/www./trailing-slash/case ignored, either-direction prefix) ->
   `trackedURLMismatch` on failure; when absent, no check. `app: String?` guards
-  you're in Safari (nil treated as Safari). Returns a status string. The save
-  goes through `ReadingListIngestor.handleSavePress`; repeat presses are ignored
-  except the Kindle double-save (see `send-to-kindle.md`).
+  you're in Safari (nil treated as Safari). The save goes through
+  `ReadingListIngestor.handleSavePress`; repeat presses are ignored except the
+  Kindle double-save (see `send-to-kindle.md`).
 - `Luna/Intents/SaveLinkIntent.swift` - "Save Link": required `url: URL`, same
-  `handleSavePress` path with the URL exactly as given. Returns the saved URL.
-- `Luna/Intents/FindYouTubeVideoIntent.swift` - see `youtube.md`. Returns a
-  status string.
+  `handleSavePress` path with the URL exactly as given. Returns the saved URL,
+  or a `"4:<url>"` media-download token when needed.
+- `Luna/Intents/FindYouTubeVideoIntent.swift` - see `youtube.md`.
 - Platform search/save intents (see `content-platforms.md`):
-  `FindBlueskyPostIntent`, `FindRedditPostIntent` (real search -> URL -> save,
-  return a status string), `SaveMusicItemIntent`/`SavePodcastItemIntent`
+  `FindBlueskyPostIntent`, `FindRedditPostIntent` (real search -> URL -> save),
+  `SaveMusicItemIntent`/`SavePodcastItemIntent`
   (URL-less media; return the synthetic key). X/TikTok/Instagram/Facebook have
   no find-intent (no free search). All registered in `LunaShortcuts`.
 - `Luna/Intents/LunaShortcuts.swift` - `AppShortcutsProvider` exposing the save

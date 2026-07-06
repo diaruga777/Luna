@@ -23,9 +23,10 @@ struct SaveXPostIntent: AppIntent {
     @Parameter(title: "Content", description: "A distinctive phrase from the post.") var content: String?
     @Parameter(title: "Posted", description: "Optional: the post's date/time as shown.") var timestamp: String?
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        .result(value: try await PlatformPostSave.save(
-            platform: .x, handle: handle, content: content, timestamp: timestamp))
+    func perform() async throws -> some IntentResult {
+        try await PlatformPostSave.save(
+            platform: .x, handle: handle, content: content, timestamp: timestamp)
+        return .result()
     }
 }
 
@@ -40,9 +41,10 @@ struct SaveTikTokIntent: AppIntent {
     @Parameter(title: "Caption", description: "A distinctive phrase from the caption.") var content: String?
     @Parameter(title: "Posted", description: "Optional: the post's date/time as shown.") var timestamp: String?
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        .result(value: try await PlatformPostSave.save(
-            platform: .tiktok, handle: handle, content: content, timestamp: timestamp))
+    func perform() async throws -> some IntentResult {
+        try await PlatformPostSave.save(
+            platform: .tiktok, handle: handle, content: content, timestamp: timestamp)
+        return .result()
     }
 }
 
@@ -57,9 +59,10 @@ struct SaveInstagramPostIntent: AppIntent {
     @Parameter(title: "Caption", description: "A distinctive phrase from the caption.") var content: String?
     @Parameter(title: "Posted", description: "Optional: the post's date/time as shown.") var timestamp: String?
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        .result(value: try await PlatformPostSave.save(
-            platform: .instagram, handle: handle, content: content, timestamp: timestamp))
+    func perform() async throws -> some IntentResult {
+        try await PlatformPostSave.save(
+            platform: .instagram, handle: handle, content: content, timestamp: timestamp)
+        return .result()
     }
 }
 
@@ -74,8 +77,9 @@ struct SaveFacebookPostIntent: AppIntent {
     @Parameter(title: "Content", description: "A distinctive phrase from the post.") var content: String?
     @Parameter(title: "Posted", description: "Optional: the post's date/time as shown.") var timestamp: String?
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        .result(value: try await PlatformPostSave.save(
-            platform: .facebook, handle: handle, content: content, timestamp: timestamp))
+    func perform() async throws -> some IntentResult {
+        try await PlatformPostSave.save(
+            platform: .facebook, handle: handle, content: content, timestamp: timestamp)
+        return .result()
     }
 }

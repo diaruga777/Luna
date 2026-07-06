@@ -15,7 +15,7 @@ import Foundation
 public enum PlatformPostSave {
     public static func save(
         platform: SocialPostFinder.Platform, handle: String?, content: String?, timestamp: String?
-    ) async throws -> String {
+    ) async throws {
         guard let handle, !handle.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PlatformPostError.missingHandle
         }
@@ -23,7 +23,6 @@ public enum PlatformPostSave {
             platform: platform, handle: handle, content: content, timestamp: timestamp)
         else { throw PlatformPostError.notFound }
         _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
-        return "Saved to Luna."
     }
 }
 

@@ -34,11 +34,11 @@ struct FindRedditPostIntent: AppIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    func perform() async throws -> some IntentResult {
         let query = RedditPostQuery.searchQuery(subreddit: subreddit, title: title, author: author)
         guard !query.isEmpty, let url = try? await RedditSearchClient().topPostURL(query: query)
         else { throw FindError.notFound }
         _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
-        return .result(value: "Saved to Luna.")
+        return .result()
     }
 }

@@ -45,13 +45,13 @@ public struct FindYouTubeVideoIntent: AppIntent {
         }
     }
 
-    public func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    public func perform() async throws -> some IntentResult {
         do {
             _ = try await YouTubeVideoSave.findAndSave(channel: channel, title: title)
         } catch let failure as YouTubeVideoSave.FindFailure {
             throw FindError(failure)
         }
-        return .result(value: "Saved to Luna.")
+        return .result()
     }
 }
 

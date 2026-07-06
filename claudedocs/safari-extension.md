@@ -169,9 +169,11 @@ load), the handoff completes:
 
 ```
 background.js (script load) → sendNativeMessage {type: "onboardingStatus"}
+  → SafariWebExtensionHandler records extension run for every native message
+    - writes safariExtensionHasRun.<surface> = true (App Group)
+    - writes safariExtensionEnabled.<surface> = now (legacy timestamp, App Group)
   → SafariWebExtensionHandler "onboardingStatus" case
   → SharedOnboardingStatus.recordEnabledAndConsumeTakeover()
-    - writes safariExtensionEnabled.<surface> = now (App Group)
     - reads + clears onboarding.safariTakeoverPending.<surface> (App Group)
   → responds {takeover: true/false, scheme: "<lunareader|lunadownloader|lunapricetracker>"}
   → background.js: if takeover, inject a full-page overlay on the active tab
@@ -180,7 +182,8 @@ background.js (script load) → sendNativeMessage {type: "onboardingStatus"}
 - `LunaSafari/SharedOnboardingStatus.swift` derives THIS extension's surface +
   scheme from its own bundle id suffix (`<host>.reader|.downloader|.pricetracker.safari`
   — mirrors `SafariWebExtensionHandler`'s existing `isHost(appSuffix:)` pattern) and
-  owns the key literals (`safariExtensionEnabled.<surface>`,
+  owns the key literals (`safariExtensionHasRun.<surface>`,
+  `safariExtensionEnabled.<surface>`,
   `onboarding.safariTakeoverPending.<surface>`), duplicated from the app-side
   `LunaStorage.SafariExtensionStatusStore` (no shared framework in this target).
 - The overlay (`background.js`'s `lunaTakeoverOverlayScript`, injected via

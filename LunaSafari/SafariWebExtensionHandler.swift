@@ -27,6 +27,7 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let item = context.inputItems.first as? NSExtensionItem
         let message = item?.userInfo?[SFExtensionMessageKey] as? [String: Any]
         var payload: [String: Any] = ["ok": true]
+        SharedOnboardingStatus.recordEnabled()
 
         switch message?["type"] as? String {
         case "buttonMode", "buttonContext":

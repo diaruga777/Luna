@@ -29,14 +29,30 @@ final class SafariExtensionStatusStoreTests: XCTestCase {
 
     func testNotEnabledByDefault() {
         XCTAssertFalse(store.isEnabled(forSurface: "reader"))
+        XCTAssertFalse(store.hasRun(forSurface: "reader"))
         XCTAssertNil(store.enabledDate(forSurface: "reader"))
     }
 
     func testRecordEnabledRoundTrips() {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         store.recordEnabled(forSurface: "reader", date: date)
+        XCTAssertTrue(store.hasRun(forSurface: "reader"))
         XCTAssertTrue(store.isEnabled(forSurface: "reader"))
         XCTAssertEqual(store.enabledDate(forSurface: "reader"), date)
+    }
+
+    func testBooleanHasRunIsEnoughToReportEnabled() {
+        defaults.set(true, forKey: "safariExtensionHasRun.reader")
+        XCTAssertTrue(store.hasRun(forSurface: "reader"))
+        XCTAssertTrue(store.isEnabled(forSurface: "reader"))
+        XCTAssertNil(store.enabledDate(forSurface: "reader"))
+    }
+
+    func testLegacyTimestampIsEnoughToReportEnabled() {
+        defaults.set(1_700_000_000.0, forKey: "safariExtensionEnabled.reader")
+        XCTAssertFalse(store.hasRun(forSurface: "reader"))
+        XCTAssertTrue(store.isEnabled(forSurface: "reader"))
+        XCTAssertEqual(store.enabledDate(forSurface: "reader"), Date(timeIntervalSince1970: 1_700_000_000))
     }
 
     func testEnabledStateIsPerSurface() {

@@ -15,17 +15,15 @@
    video's PiP, and opens a Wikipedia URL so the user can exercise the extension
    from Safari's page menu (aA → Manage Extensions → Luna on).
 3. Branches here:
-   - **iOS 27+**: **shortcut install**
+   - **iOS 27+, once the Safari extension has run at least once**:
+     **shortcut install**
      (`shortcutInstallStep`, index 2) → **Action Button setup**
-     (`actionButtonStep`, index 3). 4 steps total. This route no longer depends
-     on the Safari extension's App Group "enabled" marker being freshly written:
-     that marker can lag if the user enabled the extension before onboarding or
-     has not opened a new page since toggling it on, but iOS 27 users still need
-     the shortcut/action-button setup.
-   - **Pre-27**: a single final **action extension** step
-     (`actionExtensionStep`, index `totalSteps - 1`) explaining the Share-sheet
-     "Save to Luna" action. 3 steps total (this is the path exercised on the iOS
-     26.2 sim, since `#available(iOS 27.0, *)` is false there at runtime).
+     (`actionButtonStep`, index 3). 4 steps total.
+   - **Pre-27, or iOS 27 before the Safari extension has reported that it ran**:
+     a single final **action extension** step (`actionExtensionStep`, index
+     `totalSteps - 1`) explaining the Share-sheet "Save to Luna" action. 3 steps
+     total (this is the path exercised on the iOS 26.2 sim, since
+     `#available(iOS 27.0, *)` is false there at runtime).
 
 `totalSteps` is a computed property (`4` under `#available(iOS 27.0, *)`, else
 `3`) rather than a stored constant, since the branch is a runtime check.
@@ -47,12 +45,13 @@ Settings deep links used elsewhere in this flow. The state lives in
 - The onboarding step sets `setTakeoverPending(true, forSurface:)` as soon as it
   appears (`onDidAppear`) and again when "Open Safari" is tapped — either is
   enough; both are harmless/idempotent.
-- `LunaSafari`'s native handler (`SafariWebExtensionHandler` → `onboardingStatus`
-  message, backed by `SharedOnboardingStatus.recordEnabledAndConsumeTakeover()`)
-  records that the extension is enabled the first time `background.js` asks (at
-  script load) and, if a takeover was pending for that surface, consumes it
-  one-shot and tells the page to show the "You're all set! / Back to Luna"
-  overlay (see `claudedocs/safari-extension.md`).
+- `LunaSafari`'s native handler records `safariExtensionHasRun.<surface> = true`
+  for every native message it receives, because any native message proves the
+  extension is enabled and has run at least once. It also keeps writing the legacy
+  `safariExtensionEnabled.<surface>` timestamp for diagnostics/backward
+  compatibility. The explicit `onboardingStatus` message still consumes a pending
+  takeover one-shot and tells the page to show the "You're all set! / Back to
+  Luna" overlay (see `claudedocs/safari-extension.md`).
 - Back in Luna, `onWillEnterForeground` stops the PiP and, if
   `SafariExtensionStatusStore.shared.isEnabled(forSurface:)` is now true, advances
   the flow automatically — the same routing "Continue" would take. A `didAdvance`
@@ -216,9 +215,10 @@ it behaves like a fresh install and remains fully traversable/testable from Sett
   value newly flips true relative to that baseline. A replay always starts looking
   fresh even if the extension was already enabled before the replay began, but a user
   who genuinely turns it on mid-replay still advances the flow like a first-time
-  user would. iOS 27 routing now goes to the shortcut/action-button screens
-  regardless of this marker; the read-through rule remains useful for foreground
-  auto-advance and replay fidelity.
+  user would. `shouldUseActionButtonFlowAfterSafari(forSurface:)` also treats an
+  already-enabled baseline as eligible for the iOS 27 shortcut/action-button
+  screens during replay, so a configured app can still experience those steps
+  again.
 - **Action Button replay bridge**: lifecycle callbacks (`AppDelegate`) and
   `SaveFromAppIntent` run outside the onboarding view controller and always talk to
   `ActionButtonOnboardingStore.shared`, so a scratch action-button store cannot

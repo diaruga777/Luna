@@ -36,24 +36,42 @@ enum SharedOnboardingStatus {
         "safariExtensionEnabled.\(surface)"
     }
 
+    private static func hasRunKey(forSurface surface: String) -> String {
+        "safariExtensionHasRun.\(surface)"
+    }
+
     private static func takeoverKey(forSurface surface: String) -> String {
         "onboarding.safariTakeoverPending.\(surface)"
     }
 
-    /// Records that this extension just ran (native messages only arrive once the
-    /// extension is enabled and the page loaded it), then consumes the app's
-    /// takeover-pending flag ONE-SHOT: `true` and cleared if the app was waiting on
-    /// this hand-off, else `false` with nothing to clear.
+    /// Records that this extension just ran. Native messages only arrive once the
+    /// extension is enabled and Safari has loaded it, so any message is enough to
+    /// prove the extension has run at least once for this surface.
+    static func recordEnabled() {
+        let (surface, _) = currentSurfaceAndScheme
+        let defaults = UserDefaults(suiteName: appGroupID)
+        defaults?.set(true, forKey: hasRunKey(forSurface: surface))
+        defaults?.set(Date().timeIntervalSince1970, forKey: enabledKey(forSurface: surface))
+        defaults?.synchronize()
+    }
+
+    /// Consumes the app's takeover-pending flag ONE-SHOT: `true` and cleared if
+    /// the app was waiting on this hand-off, else `false` with nothing to clear.
     ///
     /// Returns the payload for the `"onboardingStatus"` response.
     static func recordEnabledAndConsumeTakeover() -> (takeover: Bool, scheme: String) {
         let (surface, scheme) = currentSurfaceAndScheme
         let defaults = UserDefaults(suiteName: appGroupID)
+        defaults?.set(true, forKey: hasRunKey(forSurface: surface))
         defaults?.set(Date().timeIntervalSince1970, forKey: enabledKey(forSurface: surface))
 
         let pendingKey = takeoverKey(forSurface: surface)
-        guard defaults?.bool(forKey: pendingKey) == true else { return (false, scheme) }
+        guard defaults?.bool(forKey: pendingKey) == true else {
+            defaults?.synchronize()
+            return (false, scheme)
+        }
         defaults?.removeObject(forKey: pendingKey)
+        defaults?.synchronize()
         return (true, scheme)
     }
 }

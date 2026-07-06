@@ -13,9 +13,10 @@ import Foundation
 /// The key literals here are duplicated as raw strings in `LunaSafari/` (that
 /// target doesn't link the package — see `SafariAppGroup.swift` / the
 /// `SharedSafariURL.swift` pattern this store's keys must stay in sync with):
-/// - `safariExtensionEnabled.<surface>` — written by
-///   `SafariWebExtensionHandler`'s `onboardingStatus` message handler the first
-///   time the extension actually runs for that surface.
+/// - `safariExtensionHasRun.<surface>` — Boolean written by the Safari extension
+///   whenever its native handler receives any message for that surface.
+/// - `safariExtensionEnabled.<surface>` — legacy timestamp, still written for
+///   diagnostics/backward compatibility.
 /// - `onboarding.safariTakeoverPending.<surface>` — written by the app (`true`)
 ///   while the "enable the Safari extension" onboarding step is visible; consumed
 ///   ONE-SHOT by the extension's native handler, which clears it and tells
@@ -36,6 +37,10 @@ public final class SafariExtensionStatusStore {
         "safariExtensionEnabled.\(surface)"
     }
 
+    private func hasRunKey(forSurface surface: String) -> String {
+        "safariExtensionHasRun.\(surface)"
+    }
+
     private func takeoverKey(forSurface surface: String) -> String {
         "onboarding.safariTakeoverPending.\(surface)"
     }
@@ -45,7 +50,12 @@ public final class SafariExtensionStatusStore {
     /// Records that the Safari extension ran for `surface`, at `date` (defaults to
     /// now).
     public func recordEnabled(forSurface surface: String, date: Date = Date()) {
+        defaults.set(true, forKey: hasRunKey(forSurface: surface))
         defaults.set(date.timeIntervalSince1970, forKey: enabledKey(forSurface: surface))
+    }
+
+    public func hasRun(forSurface surface: String) -> Bool {
+        defaults.bool(forKey: hasRunKey(forSurface: surface))
     }
 
     public func enabledDate(forSurface surface: String) -> Date? {
@@ -55,7 +65,7 @@ public final class SafariExtensionStatusStore {
     }
 
     public func isEnabled(forSurface surface: String) -> Bool {
-        enabledDate(forSurface: surface) != nil
+        hasRun(forSurface: surface) || enabledDate(forSurface: surface) != nil
     }
 
     // MARK: - Takeover hand-off

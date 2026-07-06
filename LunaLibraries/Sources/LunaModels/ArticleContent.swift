@@ -36,14 +36,21 @@ public struct ArticleContent: Codable, Equatable {
         /// Local file (inside the Articles directory) for `.image` blocks,
         /// set once the ingestor has downloaded it.
         public var imageFileName: String?
+        /// Declared source dimensions for `.image` blocks, when the HTML provided
+        /// them. Used to reserve layout before the bytes are downloaded.
+        public var imageWidth: Int?
+        public var imageHeight: Int?
 
         public init(kind: Kind, text: String, links: [Link],
-                    imageURLString: String? = nil, imageFileName: String? = nil) {
+                    imageURLString: String? = nil, imageFileName: String? = nil,
+                    imageWidth: Int? = nil, imageHeight: Int? = nil) {
             self.kind = kind
             self.text = text
             self.links = links
             self.imageURLString = imageURLString
             self.imageFileName = imageFileName
+            self.imageWidth = imageWidth
+            self.imageHeight = imageHeight
         }
     }
 

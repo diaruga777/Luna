@@ -569,7 +569,26 @@ public struct ArticleExtractor {
         if let hash = urlString.firstIndex(of: "#") {
             urlString = String(urlString[..<hash])
         }
-        return ArticleContent.Block(kind: .image, text: "", links: [], imageURLString: urlString)
+        let dimensions = declaredImageDimensions(from: element)
+        return ArticleContent.Block(
+            kind: .image, text: "", links: [], imageURLString: urlString,
+            imageWidth: dimensions?.width, imageHeight: dimensions?.height)
+    }
+
+    private func declaredImageDimensions(from element: Element) -> (width: Int, height: Int)? {
+        let width = declaredImageDimension(from: element, names: ["width", "data-width"])
+        let height = declaredImageDimension(from: element, names: ["height", "data-height"])
+        guard let width, let height, width >= 140, height >= 140 else { return nil }
+        return (width, height)
+    }
+
+    private func declaredImageDimension(from element: Element, names: [String]) -> Int? {
+        for name in names {
+            guard let raw = try? element.attr(name), !raw.isEmpty else { continue }
+            let digits = raw.prefix { $0.isNumber }
+            if let value = Int(digits), value > 0 { return value }
+        }
+        return nil
     }
 
     /// Resolves standard, lazy-load, and responsive image attributes. `src` is

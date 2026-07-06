@@ -142,15 +142,15 @@ public final class ReadingListIngestor {
                 blockCount: content.blocks.count, bodyTextLength: content.bodyTextLength,
                 title: content.title, hasReadableBody: content.hasReadableBody), for: replayID)
         }
-        let resolvedContent = await ArticleImageDownloader.download(
-            content, itemID: item.id, store: store, refererURL: url)
-        let coverData = await ArticleCoverThumbnail.coverImageData(html: html, baseURL: url)
+        let contentWithCachedImages = ArticleImageDownloader.resolveLocalImages(content, store: store)
+        let initialContent = await ArticleImageDownloader.downloadInitialLayoutImages(
+            contentWithCachedImages, itemID: item.id, store: store, refererURL: url)
         // Persist reader content and flip the row to `.ready` FIRST — the reader is the
-        // primary artifact and must not wait on the (up-to-20s) web-archive capture, or
-        // a time-bounded save intent (e.g. the Kindle double-press) could miss its
-        // deadline. The archive is a "nice to have original", captured after.
-        let updated = store.saveContent(resolvedContent, for: item)
-        if let coverData { store.setThumbnail(coverData, for: item.id) }
+        // primary artifact and must not wait on non-visible remote image downloads,
+        // row thumbnail fetches, or the (up-to-20s) web-archive capture. Only
+        // unknown-size images near the top are fetched before readiness; known-size
+        // images get stable placeholders and load later.
+        let updated = store.saveContent(initialContent, for: item)
         if updated.state == .ready {
             ArticleSendCoordinator.shared.articleBecameReady(updated)
             // Background-preload this article's links so the inline link viewer opens
@@ -158,9 +158,35 @@ public final class ReadingListIngestor {
             PreloadCoordinator.shared.preload(rootID: updated.id)
         }
         if let replayID {
-            await recorder.terminate(replayID, state: .success, finalContent: resolvedContent)
+            await recorder.terminate(replayID, state: .success, finalContent: initialContent)
         }
-        // Capture the original page now that the reader is ready. Prefer a live URL
+        Task { [self] in
+            await finishArticleArtifacts(
+                initialContent, html: html, for: item, url: url)
+        }
+    }
+
+    /// Finishes non-critical article artifacts after the row is already readable.
+    /// This keeps ingestion latency tied to text extraction instead of remote media
+    /// and WebKit archive capture.
+    private func finishArticleArtifacts(
+        _ content: ArticleContent, html: String, for item: ReadingListItem, url: URL
+    ) async {
+        async let downloadedContent = ArticleImageDownloader.download(
+            content, itemID: item.id, store: store, refererURL: url)
+        async let coverData = ArticleCoverThumbnail.coverImageData(html: html, baseURL: url)
+
+        if let coverData = await coverData,
+           store.item(withID: item.id)?.thumbnailFileName == nil {
+            store.setThumbnail(coverData, for: item.id)
+        }
+
+        let resolvedContent = await downloadedContent
+        if resolvedContent.blocks.contains(where: { $0.kind == .image && $0.imageFileName != nil }) {
+            _ = store.saveContent(resolvedContent, for: item)
+        }
+
+        // Capture the original page after media enrichment. Prefer a live URL
         // navigation (WebKit fetches every subresource, so Original renders like the
         // real page); fall back to the fetched HTML only if that fails.
         await captureWebArchiveIfPossible(for: item, url: url, html: html)

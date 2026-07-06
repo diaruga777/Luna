@@ -113,6 +113,8 @@ public enum ArticleTextRenderer {
                     let attachmentRange = NSRange(location: result.length, length: 1)
                     result.append(imageString)
                     imageRanges.append((attachmentRange, imagesDirectory.appendingPathComponent(fileName)))
+                } else if let placeholder = attributedImagePlaceholder(for: block, maxWidth: maxImageWidth) {
+                    result.append(placeholder)
                 }
                 blockTextRanges.append(nil)
                 continue
@@ -137,6 +139,35 @@ public enum ArticleTextRenderer {
         attachment.image = image
         let displayWidth = min(maxWidth, image.size.width)
         let displayHeight = displayWidth / image.size.width * image.size.height
+        attachment.bounds = CGRect(x: 0, y: 0, width: displayWidth, height: displayHeight)
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.paragraphSpacing = 14
+        paragraph.paragraphSpacingBefore = 6
+        paragraph.alignment = .center
+
+        let result = NSMutableAttributedString(attachment: attachment)
+        result.append(NSAttributedString(string: "\n"))
+        result.addAttribute(
+            .paragraphStyle, value: paragraph,
+            range: NSRange(location: 0, length: result.length))
+        return result
+    }
+
+    private static func attributedImagePlaceholder(
+        for block: ArticleContent.Block, maxWidth: CGFloat
+    ) -> NSAttributedString? {
+        guard let width = block.imageWidth, let height = block.imageHeight,
+              width > 0, height > 0 else { return nil }
+        let displayWidth = min(maxWidth, CGFloat(width))
+        let displayHeight = max(44, displayWidth / CGFloat(width) * CGFloat(height))
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: displayWidth, height: displayHeight))
+        let image = renderer.image { context in
+            UIColor.secondarySystemFill.setFill()
+            context.fill(CGRect(origin: .zero, size: CGSize(width: displayWidth, height: displayHeight)))
+        }
+        let attachment = NSTextAttachment()
+        attachment.image = image
         attachment.bounds = CGRect(x: 0, y: 0, width: displayWidth, height: displayHeight)
 
         let paragraph = NSMutableParagraphStyle()

@@ -32,13 +32,39 @@ public enum ArticleImageDownloader {
     public static func download(
         _ content: ArticleContent, itemID: UUID, store: ReadingListStore, refererURL: URL
     ) async -> ArticleContent {
+        await download(content, itemID: itemID, store: store, refererURL: refererURL) { _, _ in true }
+    }
+
+    /// Downloads only unknown-size images that appear near the top of the article.
+    /// Images with declared dimensions already have stable placeholders, so they do
+    /// not need to block the row becoming readable.
+    public static func downloadInitialLayoutImages(
+        _ content: ArticleContent, itemID: UUID, store: ReadingListStore, refererURL: URL
+    ) async -> ArticleContent {
+        let initialTextBudget = 3_200
+        return await download(content, itemID: itemID, store: store, refererURL: refererURL) { block, textBeforeBlock in
+            guard block.kind == .image else { return false }
+            if block.imageWidth != nil, block.imageHeight != nil { return false }
+            return textBeforeBlock <= initialTextBudget
+        }
+    }
+
+    private static func download(
+        _ content: ArticleContent,
+        itemID: UUID,
+        store: ReadingListStore,
+        refererURL: URL,
+        shouldDownload: (ArticleContent.Block, Int) -> Bool
+    ) async -> ArticleContent {
         var downloaded = 0
         var storedBytes = 0
         var blocks: [ArticleContent.Block] = []
+        var textBeforeBlock = 0
 
         for var block in content.blocks {
             guard block.kind == .image else {
                 blocks.append(block)
+                textBeforeBlock += block.text.count
                 continue
             }
             // A main-app ingestion may already have cached this image before the
@@ -48,6 +74,10 @@ public enum ArticleImageDownloader {
                 continue
             }
             guard let rawURL = block.imageURLString, let imageURL = URL(string: rawURL) else {
+                blocks.append(block)
+                continue
+            }
+            guard shouldDownload(block, textBeforeBlock) else {
                 blocks.append(block)
                 continue
             }

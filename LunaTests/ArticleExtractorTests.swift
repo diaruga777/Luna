@@ -83,6 +83,8 @@ final class ArticleExtractorTests: XCTestCase {
         let images = content.blocks.filter { $0.kind == .image }
         XCTAssertEqual(images.count, 1)
         XCTAssertEqual(images.first?.imageURLString, "https://example.com/wp-content/uploads/hero-photo.png")
+        XCTAssertEqual(images.first?.imageWidth, 1600)
+        XCTAssertEqual(images.first?.imageHeight, 900)
     }
 
     func testPrependsMetadataHeroImageAndUsesLazyResponsiveBodyImages() throws {

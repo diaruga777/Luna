@@ -28,6 +28,13 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         ArticleContent.Block(kind: .image, text: "", links: [], imageFileName: name)
     }
 
+    private func remoteImage(width: Int, height: Int) -> ArticleContent.Block {
+        ArticleContent.Block(
+            kind: .image, text: "", links: [],
+            imageURLString: "https://example.com/image.jpg",
+            imageWidth: width, imageHeight: height)
+    }
+
     /// A long article: title + several large paragraphs well past any small budget.
     private func longArticle() -> ArticleContent {
         let big = String(repeating: "word ", count: 200)   // ~1000 chars each
@@ -122,6 +129,23 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
 
         XCTAssertTrue(prefix.isComplete)
         XCTAssertEqual(prefix.imageRanges.count, 1)
+    }
+
+    func testKnownSizeRemoteImageRendersPlaceholder() {
+        let article = ArticleContent(
+            title: "Image placeholder",
+            blocks: [remoteImage(width: 1600, height: 900), paragraph("short body")])
+        let rendered = ArticleTextRenderer.render(article, characterBudget: 700)
+
+        var attachmentCount = 0
+        rendered.text.enumerateAttribute(
+            .attachment,
+            in: NSRange(location: 0, length: rendered.text.length)
+        ) { value, _, _ in
+            if value is NSTextAttachment { attachmentCount += 1 }
+        }
+        XCTAssertEqual(attachmentCount, 1)
+        XCTAssertTrue(rendered.imageRanges.isEmpty, "placeholder is layout-only until the file exists")
     }
 
     // MARK: - WordMap is richer on the full render than on the prefix

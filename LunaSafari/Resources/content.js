@@ -29,37 +29,56 @@
         "unlock this article", "this article is reserved for subscribers"
     ];
 
-    browser.runtime.sendMessage({ type: "buttonContext" }).then(function (resp) {
-        var mode = (resp && resp.mode) || "all";
-        if (mode === "never") { return; }
-        var platform = recognizedPlatformPage();
-        if (platform) {
-            var downloadTarget = downloadTargetFor(resp);
-            if (downloadTarget) { injectLunaButton(downloadTarget); }
-            return;
-        }
-        // Product pages win over the article heuristics (a retail page's long
-        // description can read as an article body).
-        if (looksLikeProductPage()) {
-            var trackTarget = trackTargetFor(resp);
-            if (trackTarget) { injectLunaButton(trackTarget); }
-            return;
-        }
+    // Guards every top-level extension-runtime entry point so this file can also
+    // be loaded (for its heuristics) in a bare WKWebView with no `browser` global,
+    // e.g. from an XCTest — see `window.__lunaLooksLikeArticle` below.
+    if (typeof browser !== "undefined") {
+        browser.runtime.sendMessage({ type: "buttonContext" }).then(function (resp) {
+            var mode = (resp && resp.mode) || "all";
+            if (mode === "never") { return; }
+            var platform = recognizedPlatformPage();
+            if (platform) {
+                var downloadTarget = downloadTargetFor(resp);
+                if (downloadTarget) { injectLunaButton(downloadTarget); }
+                return;
+            }
+            // Product pages win over the article heuristics (a retail page's long
+            // description can read as an article body).
+            if (looksLikeProductPage()) {
+                var trackTarget = trackTargetFor(resp);
+                if (trackTarget) { injectLunaButton(trackTarget); }
+                return;
+            }
+            if (!looksLikeArticle()) {
+                // Some article bodies hydrate late (SPA/client-rendered pages) --
+                // give the DOM a chance to settle, then re-check once.
+                setTimeout(function () { tryInjectArticleButton(mode, resp); }, 2500);
+                return;
+            }
+            if (mode === "onlyLocked" && !looksPaywalled()) { return; }
+            var target = readTarget(resp);
+            if (target) { injectLunaButton(target); }
+        }).catch(function () {});
+
+        // When the "Unlock Paywalls On-Device" toggle is on, reveal the body in Safari
+        // (the Referer rewrite that unlocks the server response is applied declaratively
+        // by the background ruleset; this strips the leftover overlay/clamp so the reader
+        // — and the user, right here in Safari — sees the full article). The native
+        // handler answers `enabled` only when Luna Reader is installed — unlocking is
+        // a Reader feature, so without Reader nothing is revealed.
+        browser.runtime.sendMessage({ type: "bypassEnabled" }).then(function (resp) {
+            if (resp && resp.enabled) { revealArticle(); }
+        }).catch(function () {});
+    }
+
+    // One-shot re-check of just the article branch (mirrors the tail of the
+    // `buttonContext` handler above) for the 2500ms SPA retry.
+    function tryInjectArticleButton(mode, resp) {
         if (!looksLikeArticle()) { return; }
         if (mode === "onlyLocked" && !looksPaywalled()) { return; }
         var target = readTarget(resp);
         if (target) { injectLunaButton(target); }
-    }).catch(function () {});
-
-    // When the "Unlock Paywalls On-Device" toggle is on, reveal the body in Safari
-    // (the Referer rewrite that unlocks the server response is applied declaratively
-    // by the background ruleset; this strips the leftover overlay/clamp so the reader
-    // — and the user, right here in Safari — sees the full article). The native
-    // handler answers `enabled` only when Luna Reader is installed — unlocking is
-    // a Reader feature, so without Reader nothing is revealed.
-    browser.runtime.sendMessage({ type: "bypassEnabled" }).then(function (resp) {
-        if (resp && resp.enabled) { revealArticle(); }
-    }).catch(function () {});
+    }
 
     // Generic paywall-overlay cleanup (mirrors the app's browser-tier cleanup): remove
     // common overlay containers, un-blur/un-clamp the body, restore scroll, un-lazy
@@ -170,17 +189,184 @@
         }, 3000);
     }
 
-    // A page worth a "Read in Luna" button: an article, not a homepage/search.
+    // A page worth a "Read in Luna" button: article/blog/essay/book prose, not a
+    // landing page, comment thread, docs/reference page, listing, or login gate.
+    // A lightweight Readability-style scorer: hard negatives are checked first
+    // (teaser feed, link-heavy page, docs URL/code-heavy page, login gate); the
+    // surviving candidate paragraph-like nodes are filtered (list items, hidden
+    // nodes, high own-link-density, "unlikely" container ancestry) and scored by
+    // sqrt(length); metadata (og:type, JSON-LD Article/BlogPosting, byline+date,
+    // or a single dominant <article>) lowers the score bar. JS-only approximation
+    // -- no Swift counterpart -- the app re-classifies properly on save via
+    // LunaIngest.
     function looksLikeArticle() {
+        var body = document.body;
+        if (!body) { return false; }
+        if (document.querySelectorAll("article").length >= 4) { return false; }
+        if (wholePageLinkDensity(body) > 0.5) { return false; }
+        if (isDocPathURL()) { return false; }
+        if (document.querySelector('input[type="password"]')) { return false; }
+
+        var candidates = collectArticleCandidates();
+        var score = 0;
+        var totalQualifyingText = 0;
+        var parentTotals = new Map();
+        var qualifying = [];
+        for (var i = 0; i < candidates.length; i++) {
+            var node = candidates[i];
+            var len = (node.innerText || "").length;
+            if (len < 140) { continue; }
+            score += Math.sqrt(len - 140);
+            totalQualifyingText += len;
+            qualifying.push({ node: node, len: len });
+            var parent = node.parentElement;
+            if (parent) { parentTotals.set(parent, (parentTotals.get(parent) || 0) + len); }
+        }
+
+        // Documentation (continued from the URL check above): a page dominated by
+        // code samples rather than qualifying prose.
+        var codeLength = 0;
+        var codeEls = document.querySelectorAll("pre, code");
+        for (var c = 0; c < codeEls.length; c++) { codeLength += (codeEls[c].innerText || "").length; }
+        if (codeLength > totalQualifyingText) { return false; }
+
+        var largestClusterShare = 0;
+        if (totalQualifyingText > 0) {
+            var maxParentTotal = 0;
+            parentTotals.forEach(function (total) { if (total > maxParentTotal) { maxParentTotal = total; } });
+            largestClusterShare = maxParentTotal / totalQualifyingText;
+        }
+
+        if (hasStrongArticleEvidence(qualifying, totalQualifyingText)) { return score > 20; }
+        return score > 40 && largestClusterShare >= 0.5;
+    }
+
+    // Exposed so tests can load this file into a bare WKWebView (no `browser`
+    // global) and exercise the heuristic directly.
+    window.__lunaLooksLikeArticle = looksLikeArticle;
+
+    // Sum of `<a>` innerText inside `root`, divided by `root`'s own innerText
+    // length -- a whole-page link density above 0.5 flags a listing/nav-heavy page.
+    function wholePageLinkDensity(root) {
+        var totalText = (root.innerText || "").length;
+        if (totalText === 0) { return 0; }
+        var anchors = root.querySelectorAll("a");
+        var linkText = 0;
+        for (var i = 0; i < anchors.length; i++) { linkText += (anchors[i].innerText || "").length; }
+        return linkText / totalText;
+    }
+
+    var DOC_URL_SEGMENTS = ["docs", "documentation", "api", "reference", "sdk", "changelog"];
+
+    // The first or second URL path segment names a documentation section.
+    function isDocPathURL() {
+        var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
+        for (var i = 0; i < 2 && i < segments.length; i++) {
+            if (DOC_URL_SEGMENTS.indexOf(segments[i].toLowerCase()) >= 0) { return true; }
+        }
+        return false;
+    }
+
+    // <p> elements, plus the deduped parent of each `div > br` pattern (old-school
+    // / book-style pages formatted with <br> instead of <p>) -- never a <pre> --
+    // filtered for list-item nesting, hidden nodes, high own-link-density, and
+    // "unlikely" container ancestry.
+    function collectArticleCandidates() {
+        var raw = [];
+        var paragraphs = document.querySelectorAll("p");
+        for (var i = 0; i < paragraphs.length; i++) { raw.push(paragraphs[i]); }
+        var brs = document.querySelectorAll("div > br");
+        var seenDivs = [];
+        for (var b = 0; b < brs.length; b++) {
+            var div = brs[b].parentElement;
+            if (div && seenDivs.indexOf(div) < 0) {
+                seenDivs.push(div);
+                raw.push(div);
+            }
+        }
+        var result = [];
+        for (var j = 0; j < raw.length; j++) {
+            if (!isSkippableCandidate(raw[j])) { result.push(raw[j]); }
+        }
+        return result;
+    }
+
+    function isSkippableCandidate(node) {
+        // Nested inside a list item (the `li p` selector only ever matches <p>).
+        if (typeof node.matches === "function" && node.matches("li p")) { return true; }
+        if (isHiddenCandidate(node)) { return true; }
+        var text = node.innerText || "";
+        if (text.length > 0) {
+            var linkText = 0;
+            var anchors = node.querySelectorAll("a");
+            for (var i = 0; i < anchors.length; i++) { linkText += (anchors[i].innerText || "").length; }
+            if (linkText / text.length > 0.2) { return true; }
+        }
+        return ancestorDisqualifies(node);
+    }
+
+    // Cheap hidden checks only (inline style / attributes) -- no getComputedStyle.
+    function isHiddenCandidate(node) {
+        if (node.hidden) { return true; }
+        if (node.getAttribute && node.getAttribute("aria-hidden") === "true") { return true; }
+        if (node.style && (node.style.display === "none" || node.style.visibility === "hidden")) { return true; }
+        return false;
+    }
+
+    // UNLIKELY container names (comment threads, chrome, promo/social rails, …)
+    // unless the same class/id string also reads as the POSITIVE main-content case.
+    var ARTICLE_UNLIKELY_RE = /comment|disqus|replies|sidebar|footer|header|nav|menu|banner|related|promo|newsletter|social|share|card|carousel|hero|breadcrumb|pagination|popup|cookie|subscribe|testimonial|pricing|footnote/i;
+    var ARTICLE_POSITIVE_RE = /article|body|content|main|story|post|entry|prose|text/i;
+
+    // The node or any of its nearest 5 ancestors (stopping at <body>) has an
+    // UNLIKELY class/id without a POSITIVE one -- checked per-ancestor, so a
+    // POSITIVE great-grandparent doesn't rescue an UNLIKELY direct parent.
+    function ancestorDisqualifies(node) {
+        var current = node;
+        for (var depth = 0; current && depth <= 5; depth++) {
+            if (classIdDisqualifies(current)) { return true; }
+            if (current === document.body) { break; }
+            current = current.parentElement;
+        }
+        return false;
+    }
+
+    function classIdDisqualifies(el) {
+        // `className` isn't a string on SVG elements (SVGAnimatedString there).
+        var className = typeof el.className === "string" ? el.className : "";
+        var combined = (className + " " + (el.id || "")).trim();
+        if (!combined) { return false; }
+        return ARTICLE_UNLIKELY_RE.test(combined) && !ARTICLE_POSITIVE_RE.test(combined);
+    }
+
+    // Metadata that lowers the score bar to 20 (from 40 + a cluster-concentration
+    // requirement): og:type=article, a JSON-LD Article/BlogPosting node, a byline
+    // + dateline pair, or a single <article> that already holds most of the
+    // qualifying text.
+    function hasStrongArticleEvidence(qualifying, totalQualifyingText) {
         var ogType = document.querySelector('meta[property="og:type"]');
         if (ogType && /article/i.test(ogType.getAttribute("content") || "")) { return true; }
-        if (document.querySelector("article")) { return true; }
-        var paragraphs = document.querySelectorAll("p");
-        var textLength = 0;
-        for (var i = 0; i < paragraphs.length; i++) {
-            textLength += (paragraphs[i].innerText || "").length;
+        if (hasArticleJSONLD()) { return true; }
+        if (document.querySelector('meta[name="author"], [rel="author"]') && document.querySelector("time[datetime]")) {
+            return true;
         }
-        return textLength > 1500 && !!document.querySelector("h1");
+        var articles = document.querySelectorAll("article");
+        if (articles.length === 1 && totalQualifyingText > 0) {
+            var inArticle = 0;
+            for (var i = 0; i < qualifying.length; i++) {
+                if (articles[0].contains(qualifying[i].node)) { inArticle += qualifying[i].len; }
+            }
+            if (inArticle / totalQualifyingText >= 0.6) { return true; }
+        }
+        return false;
+    }
+
+    function hasArticleJSONLD() {
+        var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+        for (var i = 0; i < scripts.length; i++) {
+            if (/"@type"\s*:\s*"[^"]*(Article|BlogPosting)/.test(scripts[i].textContent || "")) { return true; }
+        }
+        return false;
     }
 
     // Mirrors PaywallDetector: schema.org isAccessibleForFree / content_tier, plus

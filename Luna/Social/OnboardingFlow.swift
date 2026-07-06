@@ -5,13 +5,13 @@
 
 import LunaSocialUI
 import LunaSocial
-import LunaModels
+import LunaMailAccount
 import LunaTransitions
 import UIKit
 
 /// Builds the first-launch onboarding: a skippable email-account step, then
-/// quick steps to enable notifications, install the Safari extension, and set up
-/// the save-page shortcut / Action Button. Each step can be skipped.
+/// quick steps to install the Safari extension and set up the relevant save
+/// action. Each step can be skipped.
 public enum OnboardingFlow {
 
     /// Returns the onboarding root (a bare navigation controller). `onFinished`
@@ -20,16 +20,16 @@ public enum OnboardingFlow {
         let nav = UINavigationController()
         nav.setNavigationBarHidden(true, animated: false)
         nav.installDotMatrixTransitions()
-        nav.viewControllers = [emailStep(nav: nav, onFinished: onFinished)]
+        if EmailAccountStore.shared.isConfigured, let account = EmailAccountStore.shared.account {
+            nav.viewControllers = [existingAccountStep(accountAddress: account.address, onFinished: onFinished)]
+        } else {
+            nav.viewControllers = [emailStep(nav: nav, onFinished: onFinished)]
+        }
         return nav
     }
 
-    /// How many steps the flow shows on this OS — drives the per-step progress dots.
-    /// Email, notifications, Safari extension, and action extension always show;
-    /// only the Action Button shortcut setup is iOS 27+.
-    private static var totalSteps: Int {
-        if #available(iOS 27.0, *) { return 5 } else { return 4 }
-    }
+    /// Email, Safari extension, and one final save-action setup screen.
+    private static let totalSteps = 3
 
     #if DEBUG
     /// Standalone, ordered onboarding step view controllers for snapshot/navigation
@@ -37,12 +37,12 @@ public enum OnboardingFlow {
     public static func stepViewControllersForTesting() -> [UIViewController] {
         let nav = UINavigationController()
         var steps: [UIViewController] = [emailStep(nav: nav, onFinished: {})]
-        steps.append(notificationsStep(nav: nav, onFinished: {}))
         steps.append(safariStep(nav: nav, onFinished: {}))
         if #available(iOS 27.0, *) {
             steps.append(shortcutStep(nav: nav, onFinished: {}))
+        } else {
+            steps.append(actionExtensionStep(onFinished: {}))
         }
-        steps.append(actionExtensionStep(onFinished: {}))
         return steps
     }
     #endif
@@ -53,7 +53,7 @@ public enum OnboardingFlow {
     ) -> UIViewController {
         let proceed: () -> Void = { [weak nav] in
             guard let nav else { return }
-            nav.pushViewController(notificationsStep(nav: nav, onFinished: onFinished), animated: true)
+            nav.pushViewController(safariStep(nav: nav, onFinished: onFinished), animated: true)
         }
         return OnboardingStepViewController(
             symbol: "envelope.badge",
@@ -69,24 +69,21 @@ public enum OnboardingFlow {
             onContinue: proceed)
     }
 
-    private static func notificationsStep(
-        nav: UINavigationController, onFinished: @escaping () -> Void
+    private static func existingAccountStep(
+        accountAddress: String, onFinished: @escaping () -> Void
     ) -> UIViewController {
-        let proceed: () -> Void = { [weak nav] in
-            nav?.pushViewController(safariStep(nav: nav, onFinished: onFinished), animated: true)
-        }
         return OnboardingStepViewController(
-            symbol: "bell.badge",
-            title: "Get notified",
-            body: "Enable notifications for price drops, articles ready to read, and links shared with you.",
-            primary: .init(title: "Enable Notifications") { _ in
+            symbol: "envelope.badge.fill",
+            title: "Email already connected",
+            body: "Luna is already signed in as \(accountAddress). Finish setup to use this app with the same on-device library and account.",
+            primary: nil,
+            continueTitle: "Finish",
+            animation: nil,
+            progress: nil,
+            onContinue: {
                 NotificationManager.requestAuthorization()
-                proceed()
-            },
-            continueTitle: "Not Now",
-            animation: .notification,
-            progress: .init(index: 1, total: totalSteps),
-            onContinue: proceed)
+                onFinished()
+            })
     }
 
     private static func safariStep(
@@ -94,12 +91,12 @@ public enum OnboardingFlow {
     ) -> UIViewController {
         OnboardingStepViewController(
             symbol: "safari",
-            title: "Save any Safari page instantly",
-            body: "Luna remembers your last visited site. Visit data stays on device and is never shared.\n\nTurn on the Luna extension in Settings → Apps → Safari → Extensions.",
+            title: "Unlock and save from Safari",
+            body: "Turn on the Luna Safari extension to unlock supported articles automatically and add a save button on the page.\n\nYour browsing and saved article data stays on this device.",
             primary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
             continueTitle: "Continue",
             animation: .settingsToggle,
-            progress: .init(index: 2, total: totalSteps),
+            progress: .init(index: 1, total: totalSteps),
             onContinue: { [weak nav] in
                 if #available(iOS 27.0, *) {
                     nav?.pushViewController(shortcutStep(nav: nav, onFinished: onFinished), animated: true)
@@ -113,17 +110,15 @@ public enum OnboardingFlow {
         OnboardingStepViewController(
             symbol: "bolt.badge.clock",
             title: "Save anything, instantly",
-            body: "Press the Action Button to save what's on your screen.\n\nAssign our customizable shortcut to your Action Button:Settings → Action Button → Shortcut → \"\(BundledShortcut.displayName)\".",
+            body: "Press the Action Button to save what's on your screen.\n\nAssign our customizable shortcut to your Action Button: Settings → Action Button → Shortcut → \"\(BundledShortcut.displayName)\".",
             primary: .init(title: "Install Shortcut") { step in
                 BundledShortcut.presentInstaller(from: step)
             },
             secondary: .init(title: "Open Settings") { _ in SystemSettingsLink.open() },
-            continueTitle: "Continue",
+            continueTitle: "Done",
             animation: .actionButton,
-            progress: .init(index: 3, total: totalSteps),
-            onContinue: { [weak nav] in
-                nav?.pushViewController(actionExtensionStep(onFinished: onFinished), animated: true)
-            })
+            progress: .init(index: 2, total: totalSteps),
+            onContinue: onFinished)
     }
 
     /// Final step: how the Share-sheet "Read in Luna" action extension works.

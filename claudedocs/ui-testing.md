@@ -119,7 +119,7 @@ the reference for inspection.
 |---|---|---|
 | `ReadingListScreenTests` | each state + each filter segment | row tap → reader / tracker editor / archive reader / openItem (video, platform); settings/friends/catch-up buttons; table layout |
 | `SettingsScreenTests` | menu + all 12 subscreens | each top-level row → correct subscreen; email/boox → AutoSendBySource |
-| `OnboardingScreenTests` | every step (username + setup steps) | flow root shows username first; step buttons in-bounds |
+| `OnboardingScreenTests` | every step (email + setup steps) | flow root shows email first; step buttons in-bounds |
 | `ReaderScreenTests` | scroll / highlight / rsvp / inline-header / standalone scroll + rsvp | mode switcher swaps hosted child VC; reader child in-bounds |
 | `CatchUpAndPriceScreenTests` | catch-up cards (eligible + mixed/locked); price editor (normal + alerting) | catch-up + price-editor layout/store list |
 | `ShareKitScreenTests` | action-reader loading; SavedNonTextual (YouTube + platform) | Done item; layout sanity |

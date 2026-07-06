@@ -129,7 +129,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
         // Local notifications: show as banners while open (delegate below) and,
         // for already-onboarded users, ensure authorization (new users get the
-        // prompt during onboarding's notifications step, with context).
+        // prompt from onboarding when they connect email or finish a second app).
         UNUserNotificationCenter.current().delegate = self
         if UserDefaults.standard.bool(forKey: SceneDelegate.onboardingCompleteKey) {
             NotificationManager.requestAuthorization()

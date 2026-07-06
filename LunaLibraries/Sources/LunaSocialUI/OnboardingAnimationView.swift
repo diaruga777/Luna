@@ -8,8 +8,8 @@ import UIKit
 
 /// A small looping illustration shown atop an onboarding step, depicting the
 /// iOS change the step asks the user to make (flip a Settings toggle, press the
-/// Action Button, receive a notification). Purely cosmetic; `start()` kicks the
-/// loop when the step appears.
+/// Action Button, receive a notification). Purely cosmetic; `start()` lazily
+/// builds the illustration and kicks the loop when the step appears.
 public final class OnboardingAnimationView: UIView {
 
     public enum Kind {
@@ -21,6 +21,7 @@ public final class OnboardingAnimationView: UIView {
 
     private let kind: Kind
     private let accent = GlassStyle.readingAccent
+    private var didBuildIllustration = false
 
     public init(kind: Kind) {
         self.kind = kind
@@ -37,24 +38,32 @@ public final class OnboardingAnimationView: UIView {
         heightAnchor.constraint(equalToConstant: height).isActive = true
         widthAnchor.constraint(equalToConstant: kind == .actionExtension ? 220 : 260).isActive = true
         clipsToBounds = true
-        switch kind {
-        case .notification: buildNotification()
-        case .settingsToggle: buildToggle()
-        case .actionButton: buildActionButton()
-        case .actionExtension: buildActionExtension()
-        }
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
     /// Begins (or restarts) the looping animation. Safe to call repeatedly.
     public func start() {
+        buildIfNeeded()
         switch kind {
         case .notification: animateNotification()
         case .settingsToggle: animateToggle()
         case .actionButton: animateActionButton()
         case .actionExtension: animateActionExtension()
         }
+    }
+
+    private func buildIfNeeded() {
+        guard !didBuildIllustration else { return }
+        didBuildIllustration = true
+        switch kind {
+        case .notification: buildNotification()
+        case .settingsToggle: buildToggle()
+        case .actionButton: buildActionButton()
+        case .actionExtension: buildActionExtension()
+        }
+        setNeedsLayout()
+        layoutIfNeeded()
     }
 
     // MARK: - Notification banner

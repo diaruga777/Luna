@@ -6,6 +6,7 @@
 import LunaMailAccount
 import LunaMailTransport
 import LunaDesignSystem
+import LunaSocial
 import AuthenticationServices
 import LunaTransitions
 import UIKit
@@ -114,6 +115,7 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
             field.shake()
             return
         }
+        NotificationManager.requestAuthorization()
         let providerID = ProviderInference.inferProviderID(for: address)
 
         if providerID == .outlook {

@@ -5,7 +5,9 @@
 //  Snapshot + layout/navigation coverage for every onboarding step.
 //
 
+import LunaMailAccount
 import LunaSocialUI
+import LunaStorage
 import UIKit
 import XCTest
 @testable import Luna
@@ -65,8 +67,50 @@ final class OnboardingScreenTests: XCTestCase {
         let window = UITestSupport.host(root)
         let nav = root as? UINavigationController
         XCTAssertNotNil(nav)
-        XCTAssertTrue(nav?.topViewController is OnboardingStepViewController,
-                      "onboarding flow should open on the email step")
+        // Type check runs in the app image (see `OnboardingFlow.isOnboardingStep`):
+        // the test bundle carries its own duplicate copy of the LunaSocialUI classes,
+        // so an `is` check compiled here can spuriously fail cross-image.
+        XCTAssertTrue(OnboardingFlow.isOnboardingStep(nav?.topViewController),
+                      "onboarding flow should open on the email step, got \(String(describing: nav?.topViewController))")
+        XCTAssertFalse(finished)
+        _ = window
+    }
+
+    /// Even when some other store is already configured, `OnboardingFlow.make(stores:)`
+    /// over a fresh ephemeral-shaped bundle still opens on the email step — the
+    /// factory only ever consults the passed-in `OnboardingStores`, never a shared
+    /// singleton, which is what lets Settings → "Replay Onboarding" behave exactly
+    /// like a fresh install regardless of the app's real, persisted state.
+    func testOnboardingFlowWithFreshEphemeralStoresStartsAtEmailEvenWhenAnotherStoreIsConfigured() {
+        let otherSuiteName = "OnboardingFlowTests.other.\(UUID().uuidString)"
+        let otherDefaults = UserDefaults(suiteName: otherSuiteName)!
+        defer { otherDefaults.removePersistentDomain(forName: otherSuiteName) }
+        let otherEmailStore = EmailAccountStore(
+            defaults: otherDefaults, credentialStorage: InMemoryCredentialStorage())
+        otherEmailStore.save(
+            EmailAccount(providerID: .gmail, address: "someone@gmail.com"),
+            credential: .appPassword("secret"))
+        XCTAssertTrue(otherEmailStore.isConfigured, "sanity: the 'elsewhere' store really is configured")
+
+        let scratchSuiteName = "OnboardingFlowTests.scratch.\(UUID().uuidString)"
+        let scratchDefaults = UserDefaults(suiteName: scratchSuiteName)!
+        defer { scratchDefaults.removePersistentDomain(forName: scratchSuiteName) }
+        let fresh = OnboardingStores(
+            emailAccountStore: EmailAccountStore(
+                defaults: scratchDefaults, credentialStorage: InMemoryCredentialStorage()),
+            safariStatusStore: SafariExtensionStatusStore(defaults: scratchDefaults),
+            actionButtonStore: ActionButtonOnboardingStore(defaults: scratchDefaults),
+            realSafariStatusStore: .shared,
+            baselineSafariEnabled: [:],
+            scratchSuiteName: scratchSuiteName)
+
+        var finished = false
+        let root = OnboardingFlow.make(stores: fresh) { finished = true }
+        let window = UITestSupport.host(root)
+        let nav = root as? UINavigationController
+        XCTAssertNotNil(nav)
+        XCTAssertTrue(OnboardingFlow.isOnboardingStep(nav?.topViewController),
+                      "a fresh ephemeral bundle should open on the email step, got \(String(describing: nav?.topViewController))")
         XCTAssertFalse(finished)
         _ = window
     }

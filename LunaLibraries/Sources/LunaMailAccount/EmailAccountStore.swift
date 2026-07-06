@@ -28,6 +28,7 @@ public final class EmailAccountStore {
 
     private let accountKey = "lunaEmailAccount"
     private let defaults: UserDefaults
+    private let credentialStorage: MailCredentialStorage
     private let service = "com.hsanabria.luna.mailaccount"
     private let appPasswordAccount = "app-password"
     private let oauthAccount = "oauth-tokens"
@@ -35,10 +36,14 @@ public final class EmailAccountStore {
     /// Posted whenever the account is saved or cleared.
     public static let accountChanged = Notification.Name("LunaEmailAccountChanged")
 
-    public init(defaults: UserDefaults? = nil) {
+    /// `credentialStorage` defaults to the real Keychain; injectable so tests and
+    /// the onboarding replay overlay can redirect the secret to an in-memory
+    /// stand-in without changing any of the logic below.
+    public init(defaults: UserDefaults? = nil, credentialStorage: MailCredentialStorage = KeychainCredentialStorage()) {
         self.defaults = defaults
             ?? UserDefaults(suiteName: AppConfig.appGroupID)
             ?? .standard
+        self.credentialStorage = credentialStorage
     }
 
     // MARK: - Account metadata
@@ -73,19 +78,19 @@ public final class EmailAccountStore {
     /// Removes the account and its credential, then posts `accountChanged`.
     public func clear() {
         defaults.removeObject(forKey: accountKey)
-        CredentialKeychain.delete(service: service, account: appPasswordAccount)
-        CredentialKeychain.delete(service: service, account: oauthAccount)
+        credentialStorage.delete(service: service, account: appPasswordAccount)
+        credentialStorage.delete(service: service, account: oauthAccount)
         NotificationCenter.default.post(name: Self.accountChanged, object: nil)
     }
 
-    // MARK: - Credential (Keychain)
+    // MARK: - Credential (Keychain, or an injected stand-in)
 
     public var credential: MailCredential? {
-        if let password = CredentialKeychain.read(service: service, account: appPasswordAccount),
+        if let password = credentialStorage.read(service: service, account: appPasswordAccount),
            !password.isEmpty {
             return .appPassword(password)
         }
-        if let json = CredentialKeychain.read(service: service, account: oauthAccount),
+        if let json = credentialStorage.read(service: service, account: oauthAccount),
            let data = json.data(using: .utf8),
            let tokens = try? JSONDecoder().decode(OAuthTokens.self, from: data) {
             return .oauth(tokens)
@@ -96,14 +101,14 @@ public final class EmailAccountStore {
     private func setCredential(_ credential: MailCredential) {
         switch credential {
         case .appPassword(let password):
-            CredentialKeychain.write(password, service: service, account: appPasswordAccount)
-            CredentialKeychain.delete(service: service, account: oauthAccount)
+            credentialStorage.write(password, service: service, account: appPasswordAccount)
+            credentialStorage.delete(service: service, account: oauthAccount)
         case .oauth(let tokens):
             if let data = try? JSONEncoder().encode(tokens) {
-                CredentialKeychain.write(
+                credentialStorage.write(
                     String(decoding: data, as: UTF8.self), service: service, account: oauthAccount)
             }
-            CredentialKeychain.delete(service: service, account: appPasswordAccount)
+            credentialStorage.delete(service: service, account: appPasswordAccount)
         }
     }
 }

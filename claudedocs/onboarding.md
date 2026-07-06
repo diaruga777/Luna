@@ -184,6 +184,50 @@ ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers
   Luna/Resources/SafariExtensionGuide.mp4 Luna/Resources/ActionButtonGuide.mp4
 ```
 
+## Replay ("Replay Onboarding" in Settings)
+
+Settings → "Replay Onboarding" (`Luna/Settings/SettingsViewController.swift`) runs the
+**entire** flow — including the email login sub-flow — against a throwaway overlay
+rather than the app's real, persisted state, so a replay behaves exactly like a
+fresh install and is fully traversable/testable without corrupting anything real.
+
+- Every step builder in `OnboardingFlow` now takes an `OnboardingStores` (`Luna/Social/
+  OnboardingStores.swift`) instead of reaching `EmailAccountStore.shared` /
+  `SafariExtensionStatusStore.shared` / `ActionButtonOnboardingStore.shared` directly.
+  `OnboardingFlow.make(stores:onFinished:)` defaults to `OnboardingStores.real` (the
+  three real singletons — normal first-launch behavior, unchanged).
+- The Settings row instead builds `OnboardingStores.ephemeral()`: all three stores
+  backed by one scratch `UserDefaults(suiteName: "onboarding.replay.<UUID>")` (one
+  suite is enough — each store's keys are already namespaced), plus an in-memory
+  stand-in (`LunaMailAccount.InMemoryCredentialStorage`) for the email credential in
+  place of the Keychain (`EmailAccountStore`'s new `credentialStorage:` seam —
+  `MailCredentialStorage` — defaults to a `KeychainCredentialStorage` wrapping the
+  same `CredentialKeychain` calls it always made, so `.shared`'s behavior is
+  unchanged). `EmailLoginFlow.present`/`EmailEntryViewController`/
+  `CredentialViewController` all take an injected `EmailAccountStore` (default
+  `.shared`) so a "sign in" during a replay saves into the overlay, not the Keychain.
+- **Safari read-through rule**: the real Safari extension is a separate process the
+  replay can't sandbox, so `OnboardingStores.isSafariExtensionEnabled(forSurface:)`
+  snapshots the REAL enabled state as a baseline when the ephemeral instance is
+  created, then reports enabled once the scratch overlay itself is set OR the real
+  value newly flips true relative to that baseline. A replay always starts looking
+  fresh even if the extension was already enabled before the replay began, but a user
+  who genuinely turns it on mid-replay still advances the flow like a first-time user
+  would.
+- `stores.tearDown()` (`removePersistentDomain(forName:)` on the scratch suite) runs
+  the instant the flow reaches `onFinished` — before the modal is dismissed. The
+  onboarding root has no cancel affordance and is presented `.fullScreen` (not
+  interactively dismissible), so that is the only exit path; if the app were killed
+  mid-replay instead, nothing runs, but the scratch suite was never real state to
+  begin with, so nothing to reconcile.
+- The Action Button state machine's `stateDidChangeNotification` is still posted on
+  the process-wide `NotificationCenter.default` regardless of which `OnboardingStores`
+  instance changed state (that's `ActionButtonOnboardingStore`'s existing behavior,
+  unchanged) — what makes replay isolation still work is that every place the flow
+  *reads* state after the notification fires goes through `stores.actionButtonState(
+  forSurface:)`, not the shared singleton, so it always reads back the value the
+  replay itself wrote.
+
 ## Manual follow-up (cannot be automated)
 
 The bundled `Luna/Resources/Send To Luna.shortcut` is a **signed** file this

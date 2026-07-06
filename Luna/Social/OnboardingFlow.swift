@@ -17,15 +17,20 @@ import UIKit
 public enum OnboardingFlow {
 
     /// Returns the onboarding root (a bare navigation controller). `onFinished`
-    /// runs after the last step.
-    public static func make(onFinished: @escaping () -> Void) -> UIViewController {
+    /// runs after the last step. `stores` defaults to the app's real, persisted
+    /// stores; Settings → "Replay Onboarding" passes `.ephemeral()` instead so the
+    /// replay reads/writes a throwaway overlay and never touches real state.
+    public static func make(
+        stores: OnboardingStores = .real, onFinished: @escaping () -> Void
+    ) -> UIViewController {
         let nav = UINavigationController()
         nav.setNavigationBarHidden(true, animated: false)
         nav.installDotMatrixTransitions()
-        if EmailAccountStore.shared.isConfigured, let account = EmailAccountStore.shared.account {
-            nav.viewControllers = [existingAccountStep(accountAddress: account.address, onFinished: onFinished)]
+        if stores.emailAccountStore.isConfigured, let account = stores.emailAccountStore.account {
+            nav.viewControllers = [existingAccountStep(
+                stores: stores, accountAddress: account.address, onFinished: onFinished)]
         } else {
-            nav.viewControllers = [emailStep(nav: nav, onFinished: onFinished)]
+            nav.viewControllers = [emailStep(stores: stores, nav: nav, onFinished: onFinished)]
         }
         return nav
     }
@@ -44,6 +49,16 @@ public enum OnboardingFlow {
     private static var surface: String { AppSurfaceConfig.current.storageIdentifier }
 
     #if DEBUG
+    /// Cross-image-safe stand-in for `viewController is OnboardingStepViewController`
+    /// in tests. The test bundle statically embeds its own copy of the LunaSocialUI
+    /// classes alongside the app's (objc logs "implemented in both … may cause
+    /// spurious casting failures"), so an `is` check compiled into the TEST image can
+    /// spuriously fail against instances created by the app image. This helper runs
+    /// the check in the app image — the same copy `make` builds the steps from.
+    public static func isOnboardingStep(_ viewController: UIViewController?) -> Bool {
+        viewController is OnboardingStepViewController
+    }
+
     /// Standalone, ordered onboarding step view controllers for snapshot/navigation
     /// tests, built without the inter-step navigation wiring. Includes every step
     /// kind (the Action Button pair is only reachable at runtime on iOS 27+, but the
@@ -51,10 +66,11 @@ public enum OnboardingFlow {
     /// buildable — and worth snapshotting — on any OS).
     public static func stepViewControllersForTesting() -> [UIViewController] {
         let nav = UINavigationController()
-        var steps: [UIViewController] = [emailStep(nav: nav, onFinished: {})]
-        steps.append(safariStep(nav: nav, onFinished: {}))
-        steps.append(shortcutInstallStep(nav: nav, onFinished: {}))
-        steps.append(actionButtonStep(onFinished: {}))
+        let stores = OnboardingStores.real
+        var steps: [UIViewController] = [emailStep(stores: stores, nav: nav, onFinished: {})]
+        steps.append(safariStep(stores: stores, nav: nav, onFinished: {}))
+        steps.append(shortcutInstallStep(stores: stores, nav: nav, onFinished: {}))
+        steps.append(actionButtonStep(stores: stores, onFinished: {}))
         steps.append(actionExtensionStep(onFinished: {}))
         return steps
     }
@@ -62,11 +78,11 @@ public enum OnboardingFlow {
 
     /// Skippable step: connect an email account (drives send + receive of shares).
     private static func emailStep(
-        nav: UINavigationController, onFinished: @escaping () -> Void
+        stores: OnboardingStores, nav: UINavigationController, onFinished: @escaping () -> Void
     ) -> UIViewController {
         let proceed: () -> Void = { [weak nav] in
             guard let nav else { return }
-            nav.pushViewController(safariStep(nav: nav, onFinished: onFinished), animated: true)
+            nav.pushViewController(safariStep(stores: stores, nav: nav, onFinished: onFinished), animated: true)
         }
         return OnboardingStepViewController(
             symbol: "envelope.badge",
@@ -74,7 +90,7 @@ public enum OnboardingFlow {
             body: "Luna sends and receives shared articles through your own email account. "
                 + "Connect it now, or set it up later — you'll see a reminder in your reading list.",
             primary: .init(title: "Set Up Email") { step in
-                EmailLoginFlow.present(from: step) { _ in proceed() }
+                EmailLoginFlow.present(from: step, accountStore: stores.emailAccountStore) { _ in proceed() }
             },
             continueTitle: "Skip",
             animation: nil,
@@ -83,7 +99,7 @@ public enum OnboardingFlow {
     }
 
     private static func existingAccountStep(
-        accountAddress: String, onFinished: @escaping () -> Void
+        stores: OnboardingStores, accountAddress: String, onFinished: @escaping () -> Void
     ) -> UIViewController {
         return OnboardingStepViewController(
             symbol: "envelope.badge.fill",
@@ -105,7 +121,7 @@ public enum OnboardingFlow {
     /// extension's own "it's enabled" hand-off (`SafariExtensionStatusStore`) and a
     /// plain foreground/Continue tap.
     private static func safariStep(
-        nav: UINavigationController?, onFinished: @escaping () -> Void
+        stores: OnboardingStores, nav: UINavigationController?, onFinished: @escaping () -> Void
     ) -> UIViewController {
         let guide = OnboardingGuideVideo(resourceName: "SafariExtensionGuide")
         var didAdvance = false
@@ -113,11 +129,12 @@ public enum OnboardingFlow {
         let advance: () -> Void = { [weak nav] in
             guard !didAdvance else { return }
             didAdvance = true
-            SafariExtensionStatusStore.shared.setTakeoverPending(false, forSurface: surface)
+            stores.setSafariTakeoverPending(false, forSurface: surface)
             guide.stopPictureInPicture()
             guard let nav else { return }
-            if #available(iOS 27.0, *), SafariExtensionStatusStore.shared.isEnabled(forSurface: surface) {
-                nav.pushViewController(shortcutInstallStep(nav: nav, onFinished: onFinished), animated: true)
+            if #available(iOS 27.0, *), stores.isSafariExtensionEnabled(forSurface: surface) {
+                nav.pushViewController(
+                    shortcutInstallStep(stores: stores, nav: nav, onFinished: onFinished), animated: true)
             } else {
                 nav.pushViewController(actionExtensionStep(onFinished: onFinished), animated: true)
             }
@@ -129,7 +146,7 @@ public enum OnboardingFlow {
             body: "Turn on the Luna Safari extension to unlock supported articles and add a save button on the page.\n\n"
                 + "In Safari's \u{201c}aA\u{201d} menu, choose Manage Extensions and turn Luna on.",
             primary: .init(title: "Open Safari") { _ in
-                SafariExtensionStatusStore.shared.setTakeoverPending(true, forSurface: surface)
+                stores.setSafariTakeoverPending(true, forSurface: surface)
                 guide.startPictureInPicture()
                 if let url = URL(string: "https://en.wikipedia.org/wiki/Wikipedia") {
                     UIApplication.shared.open(url)
@@ -141,13 +158,13 @@ public enum OnboardingFlow {
             onContinue: advance)
 
         step.onDidAppear = { [weak step] in
-            SafariExtensionStatusStore.shared.setTakeoverPending(true, forSurface: surface)
+            stores.setSafariTakeoverPending(true, forSurface: surface)
             guide.play()
             if let step { step.installBackdropView(guide.playerView) }
         }
         step.onWillEnterForeground = {
             guide.stopPictureInPicture()
-            if SafariExtensionStatusStore.shared.isEnabled(forSurface: surface) {
+            if stores.isSafariExtensionEnabled(forSurface: surface) {
                 advance()
             }
         }
@@ -156,7 +173,7 @@ public enum OnboardingFlow {
 
     /// iOS 27+ happy path, step 1 of 2: import the bundled Action Button shortcut.
     private static func shortcutInstallStep(
-        nav: UINavigationController?, onFinished: @escaping () -> Void
+        stores: OnboardingStores, nav: UINavigationController?, onFinished: @escaping () -> Void
     ) -> UIViewController {
         var didAdvance = false
         var stateObserver: NSObjectProtocol?
@@ -168,7 +185,7 @@ public enum OnboardingFlow {
                 NotificationCenter.default.removeObserver(stateObserver)
             }
             guard let nav else { return }
-            nav.pushViewController(actionButtonStep(onFinished: onFinished), animated: true)
+            nav.pushViewController(actionButtonStep(stores: stores, onFinished: onFinished), animated: true)
         }
 
         let step = OnboardingStepViewController(
@@ -176,14 +193,14 @@ public enum OnboardingFlow {
             title: "Save anything, instantly",
             body: "Import \u{201c}\(BundledShortcut.displayName)\u{201d} into Shortcuts — you'll assign it to your Action Button next.",
             primary: .init(title: "Install Shortcut") { step in
-                ActionButtonOnboardingStore.shared.beginInstallStep(forSurface: surface)
+                stores.beginActionButtonInstallStep(forSurface: surface)
                 BundledShortcut.presentInstaller(from: step)
             },
             continueTitle: "Continue",
             animation: .shortcutInstall,
             progress: .init(index: 2, total: totalSteps),
             onContinue: {
-                ActionButtonOnboardingStore.shared.setState(.actionButtonSetup, forSurface: surface)
+                stores.setActionButtonState(.actionButtonSetup, forSurface: surface)
                 advance()
             })
 
@@ -199,14 +216,14 @@ public enum OnboardingFlow {
             ) { notification in
                 guard notification.object as? String == surface else { return }
                 guard let step, step.navigationController?.topViewController === step else { return }
-                if ActionButtonOnboardingStore.shared.state(forSurface: surface) == .actionButtonSetup {
+                if stores.actionButtonState(forSurface: surface) == .actionButtonSetup {
                     advance()
                 }
             }
         }
         step.onWillEnterForeground = { [weak step] in
             guard let step, step.navigationController?.topViewController === step else { return }
-            if ActionButtonOnboardingStore.shared.state(forSurface: surface) == .actionButtonSetup {
+            if stores.actionButtonState(forSurface: surface) == .actionButtonSetup {
                 advance()
             }
         }
@@ -220,7 +237,9 @@ public enum OnboardingFlow {
     /// relaunches Luna into the foreground (the notification, posted just before
     /// relaunch, is still observed by this same still-alive process) — so both
     /// orderings are covered by the one notification observer.
-    private static func actionButtonStep(onFinished: @escaping () -> Void) -> UIViewController {
+    private static func actionButtonStep(
+        stores: OnboardingStores, onFinished: @escaping () -> Void
+    ) -> UIViewController {
         let guide = OnboardingGuideVideo(resourceName: "ActionButtonGuide")
         var didFinish = false
         var stateObserver: NSObjectProtocol?
@@ -231,7 +250,7 @@ public enum OnboardingFlow {
             if let stateObserver {
                 NotificationCenter.default.removeObserver(stateObserver)
             }
-            ActionButtonOnboardingStore.shared.setState(.done, forSurface: surface)
+            stores.setActionButtonState(.done, forSurface: surface)
             guide.stopPictureInPicture()
             onFinished()
         }
@@ -241,7 +260,7 @@ public enum OnboardingFlow {
             title: "Set your Action Button",
             body: "Open Settings → Action Button, swipe to \u{201c}Shortcut,\u{201d} and choose \u{201c}\(BundledShortcut.displayName).\u{201d}",
             primary: .init(title: "Open Settings") { _ in
-                ActionButtonOnboardingStore.shared.markSettingsDeeplinkTapped(forSurface: surface)
+                stores.markActionButtonSettingsDeeplinkTapped(forSurface: surface)
                 guide.startPictureInPicture()
                 SystemSettingsLink.openActionButton()
             },
@@ -251,7 +270,7 @@ public enum OnboardingFlow {
             onContinue: finish)
 
         step.onDidAppear = { [weak step] in
-            if ActionButtonOnboardingStore.shared.state(forSurface: surface) == .done {
+            if stores.actionButtonState(forSurface: surface) == .done {
                 finish()
                 return
             }
@@ -268,14 +287,14 @@ public enum OnboardingFlow {
             ) { notification in
                 guard notification.object as? String == surface else { return }
                 guard let step, step.navigationController?.topViewController === step else { return }
-                if ActionButtonOnboardingStore.shared.state(forSurface: surface) == .done {
+                if stores.actionButtonState(forSurface: surface) == .done {
                     finish()
                 }
             }
         }
         step.onWillEnterForeground = { [weak step] in
             guide.stopPictureInPicture()
-            let state = ActionButtonOnboardingStore.shared.state(forSurface: surface)
+            let state = stores.actionButtonState(forSurface: surface)
             if state == .done {
                 finish()
             } else if state == .awaitingActionButton {

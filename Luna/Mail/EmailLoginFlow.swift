@@ -17,8 +17,13 @@ import UIKit
 public enum EmailLoginFlow {
 
     /// Presents the flow modally. `completion(true)` when an account was connected.
-    public static func present(from presenter: UIViewController, completion: ((Bool) -> Void)? = nil) {
-        let entry = EmailEntryViewController(completion: completion)
+    /// `accountStore` defaults to the real shared store; onboarding replay passes
+    /// its ephemeral overlay so a "sign in" during a replay never persists.
+    public static func present(
+        from presenter: UIViewController, accountStore: EmailAccountStore = .shared,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        let entry = EmailEntryViewController(accountStore: accountStore, completion: completion)
         let nav = UINavigationController(rootViewController: entry)
         nav.modalPresentationStyle = .formSheet
         nav.installDotMatrixTransitions()
@@ -30,11 +35,13 @@ public enum EmailLoginFlow {
 
 final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
 
+    private let accountStore: EmailAccountStore
     private let completion: ((Bool) -> Void)?
     private let field = UITextField()
     private let hint = UILabel()
 
-    init(completion: ((Bool) -> Void)?) {
+    init(accountStore: EmailAccountStore, completion: ((Bool) -> Void)?) {
+        self.accountStore = accountStore
         self.completion = completion
         super.init(nibName: nil, bundle: nil)
     }
@@ -129,7 +136,8 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
             let server = await resolveServer(providerID: providerID, address: address)
             let account = EmailAccount(
                 providerID: providerID, address: address, displayName: nil, server: server)
-            let credential = CredentialViewController(account: account, completion: completion)
+            let credential = CredentialViewController(
+                account: account, accountStore: accountStore, completion: completion)
             navigationController?.pushViewController(credential, animated: true)
         }
     }
@@ -208,7 +216,7 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
                 accessToken: wire.access_token, refreshToken: wire.refresh_token ?? "",
                 expiry: Date().addingTimeInterval(wire.expires_in))
             let account = EmailAccount(providerID: .outlook, address: address, displayName: nil, server: nil)
-            EmailAccountStore.shared.save(account, credential: .oauth(tokens))
+            accountStore.save(account, credential: .oauth(tokens))
             // Best-effort: install the inbox filter.
             if let transport = MailTransportFactory.make() {
                 _ = try? await transport.createLunaFilter()
@@ -274,12 +282,14 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
 final class CredentialViewController: UIViewController {
 
     private let account: EmailAccount
+    private let accountStore: EmailAccountStore
     private let completion: ((Bool) -> Void)?
     private let passwordField = UITextField()
     private let spinner = UIActivityIndicatorView(style: .medium)
 
-    init(account: EmailAccount, completion: ((Bool) -> Void)?) {
+    init(account: EmailAccount, accountStore: EmailAccountStore, completion: ((Bool) -> Void)?) {
         self.account = account
+        self.accountStore = accountStore
         self.completion = completion
         super.init(nibName: nil, bundle: nil)
     }
@@ -337,7 +347,7 @@ final class CredentialViewController: UIViewController {
             do {
                 let transport = try IMAPSMTPTransport(account: account, password: password)
                 try await transport.verifyCredentials()
-                EmailAccountStore.shared.save(account, credential: .appPassword(password))
+                accountStore.save(account, credential: .appPassword(password))
                 DotMatrixModal.dismiss(self) { self.completion?(true) }
             } catch {
                 spinner.stopAnimating()

@@ -96,7 +96,19 @@ final class SettingsViewController: NavHeaderTableController {
             guard categories.indices.contains(indexPath.row) else { return }
             navigationController?.pushViewController(categories[indexPath.row].make(), animated: true)
         } else {
-            let onboarding = OnboardingFlow.make { [weak self] in
+            // Replay runs against a throwaway overlay (see `OnboardingStores`) so
+            // it behaves exactly like a fresh install — including the email
+            // login flow — without ever mutating real persisted state. The
+            // overlay is torn down as soon as the flow finishes, before the
+            // modal is dismissed; the onboarding root has no other exit (no
+            // cancel affordance, and the full-screen presentation isn't
+            // interactively dismissible), so this is every exit path. If the
+            // app were killed mid-replay instead, nothing runs — but the
+            // overlay was only ever a scratch, never-real `UserDefaults` suite,
+            // so real state was never at risk either way.
+            let stores = OnboardingStores.ephemeral()
+            let onboarding = OnboardingFlow.make(stores: stores) { [weak self] in
+                stores.tearDown()
                 guard let self else { return }
                 DotMatrixModal.dismiss(self)
             }

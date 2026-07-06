@@ -8,9 +8,9 @@
 //  clips for the onboarding PiP guide videos (`Luna/OnboardingGuideVideo.swift`).
 //
 //  Regenerate with (see claudedocs/onboarding.md):
-//    xcodebuild test -scheme Luna -only-testing:LunaTests/GuideVideoRecorderTests \
-//      TEST_RUNNER_RECORD_GUIDE_VIDEOS=1 \
-//      TEST_RUNNER_GUIDE_VIDEO_OUTPUT_DIR=/path/to/Luna/Resources ...
+//    TEST_RUNNER_RECORD_GUIDE_VIDEOS=1 \
+//    TEST_RUNNER_GUIDE_VIDEO_OUTPUT_DIR=/path/to/Luna/Resources \
+//    xcodebuild test -scheme Luna -only-testing:LunaTests/GuideVideoRecorderTests ...
 //
 
 import AVFoundation
@@ -32,7 +32,7 @@ final class GuideVideoRecorderTests: XCTestCase {
     // MARK: - Recording
 
     /// The illustration's own fixed intrinsic size (`OnboardingAnimationView.init`'s
-    /// per-kind `height`/`width`), before the 2x scale-up applied for recording.
+    /// per-kind `height`/`width`). The recorded clip is this at 2x (context-scaled).
     private func naturalSize(for kind: OnboardingAnimationView.Kind) -> CGSize {
         switch kind {
         case .safariExtension: return CGSize(width: 220, height: 360)
@@ -53,22 +53,35 @@ final class GuideVideoRecorderTests: XCTestCase {
             XCTFail("GUIDE_VIDEO_OUTPUT_DIR must be set alongside RECORD_GUIDE_VIDEOS=1", file: file, line: line)
             return
         }
+        // The recording window MUST belong to a UIWindowScene: a scene-less UIWindow
+        // is never committed to the render server, its CAAnimations never advance, and
+        // `presentation()` just mirrors the static model tree — the recorded "video"
+        // comes out as one frozen frame repeated for the whole duration.
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive })
+            ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first
+        else {
+            XCTFail("No UIWindowScene available to host the recording window", file: file, line: line)
+            return
+        }
 
-        // A clean 2x of the illustration's own even-dimension size — fills the
-        // recorded frame exactly (no letterboxing) at a reasonably crisp PiP size.
-        let scale: CGFloat = 2
         let natural = naturalSize(for: kind)
-        let size = CGSize(width: natural.width * scale, height: natural.height * scale)
 
         let animation = OnboardingAnimationView(kind: kind)
         animation.backgroundColor = .systemBackground
-        animation.transform = CGAffineTransform(scaleX: scale, y: scale)
 
-        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(origin: .zero, size: natural)
         window.overrideUserInterfaceStyle = .light
         window.backgroundColor = .systemBackground
         window.addSubview(animation)
-        animation.center = CGPoint(x: size.width / 2, y: size.height / 2)
+        // The illustration carries its own fixed width/height constraints (== natural),
+        // so centering it makes it exactly fill the window.
+        NSLayoutConstraint.activate([
+            animation.centerXAnchor.constraint(equalTo: window.centerXAnchor),
+            animation.centerYAnchor.constraint(equalTo: window.centerYAnchor),
+        ])
         window.makeKeyAndVisible()
         window.layoutIfNeeded()
         animation.start()
@@ -81,14 +94,22 @@ final class GuideVideoRecorderTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
 
-        let recorder = try FrameRecorder(view: window, size: size, duration: kind.loopDuration, outputURL: outputURL)
+        // 2x of the illustration's even-dimension natural size — crisp at PiP size,
+        // no letterboxing (H.264 needs even dimensions).
+        let recorder = try FrameRecorder(
+            view: window, naturalSize: natural, contentScale: 2,
+            duration: kind.loopDuration, outputURL: outputURL)
         let expectation = expectation(description: "recorded \(filename)")
         recorder.start { expectation.fulfill() }
         wait(for: [expectation], timeout: kind.loopDuration + 15)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path),
                       "expected a recorded clip at \(outputURL.path)", file: file, line: line)
+        XCTAssertGreaterThan(recorder.distinctFrameCount, 10,
+                             "recorded clip looks static — the illustration's animations were not running",
+                             file: file, line: line)
         window.isHidden = true
+        window.windowScene = nil
     }
 }
 
@@ -102,10 +123,12 @@ final class GuideVideoRecorderTests: XCTestCase {
 /// off-screen test windows on this runtime, whereas `render(in:)` rasterizes the
 /// layer tree directly. `presentation()` (rather than the plain model layer) is
 /// what makes this capture the CAKeyframeAnimation-driven illustration mid-flight,
-/// not just its animation's static end state.
+/// not just its animation's static end state — provided the hosting window is
+/// scene-attached (see the caller) so those animations actually run.
 private final class FrameRecorder: NSObject {
     private let view: UIView
-    private let size: CGSize
+    private let pixelSize: CGSize
+    private let contentScale: CGFloat
     private let duration: TimeInterval
     private let fps: Int32 = 30
 
@@ -118,9 +141,18 @@ private final class FrameRecorder: NSObject {
     private var framesWritten: Int64 = 0
     private var completion: (() -> Void)?
 
-    init(view: UIView, size: CGSize, duration: TimeInterval, outputURL: URL) throws {
+    /// Rough animation sanity signal: how many appended frames differed from the
+    /// frame before them (byte-compared). A healthy clip has most frames distinct;
+    /// a broken scene-less capture has ~0.
+    private(set) var distinctFrameCount = 0
+    private var previousFrameDigest: Int = 0
+
+    init(view: UIView, naturalSize: CGSize, contentScale: CGFloat,
+         duration: TimeInterval, outputURL: URL) throws {
         self.view = view
-        self.size = size
+        self.pixelSize = CGSize(width: naturalSize.width * contentScale,
+                                height: naturalSize.height * contentScale)
+        self.contentScale = contentScale
         self.duration = duration
 
         try? FileManager.default.removeItem(at: outputURL)
@@ -132,8 +164,8 @@ private final class FrameRecorder: NSObject {
         ]
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: Int(size.width),
-            AVVideoHeightKey: Int(size.height),
+            AVVideoWidthKey: Int(pixelSize.width),
+            AVVideoHeightKey: Int(pixelSize.height),
             AVVideoCompressionPropertiesKey: compression,
         ]
         input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
@@ -141,8 +173,8 @@ private final class FrameRecorder: NSObject {
 
         let bufferAttributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
-            kCVPixelBufferWidthKey as String: Int(size.width),
-            kCVPixelBufferHeightKey as String: Int(size.height),
+            kCVPixelBufferWidthKey as String: Int(pixelSize.width),
+            kCVPixelBufferHeightKey as String: Int(pixelSize.height),
         ]
         adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input, sourcePixelBufferAttributes: bufferAttributes)
@@ -191,7 +223,7 @@ private final class FrameRecorder: NSObject {
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
         guard let context = CGContext(
             data: CVPixelBufferGetBaseAddress(pixelBuffer),
-            width: Int(size.width), height: Int(size.height),
+            width: Int(pixelSize.width), height: Int(pixelSize.height),
             bitsPerComponent: 8,
             bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
             space: CGColorSpaceCreateDeviceRGB(),
@@ -201,14 +233,27 @@ private final class FrameRecorder: NSObject {
         // `CALayer.render(in:)` draws into Core Graphics' native bottom-up
         // coordinate space, which is flipped relative to the top-down UIKit space
         // the layer tree is laid out in — without correcting for that, the capture
-        // comes out upside down. Flip the context first so it lands right-side up.
+        // comes out upside down. Flip the context (in output pixels) and scale the
+        // natural-size layer tree up to the output size in the same step.
         let target = view.layer.presentation() ?? view.layer
         context.saveGState()
-        context.translateBy(x: 0, y: size.height)
-        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: pixelSize.height)
+        context.scaleBy(x: contentScale, y: -contentScale)
         target.render(in: context)
         context.restoreGState()
+
+        trackDistinctFrame(pixelBuffer)
         return pixelBuffer
+    }
+
+    private func trackDistinctFrame(_ pixelBuffer: CVPixelBuffer) {
+        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return }
+        let length = CVPixelBufferGetDataSize(pixelBuffer)
+        var hasher = Hasher()
+        hasher.combine(bytes: UnsafeRawBufferPointer(start: base, count: length))
+        let digest = hasher.finalize()
+        if digest != previousFrameDigest, framesWritten > 0 { distinctFrameCount += 1 }
+        previousFrameDigest = digest
     }
 
     private func finish() {

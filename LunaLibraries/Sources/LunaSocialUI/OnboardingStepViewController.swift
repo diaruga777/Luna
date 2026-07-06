@@ -46,6 +46,15 @@ public final class OnboardingStepViewController: UIViewController {
 
     private let primaryButton = UIButton(type: .system)
     private let secondaryButton = UIButton(type: .system)
+    private let continueButton = UIButton(type: .system)
+    private let bodyLabel = UILabel()
+
+    /// Called once, from `viewDidAppear`, every time this step becomes visible.
+    public var onDidAppear: (() -> Void)?
+    /// Called on `UIApplication.willEnterForegroundNotification` while this step
+    /// is on screen (observed between `viewDidAppear` and `viewWillDisappear`).
+    public var onWillEnterForeground: (() -> Void)?
+    private var foregroundObserver: NSObjectProtocol?
 
     public init(symbol: String, title: String, body: String,
          primary: PrimaryAction?, secondary: PrimaryAction? = nil, continueTitle: String,
@@ -114,7 +123,6 @@ public final class OnboardingStepViewController: UIViewController {
         titleLabel.textAlignment = .center
         titleLabel.numberOfLines = 0
 
-        let bodyLabel = UILabel()
         bodyLabel.text = body
         bodyLabel.font = .preferredFont(forTextStyle: .body)
         bodyLabel.textColor = .secondaryLabel
@@ -149,7 +157,6 @@ public final class OnboardingStepViewController: UIViewController {
             buttonStack.addArrangedSubview(secondaryButton)
         }
 
-        let continueButton = UIButton(type: .system)
         continueButton.setTitle(continueTitle, for: .normal)
         continueButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .medium)
         continueButton.tintColor = primaryAction == nil ? .white : GlassStyle.readingAccent
@@ -225,6 +232,52 @@ public final class OnboardingStepViewController: UIViewController {
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         animationView?.start()
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.onWillEnterForeground?() }
+        onDidAppear?()
+    }
+
+    public override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+        foregroundObserver = nil
+    }
+
+    deinit {
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+    }
+
+    /// Updates the body copy in place (e.g. once the user has partially completed
+    /// the step's out-of-app action and the step wants to nudge them further).
+    public func updateBody(_ text: String) {
+        bodyLabel.text = text
+    }
+
+    /// Updates the continue/done button's title in place.
+    public func updateContinueTitle(_ title: String) {
+        continueButton.setTitle(title, for: .normal)
+    }
+
+    /// Installs `view` behind the animation illustration, pinned to its frame —
+    /// e.g. a muted, looping PiP-source video layer that sits fully covered by the
+    /// live illustration (keeps snapshot tests deterministic) but is still playing
+    /// and available to hand off to Picture-in-Picture. A no-op if this step has no
+    /// animation (nothing to pin behind).
+    public func installBackdropView(_ view: UIView) {
+        guard let animationView, let superview = animationView.superview else { return }
+        view.translatesAutoresizingMaskIntoConstraints = false
+        superview.insertSubview(view, belowSubview: animationView)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: animationView.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: animationView.trailingAnchor),
+            view.topAnchor.constraint(equalTo: animationView.topAnchor),
+            view.bottomAnchor.constraint(equalTo: animationView.bottomAnchor),
+        ])
     }
 
     @objc private func primaryTapped() { primaryAction?.handler(self) }

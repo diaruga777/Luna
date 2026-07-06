@@ -264,20 +264,24 @@ public final class OnboardingStepViewController: UIViewController {
         continueButton.setTitle(title, for: .normal)
     }
 
-    /// Installs `view` behind the animation illustration, pinned to its frame —
-    /// e.g. a muted, looping PiP-source video layer that sits fully covered by the
-    /// live illustration (keeps snapshot tests deterministic) but is still playing
-    /// and available to hand off to Picture-in-Picture. A no-op if this step has no
-    /// animation (nothing to pin behind).
+    /// Installs `view` (a muted, looping PiP-source video layer) behind the
+    /// animation illustration, small and centered — the illustration's opaque phone
+    /// mockup fully covers it, so it is never visible on screen (the illustrations
+    /// are transparent around the mockup, so pinning it to the full animation frame
+    /// would let the unsynchronized video peek out around the edges). It still
+    /// counts as on-screen and playing for AVKit, which is all Picture-in-Picture
+    /// needs to hand off. Idempotent per view; a no-op if this step has no
+    /// animation (nothing to tuck behind).
     public func installBackdropView(_ view: UIView) {
-        guard let animationView, let superview = animationView.superview else { return }
+        guard let animationView, let superview = animationView.superview,
+              view.superview !== superview else { return }
         view.translatesAutoresizingMaskIntoConstraints = false
         superview.insertSubview(view, belowSubview: animationView)
         NSLayoutConstraint.activate([
-            view.leadingAnchor.constraint(equalTo: animationView.leadingAnchor),
-            view.trailingAnchor.constraint(equalTo: animationView.trailingAnchor),
-            view.topAnchor.constraint(equalTo: animationView.topAnchor),
-            view.bottomAnchor.constraint(equalTo: animationView.bottomAnchor),
+            view.centerXAnchor.constraint(equalTo: animationView.centerXAnchor),
+            view.centerYAnchor.constraint(equalTo: animationView.centerYAnchor),
+            view.widthAnchor.constraint(equalToConstant: 40),
+            view.heightAnchor.constraint(equalToConstant: 40),
         ])
     }
 

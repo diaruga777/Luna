@@ -7,16 +7,17 @@ import AVFoundation
 import AVKit
 import UIKit
 
-/// A muted, looping "how to" clip shown inline behind an onboarding step's live
-/// illustration (via `OnboardingStepViewController.installBackdropView`) and mirrored
-/// into Picture-in-Picture right before the step sends the user out of Luna (into
-/// Safari or Settings) to make the actual change being demonstrated — so the guide
-/// keeps floating over whatever app they land in.
+/// A muted, looping "how to" clip kept playing (covered) behind an onboarding
+/// step's live illustration (via `OnboardingStepViewController.installBackdropView`)
+/// and mirrored into Picture-in-Picture right before the step sends the user out of
+/// Luna (into Safari or Settings) to make the actual change being demonstrated — so
+/// the guide keeps floating over whatever app they land in.
 ///
-/// The bundled clip (`Luna/Resources/<resourceName>.mp4`) is only a handful of
-/// seconds; `AVPlayerLooper` repeats it without building a long composition up
-/// front, so the next onboarding screen can appear immediately and PiP has a
-/// moving player item as soon as the user leaves Luna.
+/// `init` is deliberately trivial: the step factories construct one of these at
+/// step-creation time — i.e. inside the previous step's button handler — and the
+/// AVFoundation/AVKit stack (player item, looper, `AVPictureInPictureController`)
+/// is expensive enough to visibly stall that push transition. All of it is built
+/// lazily in `play()`, which runs from the step's `viewDidAppear` instead.
 final class OnboardingGuideVideo: NSObject {
 
     /// Hosts the `AVPlayerLayer`. A plain `UIView` subclass so it composes with
@@ -30,40 +31,52 @@ final class OnboardingGuideVideo: NSObject {
     /// `OnboardingStepViewController.installBackdropView(_:)`.
     let playerView: UIView
 
-    private let player = AVQueuePlayer()
+    private let resourceName: String
+    private let layerView: PlayerLayerView
+    private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
     private var pipController: AVPictureInPictureController?
+    private var didLoad = false
 
     /// - Parameter resourceName: bundled mp4 base name (without extension), expected
     ///   under `Luna/Resources/`. Silently does nothing if the resource is missing —
     ///   playback/PiP calls just become no-ops.
     init(resourceName: String) {
-        let layerView = PlayerLayerView()
+        self.resourceName = resourceName
+        layerView = PlayerLayerView()
         playerView = layerView
         super.init()
-
         layerView.translatesAutoresizingMaskIntoConstraints = false
-        layerView.playerLayer.player = player
         layerView.playerLayer.videoGravity = .resizeAspectFill
+    }
+
+    /// Builds the player + looper + PiP controller on first use. Main thread only.
+    private func loadIfNeeded() {
+        guard !didLoad else { return }
+        didLoad = true
+        guard let url = Bundle.main.url(forResource: resourceName, withExtension: "mp4") else { return }
+
+        let player = AVQueuePlayer()
         player.isMuted = true
-        player.actionAtItemEnd = .none
+        self.player = player
+        // NOTE: leave `actionAtItemEnd` alone — AVPlayerLooper requires the default
+        // (`.advance`); overriding it to `.none` freezes playback at the first loop's end.
+        looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
+        layerView.playerLayer.player = player
 
         if AVPictureInPictureController.isPictureInPictureSupported() {
             let pip = AVPictureInPictureController(playerLayer: layerView.playerLayer)
             pip?.canStartPictureInPictureAutomaticallyFromInline = true
             pipController = pip
         }
-
-        if let url = Bundle.main.url(forResource: resourceName, withExtension: "mp4") {
-            let item = AVPlayerItem(url: url)
-            looper = AVPlayerLooper(player: player, templateItem: item)
-        }
     }
 
-    /// Starts (or resumes) inline playback. Call once the hosting step is on screen.
+    /// Starts (or resumes) playback. Call once the hosting step is on screen
+    /// (`viewDidAppear`) — the first call also builds the whole AV stack.
     func play() {
+        loadIfNeeded()
         configureAudioSession()
-        player.play()
+        player?.play()
     }
 
     /// Programmatic PiP start — call right before sending the user out of the app
@@ -71,11 +84,12 @@ final class OnboardingGuideVideo: NSObject {
     /// they navigate to next. A no-op wherever PiP isn't available (e.g. some
     /// Simulator runtimes) — never crashes or blocks the caller.
     func startPictureInPicture() {
+        loadIfNeeded()
         guard let pipController, pipController.isPictureInPicturePossible,
               !pipController.isPictureInPictureActive
         else { return }
         configureAudioSession()
-        player.play()
+        player?.play()
         pipController.startPictureInPicture()
     }
 
@@ -86,9 +100,20 @@ final class OnboardingGuideVideo: NSObject {
         pipController.stopPictureInPicture()
     }
 
+    private var didConfigureAudioSession = false
+
     private func configureAudioSession() {
-        try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // `.playback` (+ background-mode `audio` from Luna.xcconfig) is what keeps
+        // the clip running once the app is backgrounded into PiP. `setActive` can
+        // block for a noticeable beat, so it runs off the main thread —
+        // AVAudioSession is thread-safe, and playback doesn't depend on it having
+        // finished (only backgrounded PiP does, well after the hop completes).
+        guard !didConfigureAudioSession else { return }
+        didConfigureAudioSession = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers])
+            try? AVAudioSession.sharedInstance().setActive(true)
+        }
     }
 
 }

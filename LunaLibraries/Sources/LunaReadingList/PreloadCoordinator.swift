@@ -23,6 +23,9 @@ public final class PreloadCoordinator {
     private let readingListStore: ReadingListStore
     /// Roots currently being preloaded, so a foreground resume can't double-run one.
     private var runningRoots: Set<UUID> = []
+    /// The current foreground resume sweep, if any. Coalesced and cancelled when
+    /// the app backgrounds so a reopen/close cycle cannot leave a long crawl running.
+    private var resumeTask: Task<Void, Never>?
     /// The canonical key of the pasteboard candidate we last preloaded, so re-evaluating
     /// the same clipboard URL doesn't tear down and re-crawl its tree.
     private var lastPasteboardKey: String?
@@ -42,9 +45,29 @@ public final class PreloadCoordinator {
     /// doesn't stall the whole crawl.
     private static let perLinkTimeout: TimeInterval = 15
 
+    private final class CancellationFlag {
+        private let lock = NSLock()
+        private var cancelled = false
+
+        func cancel() {
+            lock.lock()
+            cancelled = true
+            lock.unlock()
+        }
+
+        var isCancelled: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return cancelled
+        }
+    }
+
     public init(store: PreloadStore = .shared, readingListStore: ReadingListStore = .shared) {
         self.store = store
         self.readingListStore = readingListStore
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil)
     }
 
     // MARK: - Public entry points
@@ -64,13 +87,27 @@ public final class PreloadCoordinator {
     /// fresh crawl, so it's also what finishes a crawl that was deferred off cellular.
     public func resumeIncomplete() {
         guard ReaderSettings.preloadDepth > 0 else { return }
-        Task.detached(priority: .background) { [weak self] in
+        lock.lock()
+        if resumeTask != nil {
+            lock.unlock()
+            return
+        }
+        let task = Task.detached(priority: .background) { [weak self] in
             guard let self else { return }
+            defer {
+                self.lock.lock()
+                self.resumeTask = nil
+                self.lock.unlock()
+            }
             for item in self.readingListStore.items()
             where item.state == .ready && item.contentFileName != nil {
-                await self.run(rootID: item.id)
+                guard !Task.isCancelled, UIApplication.shared.applicationState == .active
+                else { break }
+                await self.run(rootID: item.id, allowsBackgroundTask: false)
             }
         }
+        resumeTask = task
+        lock.unlock()
     }
 
     /// Eagerly preload the CURRENT pasteboard candidate's links (the user chose eager
@@ -91,8 +128,17 @@ public final class PreloadCoordinator {
             // Drop the previous clipboard candidate's speculative tree (a real save that
             // also owns any of it keeps its own ownership).
             self.store.releaseTree(rootID: Self.pasteboardOwner)
-            await self.performCrawl(rootID: Self.pasteboardOwner, seedLinks: links)
+            await self.performCrawl(
+                rootID: Self.pasteboardOwner, seedLinks: links, allowsBackgroundTask: false)
         }
+    }
+
+    @objc private func appDidEnterBackground() {
+        lock.lock()
+        let task = resumeTask
+        resumeTask = nil
+        lock.unlock()
+        task?.cancel()
     }
 
     // MARK: - Crawl
@@ -109,33 +155,48 @@ public final class PreloadCoordinator {
         runningRoots.remove(rootID)
     }
 
-    private func run(rootID: UUID) async {
+    private func run(rootID: UUID, allowsBackgroundTask: Bool = true) async {
         guard let item = readingListStore.item(withID: rootID),
               let content = readingListStore.content(for: item) else { return }
-        await performCrawl(rootID: rootID, seedLinks: Self.outboundURLs(from: content))
+        await performCrawl(
+            rootID: rootID, seedLinks: Self.outboundURLs(from: content),
+            allowsBackgroundTask: allowsBackgroundTask)
     }
 
     /// Wraps `crawl` with the single-run claim, the Wi-Fi gate (background/speculative
     /// preloads are Wi-Fi-only), and a brief background window so a crawl started on save
     /// survives a short backgrounding.
-    private func performCrawl(rootID: UUID, seedLinks: [URL]) async {
+    private func performCrawl(rootID: UUID, seedLinks: [URL], allowsBackgroundTask: Bool = true) async {
         guard claim(rootID) else { return }
         defer { unclaim(rootID) }
         guard ReaderSettings.preloadDepth > 0 else { return }
+        guard allowsBackgroundTask || UIApplication.shared.applicationState == .active else { return }
         guard NetworkReachability.shared.isOnWiFi else {
             SharedDiagnosticLog.record(
                 "preload deferred (not on Wi-Fi): \(rootID.uuidString)", category: "preload")
             return
         }
-        let bgTask = UIApplication.shared.beginBackgroundTask(withName: "preload-\(rootID)")
+        var bgTask: UIBackgroundTaskIdentifier = .invalid
+        let expiration = CancellationFlag()
+        if allowsBackgroundTask {
+            bgTask = UIApplication.shared.beginBackgroundTask(withName: "preload-\(rootID)") {
+                expiration.cancel()
+            }
+        }
         defer { if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) } }
-        await crawl(seedLinks: seedLinks, rootID: rootID)
+        await crawl(
+            seedLinks: seedLinks, rootID: rootID,
+            continueWhileBackgrounded: allowsBackgroundTask,
+            expiration: expiration)
     }
 
     /// BFS over `seedLinks` (recursively to `ReaderSettings.preloadDepth`), in document
     /// order — top links first — fully materializing each page (text + images) into the
     /// shared `PreloadStore`/`Articles` cache, owned by `rootID`.
-    private func crawl(seedLinks: [URL], rootID: UUID) async {
+    private func crawl(
+        seedLinks: [URL], rootID: UUID, continueWhileBackgrounded: Bool = true,
+        expiration: CancellationFlag = CancellationFlag()
+    ) async {
         let depth = ReaderSettings.preloadDepth
         guard depth > 0 else { return }
 
@@ -144,6 +205,10 @@ public final class PreloadCoordinator {
         var pagesProcessed = 0
 
         while !queue.isEmpty, pagesProcessed < Self.maxPagesPerRun {
+            guard !Task.isCancelled else { break }
+            guard !expiration.isCancelled else { break }
+            guard continueWhileBackgrounded || UIApplication.shared.applicationState == .active
+            else { break }
             let job = queue.removeFirst()
             let key = PreloadStore.key(for: job.url)
             guard visitedThisRun.insert(key).inserted else { continue }

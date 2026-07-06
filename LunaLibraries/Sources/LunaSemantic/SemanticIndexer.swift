@@ -26,6 +26,8 @@ public final class SemanticIndexer {
 
     private let queue = DispatchQueue(label: "com.hsanabria.luna.semanticindexer", qos: .utility)
     private let index = SemanticIndexStore.shared
+    private let runLock = NSLock()
+    private var isRunQueuedOrRunning = false
 
     private func log(_ message: String) {
         SharedDiagnosticLog.record(message, category: "semantic")
@@ -36,7 +38,23 @@ public final class SemanticIndexer {
     /// Embeds saved items lacking vectors, powering semantic search. A no-op when
     /// nothing needs embedding.
     public func scheduleRun() {
-        queue.async { [weak self] in self?.buildMissingVectors() }
+        runLock.lock()
+        guard !isRunQueuedOrRunning else {
+            runLock.unlock()
+            return
+        }
+        isRunQueuedOrRunning = true
+        runLock.unlock()
+
+        queue.async { [weak self] in
+            guard let self else { return }
+            defer {
+                self.runLock.lock()
+                self.isRunQueuedOrRunning = false
+                self.runLock.unlock()
+            }
+            self.buildMissingVectors()
+        }
     }
 
     private func buildMissingVectors() {

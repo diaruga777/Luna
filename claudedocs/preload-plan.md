@@ -65,9 +65,11 @@ entry's `owners`; any entry with empty `owners` has its files deleted and is dro
     re-fetch.
 - Concurrency: a small bounded worker (≤3) off the main thread. Never blocks UI:
   the save's checkmark/Outcome completes immediately; preload runs detached.
-- Background survival: wrap with `UIApplication.beginBackgroundTask` (main app) so a
-  brief background window is used; the action extension does NOT preload (no time) —
-  it just records the root as "needs preload"; the main app resumes it on foreground.
+- Background survival: fresh-save preloads wrap with `UIApplication.beginBackgroundTask`
+  (main app) for a brief background window, and stop on expiration. Bulk foreground
+  resume does NOT claim background time; it is coalesced, foreground-only, and cancelled
+  on `UIApplication.didEnterBackgroundNotification` so a reopen/close cycle cannot
+  leave a long crawl running after the user leaves Luna.
 - Resume: on `sceneWillEnterForeground` and in the existing inbox BGAppRefresh, call
   `PreloadCoordinator.resumeIncomplete()` which finds `.ready` articles whose root
   tree is missing/partial and continues. We do NOT re-refresh already-complete trees.

@@ -49,7 +49,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var rendered: RenderedArticle
     private var wordMap: WordMap
     private var imageDownloadTask: Task<Void, Never>?
-    private let textView = UITextView()
+    private let textView = UITextView(usingTextLayoutManager: false)
     private let store = ReadingListStore.shared
     private var didFinishReading = false
     private var didRestoreScroll = false
@@ -332,10 +332,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
-        // Touch layoutManager BEFORE any text is set: the view starts in
-        // TextKit 1 and never flips mid-session (a later TK2→TK1 switch
-        // re-breaks lines and makes the text visibly jump).
-        _ = textView.layoutManager
+        // Constructed with TextKit 1 so line metrics stay stable across scroll
+        // restoration and link hit-testing.
         textView.isEditable = false
         textView.isSelectable = true
         textView.delegate = self

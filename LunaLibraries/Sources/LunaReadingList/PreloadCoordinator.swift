@@ -101,7 +101,7 @@ public final class PreloadCoordinator {
             }
             for item in self.readingListStore.items()
             where item.state == .ready && item.contentFileName != nil {
-                guard !Task.isCancelled, UIApplication.shared.applicationState == .active
+                guard !Task.isCancelled, await Self.isApplicationActive
                 else { break }
                 await self.run(rootID: item.id, allowsBackgroundTask: false)
             }
@@ -170,7 +170,9 @@ public final class PreloadCoordinator {
         guard claim(rootID) else { return }
         defer { unclaim(rootID) }
         guard ReaderSettings.preloadDepth > 0 else { return }
-        guard allowsBackgroundTask || UIApplication.shared.applicationState == .active else { return }
+        if !allowsBackgroundTask {
+            guard await Self.isApplicationActive else { return }
+        }
         guard NetworkReachability.shared.isOnWiFi else {
             SharedDiagnosticLog.record(
                 "preload deferred (not on Wi-Fi): \(rootID.uuidString)", category: "preload")
@@ -179,15 +181,15 @@ public final class PreloadCoordinator {
         var bgTask: UIBackgroundTaskIdentifier = .invalid
         let expiration = CancellationFlag()
         if allowsBackgroundTask {
-            bgTask = UIApplication.shared.beginBackgroundTask(withName: "preload-\(rootID)") {
+            bgTask = await Self.beginBackgroundTask(named: "preload-\(rootID)") {
                 expiration.cancel()
             }
         }
-        defer { if bgTask != .invalid { UIApplication.shared.endBackgroundTask(bgTask) } }
         await crawl(
             seedLinks: seedLinks, rootID: rootID,
             continueWhileBackgrounded: allowsBackgroundTask,
             expiration: expiration)
+        if bgTask != .invalid { await Self.endBackgroundTask(bgTask) }
     }
 
     /// BFS over `seedLinks` (recursively to `ReaderSettings.preloadDepth`), in document
@@ -207,8 +209,9 @@ public final class PreloadCoordinator {
         while !queue.isEmpty, pagesProcessed < Self.maxPagesPerRun {
             guard !Task.isCancelled else { break }
             guard !expiration.isCancelled else { break }
-            guard continueWhileBackgrounded || UIApplication.shared.applicationState == .active
-            else { break }
+            if !continueWhileBackgrounded {
+                guard await Self.isApplicationActive else { break }
+            }
             let job = queue.removeFirst()
             let key = PreloadStore.key(for: job.url)
             guard visitedThisRun.insert(key).inserted else { continue }
@@ -289,5 +292,23 @@ public final class PreloadCoordinator {
     /// document order.
     public static func outboundURLs(from content: ArticleContent) -> [URL] {
         content.outboundURLs
+    }
+
+    @MainActor
+    private static var isApplicationActive: Bool {
+        UIApplication.shared.applicationState == .active
+    }
+
+    @MainActor
+    private static func beginBackgroundTask(
+        named name: String,
+        expirationHandler: @escaping () -> Void
+    ) -> UIBackgroundTaskIdentifier {
+        UIApplication.shared.beginBackgroundTask(withName: name, expirationHandler: expirationHandler)
+    }
+
+    @MainActor
+    private static func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier) {
+        UIApplication.shared.endBackgroundTask(identifier)
     }
 }

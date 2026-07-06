@@ -491,19 +491,17 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         transition.play(prepare: { [weak self] in
             guard let self else { return (UIImage(), UIImage()) }
             // `before` is already-displayed content → afterScreenUpdates:false is correct
-            // and cheap. `after` is the JUST-built new layer, whose text/images haven't had
-            // a display pass yet — it MUST be captured with afterScreenUpdates:true, or the
-            // snapshot is stale (the dissolve would resolve to the *before* content
-            // pixelated). This runs on the next runloop, off the tap's critical path.
-            // The focused header is left VISIBLE in the after capture (afterScreenUpdates:true
-            // renders the solid header faithfully), so the dissolve resolves straight to the
+            // and cheap. `after` is captured after applying state and forcing layout, so it
+            // can use the current hierarchy without asking UIKit to flush screen updates
+            // during a CoreAnimation commit.
+            // The focused header is left VISIBLE in the after capture, so the dissolve resolves straight to the
             // final header — there's no headerless frame to blink before it reappears.
             // When `region` is set both snapshots are that-rect-sized so they align to the
             // region-framed overlay.
             let before = self.snapshot(region: region, afterScreenUpdates: false)
             applyState()
             self.view.layoutIfNeeded()
-            let after = self.snapshot(region: region, afterScreenUpdates: true)
+            let after = self.snapshot(region: region, afterScreenUpdates: false)
             return (before, after)
         }, in: view, region: region, contentRegion: contentRegion) { [weak self] in
             self?.transitionInFlight = false
@@ -592,12 +590,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         // Compose the after state (parent focused, top layer gone) hidden under the overlay.
         let dying = layers[topIndex]
         applyFocus(focusedIndex: topIndex - 1, hiding: dying)
-        // The parent's header stays VISIBLE in the after capture (afterScreenUpdates:true
-        // renders the solid header faithfully), so as the finger drives the wipe the header
+        // The parent's header stays VISIBLE in the after capture, so as the finger drives the wipe the header
         // dissolves in proportionally along with the rest of the content — instead of being
         // absent and snapping in only on commit.
         view.layoutIfNeeded()
-        let after = snapshot(region: region, afterScreenUpdates: true)   // re-focused parent must render fresh
+        let after = snapshot(region: region, afterScreenUpdates: false)
         applyFocus()                     // restore the live before state
         interactive = transition.begin(before: before, after: after, in: view, region: region,
                                        contentRegion: destinationContentRegion(focus: topIndex - 1))
@@ -666,7 +663,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         // Keep the parent's header in the after capture so it tracks the interactive edge
         // swipe (dissolving in proportionally) rather than snapping in only on commit.
         view.layoutIfNeeded()
-        let after = snapshot(region: region, afterScreenUpdates: true)
+        let after = snapshot(region: region, afterScreenUpdates: false)
         applyFocus()   // restore the live before state
         interactive = transition.begin(before: before, after: after, in: view, region: region,
                                        contentRegion: destinationContentRegion(focus: topIndex - 1))

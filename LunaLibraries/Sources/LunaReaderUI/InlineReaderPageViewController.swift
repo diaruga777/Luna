@@ -53,6 +53,11 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     private var didDecide = false
     private static let preloadRefreshInterval: TimeInterval = 48 * 60 * 60
 
+    @MainActor
+    private static var isApplicationActive: Bool {
+        UIApplication.shared.applicationState == .active
+    }
+
     /// Whether this page is rendering as an article (so the mode switcher applies).
     public var isArticle: Bool { articleContent != nil }
 
@@ -234,12 +239,12 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         else { return }
         refreshTask?.cancel()
         refreshTask = Task.detached(priority: .utility) {
-            guard UIApplication.shared.applicationState == .active else { return }
+            guard await Self.isApplicationActive else { return }
             guard let html = try? await ArticleFetcher().fetchHTML(from: target),
                   !Task.isCancelled,
                   let fresh = try? ArticleExtractor().extract(html: html, baseURL: target),
                   fresh.isArticleLike,
-                  UIApplication.shared.applicationState == .active
+                  await Self.isApplicationActive
             else { return }
             PreloadStore.shared.refreshArticle(for: target, content: fresh)
         }

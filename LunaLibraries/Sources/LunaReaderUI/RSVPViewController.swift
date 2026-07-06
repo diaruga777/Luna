@@ -871,6 +871,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         showWord(at: currentIndex)
         scrubber.value = Float(currentIndex)
         updateStatus()
+        guard currentIndex < engine.words.count - 1 else {
+            finish()
+            return
+        }
         scheduleNext()
     }
 

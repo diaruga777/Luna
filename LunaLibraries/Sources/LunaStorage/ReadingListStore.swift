@@ -526,6 +526,27 @@ public final class ReadingListStore {
         }
     }
 
+    /// Marks an article finished and archives it in the reading list.
+    ///
+    /// Article "archive" status is derived from `.read`, so keep the completion
+    /// transition and the terminal progress update together for end-of-reader
+    /// paths.
+    public func markFinishedReading(_ itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            var changed = false
+            if all[index].readState != .read {
+                all[index].readState = .read
+                changed = true
+            }
+            if (all[index].readingProgress ?? 0) < 1 {
+                all[index].readingProgress = 1
+                changed = true
+            }
+            return changed
+        }
+    }
+
     /// Forces an item back to unread (the Archive-section "Unarchive" action) — a
     /// deliberate downgrade that `markReadState`'s forward-only guard disallows.
     public func markUnread(_ itemID: UUID) {

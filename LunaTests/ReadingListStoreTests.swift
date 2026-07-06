@@ -278,6 +278,17 @@ final class ReadingListStoreTests: XCTestCase {
         wait(for: [notPosted], timeout: 0.5)
     }
 
+    func testMarkFinishedReadingMarksReadAndComplete() {
+        let item = store.add(urlString: "https://example.com/finished")
+        store.saveReaderExitPosition(readingProgress: 0.4, for: item.id)
+
+        store.markFinishedReading(item.id)
+
+        let fresh = store.item(withID: item.id)
+        XCTAssertEqual(fresh?.readState, .read)
+        XCTAssertEqual(fresh?.readingProgress, 1)
+    }
+
     func testSaveAndLoadContentRoundTrip() {
         let item = store.add(urlString: "https://example.com/content")
         let content = ArticleContent(

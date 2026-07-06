@@ -377,6 +377,6 @@ public final class ReaderViewController: UIViewController {
     }
 
     private func markRead() {
-        store.markReadState(.read, for: item.id)
+        store.markFinishedReading(item.id)
     }
 }

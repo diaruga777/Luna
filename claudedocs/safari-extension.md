@@ -49,10 +49,10 @@ Article flow:
 1. content.js asks background `{type:"buttonContext"}`; background relays to the native handler,
    which returns the app's `SafariSuggestionMode` (`never` / `all` / `onlyLocked`, default
    `all`) from the App Group (`SafariSuggestionSettings`, key `safariSuggestionMode`).
-2. If `never`, or the page isn't an article (`looksLikeArticle`: og:type=article / `<article>`
-   / a substantial `<p>` body + `<h1>`), or (`onlyLocked`) the page isn't paywalled
-   (`looksPaywalled` — a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree`
-   + `content_tier`), it does nothing.
+2. If `never`, or the page isn't an article (`looksLikeArticle` — see "Article
+   heuristic" below), or (`onlyLocked`) the page isn't paywalled (`looksPaywalled` —
+   a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree` +
+   `content_tier`), it does nothing.
 3. Otherwise it injects a Luna-indigo (`#5856D6`) "Read in Luna" capsule button. Tapping it
    prefers `LunaReaderAppClipURL?url=<source>` from `LunaSafari/Info.plist`; that URL is
    filled in after App Store Connect has the Reader App Clip experience and should open the
@@ -60,6 +60,37 @@ Article flow:
    it falls back to `lunareader://read?url=<encoded>` (`LunaDeepLink`) when Reader is
    installed — ONLY Reader registers `lunareader://` now, so with Reader absent and no
    App Clip URL the button isn't shown on article pages.
+
+**Article heuristic (`looksLikeArticle`).** A lightweight Readability-style scorer,
+JS-only — no Swift counterpart, since it only decides button visibility; the app
+re-classifies properly on save via `LunaIngest`.
+- Hard negatives (any one disqualifies the page): 4+ `<article>` elements (a teaser
+  feed); whole-page link density (all `<a>` text ÷ `document.body.innerText`) above 0.5;
+  a `docs`/`documentation`/`api`/`reference`/`sdk`/`changelog` first-or-second URL path
+  segment, OR `<pre>`/`<code>` text outweighing the qualifying candidate text (see
+  below); an `input[type=password]` (login/signup gates).
+- Candidates: every `<p>`, plus the deduped parent of each `div > br` pattern
+  (old-school/book-style pages with no `<p>` at all) — never a `<pre>`. Each is dropped
+  if it's nested in an `<li>`, cheaply hidden (inline `display:none`/`visibility:hidden`,
+  `hidden`, `aria-hidden="true"`), has its own link density above 0.2, or it (or one of
+  its nearest 5 ancestors, stopping at `<body>`) has a class/id matching an UNLIKELY
+  pattern (comment/sidebar/nav/promo/social/…) without also matching a POSITIVE one
+  (article/content/main/story/…).
+- Scoring: surviving candidates with `innerText.length >= 140` contribute
+  `sqrt(len - 140)`; their lengths also roll up per `parentElement` to find
+  `largestClusterShare` (the biggest single parent's share of all qualifying text).
+- Verdict is two-tier: with strong evidence (`og:type=article`, a JSON-LD
+  `Article`/`BlogPosting` node, a byline + `time[datetime]` pair, or a single
+  `<article>` holding ≥60% of the qualifying text) the bar is `score > 20`; otherwise
+  `score > 40 AND largestClusterShare >= 0.5` (rejects link-dense/teaser pages whose
+  raw text total is large but scattered across many small siblings).
+- SPA retry: if the initial check falls through to "not an article," a single
+  `setTimeout` re-runs just the article branch (re-checking `onlyLocked`/
+  `looksPaywalled` too) after 2500ms, for bodies that hydrate late.
+- Testability: every top-level `browser.*` call is wrapped in
+  `if (typeof browser !== "undefined")` so content.js can be evaluated standalone in a
+  bare `WKWebView` (no extension host); it exposes `window.__lunaLooksLikeArticle` for
+  exactly this. See `LunaTests/SafariArticleHeuristicTests.swift`.
 
 **Per-app URL schemes.** Each app registers ONLY its own scheme — `lunareader://`
 (Reader), `lunadownloader://` (Downloader), `lunapricetracker://` (Price Tracker) — via

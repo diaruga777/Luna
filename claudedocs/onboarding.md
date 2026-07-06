@@ -98,17 +98,31 @@ setup. The onboarding UI drives/observes it as follows:
 
 `OnboardingGuideVideo` wraps a small, muted, looping "how to" clip:
 
-- Loads a bundled mp4 (`Luna/Resources/SafariExtensionGuide.mp4` /
-  `Luna/Resources/ActionButtonGuide.mp4`) into an `AVQueuePlayer` with
-  `AVPlayerLooper`. The bundled files stay tiny (tens of KB) and the player is
-  ready immediately; do not rebuild a long `AVMutableComposition` here, because
-  that can delay the next onboarding page and leave PiP showing only a static
-  poster if the user taps "Open Safari" / "Open Settings" quickly.
+- **`init` is trivial by design; the whole AV stack is lazy.** The step factories
+  construct an `OnboardingGuideVideo` at step-creation time — i.e. inside the
+  *previous* step's button handler — and building the
+  `AVPlayerItem`/`AVPlayerLooper`/`AVPictureInPictureController` there used to
+  visibly stall the push transition (the "enormous delay" from the email step to
+  the Safari step). Everything is now created on first `play()` (from the step's
+  own `viewDidAppear`) / `startPictureInPicture()` instead. Loads a bundled mp4
+  (`Luna/Resources/SafariExtensionGuide.mp4` / `Luna/Resources/ActionButtonGuide.mp4`)
+  into an `AVQueuePlayer` with `AVPlayerLooper`. Do NOT set
+  `player.actionAtItemEnd` — `AVPlayerLooper` requires the default (`.advance`);
+  overriding it to `.none` freezes playback at the end of the first pass. And do
+  not rebuild a long `AVMutableComposition` here, because that can leave PiP
+  showing only a static poster if the user taps "Open Safari" / "Open Settings"
+  quickly.
 - `playerView` (an `AVPlayerLayer`-backed view) is installed **behind** the live
   `OnboardingAnimationView` illustration via
-  `OnboardingStepViewController.installBackdropView(_:)` — pinned to the
-  animation's frame, fully covered by it, so it's invisible while the step is on
-  screen (keeps snapshot tests deterministic) but still actually playing.
+  `OnboardingStepViewController.installBackdropView(_:)` — small (40×40) and
+  centered, fully covered by the illustration's opaque phone mockup. It must NOT
+  be pinned to the animation's full frame: the illustrations are transparent
+  around the mockup, so a full-size video peeks out around the edges and reads as
+  garbled overlapping UI. Small-and-covered keeps it invisible (and snapshot
+  tests deterministic) while still counting as on-screen-and-playing for AVKit's
+  PiP hand-off (PiP always shows the full video content regardless of the source
+  layer's size). `installBackdropView` is idempotent — `onDidAppear` fires on
+  every re-appear and must not stack duplicate installs/constraints.
 - `AVPictureInPictureController.canStartPictureInPictureAutomaticallyFromInline =
   true`, so backgrounding the app from that step auto-starts PiP; `startPictureInPicture()`
   is also called programmatically right before the "leave Luna" button
@@ -134,26 +148,36 @@ inline (`.safariExtension` for the Safari clip; `.actionButtonSettings` — a
 fixed-dark mock of Settings → Action Button built specifically for this — for the
 Action Button clip), via `LunaTests/GuideVideoRecorderTests.swift`. Gated behind
 `RECORD_GUIDE_VIDEOS=1` (mirrors the `RECORD_SNAPSHOTS` pattern in
-`SnapshotTesting.swift`; `XCTSkip`s otherwise). It hosts the animation at 2x its
-own fixed intrinsic size (e.g. Safari: 220×360 → 440×720; Action Button:
-280×300 → 560×600 — both even dimensions, required for H.264), waits out the
-animation's own start-up delay, then drives a `CADisplayLink` for exactly one
+`SnapshotTesting.swift`; `XCTSkip`s otherwise). It hosts the animation at its own
+fixed intrinsic size in a scene-attached window, waits out the animation's
+start-up delay, then drives a `CADisplayLink` for exactly one
 `OnboardingAnimationView.Kind.loopDuration`, rendering each tick's
 `layer.presentation()` (NOT the model layer — this is what captures the
 in-flight `CAKeyframeAnimation` values rather than their static end state) into
-an `AVAssetWriter` H.264 mp4 at ~30fps, ~800kbps (clips land under ~50KB in
-practice — well under the ~2MB budget).
+an `AVAssetWriter` H.264 mp4 at ~30fps 2x pixel scale (Safari: 220×360 → 440×720;
+Action Button: 280×300 → 560×600 — even dimensions, required for H.264), ~800kbps
+(clips land around ~250–350KB — well under the ~2MB budget).
 
-Two implementation notes that matter if you touch this:
+Three implementation notes that matter if you touch this:
+- **The recording `UIWindow` MUST be attached to a `UIWindowScene`**
+  (`UIWindow(windowScene:)`, taking the test host app's foreground scene). A
+  scene-less window is never committed to the render server, so its CAAnimations
+  never advance and `presentation()` just mirrors the static model tree — the
+  recorder then silently produces a "video" of one frozen frame repeated for the
+  full duration (this exact bug shipped once). The recorder now asserts
+  `distinctFrameCount > 10` after writing so a static capture fails the test
+  instead of landing in `Luna/Resources/`.
 - Rendering uses `CALayer.render(in:)`, **not**
   `drawHierarchy(in:afterScreenUpdates:)` — `SnapshotTesting.swift` already
   established that `drawHierarchy` produces blank captures for off-screen test
   windows on this runtime; `render(in:)` doesn't have that problem.
 - `render(in:)` draws into Core Graphics' native bottom-up coordinate space,
   which is flipped relative to the top-down space UIKit lays the view tree out
-  in — the pixel-buffer context must be flipped (`translateBy` + `scaleBy(1, -1)`)
-  before calling `render(in:)`, or the recorded frames come out upside down /
-  mirrored.
+  in — the pixel-buffer context must be flipped (`translateBy` + `scaleBy`, which
+  also applies the 2x content scale) before calling `render(in:)`, or the
+  recorded frames come out upside down / mirrored. The 2x is context scale, not a
+  view `transform` — a scaled view in an Auto Layout window shifts its frame and
+  crops the capture.
 
 Regenerate with (see CLAUDE.md for the `DEVELOPER_DIR` requirement and simulator
 UDIDs):
@@ -186,6 +210,20 @@ targets, so no project-file changes are needed to pick them up):
 ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 \
   Luna/Resources/SafariExtensionGuide.mp4 Luna/Resources/ActionButtonGuide.mp4
 ```
+
+## Illustration app icons (`AppIconImage<App>` imagesets)
+
+`OnboardingAnimationView.lunaAppIconImage()` picks the current app's icon for the
+mock UI rows (Dynamic Island confirmation, "Save to Luna" share row, Safari
+extension toggle row, notification banner) by bundle-id suffix. It loads the
+`AppIconImageReader` / `AppIconImageDownloader` / `AppIconImagePriceTracker`
+imagesets in `Luna/Assets.xcassets` — **not** the `AppIcon*` appiconsets, because
+`.appiconset`s (and Icon Composer `.icon` bundles) are not loadable via
+`UIImage(named:)`; before these imagesets existed the lookup silently fell back
+to the unrelated `luna-app-mark` glyph. The imageset art must be kept in sync by
+hand with each app's real Home Screen icon: Reader's comes from the
+`Luna Reader.icon` Icon Composer bundle's 1024 export, the other two from their
+appiconsets' 1024 PNGs (all downscaled to 512).
 
 ## Replay ("Replay Onboarding" in Settings)
 

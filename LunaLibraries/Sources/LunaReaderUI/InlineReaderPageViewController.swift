@@ -36,6 +36,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
 
     private let spinner = DotMatrixSpinnerView()
     private var articleProbe: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
     private var articleContent: ArticleContent?
     /// What the probe decided (reader vs raw web). Stashed because the probe is
     /// kicked off in `init` to overlap the host's open animation, so it can finish
@@ -50,6 +51,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     /// Set once the probe has committed to reader OR web view (so neither is
     /// applied twice).
     private var didDecide = false
+    private static let preloadRefreshInterval: TimeInterval = 48 * 60 * 60
 
     /// Whether this page is rendering as an article (so the mode switcher applies).
     public var isArticle: Bool { articleContent != nil }
@@ -87,11 +89,18 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
-    deinit { articleProbe?.cancel() }
+    deinit {
+        articleProbe?.cancel()
+        refreshTask?.cancel()
+        NotificationCenter.default.removeObserver(self)
+    }
 
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = ReaderDepth.backgroundColor(for: 0)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(cancelRefreshForBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil)
 
         spinner.hidesWhenStopped = true
         spinner.translatesAutoresizingMaskIntoConstraints = false
@@ -219,12 +228,26 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     /// Re-fetches a preloaded article in the background and updates its on-disk cache
     /// so the NEXT open is fresh. Does not disturb the currently-shown reader.
     private func refreshPreloadedCache(_ target: URL) {
-        Task.detached(priority: .utility) {
+        guard UIApplication.shared.applicationState == .active,
+              PreloadStore.shared.articleRefreshDue(
+                for: target, minimumAge: Self.preloadRefreshInterval)
+        else { return }
+        refreshTask?.cancel()
+        refreshTask = Task.detached(priority: .utility) {
+            guard UIApplication.shared.applicationState == .active else { return }
             guard let html = try? await ArticleFetcher().fetchHTML(from: target),
+                  !Task.isCancelled,
                   let fresh = try? ArticleExtractor().extract(html: html, baseURL: target),
-                  fresh.isArticleLike else { return }
+                  fresh.isArticleLike,
+                  UIApplication.shared.applicationState == .active
+            else { return }
             PreloadStore.shared.refreshArticle(for: target, content: fresh)
         }
+    }
+
+    @objc private func cancelRefreshForBackground() {
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 
     /// Applies the probe's decision once the view exists to host it. Safe to call

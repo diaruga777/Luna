@@ -34,6 +34,9 @@ public struct PreloadEntry: Codable, Equatable {
     public var kind: PreloadKind
     public var contentFile: String?
     public var platform: PreloadPlatform?
+    /// Last time this page was successfully loaded/refreshed into the preload cache.
+    /// nil means the entry predates this field and may be refreshed once on open.
+    public var lastLoadedAt: Date?
     /// Root SAVE item UUID strings whose preload subtree reaches this URL. The
     /// refcount is `owners.count`; the entry's files are deleted when it hits zero.
     public var owners: Set<String>
@@ -41,6 +44,21 @@ public struct PreloadEntry: Codable, Equatable {
     /// teardown). Empty for non-article kinds.
     public var children: [String]
     public var state: PreloadState
+
+    public init(
+        urlString: String, kind: PreloadKind, contentFile: String? = nil,
+        platform: PreloadPlatform? = nil, lastLoadedAt: Date? = nil,
+        owners: Set<String>, children: [String], state: PreloadState
+    ) {
+        self.urlString = urlString
+        self.kind = kind
+        self.contentFile = contentFile
+        self.platform = platform
+        self.lastLoadedAt = lastLoadedAt
+        self.owners = owners
+        self.children = children
+        self.state = state
+    }
 }
 
 /// The shared, URL-keyed, refcounted cache of preloaded link pages. **Physically
@@ -241,6 +259,15 @@ public final class PreloadStore {
         return content
     }
 
+    public func articleRefreshDue(
+        for url: URL, now: Date = Date(), minimumAge: TimeInterval
+    ) -> Bool {
+        guard let entry = entry(for: url), entry.kind == .article, entry.state == .loaded
+        else { return false }
+        guard let lastLoadedAt = entry.lastLoadedAt else { return true }
+        return now.timeIntervalSince(lastLoadedAt) >= minimumAge
+    }
+
     // MARK: - Writes
 
     /// Records a loaded/failed preload result for `url`, owned by `rootID`, returning
@@ -260,15 +287,18 @@ public final class PreloadStore {
             BackupPolicy.excludeFromBackups(fileURL)
         }
         let childKeys = children.map { Self.key(for: $0) }
+        let now = Date()
         let entry: PreloadEntry = mutate { index in
             var entry = index[key] ?? PreloadEntry(
                 urlString: Self.canonicalString(for: url), kind: kind, contentFile: contentFile,
-                platform: platform, owners: [], children: childKeys, state: .loaded)
+                platform: platform, lastLoadedAt: kind == .unrepresentable ? nil : now,
+                owners: [], children: childKeys, state: .loaded)
             entry.kind = kind
             if contentFile != nil { entry.contentFile = contentFile }
             if platform != nil { entry.platform = platform }
             entry.children = childKeys
             entry.state = (kind == .unrepresentable) ? .failed : .loaded
+            if entry.state == .loaded { entry.lastLoadedAt = now }
             entry.owners.insert(rootID.uuidString)
             index[key] = entry
             return entry
@@ -303,6 +333,7 @@ public final class PreloadStore {
     /// refresh never creates an unowned entry.
     public func refreshArticle(for url: URL, content: ArticleContent) {
         let key = Self.key(for: url)
+        let now = Date()
         let refreshed: Bool = mutate { index in
             guard var entry = index[key], entry.kind == .article,
                   let data = try? JSONEncoder().encode(content) else { return false }
@@ -311,6 +342,7 @@ public final class PreloadStore {
             try? data.write(to: fileURL, options: .atomic)
             BackupPolicy.excludeFromBackups(fileURL)
             entry.contentFile = file
+            entry.lastLoadedAt = now
             index[key] = entry
             return true
         }

@@ -70,6 +70,12 @@ entry's `owners`; any entry with empty `owners` has its files deleted and is dro
   resume does NOT claim background time; it is coalesced, foreground-only, and cancelled
   on `UIApplication.didEnterBackgroundNotification` so a reopen/close cycle cannot
   leave a long crawl running after the user leaves Luna.
+- Refresh policy: already-loaded preload entries are never refreshed by background
+  crawls. A cached article may refresh only after the user opens that article, only
+  while the app is foreground-active, and only when its `lastLoadedAt` is at least
+  48 hours old (legacy entries with no timestamp are treated as due once). If the app
+  backgrounds mid-refresh, the refresh task is cancelled; first-time root/nested loads
+  are the only preload work allowed to spend background time.
 - Resume: on `sceneWillEnterForeground` and in the existing inbox BGAppRefresh, call
   `PreloadCoordinator.resumeIncomplete()` which finds `.ready` articles whose root
   tree is missing/partial and continues. We do NOT re-refresh already-complete trees.

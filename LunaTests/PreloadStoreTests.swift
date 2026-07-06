@@ -48,6 +48,47 @@ final class PreloadStoreTests: XCTestCase {
         XCTAssertEqual(store.entry(for: u)?.kind, .article)
     }
 
+    func testRecordedArticleIsNotImmediatelyRefreshDue() {
+        let u = url("https://example.com/fresh")
+        store.record(url: u, rootID: UUID(), kind: .article, content: article("Fresh"))
+
+        XCTAssertFalse(store.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
+        XCTAssertNotNil(store.entry(for: u)?.lastLoadedAt)
+    }
+
+    func testLegacyArticleWithoutLoadDateIsRefreshDueOnce() throws {
+        let u = url("https://example.com/legacy")
+        let key = PreloadStore.key(for: u)
+        let entry = PreloadEntry(
+            urlString: PreloadStore.canonicalString(for: u), kind: .article,
+            contentFile: "\(key).json", lastLoadedAt: nil,
+            owners: [UUID().uuidString], children: [], state: .loaded)
+        let data = try JSONEncoder().encode([key: entry])
+        try data.write(to: store.contentURL(fileName: "preloads.json"), options: .atomic)
+        try JSONEncoder().encode(article("Legacy"))
+            .write(to: store.contentURL(fileName: "\(key).json"), options: .atomic)
+
+        XCTAssertTrue(store.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
+
+        store.refreshArticle(for: u, content: article("Refreshed"))
+
+        XCTAssertFalse(store.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
+        XCTAssertEqual(store.articleContent(for: u)?.title, "Refreshed")
+    }
+
+    func testOldArticleIsRefreshDueAfterMinimumAge() throws {
+        let u = url("https://example.com/stale")
+        let key = PreloadStore.key(for: u)
+        let entry = PreloadEntry(
+            urlString: PreloadStore.canonicalString(for: u), kind: .article,
+            contentFile: "\(key).json", lastLoadedAt: Date(timeIntervalSinceNow: -49 * 60 * 60),
+            owners: [UUID().uuidString], children: [], state: .loaded)
+        let data = try JSONEncoder().encode([key: entry])
+        try data.write(to: store.contentURL(fileName: "preloads.json"), options: .atomic)
+
+        XCTAssertTrue(store.articleRefreshDue(for: u, minimumAge: 48 * 60 * 60))
+    }
+
     // MARK: - Synchronous / in-memory cache (instant, spinner-free opens)
 
     /// `record` warms the in-memory cache so the very first tap is a synchronous hit.

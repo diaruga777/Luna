@@ -1,6 +1,5 @@
 {
   "features" : [
-    "refractivity",
     "specular-location"
   ],
   "fill" : {
@@ -38,7 +37,7 @@
             "scale" : 1,
             "translation-in-points" : [
               0.028500000000008185,
-              75.5625
+              107.6
             ]
           }
         }
@@ -46,14 +45,14 @@
       "lighting" : "combined",
       "refractivity" : {
         "depth" : 0,
-        "enabled" : true,
+        "enabled" : false,
         "strength" : -1
       },
       "shadow" : {
         "kind" : "layer-color",
-        "opacity" : 2
+        "opacity" : 0.4
       },
-      "specular" : "outside",
+      "specular" : "inside",
       "translucency" : {
         "enabled" : true,
         "value" : 0.1
@@ -94,7 +93,7 @@
       ],
       "refractivity" : {
         "depth" : 0,
-        "enabled" : true,
+        "enabled" : false,
         "strength" : 1
       },
       "shadow" : {
@@ -104,7 +103,7 @@
       "specular" : "outside",
       "translucency" : {
         "enabled" : false,
-        "value" : 0.2
+        "value" : 1
       }
     },
     {

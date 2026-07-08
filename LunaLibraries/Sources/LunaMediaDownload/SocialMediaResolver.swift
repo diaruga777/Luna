@@ -96,19 +96,15 @@ public struct SocialMediaResolver: SocialMediaResolving {
             if !assets.isEmpty { return assets }
         }
 
-        // Fallback: the og-unfurl view (`facebookexternalhit`) — video if it exposes
-        // one, else the poster image (better than nothing when the page is walled).
+        // Fallback: the og-unfurl view (`facebookexternalhit`) only when it exposes
+        // a real video. Facebook video permalinks commonly expose their poster as
+        // `og:image`; saving that still would turn a video download into an image.
         guard let data = await fetch(metaScrapeRequest(url)),
               let html = String(data: data, encoding: .utf8) else { return [] }
         if let videoURL = OpenGraphMediaParser.content(named: "og:video", in: html)
             ?? OpenGraphMediaParser.content(named: "og:video:secure_url", in: html),
            let url = URL(string: videoURL) {
             return [MediaAsset(url: url, kind: .video)]
-        }
-        if let imageURL = OpenGraphMediaParser.content(named: "og:image", in: html)
-            ?? OpenGraphMediaParser.content(named: "og:image:secure_url", in: html),
-           let url = URL(string: imageURL) {
-            return [MediaAsset(url: url, kind: .image)]
         }
         return []
     }
@@ -358,16 +354,13 @@ public enum FacebookMediaParser {
                 return [MediaAsset(url: url, kind: .video)]
             }
         }
-        // Open Graph video, then the poster image, as a last resort.
+        // Open Graph video as a last resort. Deliberately ignore `og:image`: for
+        // Facebook video URLs it is a poster, not downloadable video media.
         for pattern in [#"property="og:video(?::secure_url|:url)?" content="(.*?)""#] {
             if let raw = firstGroup(in: html, pattern: pattern),
                let url = URL(string: unescape(raw)) {
                 return [MediaAsset(url: url, kind: .video)]
             }
-        }
-        if let raw = firstGroup(in: html, pattern: #"property="og:image" content="(.*?)""#),
-           let url = URL(string: unescape(raw)) {
-            return [MediaAsset(url: url, kind: .image)]
         }
         return []
     }
@@ -376,8 +369,11 @@ public enum FacebookMediaParser {
 
 /// Unescapes the JSON/HTML-encoded URLs social pages embed in markup.
 private func unescape(_ string: String) -> String {
-    string
+    let jsonDecoded = try? JSONSerialization.jsonObject(
+        with: Data("\"\(string)\"".utf8), options: [.fragmentsAllowed]) as? String
+    return (jsonDecoded ?? string)
         .replacingOccurrences(of: "\\u0026", with: "&")
+        .replacingOccurrences(of: "\\u0025", with: "%")
         .replacingOccurrences(of: "\\/", with: "/")
         .replacingOccurrences(of: "&amp;", with: "&")
 }

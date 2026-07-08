@@ -403,7 +403,9 @@ final class ReadingListViewController: UITableViewController {
                     guard let self else { return }
                     let resultItem: ReadingListItem?
                     switch result {
-                    case .saved(let saved), .sentToEreaders(let saved): resultItem = saved
+                    case .saved(let saved), .sentToEreaders(let saved),
+                         .sentToFriends(let saved), .friendPromptRequested(let saved):
+                        resultItem = saved
                     case .ignored: resultItem = nil
                     }
                     let item = resultItem

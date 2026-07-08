@@ -9,7 +9,9 @@ The former friend-share suggestion tokens are gone. Save intents that only save
 content now return no value. Intents that still need Shortcut control flow keep
 their explicit return values, such as `SaveLinkIntent` / `SaveFromAppIntent`
 returning a media-download token (`"4:<url>"`) when the shortcut should offer a
-download step.
+download step, and `SaveFromAppIntent` returning `"open-luna"` when a Reader
+double save's ask-every-time friend action wants the shortcut to foreground
+Luna into the friend selector (see `double-save.md`).
 
 ## Key Files
 

@@ -58,7 +58,11 @@ discoverable in the action search but not in the prominent list.)
   in the response is used if present, else `SafariURLStore.lastURL` (the tracked
   page). Returns `"Saved to Luna."` on a normal save, or `"4:<url>"` when a
   media-downloadable link was saved but auto-download is off (the shortcut can
-  branch on the `4:` prefix to offer downloading).
+  branch on the `4:` prefix to offer downloading). In Luna Reader, a repeat save
+  of the same URL within 7 s runs the configured **double-save action** (send to
+  Kindle / send to friend — see `double-save.md`); its ask-every-time path
+  returns the `"open-luna"` token so the shortcut foregrounds Luna into the
+  friend selector.
 - **`ScreenAnalysisPromptIntent`** (`app`, optional): returns the per-app prompt
   (`AppNamePlatform.screenPrompt`) telling an image model to read the current app's
   screen and respond with a **single line** in exactly the `" ; "`-joined format

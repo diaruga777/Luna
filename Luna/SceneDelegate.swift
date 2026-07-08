@@ -164,7 +164,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 trustsPrefetchedHTML: prefetchedHTML != nil)
             let itemID: UUID?
             switch result {
-            case .saved(let item), .sentToEreaders(let item): itemID = item.id
+            case .saved(let item), .sentToEreaders(let item),
+                 .sentToFriends(let item), .friendPromptRequested(let item):
+                itemID = item.id
             case .ignored: itemID = ReadingListStore.shared.item(forURLString: urlString)?.id
             }
             nav.popToRootViewController(animated: false)
@@ -190,6 +192,27 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         PreloadCoordinator.shared.resumeIncomplete()
         // A notification tapped while the app was backgrounded.
         applyPendingNotificationRoute()
+        // A double save with "ask every time" bounced the user into Luna: present
+        // the friend selector for the double-saved item.
+        applyPendingFriendPrompt()
+    }
+
+    /// Presents the friend-selector share sheet for a pending double-save
+    /// "ask every time" hand-off (recorded by the Save App Intent right before
+    /// the Shortcut opened Luna). One-shot; consumed only once the main UI is
+    /// actually up so an onboarding-first launch doesn't swallow it.
+    private func applyPendingFriendPrompt() {
+        guard let nav = window?.rootViewController as? UINavigationController,
+              let list = nav.viewControllers.first as? ReadingListViewController
+        else { return }
+        let surface = AppSurfaceConfig.current.storageIdentifier
+        guard let urlString = DoubleSaveActionStore.shared
+            .takePendingFriendPrompt(forSurface: surface) else { return }
+        let item = ReadingListStore.shared.item(forURLString: urlString)
+        nav.dismiss(animated: false)
+        nav.popToRootViewController(animated: false)
+        SendToFriendSheet.present(
+            from: list, item: item, urlString: urlString, title: item?.title)
     }
 
     private func uiTestRootViewController() -> UIViewController? {

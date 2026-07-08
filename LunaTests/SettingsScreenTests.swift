@@ -146,10 +146,11 @@ final class SettingsScreenTests: XCTestCase {
 
     private func autoSendDrilldowns() -> [(UITableViewController, Int, Int)] {
         // Section/row indices that push AutoSendBySourceScreen (from the VC's source).
-        // Sections: lunaAccount(0), kindle(1), booxAccount(2), boox(3), … .
+        // On the Reader surface (the test host) the visible sections are:
+        // lunaAccount(0), kindle(1), doubleSave(2), booxAccount(3), boox(4), … .
         // Kindle forwarding: section .kindle (1), row 0.
-        // Boox forwarding: section .boox (3), row 0.
-        [(EmailAndKindleSettingsScreen(), 1, 0), (EmailAndKindleSettingsScreen(), 3, 0)]
+        // Boox forwarding: section .boox (4), row 0.
+        [(EmailAndKindleSettingsScreen(), 1, 0), (EmailAndKindleSettingsScreen(), 4, 0)]
     }
 
     private func snapshotSubscreen(_ viewController: UIViewController, named name: String) {

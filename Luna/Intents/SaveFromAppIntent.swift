@@ -81,12 +81,14 @@ public struct SaveFromAppIntent: AppIntent {
         case .bluesky:
             let query = BlueskyPostQuery.searchQuery(
                 handle: fields.first ?? "", text: fields.dropFirst().first ?? "")
-            try await saveSearch(query) { try await BlueskySearchClient().topPostURL(query: $0) }
+            return .result(value: try await saveSearch(query) {
+                try await BlueskySearchClient().topPostURL(query: $0) })
         case .reddit:
             let query = RedditPostQuery.searchQuery(
                 subreddit: fields.first ?? "", title: fields.dropFirst().first ?? "",
                 author: fields.dropFirst(2).first)
-            try await saveSearch(query) { try await RedditSearchClient().topPostURL(query: $0) }
+            return .result(value: try await saveSearch(query) {
+                try await RedditSearchClient().topPostURL(query: $0) })
         case .music:
             try await saveMedia(.music, creator: fields.first, title: fields.dropFirst().first)
         case .podcast:
@@ -158,10 +160,36 @@ public struct SaveFromAppIntent: AppIntent {
         }
     }
 
-    private func saveSearch(_ query: String, resolve: (String) async throws -> URL) async throws {
+    /// The double-save action (send to Kindle / friend on a repeat press within
+    /// 7 s) is armed only for the Reader app's Action Button saves — every other
+    /// surface and save path keeps the plain save behavior.
+    private static var doubleSaveSurface: String? {
+        guard AppSurfaceConfig.current == .reader else { return nil }
+        return AppSurfaceConfig.current.storageIdentifier
+    }
+
+    /// One save press through the intent path, with the double-save action armed
+    /// when this app is eligible for it.
+    private static func savePress(urlString: String) async -> IntentIngestHelper.ActionButtonSaveOutcome {
+        guard let surface = doubleSaveSurface else {
+            return .completed(savedURLString:
+                await IntentIngestHelper.handleSavePressWithTimeout(urlString: urlString))
+        }
+        return await IntentIngestHelper.handleActionButtonSavePress(
+            urlString: urlString, doubleSaveActionSurface: surface)
+    }
+
+    /// Saves a search-resolved post URL; returns the intent's result string
+    /// (the open-Luna token when a double save asked for the friend selector).
+    private func saveSearch(_ query: String, resolve: (String) async throws -> URL) async throws -> String {
         guard !query.isEmpty else { throw SaveError.missingValues }
         guard let url = try? await resolve(query) else { throw SaveError.notFound }
-        _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
+        switch await Self.savePress(urlString: url.absoluteString) {
+        case .friendPromptRequested:
+            return ActionButtonOnboardingStore.openLunaToken
+        case .completed:
+            return "Saved to Luna."
+        }
     }
 
     private func saveMedia(_ platform: ContentPlatform, creator: String?, title: String?) async throws {
@@ -170,7 +198,15 @@ public struct SaveFromAppIntent: AppIntent {
     }
 
     private func saveAndDownloadReturnValue(_ urlString: String) async -> String {
-        _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: urlString)
+        switch await Self.savePress(urlString: urlString) {
+        case .friendPromptRequested:
+            // Double save with "ask every time": bounce into Luna's friend
+            // selector (the pending prompt is already recorded). The Shortcut's
+            // "Open App → Luna" branch keys off this exact token.
+            return ActionButtonOnboardingStore.openLunaToken
+        case .completed:
+            break
+        }
         guard MediaDownloadablePlatform.supports(urlString) else { return "Saved to Luna." }
         if MediaAutoDownloader.isEnabled(forURLString: urlString) {
             _ = await LiveMediaDownloadManager.shared.start(urlString: urlString)

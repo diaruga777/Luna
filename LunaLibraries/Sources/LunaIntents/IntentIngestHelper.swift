@@ -11,6 +11,19 @@ import Foundation
 /// structs live in the app target (for discovery); this is the business logic they
 /// call into.
 public enum IntentIngestHelper {
+
+    /// What an Action Button save press produced, for `SaveFromAppIntent`.
+    public enum ActionButtonSaveOutcome {
+        /// Save/send handled (or duplicate). `savedURLString` is the URL that
+        /// ended up saved, nil when the outcome couldn't be determined before
+        /// the timeout.
+        case completed(savedURLString: String?)
+        /// Double save with "ask every time" — the pending friend prompt is
+        /// recorded; the intent should return the open-Luna token so the
+        /// Shortcut foregrounds the app into the friend selector.
+        case friendPromptRequested
+    }
+
     /// Handles a save press (save+ingest, double-press send, or ignore), giving
     /// up after 12 s so the intent finishes promptly in the background. Work cut
     /// off by the timeout is persisted as pending/queued and retried later.
@@ -18,7 +31,40 @@ public enum IntentIngestHelper {
     /// already in the list), or nil when the outcome couldn't be determined
     /// before the timeout.
     public static func handleSavePressWithTimeout(urlString: String) async -> String? {
-        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
+        switch await savePressRacingTimeout(urlString: urlString, doubleSaveActionSurface: nil) {
+        case .some(.saved(let item)), .some(.sentToEreaders(let item)),
+             .some(.sentToFriends(let item)), .some(.friendPromptRequested(let item)):
+            return item.urlString
+        case .some(.ignored):
+            return urlString
+        case nil:
+            return nil
+        }
+    }
+
+    /// The Action Button (Save App Intent) variant: same timeout-raced save, but
+    /// with the configured double-save action armed for `surface`, and a result
+    /// that distinguishes the "open the friend selector" hand-off.
+    public static func handleActionButtonSavePress(
+        urlString: String, doubleSaveActionSurface surface: String
+    ) async -> ActionButtonSaveOutcome {
+        switch await savePressRacingTimeout(urlString: urlString, doubleSaveActionSurface: surface) {
+        case .some(.friendPromptRequested):
+            return .friendPromptRequested
+        case .some(.saved(let item)), .some(.sentToEreaders(let item)), .some(.sentToFriends(let item)):
+            return .completed(savedURLString: item.urlString)
+        case .some(.ignored):
+            return .completed(savedURLString: urlString)
+        case nil:
+            return .completed(savedURLString: nil)
+        }
+    }
+
+    /// Runs `handleSavePress` raced against a 12 s timeout; nil ⇒ timed out.
+    private static func savePressRacingTimeout(
+        urlString: String, doubleSaveActionSurface: String?
+    ) async -> ReadingListIngestor.SavePressResult? {
+        guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }
         let urlString = url.absoluteString
         // NOT a task group: `withTaskGroup` awaits ALL children before returning,
         // and the save leg isn't reliably cancellation-responsive (web-archive
@@ -29,7 +75,7 @@ public enum IntentIngestHelper {
         let resumeLock = NSLock()
         var resumed = false
         return await withCheckedContinuation { continuation in
-            @Sendable func finish(_ value: String?) {
+            @Sendable func finish(_ value: ReadingListIngestor.SavePressResult?) {
                 resumeLock.lock()
                 let first = !resumed
                 resumed = true
@@ -38,13 +84,9 @@ public enum IntentIngestHelper {
             }
             Task {
                 let result = await ReadingListIngestor.shared.handleSavePress(
-                    urlString: urlString, source: .appIntent)
-                switch result {
-                case .saved(let item), .sentToEreaders(let item):
-                    finish(item.urlString)
-                case .ignored:
-                    finish(urlString)
-                }
+                    urlString: urlString, source: .appIntent,
+                    doubleSaveActionSurface: doubleSaveActionSurface)
+                finish(result)
             }
             Task {
                 try? await Task.sleep(nanoseconds: 12_000_000_000)

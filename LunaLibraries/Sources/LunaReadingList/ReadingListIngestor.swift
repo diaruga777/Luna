@@ -550,18 +550,32 @@ public final class ReadingListIngestor {
         case saved(ReadingListItem)
         /// Double press — the article was (re)sent to one or more ereaders.
         case sentToEreaders(ReadingListItem)
+        /// Double press — the article was emailed to the preset friends.
+        case sentToFriends(ReadingListItem)
+        /// Double press — the app should open its friend selector for the item
+        /// (the pending prompt is already recorded; the intent's caller returns
+        /// the open-Luna token so the Shortcut foregrounds the app).
+        case friendPromptRequested(ReadingListItem)
         /// Duplicate press — nothing happened.
         case ignored
     }
 
     /// The save-press entry point shared by the intents and the in-app add:
-    /// first press saves and ingests; a second press within a few seconds sends
-    /// the article to Kindle (when configured); any other press on an existing
-    /// URL is ignored. Awaits the resulting work (callers bound it with a timeout).
+    /// first press saves and ingests; a second press within a few seconds
+    /// triggers the configured double-save behavior; any other press on an
+    /// existing URL is ignored. Awaits the resulting work (callers bound it
+    /// with a timeout).
+    ///
+    /// `doubleSaveActionSurface`: non-nil ONLY for saves arriving through the
+    /// Action Button's Save App Intent on a surface with the double-save action
+    /// enabled (today: Reader). It carries the surface's storage identifier and
+    /// switches a repeat press into the 7 s configured-action regime
+    /// (`DoubleSaveActionStore`) instead of the legacy ereader double save.
     @discardableResult
     public func handleSavePress(urlString: String, source: CaptureSource = .manual,
                                 prefetchedHTML: String? = nil,
-                                trustsPrefetchedHTML: Bool = false) async -> SavePressResult {
+                                trustsPrefetchedHTML: Bool = false,
+                                doubleSaveActionSurface: String? = nil) async -> SavePressResult {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return .ignored }
         let urlString = url.absoluteString
         let existing = store.item(forURLString: urlString)
@@ -571,7 +585,8 @@ public final class ReadingListIngestor {
             existingItem: existing,
             previousPressDate: previousPress,
             now: Date(),
-            doubleSaveDestinationIDs: ArticleSendCoordinator.shared.doubleSaveDestinationIDs())
+            doubleSaveDestinationIDs: ArticleSendCoordinator.shared.doubleSaveDestinationIDs(),
+            intentAction: doubleSaveActionSurface.flatMap(Self.resolvedIntentAction(forSurface:)))
 
         switch decision {
         case .saveNew:
@@ -586,8 +601,54 @@ public final class ReadingListIngestor {
                 await ArticleSendCoordinator.shared.send(existing, toDestinationID: destinationID)
             }
             return .sentToEreaders(existing)
+        case .sendToFriends(let emails):
+            guard let existing else { return .ignored }
+            do {
+                try await EmailShareCenter.shared.send(item: existing, to: emails)
+                SharedDiagnosticLog.record(
+                    "double save: emailed \(existing.urlString) to \(emails.count) friend(s)",
+                    category: "send")
+            } catch {
+                // A failed friend send must not fail the save intent.
+                SharedDiagnosticLog.record(
+                    "double save: friend send failed: \(error)", category: "send")
+            }
+            return .sentToFriends(existing)
+        case .promptFriendSelector:
+            guard let existing, let surface = doubleSaveActionSurface else { return .ignored }
+            DoubleSaveActionStore.shared.setPendingFriendPrompt(
+                urlString: existing.urlString, forSurface: surface)
+            return .friendPromptRequested(existing)
         case .ignore:
             return .ignored
+        }
+    }
+
+    /// Resolves the configured double-save action into the policy's pure input,
+    /// applying the configuration checks the policy itself can't know about.
+    /// nil ⇒ the action can't run right now (e.g. Kindle not configured), so a
+    /// repeat press falls back to being ignored.
+    private static func resolvedIntentAction(
+        forSurface surface: String
+    ) -> SavePressPolicy.IntentAction? {
+        let store = DoubleSaveActionStore.shared
+        switch store.action(forSurface: surface) {
+        case .sendToKindle:
+            guard ArticleSendCoordinator.shared.isConfigured(
+                destinationID: ArticleDestinationID.kindle) else { return nil }
+            return .sendToKindle
+        case .sendToFriend:
+            // Preset recipients need a configured sharing account to actually
+            // send; without one (or without any preset picked yet) fall back to
+            // the in-app selector, which guides account setup itself.
+            guard store.friendMode(forSurface: surface) == .preset else {
+                return .promptFriendSelector
+            }
+            let emails = store.presetFriendEmails(forSurface: surface)
+            guard !emails.isEmpty, EmailShareCenter.shared.isConfigured else {
+                return .promptFriendSelector
+            }
+            return .sendToFriends(emails: emails)
         }
     }
 

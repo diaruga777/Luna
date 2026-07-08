@@ -8,19 +8,29 @@ import LunaReadingList
 import LunaMail
 import LunaMailAccount
 import LunaSend
+import LunaSocial
+import LunaStorage
 import LunaDesignSystem
 import LunaTransitions
 import UIKit
 
 /// Email & Sending settings. The Luna Sharing Account (any provider) powers
 /// sending articles to friends, importing shares, and — now — emailing articles
-/// to Kindle. Sections: sharing account, Send-to-Kindle, Send-to-Boox (Onyx
-/// account + forwarding), Import-from-Email.
+/// to Kindle. Sections: sharing account, Send-to-Kindle, double-save action
+/// (Reader only), Send-to-Boox (Onyx account + forwarding), Import-from-Email.
 final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable {
-        case lunaAccount, kindle, booxAccount, boox, importMail, subjectFilters
+        case lunaAccount, kindle, doubleSave, booxAccount, boox, importMail, subjectFilters
     }
+
+    /// The double-save action only fires for Reader's Action Button saves, so
+    /// its section only shows there.
+    private var visibleSections: [Section] {
+        Section.allCases.filter { $0 != .doubleSave || AppSurfaceConfig.current == .reader }
+    }
+
+    private var doubleSaveSurface: String { AppSurfaceConfig.current.storageIdentifier }
 
     /// Field tags for the text fields.
     private enum Field: Int { case kindleAddress = 1 }
@@ -38,12 +48,22 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Refresh value rows edited on pushed subscreens (double-save recipients).
+        tableView.reloadData()
+    }
+
+    override func numberOfSections(in tableView: UITableView) -> Int { visibleSections.count }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        switch Section(rawValue: section)! {
+        switch visibleSections[section] {
         case .lunaAccount: return EmailAccountStore.shared.isConfigured ? 3 : 1
         case .kindle: return 3 /* mode, kindle address, test send */
+        case .doubleSave:
+            let showsRecipients = DoubleSaveActionStore.shared
+                .action(forSurface: doubleSaveSurface) == .sendToFriend
+            return showsRecipients ? 3 : 2 /* kindle choice, friend choice, [recipients] */
         case .booxAccount: return 2 /* region, log in/out */
         case .boox: return 2 /* forwarding settings, test send */
         case .importMail: return 2 /* enabled, auto-send */ + IncomingMailSettings.allowedSenders.count + 1 /* add */
@@ -52,9 +72,10 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        switch Section(rawValue: section)! {
+        switch visibleSections[section] {
         case .lunaAccount: return "Sharing Account"
         case .kindle: return "Send to Kindle"
+        case .doubleSave: return "Double Save"
         case .booxAccount: return "Onyx Account"
         case .boox: return "Send to Boox"
         case .importMail: return "Import from Email"
@@ -63,11 +84,13 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        switch Section(rawValue: section)! {
+        switch visibleSections[section] {
         case .lunaAccount:
             return "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to friends and import shares sent to you."
         case .kindle:
             return "Articles are emailed from the connected Luna email account (the section at the top of this screen). That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings), and sending requires the account to be connected."
+        case .doubleSave:
+            return "Saving the same link twice within 7 seconds with the Action Button shortcut runs this action on the already-saved article."
         case .booxAccount:
             return "Boox sending uses Onyx's unofficial Send2Boox service. Log in with the email on your BOOX account; you'll get a code by email."
         case .boox:
@@ -88,7 +111,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         cell.accessoryType = .none
         cell.selectionStyle = .none
 
-        switch Section(rawValue: indexPath.section)! {
+        switch visibleSections[indexPath.section] {
         case .lunaAccount:
             if EmailAccountStore.shared.isConfigured {
                 switch indexPath.row {
@@ -124,6 +147,22 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
                 content.text = "Send Test to Kindle"
                 content.textProperties.color = view.tintColor ?? .systemBlue
                 content.image = UIImage(systemName: "paperplane")
+                cell.selectionStyle = .default
+            }
+
+        case .doubleSave:
+            let store = DoubleSaveActionStore.shared
+            let action = store.action(forSurface: doubleSaveSurface)
+            switch indexPath.row {
+            case 0, 1:
+                let rowAction: DoubleSaveAction = indexPath.row == 0 ? .sendToKindle : .sendToFriend
+                content.text = rowAction.displayName
+                cell.accessoryType = action == rowAction ? .checkmark : .none
+                cell.selectionStyle = .default
+            default:
+                content.text = "Recipients"
+                content.secondaryText = doubleSaveRecipientsSummary()
+                cell.accessoryType = .disclosureIndicator
                 cell.selectionStyle = .default
             }
 
@@ -199,7 +238,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        switch Section(rawValue: indexPath.section)! {
+        switch visibleSections[indexPath.section] {
         case .lunaAccount:
             if EmailAccountStore.shared.isConfigured {
                 switch indexPath.row {
@@ -212,6 +251,13 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             } else {
                 EmailLoginFlow.present(from: self) { [weak self] _ in self?.tableView.reloadData() }
             }
+        case .doubleSave where indexPath.row <= 1:
+            DoubleSaveActionStore.shared.setAction(
+                indexPath.row == 0 ? .sendToKindle : .sendToFriend,
+                forSurface: doubleSaveSurface)
+            tableView.reloadSections(IndexSet(integer: indexPath.section), with: .automatic)
+        case .doubleSave:
+            navigationController?.pushViewController(DoubleSaveRecipientsScreen(), animated: true)
         case .kindle where indexPath.row == 0:
             navigationController?.pushViewController(
                 AutoSendBySourceScreen(
@@ -238,7 +284,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        switch Section(rawValue: indexPath.section) {
+        switch visibleSections[indexPath.section] {
         case .importMail:
             return indexPath.row >= 2
                 && indexPath.row - 2 < IncomingMailSettings.allowedSenders.count
@@ -254,7 +300,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         forRowAt indexPath: IndexPath
     ) {
         guard editingStyle == .delete else { return }
-        switch Section(rawValue: indexPath.section) {
+        switch visibleSections[indexPath.section] {
         case .importMail:
             IncomingMailSettings.removeSender(at: indexPath.row - 2)
         case .subjectFilters:
@@ -263,6 +309,21 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             return
         }
         tableView.deleteRows(at: [indexPath], with: .automatic)
+    }
+
+    /// The Recipients row's value text: the chosen friends (by display name),
+    /// or the ask-every-time mode.
+    private func doubleSaveRecipientsSummary() -> String {
+        let store = DoubleSaveActionStore.shared
+        guard store.friendMode(forSurface: doubleSaveSurface) == .preset else {
+            return "Ask Every Time"
+        }
+        let emails = store.presetFriendEmails(forSurface: doubleSaveSurface)
+        guard !emails.isEmpty else { return "Ask Every Time" }
+        let names = emails.map { email in
+            FriendsStore.shared.friend(withEmail: email)?.displayName ?? Friend.localPart(email)
+        }
+        return names.count <= 2 ? names.joined(separator: ", ") : "\(names.count) Friends"
     }
 
     // MARK: - Field cells

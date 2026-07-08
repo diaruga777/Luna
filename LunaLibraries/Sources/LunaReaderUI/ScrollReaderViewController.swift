@@ -91,6 +91,22 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var highlightedRange: NSRange?
     private var followPlayback = true
 
+    // MARK: - Highlight & share (text selection)
+
+    /// A long-press adds this recognizer alongside the text view's built-in ones. It
+    /// never changes the selection itself; on `.began` it only sets
+    /// `expandNextSelectionToSentence` so the *next* selection change snaps to the
+    /// enclosing sentence. Kept as a stored reference so the gesture delegate can tell
+    /// it apart from the inline-image tap (which shares this delegate).
+    private var sentenceLongPress: UILongPressGestureRecognizer?
+    /// Set by the long-press on `.began`; the first non-empty selection change that
+    /// follows snaps to the enclosing sentence, then clears this so later drag-handle
+    /// adjustments are left alone.
+    private var expandNextSelectionToSentence = false
+    /// Reentrancy guard: setting `textView.selectedRange` inside
+    /// `textViewDidChangeSelection` re-enters it, so the snap is bracketed by this.
+    private var isExpandingSelection = false
+
     /// Sharing affordances; nil → no end-of-article share footer (share sheet).
     private var shareProvider: ReaderShareProviding?
     /// End-of-article share affordance, pinned below the text content (nil when
@@ -352,6 +368,17 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         textView.addGestureRecognizer(imageTap)
         textView.addInteraction(UIContextMenuInteraction(delegate: self))
 
+        // Long-press to select text snaps to the whole enclosing SENTENCE (the built-in
+        // long-press selects only a word). This recognizer is non-fighting: it runs
+        // simultaneously with the text view's own recognizers and never touches the
+        // selection — it just flags the next selection change to expand (see
+        // `handleSentenceLongPress` / `textViewDidChangeSelection`).
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleSentenceLongPress(_:)))
+        longPress.delegate = self
+        longPress.cancelsTouchesInView = false
+        textView.addGestureRecognizer(longPress)
+        sentenceLongPress = longPress
+
         configureFooter()
 
         // The end-of-article share footer is attached only once the FULL article is
@@ -577,7 +604,29 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        image(at: touch.location(in: textView)) != nil
+        // The sentence long-press listens everywhere in the text (it only sets a flag).
+        // The inline-image tap keeps its existing restriction: fire only on an image so
+        // link/text taps fall through to UITextView's own handling.
+        if gestureRecognizer === sentenceLongPress { return true }
+        return image(at: touch.location(in: textView)) != nil
+    }
+
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        // Only relax for the sentence long-press so it doesn't fight the text view's
+        // built-in selection recognizers. Every other pairing keeps UIKit's defaults,
+        // so link/image handling is unchanged.
+        gestureRecognizer === sentenceLongPress || otherGestureRecognizer === sentenceLongPress
+    }
+
+    @objc private func handleSentenceLongPress(_ gesture: UILongPressGestureRecognizer) {
+        // Arm the next selection change to snap to a sentence. Do NOT alter the
+        // selection here — the text view's own long-press drives it; we only expand it.
+        if gesture.state == .began {
+            expandNextSelectionToSentence = true
+        }
     }
 
     public func contextMenuInteraction(
@@ -942,6 +991,89 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // Only offer Save when there's a provider to save through.
         let custom = shareProvider != nil ? [save, share, copy] : [share, copy]
         return UITextItem.MenuConfiguration(menu: UIMenu(children: custom + defaultMenu.children))
+    }
+
+    // MARK: - Highlight & share (text selection)
+
+    /// Adds a "Share" action to the text-SELECTION menu (the callout shown for a
+    /// selected passage, distinct from the link menu above). The system's
+    /// `suggestedActions` (Copy, Look Up, Translate, …) are preserved verbatim so Copy
+    /// et al. behave exactly as before; ours is only prepended.
+    public func textView(_ textView: UITextView, editMenuForTextIn range: NSRange,
+                         suggestedActions: [UIMenuElement]) -> UIMenu? {
+        guard range.length > 0 else { return nil }
+        let quote = (textView.text as NSString).substring(with: range)
+        let share = UIAction(title: "Share",
+                             image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
+            self?.shareHighlightedText(quote, in: range)
+        }
+        return UIMenu(children: [share] + suggestedActions)
+    }
+
+    /// The text shared for a highlighted passage. Pure + static so it's unit-testable.
+    /// With a real web URL: the quote in literal double-quotes, a blank line, then the
+    /// URL. Otherwise (documents / synthetic-scheme imports): the bare trimmed quote.
+    public static func makeHighlightShareText(quote: String, item: ReadingListItem) -> String {
+        let q = quote.trimmingCharacters(in: .whitespacesAndNewlines)
+        return item.isShareable ? "\"\(q)\"\n\n\(item.urlString)" : q
+    }
+
+    /// Presents the share sheet for a highlighted passage, anchoring the iPad popover
+    /// to the current selection (mirrors the link-share popover anchoring above).
+    private func shareHighlightedText(_ quote: String, in range: NSRange) {
+        let text = Self.makeHighlightShareText(quote: quote, item: item)
+        let activity = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+        if let popover = activity.popoverPresentationController {
+            popover.sourceView = textView
+            if let selection = textView.selectedTextRange {
+                let rect = textView.firstRect(for: selection)
+                popover.sourceRect = (rect.isNull || rect.isInfinite)
+                    ? CGRect(x: textView.bounds.midX, y: textView.bounds.midY, width: 0, height: 0)
+                    : rect
+            } else {
+                popover.sourceRect = CGRect(x: textView.bounds.midX, y: textView.bounds.midY, width: 0, height: 0)
+            }
+        }
+        present(activity, animated: true)
+    }
+
+    public func textViewDidChangeSelection(_ textView: UITextView) {
+        // Only the FIRST non-empty selection change after a sentence long-press snaps —
+        // guarded against our own reentrant `selectedRange` write.
+        guard expandNextSelectionToSentence, !isExpandingSelection else { return }
+        let selected = textView.selectedRange
+        guard selected.length > 0 else { return }
+        // Clear immediately so drag-handle adjustments afterward are not re-snapped.
+        expandNextSelectionToSentence = false
+        guard let sentence = Self.enclosingSentenceRange(in: textView.text, caret: selected.location) else { return }
+        isExpandingSelection = true
+        textView.selectedRange = sentence
+        isExpandingSelection = false
+    }
+
+    /// The character range of the sentence containing (or nearest to) `caret`, scoped
+    /// to its paragraph. Returns nil if no sentence can be resolved (graceful fallback:
+    /// the caller leaves the selection untouched).
+    private static func enclosingSentenceRange(in text: String, caret: Int) -> NSRange? {
+        let ns = text as NSString
+        guard ns.length > 0 else { return nil }
+        let safeCaret = min(max(0, caret), ns.length - 1)
+        let paragraph = ns.paragraphRange(for: NSRange(location: safeCaret, length: 0))
+        var best: NSRange?
+        var bestDistance = Int.max
+        ns.enumerateSubstrings(in: paragraph, options: [.bySentences]) { _, substringRange, _, stop in
+            if NSLocationInRange(caret, substringRange) {
+                best = substringRange
+                stop.pointee = true
+                return
+            }
+            let distance = min(abs(substringRange.location - caret), abs(NSMaxRange(substringRange) - caret))
+            if distance < bestDistance {
+                bestDistance = distance
+                best = substringRange
+            }
+        }
+        return best
     }
 
     /// Opens the tapped link inline: the article splits at the link's line — the

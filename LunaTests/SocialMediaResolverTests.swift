@@ -39,6 +39,51 @@ final class SocialMediaResolverTests: XCTestCase {
         ])
     }
 
+    func testFacebookVideoResolutionRequestsDesktopPage() async {
+        let source = URL(string: "https://www.facebook.com/TheOnion/videos/openai-announces-construction-of-new-data-center-on-top-of-sick-child/3928133123988446/")!
+        var userAgents: [String] = []
+        let resolver = SocialMediaResolver { request in
+            userAgents.append(request.value(forHTTPHeaderField: "User-Agent") ?? "")
+            return Data(#"{"browser_native_hd_url":"https:\/\/video.example.com\/facebook.mp4?token=one\u00253D"}"#.utf8)
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
+        XCTAssertEqual(userAgents.first, MediaDownloadHTTP.desktopBrowserUserAgent)
+        XCTAssertEqual(assets, [
+            MediaAsset(url: URL(string: "https://video.example.com/facebook.mp4?token=one%3D")!, kind: .video),
+        ])
+    }
+
+    func testFacebookWatchShortLinkResolvesCanonicalLongPageThenVideo() async {
+        let source = URL(string: "https://fb.watch/IerlpQvlv-/?mibextid=wwXIfr")!
+        var requests: [(url: String, userAgent: String)] = []
+        let resolver = SocialMediaResolver { request in
+            requests.append((
+                request.url?.absoluteString ?? "",
+                request.value(forHTTPHeaderField: "User-Agent") ?? ""))
+            if requests.count == 1 {
+                return Data("<html><title>Error</title></html>".utf8)
+            }
+            if requests.count == 2 {
+                return Data(#"<meta property="og:url" content="https://www.facebook.com/TheOnion/videos/openai-announces-construction-of-new-data-center-on-top-of-sick-child/3928133123988446/">"#.utf8)
+            }
+            return Data(#"{"browser_native_hd_url":"https:\/\/video.example.com\/fbwatch.mp4"}"#.utf8)
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
+        XCTAssertEqual(requests.map(\.userAgent), [
+            MediaDownloadHTTP.desktopBrowserUserAgent,
+            MediaDownloadHTTP.browserUserAgent,
+            MediaDownloadHTTP.desktopBrowserUserAgent,
+        ])
+        XCTAssertEqual(requests.last?.url, "https://www.facebook.com/TheOnion/videos/openai-announces-construction-of-new-data-center-on-top-of-sick-child/3928133123988446/")
+        XCTAssertEqual(assets, [
+            MediaAsset(url: URL(string: "https://video.example.com/fbwatch.mp4")!, kind: .video),
+        ])
+    }
+
     func testFacebookInlinePlayableURLResolvesAsVideoBeforePoster() {
         let html = #"""
         <meta property="og:image" content="https://cdn.example.com/poster.jpg">

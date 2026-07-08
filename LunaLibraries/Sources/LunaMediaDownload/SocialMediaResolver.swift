@@ -89,10 +89,24 @@ public struct SocialMediaResolver: SocialMediaResolving {
     /// (video, then image). Best-effort: inaccessible/private posts expose no asset and
     /// the caller keeps the saved link usable.
     private func resolveFacebook(url: URL) async -> [MediaAsset] {
-        // Browser-UA page: carries the playable video URL in inline JSON.
-        if let data = await fetch(htmlRequest(url)),
+        // Desktop browser page: carries the playable video URL in inline JSON.
+        // Facebook's mobile logged-out page often exposes only `og:image`.
+        if let data = await fetch(facebookVideoPageRequest(url)),
            let html = String(data: data, encoding: .utf8) {
             let assets = FacebookMediaParser.assets(fromHTML: html)
+            if !assets.isEmpty { return assets }
+        }
+
+        // `fb.watch` short links 400 with the desktop UA, but the mobile page
+        // exposes the canonical long video URL. Resolve that, then fetch the long
+        // URL with the desktop UA so `browser_native_*_url` is present.
+        if let data = await fetch(htmlRequest(url)),
+           let html = String(data: data, encoding: .utf8),
+           let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html),
+           canonical.absoluteString != url.absoluteString,
+           let canonicalData = await fetch(facebookVideoPageRequest(canonical)),
+           let canonicalHTML = String(data: canonicalData, encoding: .utf8) {
+            let assets = FacebookMediaParser.assets(fromHTML: canonicalHTML)
             if !assets.isEmpty { return assets }
         }
 
@@ -133,6 +147,13 @@ public struct SocialMediaResolver: SocialMediaResolving {
         return request
     }
 
+    private func facebookVideoPageRequest(_ url: URL) -> URLRequest {
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.setValue(MediaDownloadHTTP.desktopBrowserUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        return request
+    }
+
     public static let defaultFetch: Fetch = { request in
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
@@ -143,9 +164,13 @@ public struct SocialMediaResolver: SocialMediaResolving {
 
 /// Shared HTTP constants for media resolution/download.
 public enum MediaDownloadHTTP {
-    /// A desktop Safari UA — social pages serve richer/less-walled markup to it.
-    /// Sourced from the one shared constant so the two can't drift.
+    /// The app's normal mobile Safari UA, shared with article fetching.
     public static let browserUserAgent = WebFetchConstants.safariUserAgent
+
+    /// A desktop Safari UA. Facebook's logged-out mobile page often contains only
+    /// poster metadata, while the desktop page includes `browser_native_*_url`.
+    public static let desktopBrowserUserAgent =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 }
 
 /// Small, dependency-free Open Graph parser for social pages. Attribute order in
@@ -343,6 +368,29 @@ public enum InstagramMediaParser {
 /// reel's `og:` tags only carry the poster still, so those JSON keys are the reliable
 /// keyless source for the actual video (mirrors public FB downloaders).
 public enum FacebookMediaParser {
+    public static func canonicalVideoURL(fromHTML html: String) -> URL? {
+        for pattern in [
+            #"<link[^>]+rel="canonical"[^>]+href="(.*?)""#,
+            #"<link[^>]+href="(.*?)"[^>]+rel="canonical""#,
+            #"property="og:url" content="(.*?)""#,
+            #"content="(.*?)" property="og:url""#,
+        ] {
+            if let raw = firstGroup(in: html, pattern: pattern),
+               let url = URL(string: unescape(raw)),
+               PlatformRecognizer.recognize(url.absoluteString)?.platform == .facebook {
+                return url
+            }
+        }
+
+        if let raw = firstGroup(in: html, pattern: #"oembed_video\?url=([^"&]+)"#),
+           let decoded = raw.removingPercentEncoding,
+           let url = URL(string: decoded),
+           PlatformRecognizer.recognize(url.absoluteString)?.platform == .facebook {
+            return url
+        }
+        return nil
+    }
+
     public static func assets(fromHTML html: String) -> [MediaAsset] {
         // Playable video URL, HD first. Facebook uses several key names across its
         // page variants; try them in quality order. Values are JSON string literals

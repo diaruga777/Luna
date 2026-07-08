@@ -241,7 +241,7 @@ public final class LiveMediaDownloadManager: NSObject {
             kind = "instagramEmbed"
         case .facebook:
             resolveURL = url
-            kind = "facebook"
+            kind = url.host?.lowercased() == "fb.watch" ? "facebookShort" : "facebook"
         default:
             return nil
         }
@@ -249,7 +249,10 @@ public final class LiveMediaDownloadManager: NSObject {
         if kind == "x" {
             request.setValue("application/json", forHTTPHeaderField: "Accept")
         } else {
-            request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+            let userAgent = kind == "facebook"
+                ? MediaDownloadHTTP.desktopBrowserUserAgent
+                : MediaDownloadHTTP.browserUserAgent
+            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         }
         return (request, kind)
@@ -266,7 +269,7 @@ public final class LiveMediaDownloadManager: NSObject {
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return InstagramMediaParser.assetsFromEmbedContextJSON(html).first
                 ?? InstagramMediaParser.assets(fromHTML: html).first
-        case "facebook":
+        case "facebook", "facebookShort":
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return FacebookMediaParser.assets(fromHTML: html).first
         default:
@@ -358,12 +361,27 @@ public final class LiveMediaDownloadManager: NSObject {
             }
             return
         }
-        guard let data = try? Data(contentsOf: location),
-              let asset = resolvedAsset(from: data, job: job) else {
+        guard let data = try? Data(contentsOf: location) else {
             Task { await failJob(job, message: MediaDownloadError.noMedia.message) }
             return
         }
-        startMediaDownload(for: job, asset: asset)
+        if let asset = resolvedAsset(from: data, job: job) {
+            startMediaDownload(for: job, asset: asset)
+            return
+        }
+        if job.resolveKind == "facebookShort",
+           let html = String(data: data, encoding: .utf8),
+           let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html) {
+            job.resolveKind = "facebook"
+            store.upsert(job)
+            var request = URLRequest(url: canonical, timeoutInterval: 60)
+            request.setValue(MediaDownloadHTTP.desktopBrowserUserAgent, forHTTPHeaderField: "User-Agent")
+            request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+            startTask(request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+            return
+        }
+        Task { await failJob(job, message: MediaDownloadError.noMedia.message) }
+        return
     }
 
     private func save(job: LiveMediaDownloadJob, fileURL: URL, kind: MediaAsset.Kind) async {

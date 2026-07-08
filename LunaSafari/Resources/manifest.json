@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "Luna",
+    "name": "Luna Reader",
     "description": "Tracks the page you're reading so Luna can save it to your reading list.",
     "version": "1.0",
     "icons": {

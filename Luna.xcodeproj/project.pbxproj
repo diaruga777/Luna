@@ -1180,6 +1180,7 @@
 				090152A075555CC1E88333EA /* Sources */,
 				D8458C70E2FFCCAB9891ED19 /* Frameworks */,
 				8D625DA4155FF73472CEE0E6 /* Resources */,
+				F20000000000000000000002 /* Update Safari extension branding */,
 			);
 			buildRules = (
 			);
@@ -1200,6 +1201,7 @@
 				6F840481808C183EA2D897C9 /* Sources */,
 				63DAF29D7BE8CFCDD82FC8D3 /* Frameworks */,
 				6679DE7338A7B19B74E7FB33 /* Resources */,
+				F20000000000000000000003 /* Update Safari extension branding */,
 			);
 			buildRules = (
 			);
@@ -1361,6 +1363,7 @@
 				AA1000000000000000000002 /* Sources */,
 				AA0800000000000000000002 /* Frameworks */,
 				AA1100000000000000000002 /* Resources */,
+				F20000000000000000000001 /* Update Safari extension branding */,
 			);
 			buildRules = (
 			);
@@ -1873,6 +1876,66 @@
 			shellPath = /bin/sh;
 			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
 		};
+		F20000000000000000000001 /* Update Safari extension branding */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/update_safari_extension_branding.sh",
+			);
+			name = "Update Safari extension branding";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/update_safari_extension_branding.sh\"\n";
+		};
+		F20000000000000000000002 /* Update Safari extension branding */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/update_safari_extension_branding.sh",
+			);
+			name = "Update Safari extension branding";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/update_safari_extension_branding.sh\"\n";
+		};
+		F20000000000000000000003 /* Update Safari extension branding */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/update_safari_extension_branding.sh",
+			);
+			name = "Update Safari extension branding";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/update_safari_extension_branding.sh\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -2135,7 +2198,7 @@
 		36BE64E58068B0FF635CA9AC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2199,7 +2262,7 @@
 		3A579C741B51DE45A7E87D13 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2261,6 +2324,7 @@
 		5353B55D7367CE5C1A03EA6C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2268,6 +2332,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaSafari/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleName = "$(DISPLAY_NAME_PREFIX) Downloader";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2287,6 +2352,7 @@
 		5AD1A6F1DABCAE5BC3DD6321 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2313,6 +2379,7 @@
 		65686C7A8A0FBCDB65DD7149 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2339,7 +2406,7 @@
 		6F468BEA5E125B25A9C8D2DC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2401,7 +2468,7 @@
 		79583E0C2FE0BAD200C775CA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2463,7 +2530,7 @@
 		79583E0D2FE0BAD200C775CA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2527,6 +2594,7 @@
 		7F9C81DD57B2AE5AC8CC1B13 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2534,6 +2602,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaSafari/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				INFOPLIST_KEY_CFBundleName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2553,6 +2622,7 @@
 		85CB1AEB69C5B855D8FF4C59 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2579,7 +2649,7 @@
 		91AF421C7C2DB4821CDAD9A7 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = LunaReaderClip/LunaReaderClip.entitlements;
@@ -2614,7 +2684,7 @@
 		A06A267FE792581B276EB885 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2795,6 +2865,7 @@
 		AAC500000000000000000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2802,6 +2873,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaSafari/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
+				INFOPLIST_KEY_CFBundleName = "$(DISPLAY_NAME_PREFIX) Reader";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2821,6 +2893,7 @@
 		AAC600000000000000000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2828,6 +2901,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaSafari/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Reader";
+				INFOPLIST_KEY_CFBundleName = "$(DISPLAY_NAME_PREFIX) Reader";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2885,6 +2959,7 @@
 		AAC900000000000000000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2911,6 +2986,7 @@
 		AACA00000000000000000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2968,6 +3044,7 @@
 		C5863E0B66F8E9D9132F65C0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2994,6 +3071,7 @@
 		D0EE387C77FBD5AA16E996A7 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -3001,6 +3079,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaSafari/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Downloader";
+				INFOPLIST_KEY_CFBundleName = "$(DISPLAY_NAME_PREFIX) Downloader";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -3020,7 +3099,7 @@
 		D81FDB989A8ABBFDA62F031A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = LunaReaderClip/LunaReaderClip.entitlements;
@@ -3054,6 +3133,7 @@
 		D82FEA89A1E463804FF7AF6B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -3061,6 +3141,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LunaSafari/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
+				INFOPLIST_KEY_CFBundleName = "$(DISPLAY_NAME_PREFIX) Price Tracker";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -3110,7 +3191,7 @@
 		LDCL0000000000000000000C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
 				CODE_SIGN_ENTITLEMENTS = LunaDownloaderClip/LunaDownloaderClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -3141,7 +3222,7 @@
 		LDCL0000000000000000000D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
 				CODE_SIGN_ENTITLEMENTS = LunaDownloaderClip/LunaDownloaderClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;

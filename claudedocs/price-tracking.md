@@ -312,7 +312,6 @@ tracker; if NO price by any method, fall through to the normal article pipeline 
 plain article — never a broken tracker, never paywall-bypassed).
 
 - **In-app paste / manual / app-intent**: `ReadingListIngestor.ingest` fetches once,
-  runs `ProductPageDetector` after the YouTube/platform checks (**before** the
   article resolve), then `PriceFetcher.fetchPrice` on a candidate. On a real price →
   `ProductInfo(candidate:price:)` → `ingestProductTracker` (intelligent merge via
   `ProductMatcher`, else new tracker; downloads the product image), then posts
@@ -382,7 +381,6 @@ A tracker save is Replay-compatible: `ingest` records a `note("product detected:
 `RecordingHTMLFetcher`), the product image as a `mediaReference` (URL only),
 `note("created price tracker"` | `"merged into existing tracker <id>")`, and
 terminates `.success`. `ReplayPlayer` rejects these as `unsupportedSource` (product
-notes), like youtube/platform/document saves.
 
 ## Tests
 

@@ -5,7 +5,6 @@ Process: eight parallel review agents swept every production module; every findi
 
 ## Commits
 
-1. **b2aa504** — WKScriptMessageHandler retain cycles (embed player, YouTube player, product-search overlay) → shared `WeakScriptMessageHandler`.
 2. **4406d04** — dead `MediaPreviewFetcher.fetchPreview` chain; `WebStrategy.asBypassStrategy`.
 3. **3597b86** — dedupe `trackerStores` ×3 → `ProductInfo` extension; Instagram/Facebook parser helpers.
 4. **4654f75** — **shared-store data safety**: decode-failure no longer wipes `readingList.json` (per-row failable decode, version-skew-tolerant enums, refuse-to-rewrite-unreadable-file); write failures logged and state kept honest; catch-up Undo merge-restores instead of clobbering concurrent saves; `PreloadStore`/`ImageReferenceStore` mutations now file-coordinated across processes; mail-importer coalescing made atomic; intent 12 s timeout actually returns at 12 s.

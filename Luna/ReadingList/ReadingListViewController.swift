@@ -7,7 +7,6 @@ import LunaReadingListUI
 import LunaSocialUI
 import LunaReadingList
 import LunaMailAccount
-import LunaYouTubeAPI
 import LunaPriceUI
 import LunaReaderUI
 import LunaArchiveReader
@@ -73,7 +72,7 @@ final class ReadingListViewController: UITableViewController {
     private static let displayOrder: [Section] = ReadingListSectioning.displayOrder
 
     /// Whether the item opens in the text reader (articles, documents, emails), as
-    /// opposed to media & links (YouTube, platform posts, music/podcasts) which open
+    /// opposed to media & links, which open
     /// in a player, embed, or browser. Mirrors the tap routing in `didSelectRowAt`.
     static func rendersAsReader(_ item: ReadingListItem) -> Bool {
         ReadingListSectioning.rendersAsReader(item)
@@ -343,8 +342,8 @@ final class ReadingListViewController: UITableViewController {
     private func surfaceAllows(_ candidate: PasteboardCandidate) -> Bool {
         guard let surface else { return true }
         switch surface {
-        case .reader: return !candidate.isVideo && candidate.platform == nil
-        case .downloader: return candidate.isVideo || candidate.platform != nil
+        case .reader: return candidate.platform == nil
+        case .downloader: return candidate.platform != nil
         case .priceTracker: return false // the suggester never detects products
         }
     }
@@ -383,14 +382,11 @@ final class ReadingListViewController: UITableViewController {
         guard let candidate = pasteboardCandidate else { return }
         var transient = ReadingListItem(urlString: candidate.urlString)
         transient.title = candidate.title
-        transient.youtubeVideoID = candidate.videoID
         transient.channelName = candidate.channelName
         transient.platform = candidate.platform
         transient.state = candidate.requiresUnlock ? .needsCaptcha : .ready
 
-        if candidate.isVideo {
-            openVideo(transient, from: self)
-        } else if let platform = candidate.platform {
+        if let platform = candidate.platform {
             openPlatformItem(transient, platform: platform, from: self)
         } else if candidate.requiresUnlock {
             pasteboardCandidate = nil
@@ -508,7 +504,6 @@ final class ReadingListViewController: UITableViewController {
         var item = ReadingListItem(urlString: candidate.urlString)
         item.title = candidate.title
         item.state = candidate.requiresUnlock ? .needsCaptcha : .ready
-        item.youtubeVideoID = candidate.videoID
         item.channelName = candidate.channelName
         item.platform = candidate.platform
         return item
@@ -1297,8 +1292,7 @@ final class ReadingListViewController: UITableViewController {
     private func secondaryText(for item: ReadingListItem) -> NSAttributedString {
         let baseColor: UIColor = item.readState == .unopened ? .secondaryLabel : .tertiaryLabel
         let host = item.url?.host ?? ""
-        // Platform items show a logical container (subreddit / author / channel /
-        // artist), never the bare host. Falls back to the platform name.
+        // Platform items show a logical container, never the bare host.
         let leadingLabel: String
         if let platform = item.contentPlatform,
            let module = PlatformRegistry.shared.module(for: platform) {
@@ -1423,10 +1417,6 @@ final class ReadingListViewController: UITableViewController {
     /// the caller can render those itself.
     @discardableResult
     func openItem(_ item: ReadingListItem, presentingFrom presenter: UIViewController) -> Bool {
-        if item.isYouTubeVideo {
-            openVideo(item, from: presenter)
-            return true
-        }
         if let platform = item.contentPlatform {
             switch platform {
             case .music, .podcast: openMediaItem(item, platform: platform, from: presenter)
@@ -1439,8 +1429,7 @@ final class ReadingListViewController: UITableViewController {
 
     // MARK: - Platform item playback / open
 
-    /// The launch ladder for a non-YouTube platform item: native app → in-app
-    /// embed → in-app Safari.
+    /// The launch ladder for a platform item: native app → in-app embed → in-app browser.
     private func openPlatformItem(
         _ item: ReadingListItem, platform: ContentPlatform, from presenter: UIViewController
     ) {
@@ -1499,24 +1488,6 @@ final class ReadingListViewController: UITableViewController {
             urlString: item.urlString, title: item.title)
     }
 
-    // MARK: - Video playback
-
-    /// Prefers the YouTube app (marks read on successful handoff); otherwise
-    /// the in-app player (marks read when playback finishes).
-    private func openVideo(_ item: ReadingListItem, from presenter: UIViewController) {
-        guard let videoID = item.youtubeVideoID else { return }
-        if let appURL = YouTubeURL.appURL(videoID: videoID),
-           UIApplication.shared.canOpenURL(appURL) {
-            UIApplication.shared.open(appURL) { [weak self] success in
-                if success {
-                    self?.store.markReadState(.read, for: item.id)
-                }
-            }
-            return
-        }
-        DotMatrixModal.present(YouTubePlayerViewController(videoID: videoID, itemID: item.id), from: presenter)
-    }
-
     /// The thumbnail state for a row: cached art (aspect-fit) when present, a
     /// spinner while the item is still being fetched, or the platform-logo
     /// fallback once the fetch finished with no image. The pasteboard suggestion
@@ -1535,11 +1506,6 @@ final class ReadingListViewController: UITableViewController {
         }
         let fetchFinished = isPasteboard || item.state == .ready || item.state == .failed
 
-        if item.isYouTubeVideo {
-            return fetchFinished
-                ? .logo(assetName: ContentPlatform.youtube.logoAssetName, glyph: "play.rectangle.fill")
-                : .loading
-        }
         if let platform = item.contentPlatform,
            let module = PlatformRegistry.shared.module(for: platform) {
             return fetchFinished
@@ -1596,12 +1562,6 @@ final class ReadingListViewController: UITableViewController {
             image: UIImage(systemName: "paperplane")
         ) { [weak self] _ in
             self?.sendToEreader(item, destinationID: ArticleDestinationID.kindle)
-        }
-        let sendToBoox = UIAction(
-            title: "Send to Boox",
-            image: UIImage(systemName: "books.vertical")
-        ) { [weak self] _ in
-            self?.sendToEreader(item, destinationID: ArticleDestinationID.boox)
         }
         let shareEbook = UIAction(
             title: "Share eBook…",
@@ -1689,9 +1649,6 @@ final class ReadingListViewController: UITableViewController {
         if !item.isPlatformItem {
             if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) {
                 children.append(sendToKindle)
-            }
-            if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.boox) {
-                children.append(sendToBoox)
             }
             if !item.isShareable, item.state == .ready {
                 children.append(shareEbook)
@@ -1803,7 +1760,7 @@ final class ReadingListViewController: UITableViewController {
     }
 
     /// Builds the article's EPUB off-main and presents the system share sheet so
-    /// the user can send it to Apple Books, Kobo, reMarkable, Boox, Files, etc.
+    /// the user can send it to another app or save it to Files.
     private func shareEbook(_ item: ReadingListItem, from sourceView: UIView) {
         ArticleExportService().presentShareSheet(for: item, from: self, sourceView: sourceView)
     }

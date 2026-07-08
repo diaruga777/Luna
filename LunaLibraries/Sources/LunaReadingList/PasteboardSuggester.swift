@@ -3,7 +3,6 @@
 //  Luna
 //
 
-import LunaYouTubeAPI
 import LunaPlatforms
 import LunaStorage
 import LunaFetch
@@ -13,7 +12,7 @@ import LunaURLClassification
 import LunaModels
 import UIKit
 
-/// A pasteboard URL that has readable (article) or supported (YouTube) content,
+/// A pasteboard URL that has readable or supported content,
 /// surfaced as a one-tap "From Pasteboard" suggestion at the top of the reading
 /// list. Not persisted until the user taps Save. The preview also resolves a
 /// thumbnail so the row looks like a normal saved row before it's saved.
@@ -21,58 +20,49 @@ public struct PasteboardCandidate {
     public let urlString: String
     public let title: String
     public let channelName: String?
-    public let videoID: String?
     /// Article content already extracted during the preview, so tapping can open
     /// the reader instantly without re-fetching. nil for videos/platform items.
     public let content: ArticleContent?
-    /// Set for a recognized non-YouTube platform URL (X, Bluesky, …).
+    /// Set for a recognized platform URL.
     public let platform: ContentPlatform?
     /// True when the URL is a paywalled article that must go through the normal
     /// saved-item WKWebView unlock flow before any reader preview exists.
     public let requiresUnlock: Bool
-    /// Best-effort preview thumbnail (cover art / video still / platform art).
+    /// Best-effort preview thumbnail.
     public let thumbnail: UIImage?
 
-    public init(urlString: String, title: String, channelName: String?, videoID: String?,
+    public init(urlString: String, title: String, channelName: String?,
          content: ArticleContent?, platform: ContentPlatform? = nil,
          requiresUnlock: Bool = false, thumbnail: UIImage? = nil) {
         self.urlString = urlString
         self.title = title
         self.channelName = channelName
-        self.videoID = videoID
         self.content = content
         self.platform = platform
         self.requiresUnlock = requiresUnlock
         self.thumbnail = thumbnail
     }
-
-    public var isVideo: Bool { videoID != nil }
 }
 
 public protocol PasteboardSuggesting {
     /// Evaluates a pasteboard URL string: returns a candidate when it isn't
-    /// already saved and something readable (an article) or supported (a
-    /// YouTube video) can be extracted from it; nil otherwise.
+    /// already saved and something readable or supported can be extracted from it.
     func evaluate(urlString: String) async -> PasteboardCandidate?
 }
 
-/// Default implementation: dedupes against the reading list, detects YouTube
-/// links via oEmbed, and otherwise fetches + extracts the article to confirm
-/// there's readable content.
+/// Default implementation: dedupes against the reading list and confirms there is
+/// readable content or a recognized platform item.
 public final class PasteboardSuggester: PasteboardSuggesting {
     public static let shared = PasteboardSuggester()
 
     private let store: ReadingListStore
     private let fetcher: HTMLFetching
     private let extractor = ArticleExtractor()
-    private let youTubeMetadataFetcher: YouTubeMetadataFetching
 
     public init(store: ReadingListStore = .shared,
-         fetcher: HTMLFetching = ArticleFetcher(),
-         youTubeMetadataFetcher: YouTubeMetadataFetching = YouTubeOEmbedFetcher()) {
+         fetcher: HTMLFetching = ArticleFetcher()) {
         self.store = store
         self.fetcher = fetcher
-        self.youTubeMetadataFetcher = youTubeMetadataFetcher
     }
 
     public func evaluate(urlString: String) async -> PasteboardCandidate? {
@@ -83,18 +73,7 @@ public final class PasteboardSuggester: PasteboardSuggesting {
         // copy of e.g. an X link often carries `?s=…` the saved one doesn't.
         guard !isAlreadySaved(normalizedURLString) else { return nil }
 
-        if let videoID = YouTubeURL.videoID(from: normalizedURLString) {
-            guard let metadata = try? await youTubeMetadataFetcher.fetchMetadata(videoID: videoID)
-            else { return nil }
-            let thumbnail = (try? await youTubeMetadataFetcher.fetchThumbnail(videoID: videoID))
-                .flatMap { UIImage(data: $0) }
-            return PasteboardCandidate(
-                urlString: normalizedURLString, title: metadata.title,
-                channelName: metadata.channelName, videoID: videoID, content: nil,
-                thumbnail: thumbnail)
-        }
-
-        // A recognized platform URL (tweet, skeet, …) surfaces as a platform
+        // A recognized platform URL surfaces as a platform
         // candidate (saved + ingested on tap; no article preview).
         if let match = PlatformRegistry.shared.detect(normalizedURLString) {
             let art = await PlatformRegistry.shared.module(for: match.platform)?
@@ -102,7 +81,7 @@ public final class PasteboardSuggester: PasteboardSuggesting {
                 .thumbnailData.flatMap { UIImage(data: $0) }
             return PasteboardCandidate(
                 urlString: normalizedURLString, title: match.platform.displayName,
-                channelName: nil, videoID: nil, content: nil, platform: match.platform,
+                channelName: nil, content: nil, platform: match.platform,
                 thumbnail: art)
         }
 
@@ -120,14 +99,14 @@ public final class PasteboardSuggester: PasteboardSuggesting {
             PreloadCoordinator.shared.preloadPasteboard(content: content, sourceURL: url)
             return PasteboardCandidate(
                 urlString: normalizedURLString, title: content.title,
-                channelName: nil, videoID: nil, content: content, thumbnail: cover)
+                channelName: nil, content: content, thumbnail: cover)
         case let .needsArchive(title):
             let fallbackTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
             let cover = await coverImage(html: html, baseURL: url)
             return PasteboardCandidate(
                 urlString: normalizedURLString,
                 title: fallbackTitle.isEmpty ? normalizedURLString : fallbackTitle,
-                channelName: nil, videoID: nil, content: nil,
+                channelName: nil, content: nil,
                 requiresUnlock: true, thumbnail: cover)
         default:
             return nil

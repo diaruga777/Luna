@@ -30,10 +30,7 @@ incoming (url + source)
 
 ### Stage 2 — `Classifier.classify(url:html?:documentType?:) -> ContentKind`  (pure, ReaderKit)
 - Exhaustive `ContentKind`: `.article / .paywalledArticle / .product / .social(Platform) / .video / .audio / .document / .undetermined`.
-- **Deterministic `[KnownSite]` table FIRST** — append-a-row to add a host→kind: shops (amazon/target/walmart/bestbuy/ebay…), news + hard-paywall (nytimes/wapo/wsj/ft/economist/smh.com.au…), social/video/audio (youtube/x/instagram/tiktok/facebook/reddit/bluesky/spotify/apple…). Long lists are good.
 - Heuristics (HTML words/phrases/structure) run **only** when the table says `.undetermined`.
-- **Folds together** today's scatter: `PlatformClassifier`+`PlatformRegistry`+`NonTextualContent` (one recognizer), `ProductPageDetector` detection half, `PaywallDetector`, and the 4 separate host `Set`s (`hardPaywallHosts`/`archiveTodayHosts`/`youtubeHosts`/amazon TLD).
-- **Platform/video recognition is the FIRST branch** ⇒ no surface can bypass it (kills the YouTube-text-extraction bug class).
 - Determination does **no** price-fetch / bypass / WebView. Fix `ProductPageDetector`'s loose substring scan (require a structured product signal, not "addToCart" anywhere) to stop false-positive trackers.
 
 ### Stage 3 — processing components (each: pure core + bounded I/O, independently tested)
@@ -49,7 +46,6 @@ incoming (url + source)
 
 ## How this resolves the reported bugs
 - **Action-extension spinner-forever** → Stage-4 overall timeout + Stage-3 WebView-unreachable-in-extension + exhaustive presenter.
-- **YouTube text-extracted** → platform recognition is Stage-2's first branch, shared by all surfaces.
 - **Amazon never a tracker** → buy-box price rule + amazonStaticPrice in detection + single price source + extension-safe static path.
 - **NYT too slow** → trailing-dot first silent, no WebView repeat, drop redundant fetches, bounded deadline.
 - **Facebook fbrpc** → single shared unwrap entry (offline) on every surface.
@@ -59,11 +55,9 @@ incoming (url + source)
 1. **[DONE] Foundation (new pure files):** `ContentKind`, `KnownSite` table, `Classifier`; `URLUnwrapper` registry; `PlatformRecognizer` + `[PlatformRule]`. Keep old types as thin shims temporarily.
 2. **[DONE] Processing:** `ArticleExtraction` + single readable predicate; `ProductMetadataExtractor` + `ProductPriceRule` table; `BypassPlan`. Migrate `ArticleResolver` to consume them; delete duplicates.
 3. **[DONE] Pipeline + surfaces:** `IngestPipeline` + `Outcome` + `OutcomePresenter`; migrate ingestor, both extensions, intents, friend-share, in-app paste; delete `ArticleIngestDecider`/old gating tangle and dead module `classify`.
-4. **[DONE] Tests + fixtures + cleanup:** `NamedSiteParityTests` over amazon(.com/.com.au)/target/walmart, nytimes/washingtonpost/wsj/smh.com.au, youtube/x/instagram/tiktok/facebook/reddit/bluesky/spotify/apple — one data-driven parity table (same input → same Outcome across all sources). Deleted the last shims (`PlatformClassifier`, dead `NewsAggregatorUnwrapper` async-unwrap/`normalizedIncomingURL*`). Folded tracking-strip into `URLCanonicalizer.strip`; made `Classifier.isHardPaywallHost` the single hard-paywall source; trusted the classifier's `.product` over the redundant detector gate; `ReadingListStore.addIfAbsent` is the single URL-existence dedup. Replay round-trips; full Debug (green) + Release (compiles). See `claudedocs/url-pipeline.md` Stage 4 for the final shape.
 
 ## Test matrix (named sites)
 - Price: amazon (.com/.com.au), target, walmart → `.product` + buy-box price/currency.
 - News: nytimes, washingtonpost, wsj, smh.com.au → `.article`/`.paywalledArticle`; bypass plan ordering; readable predicate on readable + stub fixtures.
-- Social: youtube, x, instagram, tiktok, facebook (+ reddit/bluesky/spotify/apple) → `.social/.video/.audio`, never `.article`.
 - Unwrap: fbrpc Messenger link, apple.news, google news, l.facebook shim, shorteners.
 - Parity: every source produces the identical `Outcome` for the same input.

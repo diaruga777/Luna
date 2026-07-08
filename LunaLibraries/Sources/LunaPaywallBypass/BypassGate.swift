@@ -61,7 +61,7 @@ public enum BypassGate {
         /// tracking, never paywall-bypassed.
         case productPage
         /// A social-media / platform link (`PlatformRecognizer` positive, incl.
-        /// YouTube and the music/podcast platforms).
+        /// platform and music/podcast links).
         case platformLink
         /// A short, non-article page with no paywall evidence (a JS shell / landing
         /// page that isn't actually walled).
@@ -84,7 +84,7 @@ public enum BypassGate {
     /// 8. Direct fetch failed on an unknown host → attempt (can't prove it's free).
     /// 9. Otherwise → block (not paywalled).
     public static func decision(for url: URL, html: String?, extracted: ArticleContent?) -> Decision {
-        // (1) Platform/social links — YouTube, X, Reddit, Spotify, Apple, … — are
+        // (1) Platform/social links are
         // never paywall-bypassed; they render from a deep link, not extracted text.
         if PlatformRecognizer.recognize(url.absoluteString) != nil {
             return .block(.platformLink)

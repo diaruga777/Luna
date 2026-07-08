@@ -10,7 +10,6 @@ are deliberately out of scope here.
 types and re-assembled differently at each input surface. The piece named "the
 decider" (`ArticleIngestDecider`) only distinguishes **article / product / paywall**
 — it *cannot name* video, platform, music, podcast, or document. Those three kinds
-(document → youtube → platform) are gated **before** the decider, by hand, in the
 main-app ingestor, and re-gated (partially, differently) in the share controller.
 Determination is also tangled with processing: the decider **fetches HTML**, **runs
 the price fetcher** (network + WKWebView), and **runs the silent bypass strategies**
@@ -24,9 +23,6 @@ before it will return a kind.
 
 | Classifier | File | Pure? | Returns | Kind(s) it can name |
 |---|---|---|---|---|
-| `YouTubeURL.videoID` | `ReaderKit/YouTubeURL.swift` | ✅ pure | `String?` (video id) | youtube only |
-| `PlatformClassifier.classify` | `ReaderKit/PlatformClassifier.swift` | ✅ pure | `PlatformClassification?` | youtube, x, bluesky, reddit, tiktok, instagram, facebook, music, podcast |
-| `NonTextualContent.detect` | `ReaderKit/NonTextualContent.swift` | ✅ pure (wraps `PlatformClassifier`) | `NonTextualContent?` | youtube + platform (rendering-oriented wrapper) |
 | `PlatformRegistry.detect` | `Luna/Platforms/PlatformRegistry.swift` ⚠️ **main-app only** | ✅ pure (wraps `PlatformClassifier`) | `PlatformMatch?` | same as `PlatformClassifier` |
 | `ReadingListItem.isDocument` | `ReaderKit/ReadingListItem.swift` | ✅ pure (flag) | `Bool` | document (set at save time, not URL-derived) |
 | `ProductPageDetector.detect` | `ReaderKit/ProductPageDetector.swift` | ✅ pure (HTML in) | `ProductCandidate?` | product (Tier-1 structured + Tier-2 heuristic) |
@@ -47,7 +43,6 @@ There is no shared ordering. Each surface re-implements the sequence:
 ```
 unwrap aggregator (NewsAggregatorUnwrapper)         line 66
 1. document?      item.isDocument        → ingestDocument        line 89   ← gated HERE, not in decider
-2. youtube?       YouTubeURL.videoID     → ingestYouTubeVideo    line 101  ← gated HERE, not in decider
 3. platform?      PlatformRegistry.detect→ ingestPlatformItem    line 110  ← gated HERE, not in decider
    (re-save dedup short-circuit for already-tracked URLs)        line 125
 4. ArticleIngestDecider.decide(...)                              line 151
@@ -59,7 +54,6 @@ unwrap aggregator (NewsAggregatorUnwrapper)         line 66
 **Share / Action extensions — `ShareViewController.routeSavedOrReader`** (`ShareKit/ShareViewController.swift:273`):
 ```
 unwrap aggregator                                                line ~262
-NonTextualContent.detect (youtube + platform, NO document, NO product) line 279/288
    ├ non-textual → autoDownload (share) / SavedNonTextualVC (action)
    └ else → ingestArticleThenComplete (share)  OR  ShareReaderViewController (action)
               └ ArticleIngestDecider.decide(...)                 ReaderVC line 82
@@ -136,19 +130,15 @@ extensions (memory-limited) run a heavyweight path just to *name* the content.
 **P3 — Kind coverage is asymmetric.** The decider knows article/product/paywall;
 the callers know video/platform/document. No type in the system can return *all*
 kinds. The result type `ArticleIngestDecision` can't even represent "this is a
-YouTube video" — so video can never flow through the unified path.
 
-**P4 — Ordering is implicit and duplicated.** The "document → youtube → platform →
 (dedup) → resolve" order is encoded as a sequence of `if`/`guard return` statements
 in `ingest` (lines 89-151) and a *different* sequence in `routeSavedOrReader`. Order
-correctness (e.g. youtube before generic platform; product before paywall) is not
 expressed anywhere as data — it's load-bearing control flow in two files.
 
 **P5 — Non-extensible hardcoded checks scattered by host.** "Known sites" are
 fragmented:
 - hard-paywall hosts: a 22-entry `Set<String>` in `ArticleFetcher` (`:160`)
 - archive.today hosts: a `Set<String>` in `ArticleFetcher` (`:91`)
-- youtube hosts: a `Set<String>` in `YouTubeURL` (`:11`)
 - per-platform host matching: inlined `matches(host, "x.com", "twitter.com")` etc.
   in `PlatformClassifier` (`:40-107`)
 - amazon TLD→currency: a tuple list in `ProductPageDetector` (`:221`)
@@ -197,7 +187,6 @@ stage. One classifier; every surface calls it identically.
      `bloomberg.com`, `smh.com.au`, `theage.com.au`, `theguardian.com`,
      `bbc.com`, `reuters.com`, `apnews.com`, … (carrying a `paywall:` flag for the
      hard-paywall subset)
-   - social/video/audio: youtube/x/twitter/instagram/tiktok/facebook/bluesky/reddit/
      spotify/music.apple/podcasts.apple (this *replaces* the inlined `if` ladder in
      `PlatformClassifier` with table rows).
 
@@ -218,7 +207,6 @@ enum ContentKind: Equatable {
     case paywalledArticle(hardHost: Bool)         // known-locked; hardHost ⇒ archive-CAPTCHA route
     case product(ProductSignal)                   // shop page; signal = how it was named
     case social(ContentPlatform, itemID: String?) // x / bluesky / reddit / tiktok / instagram / facebook
-    case video(ContentPlatform, itemID: String)   // youtube (today; vimeo/… later)
     case audio(ContentPlatform, MusicProvider?, itemID: String?) // music / podcast
     case document(type: String)                   // imported file (pdf/epub/…)
     case undetermined                             // table miss + heuristics inconclusive
@@ -256,7 +244,6 @@ enum Classifier {
     /// control-flow edits, no detector changes. Ordered: video/social/audio first
     /// (most specific), then shops, then news (paywall flag), so overlaps resolve
     /// deterministically.
-    static let knownSites: [KnownSite] = youTubeSites + socialSites + audioSites
                                         + shopSites + newsSites
 }
 ```
@@ -286,7 +273,6 @@ let newsSites: [KnownSite] = [
 ```
 
 This **subsumes** the four scattered host sets (P5): `hardPaywallHosts`,
-`archiveTodayHosts`, `youtubeHosts`, and the inlined platform `matches(...)` calls all
 become rows in one table.
 
 ### One classifier, used identically by every surface
@@ -295,7 +281,6 @@ become rows in one table.
 // Main-app ingestor (replaces lines 89–151):
 switch Classifier.classify(url: url, documentType: item.documentType) {
 case .document(let t):                 await ingestDocument(item, type: t)
-case .video(_, let id):                await ingestYouTubeVideo(item, videoID: id)
 case .social(let p, let id), .audio(let p, _, let id):
                                        await ingestPlatformItem(item, platform: p, id: id)
 case .product, .article, .paywalledArticle, .undetermined:
@@ -320,7 +305,6 @@ resolve + price + gate and return what to persist." Determination no longer fetc
 Classification becomes a **pure function over fixtures** — `(url, html?) →
 ContentKind` — with no mocks, no network, no WKWebView, no actor hops. The existing
 pure detectors (`PlatformClassifier`, `ProductPageDetector`, `PaywallDetector`,
-`YouTubeURL`) already prove the inputs are fixture-friendly; the win is one table of
 assertions instead of testing five types and re-asserting their orchestration per
 surface.
 
@@ -331,7 +315,6 @@ surface.
 | `amazon.com/dp/B09…`, `amazon.com.au/…`, `target.com/p/…`, `walmart.com/ip/…` | `.product(.knownShopHost)` |
 | `nytimes.com/2026/…`, `washingtonpost.com/…`, `wsj.com/articles/…`, `ft.com/content/…`, `smh.com.au/…` | `.paywalledArticle(hardHost: true)` |
 | `theguardian.com/…`, `bbc.com/news/…`, `reuters.com/…` | `.article` (free-news fast path) |
-| `youtube.com/watch?v=ID`, `youtu.be/ID`, `m.youtube.com/shorts/ID` | `.video(.youtube, itemID: "ID")` |
 | `x.com/u/status/123`, `twitter.com/u/status/123` | `.social(.x, itemID: "123")` |
 | `instagram.com/reel/abc`, `tiktok.com/@u/video/123`, `bsky.app/profile/a/post/x`, `reddit.com/r/s/comments/id` | `.social(.instagram/.tiktok/.bluesky/.reddit, …)` |
 | `open.spotify.com/track/…`, `music.apple.com/…` | `.audio(.music, .spotify/.apple, …)` |
@@ -388,14 +371,11 @@ struct KnownSite {
 /// when undetermined. No fetch, no price, no bypass, no WKWebView.
 enum Classifier {
     static func classify(url: URL, html: String? = nil, documentType: String? = nil) -> ContentKind
-    static let knownSites: [KnownSite]   // youTube + social + audio + shop + news rows
 }
 ```
 
 **Migration shape:** keep `PlatformClassifier`, `ProductPageDetector`,
-`PaywallDetector`, `YouTubeURL` as the *implementation* of table rows + the heuristic
 phase (don't rewrite their logic). Collapse the four scattered host sets
-(`hardPaywallHosts`, `archiveTodayHosts`, `youtubeHosts`, inlined platform `matches`)
 into `knownSites`. Move `PlatformRegistry`'s classification half into `ReaderKit`
 (P7); leave its *rendering* `module(for:)` in `Luna/`. Strip fetch/price/bypass out of
 `ArticleIngestDecider`, leaving it as the **processing** stage that consumes a

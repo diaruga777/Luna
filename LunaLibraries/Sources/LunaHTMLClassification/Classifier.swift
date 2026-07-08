@@ -60,8 +60,7 @@ public enum Classifier {
             path: nil,
             kind: { url in
                 guard let recognized = PlatformRecognizer.recognize(url.absoluteString) else {
-                    // A platform host with no recognizable item (a channel/profile
-                    // page) isn't a video/post — defer to heuristics/article.
+                    // A platform host with no recognizable item isn't a post/media item.
                     return .undetermined
                 }
                 return contentKind(for: recognized)

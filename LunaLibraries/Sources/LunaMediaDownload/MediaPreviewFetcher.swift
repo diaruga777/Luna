@@ -12,7 +12,7 @@ public enum MediaPreviewFetcher {
 
     /// Downloads and downsamples an image (ImageIO) so a full-resolution poster never
     /// sits fully decoded in the memory-constrained extension. Public so callers with
-    /// a known image URL (e.g. a YouTube thumbnail) can reuse it.
+    /// a known image URL can reuse it.
     public static func image(from url: URL, maxPixelSize: CGFloat) async -> UIImage? {
         var request = URLRequest(url: url, timeoutInterval: 20)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")

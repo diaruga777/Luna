@@ -87,11 +87,11 @@ public enum ReadingListSectioning {
     }
 
     /// Whether the item opens in the text reader (articles, documents, emails),
-    /// as opposed to media & links (YouTube, platform posts, music/podcasts)
+    /// as opposed to media & links
     /// which open in a player, embed, or browser. Mirrors the tap routing. Price
     /// trackers are neither — they open the price-tracking screen.
     public static func rendersAsReader(_ item: ReadingListItem) -> Bool {
-        !item.isPriceTracker && item.contentPlatform == nil && !item.isYouTubeVideo
+        !item.isPriceTracker && item.contentPlatform == nil
     }
 
     /// Splits the (already filter-applied) items into the Reading / Archive /

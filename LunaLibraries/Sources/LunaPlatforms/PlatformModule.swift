@@ -24,7 +24,7 @@ public struct PlatformMatch: Equatable {
 /// An in-app embed for a platform item.
 public struct PlatformEmbed {
     public let url: URL
-    /// Referer header some embeds require (e.g. YouTube).
+    /// Referer header some embeds require.
     public let referer: String?
     /// JS injected at document end that posts "ended" so the host can mark read.
     public let endedWatcherJS: String?

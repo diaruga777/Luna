@@ -42,7 +42,6 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 - **`empty`** — no items (empty-state rendering).
 - **`mixed`** — one of **every** save type: ready article, opened article,
   needsCaptcha (locked) article, failed article, friend-shared article, PDF
-  document, YouTube, X / Bluesky / Reddit / TikTok / Instagram / Facebook posts,
   Spotify music, Apple podcast, a normal price tracker, an **alerting** price tracker.
 - **`catchUpEligible`** — 12 unread ready articles (catch-up dot + queue).
 - **`priceTracking`** — 3 trackers (steady, dropped/alerting, never-refreshed).
@@ -66,7 +65,6 @@ automatically if no `-uiTestState` given). `UITestScreenBuilder` builds that scr
 (or presents it over a host) as the window root using the **same construction seams
 the snapshot tests use**. Cases: `catchUp`, `friends`, `friendDetail`, `settings`,
 `priceTrackingEditor`, `search`, `readerScroll`/`readerHighlight`/`readerRSVP`/
-`readerInlineHeader`, `shareReaderArticle`, `actionReaderArticle`, `shareMediaYouTube`,
 `shareMediaPlatform`, `replays`. Share/action-extension screens are hosted in-app (the
 real share sheet can't be driven on a simulator).
 
@@ -118,13 +116,9 @@ the reference for inspection.
 | Test file | Snapshot | Navigation / layout |
 |---|---|---|
 | `ReadingListScreenTests` | each state + each filter segment | row tap → reader / tracker editor / archive reader / openItem (video, platform); settings/friends/catch-up buttons; table layout |
-| `SettingsScreenTests` | menu + all 12 subscreens | each top-level row → correct subscreen; email/boox → AutoSendBySource |
 | `OnboardingScreenTests` | every step (email, Safari, shortcut install, Action Button, action extension) | flow root shows email first; step buttons in-bounds |
 | `ReaderScreenTests` | scroll / highlight / rsvp / inline-header / standalone scroll + rsvp | mode switcher swaps hosted child VC; reader child in-bounds |
 | `CatchUpAndPriceScreenTests` | catch-up cards (eligible + mixed/locked); price editor (normal + alerting) | catch-up + price-editor layout/store list |
-| `ShareKitScreenTests` | action-reader loading; SavedNonTextual (YouTube + platform) | Done item; layout sanity |
-| `ShareSurfaceDriverTests` | — | drives `ShareSurfaceDriver` with a `FakeExtensionHost`: each `Outcome` → the right presented VC + the store written the same shape (YouTube keeps platform/videoID, product → tracker, `.failed` → error not "Saved") |
-| `SurfaceParityTests` | — | 9 example links (amazon/nytimes/wsj/fbrpc-facebook/apple.news/google-news/youtube/instagram/x) through the main-app source AND both extension surfaces → identical `Outcome` + identical presentation intent; fails if any surface diverges |
 | `SocialAndSeederTests` | — | friends-screen layout; seeder contract (every state ↔ fixture, mixed covers all types, deterministic ids, wipe) |
 
 ### Extension surface fixture (the `ExtensionHost` / `ShareSurfaceDriver` seam)

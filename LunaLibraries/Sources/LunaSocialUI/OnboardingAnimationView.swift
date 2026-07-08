@@ -109,19 +109,21 @@ public final class OnboardingAnimationView: UIView {
     }
 
     private func lunaAppIconImage() -> UIImage? {
-        // The `AppIconImage<App>` imagesets mirror each app's real Home Screen icon
-        // (an `.appiconset`/Icon Composer bundle can't be loaded via `UIImage(named:)`,
-        // so the icon art is duplicated into plain imagesets for in-UI use).
+        // MUST load the plain `AppIconImage<App>` imageset, NOT the Icon Composer
+        // `.icon` bundle name (e.g. "Luna Reader"): `UIImage(named:)` on a `.icon`
+        // app-icon bundle THROWS an NSException at runtime (it's a valid app icon
+        // but not a loadable image asset), crashing this step. The imagesets mirror
+        // each app's icon art precisely for in-UI use.
         let identifier = Bundle.main.bundleIdentifier ?? ""
         let appIconName: String
-        if identifier.hasSuffix(".downloader") || identifier.hasSuffix(".downloader.appex") {
+        if identifier.contains(".downloader") {
             appIconName = "AppIconImageDownloader"
-        } else if identifier.hasSuffix(".pricetracker") || identifier.hasSuffix(".pricetracker.appex") {
+        } else if identifier.contains(".pricetracker") {
             appIconName = "AppIconImagePriceTracker"
         } else {
             appIconName = "AppIconImageReader"
         }
-        return UIImage(named: appIconName) ?? UIImage(named: "luna-app-mark")
+        return UIImage(named: appIconName)
     }
 
     // MARK: - Notification banner

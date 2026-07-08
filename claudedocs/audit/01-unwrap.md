@@ -236,7 +236,6 @@ display, and archive all agree on one canonical URL.
 incoming URL/string
    └─ stage 1: URLUnwrapper.unwrap(url)         // wrapper → real article (+ strip)
         └─ UnwrapResult.url
-             └─ stage 2: classifier(url)        // document? youtube? platform? product? article?
 ```
 
 Input gates call `unwrapOffline` first (so the http gate sees a real URL), then

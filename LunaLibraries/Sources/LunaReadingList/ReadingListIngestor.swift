@@ -3,7 +3,6 @@
 //  Luna
 //
 
-import LunaYouTubeAPI
 import LunaReaderUI
 import LunaArchiveReader
 import LunaMediaDownload
@@ -26,7 +25,6 @@ public final class ReadingListIngestor {
     private let store = ReadingListStore.shared
     private let fetcher = ArticleFetcher()
     private let extractor = ArticleExtractor()
-    private let youTubeMetadataFetcher: YouTubeMetadataFetching = YouTubeOEmbedFetcher()
     /// Records a `Replay` for each save (diagnostics). `NoopReplayRecorder` keeps
     /// recording off the hot path optional — a save runs identically without it.
     private let recorder: ReplayRecording
@@ -221,14 +219,13 @@ public final class ReadingListIngestor {
         }
     }
 
-    /// Ingests a recognized YouTube video outcome (best-effort metadata).
-    fileprivate func handleVideo(itemID: String?, for item: ReadingListItem, replayID: UUID?) async {
-        if let videoID = itemID {
-            await ingestYouTubeVideo(item, videoID: videoID)
-        } else {
-            store.markFailed(item.id)
-        }
-        await terminateNonArticle(replayID, itemID: item.id, note: "youtube video \(itemID ?? "?")")
+    /// Ingests a recognized video outcome.
+    fileprivate func handleVideo(
+        _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem, replayID: UUID?
+    ) async {
+        await ingestPlatformItem(
+            item, match: PlatformMatch(platform: platform, itemID: itemID, sourceService: nil))
+        await terminateNonArticle(replayID, itemID: item.id, note: "video \(platform)")
     }
 
     /// Ingests a recognized social/audio platform outcome (best-effort metadata).
@@ -241,7 +238,7 @@ public final class ReadingListIngestor {
         await terminateNonArticle(replayID, itemID: item.id, note: "platform \(platform)")
     }
 
-    /// Terminates the replay for a non-article item (video/platform): these never
+    /// Terminates the replay for a non-article item: these never
     /// `.fail`, so success reflects whether the item ended `.ready`. Media art is
     /// recorded by reference only (never bytes) before terminating.
     private func terminateNonArticle(_ replayID: UUID?, itemID: UUID, note: String) async {
@@ -387,31 +384,6 @@ public final class ReadingListIngestor {
         let updated = store.saveContent(content, for: item)
         if updated.state == .ready {
             ArticleSendCoordinator.shared.articleBecameReady(updated)
-        }
-    }
-
-    /// Video ingestion: oEmbed title/channel + thumbnail download; no article
-    /// content. On first readiness, the watch-later auto-add hook runs (never
-    /// for repeat presses — duplicates don't re-ingest).
-    private func ingestYouTubeVideo(_ item: ReadingListItem, videoID: String) async {
-        do {
-            let metadata = try await youTubeMetadataFetcher.fetchMetadata(videoID: videoID)
-            var thumbnailFileName: String?
-            if let thumbnail = try? await youTubeMetadataFetcher.fetchThumbnail(videoID: videoID) {
-                let fileName = "\(item.id.uuidString)-thumb.jpg"
-                try? thumbnail.write(
-                    to: store.articlesDirectory.appendingPathComponent(fileName),
-                    options: .atomic)
-                thumbnailFileName = fileName
-            }
-            guard let updated = store.saveYouTubeMetadata(
-                videoID: videoID, title: metadata.title,
-                channelName: metadata.channelName,
-                thumbnailFileName: thumbnailFileName, for: item.id)
-            else { return }
-            await WatchLaterAutoAdder.shared.videoBecameReady(updated)
-        } catch {
-            store.markFailed(item.id)
         }
     }
 
@@ -707,8 +679,8 @@ public struct IngestorOutcomePresenter: OutcomePresenter {
             await ingestor.persistArticle(content, html: html, for: item, url: url, replayID: replayID)
         case let .product(product, _):
             await ingestor.ingestProductTracker(item, url: url, product: product, replayID: replayID)
-        case let .video(_, itemID):
-            await ingestor.handleVideo(itemID: itemID, for: item, replayID: replayID)
+        case let .video(platform, itemID):
+            await ingestor.handleVideo(platform, itemID: itemID, for: item, replayID: replayID)
         case let .social(platform, itemID):
             await ingestor.handlePlatform(platform, service: nil, itemID: itemID, for: item, replayID: replayID)
         case let .audio(platform, service, itemID):

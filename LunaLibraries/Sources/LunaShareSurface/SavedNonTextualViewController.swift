@@ -18,7 +18,7 @@ import UIKit
 /// when there are friends — shows a scrolling friend list; tapping a friend QUEUES
 /// the send to the App Group (the app delivers it on next launch). The confirmation
 /// content sits near the top to leave room for the friend list. No eBook / system
-/// share. YouTube embeds play inline. Done dismisses the extension.
+/// share. Done dismisses the extension.
 ///
 /// For downloadable platforms (X / Instagram / TikTok / Facebook) the media is
 /// fetched and shown INLINE: when the "Auto-download media" setting is ON the file
@@ -68,7 +68,7 @@ public final class SavedNonTextualViewController: UIViewController {
     private let previewSpinner = DotMatrixSpinnerView(side: 36)
     /// A large media icon shown in the pending state (before any download starts).
     private let pendingIconView = UIImageView()
-    /// A YouTube-style play overlay shown when the downloaded media is a video.
+    /// A play overlay shown when the downloaded media is a video.
     private let playOverlay = UIView()
     /// Shown (grey box + message) when media exists but its preview couldn't render.
     private let previewPlaceholder = UILabel()
@@ -120,7 +120,7 @@ public final class SavedNonTextualViewController: UIViewController {
         savedLabel.textAlignment = .center
         savedLabel.numberOfLines = 0
 
-        // A video (YouTube) shows a STATIC poster + play button — never an autoplaying
+        // A video shows a static poster + play button, never an autoplaying
         // player; other platforms show the confirmation badge.
         let topView: UIView
         if let posterURL = content.staticPreviewImageURL {
@@ -483,7 +483,7 @@ public final class SavedNonTextualViewController: UIViewController {
     }
 
     /// Styles `badge` as a system-style play button: a frosted dark circle with a
-    /// white play glyph (like Photos / AVKit), replacing the old YouTube-red badge.
+    /// white play glyph.
     private static func styleAsSystemPlayButton(_ badge: UIView, diameter: CGFloat) {
         badge.layer.cornerRadius = diameter / 2
         badge.clipsToBounds = true

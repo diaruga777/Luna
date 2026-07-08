@@ -189,7 +189,6 @@ nothing accumulates across saves.
 
 | Entry point | File | What it records |
 |---|---|---|
-| Background ingest (paste / manual / **all app intents** via `handleSavePress`) | `Luna/ReadingList/ReadingListIngestor.swift` `ingest` | begin; `unwrap`; wraps the resolver fetcher with `RecordingHTMLFetcher`; `resolveDecision`; `extraction`; terminate on outcome; non-article items (`youtube`/`platform`/`document`) record a note + thumbnail `mediaReference` and terminate |
 | Silent bypass loop | `ReaderKit/ArticleResolver.swift` `resolve(…, replayLog:)` | `bypassStrategy` per silent strategy (name + succeeded) |
 | Every URLSession fetch | `ReaderKit/RecordingHTMLFetcher.swift` | `networkRequest` + `networkResponse` (HTML body verbatim; error on failure) |
 | Share / action extension inline ingest | `ShareKit/ShareViewController.swift` `ingestArticleThenComplete` | begin; wrapped fetcher; `resolveDecision`/`extraction`; terminate |
@@ -229,7 +228,6 @@ events — and checks the app reproduces the recorded terminal outcome.
 
 **How it plays a replay** (`ReplayPlayer.play`):
 1. Decode the `Replay` (must be `schemaVersion == 1`).
-2. Reject non-article saves (a `note` starting `youtube`/`platform`/`document`) —
    only the article path is driven today.
 3. Pick the URL: the recorded `unwrap` target if present (the live news-aggregator
    unwrap issues raw `URLSession` requests OUTSIDE the `HTMLFetching` seam, so it
@@ -259,7 +257,6 @@ recorded state (`failed`/`userReported`) is satisfied by any non-`success` outco
   watch the test fail, fix the pipeline until it passes.
 
 **Caveats / not-yet-replayable:**
-- Non-article saves (YouTube/platform/document/**price tracker**) carry a `note`,
   not resolvable article HTML, so the harness rejects them
   (`PlaybackError.unsupportedSource`). A price-tracker save (see
   `claudedocs/price-tracking.md`) records `note("product detected: …")`, its per-URL

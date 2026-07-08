@@ -10,7 +10,7 @@ import LunaDesignSystem
 import UIKit
 
 /// Per-capture-source auto-send configuration for one ereader destination
-/// (Kindle or Boox). Lets the user choose which sources auto-send: App Intents
+/// Lets the user choose which sources auto-send: App Intents
 /// (Shortcuts) and in-app saves via the send mode, plus on/off for email and
 /// the share sheet & paste.
 final class AutoSendBySourceScreen: NavHeaderTableController {

@@ -4,7 +4,6 @@
 //
 
 import LunaIntents
-import LunaYouTubeAPI
 import LunaPlatforms
 import LunaStorage
 import LunaURLClassification
@@ -41,13 +40,11 @@ public struct SaveFromAppIntent: AppIntent {
     public enum SaveError: Error, CustomLocalizedStringResourceConvertible {
         case missingValues
         case notFound
-        case youTubeNotSignedIn
 
         public var localizedStringResource: LocalizedStringResource {
             switch self {
             case .missingValues: return "Nothing to save was provided."
             case .notFound: return "Couldn't find a matching item."
-            case .youTubeNotSignedIn: return "Sign in to YouTube in Luna's settings first."
             }
         }
     }
@@ -76,8 +73,6 @@ public struct SaveFromAppIntent: AppIntent {
         let platform = AppNamePlatform.platform(forAppName: app)
 
         switch platform {
-        case .youtube:
-            try await saveYouTube(channel: fields.first, title: fields.dropFirst().first)
         case .bluesky:
             let query = BlueskyPostQuery.searchQuery(
                 handle: fields.first ?? "", text: fields.dropFirst().first ?? "")
@@ -145,18 +140,6 @@ public struct SaveFromAppIntent: AppIntent {
         case .instagram: return .instagram
         case .facebook: return .facebook
         default: return nil
-        }
-    }
-
-    private func saveYouTube(channel: String?, title: String?) async throws {
-        do {
-            _ = try await YouTubeVideoSave.findAndSave(channel: channel ?? "", title: title ?? "")
-        } catch YouTubeVideoSave.FindFailure.notSignedIn {
-            throw SaveError.youTubeNotSignedIn
-        } catch YouTubeVideoSave.FindFailure.badQuery {
-            throw SaveError.missingValues
-        } catch is YouTubeVideoSave.FindFailure {
-            throw SaveError.notFound
         }
     }
 

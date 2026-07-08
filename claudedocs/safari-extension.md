@@ -117,7 +117,6 @@ Downloader-platform flow:
    - `readerAppClipURL` — `LunaReaderAppClipURL` from `LunaSafari/Info.plist`.
    - `downloaderAppClipURL` — `LunaDownloaderAppClipURL` from `LunaSafari/Info.plist`.
 2. Before article heuristics run, content.js recognizes Downloader-platform hosts mirrored
-   from `PlatformRecognizer` (YouTube, X/Twitter, Bluesky, Reddit, TikTok, Instagram,
    Facebook, Spotify, Apple Music, Apple Podcasts). These pages are never classified as
    articles by text length, even when a caption/comment body is long.
 3. On a recognized platform URL, the button says "Download in Luna". With the Downloader

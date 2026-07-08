@@ -14,17 +14,16 @@ import os
 /// target explicit sends.
 public enum ArticleDestinationID {
     public static let kindle = "kindle"
-    public static let boox = "boox"
 }
 
-/// One ereader an article can be delivered to (Kindle email, Boox cloud, …).
+/// One destination an article can be delivered to.
 /// The coordinator's gating/state logic is destination-agnostic; each
 /// destination just knows whether it's configured, when it auto-sends, and how
 /// to deliver an EPUB.
 public protocol ArticleDestination {
     /// Stable id (see `ArticleDestinationID`), used as the per-item state key.
     var id: String { get }
-    /// User-facing name ("Kindle", "Boox").
+    /// User-facing name.
     var displayName: String { get }
     /// Whether sends can actually go out (credentials/config present).
     var isConfigured: Bool { get }
@@ -153,7 +152,7 @@ public final class ArticleSendCoordinator {
         now: @escaping () -> Date = Date.init
     ) {
         self.store = store
-        self.destinations = destinations ?? [KindleDestination(), BooxDestination()]
+        self.destinations = destinations ?? [KindleDestination()]
         self.retryPolicy = retryPolicy
         self.now = now
     }
@@ -320,7 +319,6 @@ public final class ArticleSendCoordinator {
 
     private static func isHardFailure(_ error: Error) -> Bool {
         if error is AccountEmailSender.NotConfiguredError { return true }
-        if error is Send2BooxClient.NotConfiguredError { return true }
         let text = String(describing: error).lowercased()
         return text.contains("auth")
             || text.contains("not signed in")

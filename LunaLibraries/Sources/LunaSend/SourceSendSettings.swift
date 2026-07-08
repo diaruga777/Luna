@@ -7,7 +7,7 @@ import LunaModels
 import Foundation
 
 /// Per-capture-source auto-send configuration for one ereader destination
-/// (Kindle, Boox). Each source can be enabled independently:
+/// Each source can be enabled independently:
 ///
 ///   • App Intents (Shortcuts) and in-app saves — governed by the destination's
 ///     existing send mode (off / all saves / double save).
@@ -27,7 +27,6 @@ public enum SourceSendSettings {
     public static func appIntentsMode(forDestination id: String) -> ArticleSendMode {
         switch id {
         case ArticleDestinationID.kindle: return KindleSendSettings.sendMode
-        case ArticleDestinationID.boox: return BooxSendSettings.sendMode
         default: return .off
         }
     }
@@ -35,7 +34,6 @@ public enum SourceSendSettings {
     public static func setAppIntentsMode(_ mode: ArticleSendMode, forDestination id: String) {
         switch id {
         case ArticleDestinationID.kindle: KindleSendSettings.sendMode = mode
-        case ArticleDestinationID.boox: BooxSendSettings.sendMode = mode
         default: break
         }
     }

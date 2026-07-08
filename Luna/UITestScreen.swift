@@ -43,7 +43,6 @@ enum UITestScreen: String, CaseIterable {
 
     // Reader-adjacent extension/host screens.
     case shareReaderArticle
-    case shareMediaYouTube
     case shareMediaPlatform
     case actionReaderArticle
 
@@ -129,12 +128,6 @@ enum UITestScreenBuilder {
             }
             let reader = ShareReaderViewController(url: url, mode: .reader, onDone: {})
             return UINavigationController(rootViewController: reader)
-
-        case .shareMediaYouTube:
-            let screen = SavedNonTextualViewController(
-                articleURLString: "https://youtube.com/watch?v=dQw4w9WgXcQ",
-                content: .youTube(videoID: "dQw4w9WgXcQ"), onDone: {})
-            return UINavigationController(rootViewController: screen)
 
         case .shareMediaPlatform:
             let screen = SavedNonTextualViewController(

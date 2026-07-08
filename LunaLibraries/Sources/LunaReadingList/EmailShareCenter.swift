@@ -103,7 +103,7 @@ public final class EmailShareCenter {
         item: ReadingListItem?, urlString: String, title: String?, marker: LunaShareMarker
     ) -> (body: RenderedEmailBody, images: [InlineImage]) {
         // Article / document: render the full text with inline images.
-        if let item, item.priceTracker == nil, item.platform == nil, !item.isYouTubeVideo,
+        if let item, item.priceTracker == nil, item.platform == nil,
            let content = store.content(for: item), content.isArticleLike {
             let rendered = EmailContentRenderer.renderArticle(
                 content, originalURL: urlString, marker: marker)
@@ -139,7 +139,6 @@ public final class EmailShareCenter {
     private func kindString(for item: ReadingListItem?) -> String {
         guard let item else { return "link" }
         if item.priceTracker != nil { return "product" }
-        if item.isYouTubeVideo { return "video" }
         if let platform = item.platform { return platform.rawValue }
         if item.sanitizedDocumentType != nil { return "document" }
         return "article"

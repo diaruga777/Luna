@@ -19,7 +19,6 @@ public enum ReadingListSubtitle {
     /// Human-readable destination names, keyed by destination id.
     public static let destinationNames: [String: String] = [
         ArticleDestinationID.kindle: "Kindle",
-        ArticleDestinationID.boox: "Boox",
     ]
 
     /// Words read per minute used for the reading-time estimate.
@@ -46,14 +45,12 @@ public enum ReadingListSubtitle {
     ) -> [String] {
         var parts = [leadingLabel, formattedDate]
 
-        if !item.isYouTubeVideo {
-            if showReadingTime, let minutes = readingTimeMinutes(wordCount: item.wordCount) {
-                parts.append("\(minutes) min")
-            }
-            if showReadingProgress, item.readState != .read,
-               let progress = item.readingProgress, progress > 0.01 {
-                parts.append("\(Int(progress * 100))%")
-            }
+        if showReadingTime, let minutes = readingTimeMinutes(wordCount: item.wordCount) {
+            parts.append("\(minutes) min")
+        }
+        if showReadingProgress, item.readState != .read,
+           let progress = item.readingProgress, progress > 0.01 {
+            parts.append("\(Int(progress * 100))%")
         }
 
         for (destinationID, state) in item.sendStates.sorted(by: { $0.key < $1.key }) {

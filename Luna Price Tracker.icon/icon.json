@@ -1,0 +1,190 @@
+{
+  "features" : [
+    "refractivity",
+    "specular-location"
+  ],
+  "fill" : {
+    "linear-gradient" : [
+      "srgb:0.00000,0.04502,0.01979,1.00000",
+      "srgb:0.00000,0.07491,0.00000,1.00000"
+    ]
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "Ellipse 16.svg",
+          "name" : "Ellipse 16",
+          "position" : {
+            "scale" : 3,
+            "translation-in-points" : [
+              0,
+              85
+            ]
+          }
+        }
+      ],
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : false,
+        "strength" : -1
+      },
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 4
+      },
+      "specular" : "inside",
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.9
+      }
+    },
+    {
+      "blend-mode" : "hard-light",
+      "blur-material" : 0.3,
+      "hidden" : false,
+      "layers" : [
+        {
+          "fill" : {
+            "linear-gradient" : [
+              "srgb:0.00000,0.26503,0.22018,1.00000",
+              "srgb:0.25096,0.75913,0.70421,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 1
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0
+              }
+            }
+          },
+          "image-name" : "Group 13(1).svg",
+          "name" : "Group 13(1)",
+          "position" : {
+            "scale" : 3,
+            "translation-in-points" : [
+              40,
+              125
+            ]
+          }
+        },
+        {
+          "fill" : {
+            "linear-gradient" : [
+              "display-p3:0.15294,1.00000,0.58824,1.00000",
+              "srgb:0.02957,1.00000,0.81744,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.15844015445009216,
+                "y" : 0.11615356976716716
+              },
+              "stop" : {
+                "x" : 0.7268780218809346,
+                "y" : 0.7178534989111411
+              }
+            }
+          },
+          "image-name" : "PriceTag 2.svg",
+          "name" : "PriceTag 2",
+          "position" : {
+            "scale" : 2.5,
+            "translation-in-points" : [
+              30,
+              120
+            ]
+          }
+        }
+      ],
+      "lighting" : "combined",
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : true,
+        "strength" : -1
+      },
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0.6
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.4
+      }
+    },
+    {
+      "blur-material" : 1,
+      "layers" : [
+        {
+          "fill" : {
+            "linear-gradient" : [
+              "srgb:0.14870,0.64325,0.52304,1.00000",
+              "srgb:0.00078,0.22248,0.05279,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5,
+                "y" : 0
+              },
+              "stop" : {
+                "x" : 0.5,
+                "y" : 0.283957788321349
+              }
+            }
+          },
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "Polygon 1.svg",
+          "name" : "Polygon 1",
+          "position" : {
+            "scale" : 1.1,
+            "translation-in-points" : [
+              0,
+              170
+            ]
+          }
+        }
+      ],
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : false,
+        "strength" : 1
+      },
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 4
+      },
+      "specular" : "outside",
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.2
+      }
+    },
+    {
+      "layers" : [
+        {
+          "hidden" : false,
+          "image-name" : "Group 9.svg",
+          "name" : "Group 9"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.6
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

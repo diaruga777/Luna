@@ -38,7 +38,7 @@ public final class OnboardingAnimationView: UIView {
     }
 
     private let kind: Kind
-    private let accent = GlassStyle.readingAccent
+    private let accent = GlassStyle.lunaBrandAccent
     private var didBuildIllustration = false
 
     public init(kind: Kind) {

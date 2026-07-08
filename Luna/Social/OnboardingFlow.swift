@@ -26,7 +26,12 @@ public enum OnboardingFlow {
     ) -> UIViewController {
         let nav = UINavigationController()
         nav.setNavigationBarHidden(true, animated: false)
-        nav.installDotMatrixTransitions()
+        // Deliberately NOT installing the Dot Matrix pixel-wipe here. Each onboarding
+        // step carries a dense, continuously-animating dot-matrix backdrop, and the
+        // wipe's `drawHierarchy(afterScreenUpdates: true)` snapshot of the incoming
+        // step forces a synchronous render-server commit of that whole backdrop —
+        // which stalled the step-to-step push by ~3 s on device. A plain UIKit push
+        // takes no snapshot, so onboarding transitions stay instant.
         if stores.emailAccountStore.isConfigured, let account = stores.emailAccountStore.account {
             nav.viewControllers = [existingAccountStep(
                 stores: stores, accountAddress: account.address, onFinished: onFinished)]

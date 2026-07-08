@@ -80,37 +80,29 @@ public final class OnboardingStepViewController: UIViewController {
         view.backgroundColor = .systemBackground
         navigationItem.hidesBackButton = true
 
-        // An animated illustration of the iOS change, or the static icon.
+        let accent = GlassStyle.lunaBrandAccent
+
+        // An animated illustration of the iOS change, or — for steps without one —
+        // the step's SF symbol in a brand-colored app-icon-style rounded tile.
         let topVisual: UIView
         if let animationKind {
             let animation = OnboardingAnimationView(kind: animationKind)
             animationView = animation
             topVisual = animation
         } else {
-            let icon = UIImageView(image: UIImage(systemName: symbolName,
-                withConfiguration: UIImage.SymbolConfiguration(pointSize: 64, weight: .semibold)))
-            icon.tintColor = GlassStyle.readingAccent
-            icon.contentMode = .center
-            topVisual = icon
+            topVisual = Self.iconTile(symbol: symbolName, accent: accent)
         }
 
-        // The visual sits on an ambient dot-matrix panel — every step (including
-        // the static-icon email step) shares the app's dot-matrix motif.
+        // The visual sits on a plain background — a clean, Apple-style onboarding
+        // canvas. (An earlier ambient dot-matrix panel here was both visually noisy
+        // and, snapshotted by the pixel-wipe transition, the source of a multi-second
+        // step-to-step hang; see OnboardingFlow.make.)
         let visualPanel = UIView()
-        let backdrop = OnboardingDotMatrixBackdrop()
-        backdrop.translatesAutoresizingMaskIntoConstraints = false
-        visualPanel.addSubview(backdrop)
         topVisual.translatesAutoresizingMaskIntoConstraints = false
         visualPanel.addSubview(topVisual)
-        // Panel height: the visual plus breathing room, but never smaller than a
-        // presentable dot panel (matters for the email step's small static icon).
         let panelHugsVisual = visualPanel.heightAnchor.constraint(equalTo: topVisual.heightAnchor, constant: 32)
         panelHugsVisual.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            backdrop.topAnchor.constraint(equalTo: visualPanel.topAnchor),
-            backdrop.bottomAnchor.constraint(equalTo: visualPanel.bottomAnchor),
-            backdrop.leadingAnchor.constraint(equalTo: visualPanel.leadingAnchor),
-            backdrop.trailingAnchor.constraint(equalTo: visualPanel.trailingAnchor),
             topVisual.centerXAnchor.constraint(equalTo: visualPanel.centerXAnchor),
             topVisual.centerYAnchor.constraint(equalTo: visualPanel.centerYAnchor),
             panelHugsVisual,
@@ -141,7 +133,7 @@ public final class OnboardingStepViewController: UIViewController {
         if let primaryAction {
             primaryButton.setTitle(primaryAction.title, for: .normal)
             primaryButton.titleLabel?.font = .systemFont(ofSize: 19, weight: .semibold)
-            primaryButton.backgroundColor = GlassStyle.readingAccent
+            primaryButton.backgroundColor = accent
             primaryButton.setTitleColor(.white, for: .normal)
             primaryButton.layer.cornerRadius = 14
             primaryButton.heightAnchor.constraint(equalToConstant: 52).isActive = true
@@ -152,16 +144,16 @@ public final class OnboardingStepViewController: UIViewController {
         if let secondaryAction {
             secondaryButton.setTitle(secondaryAction.title, for: .normal)
             secondaryButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .medium)
-            secondaryButton.tintColor = GlassStyle.readingAccent
+            secondaryButton.tintColor = accent
             secondaryButton.addTarget(self, action: #selector(secondaryTapped), for: .touchUpInside)
             buttonStack.addArrangedSubview(secondaryButton)
         }
 
         continueButton.setTitle(continueTitle, for: .normal)
         continueButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .medium)
-        continueButton.tintColor = primaryAction == nil ? .white : GlassStyle.readingAccent
+        continueButton.tintColor = primaryAction == nil ? .white : accent
         if primaryAction == nil {
-            continueButton.backgroundColor = GlassStyle.readingAccent
+            continueButton.backgroundColor = accent
             continueButton.layer.cornerRadius = 14
             continueButton.heightAnchor.constraint(equalToConstant: 52).isActive = true
         }
@@ -283,6 +275,31 @@ public final class OnboardingStepViewController: UIViewController {
             view.widthAnchor.constraint(equalToConstant: 40),
             view.heightAnchor.constraint(equalToConstant: 40),
         ])
+    }
+
+    /// A brand-colored, app-icon-style rounded tile holding the step's SF symbol —
+    /// the "hero" visual for steps without a live illustration (e.g. the email step),
+    /// so a lone glyph on white doesn't read as unfinished.
+    private static func iconTile(symbol: String, accent: UIColor) -> UIView {
+        let tile = UIView()
+        tile.backgroundColor = accent
+        tile.layer.cornerRadius = 26
+        tile.layer.cornerCurve = .continuous
+        tile.translatesAutoresizingMaskIntoConstraints = false
+
+        let glyph = UIImageView(image: UIImage(systemName: symbol,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 52, weight: .semibold)))
+        glyph.tintColor = .white
+        glyph.contentMode = .center
+        glyph.translatesAutoresizingMaskIntoConstraints = false
+        tile.addSubview(glyph)
+        NSLayoutConstraint.activate([
+            tile.widthAnchor.constraint(equalToConstant: 108),
+            tile.heightAnchor.constraint(equalToConstant: 108),
+            glyph.centerXAnchor.constraint(equalTo: tile.centerXAnchor),
+            glyph.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
+        ])
+        return tile
     }
 
     @objc private func primaryTapped() { primaryAction?.handler(self) }

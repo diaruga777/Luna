@@ -93,9 +93,12 @@
     // common overlay containers, un-blur/un-clamp the body, restore scroll, un-lazy
     // images. Re-runs briefly to cover late hydration.
     function revealArticle() {
-        // Toast once per page, and only when this actually unlocked something:
-        // the page carried paywall markers, or the cleanup removed/revealed a
-        // paywall node. (The UNHIDE class sweep doesn't count — names like
+        // Toast once per page, and ONLY when the cleanup actually removed or revealed a
+        // recognized paywall overlay node (announced from inside `clean()`). Detecting a
+        // paywall MARKER is NOT enough: many sites (e.g. New Statesman) serve the full
+        // body behind a client-side registration nag whose container we don't remove and
+        // don't need to — there's nothing to unlock, so claiming "Unlocked with Luna"
+        // there is dishonest. (The UNHIDE class sweep also doesn't count — names like
         // "fade" are common on unrelated elements.)
         var announced = false;
         function announceUnlock() {
@@ -103,7 +106,6 @@
             announced = true;
             showUnlockToast();
         }
-        if (looksPaywalled()) { announceUnlock(); }
         var REMOVE = [
             "div.paywall", "div.paywall-content", "div.meteredContent", "div#full-paywall",
             "aside#paywall", "div.subscription-wall", "div#tp-regwall", "div#tp-modal",

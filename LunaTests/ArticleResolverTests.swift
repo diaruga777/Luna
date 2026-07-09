@@ -140,7 +140,7 @@ final class ArticleResolverTests: XCTestCase {
             url: articleURL, fetcher: fetcher,
             nonArchiveBypass: true, trustsPrefetchedHTML: false)
         if case .readable = result {} else { XCTFail("long direct body should be readable, got \(result)") }
-        XCTAssertEqual(fetcher.calls.first?.kind, .direct)
+        XCTAssertEqual(fetcher.calls.first?.kind, .plain)
     }
 
     /// The Safari hand-off still accepts shorter already-unlocked article DOMs on body

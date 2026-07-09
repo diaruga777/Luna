@@ -97,16 +97,24 @@ public struct SocialMediaResolver: SocialMediaResolving {
             if !assets.isEmpty { return assets }
         }
 
-        // `fb.watch` short links 400 with the desktop UA, but the mobile page
-        // exposes the canonical long video URL. Resolve that, then fetch the long
-        // URL with the desktop UA so `browser_native_*_url` is present.
+        // The desktop UA 400s on some pages (notably `/reel/<id>` links and
+        // `fb.watch` short links), but the mobile page loads. Prefer resolving its
+        // canonical long-form video URL and refetching that with the desktop UA (its
+        // inline JSON carries the HD `browser_native_*_url`); if the canonical can't
+        // be resolved or fetched, the mobile page's OWN `og:video` tag carries the
+        // real (SD) playable MP4. A reel's canonical is the reel URL itself, so for
+        // reels this og:video fallback is the only asset — without it they resolved
+        // to "no media" even though the video was right there on the page.
         if let data = await fetch(htmlRequest(url)),
-           let html = String(data: data, encoding: .utf8),
-           let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html),
-           canonical.absoluteString != url.absoluteString,
-           let canonicalData = await fetch(facebookVideoPageRequest(canonical)),
-           let canonicalHTML = String(data: canonicalData, encoding: .utf8) {
-            let assets = FacebookMediaParser.assets(fromHTML: canonicalHTML)
+           let html = String(data: data, encoding: .utf8) {
+            if let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html),
+               canonical.absoluteString != url.absoluteString,
+               let canonicalData = await fetch(facebookVideoPageRequest(canonical)),
+               let canonicalHTML = String(data: canonicalData, encoding: .utf8) {
+                let assets = FacebookMediaParser.assets(fromHTML: canonicalHTML)
+                if !assets.isEmpty { return assets }
+            }
+            let assets = FacebookMediaParser.assets(fromHTML: html)
             if !assets.isEmpty { return assets }
         }
 

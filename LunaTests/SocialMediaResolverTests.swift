@@ -84,6 +84,35 @@ final class SocialMediaResolverTests: XCTestCase {
         ])
     }
 
+    func testFacebookReelDesktop400FallsBackToMobilePageOpenGraphVideo() async {
+        // `/reel/<id>` links 400 with the desktop UA (fetch → nil), and their
+        // canonical is the reel URL itself, so canonical resolution is a no-op. The
+        // mobile page's own `og:video` tag is the real playable MP4 — before the
+        // fallback these reels resolved to "no media".
+        // The canonical (no query) differs from the shared URL (`?fs=e`), so the
+        // canonical page IS fetched — but it's another `/reel/` page, which also
+        // 400s on the desktop UA. Only the mobile UA gets a body. So: the desktop
+        // page 400s (nil), and every mobile fetch returns the reel HTML with og:video.
+        let source = URL(string: "https://www.facebook.com/reel/1661338298308685/?fs=e")!
+        var userAgents: [String] = []
+        let resolver = SocialMediaResolver { request in
+            let ua = request.value(forHTTPHeaderField: "User-Agent") ?? ""
+            userAgents.append(ua)
+            guard ua == MediaDownloadHTTP.browserUserAgent else { return nil } // desktop 400s
+            return Data(#"""
+            <link rel="canonical" href="https://www.facebook.com/reel/1661338298308685/" />
+            <meta property="og:image" content="https://cdn.example.com/poster.jpg">
+            <meta property="og:video" content="https://video.example.com/reel.mp4?x=1&amp;y=2">
+            """#.utf8)
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
+        XCTAssertEqual(assets, [
+            MediaAsset(url: URL(string: "https://video.example.com/reel.mp4?x=1&y=2")!, kind: .video),
+        ])
+    }
+
     func testFacebookInlinePlayableURLResolvesAsVideoBeforePoster() {
         let html = #"""
         <meta property="og:image" content="https://cdn.example.com/poster.jpg">

@@ -51,6 +51,15 @@ public final class ReadingListItemCell: UITableViewCell {
     }
 
     private static let thumbSize = CGSize(width: 96, height: 54)
+    /// How long an `.art` cache miss waits before revealing the spinner. A cover
+    /// decodes off the main thread in a frame or two, so the common case (a cold
+    /// launch re-decoding on-disk art into the empty in-memory cache) lands the image
+    /// before this fires and never flashes a spinner — only a genuinely slow decode
+    /// reaches it. The gray placeholder well covers the gap.
+    private static let spinnerRevealDelay: TimeInterval = 0.25
+    /// Crossfade used when a decoded cover lands on a previously-empty well, so the
+    /// cold-launch load reads as a gentle fade-in rather than a pop.
+    private static let artFadeInDuration: TimeInterval = 0.2
     /// Container aspect ratio; art whose ratio stays within [R/2, R*2] is shown
     /// aspect-fit (its smaller rendered dimension then fills ≥ half the well);
     /// more extreme ratios switch to aspect-fill so they never letterbox below half.
@@ -78,6 +87,10 @@ public final class ReadingListItemCell: UITableViewCell {
     private var loadToken: UInt64 = 0
     /// Action for the optional trailing button (e.g. the pasteboard row's Save).
     private var onTrailingButton: (() -> Void)?
+    /// The pending "reveal the spinner" timer for an in-flight art decode, cancelled
+    /// the moment the decode lands (image OR failure) so a fast/failed decode never
+    /// leaves a spinner behind. See `scheduleDeferredSpinner`.
+    private var deferredSpinner: DispatchWorkItem?
 
     public override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -184,6 +197,7 @@ public final class ReadingListItemCell: UITableViewCell {
         super.prepareForReuse()
         reuseKey = nil
         loadToken &+= 1   // invalidate any in-flight async decode
+        cancelDeferredSpinner()
         thumbImageView.image = nil
         setLockedOverlayVisible(false)
         spinner.stopAnimating()
@@ -278,17 +292,48 @@ public final class ReadingListItemCell: UITableViewCell {
             applyArt(cached, locked: locked)
         } else {
             thumbImageView.image = nil
-            spinner.startAnimating()
-            loadArt(path: path, token: loadToken, locked: locked)
+            // Defer the spinner: a disk decode usually lands first (see
+            // `spinnerRevealDelay`), so the placeholder well fades straight to the
+            // cover with no spinner flash. Only a slow decode reveals the spinner.
+            scheduleDeferredSpinner(token: loadToken)
+            loadArt(path: path, token: loadToken, locked: locked, fadeIn: true)
         }
     }
 
+    /// Reveals the spinner only if the decode for `token` hasn't landed within
+    /// `spinnerRevealDelay`. A reuse/reconfigure bumps `loadToken`, so a stale timer
+    /// no-ops; a landed image (well no longer empty) also cancels it.
+    private func scheduleDeferredSpinner(token: UInt64) {
+        spinner.stopAnimating()
+        deferredSpinner?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.loadToken == token, self.thumbImageView.image == nil else { return }
+            self.spinner.startAnimating()
+        }
+        deferredSpinner = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.spinnerRevealDelay, execute: work)
+    }
+
+    private func cancelDeferredSpinner() {
+        deferredSpinner?.cancel()
+        deferredSpinner = nil
+    }
+
     /// Sets `image` as the art (no spinner, correct content mode/tint). Main-thread.
-    private func applyArt(_ image: UIImage, locked: Bool = false) {
+    /// `fadeIn` crossfades onto an empty well (a cold-launch decode) when animations
+    /// are enabled; callers with an already-visible image apply instantly.
+    private func applyArt(_ image: UIImage, locked: Bool = false, fadeIn: Bool = false) {
         spinner.stopAnimating()
         thumbImageView.tintColor = nil
         thumbImageView.contentMode = Self.contentMode(for: image.size)
-        thumbImageView.image = image
+        if fadeIn, UIView.areAnimationsEnabled {
+            UIView.transition(with: thumbImageView, duration: Self.artFadeInDuration,
+                              options: .transitionCrossDissolve) {
+                self.thumbImageView.image = image
+            }
+        } else {
+            thumbImageView.image = image
+        }
         setLockedOverlayVisible(locked)
     }
 
@@ -300,7 +345,7 @@ public final class ReadingListItemCell: UITableViewCell {
     /// Cache miss only: decode (downsampled) off the main thread, populate the cache,
     /// then land the result iff this cell hasn't been reconfigured/recycled since
     /// (`loadToken` unchanged). Downsampling means we never hold the full-size bitmap.
-    private func loadArt(path: String, token: UInt64, locked: Bool) {
+    private func loadArt(path: String, token: UInt64, locked: Bool, fadeIn: Bool = false) {
         // Read the screen scale on the main thread; the detached decode must not touch
         // main-actor UIKit state.
         let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : 2
@@ -312,9 +357,10 @@ public final class ReadingListItemCell: UITableViewCell {
             if let image { Self.decodedCache.setObject(image, forKey: path as NSString) }
             await MainActor.run { [weak self] in
                 guard let self, self.loadToken == token else { return }
+                self.cancelDeferredSpinner()
                 self.spinner.stopAnimating()
                 guard let image else { return }
-                self.applyArt(image, locked: locked)
+                self.applyArt(image, locked: locked, fadeIn: fadeIn)
             }
         }
     }

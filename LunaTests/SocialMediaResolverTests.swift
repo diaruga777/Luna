@@ -55,33 +55,69 @@ final class SocialMediaResolverTests: XCTestCase {
         ])
     }
 
-    func testFacebookWatchShortLinkResolvesCanonicalLongPageThenVideo() async {
-        let source = URL(string: "https://fb.watch/IerlpQvlv-/?mibextid=wwXIfr")!
-        var requests: [(url: String, userAgent: String)] = []
+    func testFacebookReelResolvesViaVideoPluginEmbed() async {
+        // The logged-out reel/video PAGE is frequently a stripped login wall (only
+        // og:image, no video), so the `/plugins/video.php` embed — which returns the
+        // real `hd_src` MP4 for a public video — is tried FIRST, with the desktop UA.
+        // The tracking query (`?fs=…&mibextid=…`) is stripped from the embed's `href`.
+        let source = URL(string: "https://www.facebook.com/reel/1661338298308685/?fs=e&mibextid=wwXIfr&fs=e")!
+        var firstRequest: (url: String, userAgent: String)?
         let resolver = SocialMediaResolver { request in
-            requests.append((
-                request.url?.absoluteString ?? "",
-                request.value(forHTTPHeaderField: "User-Agent") ?? ""))
-            if requests.count == 1 {
-                return Data("<html><title>Error</title></html>".utf8)
+            let url = request.url?.absoluteString ?? ""
+            if firstRequest == nil {
+                firstRequest = (url, request.value(forHTTPHeaderField: "User-Agent") ?? "")
             }
-            if requests.count == 2 {
-                return Data(#"<meta property="og:url" content="https://www.facebook.com/TheOnion/videos/openai-announces-construction-of-new-data-center-on-top-of-sick-child/3928133123988446/">"#.utf8)
-            }
-            return Data(#"{"browser_native_hd_url":"https:\/\/video.example.com\/fbwatch.mp4"}"#.utf8)
+            guard url.contains("plugins/video.php") else { return nil }
+            return Data(#"{"hd_src":"https:\/\/video.example.com\/reel-hd.mp4","sd_src":"https:\/\/video.example.com\/reel-sd.mp4"}"#.utf8)
         }
 
         let assets = await resolver.resolveAssets(for: source)
 
-        XCTAssertEqual(requests.map(\.userAgent), [
-            MediaDownloadHTTP.desktopBrowserUserAgent,
-            MediaDownloadHTTP.browserUserAgent,
-            MediaDownloadHTTP.desktopBrowserUserAgent,
+        // HD is preferred over SD.
+        XCTAssertEqual(assets, [
+            MediaAsset(url: URL(string: "https://video.example.com/reel-hd.mp4")!, kind: .video),
         ])
-        XCTAssertEqual(requests.last?.url, "https://www.facebook.com/TheOnion/videos/openai-announces-construction-of-new-data-center-on-top-of-sick-child/3928133123988446/")
+        // The plugin embed is the first request, over the desktop UA.
+        XCTAssertEqual(firstRequest?.userAgent, MediaDownloadHTTP.desktopBrowserUserAgent)
+        XCTAssertTrue(firstRequest?.url.contains("plugins/video.php") ?? false)
+        // Its `href` is the clean permalink — tracking query dropped.
+        let href = firstRequest.flatMap { URLComponents(string: $0.url) }?
+            .queryItems?.first(where: { $0.name == "href" })?.value
+        XCTAssertEqual(href, "https://www.facebook.com/reel/1661338298308685/")
+    }
+
+    func testFacebookWatchShortLinkResolvesCanonicalLongPageThenVideo() async {
+        // When the plugin embed can't resolve a short link and the desktop page 400s,
+        // the fb.watch mobile page still exposes the canonical long-form video URL;
+        // that `/videos/` page is then fetched with the desktop UA for its inline JSON.
+        let source = URL(string: "https://fb.watch/IerlpQvlv-/?mibextid=wwXIfr")!
+        let canonical = "https://www.facebook.com/TheOnion/videos/openai-announces-construction-of-new-data-center-on-top-of-sick-child/3928133123988446/"
+        var requests: [(url: String, userAgent: String)] = []
+        let resolver = SocialMediaResolver { request in
+            let url = request.url?.absoluteString ?? ""
+            let ua = request.value(forHTTPHeaderField: "User-Agent") ?? ""
+            requests.append((url, ua))
+            if url.contains("plugins/video.php") {
+                return Data("<html>no embeddable video</html>".utf8) // plugin can't resolve the short link
+            }
+            if url == canonical {
+                return Data(#"{"browser_native_hd_url":"https:\/\/video.example.com\/fbwatch.mp4"}"#.utf8)
+            }
+            if ua == MediaDownloadHTTP.browserUserAgent {
+                return Data(#"<meta property="og:url" content="\#(canonical)">"#.utf8) // mobile page exposes canonical
+            }
+            return Data("<html><title>Error</title></html>".utf8) // fb.watch desktop page 400-equivalent
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
         XCTAssertEqual(assets, [
             MediaAsset(url: URL(string: "https://video.example.com/fbwatch.mp4")!, kind: .video),
         ])
+        XCTAssertTrue(requests.first?.url.contains("plugins/video.php") ?? false)
+        XCTAssertTrue(requests.contains {
+            $0.url == canonical && $0.userAgent == MediaDownloadHTTP.desktopBrowserUserAgent
+        })
     }
 
     func testFacebookReelDesktop400FallsBackToMobilePageOpenGraphVideo() async {

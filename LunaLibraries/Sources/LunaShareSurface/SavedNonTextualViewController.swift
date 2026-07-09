@@ -378,6 +378,13 @@ public final class SavedNonTextualViewController: UIViewController {
     /// Tapping the preview plays the downloaded video in an AVPlayerViewController.
     @objc private func previewTapped() {
         guard case .ready(let media) = mediaState, media.kind == .video else { return }
+        // Route to `.playback` so the video's audio is heard even when the ring/silent
+        // switch is on. Without this the extension inherits the default ambient session,
+        // which the hardware silent switch mutes — hence the "plays fine from Photos,
+        // silent in place" symptom.
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback)
+        try? session.setActive(true)
         let player = AVPlayer(url: media.fileURL)
         let playerVC = AVPlayerViewController()
         playerVC.player = player

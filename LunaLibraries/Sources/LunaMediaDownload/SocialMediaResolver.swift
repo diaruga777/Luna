@@ -81,14 +81,28 @@ public struct SocialMediaResolver: SocialMediaResolving {
     }
 
     /// Facebook reels/videos: the real playable video URL lives in the page's embedded
-    /// JSON (`browser_native_hd_url` / `playable_url` / …), NOT the Open Graph tags —
-    /// exactly like Instagram, a reel's crawler `og:` tags expose ONLY the poster still
-    /// behind a login wall, so the OLD og-first order saved a still from every video
-    /// reel. So fetch the FULL page with a browser UA FIRST and parse the video URL out
-    /// of the JSON; only if that yields nothing fall back to the og-unfurl tags
-    /// (video, then image). Best-effort: inaccessible/private posts expose no asset and
-    /// the caller keeps the saved link usable.
+    /// JSON (`hd_src`/`sd_src`, `browser_native_hd_url`, `playable_url`, …), NOT the
+    /// Open Graph tags — exactly like Instagram, a reel's crawler `og:` tags expose
+    /// ONLY the poster still behind a login wall, so an og-first order saves a still
+    /// from every video reel. Worse, Facebook frequently serves the logged-out
+    /// reel/video PAGE itself as a stripped login wall (only `og:image`, no video), so
+    /// the page can't be relied on. The `/plugins/video.php` embed, however, returns
+    /// the real `hd_src`/`sd_src` MP4 for a public video even when the page is walled —
+    /// it's the endpoint public downloaders use — so try it FIRST, then fall back to the
+    /// full page and finally the og-unfurl tags. Best-effort: private/removed posts
+    /// expose no asset and the caller keeps the saved link usable.
     private func resolveFacebook(url: URL) async -> [MediaAsset] {
+        // Video plugin embed: the most reliable keyless source. Returns HD `hd_src`
+        // even when the logged-out reel/video page is a login wall, and works straight
+        // from a `/reel/` URL. Needs the DESKTOP UA (the mobile UA gets a sourceless
+        // page).
+        if let embed = Self.facebookVideoPluginURL(for: url),
+           let data = await fetch(facebookVideoPageRequest(embed)),
+           let html = String(data: data, encoding: .utf8) {
+            let assets = FacebookMediaParser.assets(fromHTML: html)
+            if !assets.isEmpty { return assets }
+        }
+
         // Desktop browser page: carries the playable video URL in inline JSON.
         // Facebook's mobile logged-out page often exposes only `og:image`.
         if let data = await fetch(facebookVideoPageRequest(url)),
@@ -153,6 +167,19 @@ public struct SocialMediaResolver: SocialMediaResolving {
         request.setValue("facebookexternalhit/1.1", forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         return request
+    }
+
+    /// The `/plugins/video.php?href=<url>` embed URL for a Facebook video/reel. The
+    /// tracking query (`?fs=…&mibextid=…`) is dropped so `href` is the clean permalink
+    /// the plugin recognizes. Returns nil only if the URL can't be recomposed.
+    static func facebookVideoPluginURL(for url: URL) -> URL? {
+        guard var clean = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        clean.query = nil
+        clean.fragment = nil
+        guard let href = clean.url?.absoluteString else { return nil }
+        var plugin = URLComponents(string: "https://www.facebook.com/plugins/video.php")
+        plugin?.queryItems = [URLQueryItem(name: "href", value: href)]
+        return plugin?.url
     }
 
     private func facebookVideoPageRequest(_ url: URL) -> URLRequest {

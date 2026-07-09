@@ -176,7 +176,12 @@ public struct ArticleExtractor {
         [class*=endslate], [class*=livefyre], [class*=coral-], [class*=spot-im], \
         [class*=syndication], [id*=disqus_thread], #respond
         """
-        for element in try document.select(strippedSelectors) {
+        // Skip the page root itself: CMSs routinely put layout-state classes on
+        // <body>/<html> (WordPress emits e.g. `sidebar-right has-sidebar` on <body>),
+        // and a substring match there would `remove()` the ENTIRE document — zeroing
+        // this refined layer and forcing the untrimmed `basic` layer (which keeps the
+        // page's related/tag/footer rails) to win. New Statesman hit exactly this.
+        for element in try document.select(strippedSelectors) where !isPageRoot(element) {
             try element.remove()
         }
         try removePaywallJunk(in: document)
@@ -189,6 +194,13 @@ public struct ArticleExtractor {
             blocks = try extractBlocks(from: body, baseURL: baseURL)
         }
         return trimTrailingJunk(blocks)
+    }
+
+    /// The document root elements a class-substring strip must never delete, however
+    /// their class reads — removing `<body>`/`<html>` would take the whole page with it.
+    private func isPageRoot(_ element: Element) -> Bool {
+        let tag = element.tagName().lowercased()
+        return tag == "body" || tag == "html"
     }
 
     /// Removes actual subscription walls while preserving unlocked article bodies

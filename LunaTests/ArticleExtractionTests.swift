@@ -61,20 +61,33 @@ final class ArticleExtractionTests: XCTestCase {
         }
     }
 
-    // MARK: - The HTML lock signal can't be bypassed by a text-only path
+    // MARK: - HTML lock signal policy
 
-    /// A long, clean body (text alone reads fine) but the source HTML declares the
-    /// publisher lock — `isReadableArticle(content:html:)` must still reject it (the
-    /// false-negative guard: the lock can't be skipped by reaching for a text path).
-    func testHTMLLockRejectsEvenWhenBodyTextLooksClean() {
+    /// A clean body that only just clears the readable threshold can still be a teaser
+    /// whose CTA was stripped. The source HTML lock rejects that short/medium shape.
+    func testHTMLLockRejectsShortCleanBody() {
         let cleanBody = String(repeating: "Clean prose with no subscription words at all here. ", count: 40)
         let content = ArticleContent(title: "Story", blocks: [
             .init(kind: .paragraph, text: cleanBody, links: []),
         ])
+        XCTAssertLessThan(content.bodyTextLength, PaywallDetector.shortBodyThreshold)
         // Text-only: readable.
         XCTAssertTrue(ArticleExtraction.isReadableArticle(content, html: nil))
         // With the lock-declaring HTML: NOT readable.
         XCTAssertFalse(ArticleExtraction.isReadableArticle(
+            content, html: #"{"isAccessibleForFree":false}"#))
+    }
+
+    /// Some publishers serve complete subscriber-marked stories in the initial HTML.
+    /// Once the extracted body is long and has no gate language, the stale lock signal
+    /// must not force an unnecessary archive flow.
+    func testLongCleanBodyBeatsHTMLLock() {
+        let body = String(repeating: "Clean reported prose continues with enough specific article detail here. ", count: 70)
+        let content = ArticleContent(title: "Story", blocks: [
+            .init(kind: .paragraph, text: body, links: []),
+        ])
+        XCTAssertGreaterThan(content.bodyTextLength, PaywallDetector.shortBodyThreshold)
+        XCTAssertTrue(ArticleExtraction.isReadableArticle(
             content, html: #"{"isAccessibleForFree":false}"#))
     }
 

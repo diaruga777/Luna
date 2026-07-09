@@ -50,10 +50,16 @@ public enum PaywallDetector {
 
     /// Whether the extracted article — optionally with its source HTML — reads as a
     /// paywall wall. `html` (when available) adds the publisher-declared schema.org
-    /// signal, which catches walls whose CTA text the extractor stripped out.
+    /// signal, but only for short/teaser-shaped bodies: some publishers mark subscriber
+    /// pieces with `isAccessibleForFree:false` while still serving the complete article
+    /// body in the initial HTML.
     public static func looksPaywalled(content: ArticleContent, html: String? = nil) -> Bool {
-        if let html, htmlDeclaresLocked(html) { return true }
-        return textLooksPaywalled(content.wholeText, bodyLength: content.bodyTextLength)
+        let textPaywalled = textLooksPaywalled(content.wholeText, bodyLength: content.bodyTextLength)
+        if textPaywalled { return true }
+        if let html, htmlDeclaresLocked(html), content.bodyTextLength < shortBodyThreshold {
+            return true
+        }
+        return false
     }
 
     /// Text-only check (for callers without the source HTML): a gate marker at any

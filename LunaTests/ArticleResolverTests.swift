@@ -117,9 +117,9 @@ final class ArticleResolverTests: XCTestCase {
     }
 
     /// A full, readable article body that ALSO still carries the publisher's
-    /// schema.org lock — the shape of the Safari "Read in Luna" hand-off, where the
-    /// body was unlocked client-side but the stale `isAccessibleForFree:false` remains
-    /// in the page's JSON-LD.
+    /// schema.org lock — the shape of New Statesman subscriber pages and the Safari
+    /// "Read in Luna" hand-off, where the body is present but the stale
+    /// `isAccessibleForFree:false` remains in the page's JSON-LD.
     private func readableButLockedHTML(_ marker: String) -> String {
         let paragraph = "<p>" + String(repeating: "An ordinary readable sentence about \(marker). ", count: 30) + "</p>"
         return "<html><head><title>Real \(marker)</title>"
@@ -127,18 +127,35 @@ final class ArticleResolverTests: XCTestCase {
             + "</head><body><article>\(paragraph)\(paragraph)</article></body></html>"
     }
 
-    /// The Safari hand-off supplies an already-unlocked article DOM whose own JSON-LD
-    /// still declares a lock. Untrusted, that stale signal re-rejects the very content
-    /// the user was reading (parking it for the archive dance); a TRUSTED prefetch
-    /// accepts it on body length alone.
-    func testTrustedSafariPrefetchBypassesStaleSchemaLock() async {
+    /// New Statesman-shaped direct HTML can contain the full story while still declaring
+    /// a schema.org lock. Long, gate-free article prose should resolve directly instead
+    /// of parking for archive.today.
+    func testLongDirectArticleBeatsStaleSchemaLock() async {
+        let articleURL = URL(string: "https://www.newstatesman.com/world/asia/2026/07/in-hong-kong-i-saw-the-coming-chinese-century")!
+        let html = readableButLockedHTML("newstatesman")
+        let fetcher = MockArticleFetcher()
+        fetcher.htmlByURL[articleURL.absoluteString] = html
+
+        let result = await ArticleResolver.resolve(
+            url: articleURL, fetcher: fetcher,
+            nonArchiveBypass: true, trustsPrefetchedHTML: false)
+        if case .readable = result {} else { XCTFail("long direct body should be readable, got \(result)") }
+        XCTAssertEqual(fetcher.calls.first?.kind, .direct)
+    }
+
+    /// The Safari hand-off still accepts shorter already-unlocked article DOMs on body
+    /// length alone, because the page the user captured is trusted.
+    func testTrustedSafariPrefetchBypassesShortStaleSchemaLock() async {
         let articleURL = URL(string: "https://www.wsj.com/articles/unlocked_199845b1.html")!
-        let html = readableButLockedHTML("wsj")
+        let paragraph = "<p>" + String(repeating: "Short unlocked article sentence. ", count: 25) + "</p>"
+        let html = "<html><head><title>Real wsj</title>"
+            + #"<script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script>"#
+            + "</head><body><article>\(paragraph)\(paragraph)</article></body></html>"
 
         let parked = await ArticleResolver.resolve(
             url: articleURL, prefetchedHTML: html, fetcher: MockArticleFetcher(),
             nonArchiveBypass: true, trustsPrefetchedHTML: false)
-        if case .readable = parked { XCTFail("untrusted prefetch must not bypass the schema lock") }
+        if case .readable = parked { XCTFail("short untrusted prefetch must not bypass the schema lock") }
 
         let result = await ArticleResolver.resolve(
             url: articleURL, prefetchedHTML: html, fetcher: MockArticleFetcher(),

@@ -70,11 +70,23 @@ final class PaywallDetectorTests: XCTestCase {
             #"{"isAccessibleForFree":true}"#))
     }
 
-    /// HTML signal flags a wall even when the extractor stripped the CTA text.
-    func testLooksPaywalledUsesHTMLWhenBodyLooksClean() {
+    /// HTML signal flags a short wall even when the extractor stripped the CTA text.
+    func testLooksPaywalledUsesHTMLWhenShortBodyLooksClean() {
         let clean = content([String(repeating: "Clean prose with no subscription words at all here. ", count: 40)])
+        XCTAssertLessThan(clean.bodyTextLength, PaywallDetector.shortBodyThreshold)
         XCTAssertFalse(clean.looksPaywalled)   // text alone: fine
         XCTAssertTrue(PaywallDetector.looksPaywalled(
             content: clean, html: #"{"isAccessibleForFree":false}"#))
+    }
+
+    /// New Statesman-shaped pages can serve the full article while keeping subscriber
+    /// metadata in schema.org. A long, gate-free body should win over that stale lock.
+    func testLongCleanBodyBeatsPublisherLockSignal() {
+        let article = content([
+            String(repeating: "Reported article prose continues with enough concrete detail to read as the actual story. ", count: 70),
+        ])
+        XCTAssertGreaterThan(article.bodyTextLength, PaywallDetector.shortBodyThreshold)
+        XCTAssertFalse(PaywallDetector.looksPaywalled(
+            content: article, html: #"{"isAccessibleForFree":false}"#))
     }
 }

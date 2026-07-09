@@ -141,16 +141,35 @@ public enum PlatformRecognizer {
         return segments[authorIndex + 3]
     }
 
-    /// Reddit — `reddit.com/r/<sub>/comments/<id>/…`, or `redd.it/<id>`.
+    /// Reddit — an individual post permalink ONLY: `/comments/<id>`,
+    /// `/r|user|u/<name>/comments/<id>`, `/gallery/<id>`, or `redd.it/<id>`. Unlike a
+    /// host-only match, a bare subreddit or home feed does NOT classify (mirroring
+    /// bluesky's post-only shape and the Safari content-script gate): only a post is
+    /// a recognized item.
     public static let reddit = PlatformRule(
         platform: .reddit, service: nil, hosts: ["reddit.com", "redd.it"],
-        itemID: { parts in
-            if let commentsIndex = parts.segments.firstIndex(of: "comments"),
-               commentsIndex + 1 < parts.segments.count {
-                return parts.segments[commentsIndex + 1]
-            }
-            return parts.host == "redd.it" ? parts.segments.first : nil
-        })
+        recognizes: { redditPostID($0) != nil },
+        itemID: { redditPostID($0) })
+
+    /// The base-36 post id for a Reddit POST permalink, or nil. Structural matching
+    /// (NOT `firstIndex(of: "comments")`): a subreddit literally named "comments"
+    /// (`/r/comments/top/`) is a feed, and `/user/<name>/comments/` with no id is a
+    /// comment-history listing — neither is a post.
+    private static func redditPostID(_ parts: PlatformURLParts) -> String? {
+        let segments = parts.segments
+        func nonEmpty(_ i: Int) -> String? {
+            guard i < segments.count, !segments[i].isEmpty else { return nil }
+            return segments[i]
+        }
+        if parts.host == "redd.it" { return nonEmpty(0) }
+        guard let first = segments.first else { return nil }
+        if first == "comments" { return nonEmpty(1) }
+        if first == "r" || first == "user" || first == "u", segments.count > 2, segments[2] == "comments" {
+            return nonEmpty(3)
+        }
+        if first == "gallery" { return nonEmpty(1) }
+        return nil
+    }
 
     /// TikTok — `/@user/video/<numeric id>` (short `vm.`/`vt.` links recognized,
     /// id nil).

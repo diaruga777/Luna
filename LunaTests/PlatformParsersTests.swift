@@ -3,7 +3,9 @@
 //  LunaTests
 //
 
+import LunaModels
 import LunaPlatforms
+import LunaURLClassification
 import XCTest
 @testable import Luna
 
@@ -36,6 +38,29 @@ final class PlatformParsersTests: XCTestCase {
             RedditLink.jsonURL(for: url)?.absoluteString,
             "https://www.reddit.com/r/swift/comments/abc123/some_title.json")
         XCTAssertFalse(RedditLink.isReddit("https://example.com/r/swift/comments/x/y"))
+    }
+
+    /// `PlatformRecognizer` classifies Reddit ONLY on an individual post permalink —
+    /// a subreddit / home feed (and a subreddit literally named "comments") is not a
+    /// reddit item; posts, galleries, and `redd.it/<id>` short links are.
+    func testRedditRecognizerRequiresAPost() {
+        // Feeds / listings must NOT classify as a reddit item.
+        XCTAssertNil(PlatformRecognizer.recognize("https://www.reddit.com/"))
+        XCTAssertNil(PlatformRecognizer.recognize("https://www.reddit.com/r/pics/"))
+        XCTAssertNil(PlatformRecognizer.recognize("https://www.reddit.com/r/pics/top/"))
+        XCTAssertNil(PlatformRecognizer.recognize("https://www.reddit.com/r/comments/top/"))
+        XCTAssertNil(PlatformRecognizer.recognize("https://www.reddit.com/user/spez/comments/"))
+
+        // Posts / galleries / short links must classify (with the id extracted).
+        let post = PlatformRecognizer.recognize("https://www.reddit.com/r/pics/comments/1abc2d/title/")
+        XCTAssertEqual(post?.platform, .reddit)
+        XCTAssertEqual(post?.itemID, "1abc2d")
+        XCTAssertEqual(PlatformRecognizer.recognize("https://www.reddit.com/comments/1abc2d")?.itemID, "1abc2d")
+        XCTAssertEqual(
+            PlatformRecognizer.recognize("https://www.reddit.com/user/spez/comments/1abc2d/title/")?.itemID,
+            "1abc2d")
+        XCTAssertEqual(PlatformRecognizer.recognize("https://www.reddit.com/gallery/1abc2d")?.itemID, "1abc2d")
+        XCTAssertEqual(PlatformRecognizer.recognize("https://redd.it/1abc2d")?.itemID, "1abc2d")
     }
 
     func testInstagramShortcode() {

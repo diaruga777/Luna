@@ -157,13 +157,26 @@ Downloader-platform flow:
    hosts only) that drops/re-adds the pill as the URL changes between feed and post.
 
 Product-page flow:
-1. content.js mirrors `ProductPageDetector` (`looksLikeProductPage`): Tier 1 — a
-   JSON-LD `Product` offer price / OpenGraph `product:price` meta / microdata
-   `itemprop=price` is decisive alone; Tier 2 — ≥2 retail signals (og:type=product,
-   add-to-cart affordance, rating signal, retail URL shape). The Swift detector's
-   embedded-app-state-JSON price signal is deliberately not mirrored (visibility
-   heuristic only; the app re-classifies on save). Checked after the platform check
-   and BEFORE the article heuristics, so a wordy retail page never shows "Read in Luna".
+1. content.js mirrors `ProductPageDetector` (`looksLikeProductPage`). It fires only
+   for a SINGLE primary product (a related/recommended rail is fine), never on a
+   search / category grid showing several products at equal primacy:
+   - **Listing-URL veto** (`urlIsMultiProductListing`, mirrors
+     `ProductPageDetector.urlIsMultiProductListing`): a search/browse/category/deals
+     URL (Amazon `/s?k=…`, `/b`, `/gp/bestsellers`; eBay `/sch`; generic `/search`,
+     `/category`, `/collections`, or a `?k=`/`?q=`/`?query=` search param) is a
+     multi-product listing and is rejected up front, whatever per-card furniture it
+     carries. This is the fix for the "Track in Luna" pill wrongly appearing on
+     Amazon search results.
+   - Tier 1 — a JSON-LD `Product` offer price / OpenGraph `product:price` meta /
+     microdata `itemprop=price` is decisive alone.
+   - Tier 2 — ≥2 combinable retail signals (og:type=product, add-to-cart affordance,
+     rating signal, retail URL shape) catch a legitimate single product page that has
+     no Tier-1 markup. The listing-URL veto already excludes multi-product grids, so
+     Tier 2 stays a standalone classifier. The Swift detector's embedded-app-state-JSON
+     price signal is deliberately not mirrored (visibility heuristic only; the app
+     re-classifies on save).
+   Checked after the platform check and BEFORE the article heuristics, so a wordy
+   retail page never shows "Read in Luna".
 2. On a product page the button says "Track in Luna". With Price Tracker installed
    it opens `lunapricetracker://read?url=<source>` — Price Tracker's own scheme, so
    the tap always lands in Price Tracker. Without it, the button opens

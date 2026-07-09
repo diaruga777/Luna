@@ -240,6 +240,59 @@ final class ProductPageDetectorTests: XCTestCase {
         XCTAssertFalse(ProductPageDetector.urlLooksLikeProduct(URL(string: "https://news.com/")))
     }
 
+    // MARK: - Multi-product listing veto (search / category grids)
+
+    /// The bug report: an Amazon search-results page (`/s?k=…`) showing several
+    /// products, each with its own "Add to cart" button and star rating. Those
+    /// per-card signals used to score ≥2 in Tier 2 and mint a "Track in Luna" pill on
+    /// a page with no single primary product. The listing-URL veto must reject it.
+    func testAmazonSearchResultsPageIsNotAProduct() {
+        let html = BypassFixtures.html("Products/amazon-search.html")
+        XCTAssertNil(detector.detect(urlString: "https://www.amazon.com/s?k=wireless+headphones", html: html),
+                     "A search-results grid lists many products at equal primacy — never a product page.")
+    }
+
+    /// The exact same search-results markup at a single-product `/dp/` URL WOULD
+    /// classify (add-to-cart + rating + product URL) — proving the veto keys on the
+    /// listing URL, not on stripping the page of its retail signals.
+    func testSearchMarkupAtProductURLStillClassifies() {
+        let html = BypassFixtures.html("Products/amazon-search.html")
+        XCTAssertNotNil(detector.detect(urlString: "https://www.amazon.com/dp/B09XS7JWHH", html: html),
+                        "At a /dp/ URL the same retail furniture is a legitimate single product.")
+    }
+
+    func testMultiProductListingURLShapes() {
+        func isListing(_ s: String) -> Bool { ProductPageDetector.urlIsMultiProductListing(URL(string: s)) }
+        // Search / browse / category / deals grids.
+        XCTAssertTrue(isListing("https://www.amazon.com/s?k=wireless+headphones"))
+        XCTAssertTrue(isListing("https://www.amazon.com/s?k=laptop"))
+        XCTAssertTrue(isListing("https://www.amazon.com.au/b?node=4851917051"))
+        XCTAssertTrue(isListing("https://www.amazon.com/gp/bestsellers/electronics"))
+        XCTAssertTrue(isListing("https://www.ebay.com/sch/i.html?_nkw=camera"))
+        XCTAssertTrue(isListing("https://shop.example/collections/all"))
+        XCTAssertTrue(isListing("https://store.example/search?query=boots"))
+        // Single-product pages are NOT listings, even with a listing-ish token elsewhere.
+        XCTAssertFalse(isListing("https://www.amazon.com/dp/B09XS7JWHH"))
+        XCTAssertFalse(isListing("https://www.amazon.com/Sony-Headphones/dp/B09XS7JWHH?ref=sr_1"))
+        XCTAssertFalse(isListing("https://bellroy.com/products/wallet"))
+        XCTAssertFalse(isListing("https://www.bunnings.com.au/ryobi-trimmer_p0208315"))
+        XCTAssertFalse(isListing("https://news.example/2024/some-story"))
+    }
+
+    /// A search URL must not slip through Tier 1 either: a listing that emits per-card
+    /// structured offers still describes its grid items, not one primary product.
+    func testStructuredDataOnSearchURLIsVetoed() {
+        let html = """
+        <html><head><script type="application/ld+json">
+        {"@type":"Product","name":"A","offers":{"@type":"Offer","price":"9.99","priceCurrency":"USD"}}
+        </script></head><body></body></html>
+        """
+        XCTAssertNil(detector.detect(urlString: "https://shop.example/search?q=widgets", html: html),
+                     "A search URL vetoes even a structured Product offer (it's a grid item).")
+        XCTAssertNotNil(detector.detect(urlString: "https://shop.example/products/widget", html: html),
+                        "The same structured offer at a product URL still classifies.")
+    }
+
     // MARK: - Price parsing
 
     func testParsePriceUSStyle() {

@@ -151,6 +151,10 @@ public enum Classifier {
         guard let document = try? SwiftSoup.parse(html, url.absoluteString) else { return nil }
         let baseURL = URL(string: url.absoluteString)
 
+        // A search / browse / category grid lists many products at equal primacy —
+        // never a single product page, whatever per-card offers/affordances it shows.
+        if ProductPageDetector.urlIsMultiProductListing(baseURL) { return nil }
+
         // Tier 1: structured price markup is unambiguous.
         if detector.hasStructuredProductData(document: document, baseURL: baseURL) {
             return .structuredData

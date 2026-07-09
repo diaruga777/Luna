@@ -304,4 +304,56 @@ final class SafariArticleHeuristicTests: XCTestCase {
         XCTAssertTrue(evaluate(
             "window.__lunaIsArticlePage()", html: html, urlString: "https://randomblog.example/thoughts"))
     }
+
+    // MARK: - Product-page gating (the "Track in Luna" pill)
+
+    /// A grid of several products, each with its own "Add to cart" button and star
+    /// rating -- the per-card retail furniture that fires on a search-results page.
+    private func productGridHTML() -> String {
+        var cards = ""
+        let names = ["Sony WH-1000XM5", "Bose QuietComfort Ultra", "Apple AirPods Max", "Sennheiser Momentum 4"]
+        for name in names {
+            cards += """
+            <div class="s-result-item"><h2>\(name)</h2>
+            <span class="a-icon-alt">4.6 out of 5 stars</span>
+            <span class="a-price"><span class="a-offscreen">$329.00</span></span>
+            <button name="submit.addToCart">Add to cart</button></div>
+            """
+        }
+        return "<html><head><meta property=\"og:type\" content=\"website\"></head>"
+            + "<body><h1>results for \"headphones\"</h1>\(cards)</body></html>"
+    }
+
+    /// The bug: on an Amazon `/s?k=…` search page, the per-card add-to-cart + rating
+    /// furniture made `looksLikeProductPage` true, so a "Track in Luna" pill appeared
+    /// over a page with no single primary product. The listing-URL veto rejects it.
+    func testAmazonSearchResultsIsNotAProductPage() {
+        XCTAssertFalse(evaluate(
+            "window.__lunaLooksLikeProductPage()",
+            html: productGridHTML(),
+            urlString: "https://www.amazon.com/s?k=wireless+headphones"))
+    }
+
+    /// The identical grid markup served at a single-product `/dp/` URL still counts
+    /// (product URL anchor + add-to-cart) -- proving the veto keys on the listing URL,
+    /// not on the presence of retail furniture.
+    func testSameMarkupAtProductURLIsAProductPage() {
+        XCTAssertTrue(evaluate(
+            "window.__lunaLooksLikeProductPage()",
+            html: productGridHTML(),
+            urlString: "https://www.amazon.com/Sony-WH-1000XM5/dp/B09XS7JWHH"))
+    }
+
+    /// A genuine single-product page (a JSON-LD Product offer) is still recognized.
+    func testSingleProductJSONLDIsAProductPage() {
+        let html = """
+        <html><head><script type="application/ld+json">
+        {"@type":"Product","name":"Anker 715 Charger",
+         "offers":{"@type":"Offer","price":"45.99","priceCurrency":"USD"}}
+        </script></head><body><h1>Anker 715 Charger</h1></body></html>
+        """
+        XCTAssertTrue(evaluate(
+            "window.__lunaLooksLikeProductPage()",
+            html: html, urlString: "https://www.anker.com/products/a2664"))
+    }
 }

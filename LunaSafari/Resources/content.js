@@ -455,14 +455,21 @@
         return false;
     }
 
-    // Mirrors ProductPageDetector (Swift) — keep in sync. Tier 1: structured price
-    // markup (a JSON-LD Product offer, OpenGraph product meta, or a microdata
-    // price) is decisive on its own. Tier 2: at least two combinable retail
-    // signals (og:type=product, an add-to-cart affordance, a rating, a retail URL
-    // shape). The Swift detector's fifth signal — a price recovered from embedded
-    // app-state JSON — is skipped here; this only decides button visibility, and
-    // the app re-classifies properly on save.
+    // Mirrors ProductPageDetector (Swift) — keep in sync. Only fires for a SINGLE
+    // primary product (a related/recommended rail is fine); never on a search /
+    // category grid showing several products at equal primacy.
+    //   • A search/browse/category/deals URL is a multi-product listing — vetoed up
+    //     front, whatever per-card furniture it carries (the Amazon `/s?k=…` bug).
+    //   • Tier 1: structured price markup (a JSON-LD Product offer, OpenGraph product
+    //     meta, or a microdata price) is decisive on its own.
+    //   • Tier 2: ≥2 combinable retail signals (og:type=product, add-to-cart
+    //     affordance, rating, retail URL shape) catch a single product page with no
+    //     Tier-1 markup. The listing-URL veto already excludes multi-product grids,
+    //     so these signals stay a standalone product classifier.
+    // The Swift detector's embedded-app-state-JSON price signal is skipped here; this
+    // only decides button visibility, and the app re-classifies properly on save.
     function looksLikeProductPage() {
+        if (urlIsMultiProductListing()) { return false; }
         if (hasJSONLDProductOffer()) { return true; }
         if (parsePriceNumber(metaContent(["product:price:amount", "og:price:amount", "product:price"])) !== null) {
             return true;
@@ -475,6 +482,41 @@
         if (score < 2 && hasAddToCartAffordance()) { score += 1; }
         if (score < 2 && hasRatingSignal()) { score += 1; }
         return score >= 2;
+    }
+
+    // Exposed so the bare-WKWebView test harness can exercise product gating directly.
+    window.__lunaLooksLikeProductPage = looksLikeProductPage;
+
+    // Mirrors ProductPageDetector.urlIsMultiProductListing (Swift) — keep in sync.
+    // URL shapes that list many products at equal primacy (search results, browse /
+    // category nodes, best-seller and deals grids). A single primary product never
+    // lives at such a URL, so it is never a product page whatever per-card furniture
+    // it shows.
+    function urlIsMultiProductListing() {
+        // A recognized single-product URL wins over a stray listing token.
+        if (urlLooksLikeProduct()) { return false; }
+        var segments = (location.pathname || "").split("/")
+            .filter(function (s) { return s.length > 0; })
+            .map(function (s) { return s.toLowerCase(); });
+        // Search / browse / category / deals path segments (Amazon `/s`, `/b`; eBay
+        // `/sch`; generic `/search`, `/category`, `/collections`, …).
+        var listing = ["s", "search", "sch", "b", "browse", "bestsellers",
+            "deals", "stores", "category", "categories", "collections"];
+        if (segments.length > 0 && listing.indexOf(segments[0]) >= 0) { return true; }
+        // Amazon's `/gp/search`, `/gp/bestsellers`, `/gp/browse`.
+        if (segments[0] === "gp" && ["search", "bestsellers", "browse"].indexOf(segments[1]) >= 0) {
+            return true;
+        }
+        // A search query parameter (`?k=`/`?field-keywords=` Amazon, `?q=`/`?query=`/…).
+        var searchParams = ["k", "field-keywords", "q", "query", "keyword", "keywords", "searchterm"];
+        try {
+            var params = new URLSearchParams(location.search || "");
+            var iter = params.keys();
+            for (var next = iter.next(); !next.done; next = iter.next()) {
+                if (searchParams.indexOf((next.value || "").toLowerCase()) >= 0) { return true; }
+            }
+        } catch (e) {}
+        return false;
     }
 
     function hasJSONLDProductOffer() {

@@ -147,6 +147,9 @@ public struct ProductPageDetector {
     /// from a fuzzy Tier-2 heuristic hit (so a news page with a stray affordance is
     /// never misclassified). Pure.
     public func hasStructuredProductData(document: Document, baseURL: URL?) -> Bool {
+        // A listing grid can emit per-card structured offers; those describe the
+        // grid's items, not a single primary product, so never a product page.
+        if Self.urlIsMultiProductListing(baseURL) { return false }
         if candidateFromJSONLD(document: document, baseURL: baseURL) != nil { return true }
         return priceFromMetaOrMicrodata(document: document) != nil
     }
@@ -179,6 +182,11 @@ public struct ProductPageDetector {
     /// Detection over an already-parsed document (lets the article pipeline reuse
     /// a parse it already has).
     public func detect(document: Document, baseURL: URL?) -> ProductCandidate? {
+        // A search / browse / category grid lists MANY products at equal primacy —
+        // never a single product page, regardless of the per-card retail furniture
+        // (add-to-cart buttons, star ratings, even per-item offers) it carries.
+        if Self.urlIsMultiProductListing(baseURL) { return nil }
+
         // Tier 1: structured price data — the richest, most reliable source.
         if let candidate = candidateFromJSONLD(document: document, baseURL: baseURL) {
             return candidate
@@ -192,7 +200,10 @@ public struct ProductPageDetector {
                 productID: microdataProductID(document: document))
         }
 
-        // Tier 2: no structured price — score heuristic signals.
+        // Tier 2: no structured price — score heuristic signals. A single product
+        // page with a price but no Tier-1 markup (Bunnings, Amazon /dp/) is caught
+        // here; the listing-URL veto above already excludes multi-product grids, so
+        // Tier 2 stays a standalone product classifier.
         let (score, embeddedPrice) = heuristicProductScore(document: document, baseURL: baseURL)
         guard score >= Self.minimumHeuristicScore else { return nil }
         return ProductCandidate(
@@ -345,6 +356,41 @@ public struct ProductPageDetector {
         for needle in ["aggregateRating", "ratingValue", "out of 5", "Star Rating"] {
             if html.range(of: needle, options: .caseInsensitive) != nil { return true }
         }
+        return false
+    }
+
+    /// URL shapes that list MANY products at equal primacy — search results,
+    /// browse/category nodes, best-seller and deals grids. A single primary product
+    /// never lives at such a URL, so these are never a product page regardless of the
+    /// per-card retail furniture (add-to-cart buttons, star ratings, even per-item
+    /// structured offers) they carry. The primary guard against the "several products,
+    /// one pill" bug — e.g. an Amazon `/s?k=…` search page. Mirrored in
+    /// `content.js` (`urlIsMultiProductListing`); keep the two in sync.
+    public static func urlIsMultiProductListing(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        // A recognized single-product URL wins — never treat it as a listing even if
+        // a stray listing token appears elsewhere in the path.
+        if urlLooksLikeProduct(url) { return false }
+
+        let segments = url.path.split(separator: "/").map { $0.lowercased() }
+        // Search / browse / category / deals path segments (Amazon `/s`, `/b`; eBay
+        // `/sch`; generic `/search`, `/category`, `/collections`, …).
+        let listingSegments: Set<String> = [
+            "s", "search", "sch", "b", "browse", "bestsellers",
+            "deals", "stores", "category", "categories", "collections",
+        ]
+        if let first = segments.first, listingSegments.contains(first) { return true }
+        // Amazon's `/gp/search`, `/gp/bestsellers`, `/gp/browse`.
+        if segments.first == "gp", segments.count > 1,
+           ["search", "bestsellers", "browse"].contains(segments[1]) {
+            return true
+        }
+        // A search query parameter (`?k=`/`?field-keywords=` Amazon, `?q=`/`?query=`/…).
+        let searchParamNames: Set<String> = [
+            "k", "field-keywords", "q", "query", "keyword", "keywords", "searchterm",
+        ]
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        if query.contains(where: { searchParamNames.contains($0.name.lowercased()) }) { return true }
         return false
     }
 

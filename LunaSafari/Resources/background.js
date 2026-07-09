@@ -9,17 +9,23 @@
 
 let lastSent = null;
 
-// Keep the Referer-rewrite ruleset in sync with the app's "Unlock Paywalls" toggle
-// (read from the shared App Group via the native handler). When on, requests to the
-// rule-listed hosts (WSJ/MarketWatch → Drudge, FT/Investors Chronicle → Google) get
-// the referrer those sites unlock for — applied automatically in Safari, no app launch.
+// Keep the paywall-bypass rulesets in sync with the app's "Unlock Paywalls" toggle
+// (read from the shared App Group via the native handler). When on:
+//   - "referer" rewrites the referrer the rule-listed hosts unlock for (WSJ/MarketWatch
+//     → Drudge, FT/Investors Chronicle → Google);
+//   - "blockers" blocks the metering/paywall vendor scripts (Piano.io, Poool, tinypass,
+//     …) for the site that lists them — the browser mirror of the app's directUnlock
+//     content-blocker, so a client-side wall (e.g. New Statesman) renders its full
+//     article IN SAFARI, no app launch. Generated from the app's site_unlock_rules.json
+//     by scripts/generate_safari_blocker_rules.js.
+var BYPASS_RULESETS = ["referer", "blockers"];
 function syncBypassRuleset() {
     if (!browser.declarativeNetRequest || !browser.declarativeNetRequest.updateEnabledRulesets) { return; }
     browser.runtime.sendNativeMessage("application.id", { type: "bypassEnabled" })
         .then(function (resp) {
             const on = !!(resp && resp.enabled);
             browser.declarativeNetRequest.updateEnabledRulesets(
-                on ? { enableRulesetIds: ["referer"] } : { disableRulesetIds: ["referer"] }
+                on ? { enableRulesetIds: BYPASS_RULESETS } : { disableRulesetIds: BYPASS_RULESETS }
             ).catch(function () {});
         })
         .catch(function () {});

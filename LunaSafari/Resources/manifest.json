@@ -22,7 +22,8 @@
     "host_permissions": ["<all_urls>"],
     "declarative_net_request": {
         "rule_resources": [
-            { "id": "referer", "enabled": false, "path": "rules_referer.json" }
+            { "id": "referer", "enabled": false, "path": "rules_referer.json" },
+            { "id": "blockers", "enabled": false, "path": "rules_blockers.json" }
         ]
     }
 }

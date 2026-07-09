@@ -37,11 +37,19 @@
             var mode = (resp && resp.mode) || "all";
             if (mode === "never") { return; }
             var platform = recognizedPlatformPage();
+            // Reddit is media-gated and SPA-aware; its own handler owns injection,
+            // the retry-on-hydration schedule, and the soft-nav watcher.
+            if (platform === "reddit") { handleReddit(resp); return; }
             if (platform) {
                 var downloadTarget = downloadTargetFor(resp);
                 if (downloadTarget) { injectLunaButton(downloadTarget); }
                 return;
             }
+            // Reddit feed / listing / comment-history pages are NOT posts: suppress
+            // the product/article heuristics entirely (a feed must never get any
+            // pill) while keeping the SPA watcher live so a soft-nav INTO a post
+            // still gains the pill.
+            if (isRedditHost()) { handleReddit(resp); return; }
             // Product pages win over the article heuristics (a retail page's long
             // description can read as an article body).
             if (looksLikeProductPage()) {
@@ -244,6 +252,22 @@
     // Exposed so tests can load this file into a bare WKWebView (no `browser`
     // global) and exercise the heuristic directly.
     window.__lunaLooksLikeArticle = looksLikeArticle;
+
+    // Reddit gating hooks, exposed for the same bare-WKWebView test harness.
+    // `__lunaRedditPostID` parses a URL STRING (so URL gating doesn't depend on the
+    // harness propagating baseURL to `location`); the media/platform hooks read the
+    // loaded document.
+    window.__lunaRedditPostID = function (urlString) {
+        try {
+            var u = new URL(urlString);
+            var host = (u.hostname || "").toLowerCase();
+            var segments = u.pathname.split("/").filter(function (s) { return s.length > 0; });
+            if (host === "redd.it") { return nonEmptySegment(segments[0]); }
+            return redditPostID(segments);
+        } catch (e) { return null; }
+    };
+    window.__lunaRedditPostHasMedia = redditPostHasMedia;
+    window.__lunaRecognizedPlatformPage = recognizedPlatformPage;
 
     // Sum of `<a>` innerText inside `root`, divided by `root`'s own innerText
     // length -- a whole-page link density above 0.5 flags a listing/nav-heavy page.
@@ -683,7 +707,11 @@
         var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
         if (hostMatches(host, ["x.com", "twitter.com"])) { return "x"; }
         if (host === "bsky.app" && segments.indexOf("post") >= 0) { return "bluesky"; }
-        if (hostMatches(host, ["reddit.com"]) || host === "redd.it") { return "reddit"; }
+        // Reddit classifies ONLY on an individual post permalink (comments / gallery
+        // / redd.it short link), never on a subreddit or home feed — mirrors
+        // PlatformRecognizer.reddit's `recognizes:` gate. Feed suppression and the
+        // image/video media gate live in handleReddit.
+        if ((hostMatches(host, ["reddit.com"]) || host === "redd.it") && currentRedditPostID()) { return "reddit"; }
         if (hostMatches(host, ["tiktok.com"])) { return "tiktok"; }
         if (hostMatches(host, ["instagram.com", "instagr.am"])) { return "instagram"; }
         if (hostMatches(host, ["facebook.com", "fb.com"]) || host === "fb.watch") { return "facebook"; }
@@ -693,6 +721,157 @@
         if (host === "music.apple.com") { return "appleMusic"; }
         if (host === "podcasts.apple.com") { return "applePodcasts"; }
         return null;
+    }
+
+    // MARK: - Reddit post-page + media gating
+    //
+    // Reddit's "Download in Luna" pill must appear ONLY on an individual post whose
+    // primary content is image/video (never on the home feed, a subreddit listing,
+    // a comment-history listing, or a text/link/poll post). New Reddit is a
+    // client-side-navigating SPA, so we also watch for soft-nav and re-evaluate.
+
+    var redditNavWatcherStarted = false;
+    var redditGeneration = 0;
+    var redditRetryTimers = [];
+    var lastRedditURL = "";
+
+    function nonEmptySegment(s) { return (typeof s === "string" && s.length > 0) ? s : null; }
+
+    // The base-36 post id when `segments` name a Reddit POST permalink, else null.
+    // Structural matching (NOT indexOf("comments")): a subreddit literally named
+    // "comments" (`/r/comments/top/`) is a feed, and `/user/<n>/comments/` with no
+    // id is a comment-history listing — neither is a post.
+    function redditPostID(segments) {
+        if (!segments || segments.length === 0) { return null; }
+        var first = segments[0];
+        // /comments/<id>/…
+        if (first === "comments") { return nonEmptySegment(segments[1]); }
+        // /r/<sub>/comments/<id>/…  or  /user|u/<name>/comments/<id>/…
+        if ((first === "r" || first === "user" || first === "u") && segments[2] === "comments") {
+            return nonEmptySegment(segments[3]);
+        }
+        // /gallery/<id> (gallery permalinks).
+        if (first === "gallery") { return nonEmptySegment(segments[1]); }
+        return null;
+    }
+
+    // A reddit / redd.it host (new reddit, old.reddit, or a redd.it short link).
+    function isRedditHost() {
+        var host = (location.hostname || "").toLowerCase();
+        return hostMatches(host, ["reddit.com"]) || host === "redd.it";
+    }
+
+    // The reddit post id for the CURRENT location, or null on a feed/listing.
+    function currentRedditPostID() {
+        var host = (location.hostname || "").toLowerCase();
+        var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
+        if (host === "redd.it") { return nonEmptySegment(segments[0]); }
+        return redditPostID(segments);
+    }
+
+    // True only when the current reddit POST page's primary content is
+    // image/video/gallery/gif. Cheap and null-safe. (Reddit's bot wall blocks
+    // curl, so these mirror the documented server-rendered shapes rather than
+    // freshly-scraped DOM):
+    //   1. new reddit: `<shreddit-post post-type="…">` — the authoritative signal.
+    //      qualify image/video/gallery/gif; disqualify text/self/link/poll/crosspost.
+    //   2. a `/gallery/` permalink is inherently media.
+    //   3. `<meta property="og:video">` — video posts expose it.
+    //   4. old reddit: `#siteTable .thing.link` with a media `data-domain`
+    //      (i.redd.it/v.redd.it/i.imgur.com) or an `.expando` holding a video/img.
+    function redditPostHasMedia() {
+        var segs = location.pathname.split("/").filter(function (s) { return s.length > 0; });
+        if (segs.indexOf("gallery") >= 0) { return true; }
+
+        var post = document.querySelector("shreddit-post");
+        if (post) {
+            var type = (post.getAttribute("post-type") || "").toLowerCase();
+            if (["image", "video", "gallery", "gif", "gifv"].indexOf(type) >= 0) { return true; }
+            if (["text", "self", "link", "poll", "crosspost", "prediction"].indexOf(type) >= 0) { return false; }
+            // Unknown post-type: fall through to the other signals rather than guess.
+        }
+
+        if (document.querySelector('meta[property="og:video"], meta[property="og:video:url"]')) { return true; }
+
+        var thing = document.querySelector("#siteTable .thing.link");
+        if (thing) {
+            var domain = (thing.getAttribute("data-domain") || "").toLowerCase();
+            if (["i.redd.it", "v.redd.it", "i.imgur.com"].indexOf(domain) >= 0) { return true; }
+            var expando = thing.querySelector(".expando");
+            if (expando && expando.querySelector("video, img")) { return true; }
+        }
+
+        return false;
+    }
+
+    // Whether a post container has hydrated enough to give a definitive media
+    // verdict (new-reddit shreddit-post, or an old-reddit post row).
+    function redditPostContainerPresent() {
+        return !!(document.querySelector("shreddit-post")
+            || document.querySelector("#siteTable .thing.link"));
+    }
+
+    // Entry point for ANY reddit host (post or feed). Starts the soft-nav watcher
+    // once, then evaluates the current URL.
+    function handleReddit(resp) {
+        startRedditNavWatcher(resp);
+        evaluateRedditPage(resp);
+    }
+
+    // (Re)evaluate the current reddit URL: drop any stale pill, cancel pending
+    // retries (via the generation counter), and — on a post page — inject once the
+    // media check is satisfied.
+    function evaluateRedditPage(resp) {
+        redditGeneration++;
+        cancelRedditRetries();
+        removeLunaButton();
+        var target = downloadTargetFor(resp);
+        if (!target) { return; }
+        attemptRedditInjection(resp, target, 0);
+    }
+
+    // On a post page: inject when media is confirmed. If the post container hasn't
+    // hydrated yet (new-reddit SPA), retry on a bounded schedule; a definitive
+    // non-media verdict stops immediately (no pill).
+    function attemptRedditInjection(resp, target, attempt) {
+        var generation = redditGeneration;
+        if (!currentRedditPostID()) { return; }
+        if (redditPostContainerPresent()) {
+            if (redditPostHasMedia()) { injectLunaButton(target); }
+            return;
+        }
+        // No container yet, but a gallery permalink is inherently media.
+        if (redditPostHasMedia()) { injectLunaButton(target); return; }
+        if (attempt >= 4) { return; }
+        var timer = setTimeout(function () {
+            if (generation !== redditGeneration) { return; }
+            attemptRedditInjection(resp, target, attempt + 1);
+        }, 1500);
+        redditRetryTimers.push(timer);
+    }
+
+    // A ~1s poll (reddit hosts only) that re-evaluates when the SPA soft-navigates,
+    // so feed→post gains the pill and post→feed loses it. Captures `resp` from the
+    // initial message — no per-tick background round-trip.
+    function startRedditNavWatcher(resp) {
+        if (redditNavWatcherStarted) { return; }
+        redditNavWatcherStarted = true;
+        lastRedditURL = location.href;
+        setInterval(function () {
+            if (location.href === lastRedditURL) { return; }
+            lastRedditURL = location.href;
+            evaluateRedditPage(resp);
+        }, 1000);
+    }
+
+    function cancelRedditRetries() {
+        for (var i = 0; i < redditRetryTimers.length; i++) { clearTimeout(redditRetryTimers[i]); }
+        redditRetryTimers = [];
+    }
+
+    function removeLunaButton() {
+        var existing = document.getElementById("queue-read-button");
+        if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); }
     }
 
     function hostMatches(host, roots) {

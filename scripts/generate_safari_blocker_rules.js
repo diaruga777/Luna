@@ -74,20 +74,26 @@ function pushRule(pattern, condition) {
     });
 }
 
-// Per-site vendor-script blocks, scoped to the site's own domain.
+// Per-site vendor-script blocks, scoped to the PAGE's domain. This is
+// `initiatorDomains` (the document making the request), NOT `requestDomains`: the
+// vendor script is served from a THIRD party (New Statesman's Piano loads from
+// piano.io), so scoping by the request's own domain would never match — we want
+// "block piano.io requests made BY a newstatesman.com page". `initiatorDomains`
+// matches the domain and its subdomains (so www.newstatesman.com is covered).
 for (const rule of data.rules || []) {
     if (!rule.domain || !Array.isArray(rule.blockRegex)) { continue; }
     for (const pattern of rule.blockRegex) {
-        pushRule(pattern, { requestDomains: [rule.domain] });
+        pushRule(pattern, { initiatorDomains: [rule.domain] });
     }
 }
 
-// Global vendor blockers, applied everywhere except their opt-outs.
+// Global vendor blockers, applied on every page except their opt-outs (again scoped
+// by the initiating page, mirroring the app's WKContentRuleList `unless-domain`).
 for (const blocker of data.generalBlockers || []) {
     if (!blocker.blockRegex) { continue; }
     const condition = {};
     if (Array.isArray(blocker.excludedDomains) && blocker.excludedDomains.length) {
-        condition.excludedRequestDomains = blocker.excludedDomains;
+        condition.excludedInitiatorDomains = blocker.excludedDomains;
     }
     pushRule(blocker.blockRegex, condition);
 }

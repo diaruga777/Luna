@@ -40,10 +40,23 @@ public enum SendToFriendSheet {
             recentRecipients, from: presenter, item: item, urlString: urlString, title: title)
     }
 
-    /// Copies the URL directly to the clipboard.
+    /// Copies the URL directly to the clipboard, then shows the confirmation.
     public static func copyLink(urlString: String, from presenter: UIViewController) {
+        copyToPasteboard(urlString: urlString)
+        presentCopiedConfirmation(from: presenter)
+    }
+
+    /// Writes the URL to the pasteboard and fires the success haptic — the part that
+    /// must happen synchronously the instant the user taps, before any menu dismissal.
+    public static func copyToPasteboard(urlString: String) {
         UIPasteboard.general.string = urlString
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    /// Presents the transient "Copied Link" confirmation. Kept separate so a caller
+    /// inside a context menu can defer JUST this present until the menu has finished
+    /// dismissing — presenting during the dismissal makes the wipe animations overlap.
+    public static func presentCopiedConfirmation(from presenter: UIViewController) {
         let alert = UIAlertController(title: "Copied Link", message: nil, preferredStyle: .alert)
         DotMatrixModal.present(alert, from: presenter)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak alert] in

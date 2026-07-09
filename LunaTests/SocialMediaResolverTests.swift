@@ -126,7 +126,8 @@ final class SocialMediaResolverTests: XCTestCase {
 
     func testInstagramReelResolvesEmbedContextVideoBeforePoster() {
         let context = #"{"gql_data":{"shortcode_media":{"is_video":true,"video_url":"https://video.example.com/reel.mp4","display_url":"https://cdn.example.com/reel.jpg"}}}"#
-        let literal = String(data: try! JSONSerialization.data(withJSONObject: context), encoding: .utf8)!
+        let literal = String(data: try! JSONSerialization.data(
+            withJSONObject: context, options: [.fragmentsAllowed]), encoding: .utf8)!
         let html = #"window.__additionalDataLoaded("/embed/", {"contextJSON": \#(literal)});"#
 
         XCTAssertEqual(InstagramMediaParser.assetsFromEmbedContextJSON(html), [

@@ -36,6 +36,34 @@ final class ArticleExtractorTests: XCTestCase {
         XCTAssertFalse(content.wholeText.contains("Footer junk"))
     }
 
+    /// New Statesman regression: WordPress puts layout-state classes on <body>
+    /// (`sidebar-right has-sidebar`), so the refined layer's `[class*=sidebar]` strip
+    /// matched the <body> itself and removed the WHOLE document — the refined layer
+    /// returned nothing and the untrimmed `basic` layer won, dragging in the trailing
+    /// related-article rail. The strip must skip the page root: the article body is
+    /// extracted AND the trailing recirc rail is trimmed.
+    func testLayoutClassOnBodyDoesNotDeleteTheDocument() throws {
+        let paragraph = "<p>Reported prose continues with enough concrete article detail here to score as the real content container and clear the refined layer's length bar comfortably.</p>"
+        let html = """
+        <html><body class="single-post sidebar-right has-sidebar wp-theme-figaro">
+        <article><h1>The Heading</h1>
+        \(String(repeating: paragraph, count: 12))
+        </article>
+        <section class="c-related"><h2>Related</h2>
+        <p><a href="/other-1">Some other article headline over here</a></p>
+        <p><a href="/other-2">Yet another unrelated recommended story link</a></p>
+        </section>
+        </body></html>
+        """
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        XCTAssertGreaterThan(content.bodyTextLength, ArticleContent.readableBodyThreshold,
+                             "the article body must survive a layout class on <body>")
+        XCTAssertTrue(content.wholeText.contains("Reported prose continues"))
+        XCTAssertFalse(content.wholeText.contains("Related"),
+                       "the trailing recirc rail must be trimmed by the refined layer")
+        XCTAssertFalse(content.wholeText.contains("recommended story"))
+    }
+
     func testPreservesInlineLinksWithCorrectRanges() throws {
         let html = """
         <html><body><article>

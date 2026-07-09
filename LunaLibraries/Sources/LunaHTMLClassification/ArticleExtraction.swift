@@ -55,16 +55,24 @@ public struct ArticleExtraction {
     /// well-tested, HTML-aware function: a body that clears the length threshold AND
     /// doesn't read as a paywall (including the publisher-declared schema.org lock the
     /// HTML carries). Pass `html` whenever the source HTML is available so the lock
-    /// signal can't be bypassed by reaching for a text-only path. Pure.
-    public static func isReadableArticle(_ content: ArticleContent, html: String?) -> Bool {
+    /// signal can't be bypassed by reaching for a text-only path. `trustDeclaredLock`
+    /// (forwarded to `PaywallDetector.looksPaywalled`) makes the publisher-declared
+    /// schema.org lock flag a wall at ANY body length — passed by the resolver for a
+    /// direct read of a known hard-paywall host, where a long body that ALSO declares
+    /// locked is a teaser, not the article. Pure.
+    public static func isReadableArticle(_ content: ArticleContent, html: String?,
+                                         trustDeclaredLock: Bool = false) -> Bool {
         content.bodyTextLength >= ArticleContent.readableBodyThreshold
-            && !PaywallDetector.looksPaywalled(content: content, html: html)
+            && !PaywallDetector.looksPaywalled(content: content, html: html,
+                                               trustDeclaredLock: trustDeclaredLock)
     }
 
     /// Whether a fetched+extracted pair is a readable article — the pair-shaped
     /// overload of `isReadableArticle` (the source HTML is always known here).
-    public static func isReadableArticle(_ article: ExtractedArticle) -> Bool {
-        isReadableArticle(article.content, html: article.sourceHTML)
+    public static func isReadableArticle(_ article: ExtractedArticle,
+                                         trustDeclaredLock: Bool = false) -> Bool {
+        isReadableArticle(article.content, html: article.sourceHTML,
+                          trustDeclaredLock: trustDeclaredLock)
     }
 
     /// Runs an HTML fetch and extracts it, pairing the parsed content with its source

@@ -62,6 +62,15 @@ public enum ArticleResolver {
             if let prefetchedHTML { return prefetchedHTML }
             return try await fetcher.fetchHTML(from: url)
         }
+        // An uncookied server fetch of a KNOWN hard-paywall host can only have gotten a
+        // teaser, so we honor the publisher's schema.org lock at ANY body length for the
+        // DIRECT read — some walls (e.g. New Statesman's Piano.io `<div id="piano-paywall">`)
+        // serve a long, gate-marker-free teaser and inject the "subscribe" CTA client-side,
+        // leaving that flag as the sole server-side signal. NOT applied to the archive /
+        // bypass candidates below: an archive snapshot may hold the FULL article yet still
+        // carry the page's stale lock flag, so those are judged on content alone.
+        let hardPaywallHost = Classifier.isHardPaywallHost(url)
+
         // Skip everything else when the direct read already succeeded. A TRUSTED
         // prefetch (the Safari "Read in Luna" hand-off, which captured the already-
         // unlocked on-screen article) is accepted on body length alone: the page's
@@ -70,7 +79,8 @@ public enum ArticleResolver {
         if let direct {
             let trustedUnlock = trustsPrefetchedHTML && prefetchedHTML != nil
                 && direct.content.bodyTextLength >= ArticleContent.readableBodyThreshold
-            if trustedUnlock || ArticleExtraction.isReadableArticle(direct) {
+            if trustedUnlock
+                || ArticleExtraction.isReadableArticle(direct, trustDeclaredLock: hardPaywallHost) {
                 return .readable(direct.content, html: direct.sourceHTML)
             }
         }
@@ -111,7 +121,7 @@ public enum ArticleResolver {
         for strategy in plan.silent {
             let candidate = await bypassRunner.run(strategy.asBypassStrategy, url: url,
                                                    directHTML: direct?.sourceHTML)
-            let succeeded = candidate.map(ArticleExtraction.isReadableArticle) ?? false
+            let succeeded = candidate.map { ArticleExtraction.isReadableArticle($0) } ?? false
             await replayLog?(.bypassStrategy(
                 name: strategy.asBypassStrategy.replayName, runsSilently: true, succeeded: succeeded))
             if let candidate, ArticleExtraction.isReadableArticle(candidate) {
@@ -126,7 +136,7 @@ public enum ArticleResolver {
         // rule, and `archive.ph/newest` belongs to the bounded WKWebView terminal flow,
         // not a silent fetch — removing the duplicate Wayback hit + near-always-failing
         // archive.ph GET is the NYT/WSJ "no silent strategy worked" speed fix.)
-        return resolution(direct: direct, archived: nil)
+        return resolution(direct: direct, archived: nil, directTrustsDeclaredLock: hardPaywallHost)
     }
 
     /// The page's advertised AMP URL (`<link rel="amphtml" href="…">`), absolute,
@@ -146,10 +156,17 @@ public enum ArticleResolver {
     /// (direct page first — it's canonical — then the archive snapshot), else
     /// `.unreadable`. Judged by the shared `ArticleExtraction.isReadableArticle`
     /// predicate (the only place the readable/locked decision lives).
+    ///
+    /// `directTrustsDeclaredLock` honors the publisher's schema.org lock at any body
+    /// length for the DIRECT candidate (a known hard-paywall host — see the note in
+    /// `resolve`); the archived candidate is always judged on content alone, since an
+    /// archive snapshot may hold the full article while still carrying a stale lock flag.
     public static func resolution(
-        direct: ExtractedArticle?, archived: ExtractedArticle?
+        direct: ExtractedArticle?, archived: ExtractedArticle?,
+        directTrustsDeclaredLock: Bool = false
     ) -> ArticleResolution {
-        if let direct, ArticleExtraction.isReadableArticle(direct) {
+        if let direct, ArticleExtraction.isReadableArticle(
+            direct, trustDeclaredLock: directTrustsDeclaredLock) {
             return .readable(direct.content, html: direct.sourceHTML)
         }
         if let archived, ArticleExtraction.isReadableArticle(archived) {

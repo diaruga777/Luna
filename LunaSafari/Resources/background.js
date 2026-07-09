@@ -37,8 +37,12 @@ function report(url) {
 function injectContentScript(tabId, url) {
     if (!/^https?:\/\//i.test(url || "")) { return; }
     if (!browser.scripting || !browser.scripting.executeScript) { return; }
-    browser.scripting.executeScript({ target: { tabId: tabId }, files: ["content.js"] })
-        .catch(function () { /* some pages block injection; ignore */ });
+    // news_hosts.generated.js defines self.__LUNA_NEWS_HOSTS (the app's shared
+    // NewsSites host list) FIRST, in the same injected world, so content.js's
+    // isKnownArticleHost/isKnownHardPaywallHost see it as soon as they run.
+    browser.scripting.executeScript({
+        target: { tabId: tabId }, files: ["news_hosts.generated.js", "content.js"]
+    }).catch(function () { /* some pages block injection; ignore */ });
 }
 
 // --- Safari-onboarding takeover overlay --------------------------------------

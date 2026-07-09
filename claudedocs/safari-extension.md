@@ -49,10 +49,12 @@ Article flow:
 1. content.js asks background `{type:"buttonContext"}`; background relays to the native handler,
    which returns the app's `SafariSuggestionMode` (`never` / `all` / `onlyLocked`, default
    `all`) from the App Group (`SafariSuggestionSettings`, key `safariSuggestionMode`).
-2. If `never`, or the page isn't an article (`looksLikeArticle` — see "Article
-   heuristic" below), or (`onlyLocked`) the page isn't paywalled (`looksPaywalled` —
-   a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree` +
-   `content_tier`), it does nothing.
+2. If `never`, or the page isn't an article, or (`onlyLocked`) the page isn't locked, it
+   does nothing. A page is an article when its host is a known news/article host
+   (`isKnownArticleHost` — see "Shared news-host list" below) OR the DOM scorer accepts it
+   (`looksLikeArticle`). A page is "locked" for `onlyLocked` when its host is a known
+   hard-paywall site (`isKnownHardPaywallHost`) OR it shows paywall markers (`looksPaywalled`
+   — a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree` + `content_tier`).
 3. Otherwise it injects a Luna-indigo (`#5856D6`) "Read in Luna" capsule button. Tapping it
    prefers `LunaReaderAppClipURL?url=<source>` from `LunaSafari/Info.plist`; that URL is
    filled in after App Store Connect has the Reader App Clip experience and should open the
@@ -61,9 +63,23 @@ Article flow:
    installed — ONLY Reader registers `lunareader://` now, so with Reader absent and no
    App Clip URL the button isn't shown on article pages.
 
-**Article heuristic (`looksLikeArticle`).** A lightweight Readability-style scorer,
-JS-only — no Swift counterpart, since it only decides button visibility; the app
-re-classifies properly on save via `LunaIngest`.
+**Shared news-host list (`isKnownArticleHost` / `isKnownHardPaywallHost`).** The main app
+recognizes news/article sites by URL host alone — `afr.com` and ~450 others in
+`NewsSites.hardPaywall` / `.free` (`LunaURLClassification`), matched by host suffix
+(`KnownSite.matches`) with zero DOM inspection — which is why the app classifies a metered
+site's truncated teaser as an article while a DOM-only scorer cannot. The extension shares
+that exact data through the generated `LunaSafari/Resources/news_hosts.generated.js`
+(`self.__LUNA_NEWS_HOSTS`), which `background.js` injects immediately before `content.js`.
+`NewsSitesJSParityTests` regenerates it (`TEST_RUNNER_RECORD_NEWS_HOSTS=1`) from the Swift
+arrays and, without that flag, fails the suite if the committed file drifts — so the two
+sides can never disagree on which hosts are article/news sites. A known article host is an
+article regardless of the DOM scorer; a known hard-paywall host also counts as "locked" for
+the `onlyLocked` mode. This is the single generalized rule — no site is hardcoded in the
+extension; `afr.com` is simply one entry in the shared list.
+
+**Article heuristic (`looksLikeArticle`).** The FALLBACK scorer for hosts NOT on the shared
+list above — a lightweight Readability-style scorer, JS-only, since it only decides button
+visibility; the app re-classifies properly on save via `LunaIngest`.
 - Hard negatives (any one disqualifies the page): 4+ `<article>` elements (a teaser
   feed); whole-page link density (all `<a>` text ÷ `document.body.innerText`) above 0.5;
   a `docs`/`documentation`/`api`/`reference`/`sdk`/`changelog` first-or-second URL path

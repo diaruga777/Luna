@@ -21,18 +21,28 @@ import XCTest
 final class SafariArticleHeuristicTests: XCTestCase {
 
     /// `LunaTests/SafariArticleHeuristicTests.swift` -> repo root -> `LunaSafari/Resources/content.js`.
-    private static let contentScriptSource: String = {
+    private static let contentScriptSource: String = resource("LunaSafari/Resources/content.js")
+
+    /// The generated shared news-host list (`self.__LUNA_NEWS_HOSTS`); background.js
+    /// injects it before content.js in the real extension, so the host-gating tests
+    /// evaluate it first too.
+    private static let newsHostsSource: String = resource("LunaSafari/Resources/news_hosts.generated.js")
+
+    private static func resource(_ relativePath: String) -> String {
         let thisFile = URL(fileURLWithPath: #filePath)
         let repoRoot = thisFile.deletingLastPathComponent().deletingLastPathComponent()
-        let scriptURL = repoRoot.appendingPathComponent("LunaSafari/Resources/content.js")
-        return (try? String(contentsOf: scriptURL, encoding: .utf8)) ?? ""
-    }()
+        let url = repoRoot.appendingPathComponent(relativePath)
+        return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    }
 
     override func setUp() {
         super.setUp()
         XCTAssertFalse(
             Self.contentScriptSource.isEmpty,
             "content.js not found on disk -- check the path relative to #filePath")
+        XCTAssertFalse(
+            Self.newsHostsSource.isEmpty,
+            "news_hosts.generated.js not found on disk -- generate with TEST_RUNNER_RECORD_NEWS_HOSTS=1")
     }
 
     // MARK: - Harness
@@ -205,5 +215,93 @@ final class SafariArticleHeuristicTests: XCTestCase {
     func testNearEmptyPageIsNotArticle() {
         let html = "<html><body><p>Just a short line of text.</p></body></html>"
         XCTAssertFalse(evaluateHeuristic(html: html, urlString: "https://example.com/x"))
+    }
+
+    // MARK: - Shared news-host gating (extension <-> main-app parity)
+
+    /// Loads `news_hosts.generated.js` (the shared `NewsSites` list) THEN content.js
+    /// into a WKWebView at `urlString`, then evaluates `expression` -- so the host
+    /// gating sees `location.hostname` from the baseURL and the injected host set,
+    /// exactly as in the real extension.
+    @MainActor
+    private func evaluate(_ expression: String, html: String, urlString: String) -> Bool {
+        let expectation = expectation(description: "evaluated \(expression)")
+        var outcome: Bool?
+
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let delegate = LoadDelegate {
+            webView.evaluateJavaScript(Self.newsHostsSource) { _, error in
+                if let error { XCTFail("news_hosts.generated.js failed to evaluate: \(error)") }
+                webView.evaluateJavaScript(Self.contentScriptSource) { _, error in
+                    if let error { XCTFail("content.js failed to evaluate: \(error)") }
+                    webView.evaluateJavaScript(expression) { result, error in
+                        if let error { XCTFail("\(expression) failed to evaluate: \(error)") }
+                        outcome = result as? Bool
+                        expectation.fulfill()
+                    }
+                }
+            }
+        }
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString(html, baseURL: URL(string: urlString))
+
+        wait(for: [expectation], timeout: 10)
+        withExtendedLifetime(delegate) {}
+        guard let outcome else {
+            XCTFail("\(expression) never returned a Bool")
+            return false
+        }
+        return outcome
+    }
+
+    /// A metered news site's server-rendered teaser: og:type=article + NewsArticle
+    /// JSON-LD, but only a couple of short lead paragraphs before the wall -- far too
+    /// little qualifying prose for the DOM scorer to clear its bar. This is the AFR
+    /// failure mode from the bug report.
+    private func meteredTeaserHTML() -> String {
+        return """
+        <html><head>
+        <meta property="og:type" content="article">
+        <script type="application/ld+json">{"@context":"https://schema.org","@type":"NewsArticle","headline":"Teaser"}</script>
+        </head>
+        <body><article><h1>Anthropic wants Australian data centres</h1>
+        <p>\(prose(150))</p><p>\(prose(150))</p>
+        <div class="paywall">Subscribe to continue reading.</div>
+        </article></body></html>
+        """
+    }
+
+    /// (A) The bug repro, generalized: a known hard-paywall news host (afr.com) whose
+    /// server sends only a thin teaser. The DOM scorer ALONE fails (too little prose --
+    /// this is why the "Read in Luna" pill was absent), but the shared `NewsSites` host
+    /// list classifies it as an article, exactly as the main app does. No afr-specific
+    /// code: afr.com is just one of the ~450 entries in the shared list.
+    func testKnownNewsHostWithThinTeaserIsArticle() {
+        let html = meteredTeaserHTML()
+        let afrURL = "https://www.afr.com/companies/infrastructure/some-story-20260706-p60cwq"
+        // The scorer alone misses it (the original bug)...
+        XCTAssertFalse(evaluate("window.__lunaLooksLikeArticle()", html: html, urlString: afrURL))
+        // ...but sharing the app's host list makes it an article.
+        XCTAssertTrue(evaluate("window.__lunaIsArticlePage()", html: html, urlString: afrURL))
+        // ...and it's known-locked, so it also surfaces under the onlyLocked mode.
+        XCTAssertTrue(evaluate("window.__lunaIsKnownHardPaywallHost()", html: html, urlString: afrURL))
+    }
+
+    /// (B) Control: the identical thin teaser on a host NOT in the shared list gets no
+    /// host rescue and correctly fails the DOM scorer -- proving the fix keys on the
+    /// shared host data, not blanket acceptance of thin pages.
+    func testUnknownHostWithThinTeaserIsNotArticle() {
+        let html = meteredTeaserHTML()
+        XCTAssertFalse(evaluate(
+            "window.__lunaIsArticlePage()", html: html, urlString: "https://randomblog.example/some-post"))
+    }
+
+    /// (C) Fallback intact: an unknown host with a genuinely long article body is still
+    /// an article via the DOM scorer -- the host list is additive; it does not gate real
+    /// articles on non-news hosts behind a list.
+    func testUnknownHostWithFullArticleIsArticle() {
+        let html = "<html><body><div class=\"post-body\">\(paragraphs(6, length: 450))</div></body></html>"
+        XCTAssertTrue(evaluate(
+            "window.__lunaIsArticlePage()", html: html, urlString: "https://randomblog.example/thoughts"))
     }
 }

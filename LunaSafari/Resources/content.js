@@ -57,13 +57,14 @@
                 if (trackTarget) { injectLunaButton(trackTarget); }
                 return;
             }
-            if (!looksLikeArticle()) {
+            if (!isKnownArticleHost() && !looksLikeArticle()) {
                 // Some article bodies hydrate late (SPA/client-rendered pages) --
-                // give the DOM a chance to settle, then re-check once.
+                // give the DOM a chance to settle, then re-check once. (A known
+                // article host classifies immediately, so it never reaches here.)
                 setTimeout(function () { tryInjectArticleButton(mode, resp); }, 2500);
                 return;
             }
-            if (mode === "onlyLocked" && !looksPaywalled()) { return; }
+            if (mode === "onlyLocked" && !pageIsLocked()) { return; }
             var target = readTarget(resp);
             if (target) { injectLunaButton(target); }
         }).catch(function () {});
@@ -82,8 +83,8 @@
     // One-shot re-check of just the article branch (mirrors the tail of the
     // `buttonContext` handler above) for the 2500ms SPA retry.
     function tryInjectArticleButton(mode, resp) {
-        if (!looksLikeArticle()) { return; }
-        if (mode === "onlyLocked" && !looksPaywalled()) { return; }
+        if (!isKnownArticleHost() && !looksLikeArticle()) { return; }
+        if (mode === "onlyLocked" && !pageIsLocked()) { return; }
         var target = readTarget(resp);
         if (target) { injectLunaButton(target); }
     }
@@ -204,9 +205,11 @@
     // surviving candidate paragraph-like nodes are filtered (list items, hidden
     // nodes, high own-link-density, "unlikely" container ancestry) and scored by
     // sqrt(length); metadata (og:type, JSON-LD Article/BlogPosting, byline+date,
-    // or a single dominant <article>) lowers the score bar. JS-only approximation
-    // -- no Swift counterpart -- the app re-classifies properly on save via
-    // LunaIngest.
+    // or a single dominant <article>) lowers the score bar. This scorer is the
+    // FALLBACK for hosts not on the shared news-host list: the app recognizes known
+    // news/article sites by URL host alone (see `isKnownArticleHost`), and only such
+    // unknown hosts reach this DOM heuristic. On save the app re-classifies properly
+    // via LunaIngest.
     function looksLikeArticle() {
         var body = document.body;
         if (!body) { return false; }
@@ -268,6 +271,42 @@
     };
     window.__lunaRedditPostHasMedia = redditPostHasMedia;
     window.__lunaRecognizedPlatformPage = recognizedPlatformPage;
+
+    // The app recognizes news/article sites by URL host alone (NewsSites.hardPaywall /
+    // .free in LunaURLClassification, via KnownSite.matches' host-suffix test) with no
+    // DOM inspection. The Safari extension shares that exact host data through the
+    // generated `news_hosts.generated.js` (injected before this file by background.js;
+    // guarded against drift by NewsSitesJSParityTests), so a known article host is
+    // treated as an article even when the rendered DOM is too thin for the scorer above
+    // (e.g. a metered site's truncated teaser body). This is what keeps the extension
+    // and the main app applying the SAME classification rule rather than two heuristics.
+    function knownNewsHosts(key) {
+        var data = (typeof self !== "undefined") ? self.__LUNA_NEWS_HOSTS : undefined;
+        return (data && data[key]) || [];
+    }
+    function isKnownArticleHost() {
+        var host = (location.hostname || "").toLowerCase();
+        return hostMatches(host, knownNewsHosts("hardPaywall"))
+            || hostMatches(host, knownNewsHosts("free"));
+    }
+    function isKnownHardPaywallHost() {
+        var host = (location.hostname || "").toLowerCase();
+        return hostMatches(host, knownNewsHosts("hardPaywall"));
+    }
+    // "Locked" for the onlyLocked suggestion mode: the app would know this is paywalled
+    // by host (a hard-paywall news site) OR the page carries paywall markers. Note
+    // `looksPaywalled` itself is left untouched -- it also drives the "Unlocked with
+    // Luna" toast, which must stay honest to actual on-page markers.
+    function pageIsLocked() {
+        return isKnownHardPaywallHost() || looksPaywalled();
+    }
+
+    // Combined article verdict (host list OR DOM scorer), exposed for the bare-WKWebView
+    // test harness. Mirrors the gate used in the buttonContext handler above.
+    window.__lunaIsArticlePage = function () {
+        return isKnownArticleHost() || looksLikeArticle();
+    };
+    window.__lunaIsKnownHardPaywallHost = isKnownHardPaywallHost;
 
     // Sum of `<a>` innerText inside `root`, divided by `root`'s own innerText
     // length -- a whole-page link density above 0.5 flags a listing/nav-heavy page.

@@ -50,25 +50,13 @@ public enum PaywallDetector {
 
     /// Whether the extracted article — optionally with its source HTML — reads as a
     /// paywall wall. `html` (when available) adds the publisher-declared schema.org
-    /// signal, but by default only for short/teaser-shaped bodies: some publishers mark
-    /// subscriber pieces with `isAccessibleForFree:false` while still serving the
-    /// complete article body in the initial HTML, and a logged-in subscriber (Safari)
-    /// sees a long body we must not falsely flag.
-    ///
-    /// `trustDeclaredLock` lifts that length cap so the schema.org lock flags a wall at
-    /// ANY body length. It stays a CALLER decision (this detector remains content-based,
-    /// NOT a host allowlist): the resolver passes it for an uncookied server fetch of a
-    /// KNOWN hard-paywall host, where a "readable-looking" body that ALSO declares locked
-    /// can only be a long teaser — some walls inject the "subscribe" CTA client-side
-    /// (e.g. New Statesman's empty `<div id="piano-paywall">`), leaving the schema.org
-    /// flag as the sole server-side signal, and the free-publisher-mislabels risk the cap
-    /// guards against doesn't exist for a host already curated as hard-paywall.
-    public static func looksPaywalled(content: ArticleContent, html: String? = nil,
-                                      trustDeclaredLock: Bool = false) -> Bool {
+    /// signal, but only for short/teaser-shaped bodies: some publishers mark subscriber
+    /// pieces with `isAccessibleForFree:false` while still serving the complete article
+    /// body in the initial HTML.
+    public static func looksPaywalled(content: ArticleContent, html: String? = nil) -> Bool {
         let textPaywalled = textLooksPaywalled(content.wholeText, bodyLength: content.bodyTextLength)
         if textPaywalled { return true }
-        if let html, htmlDeclaresLocked(html),
-           trustDeclaredLock || content.bodyTextLength < shortBodyThreshold {
+        if let html, htmlDeclaresLocked(html), content.bodyTextLength < shortBodyThreshold {
             return true
         }
         return false

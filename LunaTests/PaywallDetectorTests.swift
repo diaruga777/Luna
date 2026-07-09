@@ -79,9 +79,8 @@ final class PaywallDetectorTests: XCTestCase {
             content: clean, html: #"{"isAccessibleForFree":false}"#))
     }
 
-    /// Some publishers keep `isAccessibleForFree:false` in schema.org while still serving
-    /// the complete article body. For a host we can't prove is a hard paywall, a long,
-    /// gate-free body should win over that stale lock (the default, content-based read).
+    /// New Statesman-shaped pages can serve the full article while keeping subscriber
+    /// metadata in schema.org. A long, gate-free body should win over that stale lock.
     func testLongCleanBodyBeatsPublisherLockSignal() {
         let article = content([
             String(repeating: "Reported article prose continues with enough concrete detail to read as the actual story. ", count: 70),
@@ -89,36 +88,5 @@ final class PaywallDetectorTests: XCTestCase {
         XCTAssertGreaterThan(article.bodyTextLength, PaywallDetector.shortBodyThreshold)
         XCTAssertFalse(PaywallDetector.looksPaywalled(
             content: article, html: #"{"isAccessibleForFree":false}"#))
-    }
-
-    /// New Statesman failure case: a hard-paywall host serves a LONG teaser (well over
-    /// `shortBodyThreshold`) with no gate marker — the "subscribe" CTA is injected
-    /// client-side (an empty `<div id="piano-paywall">`), so the schema.org lock is the
-    /// only server-side signal. `trustDeclaredLock` (which the resolver passes for a known
-    /// hard-paywall host) must flag it at any length so it routes to the archive bypass.
-    func testTrustedDeclaredLockFlagsLongTeaser() {
-        let teaser = content([
-            String(repeating: "A vivid, gate-marker-free opening that runs long before the wall cuts it off. ", count: 70),
-        ])
-        XCTAssertGreaterThan(teaser.bodyTextLength, PaywallDetector.shortBodyThreshold)
-        // Default (content-based) read lets the long body win…
-        XCTAssertFalse(PaywallDetector.looksPaywalled(
-            content: teaser, html: #"{"isAccessibleForFree":false}"#))
-        // …but trusting the publisher lock flags the wall regardless of length.
-        XCTAssertTrue(PaywallDetector.looksPaywalled(
-            content: teaser, html: #"{"isAccessibleForFree":false}"#, trustDeclaredLock: true))
-        XCTAssertFalse(ArticleExtraction.isReadableArticle(
-            teaser, html: #"{"isAccessibleForFree":false}"#, trustDeclaredLock: true))
-    }
-
-    /// `trustDeclaredLock` only lifts the length cap on the schema.org lock — it must NOT
-    /// flag a genuinely lock-free page (so a hard-paywall host that happens to serve a
-    /// full, unlocked capture still reads as an article).
-    func testTrustedDeclaredLockDoesNotFlagUnlockedPage() {
-        let article = content([
-            String(repeating: "Complete article prose with no lock declaration anywhere in the markup. ", count: 70),
-        ])
-        XCTAssertFalse(PaywallDetector.looksPaywalled(
-            content: article, html: #"{"isAccessibleForFree":true}"#, trustDeclaredLock: true))
     }
 }

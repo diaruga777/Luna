@@ -116,10 +116,10 @@ final class ArticleResolverTests: XCTestCase {
         XCTAssertTrue(fetcher.calls.contains { $0.kind == .referer })
     }
 
-    /// A long, gate-marker-free body that ALSO still carries the publisher's schema.org
-    /// lock — the shape a hard-paywall wall serves when it truncates a long teaser and
-    /// injects its "subscribe" CTA client-side, and the shape of the Safari "Read in Luna"
-    /// hand-off / a free publisher that mislabels its JSON-LD.
+    /// A full, readable article body that ALSO still carries the publisher's
+    /// schema.org lock — the shape of New Statesman subscriber pages and the Safari
+    /// "Read in Luna" hand-off, where the body is present but the stale
+    /// `isAccessibleForFree:false` remains in the page's JSON-LD.
     private func readableButLockedHTML(_ marker: String) -> String {
         let paragraph = "<p>" + String(repeating: "An ordinary readable sentence about \(marker). ", count: 30) + "</p>"
         return "<html><head><title>Real \(marker)</title>"
@@ -127,12 +127,10 @@ final class ArticleResolverTests: XCTestCase {
             + "</head><body><article>\(paragraph)\(paragraph)</article></body></html>"
     }
 
-    /// New Statesman failure case: a hard-paywall host serves a LONG (over the readable
-    /// threshold), gate-marker-free teaser that still declares a schema.org lock — the
-    /// "subscribe" CTA is injected client-side (an empty `<div id="piano-paywall">`), so
-    /// that flag is the only server-side signal. The resolver must NOT accept the teaser;
-    /// it parks under the page title for the archive bypass instead of returning readable.
-    func testHardPaywallHostLongTeaserParksDespiteNoGateMarker() async {
+    /// New Statesman-shaped direct HTML can contain the full story while still declaring
+    /// a schema.org lock. Long, gate-free article prose should resolve directly instead
+    /// of parking for archive.today.
+    func testLongDirectArticleBeatsStaleSchemaLock() async {
         let articleURL = URL(string: "https://www.newstatesman.com/world/asia/2026/07/in-hong-kong-i-saw-the-coming-chinese-century")!
         let html = readableButLockedHTML("newstatesman")
         let fetcher = MockArticleFetcher()
@@ -141,22 +139,7 @@ final class ArticleResolverTests: XCTestCase {
         let result = await ArticleResolver.resolve(
             url: articleURL, fetcher: fetcher,
             nonArchiveBypass: true, trustsPrefetchedHTML: false)
-        XCTAssertEqual(result, .paywalled(title: "Real newstatesman"))
-    }
-
-    /// The lock is distrusted ONLY for KNOWN hard-paywall hosts. An unknown host that
-    /// serves a long body while carrying a stale schema.org lock still resolves directly —
-    /// the "publisher mislabels a free article" case the length cap exists to protect.
-    func testUnknownHostLongBodyBeatsStaleSchemaLock() async {
-        let articleURL = URL(string: "https://blog.example.org/2026/07/a-free-essay")!
-        let html = readableButLockedHTML("freeblog")
-        let fetcher = MockArticleFetcher()
-        fetcher.htmlByURL[articleURL.absoluteString] = html
-
-        let result = await ArticleResolver.resolve(
-            url: articleURL, fetcher: fetcher,
-            nonArchiveBypass: true, trustsPrefetchedHTML: false)
-        if case .readable = result {} else { XCTFail("unknown-host long body should be readable, got \(result)") }
+        if case .readable = result {} else { XCTFail("long direct body should be readable, got \(result)") }
         XCTAssertEqual(fetcher.calls.first?.kind, .plain)
     }
 

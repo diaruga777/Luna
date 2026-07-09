@@ -765,18 +765,16 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         // to solve it — the same courtesy the archive.today flow gives.
         let probe = """
         (function () {
-            if (document.querySelector(
-                'iframe[src*="captcha-delivery.com"], iframe[src*="geo.captcha-delivery"], '
-                + '#captcha__frame, iframe[src*="recaptcha"], iframe[src*="challenges.cloudflare.com"], '
-                + 'iframe[src*="hcaptcha.com"], .g-recaptcha, [data-sitekey], .cf-turnstile, '
-                + '#cf-challenge-running')) { return 'challenge'; }
-            var t = document.body ? document.body.innerText : '';
-            if (/verification required|verify (you are|you're)( a)? human|complete the security check|please verify you are (a )?human|checking your browser|why do i have to complete a captcha/i.test(t)) {
-                return 'challenge';
-            }
+            // CONTENT FIRST: if the article body already rendered, the page ISN'T gated —
+            // extract it, even when a reCAPTCHA/consent iframe is ALSO on the page. A
+            // client-side-unlocked article (New Statesman, Piano blocked) still loads ad
+            // slots (dianomi/Google) that embed `recaptcha` iframes; the old challenge-
+            // first order mistook those AD reCAPTCHAs for an access gate, revealed the
+            // page, and paused forever without ever extracting the visible article.
             if (document.querySelector('article, [itemprop=articleBody], main article, [class*=article-body], #CONTENT')) {
                 return 'content-root';
             }
+            var t = document.body ? document.body.innerText : '';
             // A referer-unlocked site (WSJ) can render the full article body without any
             // of the recognized article-container selectors, so a selector-only readiness
             // test never fires and the flow times out into archive.today even though the
@@ -787,6 +785,16 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             var ps = document.querySelectorAll('p'), textLen = 0;
             for (var i = 0; i < ps.length; i++) { textLen += (ps[i].innerText || '').length; }
             if (textLen > 1500 && document.querySelector('h1')) { return 'content-root'; }
+            // No article rendered yet — NOW a real access CAPTCHA blocking the page matters,
+            // so reveal it for the user to solve.
+            if (document.querySelector(
+                'iframe[src*="captcha-delivery.com"], iframe[src*="geo.captcha-delivery"], '
+                + '#captcha__frame, iframe[src*="recaptcha"], iframe[src*="challenges.cloudflare.com"], '
+                + 'iframe[src*="hcaptcha.com"], .g-recaptcha, [data-sitekey], .cf-turnstile, '
+                + '#cf-challenge-running')) { return 'challenge'; }
+            if (/verification required|verify (you are|you're)( a)? human|complete the security check|please verify you are (a )?human|checking your browser|why do i have to complete a captcha/i.test(t)) {
+                return 'challenge';
+            }
             return t;
         })()
         """

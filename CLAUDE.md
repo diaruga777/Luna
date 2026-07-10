@@ -1,11 +1,13 @@
 # Luna — three weblink apps over one shared store (experiment)
 
-Luna is a family of **three standalone iOS apps** (UIKit, deployment target iOS 26)
+Luna is a family of **three standalone iOS apps** (UIKit, deployment target iOS 18;
+FoundationModels/new-API code is gated behind `@available(iOS 26, *)`)
 that share one App Group, one on-disk store (`readingList.json`), and one codebase:
 
 - **Luna Reader** (`com.hsanabria.luna.reader`, Xcode target `Luna`) — articles,
   paywalled articles, documents. Scrolling reader (inline split-web frames) + RSVP speed
-  reader; send-to-Kindle (emailed through the connected email account).
+  reader; background-playback read-aloud with autoplay-next and on-device trimming (see
+  `claudedocs/audio-playback.md`); send-to-Kindle (emailed through the connected email account).
 - **Luna Downloader** (`com.hsanabria.luna.downloader`, target `LunaDownloader`) —
   social / video / audio links + friend-sharing (email-based; see
   `claudedocs/social-sharing.md` — no CloudKit).
@@ -73,7 +75,8 @@ closures/protocols installed at launch in AppDelegate (e.g.
 ## Running the unit tests (CLI — works headless, no Blitz needed)
 
 The full `LunaTests` suite runs from the command line on an **iOS 26.x simulator**
-(deployment target is iOS 26) via the **`Luna`** scheme (Reader is the test host). The
+(the project's deployment target is iOS 18 — the iOS 26.x simulator is just what's used
+for testing) via the **`Luna`** scheme (Reader is the test host). The
 `LunaDownloader` / `LunaPriceTracker` schemes build their apps (`xcodebuild build
 -scheme …`) but carry no test bundle of their own. Recipe:
 
@@ -88,7 +91,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   Xcode 26.2's `actool` cannot compile it** ("Icon export exited with status
   255") — prefix every `xcodebuild` invocation with
   `DEVELOPER_DIR=/Applications/Xcode-27.0.0-Beta.app` in that case. Tests still
-  run fine on an iOS 26.2 simulator either way (deployment target stays iOS 26).
+  run fine on an iOS 26.2 simulator either way (deployment target stays iOS 18).
 - **`DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO` works around a confirmed Xcode 26
   swift-build bug (swiftlang/swift-build#975).** Its target-dependency-graph
   validator emits spurious `'X' is missing a dependency on 'Y' because dependency
@@ -116,9 +119,18 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   app-group entitlement, so the test host crashes at launch (early-exit, "external
   symbol") on app-group container access. Default ad-hoc signing applies the
   entitlement and the app group works on the simulator.
-- **The full suite is green on the iOS 26.x sim: 904 tests, 2 skipped, 0 failures.**
-  (The 2 skips are intentional `XCTSkip`s — `CatchUpAndPriceScreenTests.testPriceTracking{,Alerting}EditorSnapshot`.)
-  The ~36 failures previously documented here were all stale test data, not the
+- **The full suite is green on the iOS 26.x sim: 914 tests, 4 skipped, 0 failures**
+  (measured after the audio-playback feature landed; the previously-documented "904"
+  predates it). The 4 skips are intentional `XCTSkip`s — `CatchUpAndPriceScreenTests
+  .testPriceTracking{,Alerting}EditorSnapshot` and `GuideVideoRecorderTests.testRecord
+  {ActionButton,SafariExtension}Guide` (gated behind `RECORD_GUIDE_VIDEOS=1`). One class,
+  `ArticleAudioEngineTests` (14 tests, real `AVAudioEngine.start()` even in manual/offline
+  rendering mode), is environment-fragile: on at least one Mac it reproducibly aborts every
+  test with a mediaserverd "RPC timeout, apparently deadlocked" — reproduced across a
+  simulator reboot and a sandbox toggle, ruling out a code regression (the class hasn't
+  changed since it first landed). If you hit this, verify the rest of the suite with
+  `-skip-testing:LunaTests/ArticleAudioEngineTests` and run that class alone/on another
+  Mac. The ~36 failures previously documented here were all stale test data, not the
   environment, and have been fixed: snapshot reference PNGs are device-specific and
   were re-recorded on this sim with `RECORD_SNAPSHOTS=1` (re-record after intentional
   UI changes via `TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test …` — the build-setting

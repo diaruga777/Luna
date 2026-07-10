@@ -145,23 +145,28 @@ final class AudioMiniPlayerView: UIView {
         row.setCustomSpacing(2, after: skipBackButton)
         row.setCustomSpacing(2, after: playPauseButton)
         row.setCustomSpacing(6, after: skipForwardButton)
-        glass.contentView.addSubview(row)
+        // Content is overlaid as SIBLINGS above the glass rather than inside
+        // `glass.contentView`: no vibrancy is wanted here, and layers hosted
+        // inside `UIGlassEffect`'s content view don't rasterize through
+        // `layer.render(in:)` (verified empirically on the iOS 26 sim — the
+        // snapshot tests, and any layer-tree capture, would show an empty bar).
+        addSubview(row)
 
         progressBar.translatesAutoresizingMaskIntoConstraints = false
-        glass.contentView.addSubview(progressBar)
+        addSubview(progressBar)
 
         let rowHeight = row.heightAnchor.constraint(equalToConstant: 36)
         rowHeightConstraint = rowHeight
         NSLayoutConstraint.activate([
-            row.topAnchor.constraint(equalTo: glass.contentView.topAnchor, constant: 6),
-            row.leadingAnchor.constraint(equalTo: glass.contentView.leadingAnchor, constant: 14),
-            row.trailingAnchor.constraint(equalTo: glass.contentView.trailingAnchor, constant: -10),
+            row.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             rowHeight,
             thumbnailView.widthAnchor.constraint(equalToConstant: 36),
             thumbnailView.heightAnchor.constraint(equalToConstant: 36),
             progressBar.topAnchor.constraint(equalTo: row.bottomAnchor, constant: 2),
-            progressBar.leadingAnchor.constraint(equalTo: glass.contentView.leadingAnchor, constant: 16),
-            progressBar.trailingAnchor.constraint(equalTo: glass.contentView.trailingAnchor, constant: -16),
+            progressBar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            progressBar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             progressBar.heightAnchor.constraint(equalToConstant: 14),
         ])
 

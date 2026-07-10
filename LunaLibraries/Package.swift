@@ -81,11 +81,13 @@ let package = Package(
         .target(name: "LunaSocial", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification"]),
         .target(name: "LunaReaderEngine", dependencies: ["LunaModels"]),
         // Offline speech rendering (AVSpeechSynthesizer.write -> PCM) + a long-lived
-        // AVAudioEngine playback graph. Phase 1 of the audio-playback rebuild — see
-        // claudedocs/audio-playback-plan.md. Deliberately depends on nothing beyond
-        // LunaModels yet: no persistence/App-Group/UI wiring happens until later
-        // phases (AudioPlaybackCenter, Now Playing, settings, mini-player).
-        .target(name: "LunaAudioPlayback", dependencies: ["LunaModels"], resources: [
+        // AVAudioEngine playback graph, plus (Phase 2) the app-wide playback center,
+        // Now Playing/remote-command integration, session policy, and App-Group
+        // settings/position persistence — see claudedocs/audio-playback-plan.md.
+        // LunaAppConfig (App-Group id) and LunaStorage (ReadingListStore access,
+        // behind the ReadingListPlaybackStore seam) are Phase 2 additions; UI wiring
+        // (mini-player, settings screen) is still later phases.
+        .target(name: "LunaAudioPlayback", dependencies: ["LunaModels", "LunaAppConfig", "LunaStorage"], resources: [
             .copy("Resources/ChimeTransition.caf"),
             .copy("Resources/ChimeFinal.caf"),
         ]),

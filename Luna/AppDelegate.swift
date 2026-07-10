@@ -92,6 +92,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             DotMatrixKeyboardReveal.prewarmKeyboard()
         }
 
+        // New audio-playback stack (claudedocs/audio-playback-plan.md, Phase 2):
+        // install the autoplay queue provider and register the Now Playing /
+        // remote-command coordinator. Registration must happen at launch (not
+        // lazily) so a cold background relaunch from a lock-screen play command
+        // can restore the persisted session. Universal across all three apps;
+        // playback only ever starts from Reader-surface flows.
+        AudioPlaybackWiring.install()
+
         // Wire the read-aloud first-run prompt's "Open Settings" to push the
         // Voice settings screen. Setting this hook is what enables the prompt in
         // the main app (extensions leave it nil → the prompt is skipped).

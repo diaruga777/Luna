@@ -244,7 +244,11 @@ public final class ReaderViewController: UIViewController {
     private static func floatingShareBottomInset(
         for mode: ReadingListItem.ReaderMode, audioOn: Bool) -> CGFloat {
         switch mode {
-        case .scroll: return audioOn ? -92 : -24   // lift to clear the read-aloud footer
+        case .scroll:
+            // The in-reader read-aloud footer only exists on the LEGACY path
+            // (extensions). In-app the window-level mini-player replaces it,
+            // so the share button stays low.
+            return (audioOn && ReaderAudioLauncher.center == nil) ? -92 : -24
         case .rsvp: return -168                     // clear the scrubber + playback controls
         case .highlight, .original: return -24      // .highlight retired (never selectable)
         }
@@ -298,6 +302,13 @@ public final class ReaderViewController: UIViewController {
     @objc private func audioToggled() {
         audioOn.toggle()
         updateAudioButton()
+        // Toggling OFF while the app-wide center is voicing THIS article pauses
+        // it (the rebuilt child then renders silently). Playback of a different
+        // article is deliberately untouched, and this is a no-op on the legacy
+        // (extension) path where no center is installed.
+        if !audioOn {
+            ReaderAudioLauncher.pauseIfPlaying(itemID: item.id)
+        }
         // Read-aloud grows a playback footer in scroll mode — lift the share button.
         floatingShareBottomConstraint?.constant = Self.floatingShareBottomInset(for: mode, audioOn: audioOn)
         showCurrentMode()

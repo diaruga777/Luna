@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaAudioPlayback
 import LunaReaderEngine
 import LunaDesignSystem
 import LunaStorage
@@ -380,6 +381,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         sentenceLongPress = longPress
 
         configureFooter()
+
+        // In-app (seam installed) the center drives read-aloud: subscribe to its
+        // word events for highlighting — applied only while the DISPLAYED article
+        // is the playing one (see the AudioPlaybackObserver conformance below).
+        // Observers are weakly held, so no teardown is needed.
+        ReaderAudioLauncher.center?.addObserver(self)
 
         // The end-of-article share footer is attached only once the FULL article is
         // rendered (its position is keyed off the complete content size). For a short
@@ -836,6 +843,30 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 
     private func startSpeech() {
+        followPlayback = true
+
+        // In-app: hand off to the app-wide playback center (background audio,
+        // autoplay, the window-level mini-player replaces the private footer).
+        // The legacy path below stays for the share/action extensions, where
+        // the seam is never installed.
+        if let center = ReaderAudioLauncher.center {
+            // Already voicing this very article (e.g. a mode switch back to
+            // scroll, or reopening the playing article with audio on): keep
+            // going rather than restarting — unless a position was explicitly
+            // carried in from another reader mode.
+            if center.currentItemInfo?.itemID == item.id,
+               center.currentSnapshot.isAudiblyPlaying,
+               explicitResumeWordIndex == nil {
+                VoiceFirstRunPrompt.showIfNeeded(from: self)
+                return
+            }
+            // nil resumes the center's own persisted position when it names
+            // this item; a carried-over mode-switch position wins outright.
+            center.play(item: item, content: content, fromWordIndex: explicitResumeWordIndex)
+            VoiceFirstRunPrompt.showIfNeeded(from: self)
+            return
+        }
+
         if speech == nil {
             let controller = SpeechController(
                 content: content, rendered: rendered, wordMap: wordMap,
@@ -843,7 +874,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             controller.delegate = self
             speech = controller
         }
-        followPlayback = true
         footer.isHidden = false
         layoutShareView()
         speech?.play(fromWordIndex: resumeWordIndex)
@@ -1228,6 +1258,36 @@ extension ScrollReaderViewController: SpeechControllerDelegate {
         didFinishReading = true
         onFinishedReading?()
         footerPlayButton.configuration?.image = UIImage(systemName: "play.fill")
+        removeHighlight()
+    }
+}
+
+// MARK: - AudioPlaybackObserver (in-app center-driven read-aloud)
+
+extension ScrollReaderViewController: AudioPlaybackObserver {
+    /// Word highlighting from the app-wide center, applied only while the
+    /// DISPLAYED article is the one playing. The event's range is UTF-16 within
+    /// the ORIGINAL `ArticleContent` block at `blockIndex`, so it maps into the
+    /// rendered attributed string exactly the way the legacy
+    /// `SpeechController` delegate path did: block range start + in-block
+    /// location. A prefix-only render simply skips events for blocks beyond it
+    /// (audio-enabled opens always render the full article up front).
+    public func audioPlaybackCenter(_ center: AudioPlaybackCenter, didEmitWordEvent event: AudioWordEvent) {
+        guard center.currentItemInfo?.itemID == item.id, isViewLoaded else { return }
+        guard let blockRange = rendered.blockTextRanges[safe: event.blockIndex] ?? nil else { return }
+        let attributedRange = NSRange(
+            location: blockRange.location + event.rangeInBlockText.location,
+            length: event.rangeInBlockText.length)
+        applyHighlight(attributedRange)
+        if followPlayback {
+            scrollToCenter(attributedRange)
+        }
+    }
+
+    /// Autoplay advanced to (or the user started) a different article: this
+    /// reader's spoken-word highlight no longer describes what's audible.
+    public func audioPlaybackCenter(_ center: AudioPlaybackCenter, didUpdateItem info: AudioPlaybackItemInfo?) {
+        guard isViewLoaded, info?.itemID != item.id else { return }
         removeHighlight()
     }
 }

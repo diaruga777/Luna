@@ -61,6 +61,12 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private var didDecide = false
     private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
     private var audioOn = false
+    /// The `ReadingListItem.id` handed to the CURRENTLY embedded reader child —
+    /// the identity the app-wide audio center plays under when this layer's
+    /// audio toggle starts read-aloud. Captured per embed so toggling audio OFF
+    /// can pause exactly that playback, and so the host can tell whether the
+    /// playing article lives somewhere in this reader's trail.
+    private(set) var embeddedReaderItemID: UUID?
     private weak var readerChild: UIViewController?
     /// This layer's current chrome role, tracked so a mode switch (which re-embeds the
     /// reader child) can restore the new child's interaction to match the focus state —
@@ -452,6 +458,12 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         audioOn.toggle()
         audioButton.configuration?.image = UIImage(
             systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash")
+        // Toggling OFF while the app-wide center is voicing THIS layer's page
+        // pauses it (the re-embed below renders silently); other articles'
+        // playback is untouched. No-op on the legacy (extension-less) path.
+        if !audioOn, let itemID = embeddedReaderItemID {
+            ReaderAudioLauncher.pauseIfPlaying(itemID: itemID)
+        }
         guard isArticle else { return }
         // The re-embed restores from `descriptor.scrollOffset`, which is only
         // written on dive/pop/background — capture the live position first or
@@ -650,27 +662,48 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             return
         }
         removeLiveWebView()
-        var transient = ReadingListItem(urlString: url.absoluteString)
-        transient.state = .ready
-        transient.title = descriptor.title
-        transient.lastScrollOffset = descriptor.scrollOffset
+        let readerItem = readerItem(for: url)
+        embeddedReaderItemID = readerItem.id
 
         switch mode {
         case .scroll, .highlight, .original:
             scrollReader.configureForReuse(
-                item: transient, content: content, audioEnabled: audioOn)
+                item: readerItem, content: content, audioEnabled: audioOn)
             scrollReader.onLinkActivatedWithRange = { [weak self] url, range in
                 guard let self else { return }
                 self.onLinkActivated?(url, self.lineText(for: range))
             }
             showPreloadedChild(scrollReader)
         case .rsvp:
-            rsvpReader.configureForReuse(item: transient, content: content, audioEnabled: audioOn)
+            rsvpReader.configureForReuse(item: readerItem, content: content, audioEnabled: audioOn)
             rsvpReader.onLinkActivated = { [weak self] url in self?.onLinkActivated?(url, nil) }
             showPreloadedChild(rsvpReader)
         }
         readerMode = mode
         view.setNeedsLayout()
+    }
+
+    /// The `ReadingListItem` handed to the embedded scroll/RSVP reader. When this
+    /// layer's page IS a saved reading-list item (always true for the root layer,
+    /// and for any dived-into link the user happens to have saved), the REAL store
+    /// item is used so read-aloud plays under its durable identity — mark-read,
+    /// the autoplay queue's exclusion, spoken-position resume, and the
+    /// mini-player's thumbnail/navigation all key off `item.id`. Unsaved pages
+    /// get a transient whose id is DETERMINISTICALLY seeded from the URL, so the
+    /// identity stays stable across re-embeds (mode/audio toggles) within the
+    /// layer instead of regenerating per embed. Either way the per-session
+    /// scroll offset comes from the descriptor, exactly as before.
+    private func readerItem(for url: URL) -> ReadingListItem {
+        var item = ReadingListStore.shared.item(forURLString: url.absoluteString)
+            ?? ReadingListItem(
+                seed: "rabbithole:\(url.absoluteString)",
+                urlString: url.absoluteString,
+                title: descriptor.title,
+                dateAdded: Date())
+        item.state = .ready
+        item.title = descriptor.title ?? item.title
+        item.lastScrollOffset = descriptor.scrollOffset
+        return item
     }
 
     private func showPreloadedChild(_ child: UIViewController) {

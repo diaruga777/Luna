@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaAudioPlayback
 import LunaReaderEngine
 import LunaDesignSystem
 import LunaStorage
@@ -57,6 +58,31 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     // normal pace) and the display flashes each word as it's voiced — the WPM
     // setting is ignored.
     private var isSpeechMode: Bool
+
+    // MARK: Center-driven read-aloud (in-app only — see ReaderAudioLauncher)
+
+    /// The article content, retained so speech mode can hand it to the
+    /// app-wide playback center (the RSVP engine consumes the content at init;
+    /// the center needs the original blocks).
+    private var articleContent: ArticleContent
+    /// Lazily built per-block token starts, for mapping the center's word
+    /// events (original block index + in-block UTF-16 range) into the engine's
+    /// shared token space. Invalidated on `configureForReuse`.
+    private var blockTokenStartsCache: [Int]?
+
+    /// Non-nil when speech mode should be driven by the app-wide playback
+    /// center (in-app) instead of the private per-sentence synthesizer
+    /// (extensions, where the seam is never installed). Silent (timer) mode
+    /// never touches either.
+    private var speechCenter: AudioPlaybackCenter? {
+        isSpeechMode ? ReaderAudioLauncher.center : nil
+    }
+
+    /// Whether the center currently owns playback of THIS reader's article.
+    private var centerOwnsItem: Bool {
+        guard let center = speechCenter else { return false }
+        return center.currentItemInfo?.itemID == item.id
+    }
     /// Created lazily so the SILENT speed reader never instantiates a speech
     /// synthesizer — instantiating one can claim the system audio session and
     /// interrupt other audio (e.g. Picture-in-Picture video). Only read-aloud
@@ -136,6 +162,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
          initialDisplayMode: RSVPDisplayMode? = nil) {
         self.item = item
         self.isSpeechMode = audioEnabled
+        self.articleContent = content
         self.shareProvider = shareProvider
         self.displayMode = initialDisplayMode ?? ReaderSettings.rsvpMode
         // Cap the sizing width so the word/font stays readable on wide screens
@@ -184,6 +211,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
         self.item = item
         self.isSpeechMode = audioEnabled
+        self.articleContent = content
+        self.blockTokenStartsCache = nil
         self.shareProvider = shareProvider
         self.displayMode = initialDisplayMode ?? ReaderSettings.rsvpMode
         self.engine = RSVPEngine(content: content, maxCharactersPerWord: Self.targetCharactersAcross)
@@ -198,6 +227,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         if displayMode == .phrases { currentChunkIndex = chunkIndex(forWord: currentIndex) }
 
         guard isViewLoaded else { return }
+        updateMeldAnchor()
         subModeControl.selectedSegmentIndex = displayMode == .phrases ? 1 : 0
         scrubber.maximumValue = Float(max(engine.words.count - 1, 1))
         scrubber.value = Float(currentIndex)
@@ -274,6 +304,17 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         refreshDisplay()
         updateStatus()
         finishIfAtEnd()
+
+        // In-app, speech mode is driven by the app-wide playback center: the
+        // circular controls become its remote and word flashing follows its
+        // word events (see the AudioPlaybackObserver conformance below).
+        // Observers are weakly held, so no teardown is needed.
+        ReaderAudioLauncher.center?.addObserver(self)
+    }
+
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        updateMeldAnchor()
     }
 
     public override func viewDidLayoutSubviews() {
@@ -289,10 +330,30 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         super.viewWillDisappear(animated)
         // `pause()` already saves (a legitimate play→pause save point); only
         // call it — and skip the redundant extra save — when actually playing.
+        // On the center path `pause()` never stops the audio itself: leaving
+        // the screen is exactly when background playback should keep going.
         if isPlaying {
             pause()
         } else {
             saveProgress()
+        }
+        if AudioMiniPlayerMeld.anchorView === controlsStack {
+            AudioMiniPlayerMeld.setAnchor(nil)
+        }
+    }
+
+    /// Publishes (or clears) this reader's controls stack as the mini-player's
+    /// dock anchor: set while RSVP is on screen in CENTER-driven speech mode,
+    /// so the window-level bar slims down and docks above the circular
+    /// controls. The mini-player host also re-validates the anchor's actual
+    /// visibility itself (the RabbitHole host shows/hides pre-built children
+    /// without appearance callbacks).
+    private func updateMeldAnchor() {
+        guard ReaderAudioLauncher.center != nil, isViewLoaded else { return }
+        if isSpeechMode, view.window != nil {
+            AudioMiniPlayerMeld.setAnchor(controlsStack)
+        } else if AudioMiniPlayerMeld.anchorView === controlsStack {
+            AudioMiniPlayerMeld.setAnchor(nil)
         }
     }
 
@@ -776,6 +837,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     private func play() {
         guard !engine.words.isEmpty else { return }
+        // In-app speech mode: the play control drives the app-wide center
+        // (resume when it owns this article, else start/switch playback to
+        // it). Display state (isPlaying, button glyph, word flashing) follows
+        // via the AudioPlaybackObserver conformance, not from here.
+        if let center = speechCenter {
+            playViaCenter(center)
+            return
+        }
         if currentIndex >= engine.words.count - 1 {
             currentIndex = 0
             currentChunkIndex = 0
@@ -794,7 +863,34 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         }
     }
 
+    private func playViaCenter(_ center: AudioPlaybackCenter) {
+        if centerOwnsItem {
+            if center.currentSnapshot.isAudiblyPlaying { return }
+            if case .paused = center.state { center.resume(); return }
+        }
+        if currentIndex >= engine.words.count - 1 {
+            currentIndex = 0
+            currentChunkIndex = 0
+        }
+        // Start (or switch) playback at the displayed focal word — this is
+        // also the "explicit play switches playback to this article" path
+        // when something else is playing.
+        let token = engine.tokenIndex(forFrameIndex: currentIndex) ?? currentIndex
+        center.play(item: item, content: articleContent, fromWordIndex: token)
+    }
+
     private func pause() {
+        // Center-driven speech mode: lifecycle pauses (reuse, disappearing,
+        // sub-mode switches) must NEVER stop the app-wide playback —
+        // navigating away is exactly when background audio should keep going.
+        // Explicit user pauses go through `togglePlayPause`/`scrubbed`, which
+        // pause the center directly; this path only settles local state.
+        if speechCenter != nil {
+            timer?.invalidate()
+            timer = nil
+            saveProgress()
+            return
+        }
         isPlaying = false
         timer?.invalidate()
         timer = nil
@@ -846,6 +942,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     }
 
     @objc private func togglePlayPause() {
+        if let center = speechCenter {
+            if centerOwnsItem, center.currentSnapshot.isAudiblyPlaying {
+                center.pause()
+            } else {
+                play()
+            }
+            return
+        }
         isPlaying ? pause() : play()
     }
 
@@ -926,7 +1030,13 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         // while already paused shouldn't re-run pause's save/display work, and
         // continuous `.valueChanged` ticks must not persist at all; the scrub
         // gesture's end (`scrubEnded`) saves once.
-        if isPlaying { pause() }
+        if isPlaying {
+            if let center = speechCenter {
+                if centerOwnsItem { center.pause() }
+            } else {
+                pause()
+            }
+        }
         seek(toWord: Int(scrubber.value))
     }
 
@@ -934,6 +1044,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// persistence point for a scrubber drag, instead of every continuous tick.
     @objc private func scrubEnded() {
         saveProgress()
+        // Land the center on the scrubbed position too (it stays paused;
+        // resume/lock-screen then continue from here).
+        syncCenterToDisplayedPosition()
     }
 
     @objc private func skipBack() { skip(by: -Self.skipWordCount) }
@@ -950,6 +1063,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let target = RSVPEngine.skipTarget(
             currentIndex: currentIndex, by: delta, wordCount: engine.words.count)
         guard target != currentIndex else { return }
+
+        // Center-driven speech mode: move the display, then land the center on
+        // the same word — its seek preserves the play/pause state itself.
+        if speechCenter != nil {
+            seek(toWord: target)
+            saveProgress()
+            syncCenterToDisplayedPosition()
+            return
+        }
 
         let wasPlaying = isPlaying
         // Tear down whichever engine is running without flipping the play/pause
@@ -1006,6 +1128,27 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let percent = engine.words.isEmpty
             ? 0 : Int((Double(currentIndex + 1) / Double(engine.words.count)) * 100)
         statusLabel.text = "\(percent)% · \(Int(wpm)) wpm"
+    }
+
+    /// Seeks the center to the currently displayed focal word — used after a
+    /// scrub/skip so the audio lands where the display is. Only when the
+    /// center owns THIS article; its seek preserves play/pause state.
+    private func syncCenterToDisplayedPosition() {
+        guard let center = speechCenter, centerOwnsItem else { return }
+        let token = engine.tokenIndex(forFrameIndex: currentIndex) ?? currentIndex
+        let lastFrame = max(engine.words.count - 1, 0)
+        let tokenCount = (engine.tokenIndex(forFrameIndex: lastFrame) ?? token) + 1
+        guard tokenCount > 1 else { return }
+        center.seek(toFraction: Double(token) / Double(tokenCount - 1))
+    }
+
+    /// Token starts per ORIGINAL content block, built once per configure —
+    /// the mapping table for center word events.
+    private func blockTokenStarts() -> [Int] {
+        if let cached = blockTokenStartsCache { return cached }
+        let starts = AudioWordEventTokenMapping.blockTokenStarts(blocks: articleContent.blocks)
+        blockTokenStartsCache = starts
+        return starts
     }
 
     private func saveProgress() {
@@ -1075,6 +1218,59 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         didRevealShare = true
         shareView.isHidden = false
         UIView.animate(withDuration: 0.3) { self.shareView.alpha = 1 }
+    }
+}
+
+// MARK: - AudioPlaybackObserver (in-app center-driven speech mode)
+
+extension RSVPViewController: AudioPlaybackObserver {
+    /// Mirrors the center's state into RSVP's local play/pause display —
+    /// `isPlaying` is true exactly while the center is voicing THIS article.
+    public func audioPlaybackCenter(_ center: AudioPlaybackCenter, didChangeState state: AudioPlaybackState) {
+        guard speechCenter != nil, isViewLoaded else { return }
+        let playingMine: Bool
+        if case .playing(let itemID) = state, itemID == item.id {
+            playingMine = true
+        } else {
+            playingMine = false
+        }
+        guard playingMine != isPlaying else { return }
+        isPlaying = playingMine
+        playPauseButton.configuration?.image = UIImage(systemName: playingMine ? "pause.fill" : "play.fill")
+        playPauseButton.accessibilityLabel = playingMine ? "Pause" : "Play"
+        updateContextVisibility(animated: true, duration: playingMine ? 0.05 : 0.2)
+        if !playingMine {
+            refreshDisplay()
+            saveProgress()
+        }
+    }
+
+    /// Word flashing from the center's voicing, applied only while it plays
+    /// THIS article: the event's (original block index, in-block UTF-16 range)
+    /// maps into the engine's shared token space, then to an RSVP frame.
+    public func audioPlaybackCenter(_ center: AudioPlaybackCenter, didEmitWordEvent event: AudioWordEvent) {
+        guard speechCenter != nil, isViewLoaded, isPlaying, centerOwnsItem else { return }
+        guard let token = AudioWordEventTokenMapping.tokenIndex(
+                blockIndex: event.blockIndex,
+                utf16Location: event.rangeInBlockText.location,
+                blocks: articleContent.blocks,
+                blockTokenStarts: blockTokenStarts()),
+              let frame = engine.frameIndex(forTokenIndex: token),
+              engine.words.indices.contains(frame)
+        else { return }
+        guard frame != currentIndex || displayMode == .phrases else { return }
+        currentIndex = frame
+        if displayMode == .phrases {
+            currentChunkIndex = chunkIndex(forWord: frame)
+            showChunk(at: currentChunkIndex, highlightWord: frame)
+        } else {
+            showWord(at: frame)
+        }
+        scrubber.value = Float(frame)
+        updateStatus()
+        if frame >= engine.words.count - 1 {
+            finish()
+        }
     }
 }
 

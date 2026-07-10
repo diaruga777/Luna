@@ -89,6 +89,18 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// The saved reading-list item this reader was opened for — how the
+    /// window-level audio mini-player finds an already-open reader for the
+    /// playing article in the nav stack (tap-to-return navigation).
+    public var rootItemID: UUID { rootItem.id }
+
+    /// Whether the article playing under `itemID` is embedded anywhere in this
+    /// reader's layer trail (the root, or a dived-into page — saved pages play
+    /// under their real store id, unsaved ones under a URL-seeded transient id).
+    public func containsReaderItem(withID itemID: UUID) -> Bool {
+        rootItem.id == itemID || layers.contains { $0.embeddedReaderItemID == itemID }
+    }
+
     deinit {
         warmTask?.cancel()
         // Backstop: ensure this session's speculative (+1 depth) preloads are released even

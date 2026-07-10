@@ -46,11 +46,29 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         UIApplication.shared.connectedScenes.compactMap { $0.delegate as? SceneDelegate }.first
     }
 
+    /// The main navigation controller, whichever shape the root takes: wrapped
+    /// in the audio mini-player host (the normal main UI) or bare (UI-test and
+    /// debug roots). Nil during onboarding.
+    private var mainNavigationController: UINavigationController? {
+        if let host = window?.rootViewController as? MiniPlayerHostViewController {
+            return host.contentNavigationController
+        }
+        return window?.rootViewController as? UINavigationController
+    }
+
+    /// Wraps the main nav controller in the window-level audio mini-player
+    /// host (claudedocs/audio-playback-plan.md, Phase 3): the bar floats above
+    /// the bottom safe area, survives every push/pop, and hides while idle.
+    private func makeMainRootViewController() -> UIViewController {
+        MiniPlayerHostViewController(content: UINavigationController(
+            rootViewController: ReadingListViewController(surface: AppSurfaceConfig.current)))
+    }
+
     /// Pushes the Pending Requests screen onto the reading-list nav once the main
     /// UI exists.
     private func applyPendingNotificationRoute() {
         guard Self.pendingRequestsRoute,
-              let nav = window?.rootViewController as? UINavigationController else { return }
+              let nav = mainNavigationController else { return }
         Self.pendingRequestsRoute = false
         nav.dismiss(animated: false)
         nav.popToRootViewController(animated: false)
@@ -102,8 +120,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             }
             window.rootViewController = OnboardingFlow.make(onFinished: finish)
         } else {
-            window.rootViewController = UINavigationController(
-                rootViewController: ReadingListViewController(surface: AppSurfaceConfig.current))
+            window.rootViewController = makeMainRootViewController()
         }
         self.window = window
         window.makeKeyAndVisible()
@@ -147,7 +164,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// Saves the article (if new), then opens it the way tapping its list row does.
     /// Stashes the URL if the main UI isn't up yet (onboarding).
     private func openReader(articleURL: String) {
-        guard let nav = window?.rootViewController as? UINavigationController else {
+        guard let nav = mainNavigationController else {
             pendingReadURL = articleURL
             return
         }
@@ -202,7 +219,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// the Shortcut opened Luna). One-shot; consumed only once the main UI is
     /// actually up so an onboarding-first launch doesn't swallow it.
     private func applyPendingFriendPrompt() {
-        guard let nav = window?.rootViewController as? UINavigationController,
+        guard let nav = mainNavigationController,
               let list = nav.viewControllers.first as? ReadingListViewController
         else { return }
         let surface = AppSurfaceConfig.current.storageIdentifier
@@ -235,18 +252,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Onboarding → main UI is a whole-screen swap: dissolve it through the pixel
         // wipe (falls back to a plain animated fade when the wipe is off).
         DotMatrixCrossfade.run(in: window, direction: .random) {
-            window.rootViewController = UINavigationController(
-                rootViewController: ReadingListViewController(surface: AppSurfaceConfig.current))
+            window.rootViewController = self.makeMainRootViewController()
             window.layoutIfNeeded()
         }
         installDotMatrixTransitions()
     }
 
-    /// Prewarm the GPU overlay and route the root navigation controller's push/pop
+    /// Prewarm the GPU overlay and route the main navigation controller's push/pop
     /// through the Dot Matrix pixel-wipe (a no-op when off / Metal unavailable).
+    /// The nav controller now usually sits INSIDE the mini-player host container
+    /// (`mainNavigationController` resolves both shapes), so the transitions are
+    /// installed on the inner nav, not on the window root itself.
     private func installDotMatrixTransitions() {
         guard let window else { return }
         DotMatrixTransitionCenter.shared.prewarm(in: window)
-        (window.rootViewController as? UINavigationController)?.installDotMatrixTransitions()
+        mainNavigationController?.installDotMatrixTransitions()
     }
 }

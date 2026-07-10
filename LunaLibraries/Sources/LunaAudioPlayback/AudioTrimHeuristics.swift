@@ -75,6 +75,11 @@ public enum AudioTrimHeuristics {
     /// A block this short (or shorter) counts as "short" for the LLM's
     /// mid-article weak-signal gate (`looksLikeRemovableJunk`).
     static let shortBlockMaxWordCount = 12
+    /// A byline is a SHORT line ("By Jane Doe", "By Jane Doe and John Smith,
+    /// Staff Writers") — a long paragraph that merely STARTS with "By <Name>"
+    /// (e.g. an article lead introducing its author) must never match, even
+    /// though it clears the generic `weakEdgeMaxWordCount` gate.
+    static let bylineMaxWordCount = 12
 
     // MARK: - Public entry point
 
@@ -249,7 +254,9 @@ public enum AudioTrimHeuristics {
     /// Bylines (`^By NAME`), datelines (`CITY — `), `Updated:`/`Published:`,
     /// and "N min read" — all leading-edge-only, all typically short.
     private static func leadingBoilerplateReason(_ text: String) -> String? {
-        if matches(text, prefixPattern: "^By [A-Z]") { return "byline" }
+        if matches(text, prefixPattern: "^By [A-Z]"), wordCount(text: text) <= bylineMaxWordCount {
+            return "byline"
+        }
         if matches(text, prefixPattern: "(?i)^(updated|published)\\s*:") { return "updated/published timestamp" }
         if matches(text, containsPattern: "(?i)\\d+\\s*min(ute)?s?\\s*read") { return "\"min read\" label" }
         if matches(text, prefixPattern: "^[A-Z]{2,}[A-Za-z.,'’ ]*\\s[—–-]\\s") { return "dateline" }

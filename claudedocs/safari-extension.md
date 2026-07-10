@@ -141,18 +141,24 @@ Downloader-platform flow:
    `LunaDownloaderAppClipURL?url=<source>`. If `LunaDownloaderAppClipURL` is empty
    (the default until the production App Clip invocation URL exists), no button is shown
    on platform pages when Downloader isn't installed.
-4. **Reddit is post-page + media gated** (mirrors `PlatformRecognizer.reddit`, which
+4. **Static-image posts are not proactively suggested.** The Downloader still accepts
+   those URLs if the user adds/saves them manually, but the Safari extension only shows
+   the "Download in Luna" pill when a platform page is not a static-image post. Explicit
+   video/player metadata, `<video>` nodes, and GIF/GIFV/video URLs are treated as
+   downloadable/animated; preview-image-only posts are suppressed.
+5. **Reddit is post-page + animated-media gated** (mirrors `PlatformRecognizer.reddit`, which
    now `recognizes:` only a post). The pill appears ONLY on an individual post permalink
    (`/comments/<id>`, `/r|user|u/<name>/comments/<id>`, `/gallery/<id>`, or a
    `redd.it/<id>` short link) — never on the home feed, a subreddit listing, or a
    comment-history listing (a subreddit literally named "comments" is still a feed) —
-   AND only when the post's primary content is image/video. `redditPostHasMedia()`
-   qualifies on the server-rendered `<shreddit-post post-type="image|video|gallery|gif">`
-   (disqualifying `text`/`link`/`poll`/`crosspost`), an `og:video` meta, a `/gallery/`
-   path, or the old-reddit `#siteTable .thing.link` with an `i.redd.it`/`v.redd.it`/
-   `i.imgur.com` `data-domain` (or an `.expando` holding a video/img). Because feeds must
-   never get ANY pill, a reddit host that is not a post short-circuits `content.js` before
-   the product/article heuristics. New Reddit is a client-side-navigating SPA, so
+   AND only when the post's primary content is animated image/video. `redditPostHasMedia()`
+   qualifies on the server-rendered `<shreddit-post post-type="video|gif|gifv">`
+   (disqualifying static `image`/`gallery` plus `text`/`link`/`poll`/`crosspost`),
+   `og:video`/player metadata, GIF/GIFV/video URLs, or the old-reddit `#siteTable`
+   row for `v.redd.it` / animated URLs. Static `i.redd.it` image posts do not show
+   the pill. Because feeds must never get ANY pill, a reddit host that is not a post
+   short-circuits `content.js` before the product/article heuristics. New Reddit is a
+   client-side-navigating SPA, so
    `content.js` retries on hydration (bounded) and runs a ~1s soft-nav watcher (reddit
    hosts only) that drops/re-adds the pill as the URL changes between feed and post.
 

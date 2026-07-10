@@ -12,8 +12,8 @@ import XCTest
 /// global) and the test-only hooks it exposes are called —
 /// `window.__lunaRedditPostID(urlString)` for URL gating (a subreddit / home feed /
 /// comment-history listing must NOT read as a post) and
-/// `window.__lunaRedditPostHasMedia()` for the media gate (only image/video/gallery
-/// posts should get a "Download in Luna" pill).
+/// `window.__lunaRedditPostHasMedia()` for the media gate (only animated image/video
+/// posts should get a "Download in Luna" pill; static images should not).
 @MainActor
 final class SafariRedditGatingTests: XCTestCase {
 
@@ -82,6 +82,19 @@ final class SafariRedditGatingTests: XCTestCase {
         return (result as? Bool) ?? false
     }
 
+    /// The generic Downloader pill verdict for non-Reddit platform pages.
+    private func shouldShowDownloadPill(
+        _ html: String,
+        platform: String = "instagram",
+        urlString: String = "https://www.instagram.com/p/abc123/"
+    ) -> Bool {
+        let result = evaluate(
+            "window.__lunaShouldShowDownloadPillForPlatform(\"\(platform)\")",
+            html: html,
+            urlString: urlString)
+        return (result as? Bool) ?? false
+    }
+
     // MARK: - URL gating (feeds/listings are NOT posts)
 
     func testFeedAndListingURLsAreNotPosts() {
@@ -102,14 +115,22 @@ final class SafariRedditGatingTests: XCTestCase {
         XCTAssertEqual(redditPostID("https://redd.it/1abc2d"), "1abc2d")
     }
 
-    // MARK: - Media gating (image/video only)
+    // MARK: - Media gating (animated image/video only)
 
-    func testImagePostHasMedia() {
-        XCTAssertTrue(hasMedia("<html><body><shreddit-post post-type=\"image\"></shreddit-post></body></html>"))
+    func testStaticImagePostHasNoMedia() {
+        XCTAssertFalse(hasMedia("<html><body><shreddit-post post-type=\"image\"></shreddit-post></body></html>"))
     }
 
     func testVideoPostHasMedia() {
         XCTAssertTrue(hasMedia("<html><body><shreddit-post post-type=\"video\"></shreddit-post></body></html>"))
+    }
+
+    func testGifPostHasMedia() {
+        XCTAssertTrue(hasMedia("<html><body><shreddit-post post-type=\"gif\"></shreddit-post></body></html>"))
+    }
+
+    func testGalleryPostHasNoMediaWithoutAnimatedSignal() {
+        XCTAssertFalse(hasMedia("<html><body><shreddit-post post-type=\"gallery\"></shreddit-post></body></html>"))
     }
 
     func testTextPostHasNoMedia() {
@@ -120,17 +141,71 @@ final class SafariRedditGatingTests: XCTestCase {
         XCTAssertFalse(hasMedia("<html><body><shreddit-post post-type=\"link\"></shreddit-post></body></html>"))
     }
 
-    /// Old-reddit fallback: a post row whose `data-domain` is a reddit image host.
-    func testOldRedditImagePostHasMedia() {
+    /// Old-reddit fallback: a post row whose `data-domain` is a reddit static-image host.
+    func testOldRedditStaticImagePostHasNoMedia() {
         let html = """
         <html><body><div id="siteTable">
         <div class="thing id-t3_1abc2d link" data-domain="i.redd.it"><a class="thumbnail"></a></div>
         </div></body></html>
         """
-        XCTAssertTrue(hasMedia(html, urlString: "https://old.reddit.com/r/pics/comments/1abc2d/title/"))
+        XCTAssertFalse(hasMedia(html, urlString: "https://old.reddit.com/r/pics/comments/1abc2d/title/"))
+    }
+
+    func testOldRedditVideoPostHasMedia() {
+        let html = """
+        <html><body><div id="siteTable">
+        <div class="thing id-t3_1abc2d link" data-domain="v.redd.it"><a class="thumbnail"></a></div>
+        </div></body></html>
+        """
+        XCTAssertTrue(hasMedia(html, urlString: "https://old.reddit.com/r/videos/comments/1abc2d/title/"))
+    }
+
+    func testOldRedditAnimatedImageURLHasMedia() {
+        let html = """
+        <html><body><div id="siteTable">
+        <div class="thing id-t3_1abc2d link" data-domain="i.imgur.com" data-url="https://i.imgur.com/abc.gif"></div>
+        </div></body></html>
+        """
+        XCTAssertTrue(hasMedia(html, urlString: "https://old.reddit.com/r/gifs/comments/1abc2d/title/"))
     }
 
     func testEmptyDOMHasNoMedia() {
         XCTAssertFalse(hasMedia("<html><body></body></html>"))
+    }
+
+    // MARK: - Non-Reddit platform pill gating
+
+    func testStaticImagePlatformPostDoesNotShowDownloadPill() {
+        let html = """
+        <html><head>
+        <meta property="og:type" content="article">
+        <meta property="og:image" content="https://cdn.example.com/post.jpg">
+        </head><body></body></html>
+        """
+        XCTAssertFalse(shouldShowDownloadPill(html))
+    }
+
+    func testVideoPlatformPostShowsDownloadPill() {
+        let html = """
+        <html><head>
+        <meta property="og:type" content="video.other">
+        <meta property="og:video" content="https://cdn.example.com/post.mp4">
+        <meta property="og:image" content="https://cdn.example.com/post.jpg">
+        </head><body></body></html>
+        """
+        XCTAssertTrue(shouldShowDownloadPill(html))
+    }
+
+    func testAnimatedImagePlatformPostShowsDownloadPill() {
+        let html = """
+        <html><head>
+        <meta property="og:image" content="https://cdn.example.com/post.gif">
+        </head><body></body></html>
+        """
+        XCTAssertTrue(shouldShowDownloadPill(html))
+    }
+
+    func testPlatformPostWithoutStaticImageSignalStillShowsDownloadPill() {
+        XCTAssertTrue(shouldShowDownloadPill("<html><body><p>Post text</p></body></html>"))
     }
 }

@@ -41,6 +41,7 @@
             // the retry-on-hydration schedule, and the soft-nav watcher.
             if (platform === "reddit") { handleReddit(resp); return; }
             if (platform) {
+                if (!shouldShowDownloadPillForPlatform(platform)) { return; }
                 var downloadTarget = downloadTargetFor(resp);
                 if (downloadTarget) { injectLunaButton(downloadTarget); }
                 return;
@@ -273,6 +274,7 @@
     };
     window.__lunaRedditPostHasMedia = redditPostHasMedia;
     window.__lunaRecognizedPlatformPage = recognizedPlatformPage;
+    window.__lunaShouldShowDownloadPillForPlatform = shouldShowDownloadPillForPlatform;
 
     // The app recognizes news/article sites by URL host alone (NewsSites.hardPaywall /
     // .free in LunaURLClassification, via KnownSite.matches' host-suffix test) with no
@@ -793,7 +795,7 @@
         // Reddit classifies ONLY on an individual post permalink (comments / gallery
         // / redd.it short link), never on a subreddit or home feed — mirrors
         // PlatformRecognizer.reddit's `recognizes:` gate. Feed suppression and the
-        // image/video media gate live in handleReddit.
+        // animated-media gate live in handleReddit.
         if ((hostMatches(host, ["reddit.com"]) || host === "redd.it") && currentRedditPostID()) { return "reddit"; }
         if (hostMatches(host, ["tiktok.com"])) { return "tiktok"; }
         if (hostMatches(host, ["instagram.com", "instagr.am"])) { return "instagram"; }
@@ -806,12 +808,81 @@
         return null;
     }
 
+    // Visibility-only media gate for Downloader-platform pages. Saving/downloading a
+    // URL still happens in the app when the user adds it manually; this only decides
+    // whether Safari should proactively show the "Download in Luna" pill.
+    function shouldShowDownloadPillForPlatform(platform) {
+        if (platform === "reddit") { return redditPostHasMedia(); }
+        return !looksLikeStaticImagePost();
+    }
+
+    function looksLikeStaticImagePost() {
+        if (hasVideoOrAnimatedImageSignal()) { return false; }
+        return hasStaticImagePostSignal();
+    }
+
+    function hasVideoOrAnimatedImageSignal() {
+        if (document.querySelector(
+            'meta[property="og:video"], meta[property="og:video:url"], '
+            + 'meta[property="og:video:secure_url"], meta[name="twitter:player"]')) {
+            return true;
+        }
+        var type = metaContent(["og:type", "twitter:card"]).toLowerCase();
+        if (type.indexOf("video") >= 0 || type.indexOf("player") >= 0) { return true; }
+        if (document.querySelector("video, source[type^='video/']")) { return true; }
+        if (document.querySelector("img[src$='.gif'], img[src*='.gif?']")) {
+            return true;
+        }
+        var urls = mediaURLCandidates();
+        for (var i = 0; i < urls.length; i++) {
+            if (urlLooksAnimatedOrVideo(urls[i])) { return true; }
+        }
+        return false;
+    }
+
+    function hasStaticImagePostSignal() {
+        var type = metaContent(["og:type", "twitter:card"]).toLowerCase();
+        var imageURL = metaContent(["og:image", "og:image:secure_url", "twitter:image", "twitter:image:src"]);
+        if (!imageURL) { return false; }
+        if (urlLooksAnimatedOrVideo(imageURL)) { return false; }
+        if (type.indexOf("image") >= 0) { return true; }
+        if (type === "summary_large_image" || type === "photo") { return true; }
+        // Social post pages often omit a precise media type, but a primary preview
+        // image with no video/player counterpart is the static-image shape we want
+        // to suppress.
+        return true;
+    }
+
+    function mediaURLCandidates() {
+        var names = [
+            "og:video", "og:video:url", "og:video:secure_url", "og:image",
+            "og:image:secure_url", "twitter:image", "twitter:image:src"
+        ];
+        var urls = [];
+        for (var i = 0; i < names.length; i++) {
+            var els = document.querySelectorAll(
+                'meta[property="' + names[i] + '"], meta[name="' + names[i] + '"]');
+            for (var j = 0; j < els.length; j++) {
+                var content = els[j].getAttribute("content");
+                if (content && content.trim()) { urls.push(content.trim()); }
+            }
+        }
+        return urls;
+    }
+
+    function urlLooksAnimatedOrVideo(raw) {
+        if (!raw) { return false; }
+        var url = raw.toLowerCase().split("#")[0].split("?")[0];
+        return /\.(gif|gifv|webm|mp4|m4v|mov|m3u8)$/.test(url);
+    }
+
     // MARK: - Reddit post-page + media gating
     //
     // Reddit's "Download in Luna" pill must appear ONLY on an individual post whose
-    // primary content is image/video (never on the home feed, a subreddit listing,
-    // a comment-history listing, or a text/link/poll post). New Reddit is a
-    // client-side-navigating SPA, so we also watch for soft-nav and re-evaluate.
+    // primary content is animated image/video (never static image posts, the home
+    // feed, a subreddit listing, a comment-history listing, or a text/link/poll
+    // post). New Reddit is a client-side-navigating SPA, so we also watch for
+    // soft-nav and re-evaluate.
 
     var redditNavWatcherStarted = false;
     var redditGeneration = 0;
@@ -852,36 +923,36 @@
         return redditPostID(segments);
     }
 
-    // True only when the current reddit POST page's primary content is
-    // image/video/gallery/gif. Cheap and null-safe. (Reddit's bot wall blocks
+    // True only when the current reddit POST page's primary content is animated
+    // image/video. Cheap and null-safe. (Reddit's bot wall blocks
     // curl, so these mirror the documented server-rendered shapes rather than
     // freshly-scraped DOM):
     //   1. new reddit: `<shreddit-post post-type="…">` — the authoritative signal.
-    //      qualify image/video/gallery/gif; disqualify text/self/link/poll/crosspost.
-    //   2. a `/gallery/` permalink is inherently media.
-    //   3. `<meta property="og:video">` — video posts expose it.
+    //      qualify video/gif; disqualify image/gallery/text/self/link/poll/crosspost.
+    //   2. `<meta property="og:video">` — video posts expose it.
+    //   3. animated image/video URLs in primary meta/image/video attributes.
     //   4. old reddit: `#siteTable .thing.link` with a media `data-domain`
-    //      (i.redd.it/v.redd.it/i.imgur.com) or an `.expando` holding a video/img.
+    //      (`v.redd.it`) or an animated/video URL; static `i.redd.it` images do not
+    //      show the pill.
     function redditPostHasMedia() {
-        var segs = location.pathname.split("/").filter(function (s) { return s.length > 0; });
-        if (segs.indexOf("gallery") >= 0) { return true; }
-
         var post = document.querySelector("shreddit-post");
         if (post) {
             var type = (post.getAttribute("post-type") || "").toLowerCase();
-            if (["image", "video", "gallery", "gif", "gifv"].indexOf(type) >= 0) { return true; }
-            if (["text", "self", "link", "poll", "crosspost", "prediction"].indexOf(type) >= 0) { return false; }
+            if (["video", "gif", "gifv"].indexOf(type) >= 0) { return true; }
+            if (["image", "gallery", "text", "self", "link", "poll", "crosspost", "prediction"].indexOf(type) >= 0) { return false; }
             // Unknown post-type: fall through to the other signals rather than guess.
         }
 
-        if (document.querySelector('meta[property="og:video"], meta[property="og:video:url"]')) { return true; }
+        if (hasVideoOrAnimatedImageSignal()) { return true; }
 
         var thing = document.querySelector("#siteTable .thing.link");
         if (thing) {
             var domain = (thing.getAttribute("data-domain") || "").toLowerCase();
-            if (["i.redd.it", "v.redd.it", "i.imgur.com"].indexOf(domain) >= 0) { return true; }
+            if (domain === "v.redd.it") { return true; }
+            var dataURL = thing.getAttribute("data-url") || thing.getAttribute("data-permalink") || "";
+            if (urlLooksAnimatedOrVideo(dataURL)) { return true; }
             var expando = thing.querySelector(".expando");
-            if (expando && expando.querySelector("video, img")) { return true; }
+            if (expando && expando.querySelector("video, source[type^='video/'], img[src$='.gif'], img[src*='.gif?']")) { return true; }
         }
 
         return false;

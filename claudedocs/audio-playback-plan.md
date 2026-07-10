@@ -1,6 +1,9 @@
 # Robust Audio Playback — Implementation Plan
 
-Status: **planned — implementation in progress**. This doc is the working plan; when the
+Status: **implementation in progress — Phases 1 and 2 landed** (engine core; playback
+center + Now Playing/remote commands + session policy + position persistence +
+`AudioSettings` + AppDelegate wiring incl. the queue provider). Phase 3 (UI), Phase 4
+(trimming), and Phase 5 (integration) remain. This doc is the working plan; when the
 feature lands, rewrite it as the feature doc (per CLAUDE.md, `claudedocs/` stays current).
 
 ## What we're building

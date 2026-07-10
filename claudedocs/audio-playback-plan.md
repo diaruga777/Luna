@@ -1,9 +1,17 @@
 # Robust Audio Playback — Implementation Plan
 
-Status: **implementation in progress — Phases 1 and 2 landed** (engine core; playback
-center + Now Playing/remote commands + session policy + position persistence +
-`AudioSettings` + AppDelegate wiring incl. the queue provider). Phase 3 (UI), Phase 4
-(trimming), and Phase 5 (integration) remain. This doc is the working plan; when the
+Status: **implementation in progress — Phases 1, 2, and 3 landed** (engine core;
+playback center + Now Playing/remote commands + session policy + position persistence +
+`AudioSettings` + AppDelegate wiring incl. the queue provider; and the Phase-3 UI: the
+window-level mini-player host wrapping the main nav (`MiniPlayerHostViewController` +
+`AudioMiniPlayerView`, `Luna/MiniPlayer/`), the `ReaderAudioLauncher` seam in
+`LunaReaderUI` rerouting the in-app readers to the center — the share/action extensions
+keep the legacy SpeechController path — the RSVP meld via `AudioMiniPlayerMeld`, and the
+Audio settings screen). Phase-3 implementation notes: RabbitHole layers hand readers the
+REAL store item when the page is saved (else a URL-seeded stable transient), and the
+mini-player's content overlays its glass as siblings because layers inside
+`UIGlassEffect`'s contentView don't rasterize via `layer.render(in:)`. Phase 4
+(trimming) and Phase 5 (integration) remain. This doc is the working plan; when the
 feature lands, rewrite it as the feature doc (per CLAUDE.md, `claudedocs/` stays current).
 
 ## What we're building

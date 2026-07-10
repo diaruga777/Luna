@@ -37,9 +37,12 @@ public struct AudioPlaybackItemInfo: Equatable {
 
 /// One word becoming current during forward playback, for reader
 /// highlighting. `rangeInBlockText` is a UTF-16 range within the ORIGINAL
-/// `ArticleContent.Block.text` at `blockIndex` (the Phase-1/2 pass-through
-/// script's text is verbatim, so this needs no re-mapping; a future trimming
-/// pass must preserve that property or update this contract).
+/// `ArticleContent.Block.text` at `blockIndex`. This needs no re-mapping even
+/// with the Phase 4 trimming pass: trimming only ever narrows `AudioScript`
+/// to a subset of whole blocks (by `blockIndex`) — every `SpokenBlock` that
+/// survives keeps its source block's text verbatim, word-for-word, so a word
+/// index/range computed against `SpokenBlock.text` is always valid against
+/// the original `ArticleContent.Block.text` at the same `blockIndex`.
 public struct AudioWordEvent: Equatable {
     public var blockIndex: Int
     public var rangeInBlockText: NSRange
@@ -136,6 +139,25 @@ public final class AudioPlaybackCenter {
     /// top-most unopened, readable Reader-surface article in the reading
     /// list's own displayed order — or `nil` when the queue is empty.
     public var nextItemProvider: (() -> QueueCandidate?)?
+
+    /// Phase 4 seam (`claudedocs/audio-playback-plan.md`): resolves the
+    /// script to speak for `item`. Defaults to the Phase-1 pass-through (so
+    /// nothing regresses if the app shell never overrides it); the app shell
+    /// installs `AudioScriptPipeline.shared.script(for:content:)` here at
+    /// launch (`Luna/AudioScriptPipelineWiring.swift`) — cache hit, or a
+    /// fast synchronous heuristic build on miss. NEVER blocks on the LLM
+    /// refinement pass; an upgrade landing later only updates the cache for
+    /// the NEXT play of this item, never swaps mid-playback.
+    public var scriptProvider: (ReadingListItem, ArticleContent) -> AudioScript = { _, content in
+        AudioScript(passthrough: content)
+    }
+
+    /// Phase 4 seam: called once the autoplay chain resolves the NEXT queue
+    /// candidate (before its transition chime/announcement even starts), so
+    /// the app shell can ask the script pipeline to verify/prefetch that
+    /// item's script ahead of when playback actually reaches it. Optional —
+    /// unset in tests/extensions with no measurable effect on playback.
+    public var scriptPrefetchHandler: ((ReadingListItem, ArticleContent) -> Void)?
 
     public var currentSnapshot: AudioPlaybackSnapshot {
         let totalWords = currentScript?.totalWordCount ?? 0
@@ -395,11 +417,10 @@ public final class AudioPlaybackCenter {
     // MARK: - Playback session lifecycle
 
     private func beginPlayback(item: ReadingListItem, content: ArticleContent, fromWordIndex: Int?) {
-        // Phase 4 SEAM: `AudioScript(passthrough:)` is a pass-through factory
-        // today. When the cached/trimmed script builder lands, this single
-        // line is where it slots in (look up the cached script for `item`,
-        // falling back to a fresh passthrough build if none exists yet).
-        let script = AudioScript(passthrough: content)
+        // Phase 4: cache hit, or a fast synchronous heuristic build on miss
+        // (see `scriptProvider`'s doc comment) — never the LLM refinement
+        // pass, which only ever updates the cache for next time.
+        let script = scriptProvider(item, content)
         guard !script.spokenBlocks.isEmpty else { return }
 
         sessionToken = UUID()
@@ -593,6 +614,10 @@ public final class AudioPlaybackCenter {
             playFinalChimeThenIdle()
             return
         }
+        // Phase 4: verify/prefetch the resolved candidate's script now, well
+        // before playback actually reaches it (transition chime +
+        // announcement + another chime still have to play first).
+        scriptPrefetchHandler?(candidate.item, candidate.content)
         let token = sessionToken
         playTransitionChime { [weak self] in
             guard let self, token == self.sessionToken else { return }

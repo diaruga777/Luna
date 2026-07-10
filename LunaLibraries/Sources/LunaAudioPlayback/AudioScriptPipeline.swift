@@ -1,0 +1,259 @@
+//
+//  AudioScriptPipeline.swift
+//  LunaAudioPlayback
+//
+
+import LunaModels
+import LunaStorage
+import Foundation
+import UIKit
+
+/// Orchestrates Phase 4 trimming end to end: cache lookups, the always-on
+/// heuristic pass, the opportunistic LLM refinement pass, and the sweep that
+/// builds scripts as soon as an article is saved rather than lazily at first
+/// playback (see "Trimming timing" in `claudedocs/audio-playback-plan.md`).
+///
+/// Installed ONLY by the main app (`Luna/AudioScriptPipelineWiring.swift`,
+/// called once from `AppDelegate`) — the Share/Action extensions never call
+/// `install()`, so they never observe `.readingListChanged` or run the
+/// builder themselves (extension memory limits + FoundationModels
+/// constraints), matching the plan doc's "MAIN APP ONLY" requirement.
+public final class AudioScriptPipeline {
+    public static let shared = AudioScriptPipeline()
+
+    private let store: ReadingListScriptSource
+    private let scriptStore: AudioScriptStore
+    /// A FRESH `AudioTrimModelSession` per article's refinement pass (not one
+    /// shared instance reused across every article) — keeps each article's
+    /// on-device conversation/context isolated and small, rather than
+    /// accumulating turns across an entire sweep.
+    private let modelSessionFactory: () -> AudioTrimModelSession
+
+    /// Debounces bursts of `.readingListChanged` (e.g. a multi-item import)
+    /// into one sweep.
+    private let debounceInterval: TimeInterval
+    private let workQueue = DispatchQueue(label: "com.hsanabria.luna.audioScriptPipeline", qos: .utility)
+
+    private var notificationObserver: NSObjectProtocol?
+    private var foregroundObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
+    private var debounceWorkItem: DispatchWorkItem?
+    private var isSweeping = false
+    /// Guards against kicking off a second concurrent refinement pass for the
+    /// same item while an earlier one (from `script(for:content:)` or a
+    /// sweep) is still in flight.
+    private var inFlightItemIDs: Set<UUID> = []
+    private let inFlightLock = NSLock()
+    /// Tracked via `UIApplication.didBecomeActiveNotification`/
+    /// `didEnterBackgroundNotification` rather than reading
+    /// `UIApplication.shared.applicationState` directly — `UIApplication.shared`
+    /// is unavailable to app extensions, and this module is transitively
+    /// linked into them (via `LunaReaderUI`), so it must stay
+    /// `APPLICATION_EXTENSION_API_ONLY`-safe even though `install()` itself
+    /// is never called there.
+    private var isForeground = true
+
+    public init(
+        store: ReadingListScriptSource = ReadingListStore.shared,
+        modelSessionFactory: @escaping () -> AudioTrimModelSession = {
+            // See the discrepancy note on `AudioCleanupVerdict`: this
+            // project's actual deployment target is iOS 18, below
+            // FoundationModels' iOS 26 minimum, so the real session is only
+            // ever constructed behind this `#available` check.
+            if #available(iOS 26.0, *) {
+                return FoundationModelsTrimSession()
+            } else {
+                return UnavailableTrimSession()
+            }
+        },
+        debounceInterval: TimeInterval = 1.5
+    ) {
+        self.store = store
+        self.scriptStore = AudioScriptStore(articlesDirectory: store.articlesDirectory)
+        self.modelSessionFactory = modelSessionFactory
+        self.debounceInterval = debounceInterval
+    }
+
+    deinit {
+        if let notificationObserver { NotificationCenter.default.removeObserver(notificationObserver) }
+        if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
+    }
+
+    // MARK: - Installation (main app only)
+
+    /// Idempotent. Observes `.readingListChanged` (debounced) plus
+    /// foreground/background transitions, and runs an immediate launch
+    /// sweep.
+    public func install() {
+        guard notificationObserver == nil else { return }
+        notificationObserver = NotificationCenter.default.addObserver(
+            forName: .readingListChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.scheduleSweep(debounced: true)
+        }
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.isForeground = true
+            self?.scheduleSweep(debounced: false)
+        }
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.isForeground = false
+        }
+        scheduleSweep(debounced: false) // launch sweep
+    }
+
+    // MARK: - Playback-time lookup (never blocks on the LLM)
+
+    /// Cache hit -> returns immediately. Cache miss -> builds the heuristic
+    /// script NOW (fast, synchronous), persists it, and — when eligible —
+    /// kicks off LLM refinement in the background (updating the cache for
+    /// NEXT time; never swaps the script an in-progress playback session is
+    /// already using). Playback-time build is a last-resort fallback; the
+    /// sweep below is what normally keeps scripts ready ahead of time.
+    public func script(for item: ReadingListItem, content: ArticleContent) -> AudioScript {
+        guard let contentFileName = item.contentFileName else {
+            return AudioTrimHeuristics.classify(content).heuristicScript(for: content)
+        }
+        if let cached = scriptStore.load(forContentFileName: contentFileName) {
+            if !cached.refined, !cached.llmPermanentlyFailed {
+                kickOffRefinementIfEligible(item: item, content: content, contentFileName: contentFileName, baseline: cached)
+            }
+            return cached.script
+        }
+        let heuristicResult = AudioTrimHeuristics.classify(content)
+        let script = heuristicResult.heuristicScript(for: content)
+        let envelope = AudioScriptCacheEnvelope(script: script, refined: false, llmPermanentlyFailed: false)
+        scriptStore.save(envelope, forContentFileName: contentFileName)
+        kickOffRefinementIfEligible(item: item, content: content, contentFileName: contentFileName, baseline: envelope)
+        return script
+    }
+
+    /// Verifies/prefetches `item`'s script without returning it — called when
+    /// `AudioPlaybackCenter` resolves the NEXT autoplay queue candidate, so
+    /// its script is ready (or at least building) before playback reaches it.
+    public func prefetch(item: ReadingListItem, content: ArticleContent) {
+        _ = script(for: item, content: content)
+    }
+
+    // MARK: - Sweep (opportunistic builder)
+
+    private func scheduleSweep(debounced: Bool) {
+        debounceWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.runSweep() }
+        debounceWorkItem = work
+        workQueue.asyncAfter(deadline: .now() + (debounced ? debounceInterval : 0), execute: work)
+    }
+
+    private func runSweep() {
+        guard !isSweeping else { return }
+        isSweeping = true
+        defer { isSweeping = false }
+
+        for item in store.items() {
+            guard item.state == .ready, let contentFileName = item.contentFileName else { continue }
+            guard let content = store.content(for: item), Self.isReadable(content) else { continue }
+            guard !isInFlight(item.id) else { continue }
+
+            let cached = scriptStore.load(forContentFileName: contentFileName)
+            if cached == nil {
+                buildHeuristicScriptSync(item: item, content: content, contentFileName: contentFileName)
+                continue
+            }
+            guard let cached, !cached.refined, !cached.llmPermanentlyFailed else { continue }
+            kickOffRefinementIfEligible(item: item, content: content, contentFileName: contentFileName, baseline: cached)
+        }
+    }
+
+    private func buildHeuristicScriptSync(item: ReadingListItem, content: ArticleContent, contentFileName: String) {
+        let heuristicResult = AudioTrimHeuristics.classify(content)
+        let script = heuristicResult.heuristicScript(for: content)
+        let envelope = AudioScriptCacheEnvelope(script: script, refined: false, llmPermanentlyFailed: false)
+        scriptStore.save(envelope, forContentFileName: contentFileName)
+        kickOffRefinementIfEligible(item: item, content: content, contentFileName: contentFileName, baseline: envelope)
+    }
+
+    // MARK: - LLM refinement
+
+    private func kickOffRefinementIfEligible(
+        item: ReadingListItem, content: ArticleContent, contentFileName: String, baseline: AudioScriptCacheEnvelope
+    ) {
+        guard AudioSettings.isIntelligentTrimmingEnabled, isForeground, !isInFlight(item.id) else { return }
+        let session = modelSessionFactory()
+        guard session.isAvailable else { return }
+
+        markInFlight(item.id)
+        let heuristicResult = AudioTrimHeuristics.classify(content)
+        Task { [weak self] in
+            guard let self else { return }
+            let refinement = await AudioTrimIntelligence.refine(
+                content: content, heuristicResult: heuristicResult,
+                totalWordCount: baseline.script.totalWordCount, session: session)
+            self.applyRefinement(
+                refinement, item: item, content: content, contentFileName: contentFileName,
+                heuristicResult: heuristicResult)
+            self.clearInFlight(item.id)
+        }
+    }
+
+    private func applyRefinement(
+        _ refinement: AudioTrimIntelligence.RefinementResult, item: ReadingListItem, content: ArticleContent,
+        contentFileName: String, heuristicResult: AudioTrimHeuristics.Result
+    ) {
+        if refinement.permanentFailure {
+            let script = heuristicResult.heuristicScript(for: content)
+            let envelope = AudioScriptCacheEnvelope(script: script, refined: false, llmPermanentlyFailed: true)
+            scriptStore.save(envelope, forContentFileName: contentFileName)
+            return
+        }
+        let combinedDropped = heuristicResult.droppedBlockIndices.union(refinement.additionalDroppedIndices)
+        let script = Self.buildScript(content: content, droppedBlockIndices: combinedDropped)
+        let envelope = AudioScriptCacheEnvelope(script: script, refined: true, llmPermanentlyFailed: false)
+        scriptStore.save(envelope, forContentFileName: contentFileName)
+    }
+
+    // MARK: - In-flight bookkeeping
+
+    private func isInFlight(_ itemID: UUID) -> Bool {
+        inFlightLock.lock()
+        defer { inFlightLock.unlock() }
+        return inFlightItemIDs.contains(itemID)
+    }
+
+    private func markInFlight(_ itemID: UUID) {
+        inFlightLock.lock()
+        inFlightItemIDs.insert(itemID)
+        inFlightLock.unlock()
+    }
+
+    private func clearInFlight(_ itemID: UUID) {
+        inFlightLock.lock()
+        inFlightItemIDs.remove(itemID)
+        inFlightLock.unlock()
+    }
+
+    // MARK: - Readability
+
+    static func isReadable(_ content: ArticleContent) -> Bool {
+        content.blocks.contains { !$0.text.isEmpty }
+    }
+
+    static func buildScript(content: ArticleContent, droppedBlockIndices: Set<Int>) -> AudioScript {
+        let spokenBlocks: [AudioScript.SpokenBlock] = content.blocks.enumerated().compactMap { index, block in
+            guard !block.text.isEmpty, !droppedBlockIndices.contains(index) else { return nil }
+            return AudioScript.SpokenBlock(blockIndex: index, text: block.text)
+        }
+        let wordCount = spokenBlocks.reduce(0) { $0 + AudioTrimHeuristics.wordCount(text: $1.text) }
+        return AudioScript(
+            spokenBlocks: spokenBlocks, totalWordCount: wordCount, builderVersion: AudioScript.heuristicBuilderVersion)
+    }
+}
+
+extension AudioTrimHeuristics.Result {
+    func heuristicScript(for content: ArticleContent) -> AudioScript {
+        AudioScriptPipeline.buildScript(content: content, droppedBlockIndices: droppedBlockIndices)
+    }
+}

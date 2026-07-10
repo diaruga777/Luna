@@ -56,6 +56,14 @@ public extension AudioScript {
     /// trimmed ones.
     static let passthroughBuilderVersion = 1
 
+    /// The builder version produced by Phase 4's heuristic (+ optional
+    /// on-device-LLM refinement) trimming pass — see `AudioTrimHeuristics`,
+    /// `AudioTrimIntelligence`, and `AudioScriptPipeline`. Whether the LLM
+    /// pass actually ran is tracked separately (`AudioScriptCacheEnvelope.refined`)
+    /// rather than as its own builder version, since a heuristics-only script
+    /// is upgraded to a refined one in place without changing its shape.
+    static let heuristicBuilderVersion = 2
+
     /// Phase-1 stub script builder: every non-empty text block of `content`,
     /// verbatim, in order — no trimming at all. This is a legitimate standing
     /// option (not just a placeholder): it's what a future "disable Apple

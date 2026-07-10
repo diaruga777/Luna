@@ -99,6 +99,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // can restore the persisted session. Universal across all three apps;
         // playback only ever starts from Reader-surface flows.
         AudioPlaybackWiring.install()
+        // Phase 4 (trimming): opportunistic script-cache builder, wired
+        // right after playback so its scriptProvider/scriptPrefetchHandler
+        // seams are set before anything could call into the center.
+        AudioScriptPipelineWiring.install()
 
         // Wire the read-aloud first-run prompt's "Open Settings" to push the
         // Voice settings screen. Setting this hook is what enables the prompt in

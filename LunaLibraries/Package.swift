@@ -92,7 +92,11 @@ let package = Package(
             .copy("Resources/ChimeFinal.caf"),
         ]),
         .target(name: "LunaArchiveReader", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaStorage", "LunaDesignSystem", "LunaTransitions", "LunaAppConfig", "LunaContentRendering", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")], resources: [.process("Resources/site_cleanup_scripts.json")]),
-        .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaTransitions", "LunaContentRendering", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
+        // LunaAudioPlayback: the Phase-3 reroute seam (`ReaderAudioLauncher`) — the shared
+        // readers hand read-aloud to the app-wide `AudioPlaybackCenter` when the app shell
+        // installs it, and keep the legacy self-contained SpeechController path when it's
+        // absent (the share/action extensions never install it).
+        .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaTransitions", "LunaContentRendering", "LunaPriceMetadata", "LunaAudioPlayback", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaReaderUI", "LunaTransitions", "LunaAppConfig", "LunaArchiveReader", "LunaContentRendering", "LunaPaywallBypass", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms", "LunaTransitions"]),
         .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReaderUI", "LunaReadingList", "LunaSocial", "LunaTransitions"]),

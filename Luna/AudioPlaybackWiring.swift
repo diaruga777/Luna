@@ -4,6 +4,7 @@
 //
 
 import LunaAudioPlayback
+import LunaReaderUI
 import LunaReadingListUI
 import LunaStorage
 import LunaModels
@@ -32,6 +33,12 @@ enum AudioPlaybackWiring {
                 content: { store.content(for: $0) })
         }
         NowPlayingCoordinator.shared.registerAtLaunch(center: .shared)
+        // Phase 3: hand the center to the shared readers. With this installed,
+        // their audio toggles route read-aloud through the center (mini-player,
+        // background playback, autoplay) instead of the legacy in-reader
+        // SpeechController; the share/action extensions never install it and
+        // keep the legacy path.
+        ReaderAudioLauncher.center = .shared
     }
 }
 

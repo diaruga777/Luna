@@ -38,6 +38,20 @@ public protocol ReadingListPlaybackStore: AnyObject {
 
 extension ReadingListStore: ReadingListPlaybackStore {}
 
+/// The narrow slice of `LunaStorage.ReadingListStore` `AudioScriptPipeline`
+/// needs to sweep the whole list for readable articles lacking a
+/// current-version cached script, and to derive `AudioScriptStore`'s cache
+/// directory. Kept separate from `ReadingListPlaybackStore` (which is about
+/// ONE item at playback time) since the pipeline's job is enumerating ALL
+/// items.
+public protocol ReadingListScriptSource: AnyObject {
+    func items() -> [ReadingListItem]
+    func content(for item: ReadingListItem) -> ArticleContent?
+    var articlesDirectory: URL { get }
+}
+
+extension ReadingListStore: ReadingListScriptSource {}
+
 /// The slice of `SpeechRenderer` `AudioPlaybackCenter` drives, kept as a
 /// protocol so tests can substitute a fake that returns canned
 /// `RenderedSegment`s instantly instead of driving real offline

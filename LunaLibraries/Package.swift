@@ -29,6 +29,7 @@ let package = Package(
         .library(name: "LunaMediaDownload", targets: ["LunaMediaDownload"]),
         .library(name: "LunaSocial", targets: ["LunaSocial"]),
         .library(name: "LunaReaderEngine", targets: ["LunaReaderEngine"]),
+        .library(name: "LunaAudioPlayback", targets: ["LunaAudioPlayback"]),
         .library(name: "LunaArchiveReader", targets: ["LunaArchiveReader"]),
         .library(name: "LunaReaderUI", targets: ["LunaReaderUI"]),
         .library(name: "LunaPriceUI", targets: ["LunaPriceUI"]),
@@ -79,6 +80,15 @@ let package = Package(
         .target(name: "LunaMediaDownload", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaStorage"]),
         .target(name: "LunaSocial", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaURLClassification"]),
         .target(name: "LunaReaderEngine", dependencies: ["LunaModels"]),
+        // Offline speech rendering (AVSpeechSynthesizer.write -> PCM) + a long-lived
+        // AVAudioEngine playback graph. Phase 1 of the audio-playback rebuild — see
+        // claudedocs/audio-playback-plan.md. Deliberately depends on nothing beyond
+        // LunaModels yet: no persistence/App-Group/UI wiring happens until later
+        // phases (AudioPlaybackCenter, Now Playing, settings, mini-player).
+        .target(name: "LunaAudioPlayback", dependencies: ["LunaModels"], resources: [
+            .copy("Resources/ChimeTransition.caf"),
+            .copy("Resources/ChimeFinal.caf"),
+        ]),
         .target(name: "LunaArchiveReader", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaStorage", "LunaDesignSystem", "LunaTransitions", "LunaAppConfig", "LunaContentRendering", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")], resources: [.process("Resources/site_cleanup_scripts.json")]),
         .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaTransitions", "LunaContentRendering", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaReaderUI", "LunaTransitions", "LunaAppConfig", "LunaArchiveReader", "LunaContentRendering", "LunaPaywallBypass", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),

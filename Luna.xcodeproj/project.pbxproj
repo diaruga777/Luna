@@ -133,6 +133,7 @@
 		79E9D2E92FFC3E6E00329B57 /* Luna Price Tracker.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9D2E52FFC3E6E00329B57 /* Luna Price Tracker.icon */; };
 		79E9D2EA2FFC3E6E00329B57 /* Luna Downloader.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9D2E42FFC3E6E00329B57 /* Luna Downloader.icon */; };
 		79E9D2EB2FFC3E6E00329B57 /* Luna Price Tracker.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9D2E52FFC3E6E00329B57 /* Luna Price Tracker.icon */; };
+		79E9F2763000949300329B57 /* LunaAudioPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = 648405211A7DCF06041EDDB6 /* LunaAudioPlayback */; };
 		7A2A261BD9A78CDAD99A8432 /* LunaPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunaPriceMetadata */; };
 		7AF7216F62048B1A8C59F9E6 /* LunaPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunaPlatforms */; };
 		7D74667CBC09543524AD4E59 /* LunaArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LunaArchiveReader */; };
@@ -755,6 +756,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				79E9F2763000949300329B57 /* LunaAudioPlayback in Frameworks */,
 				C100000000000000000000056 /* LunaModels in Frameworks */,
 				C100000000000000000000057 /* LunaFetch in Frameworks */,
 				B7EB2775DD38C41CBD105079 /* LunaIngest in Frameworks */,
@@ -1420,6 +1422,7 @@
 				C100000000000000000000018 /* LunaTransitions */,
 				3097C2C000FCEA7B5ACE23A8 /* LunaMailAccount */,
 				8909E25ED1F6D19133F69D41 /* LunaMailTransport */,
+				648405211A7DCF06041EDDB6 /* LunaAudioPlayback */,
 			);
 			productName = LunaTests;
 			productReference = AA0200000000000000000003 /* LunaTests.xctest */;
@@ -3551,6 +3554,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaPriceUI;
+		};
+		648405211A7DCF06041EDDB6 /* LunaAudioPlayback */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaAudioPlayback;
 		};
 		6733C497754C454FAA262597 /* LunaMail */ = {
 			isa = XCSwiftPackageProductDependency;

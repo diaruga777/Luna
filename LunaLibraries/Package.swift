@@ -103,7 +103,7 @@ let package = Package(
         // ShareSurfaceDriver.persistArticle); the extensions never call AudioScriptPipeline.install().
         .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaAudioPlayback", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms", "LunaTransitions"]),
         .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReaderUI", "LunaReadingList", "LunaSocial", "LunaTransitions"]),
-        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaPlatforms", "LunaReadingList", "LunaSocial"]),
+        .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaPlatforms", "LunaReadingList", "LunaSocial", "LunaSend"]),
         .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaPlatforms", "LunaMediaDownload", "LunaReaderUI", "LunaSend"]),
         .target(name: "LunaReadingList", dependencies: ["LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaDesignSystem", "LunaDocuments", "LunaEpub", "LunaSend", "LunaMail", "LunaMailAccount", "LunaMailTransport", "LunaMediaDownload", "LunaPlatforms", "LunaPriceUI", "LunaReaderUI", "LunaArchiveReader", "LunaSocial", "LunaTransitions", "LunaAppConfig", "LunaContentRendering", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .testTarget(name: "LunaAppConfigTests", dependencies: ["LunaAppConfig"]),

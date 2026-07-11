@@ -352,6 +352,18 @@ final class AudioPlaybackCenterTests: XCTestCase {
         }
     }
 
+    func testSkipBySecondsUsesLiveEngineClockWhenWordMarkersAreStale() {
+        startPlayback(blockCount: 5, wordsPerBlock: 4)
+        waitUntil { self.engine.scheduledSegments.count == 2 }
+        engine.currentTime = 1.0 // word 4, even though no marker event updated lastKnownWordIndex
+
+        // +1.25s at 0.25 s/word = +5 words from live word 4 -> word 9,
+        // which snaps to block 2's start (word 8). The stale base was word 0.
+        center.skip(bySeconds: 1.25)
+
+        XCTAssertEqual(positionStore.load()?.wordIndex, 8)
+    }
+
     func testSkipBackwardBySecondsClampsAtZero() {
         startPlayback(blockCount: 3)
         waitUntil { self.engine.scheduledSegments.count == 2 }
@@ -363,6 +375,26 @@ final class AudioPlaybackCenterTests: XCTestCase {
         startPlayback(blockCount: 4, wordsPerBlock: 4)
         center.skipForwardParagraph()
         XCTAssertEqual(positionStore.load()?.wordIndex, 4, "next paragraph = block 1 = word 4")
+    }
+
+    func testSkipForwardParagraphUsesLiveEngineClockWhenWordMarkersAreStale() {
+        startPlayback(blockCount: 5, wordsPerBlock: 4)
+        waitUntil { self.engine.scheduledSegments.count == 2 }
+        engine.currentTime = 2.0 // word 8 / block 2
+
+        center.skipForwardParagraph()
+
+        XCTAssertEqual(positionStore.load()?.wordIndex, 12, "next paragraph from live block 2 = block 3 = word 12")
+    }
+
+    func testSkipBackwardParagraphUsesLiveEngineClockWhenWordMarkersAreStale() {
+        startPlayback(blockCount: 5, wordsPerBlock: 4)
+        waitUntil { self.engine.scheduledSegments.count == 2 }
+        engine.currentTime = 2.25 // word 9, inside block 2
+
+        center.skipBackwardParagraph()
+
+        XCTAssertEqual(positionStore.load()?.wordIndex, 8, "back from inside live block 2 restarts block 2")
     }
 
     func testSkipBackwardParagraphAtBlockStartStaysAtArticleStart() {

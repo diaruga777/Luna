@@ -432,7 +432,7 @@ public final class AudioPlaybackCenter {
     /// Jumps to the start of the next paragraph (block).
     public func skipForwardParagraph() {
         guard let script = currentScript, !script.spokenBlocks.isEmpty else { return }
-        let position = AudioWordIndexing.spokenBlockPosition(forWordIndex: lastKnownWordIndex, in: blockStartWordIndices)
+        let position = AudioWordIndexing.spokenBlockPosition(forWordIndex: currentSeekBaseWordIndex(), in: blockStartWordIndices)
         let nextPosition = min(position + 1, script.spokenBlocks.count - 1)
         restartPlayback(fromWordIndex: blockStartWordIndices[safe: nextPosition] ?? 0)
     }
@@ -441,8 +441,9 @@ public final class AudioPlaybackCenter {
     /// already at its start — mirrors `SpeechController.skipBackward`.
     public func skipBackwardParagraph() {
         guard currentScript != nil else { return }
-        let position = AudioWordIndexing.spokenBlockPosition(forWordIndex: lastKnownWordIndex, in: blockStartWordIndices)
-        let spokenIntoBlock = lastKnownWordIndex > (blockStartWordIndices[safe: position] ?? 0)
+        let baseWordIndex = currentSeekBaseWordIndex()
+        let position = AudioWordIndexing.spokenBlockPosition(forWordIndex: baseWordIndex, in: blockStartWordIndices)
+        let spokenIntoBlock = baseWordIndex > (blockStartWordIndices[safe: position] ?? 0)
         let target = spokenIntoBlock ? position : max(0, position - 1)
         restartPlayback(fromWordIndex: blockStartWordIndices[safe: target] ?? 0)
     }
@@ -455,7 +456,7 @@ public final class AudioPlaybackCenter {
             ? (renderedDurationSoFar / Double(wordsRenderedSoFar)) : Self.defaultSecondsPerWord
         guard avgSecPerWord > 0 else { return }
         let deltaWords = Int((seconds / avgSecPerWord).rounded())
-        let target = max(0, min(lastKnownWordIndex + deltaWords, script.totalWordCount - 1))
+        let target = max(0, min(currentSeekBaseWordIndex() + deltaWords, script.totalWordCount - 1))
         restartPlayback(fromWordIndex: target)
     }
 
@@ -568,6 +569,20 @@ public final class AudioPlaybackCenter {
         persistPositionToAppGroup()
         mirrorWordIndexToStore()
         pumpRenderingIfNeeded()
+    }
+
+    /// The word-index base for user-initiated skip/seek actions. Word-marker
+    /// callbacks are best-effort, so use the engine's absolute content clock
+    /// to keep controls anchored to the audible playhead even when markers
+    /// are delayed or unavailable.
+    private func currentSeekBaseWordIndex() -> Int {
+        guard let script = currentScript, script.totalWordCount > 0 else { return lastKnownWordIndex }
+        guard let engine else { return max(0, min(lastKnownWordIndex, script.totalWordCount - 1)) }
+        let avgSecPerWord = wordsRenderedSoFar > 0
+            ? (renderedDurationSoFar / Double(wordsRenderedSoFar)) : Self.defaultSecondsPerWord
+        guard avgSecPerWord > 0 else { return max(0, min(lastKnownWordIndex, script.totalWordCount - 1)) }
+        let estimated = Int((engine.currentTime / avgSecPerWord).rounded(.down))
+        return max(0, min(max(lastKnownWordIndex, estimated), script.totalWordCount - 1))
     }
 
     // MARK: - Render/schedule pipeline

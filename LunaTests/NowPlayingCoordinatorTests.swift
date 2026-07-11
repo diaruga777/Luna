@@ -192,6 +192,19 @@ final class NowPlayingCoordinatorTests: XCTestCase {
         XCTAssertEqual(positionStore.load()?.wordIndex, 0)
     }
 
+    func testSkipCommandsUseLiveEngineClockWhenWordMarkersAreStale() {
+        coordinator.registerAtLaunch(center: center)
+        startPlayback()
+        waitUntil { self.engine.scheduledSegments.count == 2 }
+        engine.currentTime = 1.0 // word 4, even with no word-marker tick
+
+        // +1.25s at 0.25 s/word = +5 words from live word 4 -> word 9,
+        // which snaps to block 2's start (word 8). The stale base was word 0.
+        XCTAssertEqual(binding.handler?(.skipForward(seconds: 1.25)), true)
+
+        XCTAssertEqual(positionStore.load()?.wordIndex, 8)
+    }
+
     func testSkipCommandsFailWhenIdle() {
         coordinator.registerAtLaunch(center: center)
         XCTAssertEqual(binding.handler?(.skipForward(seconds: 30)), false)

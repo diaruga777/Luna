@@ -103,6 +103,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // right after playback so its scriptProvider/scriptPrefetchHandler
         // seams are set before anything could call into the center.
         AudioScriptPipelineWiring.install()
+        // Phase 7 (Siri): keep ArticleEntity's Spotlight index in sync with the
+        // reading list so saved articles are semantically discoverable and
+        // Siri can resolve "my article about …"/"from …" without the app
+        // running. Main app only (extensions don't index).
+        ArticleSpotlightIndexWiring.install()
 
         // Wire the read-aloud first-run prompt's "Open Settings" to push the
         // Voice settings screen. Setting this hook is what enables the prompt in

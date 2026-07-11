@@ -73,5 +73,19 @@ struct LunaShortcuts: AppShortcutsProvider {
             shortTitle: "Screen Analysis Prompt",
             systemImageName: "text.viewfinder"
         )
+        AppShortcut(
+            intent: ReadArticleIntent(),
+            phrases: [
+                "Read my \(.applicationName) article",
+                "Read my latest \(.applicationName) article",
+                "Read my \(.applicationName) article about \(\.$article)",
+                "Read my \(.applicationName) article from \(\.$article)",
+                "Play my \(.applicationName) article about \(\.$article)",
+                "Play my \(.applicationName) article from \(\.$article)",
+                "Play my latest \(.applicationName) article",
+            ],
+            shortTitle: "Read Article",
+            systemImageName: "speaker.wave.2"
+        )
     }
 }

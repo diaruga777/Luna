@@ -15,10 +15,14 @@ provider list, `actions` = all discoverable intents).
 
 ## The 10 prominent App Shortcuts (`LunaShortcuts.swift`)
 
-`FindBlueskyPostIntent`, `FindRedditPostIntent`, `SaveXPostIntent`,
-`SaveTikTokIntent`, `SaveInstagramPostIntent`, `SaveFromAppIntent`,
-`ScreenAnalysisPromptIntent`. (Save Song / Save Podcast / Save Facebook are
-discoverable in the action search but not in the prominent list.)
+`LunaSafariPageIntent`, `SaveLinkIntent`, `FindBlueskyPostIntent`,
+`FindRedditPostIntent`, `SaveXPostIntent`, `SaveTikTokIntent`,
+`SaveInstagramPostIntent`, `SaveFromAppIntent`, `ScreenAnalysisPromptIntent`,
+`ReadArticleIntent` (Phase 7 — background read-aloud via Siri, see
+`claudedocs/audio-playback.md`'s "Siri" section). That's exactly the
+provider's hard cap of 10 — any new prominent shortcut must first retire one
+of these. (Save Song / Save Podcast / Save Facebook are discoverable in the
+action search but not in the prominent list.)
 
 ## Per-platform save intents (precise params, not vague search strings)
 

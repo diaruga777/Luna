@@ -18,10 +18,14 @@ public enum ArticleSourceName {
     ]
 
     /// The literal, `www.`-stripped host (`"theatlantic.com"`) — nil for
-    /// synthetic non-web URLs (`lunamail://`, `lunadoc://`) or an unparsable
-    /// `urlString`.
+    /// synthetic non-web URLs (`lunamail://`, `lunadoc://` — `URL.host` will
+    /// happily parse an authority-looking component out of these too, so the
+    /// scheme is checked explicitly) or an unparsable `urlString`.
     public static func host(fromURLString urlString: String) -> String? {
-        guard let host = URL(string: urlString)?.host?.lowercased(), !host.isEmpty else { return nil }
+        guard let url = URL(string: urlString),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = url.host?.lowercased(), !host.isEmpty
+        else { return nil }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 

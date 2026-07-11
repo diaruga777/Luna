@@ -9,9 +9,16 @@ import XCTest
 final class ArticleQueryParserTests: XCTestCase {
 
     func testTokenizeSplitsOnNonAlphanumerics() {
+        // `tokenize` operates on already-normalized text (its doc comment) —
+        // case folding is `normalize`'s job, exercised together here as
+        // `parse`/`search` always use them.
         XCTAssertEqual(
-            ArticleQueryParser.tokenize("The Atlantic's Boston piece!"),
+            ArticleQueryParser.tokenize(ArticleQueryParser.normalize("The Atlantic's Boston piece!")),
             ["the", "atlantic", "s", "boston", "piece"])
+    }
+
+    func testTokenizePreservesCaseOnItsOwn() {
+        XCTAssertEqual(ArticleQueryParser.tokenize("Boston Piece"), ["Boston", "Piece"])
     }
 
     func testNormalizeFoldsCaseAndDiacritics() {

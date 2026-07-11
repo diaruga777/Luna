@@ -395,6 +395,101 @@ a way to pick up where an extension left off.
   inherently risky — global ~50% cap with progressive degradation to
   conservative rule sets.
 
+## Siri (Phase 7)
+
+Saved articles are Siri/Shortcuts/Spotlight entities, and Siri can start
+background read-aloud playback directly — no UI has to appear. Follows the
+established App Intents split: `AppEntity`/`EntityQuery`/`AppIntent`
+conformances live in the app shell (`Luna/Intents/`, for discovery); the
+matching/ranking/selection logic they call into is plain, store-free,
+unit-tested types in `LunaLibraries/Sources/LunaIntents/`.
+
+- **`ArticleEntity`** (`Luna/Intents/ArticleEntity.swift`) — wraps a
+  `ReadingListItem` restricted to `ArticleReadability.isReadableArticle`
+  (`state == .ready && contentPlatform == nil && !isPriceTracker` — the same
+  rule `AudioQueueRule.nextCandidate` uses for autoplay; never videos, social
+  posts, or price trackers). Visible representation is title +
+  "`<source host>` · `<date>`" (`ArticleEntity.subtitleText`, date-only when
+  there's no real web host — e.g. a `lunadoc://` import). `@Property title
+  /savedDate/sourceHost` so Shortcuts' Find/filter actions work. Conforms to
+  `IndexedEntity` (iOS 18+; `attributeSet`/`hideInSpotlight` use the SDK's
+  default implementation — no custom attribute set needed for this use case).
+- **`ArticleEntityQuery`** (same file) — `EntityQuery.entities(for:)` (by id),
+  `EntityStringQuery.entities(matching:)` (the "find" workhorse), and
+  `suggestedEntities()` (recent unread articles, ~10). All matching lives in
+  `LunaIntents.ArticleMatcher`; the query type only bridges it to
+  `ReadingListStore`.
+- **`LunaIntents.ArticleMatcher`** — pure functions over `[ReadingListItem]`,
+  never loading `ArticleContent` (title/host/url only, so it's cheap over a
+  large list):
+  - `search(query:in:now:calendar:limit:)` — the string-query workhorse.
+    `ArticleQueryParser` splits the query into an optional relative-date
+    filter (`ArticleRelativeDateFilter`: `.today`/`.yesterday`/`.thisWeek`,
+    matched via longest-phrase-first scanning so "this week" doesn't leave a
+    stray "week" token) and the remaining free-text tokens. Each candidate is
+    scored by token overlap against the title (×2) and the source (×3 — host
+    + `ArticleSourceName.humanReadable`, e.g. `"theatlantic.com"` →
+    `"the atlantic"`, so "from The Atlantic" matches); ties (and pure
+    date-only queries like "yesterday") break by recency, which is also what
+    makes "latest … from X" phrasing fall out naturally rather than needing
+    separate handling.
+  - `suggested(in:limit:)` — unread readable articles, newest first.
+  - `latestUnread(in:)` — newest-saved unread readable article, the
+    nil-entity fallback below.
+- **`ReadArticleIntent`** (`Luna/Intents/ReadArticleIntent.swift`) — conforms
+  to **`AudioPlaybackIntent`**, verified directly against the installed
+  AppIntents SDK swiftinterface: `public protocol AudioPlaybackIntent:
+  SystemIntent` (`SystemIntent: AppIntent`) — a marker refinement with NO
+  extra required members beyond `AppIntent` itself, available iOS 17+. It
+  tells the system to run `perform()` in the app's own process and allows
+  starting audio playback without foregrounding. `openAppWhenRun = false` is
+  kept anyway (harmless, matches every other intent's convention). Optional
+  `article: ArticleEntity?` parameter: provided → play it (re-validated as
+  still readable); nil → `ArticleMatcher.latestUnread`. Loads the item's
+  `ArticleContent` from `ReadingListStore` and calls the SAME
+  `AudioPlaybackCenter.shared.play(item:content:)` the in-app mini-player
+  uses — `AudioPlaybackWiring.install()` runs in `AppDelegate.
+  didFinishLaunching`, before any intent could plausibly run, so the center
+  is always wired. Dialog: `"Reading <title>."`; throws a localized error for
+  no-unread-articles or missing content.
+- **`LunaShortcuts`** (`AppShortcutsProvider`) gained a 10th `AppShortcut`
+  (the provider's documented hard cap — see `claudedocs/app-intents.md`) with
+  7 phrase variants covering all three utterance families: bare/"latest"
+  ("Read/Play my `\(.applicationName)` article[, latest]") and
+  entity-parameterized "about `$article`"/"from `$article`" variants (both
+  "Read" and "Play").
+- **`ArticleSpotlightIndexWiring`** (`Luna/ArticleSpotlightIndexWiring.swift`,
+  installed at launch right after `AudioScriptPipelineWiring`, main-app-only
+  like the trimming pipeline) — sweeps on launch and on debounced (1.5s)
+  `.readingListChanged`: builds a `CSSearchableItem` per readable article from
+  `ArticleEntity.attributeSet`, calls `associateAppEntity` (so Spotlight's
+  semantic index can resolve back to the entity/intent), indexes them via
+  `CSSearchableIndex.default()`, and deletes entries for ids that dropped out
+  of the readable set since the last sweep (a small id-set diff persisted in
+  App-Group `UserDefaults`, so a deletion that happened while the app was
+  terminated is still cleaned up on the next launch).
+
+### Known limits (honest accounting)
+
+- **Date-phrase resolution is the speculative part.** Siri filling the
+  `$article` entity-search-string parameter with "yesterday" out of "Read my
+  `\(.applicationName)` article from yesterday" is standard `EntityStringQuery`
+  usage, but whether Siri's NL parser actually segments THAT phrasing that way
+  (vs. failing to parse the sentence at all) can only be confirmed on-device —
+  there is no headless way to exercise real Siri intent resolution.
+  "About Boston"/"from The Atlantic" (an explicit noun-phrase content slot)
+  are much more standard Shortcuts patterns and are expected to resolve
+  reliably; "yesterday" is the honest reach.
+- **Source-name matching is heuristic**, not NLP word segmentation:
+  `ArticleSourceName.humanReadable` only special-cases a leading "the" run-in
+  (`"theatlantic"` → `"the atlantic"`) and dot/hyphen splits — a smushed
+  compound host with no "the" prefix and no separators (e.g. `"nytimes.com"`)
+  stays as one token (`"nytimes"`), so "from The New York Times" only matches
+  it via the host token itself, not word-by-word.
+- **No content-body matching.** Per the design constraint, `ArticleMatcher`
+  never loads `ArticleContent` for a query — "about Boston" only matches if
+  "Boston" is in the article's TITLE, not its body text.
+
 ## Manual verification still needed (device, not simulator)
 
 Background audio, AirPods press-to-resume, lock-screen scrub, and
@@ -402,3 +497,22 @@ interruption/route-change behavior are exercised by unit tests against the
 protocol seams (`AudioSessionCoordinator.Action`, `RemoteCommandBinding`), but
 the real system behavior can only be confirmed on a physical device. See the
 Phase 5 integration report's punch-list.
+
+### Siri punch list (device only)
+
+- "Read my latest `<app>` article" — should start background audio for the
+  newest unread readable article with no UI appearing.
+- "Read my `<app>` article about Boston" / "…from The Atlantic" — should
+  resolve the right `ArticleEntity` via Siri (not just `ArticleMatcher`
+  in isolation) and start playback.
+- "Read my `<app>` article from yesterday" — the speculative one; confirm
+  whether Siri actually parses "yesterday" into the `$article` slot at all,
+  and if not, note the failure mode (falls through to a full-text search of
+  the literal word "yesterday", which would only work if that word is in a
+  title).
+- Spotlight: saved readable articles show up in system search; deleting/
+  reading an article updates/removes its Spotlight entry (`CSSearchableIndex`
+  writes are async — allow a beat).
+- Confirm the 10th `AppShortcut` didn't push `LunaShortcuts.appShortcuts`
+  over the provider's hard cap (`appintentsmetadataprocessor` build error if
+  so — see `claudedocs/app-intents.md`).

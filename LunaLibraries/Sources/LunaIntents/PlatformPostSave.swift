@@ -13,16 +13,22 @@ import Foundation
 /// HTML search via `SocialPostFinder`), then save it. The intent structs live in
 /// the app target (for App Intents discovery); this is the shared business logic.
 public enum PlatformPostSave {
+    /// Finds and saves the post, double-save-aware: when `doubleSaveActionSurface`
+    /// is non-nil, routes through `IntentIngestHelper.handleActionButtonSavePress`
+    /// (so a repeat press within the window fires the configured double-save
+    /// action); otherwise the plain timeout-raced save.
     public static func save(
-        platform: SocialPostFinder.Platform, handle: String?, content: String?, timestamp: String?
-    ) async throws {
+        platform: SocialPostFinder.Platform, handle: String?, content: String?, timestamp: String?,
+        doubleSaveActionSurface: String?
+    ) async throws -> IntentIngestHelper.ActionButtonSaveOutcome {
         guard let handle, !handle.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw PlatformPostError.missingHandle
         }
         guard let url = await SocialPostFinder.findPostURL(
             platform: platform, handle: handle, content: content, timestamp: timestamp)
         else { throw PlatformPostError.notFound }
-        _ = await IntentIngestHelper.handleSavePressWithTimeout(urlString: url.absoluteString)
+        return await IntentIngestHelper.handleSavePress(
+            urlString: url.absoluteString, doubleSaveActionSurface: doubleSaveActionSurface)
     }
 }
 

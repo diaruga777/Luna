@@ -24,8 +24,9 @@ struct SaveXPostIntent: AppIntent {
     @Parameter(title: "Posted", description: "Optional: the post's date/time as shown.") var timestamp: String?
 
     func perform() async throws -> some IntentResult {
-        try await PlatformPostSave.save(
-            platform: .x, handle: handle, content: content, timestamp: timestamp)
+        _ = try await PlatformPostSave.save(
+            platform: .x, handle: handle, content: content, timestamp: timestamp,
+            doubleSaveActionSurface: nil)
         return .result()
     }
 }
@@ -42,8 +43,9 @@ struct SaveTikTokIntent: AppIntent {
     @Parameter(title: "Posted", description: "Optional: the post's date/time as shown.") var timestamp: String?
 
     func perform() async throws -> some IntentResult {
-        try await PlatformPostSave.save(
-            platform: .tiktok, handle: handle, content: content, timestamp: timestamp)
+        _ = try await PlatformPostSave.save(
+            platform: .tiktok, handle: handle, content: content, timestamp: timestamp,
+            doubleSaveActionSurface: nil)
         return .result()
     }
 }
@@ -60,8 +62,9 @@ struct SaveInstagramPostIntent: AppIntent {
     @Parameter(title: "Posted", description: "Optional: the post's date/time as shown.") var timestamp: String?
 
     func perform() async throws -> some IntentResult {
-        try await PlatformPostSave.save(
-            platform: .instagram, handle: handle, content: content, timestamp: timestamp)
+        _ = try await PlatformPostSave.save(
+            platform: .instagram, handle: handle, content: content, timestamp: timestamp,
+            doubleSaveActionSurface: nil)
         return .result()
     }
 }
@@ -78,8 +81,9 @@ struct SaveFacebookPostIntent: AppIntent {
     @Parameter(title: "Posted", description: "Optional: the post's date/time as shown.") var timestamp: String?
 
     func perform() async throws -> some IntentResult {
-        try await PlatformPostSave.save(
-            platform: .facebook, handle: handle, content: content, timestamp: timestamp)
+        _ = try await PlatformPostSave.save(
+            platform: .facebook, handle: handle, content: content, timestamp: timestamp,
+            doubleSaveActionSurface: nil)
         return .result()
     }
 }

@@ -38,24 +38,24 @@ final class IntentQueryTests: XCTestCase {
 
     func testParseFieldsSplitsOnDelimiterAndTrims() {
         XCTAssertEqual(
-            SaveFromAppIntent.parseFields(from: "Veritasium ; The math of slime"),
+            SaveResponseParsing.parseFields(from: "Veritasium ; The math of slime"),
             ["Veritasium", "The math of slime"])
         XCTAssertEqual(
-            SaveFromAppIntent.parseFields(from: "  swift  ;  Concurrency tips ;  bob "),
+            SaveResponseParsing.parseFields(from: "  swift  ;  Concurrency tips ;  bob "),
             ["swift", "Concurrency tips", "bob"])
     }
 
     func testParseFieldsTreatsNoneAndEmptyAsNothing() {
-        XCTAssertEqual(SaveFromAppIntent.parseFields(from: "none"), [])
-        XCTAssertEqual(SaveFromAppIntent.parseFields(from: "  NONE  "), [])
-        XCTAssertEqual(SaveFromAppIntent.parseFields(from: ""), [])
-        XCTAssertEqual(SaveFromAppIntent.parseFields(from: "   "), [])
-        XCTAssertEqual(SaveFromAppIntent.parseFields(from: nil), [])
+        XCTAssertEqual(SaveResponseParsing.parseFields(from: "none"), [])
+        XCTAssertEqual(SaveResponseParsing.parseFields(from: "  NONE  "), [])
+        XCTAssertEqual(SaveResponseParsing.parseFields(from: ""), [])
+        XCTAssertEqual(SaveResponseParsing.parseFields(from: "   "), [])
+        XCTAssertEqual(SaveResponseParsing.parseFields(from: nil), [])
     }
 
     func testParseFieldsSingleValuePassesThrough() {
         XCTAssertEqual(
-            SaveFromAppIntent.parseFields(from: "https://example.com/a"),
+            SaveResponseParsing.parseFields(from: "https://example.com/a"),
             ["https://example.com/a"])
     }
 }

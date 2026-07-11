@@ -69,7 +69,7 @@ public struct SaveFromAppIntent: AppIntent {
             break
         }
 
-        let fields = Self.parseFields(from: details)
+        let fields = SaveResponseParsing.parseFields(from: details)
         let platform = AppNamePlatform.platform(forAppName: app)
 
         switch platform {
@@ -99,17 +99,6 @@ public struct SaveFromAppIntent: AppIntent {
             return .result(value: await saveAndDownloadReturnValue(link))
         }
         return .result(value: "Saved to Luna.")
-    }
-
-    /// Splits the model's single response string into its " ; "-joined fields,
-    /// trimming each and dropping empties. A "none" response (the model's
-    /// "nothing identifiable" / error sentinel) yields no fields.
-    public static func parseFields(from response: String?) -> [String] {
-        let trimmed = (response ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed.lowercased() != "none" else { return [] }
-        return trimmed.components(separatedBy: " ; ")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
     }
 
     /// Whether the "current app" reported by Shortcuts (`Get Current App`) is THIS

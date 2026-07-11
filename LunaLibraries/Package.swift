@@ -98,7 +98,10 @@ let package = Package(
         // absent (the share/action extensions never install it).
         .target(name: "LunaReaderUI", dependencies: ["LunaAppConfig", "LunaModels", "LunaReaderEngine", "LunaDesignSystem", "LunaStorage", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaArchiveReader", "LunaIngest", "LunaURLClassification", "LunaPlatforms", "LunaTransitions", "LunaContentRendering", "LunaPriceMetadata", "LunaAudioPlayback", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaPriceUI", dependencies: ["LunaModels", "LunaDesignSystem", "LunaHTMLClassification", "LunaStorage", "LunaFetch", "LunaURLClassification", "LunaIngest", "LunaReaderUI", "LunaTransitions", "LunaAppConfig", "LunaArchiveReader", "LunaContentRendering", "LunaPaywallBypass", "LunaPriceMetadata", "LunaReaderEngine", .product(name: "SwiftSoup", package: "SwiftSoup")]),
-        .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms", "LunaTransitions"]),
+        // LunaAudioPlayback: Phase 6 — `ExtensionAudioScriptWriter` writes a heuristics-only
+        // audio script to the cache right after an extension-context article save (see
+        // ShareSurfaceDriver.persistArticle); the extensions never call AudioScriptPipeline.install().
+        .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaAudioPlayback", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms", "LunaTransitions"]),
         .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReaderUI", "LunaReadingList", "LunaSocial", "LunaTransitions"]),
         .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaPlatforms", "LunaReadingList", "LunaSocial"]),
         .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaPlatforms", "LunaMediaDownload", "LunaReaderUI", "LunaSend"]),

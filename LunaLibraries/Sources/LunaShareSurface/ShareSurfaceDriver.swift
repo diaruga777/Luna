@@ -6,6 +6,7 @@
 import LunaPriceUI
 import LunaReaderUI
 import LunaArchiveReader
+import LunaAudioPlayback
 import LunaMediaDownload
 import LunaStorage
 import LunaIngest
@@ -133,7 +134,15 @@ public final class ShareSurfaceDriver {
 
     private func persistArticle(_ content: ArticleContent, html: String, url: URL) {
         guard let saved = store.item(forURLString: url.absoluteString) else { return }
-        _ = store.saveContent(content, for: saved)
+        let savedWithContent = store.saveContent(content, for: saved)
+        // Phase 6, product requirement B: write a heuristics-only audio
+        // script to the cache right away — cheap/synchronous, off the ingest
+        // critical path below (thumbnail fetch) — so the article is
+        // audio-ready before the main app's `AudioScriptPipeline` sweep gets
+        // to it. Reuses the exact same store/heuristics the main pipeline
+        // does; a no-op if a script is already cached.
+        ExtensionAudioScriptWriter.writeHeuristicScriptIfNeeded(
+            item: savedWithContent, content: content, articlesDirectory: store.articlesDirectory)
         // Give the row the SAME cover thumbnail an in-app save produces. Best-effort
         // from the page HTML the pipeline already fetched (Safari's text-only action
         // snapshot has no og:image, so it simply yields no cover here). The extension

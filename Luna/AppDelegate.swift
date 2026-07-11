@@ -96,13 +96,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // install the autoplay queue provider and register the Now Playing /
         // remote-command coordinator. Registration must happen at launch (not
         // lazily) so a cold background relaunch from a lock-screen play command
-        // can restore the persisted session. Universal across all three apps;
-        // playback only ever starts from Reader-surface flows.
-        AudioPlaybackWiring.install()
-        // Phase 4 (trimming): opportunistic script-cache builder, wired
-        // right after playback so its scriptProvider/scriptPrefetchHandler
-        // seams are set before anything could call into the center.
-        AudioScriptPipelineWiring.install()
+        // can restore the persisted session. READER SURFACE ONLY — read-aloud
+        // (the app-wide center, its background session, the window mini-player)
+        // belongs exclusively to Luna Reader; leaving `ReaderAudioLauncher.center`
+        // nil in the Downloader / Price Tracker apps keeps the shared readers on
+        // their legacy self-contained `SpeechController` path and guarantees the
+        // audio controls never appear there.
+        if AppSurfaceConfig.current == .reader {
+            AudioPlaybackWiring.install()
+            // Phase 4 (trimming): opportunistic script-cache builder, wired
+            // right after playback so its scriptProvider/scriptPrefetchHandler
+            // seams are set before anything could call into the center.
+            AudioScriptPipelineWiring.install()
+        }
         // Phase 7 (Siri): keep ArticleEntity's Spotlight index in sync with the
         // reading list so saved articles are semantically discoverable and
         // Siri can resolve "my article about …"/"from …" without the app

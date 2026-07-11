@@ -242,7 +242,11 @@ a way to pick up where an extension left off.
 - **`MiniPlayerHostViewController` + `AudioMiniPlayerView`**
   (`Luna/MiniPlayer/`) — window-level container `SceneDelegate` installs as
   `window.rootViewController`, wrapping the main `UINavigationController` as
-  a child. Hidden while idle, animates in on first play, persists across
+  a child. **Luna Reader only** — read-aloud is a Reader-exclusive feature, so
+  `makeMainRootViewController()` wraps in this host only when
+  `AppSurfaceConfig.current == .reader`; the Downloader / Price Tracker apps
+  install a bare nav controller (and skip `AudioPlaybackWiring.install()`
+  entirely, so `ReaderAudioLauncher.center` stays nil there). Hidden while idle, animates in on first play, persists across
   push/pop; presented view controllers cover it (playback continues
   regardless). Content is layered as glass-siblings rather than inside
   `UIGlassEffect`'s contentView (layers there don't rasterize via

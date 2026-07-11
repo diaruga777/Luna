@@ -12,9 +12,11 @@ import Foundation
 
 /// App-shell composition for the new audio-playback stack (Phase 2 of
 /// `claudedocs/audio-playback-plan.md`): installed once at launch from
-/// `AppDelegate`, in all three Luna apps (the machinery is universal;
-/// playback simply never starts outside Reader-surface flows until the
-/// Phase 3 UI lands).
+/// `AppDelegate`, but ONLY in Luna Reader — read-aloud (the app-wide center,
+/// its background session, the window mini-player) is a Reader-exclusive
+/// feature. The Downloader / Price Tracker apps skip this install entirely, so
+/// `ReaderAudioLauncher.center` stays nil there and their shared readers keep
+/// the legacy self-contained `SpeechController` path (no audio controls).
 ///
 /// This is the injected-closure composition pattern the app shell already
 /// uses (`SocialMessageCenter.ingestHandler`, `DiagnosticLog.export*`,

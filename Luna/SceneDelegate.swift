@@ -60,11 +60,20 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// Wraps the main nav controller in the window-level audio mini-player
     /// host (claudedocs/audio-playback-plan.md, Phase 3): the bar floats above
     /// the bottom safe area, survives every push/pop, and hides while idle.
+    ///
+    /// READER SURFACE ONLY. Read-aloud is a Luna Reader feature, so only Reader
+    /// wraps its nav controller in the mini-player host — the Downloader and
+    /// Price Tracker apps install a bare nav controller and never carry the
+    /// audio-playback bar or its interactions. (`mainNavigationController`
+    /// already resolves either shape.)
     private func makeMainRootViewController() -> UIViewController {
-        let root: UIViewController = AppSurfaceConfig.current == .downloader
+        let surface = AppSurfaceConfig.current
+        let root: UIViewController = surface == .downloader
             ? SavedMediaGridViewController()
-            : ReadingListViewController(surface: AppSurfaceConfig.current)
-        return MiniPlayerHostViewController(content: UINavigationController(rootViewController: root))
+            : ReadingListViewController(surface: surface)
+        let nav = UINavigationController(rootViewController: root)
+        guard surface == .reader else { return nav }
+        return MiniPlayerHostViewController(content: nav)
     }
 
     /// Pushes the Pending Requests screen onto the reading-list nav once the main

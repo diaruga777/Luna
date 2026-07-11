@@ -78,6 +78,7 @@ public final class SavedNonTextualViewController: UIViewController {
     // "Downloading…" / hidden (ready), and a "Save to Photos" button enabled once a
     // file exists. A status label carries errors. All hold layout space from load.
     private let downloadButton = UIButton(type: .system)
+    private let shareButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
     private let downloadProgress = MoonHorizonProgressBar()
     private let downloadStatus = UILabel()
@@ -226,6 +227,17 @@ public final class SavedNonTextualViewController: UIViewController {
         downloadButton.addAction(
             UIAction { [weak self] _ in self?.startMediaDownload() }, for: .touchUpInside)
 
+        var shareConfig = UIButton.Configuration.tinted()
+        shareConfig.title = "Share media"
+        shareConfig.image = UIImage(systemName: "square.and.arrow.up")
+        shareConfig.imagePadding = 8
+        shareConfig.baseForegroundColor = GlassStyle.readingAccent
+        shareButton.configuration = shareConfig
+        shareButton.addAction(
+            UIAction { [weak self] _ in self?.shareDownloadedMedia() }, for: .touchUpInside)
+        shareButton.isEnabled = false
+        // Hold layout space (visible but disabled) so the row height is stable.
+
         var saveConfig = UIButton.Configuration.tinted()
         saveConfig.title = "Save to Photos"
         saveConfig.image = UIImage(systemName: "photo.badge.arrow.down")
@@ -245,7 +257,9 @@ public final class SavedNonTextualViewController: UIViewController {
         downloadStatus.textAlignment = .center
         downloadStatus.numberOfLines = 0
 
-        return [previewContainer, downloadButton, downloadProgress, saveButton, downloadStatus]
+        return [
+            previewContainer, downloadButton, downloadProgress, shareButton, saveButton, downloadStatus
+        ]
     }
 
     // MARK: - Media flow (state machine)
@@ -280,6 +294,7 @@ public final class SavedNonTextualViewController: UIViewController {
             previewPlaceholder.isHidden = true
             downloadButton.isHidden = false
             downloadProgress.isHidden = true
+            shareButton.isEnabled = false
             saveButton.isEnabled = false
             downloadStatus.isHidden = true
 
@@ -292,6 +307,7 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadButton.isHidden = true
             downloadProgress.setProgress(0, animated: false)
             downloadProgress.isHidden = false
+            shareButton.isEnabled = false
             saveButton.isEnabled = false
             downloadStatus.text = "Downloading…"
             downloadStatus.textColor = .secondaryLabel
@@ -303,6 +319,7 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadButton.isHidden = true
             downloadProgress.isHidden = true
             downloadStatus.isHidden = true
+            shareButton.isEnabled = true
             saveButton.isEnabled = true
             showReadyPreview(media)
 
@@ -314,6 +331,7 @@ public final class SavedNonTextualViewController: UIViewController {
             previewPlaceholder.isHidden = true
             downloadButton.isHidden = false
             downloadProgress.isHidden = true
+            shareButton.isEnabled = false
             saveButton.isEnabled = false
             downloadStatus.text = message
             downloadStatus.textColor = .systemRed
@@ -389,6 +407,16 @@ public final class SavedNonTextualViewController: UIViewController {
         let playerVC = AVPlayerViewController()
         playerVC.player = player
         present(playerVC, animated: true) { player.play() }
+    }
+
+    /// Presents the system share sheet with the downloaded source media file.
+    private func shareDownloadedMedia() {
+        guard case .ready(let media) = mediaState else { return }
+        let activity = UIActivityViewController(
+            activityItems: [media.fileURL], applicationActivities: nil)
+        activity.popoverPresentationController?.sourceView = shareButton
+        activity.popoverPresentationController?.sourceRect = shareButton.bounds
+        present(activity, animated: true)
     }
 
     /// Requests Photos add access and saves the downloaded file, then marks the item

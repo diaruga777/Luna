@@ -153,6 +153,90 @@ whole-block-only contract, or reader word-highlighting breaks.
   FoundationModels constraints); their scripts get built the next time the
   main app foregrounds.
 
+### Extension audio (Phase 6)
+
+The Share/Action extensions deliberately keep the LEGACY `SpeechController`
+path (no `AudioPlaybackCenter`, no `AVAudioEngine`, no Now Playing/session
+machinery — extension memory/lifetime rule out background audio entirely).
+Phase 6 made that legacy path speak the TRIMMED script and gave the main app
+a way to pick up where an extension left off.
+
+- **What runs where.** The extension never calls `AudioScriptPipeline.
+  install()` (no `.readingListChanged` sweep, no foreground/background
+  tracking) — that stays main-app-only. Two small, extension-safe types in
+  `LunaAudioPlayback` cover the extension's two touch points instead:
+  - **`ExtensionAudioScriptWriter.writeHeuristicScriptIfNeeded`** — called
+    from `LunaShareSurface.ShareSurfaceDriver.persistArticle` (the ONE
+    canonical article-save completion point shared by the share and action
+    extensions, regardless of whether the in-sheet reader opens). Writes a
+    heuristics-only `AudioScriptCacheEnvelope` immediately (cheap/synchronous,
+    off the ingest critical path) so the article is audio-ready before the
+    main app's sweep ever reaches it. No-op if a script is already cached
+    (never clobbers one the main app already refined).
+  - **`ExtensionAudioScriptResolver`** — used by `ScrollReaderViewController`
+    only on the legacy path (`ReaderAudioLauncher.center == nil`, i.e. only
+    in an extension) when read-aloud starts. Resolves the best available
+    script and feeds `SpeechController` its `spokenBlocks.map(\.blockIndex)`.
+- **Degradation ladder (never blocks playback start).** Cached refined script
+  > cached heuristic script > a freshly-built heuristic script (pure/fast,
+  fine to run synchronously in-extension, and persisted immediately). If the
+  resolved script isn't yet refined and hasn't permanently failed, an
+  opportunistic on-device refinement pass is ALSO kicked off (subject to
+  `AudioSettings.isIntelligentTrimmingEnabled` and `AudioTrimModelSession.
+  isAvailable`, via the shared `AudioTrimModelSessionFactory.makeDefault()`),
+  running while the extension stays open. On ANY error/unavailability it
+  degrades silently to the heuristic script already in hand — exactly
+  `AudioTrimIntelligence`'s existing error handling, reused unchanged. A
+  completed refinement only WRITES THE CACHE for a later session; it never
+  swaps the script an in-progress extension playback session is using
+  (same hard contract as the main app's `AudioScriptPipeline.script(for:
+  content:)`). `ExtensionAudioScriptResolver.cancelInFlightRefinement()` is
+  called from `ScrollReaderViewController.deinit` so a straggling attempt
+  never outlives the view controller that started it.
+  FoundationModels inference itself runs out-of-process (a system daemon,
+  not extension memory) and a web check turned up no documented prohibition
+  against using it from an ordinary share/action extension (only
+  MessageFilter extensions are called out as unsupported) — so the guarded,
+  cancellable, silently-degrading attempt above is used as-is rather than
+  skipped outright; `isAvailable` already folds every unavailability reason
+  (Apple Intelligence off, unsupported language, model not ready, pre-iOS-26)
+  into the same no-op path regardless of process type.
+- **Block-index / highlighting mapping.** `SpeechController.init` takes an
+  optional `spokenBlockIndices: Set<Int>?`; filtering happens via the
+  file-scoped `speakableBlocks(content:spokenBlockIndices:)` (unit-tested
+  directly in `SpeechControllerAudioTrimmingTests`, no `AVSpeechSynthesizer`
+  needed). Each surviving entry keeps its ORIGINAL `content.blocks` index —
+  `SpeechController` was already index-keyed rather than assuming a
+  contiguous array (it already skipped empty-text blocks the same way), so
+  every other method (`blockPosition(forAttributedLocation:)`,
+  `willSpeakRangeOfSpeechString`) keeps mapping through
+  `blockTextRanges[safe: block.blockIndex]` unmodified. The VISUAL reader
+  (`content`/`rendered`/`wordMap`) stays untrimmed always — only which
+  blocks are SPOKEN is restricted.
+- **Handoff (extension → main-app), not true continuation.** The extension
+  process dies on close (no background modes) — no responder-chain/openURL
+  hacks are used. Instead, while the extension speaks, `SpeechController`'s
+  existing position bookkeeping (see `ScrollReaderViewController`) persists
+  through the SAME `AudioPlaybackPositionStore` format the main app already
+  restores from (`AudioPlaybackPositionStore.Position` now also carries a
+  `savedAt` timestamp, defaulted so pre-Phase-6 call sites/persisted data
+  keep working unchanged). `AudioPlaybackCenter.restorableHandoffIfAvailable
+  (now:)` is a NON-MUTATING peek (never touches `state`/the engine/the
+  session) that returns an `AudioPlaybackHandoff` (title, thumbnail, word
+  index, elapsed, a rough progress estimate) when idle AND a persisted
+  position exists AND it's RECENT (`AudioPlaybackCenter.handoffRecencyWindow`
+  — a named 30-minute constant) AND the item/its content still exist; nil
+  otherwise (including "something is already playing"), which doubles as the
+  "item deleted / content missing → do nothing" guard.
+  `MiniPlayerHostViewController` checks this once at launch and, if non-nil,
+  shows the bar in a paused preview — the center itself stays `.idle`, no
+  half-initialized "paused but nothing built yet" state was added there.
+  Tapping play routes through the EXISTING
+  `restorePersistedSessionIfAvailable()` (reused, not duplicated); any real
+  playback state arriving from that tap (or any other trigger) clears the
+  preview flag so the ordinary `AudioPlaybackObserver`-driven display takes
+  over.
+
 ### UI
 
 - **`MiniPlayerHostViewController` + `AudioMiniPlayerView`**
@@ -195,7 +279,9 @@ whole-block-only contract, or reader word-highlighting breaks.
   `AudioSessionCoordinator`, `AudioSettings`, `AudioVoiceResolution`,
   `ToneLibrary`, `AudioFormatConversion`, `AudioScript`,
   `AudioScriptPipeline`, `AudioScriptStore`, `AudioTrimHeuristics`,
-  `AudioTrimIntelligence`, `Resources/*.caf`).
+  `AudioTrimIntelligence`, `AudioTrimModelSessionFactory`,
+  `ExtensionAudioScriptResolver`, `ExtensionAudioScriptWriter`,
+  `Resources/*.caf`).
 - `Luna/AudioPlaybackWiring.swift` — queue provider + Now Playing
   registration + `ReaderAudioLauncher.center` install, at launch.
 - `Luna/AudioScriptPipelineWiring.swift` — trimming pipeline install +
@@ -209,11 +295,23 @@ whole-block-only contract, or reader word-highlighting breaks.
 - `LunaLibraries/Sources/LunaReaderUI/SpeechController.swift`,
   `SpeechEngine.swift`, `ReaderAudioSession.swift`, `VoiceModelStore.swift` —
   the LEGACY live-`speak()` path, kept working for the Share/Action
-  extensions only (never gains background-audio machinery).
+  extensions only (never gains background-audio machinery); Phase 6 added the
+  `spokenBlockIndices` trimming filter to `SpeechController.init`.
+- `LunaLibraries/Sources/LunaReaderUI/ScrollReaderViewController.swift` — owns
+  the `ExtensionAudioScriptResolver` instance on the legacy speech path and
+  cancels its in-flight refinement in `deinit`.
+- `LunaLibraries/Sources/LunaShareSurface/ShareSurfaceDriver.swift` — calls
+  `ExtensionAudioScriptWriter.writeHeuristicScriptIfNeeded` from
+  `persistArticle`, the extension article-save completion point.
+- `Luna/MiniPlayer/MiniPlayerHostViewController.swift` — Phase 6:
+  `showHandoffPreviewIfAvailable()`/`handlePlayPauseTap()` for the
+  launch-time paused-preview handoff.
 - `scripts/make_tones.py` — generates the two bundled chime `.caf` assets.
-- `LunaTests/{ArticleAudioEngine,AudioPlaybackCenter,AudioQueueRule,
-  NowPlayingCoordinator,AudioSessionCoordinator,AudioScriptPipeline,
-  AudioScriptStore,AudioTrimHeuristics,AudioTrimIntelligence,MiniPlayer,...}Tests.swift`.
+- `LunaTests/{ArticleAudioEngine,AudioPlaybackCenter,AudioPlaybackHandoff,
+  AudioQueueRule,NowPlayingCoordinator,AudioSessionCoordinator,
+  AudioScriptPipeline,AudioScriptStore,AudioTrimHeuristics,
+  AudioTrimIntelligence,ExtensionAudioScriptResolver,ExtensionAudioScriptWriter,
+  SpeechControllerAudioTrimming,MiniPlayer,...}Tests.swift`.
 
 ## Gotchas future changes must respect
 
@@ -231,7 +329,14 @@ whole-block-only contract, or reader word-highlighting breaks.
   nil in the Share/Action extensions; nothing in `LunaReaderUI` may reach
   `AudioPlaybackCenter.shared` directly (that would instantiate the engine +
   session coordinator in a memory-constrained extension process). Same for
-  `AudioScriptPipeline` — extensions never call `install()`.
+  `AudioScriptPipeline` — extensions never call `install()`. Phase 6's
+  `ExtensionAudioScriptResolver`/`ExtensionAudioScriptWriter` reuse
+  `AudioScriptStore`/`AudioTrimHeuristics`/`AudioTrimIntelligence` directly
+  (cache I/O + pure/async trimming logic only) WITHOUT touching
+  `AudioScriptPipeline`'s sweep/notification machinery — that distinction
+  (which pieces of the trimming pipeline are extension-safe vs. main-app-only)
+  is what makes trimmed extension playback possible without violating this
+  gotcha.
 - **iOS 26 availability guards around FoundationModels.** Despite this
   feature's plan doc historically describing the project as iOS 26+,
   `Luna.xcodeproj`'s actual `IPHONEOS_DEPLOYMENT_TARGET` is `18.0` on every

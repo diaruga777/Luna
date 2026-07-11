@@ -32,6 +32,50 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
 public final class SavedMediaStore {
     public static let shared = SavedMediaStore()
 
+    /// Darwin notification name mutations are echoed on, in addition to the in-process
+    /// `.savedMediaChanged` — the only channel that reaches a DIFFERENT process (e.g. the
+    /// action/share extension, which downloads media via `LiveMediaDownloadManager` and
+    /// writes the shared manifest from its own process; `NotificationCenter.default` posts
+    /// never cross the process boundary).
+    private static var darwinNotificationName: String {
+        "\(AppConfig.appGroupID).savedMediaChanged"
+    }
+
+    private static var didRegisterDarwinObserver = false
+
+    /// Registers a cross-process observer that re-posts the in-process `.savedMediaChanged`
+    /// on the main queue whenever ANY process (including this one) posts the Darwin
+    /// notification. Idempotent — safe to call from every surface that wants the bridge
+    /// (e.g. the Downloader grid's `viewDidLoad`). Receiving our own process's echo just
+    /// causes one harmless extra reload.
+    ///
+    /// Darwin's C callback can't capture context, so this uses the classic pattern: a
+    /// plain top-level function pointer that only knows how to post the in-process
+    /// notification — it doesn't need `self`, since there's nothing instance-specific to
+    /// recover (the shared manifest is the same for every SavedMediaStore instance).
+    public static func startObservingCrossProcessChanges() {
+        guard !didRegisterDarwinObserver else { return }
+        didRegisterDarwinObserver = true
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            nil,
+            { _, _, _, _, _ in
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
+                }
+            },
+            darwinNotificationName as CFString,
+            nil,
+            .deliverImmediately)
+    }
+
+    private func postCrossProcessChange() {
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName(Self.darwinNotificationName as CFString),
+            nil, nil, true)
+    }
+
     private let lock = NSLock()
     private let fm = FileManager.default
     private let encoder: JSONEncoder = {
@@ -126,6 +170,7 @@ public final class SavedMediaStore {
             if let thumbnailURL = old.thumbnailURL { try? fm.removeItem(at: thumbnailURL) }
         }
         NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
+        postCrossProcessChange()
         return item
     }
 
@@ -138,6 +183,7 @@ public final class SavedMediaStore {
         try? fm.removeItem(at: item.fileURL)
         if let thumbnailURL = item.thumbnailURL { try? fm.removeItem(at: thumbnailURL) }
         NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
+        postCrossProcessChange()
     }
 
     /// Applies the age-based retention policy. Saved media is app-owned: it is the
@@ -170,6 +216,7 @@ public final class SavedMediaStore {
             if let thumbnailURL = item.thumbnailURL { try? fm.removeItem(at: thumbnailURL) }
         }
         NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
+        postCrossProcessChange()
     }
 
     private func loadUnlocked() -> [SavedMediaItem] {

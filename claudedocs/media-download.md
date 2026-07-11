@@ -47,11 +47,37 @@ extraction.
      checkmark; on failure it shows the error and re-enables. On Downloader this is a pure
      Photos export — the app-library copy already exists from the auto-persist step.
 2. **Downloader saved-media grid** — the Downloader app's root screen is
-   `SavedMediaGridViewController`, a Photos-style chronological grid backed by
-   `SavedMediaStore`. Tapping an item opens a local-file viewer/player
-   (`AVPlayerViewController` for videos, zoomable image view for stills/GIFs). Context
-   menus expose Share and Delete. The old reading-list UI remains the root only for
-   Reader, Price Tracker, and debug/test combined-list surfaces.
+   `SavedMediaGridViewController`, a Photos-parity chronological grid backed by
+   `SavedMediaStore`:
+   - **Cell geometry** — edge-to-edge, hairline (1pt) gaps between cells, zero outer
+     section insets, exactly-square cells (item width computed explicitly per section —
+     `SavedMediaGridViewController.columnLayout(width:gap:)`, unit-tested in
+     `LunaTests/SavedMediaGridLayoutTests.swift` — rather than left to fractional
+     dimensions resolving against the group). 3 columns at an iPhone-portrait width,
+     scaling up with no cap for landscape/iPad. Video/GIF cells show a bottom-edge scrim
+     behind the play glyph (no duration label yet — `SavedMediaItem` carries no duration).
+   - **Viewer** — tapping an item pushes `SavedMediaViewerViewController`, a
+     `UIPageViewController` paging horizontally through the grid's items (one page per
+     item): `AVPlayerViewController` for videos (autoplay on arrival, pause on
+     page-away), a simple zoomable scroll view (double-tap to zoom) for stills/GIFs.
+     Deleting the current item, opening it, or paging to a new one all route through the
+     same store-notification handler the grid uses (see below), so "remove the page,
+     advance to the next item, pop only when nothing's left" and "mark as opened" are one
+     code path shared with cross-process/cross-surface changes.
+   - **Zoom transition** — the push/pop into/out of the viewer uses iOS 18's
+     `preferredTransition = .zoom(sourceViewProvider:)`, zooming to/from the grid CELL of
+     whichever item is currently on screen in the viewer (scrolling it into view first if
+     off-screen via `SavedMediaGridViewController.gridCellView(for:)`) — not necessarily
+     the cell originally tapped, since the user may have paged elsewhere. The app's global
+     `DotMatrixNavigationDelegate` (`LunaTransitions`) would otherwise force its own
+     pixel-wipe on every push/pop; `SavedMediaViewerViewController` opts out by conforming
+     to `LunaTransitions.DotMatrixTransitionExempt`, a marker protocol the delegate checks
+     on both endpoints of a push/pop (and in its edge-pan gesture's `shouldBegin`) to step
+     aside and let the system transition — and its own interactive dismiss gesture — run
+     instead. Any other VC that needs to own its transition can adopt the same protocol.
+   - Context menus (from the grid) expose Share, Save to Photos, and Delete. The old
+     reading-list UI remains the root only for Reader, Price Tracker, and debug/test
+     combined-list surfaces.
 3. **Reading list row long-press** — `ReadingListViewController.saveMediaToPhotos`
    adds a **"Save to Photos"** action (`photo.badge.arrow.down`) for the same
    platforms. Progress + result show in a **non-blocking bottom pill**
@@ -124,6 +150,34 @@ extraction.
   by kind + MIME (`fileExtension`). TikTok downloads set a `https://www.tiktok.com/` Referer.
 - **`PhotoLibrarySaver.swift`** — `.addOnly` authorization; `PHAssetCreationRequest`
   `addResource(with: .video/.photo, fileURL:, options.shouldMoveFile=true)`.
+
+## Cross-process reload (Darwin notification bridge)
+
+A save/delete made by the action/share extension happens in a DIFFERENT OS process from
+the running app, so `SavedMediaStore`'s in-process `NotificationCenter` posts
+(`.savedMediaChanged`) never reach it — the grid could go stale until the app was fully
+relaunched. `SavedMediaStore` now also posts a Darwin notification (name
+`"\(AppConfig.appGroupID).savedMediaChanged"`, via `CFNotificationCenterGetDarwinNotifyCenter()`)
+at the same 3 mutation sites (`addDownloadedFile`, `delete`, `purgeExpired`). Any surface
+that wants the bridge calls the idempotent `SavedMediaStore.startObservingCrossProcessChanges()`
+once (the grid does this in `viewDidLoad`); it registers a C-callback Darwin observer
+(classic static-callback pattern — Darwin callbacks can't capture context) that re-posts
+the in-process `.savedMediaChanged` on the main queue. Receiving our own process's echo
+just causes one harmless extra reload.
+
+Darwin notifications are dropped while the app is suspended, so the grid ALSO reloads on
+`UIApplication.didBecomeActiveNotification` (in addition to the existing
+`willEnterForegroundNotification` purge+reload) — this catches iPad multitasking, where
+the app can stay foregrounded the whole time an extension runs alongside it, and cases
+where only `didBecomeActive` (not a full foreground transition) fires. `reload()` also
+`reconfigureItems` for ids that persisted across a reload (their thumbnail may have only
+just been written), not just `appendItems`, since the diffable data source only reloads
+new/removed identities by default.
+
+While the viewer is open, the same `.savedMediaChanged` (and `.readingListChanged`)
+posts refresh its item list too; if the currently-displayed item vanished (deleted
+elsewhere, or by the viewer's own trash button — see above), it shows the next available
+item or pops if none are left, matching Photos.
 
 ## Auto-download and retention settings
 

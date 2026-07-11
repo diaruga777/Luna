@@ -35,6 +35,10 @@ final class SavedMediaGridViewController: UICollectionViewController {
         collectionView.dataSource = dataSource
         header.mount(in: self)
         setHeaderControls()
+        // Bridges saves/deletes made by the action/share extension (a DIFFERENT process,
+        // so the in-process .savedMediaChanged post below never reaches it) back to a
+        // .savedMediaChanged post here via a Darwin notification. Idempotent.
+        SavedMediaStore.startObservingCrossProcessChanges()
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .savedMediaChanged, object: nil)
         NotificationCenter.default.addObserver(
@@ -43,6 +47,11 @@ final class SavedMediaGridViewController: UICollectionViewController {
             self, selector: #selector(applicationForegrounded),
             name: UIApplication.willEnterForegroundNotification,
             object: nil)
+        // Darwin notifications are dropped while suspended, so also catch up on
+        // activation (covers iPad multitasking, where the app can stay foregrounded the
+        // whole time an extension runs alongside it, and plain didBecomeActive returns).
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reload), name: UIApplication.didBecomeActiveNotification, object: nil)
         reload()
     }
 
@@ -63,17 +72,26 @@ final class SavedMediaGridViewController: UICollectionViewController {
             adjustedTopInset: scrollView.adjustedContentInset.top)
     }
 
+    /// Column count + exactly-square item width for a Photos-style grid at a given
+    /// container width: hairline `gap` between cells, no outer insets. Pulled out as
+    /// pure math (no UIKit types) so it's covered by a plain unit test — see
+    /// `SavedMediaGridLayoutTests`. 3 columns on an iPhone-portrait-width layout,
+    /// scaling up for wider layouts (landscape, iPad) — no upper cap, matching Photos.
+    static func columnLayout(width: CGFloat, gap: CGFloat = 1) -> (columns: Int, itemWidth: CGFloat) {
+        let columns = max(3, Int(width / 130))
+        let itemWidth = ((width - gap * CGFloat(columns - 1)) / CGFloat(columns)).rounded(.down)
+        return (columns, itemWidth)
+    }
+
     /// Photos-style grid: edge-to-edge, hairline (1pt) gaps between cells, no outer
     /// section insets. Squareness is computed explicitly (not left to fractional
     /// dimensions resolving against the group) so cells stay exactly square at any
-    /// column count / gap combination. 3 columns on an iPhone-portrait-width layout,
-    /// scaling up for wider layouts (landscape, iPad) — no upper cap, matching Photos.
+    /// column count / gap combination.
     private static func makeLayout() -> UICollectionViewLayout {
         UICollectionViewCompositionalLayout { _, environment in
             let width = environment.container.effectiveContentSize.width
             let gap: CGFloat = 1
-            let columns = max(3, Int(width / 130))
-            let itemWidth = ((width - gap * CGFloat(columns - 1)) / CGFloat(columns)).rounded(.down)
+            let (columns, itemWidth) = columnLayout(width: width, gap: gap)
             let item = NSCollectionLayoutItem(
                 layoutSize: NSCollectionLayoutSize(
                     widthDimension: .fractionalWidth(1 / CGFloat(columns)),
@@ -138,10 +156,20 @@ final class SavedMediaGridViewController: UICollectionViewController {
 
     @objc private func reload() {
         store.purgeExpired()
+        let previousIDs = Set(items.map(\.id))
         items = store.items()
+        let ids = items.map(\.id)
         var snapshot = NSDiffableDataSourceSnapshot<Section, UUID>()
         snapshot.appendSections([.main])
-        snapshot.appendItems(items.map(\.id), toSection: .main)
+        snapshot.appendItems(ids, toSection: .main)
+        // An id that persisted across this reload is still the same collection-view
+        // item identity, so appendItems alone wouldn't refresh its cell — but its
+        // thumbnail may have only just been written to disk. Explicitly reconfigure
+        // those so the new thumbnail actually shows up.
+        let persisting = ids.filter { previousIDs.contains($0) }
+        if !persisting.isEmpty {
+            snapshot.reconfigureItems(persisting)
+        }
         dataSource.apply(snapshot, animatingDifferences: view.window != nil)
         collectionView.backgroundView = items.isEmpty ? EmptyMediaView() : nil
     }

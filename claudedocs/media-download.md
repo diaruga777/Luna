@@ -30,12 +30,22 @@ extraction.
      a **video** renders a poster frame (`AVAssetImageGenerator`) with a red play overlay,
      and **tapping the preview plays it** in an `AVPlayerViewController`. The still is
      persisted into the shared store as the platform card thumbnail (`setThumbnail`).
+   - **Auto-persist into the app library (Downloader only)** — the moment the media is
+     `ready`, `persistToDownloaderLibraryIfNeeded` moves a **copy** of the downloaded file
+     into `SavedMediaStore` (the grid's data source) and marks the URL downloaded, so a
+     shared post shows up in the home grid with no extra tap. This is what makes saves
+     actually land in the Downloader; without it the file only ever reached Photos and the
+     grid stayed empty (the in-app ingest funnel's dedup then skipped it, because the
+     preview download had already set `markDownloaded`). No-op in sibling apps, whose media
+     flow stays Photos-only. A COPY is stored so the live preview file remains playable and
+     usable for the explicit Photos export below.
    - **Save to Photos** — a **"Save to Photos"** button enables once `ready`. Tapping it
      calls `MediaDownloadService.saveDownloadedMediaToPhotos` (requests add-only auth, then
      `PhotoLibrarySaver.save`), marks the URL downloaded (`AutoDownloadSettings.markDownloaded`),
      and **marks the reading-list item read** (`ReadingListStore.markReadState(.read,…)` —
      NEW: saving now consumes the item). On success it becomes a green "Saved to Photos"
-     checkmark; on failure it shows the error and re-enables.
+     checkmark; on failure it shows the error and re-enables. On Downloader this is a pure
+     Photos export — the app-library copy already exists from the auto-persist step.
 2. **Downloader saved-media grid** — the Downloader app's root screen is
    `SavedMediaGridViewController`, a Photos-style chronological grid backed by
    `SavedMediaStore`. Tapping an item opens a local-file viewer/player
@@ -96,7 +106,12 @@ extraction.
 - **`SavedMediaStore.swift`** — app-group backed durable saved-media manifest
   (`savedMedia.json`) plus local files/thumbnails under `SavedMedia/Files` and
   `SavedMedia/Thumbnails`. `MediaRetentionSettings` defaults to 7 days, clamps to 1-30
-  days, or disables expiry when set to nil. Purging runs on app launch and foreground.
+  days, or disables expiry when set to nil. Purging (`purgeExpired`) runs on app launch and
+  foreground and is **age-based only** — saved media is app-owned (the grid's content,
+  deleted explicitly from the grid or aged out), NOT tied to reading-list membership.
+  (An earlier orphan rule that deleted any item whose `sourceURLString` wasn't in the
+  reading list silently wiped freshly-saved media once the ingest funnel unwrapped/
+  normalized the URL, since the stored copy keeps the pre-unwrap source URL.)
 - **`MediaDownloadService.swift`** — `downloadFirstMediaToPhotos(from:onProgress:)`:
   guards `supports`, requests add-only auth FIRST, resolves, downloads the first asset,
   saves. `downloadFirstMediaToAppStorage(from:title:onProgress:)` resolves/downloads and

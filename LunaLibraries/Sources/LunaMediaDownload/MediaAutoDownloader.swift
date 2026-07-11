@@ -57,7 +57,11 @@ public enum MediaAutoDownloader {
         return await LiveMediaDownloadManager.shared.start(urlString: urlString)
     }
 
-    static var isRunningInDownloader: Bool {
+    /// Whether the running process belongs to Luna Downloader (the app OR one of its
+    /// extensions — bundle ids are all `…downloader[.share|.action|.safari]`). Public
+    /// so the share surface can route saves into the app-owned `SavedMediaStore`
+    /// (the Downloader grid's data source) rather than Photos.
+    public static var isRunningInDownloader: Bool {
         guard let identifier = Bundle.main.bundleIdentifier?.lowercased() else { return false }
         return identifier.contains(".downloader")
     }

@@ -52,6 +52,10 @@ public final class SavedNonTextualViewController: UIViewController {
     private var mediaState: MediaState = .pending
     private let downloadService = MediaDownloadService()
 
+    /// Guards the one-time auto-persist into the Downloader's app-owned media
+    /// library (see `persistToDownloaderLibraryIfNeeded`).
+    private var didPersistToLibrary = false
+
     /// The on-disk preview file that still needs cleanup: set when media becomes
     /// `.ready`, cleared once it's saved to Photos (PhotoKit moves/consumes the
     /// file). Deleted in `deinit` so a downloaded-but-never-saved preview doesn't
@@ -322,6 +326,7 @@ public final class SavedNonTextualViewController: UIViewController {
             shareButton.isEnabled = true
             saveButton.isEnabled = true
             showReadyPreview(media)
+            persistToDownloaderLibraryIfNeeded(media)
 
         case .failed(let message):
             previewSpinner.stopAnimating()
@@ -356,6 +361,34 @@ public final class SavedNonTextualViewController: UIViewController {
             } catch {
                 let message = (error as? MediaDownloadError)?.message ?? "Couldn't download the media."
                 await MainActor.run { self.applyMediaState(.failed(message: message)) }
+            }
+        }
+    }
+
+    /// In Luna Downloader the app-owned media library (`SavedMediaStore`) is the
+    /// home grid's data source and the primary save destination, so a `ready`
+    /// preview is persisted there automatically — a shared post appears in the grid
+    /// with no extra tap (the "Save to Photos" button stays an explicit Photos
+    /// export). A COPY is stored so the live preview file remains playable / usable
+    /// for that export; marking the URL downloaded dedupes the main app's ingest
+    /// funnel so it never re-downloads the same post. No-op in sibling apps, whose
+    /// media flow stays Photos-only.
+    private func persistToDownloaderLibraryIfNeeded(_ media: DownloadedMedia) {
+        guard MediaAutoDownloader.isRunningInDownloader, !didPersistToLibrary else { return }
+        didPersistToLibrary = true
+        let sourceURLString = articleURLString
+        let title = ReadingListStore.shared.item(forURLString: sourceURLString)?.title
+        let previewURL = media.fileURL
+        let kind = media.kind
+        Task.detached {
+            let copy = MediaDownloadStorage.newFileURL(extension: previewURL.pathExtension)
+            do {
+                try FileManager.default.copyItem(at: previewURL, to: copy)
+                _ = try SavedMediaStore.shared.addDownloadedFile(
+                    copy, kind: kind, sourceURLString: sourceURLString, title: title)
+                AutoDownloadSettings.markDownloaded(sourceURLString)
+            } catch {
+                try? FileManager.default.removeItem(at: copy)
             }
         }
     }

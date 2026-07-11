@@ -140,11 +140,15 @@ public final class SavedMediaStore {
         NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
     }
 
+    /// Applies the age-based retention policy. Saved media is app-owned: it is the
+    /// Downloader grid's primary content, deleted explicitly from the grid (`delete`)
+    /// or aged out here — NOT tied to reading-list membership. (An earlier version
+    /// also purged any item whose `sourceURLString` wasn't in the reading list; that
+    /// silently deleted freshly-saved media whenever the app's ingest unwrapped/
+    /// normalized a URL, since the stored copy keeps the pre-unwrap source URL.)
     public func purgeExpired(now: Date = Date()) {
         lock.lock()
         let items = loadUnlocked()
-        let savedURLs = Set(ReadingListStore.shared.items().map(\.urlString))
-        let orphaned = items.filter { !savedURLs.contains($0.sourceURLString) }
         let ageExpired: [SavedMediaItem]
         if let days = MediaRetentionSettings.retentionDays {
             let cutoff = now.addingTimeInterval(-TimeInterval(days) * 24 * 60 * 60)
@@ -152,7 +156,7 @@ public final class SavedMediaStore {
         } else {
             ageExpired = []
         }
-        let expiredIDs = Set((orphaned + ageExpired).map(\.id))
+        let expiredIDs = Set(ageExpired.map(\.id))
         guard !expiredIDs.isEmpty else {
             lock.unlock()
             return

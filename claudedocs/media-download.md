@@ -100,7 +100,7 @@ extraction.
 
 - **`MediaDownload.swift`** — `MediaAsset` (`url` + `Kind` = image/gif/video),
   `MediaDownloadError` (with `.message`), `MediaDownloadablePlatform` (supported set =
-  `.x/.instagram/.tiktok`, `supports(urlString)` via `PlatformRecognizer`), and the
+  `.x/.instagram/.tiktok/.facebook`, `supports(urlString)` via `PlatformRecognizer`), and the
   protocols `SocialMediaResolving` / `PhotoLibrarySaving` / `MediaDownloading`.
 - **`SocialMediaResolver.swift`** — `resolveAssets(for:)` dispatches by platform; fetch
   is injectable (`Fetch` closure) so the **pure parsers** are unit-tested:
@@ -108,7 +108,8 @@ extraction.
     `tweet.media.all` (ordered, typed: photo→image, video/gif→video=mp4), falls back to
     `videos`/`photos`.
   - `TikTokMediaParser` — the page's `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">`
-    JSON → `…webapp.video-detail.itemInfo.itemStruct`: `imagePost.images[].imageURL.urlList[0]`
+    JSON → `…webapp.video-detail.itemInfo.itemStruct` or shared-link reflow
+    `…webapp.reflow.video.detail.itemInfo.itemStruct`: `imagePost.images[].imageURL.urlList[0]`
     (photo carousel) else `video.playAddr` (no-watermark) / `video.downloadAddr`.
   - `InstagramMediaParser` — the resolver fetches the **`/p/{code}/embed/captioned/`
     page FIRST** and parses its `contextJSON` blob (`assetsFromEmbedContextJSON`): a
@@ -209,11 +210,12 @@ downloaded in one process isn't downloaded again when the main app re-ingests it
 Keyless extraction depends on third-party/undocumented endpoints that change and may be
 rate-limited or login-walled: Instagram video relies on the embed `contextJSON` (verified
 working for reels); if Instagram drops it the fallbacks yield only the poster still.
-TikTok `playAddr` can 403 without page cookies. The parsers are tested; live extraction
-is not guaranteed end-to-end. Twitter "GIFs" are mp4 and save as videos.
+TikTok shared `/t/...` links redirect to canonical pages whose media can live under the
+reflow scope; `playAddr` can still 403 without page cookies. The parsers are tested; live
+extraction is not guaranteed end-to-end. Twitter "GIFs" are mp4 and save as videos.
 
 ## Tests
 
-`LunaTests/MediaDownloadTests.swift` — platform support, X/TikTok/Instagram parsers
+`LunaTests/SocialMediaResolverTests.swift` — platform support, X/TikTok/Instagram parsers
 (incl. fallbacks + unescape), `fileExtension` mapping, and resolver dispatch via an
 injected fetch. Network is not hit.

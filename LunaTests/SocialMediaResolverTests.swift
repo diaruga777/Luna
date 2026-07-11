@@ -186,4 +186,37 @@ final class SocialMediaResolverTests: XCTestCase {
         XCTAssertEqual(PlatformRecognizer.recognize(reddit)?.platform, .reddit)
         XCTAssertFalse(MediaDownloadablePlatform.supports(reddit))
     }
+
+    func testTikTokSharedLinkReflowPayloadResolvesAsVideo() async {
+        let source = URL(string: "https://www.tiktok.com/t/ZP8Gqx5p5/")!
+        let html = #"""
+        <script type="application/json" id="__UNIVERSAL_DATA_FOR_REHYDRATION__">
+        {"__DEFAULT_SCOPE__":{"webapp.reflow.video.detail":{"itemInfo":{"itemStruct":{"video":{"playAddr":"https://video.example.com/reflow.mp4","downloadAddr":"https://video.example.com/watermarked.mp4"}}}}}}
+        </script>
+        """#
+        var requestedURL: URL?
+        let resolver = SocialMediaResolver { request in
+            requestedURL = request.url
+            return Data(html.utf8)
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
+        XCTAssertEqual(requestedURL, source)
+        XCTAssertEqual(assets, [
+            MediaAsset(url: URL(string: "https://video.example.com/reflow.mp4")!, kind: .video),
+        ])
+    }
+
+    func testTikTokReflowPayloadFallsBackToDownloadAddress() {
+        let html = #"""
+        <script data-extra="ignored" id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+        {"__DEFAULT_SCOPE__":{"webapp.reflow.video.detail":{"itemInfo":{"itemStruct":{"video":{"playAddr":"","downloadAddr":"https://video.example.com/download.mp4"}}}}}}
+        </script>
+        """#
+
+        XCTAssertEqual(TikTokMediaParser.assets(fromHTML: html), [
+            MediaAsset(url: URL(string: "https://video.example.com/download.mp4")!, kind: .video),
+        ])
+    }
 }

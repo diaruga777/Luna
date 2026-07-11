@@ -292,16 +292,36 @@ public enum TikTokMediaParser {
     }
 
     private static func videoItemStruct(in html: String) -> [String: Any]? {
-        let marker = "id=\"__UNIVERSAL_DATA_FOR_REHYDRATION__\" type=\"application/json\">"
-        guard let start = html.range(of: marker) else { return nil }
-        let rest = html[start.upperBound...]
-        guard let end = rest.range(of: "</script>") else { return nil }
-        let jsonString = String(rest[..<end.lowerBound])
-        guard let root = (try? JSONSerialization.jsonObject(with: Data(jsonString.utf8))) as? [String: Any],
-              let scope = root["__DEFAULT_SCOPE__"] as? [String: Any],
-              let detail = scope["webapp.video-detail"] as? [String: Any],
-              let info = detail["itemInfo"] as? [String: Any] else { return nil }
-        return info["itemStruct"] as? [String: Any]
+        guard let jsonString = rehydrationJSON(in: html),
+              let root = (try? JSONSerialization.jsonObject(with: Data(jsonString.utf8))) as? [String: Any],
+              let scope = root["__DEFAULT_SCOPE__"] as? [String: Any] else { return nil }
+
+        for key in ["webapp.video-detail", "webapp.reflow.video.detail"] {
+            guard let detail = scope[key] as? [String: Any],
+                  let info = detail["itemInfo"] as? [String: Any],
+                  let item = info["itemStruct"] as? [String: Any] else { continue }
+            return item
+        }
+        return nil
+    }
+
+    private static func rehydrationJSON(in html: String) -> String? {
+        guard let scriptStart = html.range(of: "<script", options: [.caseInsensitive]) else { return nil }
+        var searchStart = scriptStart.lowerBound
+        while searchStart < html.endIndex,
+              let tagStart = html[searchStart...].range(of: "<script", options: [.caseInsensitive]) {
+            guard let tagEnd = html[tagStart.upperBound...].firstIndex(of: ">") else { return nil }
+            let tag = String(html[tagStart.lowerBound...tagEnd]).lowercased()
+            let contentStart = html.index(after: tagEnd)
+            guard let end = html[contentStart...].range(of: "</script>", options: [.caseInsensitive]) else {
+                return nil
+            }
+            if tag.contains("__universal_data_for_rehydration__") {
+                return String(html[contentStart..<end.lowerBound])
+            }
+            searchStart = end.upperBound
+        }
+        return nil
     }
 }
 

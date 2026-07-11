@@ -45,6 +45,9 @@ public final class DotMatrixNavigationDelegate: NSObject, UINavigationController
         from fromVC: UIViewController,
         to toVC: UIViewController) -> UIViewControllerAnimatedTransitioning? {
         guard DotMatrixTransitionCenter.shared.isEnabled else { return nil }
+        // Step aside for a VC that manages its own transition (e.g. the media viewer's
+        // iOS 18 zoom transition) on BOTH the push into it and the later pop out of it.
+        guard !(fromVC is DotMatrixTransitionExempt), !(toVC is DotMatrixTransitionExempt) else { return nil }
         switch operation {
         case .push: return DotMatrixAnimator(direction: .rightToLeft)
         case .pop:  return DotMatrixAnimator(direction: .leftToRight)
@@ -118,6 +121,9 @@ public final class DotMatrixNavigationDelegate: NSObject, UINavigationController
 
     public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === edgePan, let nav = navigationController else { return true }
+        // Decline entirely while the top VC manages its own transition (e.g. the media
+        // viewer's zoom), so the system's own interactive dismissal gesture runs instead.
+        if let top = nav.topViewController, top is DotMatrixTransitionExempt { return false }
         // Own the back-swipe only while the wipe is enabled and a pop is possible; otherwise
         // step aside so UIKit's own interactivePopGestureRecognizer runs the stock swipe.
         guard DotMatrixTransitionCenter.shared.isEnabled,

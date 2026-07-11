@@ -3,7 +3,6 @@
 //  Luna
 //
 
-import AVKit
 import LunaDesignSystem
 import LunaMediaDownload
 import LunaReadingList
@@ -175,12 +174,23 @@ final class SavedMediaGridViewController: UICollectionViewController {
 
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard indexPath.item < items.count else { return }
-        let item = items[indexPath.item]
-        let viewer = SavedMediaViewerViewController(items: items, initialIndex: indexPath.item)
+        // The viewer marks the initially-shown item (and every item paged to
+        // afterwards) as opened itself — see SavedMediaViewerViewController.markOpened.
+        let viewer = SavedMediaViewerViewController(items: items, initialIndex: indexPath.item, grid: self)
         navigationController?.pushViewController(viewer, animated: true)
-        if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
-            ReadingListStore.shared.markReadState(.opened, for: saved.id)
+    }
+
+    /// Resolves the grid cell currently displaying `id`, scrolling it into view first
+    /// if it's off-screen — used as the zoom transition's `sourceViewProvider` so the
+    /// dismiss-from-viewer animation always zooms back into the right cell, even if the
+    /// user paged to a different item while the viewer was open.
+    func gridCellView(for id: UUID) -> UIView? {
+        guard let indexPath = dataSource.indexPath(for: id) else { return nil }
+        if !collectionView.indexPathsForVisibleItems.contains(indexPath) {
+            collectionView.scrollToItem(at: indexPath, at: .centeredVertically, animated: false)
+            collectionView.layoutIfNeeded()
         }
+        return collectionView.cellForItem(at: indexPath)
     }
 
     override func collectionView(
@@ -355,110 +365,4 @@ private final class EmptyMediaView: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
-}
-
-private final class SavedMediaViewerViewController: UIViewController, UIScrollViewDelegate {
-    private let items: [SavedMediaItem]
-    private var index: Int
-    private var playerController: AVPlayerViewController?
-    private let scrollView = UIScrollView()
-    private let imageView = UIImageView()
-
-    init(items: [SavedMediaItem], initialIndex: Int) {
-        self.items = items
-        self.index = initialIndex
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .black
-        navigationController?.setNavigationBarHidden(false, animated: true)
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .trash,
-            target: self,
-            action: #selector(deleteCurrent))
-        configureSwipeGestures()
-        showCurrent()
-    }
-
-    private func configureSwipeGestures() {
-        let left = UISwipeGestureRecognizer(target: self, action: #selector(nextItem))
-        left.direction = .left
-        let right = UISwipeGestureRecognizer(target: self, action: #selector(previousItem))
-        right.direction = .right
-        view.addGestureRecognizer(left)
-        view.addGestureRecognizer(right)
-    }
-
-    private func showCurrent() {
-        guard items.indices.contains(index) else {
-            navigationController?.popViewController(animated: true)
-            return
-        }
-        let item = items[index]
-        title = item.title ?? item.sourceURLString
-        children.forEach { child in
-            child.willMove(toParent: nil)
-            child.view.removeFromSuperview()
-            child.removeFromParent()
-        }
-        scrollView.removeFromSuperview()
-        playerController?.player?.pause()
-        playerController = nil
-
-        switch item.kind {
-        case .video:
-            let player = AVPlayer(url: item.fileURL)
-            let controller = AVPlayerViewController()
-            controller.player = player
-            controller.view.frame = view.bounds
-            controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            addChild(controller)
-            view.addSubview(controller.view)
-            controller.didMove(toParent: self)
-            playerController = controller
-            player.play()
-        case .image, .gif:
-            scrollView.frame = view.bounds
-            scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            scrollView.minimumZoomScale = 1
-            scrollView.maximumZoomScale = 4
-            scrollView.zoomScale = 1
-            scrollView.delegate = self
-            imageView.image = UIImage(contentsOfFile: item.fileURL.path)
-            imageView.contentMode = .scaleAspectFit
-            imageView.frame = scrollView.bounds
-            imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            scrollView.addSubview(imageView)
-            view.addSubview(scrollView)
-        }
-    }
-
-    func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
-
-    @objc private func nextItem() {
-        guard index + 1 < items.count else { return }
-        index += 1
-        showCurrent()
-    }
-
-    @objc private func previousItem() {
-        guard index > 0 else { return }
-        index -= 1
-        showCurrent()
-    }
-
-    @objc private func deleteCurrent() {
-        guard items.indices.contains(index) else { return }
-        let item = items[index]
-        if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
-            ReadingListStore.shared.delete(saved)
-        } else {
-            SavedMediaStore.shared.delete(item)
-        }
-        navigationController?.popViewController(animated: true)
-    }
 }

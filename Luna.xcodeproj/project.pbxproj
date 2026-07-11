@@ -125,15 +125,18 @@
 		7958393D2FE0A62700C775CA /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000003 /* SwiftSoup */; };
 		79583DFF2FE0BAD100C775CA /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */; };
 		79583E0B2FE0BAD200C775CA /* Luna Action Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 79583DFC2FE0BAD100C775CA /* Luna Action Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		79E9C2FE2FFAF84100329B57 /* Luna Reader.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9C2FD2FFAF84100329B57 /* Luna Reader.icon */; };
-		79E9C2FF2FFAF84100329B57 /* Luna Reader.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9C2FD2FFAF84100329B57 /* Luna Reader.icon */; };
-		79E9C3002FFAF84100329B57 /* Luna Reader.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9C2FD2FFAF84100329B57 /* Luna Reader.icon */; };
-		79E9D2E62FFC3E6E00329B57 /* Luna Downloader.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9D2E42FFC3E6E00329B57 /* Luna Downloader.icon */; };
-		79E9D2E72FFC3E6E00329B57 /* Luna Price Tracker.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9D2E52FFC3E6E00329B57 /* Luna Price Tracker.icon */; };
-		79E9D2E82FFC3E6E00329B57 /* Luna Downloader.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9D2E42FFC3E6E00329B57 /* Luna Downloader.icon */; };
-		79E9D2E92FFC3E6E00329B57 /* Luna Price Tracker.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9D2E52FFC3E6E00329B57 /* Luna Price Tracker.icon */; };
-		79E9D2EA2FFC3E6E00329B57 /* Luna Downloader.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9D2E42FFC3E6E00329B57 /* Luna Downloader.icon */; };
-		79E9D2EB2FFC3E6E00329B57 /* Luna Price Tracker.icon in Resources */ = {isa = PBXBuildFile; fileRef = 79E9D2E52FFC3E6E00329B57 /* Luna Price Tracker.icon */; };
+		F70000000000000000000001 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F70000000000000000000002 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F70000000000000000000003 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F70000000000000000000004 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F70000000000000000000005 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F70000000000000000000006 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F70000000000000000000007 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F70000000000000000000008 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F70000000000000000000009 /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F7000000000000000000000A /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F7000000000000000000000B /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
+		F7000000000000000000000C /* SharedIconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F70000000000000000000000 /* SharedIconAssets.xcassets */; };
 		79E9F2763000949300329B57 /* LunaAudioPlayback in Frameworks */ = {isa = PBXBuildFile; productRef = 648405211A7DCF06041EDDB6 /* LunaAudioPlayback */; };
 		7A2A261BD9A78CDAD99A8432 /* LunaPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunaPriceMetadata */; };
 		7AF7216F62048B1A8C59F9E6 /* LunaPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunaPlatforms */; };
@@ -443,9 +446,7 @@
 		7222BE8C519159B489DB3C0C /* LunaPriceTrackerSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaPriceTrackerSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFC2FE0BAD100C775CA /* Luna Action Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "Luna Action Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		79583DFE2FE0BAD100C775CA /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
-		79E9C2FD2FFAF84100329B57 /* Luna Reader.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "Luna Reader.icon"; sourceTree = "<group>"; };
-		79E9D2E42FFC3E6E00329B57 /* Luna Downloader.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "Luna Downloader.icon"; sourceTree = "<group>"; };
-		79E9D2E52FFC3E6E00329B57 /* Luna Price Tracker.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "Luna Price Tracker.icon"; sourceTree = "<group>"; };
+		F70000000000000000000000 /* SharedIconAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = SharedIconAssets.xcassets; sourceTree = "<group>"; };
 		AA0200000000000000000001 /* Luna.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Luna.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000002 /* LunaSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LunaSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0200000000000000000003 /* LunaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LunaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -986,9 +987,7 @@
 				AA0900000000000000000002 /* Products */,
 				795840BB2FE0BD8600C775CA /* Recovered References */,
 				88C0217468B4933DA5C3084F /* LunaReaderClip */,
-				79E9C2FD2FFAF84100329B57 /* Luna Reader.icon */,
-				79E9D2E42FFC3E6E00329B57 /* Luna Downloader.icon */,
-				79E9D2E52FFC3E6E00329B57 /* Luna Price Tracker.icon */,
+				F70000000000000000000000 /* SharedIconAssets.xcassets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -1715,6 +1714,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F70000000000000000000001 /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1722,6 +1722,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F70000000000000000000002 /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1736,6 +1737,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F70000000000000000000003 /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1743,9 +1745,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				79E9C2FF2FFAF84100329B57 /* Luna Reader.icon in Resources */,
-				79E9D2E62FFC3E6E00329B57 /* Luna Downloader.icon in Resources */,
-				79E9D2E72FFC3E6E00329B57 /* Luna Price Tracker.icon in Resources */,
+				F70000000000000000000004 /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1753,6 +1753,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F70000000000000000000005 /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1760,6 +1761,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F70000000000000000000006 /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1767,6 +1769,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F70000000000000000000007 /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1774,9 +1777,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				79E9C3002FFAF84100329B57 /* Luna Reader.icon in Resources */,
-				79E9D2EA2FFC3E6E00329B57 /* Luna Downloader.icon in Resources */,
-				79E9D2EB2FFC3E6E00329B57 /* Luna Price Tracker.icon in Resources */,
+				F70000000000000000000008 /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1784,9 +1785,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				79E9C2FE2FFAF84100329B57 /* Luna Reader.icon in Resources */,
-				79E9D2E82FFC3E6E00329B57 /* Luna Downloader.icon in Resources */,
-				79E9D2E92FFC3E6E00329B57 /* Luna Price Tracker.icon in Resources */,
+				F70000000000000000000009 /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1794,6 +1793,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F7000000000000000000000A /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1808,6 +1808,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F7000000000000000000000B /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1815,6 +1816,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F7000000000000000000000C /* SharedIconAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2149,7 +2151,7 @@
 		023E20620BE250C369387843 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Luna/LunaDownloader.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -2180,7 +2182,7 @@
 		144800522E501D4A6D024453 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPriceTracker;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Luna/LunaPriceTracker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -2210,7 +2212,7 @@
 		36BE64E58068B0FF635CA9AC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2274,7 +2276,7 @@
 		3A579C741B51DE45A7E87D13 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2336,7 +2338,7 @@
 		5353B55D7367CE5C1A03EA6C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2364,7 +2366,7 @@
 		5AD1A6F1DABCAE5BC3DD6321 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPriceTracker;
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2391,7 +2393,7 @@
 		65686C7A8A0FBCDB65DD7149 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2418,7 +2420,7 @@
 		6F468BEA5E125B25A9C8D2DC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPriceTracker;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2480,7 +2482,7 @@
 		79583E0C2FE0BAD200C775CA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2542,7 +2544,7 @@
 		79583E0D2FE0BAD200C775CA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2606,7 +2608,7 @@
 		7F9C81DD57B2AE5AC8CC1B13 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPriceTracker;
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2634,7 +2636,7 @@
 		85CB1AEB69C5B855D8FF4C59 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPriceTracker;
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2661,7 +2663,7 @@
 		91AF421C7C2DB4821CDAD9A7 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = LunaReaderClip/LunaReaderClip.entitlements;
@@ -2696,7 +2698,7 @@
 		A06A267FE792581B276EB885 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPriceTracker;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2817,7 +2819,7 @@
 		AAC300000000000000000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Luna/Luna.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -2847,7 +2849,7 @@
 		AAC400000000000000000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Luna/Luna.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -2877,7 +2879,7 @@
 		AAC500000000000000000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2905,7 +2907,7 @@
 		AAC600000000000000000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2971,7 +2973,7 @@
 		AAC900000000000000000000 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -2998,7 +3000,7 @@
 		AACA00000000000000000000 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -3025,7 +3027,7 @@
 		BE6F0F191F208F7FEDC7D0B5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Luna/LunaDownloader.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -3056,7 +3058,7 @@
 		C5863E0B66F8E9D9132F65C0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
 				CODE_SIGN_ENTITLEMENTS = LunaShare/LunaShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -3083,7 +3085,7 @@
 		D0EE387C77FBD5AA16E996A7 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -3111,7 +3113,7 @@
 		D81FDB989A8ABBFDA62F031A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Reader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconReader;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = LunaReaderClip/LunaReaderClip.entitlements;
@@ -3145,7 +3147,7 @@
 		D82FEA89A1E463804FF7AF6B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPriceTracker;
 				CODE_SIGN_ENTITLEMENTS = LunaSafari/LunaSafari.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -3173,7 +3175,7 @@
 		ED6F9B6CE81E9794FA1FC336 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Price Tracker";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconPriceTracker;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Luna/LunaPriceTracker.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -3203,7 +3205,7 @@
 		LDCL0000000000000000000C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
 				CODE_SIGN_ENTITLEMENTS = LunaDownloaderClip/LunaDownloaderClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;
@@ -3234,7 +3236,7 @@
 		LDCL0000000000000000000D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "Luna Downloader";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDownloader;
 				CODE_SIGN_ENTITLEMENTS = LunaDownloaderClip/LunaDownloaderClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 123;

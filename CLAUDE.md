@@ -87,11 +87,10 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   -configuration Debug -derivedDataPath "$DD" DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO
 ```
 
-- **If the committed `Luna Reader.icon` Icon Composer bundle is present, stable
-  Xcode 26.2's `actool` cannot compile it** ("Icon export exited with status
-  255") — prefix every `xcodebuild` invocation with
-  `DEVELOPER_DIR=/Applications/Xcode-27.0.0-Beta.app` in that case. Tests still
-  run fine on an iOS 26.2 simulator either way (deployment target stays iOS 18).
+- **App icons use conventional PNG `.appiconset`s in
+  `SharedIconAssets.xcassets`**, so stable Xcode 26.2's `actool` compiles every
+  host app and extension. Do not add Xcode 27 Icon Composer `.icon` bundles to
+  the project; they are not supported by Xcode 26.
 - **`DIAGNOSE_MISSING_TARGET_DEPENDENCIES=NO` works around a confirmed Xcode 26
   swift-build bug (swiftlang/swift-build#975).** Its target-dependency-graph
   validator emits spurious `'X' is missing a dependency on 'Y' because dependency

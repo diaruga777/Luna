@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Retired icon generator.
 
-Luna now uses Icon Composer `.icon` files at the repository root:
-
-- Luna Reader.icon
-- Luna Downloader.icon
-- Luna Price Tracker.icon
-
-Edit those files in Icon Composer/Xcode instead of regenerating the old asset
-catalog PNGs.
+Luna's committed source of truth is the Xcode 26-compatible standard asset
+catalog `SharedIconAssets.xcassets`, with `AppIconReader`,
+`AppIconDownloader`, and `AppIconPriceTracker` appiconsets. Update those PNG
+assets directly when new raster exports are available.
 """
 
 import sys

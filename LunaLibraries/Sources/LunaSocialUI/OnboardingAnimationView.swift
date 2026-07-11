@@ -109,11 +109,9 @@ public final class OnboardingAnimationView: UIView {
     }
 
     private func lunaAppIconImage() -> UIImage? {
-        // MUST load the plain `AppIconImage<App>` imageset, NOT the Icon Composer
-        // `.icon` bundle name (e.g. "Luna Reader"): `UIImage(named:)` on a `.icon`
-        // app-icon bundle THROWS an NSException at runtime (it's a valid app icon
-        // but not a loadable image asset), crashing this step. The imagesets mirror
-        // each app's icon art precisely for in-UI use.
+        // MUST load the plain `AppIconImage<App>` imageset: app icon sets cannot be
+        // loaded through `UIImage(named:)`. These imagesets mirror the standard app
+        // icons precisely for in-UI use.
         let identifier = Bundle.main.bundleIdentifier ?? ""
         let appIconName: String
         if identifier.contains(".downloader") {

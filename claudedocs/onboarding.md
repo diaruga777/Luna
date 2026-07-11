@@ -218,12 +218,12 @@ mock UI rows (Dynamic Island confirmation, "Save to Luna" share row, Safari
 extension toggle row, notification banner) by bundle-id suffix. It loads the
 `AppIconImageReader` / `AppIconImageDownloader` / `AppIconImagePriceTracker`
 imagesets in `Luna/Assets.xcassets` — **not** the `AppIcon*` appiconsets, because
-`.appiconset`s (and Icon Composer `.icon` bundles) are not loadable via
-`UIImage(named:)`; before these imagesets existed the lookup silently fell back
-to the unrelated `luna-app-mark` glyph. The imageset art must be kept in sync by
-hand with each app's real Home Screen icon: Reader's comes from the
-`Luna Reader.icon` Icon Composer bundle's 1024 export, the other two from their
-appiconsets' 1024 PNGs (all downscaled to 512).
+`.appiconset`s are not loadable via `UIImage(named:)`; before these imagesets
+existed the lookup silently fell back to the unrelated `luna-app-mark` glyph.
+The canonical Home Screen icons live in `SharedIconAssets.xcassets` as standard
+Xcode 26-compatible `AppIconReader`, `AppIconDownloader`, and
+`AppIconPriceTracker` appiconsets. Keep the three onboarding images in sync with
+their corresponding `*-1024.png` canonical exports (all downscaled to 512).
 
 ## Replay ("Replay Onboarding" in Settings)
 

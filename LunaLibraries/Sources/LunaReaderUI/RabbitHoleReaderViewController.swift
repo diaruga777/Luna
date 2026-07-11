@@ -788,6 +788,11 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         stackStore.save(RabbitHoleStack(layers: layers.map { $0.descriptor }), forRootID: rootItem.id)
         if let root = layers.first {
             store.setLastScrollOffset(root.descriptor.scrollOffset, for: rootItem.id)
+            // Persist the root's reader mode onto the durable item too. The stack file
+            // isn't enough: `RabbitHoleStackStore.save` DELETES a single-layer (undived)
+            // trail, so a plain read that only switched mode would lose it. Writing it to
+            // the item makes `rootDescriptor()` (rootItem.lastReaderMode) restore it.
+            store.setReaderMode(root.descriptor.readerMode, for: rootItem.id)
         }
     }
 

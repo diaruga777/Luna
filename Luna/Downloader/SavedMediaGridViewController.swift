@@ -64,22 +64,32 @@ final class SavedMediaGridViewController: UICollectionViewController {
             adjustedTopInset: scrollView.adjustedContentInset.top)
     }
 
+    /// Photos-style grid: edge-to-edge, hairline (1pt) gaps between cells, no outer
+    /// section insets. Squareness is computed explicitly (not left to fractional
+    /// dimensions resolving against the group) so cells stay exactly square at any
+    /// column count / gap combination. 3 columns on an iPhone-portrait-width layout,
+    /// scaling up for wider layouts (landscape, iPad) — no upper cap, matching Photos.
     private static func makeLayout() -> UICollectionViewLayout {
         UICollectionViewCompositionalLayout { _, environment in
             let width = environment.container.effectiveContentSize.width
-            let columns = max(3, min(6, Int(width / 118)))
+            let gap: CGFloat = 1
+            let columns = max(3, Int(width / 130))
+            let itemWidth = ((width - gap * CGFloat(columns - 1)) / CGFloat(columns)).rounded(.down)
             let item = NSCollectionLayoutItem(
                 layoutSize: NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1),
-                    heightDimension: .fractionalWidth(1)))
-            item.contentInsets = NSDirectionalEdgeInsets(top: 1, leading: 1, bottom: 1, trailing: 1)
+                    widthDimension: .fractionalWidth(1 / CGFloat(columns)),
+                    heightDimension: .absolute(itemWidth)))
             let group = NSCollectionLayoutGroup.horizontal(
                 layoutSize: NSCollectionLayoutSize(
                     widthDimension: .fractionalWidth(1),
-                    heightDimension: .fractionalWidth(1 / CGFloat(columns))),
+                    heightDimension: .absolute(itemWidth)),
                 subitem: item,
                 count: columns)
-            return NSCollectionLayoutSection(group: group)
+            group.interItemSpacing = .fixed(gap)
+            let section = NSCollectionLayoutSection(group: group)
+            section.contentInsets = .zero
+            section.interGroupSpacing = gap
+            return section
         }
     }
 
@@ -242,6 +252,10 @@ final class SavedMediaGridViewController: UICollectionViewController {
 private final class SavedMediaCell: UICollectionViewCell {
     static let reuseID = "SavedMediaCell"
     private let imageView = UIImageView()
+    // Photos-style bottom-edge scrim so the play glyph (and, if ever added, a
+    // duration label) reads over bright thumbnails.
+    private let scrimLayer = CAGradientLayer()
+    private let scrimView = UIView()
     private let glyphView = UIImageView(image: UIImage(systemName: "play.fill"))
 
     override init(frame: CGRect) {
@@ -250,16 +264,28 @@ private final class SavedMediaCell: UICollectionViewCell {
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.translatesAutoresizingMaskIntoConstraints = false
+
+        scrimView.isUserInteractionEnabled = false
+        scrimLayer.colors = [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.55).cgColor]
+        scrimLayer.locations = [0, 1]
+        scrimView.layer.addSublayer(scrimLayer)
+        scrimView.translatesAutoresizingMaskIntoConstraints = false
+
         glyphView.tintColor = .white
         glyphView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)
         glyphView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(imageView)
+        contentView.addSubview(scrimView)
         contentView.addSubview(glyphView)
         NSLayoutConstraint.activate([
             imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
             imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            scrimView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            scrimView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            scrimView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            scrimView.heightAnchor.constraint(equalToConstant: 32),
             glyphView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
             glyphView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
         ])
@@ -267,10 +293,16 @@ private final class SavedMediaCell: UICollectionViewCell {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        scrimLayer.frame = scrimView.bounds
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
         imageView.image = nil
         glyphView.isHidden = true
+        scrimView.isHidden = true
     }
 
     func configure(_ item: SavedMediaItem?) {
@@ -284,7 +316,11 @@ private final class SavedMediaCell: UICollectionViewCell {
             imageView.tintColor = .tertiaryLabel
             imageView.contentMode = .center
         }
-        glyphView.isHidden = item.kind == .image
+        // SavedMediaItem carries no duration today, so we show the play glyph
+        // (as before) plus the scrim behind it — no duration text plumbing added.
+        let isPlayable = item.kind != .image
+        glyphView.isHidden = !isPlayable
+        scrimView.isHidden = !isPlayable
     }
 }
 

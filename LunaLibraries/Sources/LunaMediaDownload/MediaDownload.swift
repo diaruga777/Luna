@@ -11,7 +11,7 @@ import Foundation
 /// A single downloadable media item resolved from a social post.
 public struct MediaAsset: Equatable {
     /// What the file is, which decides how it's saved to Photos and its extension.
-    public enum Kind: Equatable {
+    public enum Kind: String, Codable, Equatable {
         case image   // still photo (jpg/png)
         case gif     // animated GIF
         case video   // mp4 (Twitter "GIFs" are mp4s and resolve as .video)
@@ -81,10 +81,9 @@ public struct DownloadedMedia: Equatable {
     public let kind: MediaAsset.Kind
 }
 
-/// Disk location for downloaded media files. Everything lands in a DEDICATED
-/// subdirectory of the temp dir so orphans (left when a preview is downloaded but
-/// never saved, then the process is killed before its view controller can clean
-/// up) can be swept wholesale on launch without touching unrelated temp files.
+/// Disk location for transient downloaded media files. Durable Downloader saves
+/// move into `SavedMediaStore`; this temp directory is only for previews and
+/// in-flight foreground work.
 public enum MediaDownloadStorage {
 
     /// The dedicated media-downloads directory, created on demand.
@@ -120,6 +119,12 @@ public protocol MediaDownloading {
     func downloadFirstMediaToPhotos(
         from url: URL, onProgress: @escaping (Double) -> Void
     ) async throws -> MediaAsset.Kind
+
+    /// Resolves the post's media, downloads the FIRST item, and moves it into
+    /// Luna Downloader's app-owned saved-media library.
+    func downloadFirstMediaToAppStorage(
+        from url: URL, title: String?, onProgress: @escaping (Double) -> Void
+    ) async throws -> SavedMediaItem
 
     /// Resolves the post's media and downloads the FIRST item to a local file
     /// WITHOUT saving to Photos (so the action extension can show it inline and let

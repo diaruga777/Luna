@@ -9,13 +9,14 @@ import LunaDesignSystem
 import LunaTransitions
 import UIKit
 
-/// Per-platform toggles to auto-save a saved post's media to the photo library.
-/// Turning a toggle on first requires Photos add permission — flipping it prompts,
-/// and reverts if access is denied.
+/// Media download and retention controls. Downloader saves supported media into
+/// app-owned storage automatically; the retention rows control when those local
+/// files are cleaned up.
 final class AutoDownloadSettingsScreen: NavHeaderTableController {
-
     private let platforms = AutoDownloadSettings.platforms
     private let saver = PhotoLibrarySaver()
+    private let daysLabel = UILabel()
+    private var isDownloader: Bool { AppSurfaceConfig.current == .downloader }
 
     init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -25,31 +26,47 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         super.viewDidLoad()
     }
 
-    // Section 0: the master "Auto-download media" switch (the action extension's
-    // inline preview reads this). Section 1: the per-platform auto-save-to-Photos
-    // toggles used by the main app's ingest funnel.
+    // Downloader: retention + preview switch. Sibling apps: preview switch +
+    // the existing per-platform explicit Photos auto-save toggles.
     override func numberOfSections(in tableView: UITableView) -> Int { 2 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? 1 : platforms.count
+        if isDownloader { return section == 0 ? 2 : 1 }
+        return section == 0 ? 1 : platforms.count
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        section == 1 ? "Auto-Save to Photos by Platform" : nil
+        if isDownloader { return section == 0 ? "Saved Media" : nil }
+        return section == 1 ? "Auto-Save to Photos by Platform" : nil
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        if section == 0 {
+        if isDownloader {
+            if section == 0 {
+                return "Files saved in Luna Downloader are deleted automatically after the selected number of days. Turn retention off to keep files until you delete them."
+            }
             return "When on, the action extension downloads a saved post's media automatically and shows it inline. Turn off to download manually with a button."
+        } else {
+            if section == 0 {
+                return "When on, the action extension downloads a saved post's media automatically and shows it inline. Turn off to download manually with a button."
+            }
+            return "Auto-download media from saved posts from that platform and save straight to your photo library. Requires Photos access. Luna never reads or edits your photos."
         }
-        return "Auto-download media from saved posts from that platform and save straight to your photo library. Requires Photos access. Luna never reads or edits your photos."
     }
 
     override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        if indexPath.section == 0 { return autoDownloadCell() }
-        let platform = platforms[indexPath.row]
+        if !isDownloader {
+            return indexPath.section == 0 ? autoDownloadCell() : platformCell(at: indexPath.row)
+        }
+        if indexPath.section == 1 { return autoDownloadCell() }
+        if indexPath.row == 0 { return retentionDaysCell() }
+        return retentionDisabledCell()
+    }
+
+    private func platformCell(at index: Int) -> UITableViewCell {
+        let platform = platforms[index]
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         var content = cell.defaultContentConfiguration()
@@ -62,8 +79,47 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
 
         let toggle = UISwitch()
         toggle.isOn = AutoDownloadSettings.isEnabled(for: platform)
-        toggle.tag = indexPath.row
-        toggle.addTarget(self, action: #selector(toggled(_:)), for: .valueChanged)
+        toggle.tag = index
+        toggle.addTarget(self, action: #selector(platformToggled(_:)), for: .valueChanged)
+        cell.accessoryView = toggle
+        return cell
+    }
+
+    private func retentionDaysCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = "Delete After"
+        content.image = UIImage(systemName: "calendar.badge.clock")
+        cell.contentConfiguration = content
+
+        let stepper = UIStepper()
+        stepper.minimumValue = 1
+        stepper.maximumValue = 30
+        stepper.value = Double(MediaRetentionSettings.retentionDays ?? 7)
+        stepper.addTarget(self, action: #selector(retentionDaysChanged(_:)), for: .valueChanged)
+
+        daysLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+        daysLabel.textColor = .secondaryLabel
+        updateDaysLabel()
+        let stack = UIStackView(arrangedSubviews: [daysLabel, stepper])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 10
+        cell.accessoryView = stack
+        return cell
+    }
+
+    private func retentionDisabledCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = "Keep Until Deleted"
+        content.image = UIImage(systemName: "infinity")
+        cell.contentConfiguration = content
+        let toggle = UISwitch()
+        toggle.isOn = MediaRetentionSettings.retentionDays == nil
+        toggle.addTarget(self, action: #selector(retentionDisabledChanged(_:)), for: .valueChanged)
         cell.accessoryView = toggle
         return cell
     }
@@ -89,13 +145,23 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         AutoDownloadSettings.autoDownloadMediaInPreview = sender.isOn
     }
 
-    @objc private func toggled(_ sender: UISwitch) {
+    @objc private func retentionDaysChanged(_ sender: UIStepper) {
+        MediaRetentionSettings.retentionDays = Int(sender.value)
+        updateDaysLabel()
+        tableView.reloadRows(at: [IndexPath(row: 1, section: 0)], with: .none)
+    }
+
+    @objc private func retentionDisabledChanged(_ sender: UISwitch) {
+        MediaRetentionSettings.retentionDays = sender.isOn ? nil : 7
+        tableView.reloadRows(at: [IndexPath(row: 0, section: 0)], with: .none)
+    }
+
+    @objc private func platformToggled(_ sender: UISwitch) {
         let platform = platforms[sender.tag]
         guard sender.isOn else {
             AutoDownloadSettings.setEnabled(false, for: platform)
             return
         }
-        // Enabling needs Photos access — prompt, and revert if denied.
         Task { @MainActor in
             let granted = await saver.requestAddAuthorization()
             if granted {
@@ -120,5 +186,14 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         })
         alert.addAction(UIAlertAction(title: "OK", style: .cancel))
         DotMatrixModal.present(alert, from: self)
+    }
+
+    private func updateDaysLabel() {
+        if let days = MediaRetentionSettings.retentionDays {
+            daysLabel.text = "\(days) day\(days == 1 ? "" : "s")"
+        } else {
+            daysLabel.text = "Off"
+        }
+        daysLabel.sizeToFit()
     }
 }

@@ -1,103 +1,33 @@
 # Content Platforms
 
-Luna accepts and renders links from many platforms beyond plain articles:
-**music** and **podcast** items (Spotify / Apple). A recognized platform URL is
-saved as a no-content `.ready` item (NEVER "Couldn't Load") and rendered with a
-platform glyph + creator; tapping runs a launch ladder.
+Luna accepts articles, documents, products, and supported social/video links.
+Recognized platform URLs are saved as ready items and open through the platform's
+native deep link, embed, or in-app browser fallback.
 
-## Architecture (`Luna/Platforms/`, enums in `ReaderKit/`)
+## Supported platforms
 
-  facebook/music/podcast`. `MusicProvider` — `apple/spotify`. (In ReaderKit so
-  `ReadingListItem` can store them.)
-- **`PlatformModule`** — per-platform: `classify(urlString) -> PlatformMatch?`,
-  `glyphSymbolName`, `subtitle`, `appDeepLink`, `embed`, optional `metadataFetcher`.
-  `subtitle(for:)` returns a **logical platform container**, not the URL host: it
-  prefers `channelName`/`mediaCreatorName`, then derives one from the URL when absent
-  — subreddit (`RedditLink.subreddit`), post author handle (`XLink.handle`,
-  `TikTokLink.handle`, `BlueskyLink.post(...).author`), or artist/channel for
-  Music/Podcast. The reading list shows this in place of the host.
-- **`PlatformRegistry`** — ordered modules; `detect(urlString)` (replaces the old
-- **`PlatformEmbedViewController`** — generalized WKWebView embed (16:9, optional
-- **`InAppBrowser`** — `SFSafariViewController` wrapper, the ultimate fallback.
-- **Row art** is rendered by `ReadingListItemCell` (see reading-list.md): cached
-  art aspect-fit, else the platform's bundled brand logo. `ContentPlatform.logoAssetName`
-  in Assets.xcassets); music/podcast fall back to the SF `glyphSymbolName`.
+`ContentPlatform` contains X, Bluesky, Reddit, TikTok, Instagram, and Facebook.
+`PlatformRecognizer` is the single URL-classification table; `PlatformRegistry`
+owns each platform module's presentation and optional metadata fetcher.
 
-## Data model (`ReaderKit/ReadingListItem.swift`)
+Music and podcast items are no longer a Luna content type. Spotify, Apple Music,
+and Apple Podcasts URLs are not classified as platform media and cannot create
+URL-less saved items through App Intents or the reading list.
 
-Added optionals (decodeIfPresent — back-compatible): `platform`, `platformItemID`
+## Ingestion and rendering
 
-## Acceptance & rendering
+`IngestPipeline` routes recognized social/video URLs directly to their typed
+outcomes, so they never enter article extraction. `ReadingListIngestor` persists
+the platform, item identifier, available title/creator, and thumbnail, then marks
+the item ready. Platform items do not become failed articles when metadata is
+unavailable.
 
-  bespoke watch-later/suggestion path), then `PlatformRegistry.detect` →
-  `ingestPlatformItem` (best-effort metadata via the module's fetcher →
-  `ReadingListStore.savePlatformMetadata`, always `.ready`), then the article
-  extractor. Platform items never enter `.failed`.
-- **Cell**: `ReadingListItemCell` — spinner while fetching, fetched art, or the
-  brand-logo fallback. Reddit images: `RedditMetadataFetcher.bestImageURL` tries
-  preview source → `media_metadata` gallery → direct `i.redd.it`/imgur → crosspost
-  → thumbnail. Creator shows via `channelName`/`mediaCreatorName`.
-- **Tap (launch ladder)**: native app deep link (`canOpenURL` → `open` → mark
-  read) → in-app embed (`PlatformEmbedViewController`) → `InAppBrowser` (Safari).
-  items (`!isPlatformItem`); ereader send guards broadened to `isPlatformItem`.
+The reading list renders cached art when present, otherwise the platform logo.
+Tapping uses the module's native-app link first, then an embed, then the in-app
+browser.
 
-## Per-platform capability
+## Tests
 
-| Platform | Classify | Metadata | App link | Embed | Search intent |
-|---|---|---|---|---|---|
-| Bluesky | `BlueskyLink` | oEmbed (author) | — | — | `FindBlueskyPostIntent` (keyless searchPosts) |
-| X | `XLink` | fxtwitter (author/text) | `twitter://status?id=` | — | none (no free search) |
-| TikTok | `TikTokLink` | oEmbed (author/title/thumb) | — | — | none |
-| Reddit | `RedditLink` | public `.json` (title/subreddit) | — | — | `FindRedditPostIntent` (public search.json) |
-| Instagram | `InstagramLink` | og: scrape (login-walled → logo) | — | — | none |
-| Facebook | `FacebookLink` | og: scrape | — | — | none |
-| Music | `MediaLink` | iTunes Lookup / Spotify oEmbed | preferred app | — | `SaveMusicItemIntent` (URL-less) |
-| Podcast | `MediaLink` | Apple: SCRAPE the page (`og:title` episode + `og:image` art) + iTunes lookup of the show id for the show name — episode ids are NOT lookup-able. Spotify: oEmbed. | preferred app | — | `SavePodcastItemIntent` (URL-less) |
-
-X/TikTok/Instagram/Facebook have **no free search**, so they have no find-intent
-(an always-failing intent is worse than none) — captured via the share sheet /
-paste / Safari, which always yield the full URL and bypass the ingestor.
-
-## Music & Podcasts portability
-
-`MediaLink` classifies Spotify/Apple URLs into a provider-agnostic `music`/
-`podcast` item + `sourceService`. `MediaProviderSettings` (App Group) holds the
-preferred app per kind, **defaulting to `.apple`** when unset (the getter is
-non-optional; the settings screen offers Apple/Spotify, no "None"). `openMediaItem`: exact same-provider link
-(web→app scheme via `MediaLink.appSchemeURL`) → search in the preferred app
-(`MusicProvider.appSearchURL(query:platform:)`) → Safari (original URL or web
-search). Unset → prompt to choose in Settings → "Music & Podcasts".
-`appSearchURL`/`webSearchURL` take the platform so Apple PODCASTS open in the
-Podcasts app (`podcasts://` / podcasts.apple.com), not Apple Music (which can't
-play them); Spotify uses one app/scheme for both.
-
-**URL-less items** (no shareable http URL) come from `SaveMusicItemIntent`/
-`SavePodcastItemIntent` (now-playing OCR via the shortcut). Keyed by a synthetic
-`lunamusic://`/`lunapodcast://` (`MediaItemKey`); `ReadingListStore.
-createURLlessMediaItem`. They share via the CloudKit **`mediaItem`** case
-(`MessageBody.mediaItem(kind:creator:title:)` + `SocialMessageCenter.
-sendMediaItem`/receive), not as URLs. URL-based platform items share for free via
-the existing `readingListItem` path (recipient re-classifies via the registry).
-
-## Info.plist
-
-music, podcasts, tiktok, snssdk1233, instagram, fb` (so `canOpenURL` works).
-
-## Bundled Shortcut (manual)
-
-The OCR-driven capture flow (current app → screenshot → scan text → the matching
-`Find…`/`Save…` intent) must be authored in the Shortcuts app and re-bundled
-(`BundledShortcut`); the `.shortcut` binary can't be generated in code. **Pending
-manual step.**
-
-## Tests (`LunaTests/`)
-
-`PlatformRegistryTests`, `BlueskyLinkTests`, `PlatformParsersTests` (X/TikTok/
-Reddit/Instagram/Facebook), `MediaPlatformTests` (parse/scheme/search-links/
-URL-less creation/`mediaItem` round-trip). Network is not hit in tests.
-
-## Caveats (unverified live)
-
-fxtwitter/oEmbed/og-scrape endpoints and rate limits can change; IG/FB scrapes
-are often login-walled (→ logo fallback). App-scheme opens depend on the app
-being installed. Not validated end-to-end against every live service.
+Platform recognition and presentation are covered by the platform parser and
+registry tests. No music or podcast capture tests remain because those save paths
+have been retired.

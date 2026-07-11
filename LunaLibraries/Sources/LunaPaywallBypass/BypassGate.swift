@@ -61,7 +61,7 @@ public enum BypassGate {
         /// tracking, never paywall-bypassed.
         case productPage
         /// A social-media / platform link (`PlatformRecognizer` positive, incl.
-        /// platform and music/podcast links).
+        /// platform links).
         case platformLink
         /// A short, non-article page with no paywall evidence (a JS shell / landing
         /// page that isn't actually walled).

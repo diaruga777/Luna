@@ -121,12 +121,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     public var platform: ContentPlatform?
     /// Platform item id (tweet id, post shortcode, etc.).
     public var platformItemID: String?
-    /// Artist (music) or show (podcast).
-    public var mediaCreatorName: String?
-    /// Track (music) or episode (podcast) title.
-    public var mediaItemTitle: String?
-    /// Which service the original URL came from (music/podcast), if any.
-    public var mediaSourceService: MusicProvider?
     /// Where this item was captured from — drives per-source auto-send. Absent
     /// on legacy items (treated as `.manual`).
     public var captureSource: CaptureSource?
@@ -149,9 +143,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
 
     /// A recognized platform item (vs. a plain article/document).
     public var isPlatformItem: Bool { contentPlatform != nil }
-
-    /// A provider-agnostic media item with no shareable http URL.
-    public var isURLlessMedia: Bool { contentPlatform?.isURLless ?? false }
 
     /// An imported document (PDF/text/etc.) rather than a web link or video.
     public var isDocument: Bool { documentType != nil }
@@ -227,9 +218,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.lastSaveAttemptDate = nil
         self.platform = nil
         self.platformItemID = nil
-        self.mediaCreatorName = nil
-        self.mediaItemTitle = nil
-        self.mediaSourceService = nil
         self.captureSource = nil
         self.priceTracker = nil
     }
@@ -254,9 +242,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         documentType: String? = nil,
         platform: ContentPlatform? = nil,
         platformItemID: String? = nil,
-        mediaCreatorName: String? = nil,
-        mediaItemTitle: String? = nil,
-        mediaSourceService: MusicProvider? = nil,
         channelName: String? = nil,
         captureSource: CaptureSource? = nil,
         priceTracker: PriceTracker? = nil
@@ -289,9 +274,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.lastSaveAttemptDate = nil
         self.platform = platform
         self.platformItemID = platformItemID
-        self.mediaCreatorName = mediaCreatorName
-        self.mediaItemTitle = mediaItemTitle
-        self.mediaSourceService = mediaSourceService
         self.captureSource = captureSource
         self.priceTracker = priceTracker
     }
@@ -387,9 +369,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         lastSaveAttemptDate = try container.decodeIfPresent(Date.self, forKey: .lastSaveAttemptDate)
         platform = Self.tolerant(ContentPlatform.self, container, .platform)
         platformItemID = try container.decodeIfPresent(String.self, forKey: .platformItemID)
-        mediaCreatorName = try container.decodeIfPresent(String.self, forKey: .mediaCreatorName)
-        mediaItemTitle = try container.decodeIfPresent(String.self, forKey: .mediaItemTitle)
-        mediaSourceService = Self.tolerant(MusicProvider.self, container, .mediaSourceService)
         captureSource = Self.tolerant(CaptureSource.self, container, .captureSource)
         priceTracker = try container.decodeIfPresent(PriceTracker.self, forKey: .priceTracker)
     }

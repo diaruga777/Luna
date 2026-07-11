@@ -42,7 +42,7 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 - **`empty`** — no items (empty-state rendering).
 - **`mixed`** — one of **every** save type: ready article, opened article,
   needsCaptcha (locked) article, failed article, friend-shared article, PDF
-  Spotify music, Apple podcast, a normal price tracker, an **alerting** price tracker.
+  platform posts, a normal price tracker, and an **alerting** price tracker.
 - **`catchUpEligible`** — 12 unread ready articles (catch-up dot + queue).
 - **`priceTracking`** — 3 trackers (steady, dropped/alerting, never-refreshed).
 

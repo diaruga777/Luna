@@ -20,7 +20,7 @@ enum UITestState: String, CaseIterable {
     /// No items at all (empty-state rendering).
     case empty
     /// One of every save type: articles (ready/locked/failed), document,
-    /// platform posts, music, podcast, friend-shared, price trackers.
+    /// platform posts, friend-shared items, and price trackers.
     case mixed
     /// 12 unread renderable articles — enough to make catch-up eligible (the dot)
     /// and give the card stack a queue.
@@ -130,16 +130,12 @@ enum UITestFixtures {
 
         func platform(
             seed: String, url: String, title: String, daysAgo: Int,
-            platform: ContentPlatform, creator: String?,
-            mediaTitle: String? = nil, source: MusicProvider? = nil,
-            channel: String? = nil
+            platform: ContentPlatform, creator: String?, channel: String? = nil
         ) -> ReadingListItem {
             ReadingListItem(
                 seed: seed, urlString: url, title: title, dateAdded: ago(days: daysAgo),
                 state: .ready, readState: .unopened,
                 platform: platform, platformItemID: seed,
-                mediaCreatorName: creator, mediaItemTitle: mediaTitle,
-                mediaSourceService: source,
                 channelName: channel,
                 captureSource: .shareSheet)
         }
@@ -179,14 +175,6 @@ enum UITestFixtures {
                              title: "An Instagram post", daysAgo: 1, platform: .instagram, creator: "creator"))
         items.append(platform(seed: "fb", url: "https://facebook.com/post/1",
                              title: "A Facebook post", daysAgo: 1, platform: .facebook, creator: "A Page"))
-        // Music + podcast (Spotify + Apple)
-        items.append(platform(seed: "music-sp", url: "https://open.spotify.com/track/1",
-                             title: "A Song", daysAgo: 1, platform: .music,
-                             creator: "An Artist", mediaTitle: "A Song", source: .spotify))
-        items.append(platform(seed: "podcast-ap", url: "https://podcasts.apple.com/show/1?i=2",
-                             title: "An Episode", daysAgo: 1, platform: .podcast,
-                             creator: "A Show", mediaTitle: "An Episode", source: .apple))
-
         // Price trackers — normal + alerting
         items.append(ReadingListItem(
             seed: "pt-normal", urlString: "https://store.example.com/widget",

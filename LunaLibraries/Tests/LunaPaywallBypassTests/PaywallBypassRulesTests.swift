@@ -16,8 +16,7 @@ import LunaFetch
         + "</head><body><article>\(paragraph)\(paragraph)</article></body></html>"
     let fetcher = PackageMockFetcher(html: html)
 
-    let result = await ArticleResolver.resolve(
-        url: articleURL, fetcher: fetcher, nonArchiveBypass: true)
+    let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
 
     guard case let .readable(content, _) = result else {
         Issue.record("Expected readable article, got \(result)")

@@ -123,8 +123,7 @@ public final class EmailShareCenter {
                 heroImage = inlineImage(fileName: thumb, cid: "hero")
             }
         } else {
-            if let creator = item?.mediaCreatorName ?? item?.channelName { detailLines.append(creator) }
-            if let mediaTitle = item?.mediaItemTitle, mediaTitle != title { detailLines.append(mediaTitle) }
+            if let creator = item?.channelName { detailLines.append(creator) }
             if let thumb = item?.thumbnailFileName {
                 heroImage = inlineImage(fileName: thumb, cid: "hero")
             }

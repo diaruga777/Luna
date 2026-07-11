@@ -78,7 +78,7 @@ final class ClipReaderViewController: UIViewController {
         case .needsArchive(_):
             update(.failed("This article needs an archive unlock. Open it in Luna Reader to finish loading it."))
 
-        case .product(_, _), .video(_, _), .social(_, _), .audio(_, _, _), .document:
+        case .product(_, _), .video(_, _), .social(_, _), .document:
             update(.failed("This Luna link is not a readable article."))
 
         case .failed:

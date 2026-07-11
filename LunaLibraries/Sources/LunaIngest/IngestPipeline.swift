@@ -69,9 +69,6 @@ public enum Outcome: Equatable {
     case social(ContentPlatform, itemID: String?)
     /// A video. Never article-extracted.
     case video(ContentPlatform, itemID: String?)
-    /// A music track / podcast episode. `service` is the streaming provider when
-    /// known.
-    case audio(ContentPlatform, service: MusicProvider?, itemID: String?)
     /// An imported document (pdf / epub / …).
     case document(type: String)
     /// A genuine paywall we couldn't read silently, parked under a title for the
@@ -88,8 +85,6 @@ public enum Outcome: Equatable {
         case let (.product(lp, lh), .product(rp, rh)): return lp == rp && lh == rh
         case let (.social(lp, lid), .social(rp, rid)): return lp == rp && lid == rid
         case let (.video(lp, lid), .video(rp, rid)): return lp == rp && lid == rid
-        case let (.audio(lp, ls, lid), .audio(rp, rs, rid)):
-            return lp == rp && ls == rs && lid == rid
         case let (.document(lt), .document(rt)): return lt == rt
         case let (.needsArchive(lt), .needsArchive(rt)): return lt == rt
         case (.failed, .failed): return true
@@ -222,7 +217,7 @@ public enum IngestPipeline {
                 fromURLString: input.url.absoluteString, toURLString: url.absoluteString))
         }
 
-        // (2) Classify deterministically (URL-only). Platform/video/audio/document
+        // (2) Classify deterministically (URL-only). Platform/video/document
         // are decided here, before any fetch, so they can never reach article extraction.
         let kind = Classifier.classify(url: url, documentType: input.documentType)
         switch kind {
@@ -232,9 +227,6 @@ public enum IngestPipeline {
             return IngestResult(url: url, outcome: .video(platform, itemID: itemID))
         case let .social(platform, itemID):
             return IngestResult(url: url, outcome: .social(platform, itemID: itemID))
-        case let .audio(platform, service, itemID):
-            return IngestResult(
-                url: url, outcome: .audio(platform, service: service, itemID: itemID))
         case .product, .article, .paywalledArticle, .undetermined:
             // Web processing: only NOW do we fetch HTML, (re)classify with the HTML
             // for the undetermined/product confirmation, fetch price, resolve the

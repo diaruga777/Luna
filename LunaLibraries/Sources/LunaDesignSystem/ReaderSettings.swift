@@ -26,27 +26,9 @@ public enum ReaderSettings {
     private static let progressKey = "showReadingProgress"
     private static let lastReaderModeKey = "lastReaderMode"
     private static let rsvpModeKey = "rsvpDisplayMode"
-    private static let nonArchiveBypassKey = "nonArchiveBypassEnabled"
     private static let preloadDepthKey = "linkPreloadDepth"
     private static let accentKey = "readerAccentColor"
-    private static let archiveOverlayAlphaKey = "archiveOverlayAlpha"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
-
-    /// Opacity of the cover over the archive web view (experimental/diagnostic):
-    /// 0.99 = effectively hidden (default); lower it to see the archive flow
-    /// through the overlay. Clamped to 0.2…0.99.
-    public static let archiveOverlayAlphaRange: ClosedRange<Double> = 0.2...0.99
-    public static var archiveOverlayAlpha: Double {
-        get {
-            guard let stored = defaults.object(forKey: archiveOverlayAlphaKey) as? Double else { return 0.99 }
-            return min(max(stored, archiveOverlayAlphaRange.lowerBound), archiveOverlayAlphaRange.upperBound)
-        }
-        set {
-            defaults.set(
-                min(max(newValue, archiveOverlayAlphaRange.lowerBound), archiveOverlayAlphaRange.upperBound),
-                forKey: archiveOverlayAlphaKey)
-        }
-    }
 
     /// One-time copy of settings previously kept in standard defaults into the
     /// App Group (so the extension sees them). Call once at app launch.
@@ -79,18 +61,6 @@ public enum ReaderSettings {
     public static var rsvpMode: RSVPDisplayMode {
         get { RSVPDisplayMode(rawValue: defaults.string(forKey: rsvpModeKey) ?? "") ?? .words }
         set { defaults.set(newValue.rawValue, forKey: rsvpModeKey) }
-    }
-
-    /// Whether to try non-archive paywall-bypass strategies (Googlebot/first-party
-    /// reads, fresh session, AMP, Wayback) over URLSession BEFORE falling back to
-    /// the archive.today reader. **Off by default** — when off, a detected paywall
-    /// goes straight to archive.today (the long-standing behavior). On, the silent
-    /// chain runs first, which can unlock some hard paywalls (e.g. WSJ via
-    /// Googlebot from the device's own IP) at the cost of a few seconds' wait
-    /// before the archive fallback. App Group so the extensions honor it too.
-    public static var nonArchiveBypassEnabled: Bool {
-        get { defaults.bool(forKey: nonArchiveBypassKey) }
-        set { defaults.set(newValue, forKey: nonArchiveBypassKey) }
     }
 
     /// How many levels of links to background-preload from a saved article so the

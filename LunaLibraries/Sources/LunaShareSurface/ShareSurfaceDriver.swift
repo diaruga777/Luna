@@ -97,15 +97,11 @@ public final class ShareSurfaceDriver {
             presentPriceEditor(product: product, url: url)
 
         case let .video(platform, itemID):
-            persistPlatform(platform, service: nil, itemID: itemID, url: url)
+            persistPlatform(platform, itemID: itemID, url: url)
             presentNonTextual(.platform(platform, itemID: itemID), url: url)
 
         case let .social(platform, itemID):
-            persistPlatform(platform, service: nil, itemID: itemID, url: url)
-            presentNonTextual(.platform(platform, itemID: itemID), url: url)
-
-        case let .audio(platform, service, itemID):
-            persistPlatform(platform, service: service, itemID: itemID, url: url)
+            persistPlatform(platform, itemID: itemID, url: url)
             presentNonTextual(.platform(platform, itemID: itemID), url: url)
 
         case .document:
@@ -160,15 +156,14 @@ public final class ShareSurfaceDriver {
         }
     }
 
-    /// Persists a recognized video/social/audio item's classification.
+    /// Persists a recognized video/social item's classification.
     private func persistPlatform(
-        _ platform: ContentPlatform, service: MusicProvider?, itemID: String?, url: URL
+        _ platform: ContentPlatform, itemID: String?, url: URL
     ) {
         guard let saved = store.item(forURLString: url.absoluteString) else { return }
         _ = store.savePlatformMetadata(
             platform: platform, platformItemID: itemID, title: nil, creator: nil,
-            thumbnailFileName: nil, mediaCreatorName: nil, mediaItemTitle: nil,
-            mediaSourceService: service, for: saved.id)
+            thumbnailFileName: nil, for: saved.id)
     }
 
     @discardableResult

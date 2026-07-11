@@ -258,10 +258,6 @@ public final class PreloadCoordinator {
             store.record(url: url, rootID: rootID, kind: .platform,
                          platform: PreloadPlatform(platform: platform.rawValue, itemID: itemID))
             return []
-        case let .audio(platform, _, itemID):
-            store.record(url: url, rootID: rootID, kind: .platform,
-                         platform: PreloadPlatform(platform: platform.rawValue, itemID: itemID))
-            return []
         case .product, .needsArchive, .document, .failed:
             // No reader content to cache: a product page (live tap handles its UI), a
             // paywall the silent bypass couldn't crack, a document, or a failure. Record

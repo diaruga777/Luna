@@ -1420,17 +1420,14 @@ final class ReadingListViewController: UITableViewController {
         DotMatrixModal.present(nav, from: presenter)
     }
 
-    /// Opens a non-article item (video / platform post / music / podcast) the way
+    /// Opens a non-article item (video / platform post) the way
     /// tapping its row does, presenting any in-app viewer from `presenter` (the
     /// reading list, or the catch-up screen). Returns false for reader articles, so
     /// the caller can render those itself.
     @discardableResult
     func openItem(_ item: ReadingListItem, presentingFrom presenter: UIViewController) -> Bool {
         if let platform = item.contentPlatform {
-            switch platform {
-            case .music, .podcast: openMediaItem(item, platform: platform, from: presenter)
-            default: openPlatformItem(item, platform: platform, from: presenter)
-            }
+            openPlatformItem(item, platform: platform, from: presenter)
             return true
         }
         return false
@@ -1455,38 +1452,6 @@ final class ReadingListViewController: UITableViewController {
             return
         }
         InAppBrowser.present(urlString: item.urlString, from: presenter)
-    }
-
-    /// Opens a music/podcast item in the user's preferred provider (exact link
-    /// when same-provider, else a search). The provider defaults to Apple.
-    private func openMediaItem(
-        _ item: ReadingListItem, platform: ContentPlatform, from presenter: UIViewController
-    ) {
-        let provider = MediaProviderSettings.preferredProvider(for: platform)
-        let query = [item.mediaCreatorName, item.mediaItemTitle ?? item.title]
-            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
-        let markRead: (Bool) -> Void = { [weak self] success in
-            if success { self?.store.markReadState(.read, for: item.id) }
-        }
-
-        if item.mediaSourceService == provider,
-           let appURL = MediaLink.appSchemeURL(forWebURL: item.urlString),
-           UIApplication.shared.canOpenURL(appURL) {
-            UIApplication.shared.open(appURL, completionHandler: markRead)
-            return
-        }
-        if !query.isEmpty, let appSearch = provider.appSearchURL(query: query, platform: platform),
-           UIApplication.shared.canOpenURL(appSearch) {
-            UIApplication.shared.open(appSearch, completionHandler: markRead)
-            return
-        }
-        // Web fallback: the original http URL, else a web search in the provider.
-        if let url = URL(string: item.urlString), let scheme = url.scheme?.lowercased(),
-           scheme == "http" || scheme == "https" {
-            InAppBrowser.present(urlString: item.urlString, from: presenter)
-        } else if !query.isEmpty, let webSearch = provider.webSearchURL(query: query, platform: platform) {
-            InAppBrowser.present(urlString: webSearch.absoluteString, from: presenter)
-        }
     }
 
     /// Sends any reading-list item (article, media, or price tracker) to chosen
@@ -1671,11 +1636,11 @@ final class ReadingListViewController: UITableViewController {
                 self?.store.bump(item.id)
             })
         }
-        if item.canShareToFriends || item.isURLlessMedia {
+        if item.canShareToFriends {
             children.append(sendToFriend)
         }
-        // Any item that kept a real web URL (articles AND platform items like
-        // Reddit/Spotify/X) can share that link.
+        // Any item that kept a real web URL (articles and platform items) can
+        // share that link.
         if item.isShareable {
             children.append(shareLink)
             children.append(copyLink)

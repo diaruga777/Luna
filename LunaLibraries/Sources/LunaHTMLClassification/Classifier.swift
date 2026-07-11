@@ -48,11 +48,11 @@ public enum Classifier {
     /// resolve deterministically.
     public static let knownSites: [KnownSite] = platformSites + shopSites + newsSites
 
-    // MARK: - Phase 1a: platform / video / social / audio rows
+    // MARK: - Phase 1a: platform / video / social rows
 
     /// The platform rows: a single row that defers to `PlatformRecognizer` (the one
     /// place URL→platform rules live), mapping its `RecognizedPlatform` to the
-    /// matching `ContentKind` branch. Recognition is FIRST so a video/social/audio
+    /// matching `ContentKind` branch. Recognition is FIRST so a video/social
     /// URL is never text-extracted or treated as a product.
     public static let platformSites: [KnownSite] = [
         KnownSite(
@@ -72,7 +72,6 @@ public enum Classifier {
         switch recognized.kind {
         case .video: return .video(recognized.platform, itemID: recognized.itemID)
         case .social: return .social(recognized.platform, itemID: recognized.itemID)
-        case .audio: return .audio(recognized.platform, recognized.service, itemID: recognized.itemID)
         }
     }
 

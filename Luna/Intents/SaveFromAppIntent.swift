@@ -84,10 +84,6 @@ public struct SaveFromAppIntent: AppIntent {
                 author: fields.dropFirst(2).first)
             return .result(value: try await saveSearch(query) {
                 try await RedditSearchClient().topPostURL(query: $0) })
-        case .music:
-            try await saveMedia(.music, creator: fields.first, title: fields.dropFirst().first)
-        case .podcast:
-            try await saveMedia(.podcast, creator: fields.first, title: fields.dropFirst().first)
         case .x, .tiktok, .instagram, .facebook:
             // No public search API: find the post from [handle, content, time?].
             guard let finderPlatform = Self.finderPlatform(for: platform) else { throw SaveError.notFound }
@@ -173,11 +169,6 @@ public struct SaveFromAppIntent: AppIntent {
         case .completed:
             return "Saved to Luna."
         }
-    }
-
-    private func saveMedia(_ platform: ContentPlatform, creator: String?, title: String?) async throws {
-        guard let creator, let title else { throw SaveError.missingValues }
-        await MediaItemSave.save(platform: platform, creator: creator, title: title)
     }
 
     private func saveAndDownloadReturnValue(_ urlString: String) async -> String {

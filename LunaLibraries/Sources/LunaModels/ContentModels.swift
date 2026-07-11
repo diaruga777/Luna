@@ -1,13 +1,12 @@
 import Foundation
 
 public enum ContentPlatform: String, Codable, CaseIterable, Sendable {
-    case x, bluesky, reddit, tiktok, instagram, facebook, music, podcast
+    case x, bluesky, reddit, tiktok, instagram, facebook
 
     public var kind: PlatformKind {
         switch self {
         case .tiktok, .facebook: .video
         case .x, .bluesky, .reddit, .instagram: .social
-        case .music, .podcast: .audio
         }
     }
 
@@ -19,12 +18,8 @@ public enum ContentPlatform: String, Codable, CaseIterable, Sendable {
         case .tiktok: return "TikTok"
         case .instagram: return "Instagram"
         case .facebook: return "Facebook"
-        case .music: return "Music"
-        case .podcast: return "Podcast"
         }
     }
-
-    public var isURLless: Bool { self == .music || self == .podcast }
 
     public var logoAssetName: String? {
         switch self {
@@ -34,7 +29,6 @@ public enum ContentPlatform: String, Codable, CaseIterable, Sendable {
         case .tiktok: return "logo-tiktok"
         case .instagram: return "logo-instagram"
         case .facebook: return "logo-facebook"
-        case .music, .podcast: return nil // cover art primary; SF Symbol fallback
         }
     }
 
@@ -46,24 +40,11 @@ public enum ContentPlatform: String, Codable, CaseIterable, Sendable {
         case .tiktok: return "music.note"
         case .instagram: return "camera.fill"
         case .facebook: return "play.tv.fill"
-        case .music: return "music.note"
-        case .podcast: return "mic.fill"
         }
     }
 }
 
-public enum PlatformKind: Equatable, Sendable { case video, social, audio }
-
-public enum MusicProvider: String, Codable, CaseIterable, Sendable {
-    case apple, spotify
-
-    public var displayName: String {
-        switch self {
-        case .apple: return "Apple"
-        case .spotify: return "Spotify"
-        }
-    }
-}
+public enum PlatformKind: Equatable, Sendable { case video, social }
 
 public enum ContentKind: Equatable, Sendable {
     case article
@@ -71,7 +52,6 @@ public enum ContentKind: Equatable, Sendable {
     case product(ProductSignal)
     case social(ContentPlatform, itemID: String?)
     case video(ContentPlatform, itemID: String?)
-    case audio(ContentPlatform, MusicProvider?, itemID: String?)
     case document(type: String)
     case undetermined
 }

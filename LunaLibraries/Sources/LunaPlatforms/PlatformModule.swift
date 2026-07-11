@@ -11,13 +11,10 @@ public struct PlatformMatch: Equatable {
     public let platform: ContentPlatform
     /// Platform item id (tweet id, post shortcode, video id, …), if extractable.
     public let itemID: String?
-    /// For music/podcast, which service the URL came from.
-    public let sourceService: MusicProvider?
 
-    public init(platform: ContentPlatform, itemID: String? = nil, sourceService: MusicProvider? = nil) {
+    public init(platform: ContentPlatform, itemID: String? = nil) {
         self.platform = platform
         self.itemID = itemID
-        self.sourceService = sourceService
     }
 }
 
@@ -66,8 +63,6 @@ public struct PlatformMetadata {
     public var title: String?
     public var creator: String?
     public var thumbnailData: Data?
-    public var mediaCreatorName: String?
-    public var mediaItemTitle: String?
 }
 
 /// Fetches best-effort metadata for a recognized platform item.

@@ -452,30 +452,12 @@ public final class ReadingListStore {
         }
     }
 
-    /// Creates (or returns the existing) URL-less music/podcast item from a
-    /// synthetic `lunamusic://`/`lunapodcast://` key, marked ready. Used by the
-    /// media intents and incoming media shares.
-    @discardableResult
-    public func createURLlessMediaItem(
-        platform: ContentPlatform, creator: String, title: String
-    ) -> ReadingListItem {
-        let key = MediaItemKey.url(platform: platform, creator: creator, title: title)
-        let item = add(urlString: key)
-        let display = creator.isEmpty ? title : "\(creator) — \(title)"
-        return savePlatformMetadata(
-            platform: platform, platformItemID: nil, title: display, creator: creator,
-            thumbnailFileName: nil, mediaCreatorName: creator, mediaItemTitle: title,
-            mediaSourceService: nil, for: item.id) ?? item
-    }
-
     /// Fills in metadata for a recognized platform item and marks it ready
     /// (platform items have no `ArticleContent`). Best-effort: any field may be
     /// nil and the item still renders (logo + deep link).
     public func savePlatformMetadata(
         platform: ContentPlatform, platformItemID: String?, title: String?,
-        creator: String?, thumbnailFileName: String?,
-        mediaCreatorName: String?, mediaItemTitle: String?,
-        mediaSourceService: MusicProvider?, for itemID: UUID
+        creator: String?, thumbnailFileName: String?, for itemID: UUID
     ) -> ReadingListItem? {
         coordinatedMutate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return nil }
@@ -484,9 +466,6 @@ public final class ReadingListStore {
             if let title, !title.isEmpty { all[index].title = title }
             if let creator, !creator.isEmpty { all[index].channelName = creator }
             if let thumbnailFileName { all[index].thumbnailFileName = thumbnailFileName }
-            all[index].mediaCreatorName = mediaCreatorName
-            all[index].mediaItemTitle = mediaItemTitle
-            all[index].mediaSourceService = mediaSourceService
             all[index].state = .ready
             return all[index]
         }

@@ -133,7 +133,7 @@ Downloader-platform flow:
    - `readerAppClipURL` — `LunaReaderAppClipURL` from `LunaSafari/Info.plist`.
    - `downloaderAppClipURL` — `LunaDownloaderAppClipURL` from `LunaSafari/Info.plist`.
 2. Before article heuristics run, content.js recognizes Downloader-platform hosts mirrored
-   Facebook, Spotify, Apple Music, Apple Podcasts). These pages are never classified as
+   Facebook). These pages are never classified as
    articles by text length, even when a caption/comment body is long.
 3. On a recognized platform URL, the button says "Download in Luna". With the Downloader
    app installed (its own extension host, or the launch marker), it deep-links
@@ -190,11 +190,10 @@ Product-page flow:
    Store page — fill in once the app is live); while that key is empty, no button is
    shown on product pages when Price Tracker isn't installed.
 
-Paywall unlock ("Unlock Paywalls On-Device") gating + toast:
-- The native handler answers `bypassEnabled` true only when the toggle is on AND
-  Luna Reader is installed (marker or reader-host extension) — unlocking is a Reader
-  feature. This gates both the declarative Referer ruleset (background.js) and the
-  in-page overlay cleanup (content.js `revealArticle`).
+Paywall unlock + toast:
+- The native handler always answers `bypassEnabled` true. This enables both the
+  declarative Referer ruleset (background.js) and the in-page overlay cleanup
+  (content.js `revealArticle`) without a user preference.
 - When a reveal actually unlocks something (page had paywall markers, or the cleanup
   removed/revealed a paywall node — the generic UNHIDE class sweep doesn't count),
   content.js shows a brief "Unlocked with Luna" toast: an indigo capsule centered

@@ -42,8 +42,6 @@ public enum AppNamePlatform {
         if name.contains("reddit") { return .reddit }
         if name.contains("instagram") { return .instagram }
         if name.contains("facebook") { return .facebook }
-        if name.contains("podcast") { return .podcast }
-        if name.contains("spotify") || name.contains("music") { return .music }
         if name == "x" || name.contains("twitter") { return .x }
         return nil
     }
@@ -61,10 +59,6 @@ public enum AppNamePlatform {
     public static func screenPrompt(forAppName app: String) -> String? {
         guard let platform = platform(forAppName: app) else { return nil }
         switch platform {
-        case .music:
-            return "Respond with a single line for the song on screen, in the exact form \"artist ; title\" (the artist, then \" ; \", then the track title). If nothing identifiable is on screen, respond with exactly \"none\"."
-        case .podcast:
-            return "Respond with a single line for the podcast on screen, in the exact form \"show ; episode title\" (the show name, then \" ; \", then the episode title). If nothing identifiable is on screen, respond with exactly \"none\"."
         case .bluesky:
             return "Respond with a single line for the Bluesky post on screen, in the exact form \"handle ; phrase\" (the author handle, then \" ; \", then a distinctive phrase from the post). If nothing identifiable is on screen, respond with exactly \"none\"."
         case .reddit:

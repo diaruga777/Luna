@@ -21,8 +21,8 @@ provider list, `actions` = all discoverable intents).
 `ReadArticleIntent` (Phase 7 — background read-aloud via Siri, see
 `claudedocs/audio-playback.md`'s "Siri" section). That's exactly the
 provider's hard cap of 10 — any new prominent shortcut must first retire one
-of these. (Save Song / Save Podcast / Save Facebook are discoverable in the
-action search but not in the prominent list.)
+of these. Facebook remains discoverable in action search but is not in the
+prominent list.
 
 ## Per-platform save intents (precise params, not vague search strings)
 
@@ -31,9 +31,6 @@ action search but not in the prominent list.)
   (`BlueskyPostQuery`).
 - **Reddit** (`FindRedditPostIntent`): `subreddit` + `title` + optional `author` →
   `<title> subreddit:<sub> author:<user>` (`RedditPostQuery`).
-- **Music** (`SaveMusicItemIntent`): `artist` + `title` (URL-less).
-- **Podcast** (`SavePodcastItemIntent`): `show` + `episode` (episode is a TITLE
-  string, NOT a number — stated in the param description).
 - **X / TikTok / Instagram / Facebook** (`PlatformLinkIntents.swift`): each takes
   the author `handle` + a content phrase and/or timestamp and FINDS the post link
   via `SocialPostFinder`. It tries progressively looser keyless DuckDuckGo HTML
@@ -51,9 +48,8 @@ action search but not in the prominent list.)
   intercept, routes by the current app to the right per-platform save. `details` is
   the **single** response string the on-device model produced for that app's
   screen; `parseFields` splits it on `" ; "` (trimming, dropping empties;
-  Bluesky `handle ; phrase`, Reddit `subreddit ; title ; author`, Music/Spotify
-  `artist ; title`, Podcasts `show ; episode title`, X/TikTok/Instagram/Facebook
-  `handle ; phrase ; date?` (the prompt asks for an exact short quote and appends
+  Bluesky `handle ; phrase`, Reddit `subreddit ; title ; author`, and
+  X/TikTok/Instagram/Facebook `handle ; phrase ; date?` (the prompt asks for an exact short quote and appends
   the post date/time when visible — the optional timestamp field helps the
   lookup). Safari and unknown apps may pass an empty/nil `details` — a `http…` link
   in the response is used if present, else `SafariURLStore.lastURL` (the tracked
@@ -111,5 +107,4 @@ cascade as `open()`).
 > **ITMS-90626**: an App Intent `title`/`description`/parameter string must NEVER
 > contain "apple" or Siri references, or App Store processing silently drops the
 > build. (Doc comments, `.apple` enum cases, and `itunes.apple.com` URLs in code
-> are fine — only the AppIntents metadata strings are scanned.) Use "Music or
-> Spotify" / "Podcasts", not "Apple Music" / "Apple Podcasts".
+> are fine — only the AppIntents metadata strings are scanned.)

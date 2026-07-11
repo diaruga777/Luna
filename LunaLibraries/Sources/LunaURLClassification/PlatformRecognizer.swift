@@ -8,13 +8,12 @@ import Foundation
 
 /// A URL recognized as belonging to a content platform, with the extracted item
 /// id (nil for short links / opaque pages that still classify as the platform)
-/// and the streaming service for audio platforms.
+/// and its extractable item id.
 public struct RecognizedPlatform: Equatable {
     public let platform: ContentPlatform
     public let itemID: String?
-    public let service: MusicProvider?
 
-    /// The broad category (video / social / audio) the recognized platform is in.
+    /// The broad category (video / social) the recognized platform is in.
     public var kind: PlatformKind { platform.kind }
 }
 
@@ -38,15 +37,12 @@ public struct PlatformURLParts {
 public struct PlatformRule {
     /// The platform a matching URL belongs to.
     public let platform: ContentPlatform
-    /// The streaming service, for `.music` / `.podcast` platforms only (else nil).
-    public let service: MusicProvider?
     /// Hosts matched exactly OR as a subdomain (e.g. `tiktok.com` matches
     /// `vm.tiktok.com`). Lowercased.
     public let hosts: [String]
     /// Whether this rule recognizes a URL on a matching host. A rule may decline a
-    /// host it shares with another platform (Spotify splits music vs podcast by
-    /// path), in which case the recognizer keeps scanning later rules. Default:
-    /// host match is enough.
+    /// host it shares with another platform, in which case the recognizer keeps
+    /// scanning later rules. Default: host match is enough.
     public let recognizes: (PlatformURLParts) -> Bool
     /// Extracts the item id from the parsed parts. A nil result is allowed — a
     /// short link or opaque page still classifies as the platform.
@@ -54,13 +50,11 @@ public struct PlatformRule {
 
     public init(
         platform: ContentPlatform,
-        service: MusicProvider?,
         hosts: [String],
         recognizes: @escaping (PlatformURLParts) -> Bool = { _ in true },
         itemID: @escaping (PlatformURLParts) -> String?
     ) {
         self.platform = platform
-        self.service = service
         self.hosts = hosts
         self.recognizes = recognizes
         self.itemID = itemID
@@ -77,8 +71,7 @@ public enum PlatformRecognizer {
 
     /// EXTEND HERE: add a platform by appending one rule. Order matters only when
     /// host lists overlap; the first rule that both matches a host AND `recognizes`
-    /// the URL wins. Spotify's two rows (music, podcast) share a host and split by
-    /// path, so the music row must precede the podcast row.
+    /// the URL wins.
     public static let rules: [PlatformRule] = [
         x,
         bluesky,
@@ -86,10 +79,6 @@ public enum PlatformRecognizer {
         tiktok,
         instagram,
         facebook,
-        spotifyMusic,
-        spotifyPodcast,
-        appleMusic,
-        applePodcasts,
     ]
 
     /// Recognizes `urlString` as a platform URL, or nil for an ordinary
@@ -105,7 +94,7 @@ public enum PlatformRecognizer {
             url: url)
         for rule in rules
         where rule.hosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") }) && rule.recognizes(parts) {
-            return RecognizedPlatform(platform: rule.platform, itemID: rule.itemID(parts), service: rule.service)
+            return RecognizedPlatform(platform: rule.platform, itemID: rule.itemID(parts))
         }
         return nil
     }
@@ -118,7 +107,7 @@ public enum PlatformRecognizer {
     /// X / Twitter — `/<user>/status/<id>` (numeric id only); the platform is
     /// recognized even without a status (id nil), matching the live ladder.
     public static let x = PlatformRule(
-        platform: .x, service: nil, hosts: ["x.com", "twitter.com"],
+        platform: .x, hosts: ["x.com", "twitter.com"],
         itemID: { parts in
             guard let statusIndex = parts.segments.firstIndex(where: { $0 == "status" || $0 == "statuses" }),
                   statusIndex + 1 < parts.segments.count else { return nil }
@@ -130,7 +119,7 @@ public enum PlatformRecognizer {
     /// platforms, a bare Bluesky profile (no `/post/`) does NOT classify (matching
     /// other social platforms): only a post is a recognized item.
     public static let bluesky = PlatformRule(
-        platform: .bluesky, service: nil, hosts: ["bsky.app"],
+        platform: .bluesky, hosts: ["bsky.app"],
         recognizes: { blueskyPostID($0.segments) != nil },
         itemID: { blueskyPostID($0.segments) })
 
@@ -147,7 +136,7 @@ public enum PlatformRecognizer {
     /// bluesky's post-only shape and the Safari content-script gate): only a post is
     /// a recognized item.
     public static let reddit = PlatformRule(
-        platform: .reddit, service: nil, hosts: ["reddit.com", "redd.it"],
+        platform: .reddit, hosts: ["reddit.com", "redd.it"],
         recognizes: { redditPostID($0) != nil },
         itemID: { redditPostID($0) })
 
@@ -174,7 +163,7 @@ public enum PlatformRecognizer {
     /// TikTok — `/@user/video/<numeric id>` (short `vm.`/`vt.` links recognized,
     /// id nil).
     public static let tiktok = PlatformRule(
-        platform: .tiktok, service: nil, hosts: ["tiktok.com"],
+        platform: .tiktok, hosts: ["tiktok.com"],
         itemID: { parts in
             guard let videoIndex = parts.segments.firstIndex(of: "video"),
                   videoIndex + 1 < parts.segments.count else { return nil }
@@ -184,7 +173,7 @@ public enum PlatformRecognizer {
 
     /// Instagram — `instagram.com` (+ `instagr.am`) `/(p|reel|reels|tv)/<shortcode>`.
     public static let instagram = PlatformRule(
-        platform: .instagram, service: nil, hosts: ["instagram.com", "instagr.am"],
+        platform: .instagram, hosts: ["instagram.com", "instagr.am"],
         itemID: { parts in
             let mediaKinds: Set<String> = ["p", "reel", "reels", "tv"]
             guard let mediaIndex = parts.segments.firstIndex(where: { mediaKinds.contains($0) }),
@@ -195,7 +184,7 @@ public enum PlatformRecognizer {
     /// Facebook — `facebook.com` (+ subdomains), `fb.watch`, `fb.com`; id from `?v=`
     /// or a `/reel|/videos/<id>` path segment.
     public static let facebook = PlatformRule(
-        platform: .facebook, service: nil, hosts: ["facebook.com", "fb.watch", "fb.com"],
+        platform: .facebook, hosts: ["facebook.com", "fb.watch", "fb.com"],
         itemID: { parts in
             if let queryV = parts.query.first(where: { $0.name == "v" })?.value { return queryV }
             for key in ["reel", "videos"] {
@@ -206,38 +195,4 @@ public enum PlatformRecognizer {
             return nil
         })
 
-    /// Spotify music — `open.spotify.com/{track|album|artist}/<id>`. Declines
-    /// episode/show paths so the podcast rule can claim them.
-    public static let spotifyMusic = PlatformRule(
-        platform: .music, service: .spotify, hosts: ["spotify.com"],
-        recognizes: { spotifyKind($0.segments) == .music },
-        itemID: { $0.segments.count > 1 ? $0.segments[1] : nil })
-
-    /// Spotify podcast — `open.spotify.com/{episode|show}/<id>`.
-    public static let spotifyPodcast = PlatformRule(
-        platform: .podcast, service: .spotify, hosts: ["spotify.com"],
-        recognizes: { spotifyKind($0.segments) == .audioPodcast },
-        itemID: { $0.segments.count > 1 ? $0.segments[1] : nil })
-
-    /// Apple Music — `music.apple.com`; id from `?i=` or the last path segment.
-    public static let appleMusic = PlatformRule(
-        platform: .music, service: .apple, hosts: ["music.apple.com"],
-        itemID: { $0.query.first(where: { $0.name == "i" })?.value ?? $0.segments.last })
-
-    /// Apple Podcasts — `podcasts.apple.com`; id from `?i=` or the last path segment.
-    public static let applePodcasts = PlatformRule(
-        platform: .podcast, service: .apple, hosts: ["podcasts.apple.com"],
-        itemID: { $0.query.first(where: { $0.name == "i" })?.value ?? $0.segments.last })
-
-    /// The Spotify content kind named by the leading path segment (track/album/artist
-    /// → music; episode/show → podcast; anything else → nil so no Spotify rule claims
-    /// the URL).
-    private enum SpotifyKind { case music, audioPodcast }
-    private static func spotifyKind(_ segments: [String]) -> SpotifyKind? {
-        switch segments.first {
-        case "track", "album", "artist": return .music
-        case "episode", "show": return .audioPodcast
-        default: return nil
-        }
-    }
 }

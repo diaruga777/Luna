@@ -13,7 +13,6 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private static let appGroupID = SafariAppGroup.id
     private static let suggestionModeKey = "safariSuggestionMode"
-    private static let bypassEnabledKey = "nonArchiveBypassEnabled"
     private static let readerAppClipURLKey = "LunaReaderAppClipURL"
     private static let downloaderAppClipURLKey = "LunaDownloaderAppClipURL"
     private static let priceTrackerAppStoreURLKey = "LunaPriceTrackerAppStoreURL"
@@ -42,12 +41,9 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             payload["priceTrackerInstalled"] = Self.isPriceTrackerInstalled
             payload["priceTrackerAppStoreURL"] = Self.priceTrackerAppStoreURL
         case "bypassEnabled":
-            // The "Unlock Paywalls On-Device" toggle — gates the Safari auto-bypass.
-            // Unlocking is a Reader feature: without Luna Reader installed the
-            // unlocked article has nowhere to open, so the bypass stays off.
-            payload["enabled"] = Self.isReaderInstalled
-                && (UserDefaults(suiteName: Self.appGroupID)?
-                    .bool(forKey: Self.bypassEnabledKey) ?? false)
+            // On-device unlocking is always enabled; the receiving Luna surface
+            // decides how to present the captured article.
+            payload["enabled"] = true
         case "saveContent":
             // The content script hands over the already-unlocked article HTML so the
             // app can render it as prefetched content (never re-fetching a page that

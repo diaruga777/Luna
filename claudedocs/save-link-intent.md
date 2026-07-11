@@ -28,9 +28,8 @@ Luna into the friend selector (see `double-save.md`).
   `handleSavePress` path with the URL exactly as given. Returns the saved URL,
   or a `"4:<url>"` media-download token when needed.
 - Platform search/save intents (see `content-platforms.md`):
-  `FindBlueskyPostIntent`, `FindRedditPostIntent` (real search -> URL -> save),
-  `SaveMusicItemIntent`/`SavePodcastItemIntent`
-  (URL-less media; return the synthetic key). X/TikTok/Instagram/Facebook have
+  `FindBlueskyPostIntent`, `FindRedditPostIntent` (real search -> URL -> save).
+  X/TikTok/Instagram/Facebook have
   no find-intent (no free search). All registered in `LunaShortcuts`.
 - `Luna/Intents/LunaShortcuts.swift` - `AppShortcutsProvider` exposing the save
   intents.

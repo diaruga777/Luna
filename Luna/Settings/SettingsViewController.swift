@@ -39,20 +39,29 @@ final class SettingsViewController: NavHeaderTableController {
     }
 
     private let categories: [Category] = {
-        var categories = [
-            Category(title: "Reader", symbol: "textformat.size") { ReaderSettingsScreen() },
-            // Audio (read-aloud playback) subsumes the old top-level Voice row —
-            // the Voice screen is reached from inside it.
-            Category(title: "Audio", symbol: "headphones") { AudioSettingsScreen() },
-            Category(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
-            Category(title: "Email & Sending", symbol: "envelope") { EmailAndKindleSettingsScreen() },
-            Category(title: "Music & Podcasts", symbol: "music.note") { MediaProviderSettingsScreen() },
-            Category(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") { AutoDownloadSettingsScreen() },
-            Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
-        ]
+        var categories: [Category] = []
+
+        if AppSurfaceConfig.current == .reader {
+            categories.append(contentsOf: [
+                Category(title: "Reader", symbol: "textformat.size") { ReaderSettingsScreen() },
+                // Audio (read-aloud playback) subsumes the old top-level Voice row —
+                // the Voice screen is reached from inside it.
+                Category(title: "Audio", symbol: "headphones") { AudioSettingsScreen() },
+                Category(title: "Reading List", symbol: "list.bullet") { ReadingListSettingsScreen() },
+                Category(title: "Email & Sending", symbol: "envelope") { EmailAndKindleSettingsScreen() },
+            ])
+        }
+
+        if AppSurfaceConfig.current == .downloader {
+            categories.append(
+                Category(title: "Auto-Download Media", symbol: "photo.badge.arrow.down") {
+                    AutoDownloadSettingsScreen()
+                })
+        }
+
         categories.append(contentsOf: [
+            Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
             Category(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
-            Category(title: "Experimental", symbol: "flask") { ExperimentalSettingsScreen() },
             Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
         ])
         return categories

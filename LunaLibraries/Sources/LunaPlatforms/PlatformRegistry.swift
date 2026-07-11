@@ -25,8 +25,6 @@ public final class PlatformRegistry {
             RedditPlatform(),
             InstagramPlatform(),
             FacebookPlatform(),
-            MusicPlatform(),
-            PodcastPlatform(),
         ]
     }
 
@@ -34,8 +32,7 @@ public final class PlatformRegistry {
     /// truth, broad host coverage). Returns nil if no platform recognizes it.
     public func detect(_ urlString: String) -> PlatformMatch? {
         guard let recognized = PlatformRecognizer.recognize(urlString) else { return nil }
-        return PlatformMatch(platform: recognized.platform, itemID: recognized.itemID,
-                             sourceService: recognized.service)
+        return PlatformMatch(platform: recognized.platform, itemID: recognized.itemID)
     }
 
     /// The module for a platform (for rendering/opening).

@@ -126,7 +126,7 @@ public final class ShareViewController: UIViewController {
             handleURL(urlProvider)
             return
         }
-        // Some apps (e.g. Apple Podcasts) share the link as TEXT, not a URL —
+        // Some apps share the link as TEXT, not a URL —
         // pull the first link out of it.
         if let textProvider = providers.first(where: {
             $0.hasItemConformingToTypeIdentifier(UTType.text.identifier)
@@ -357,8 +357,8 @@ public final class ShareViewController: UIViewController {
             .replacingOccurrences(of: "'", with: "&#39;")
     }
 
-    /// Handles a shared text item by extracting the first web link from it (how
-    /// Apple Podcasts and some apps share). Saves nothing if there's no link.
+    /// Handles a shared text item by extracting its first web link. Saves nothing
+    /// if there is no link.
     private func handleText(_ provider: NSItemProvider) {
         provider.loadItem(forTypeIdentifier: UTType.text.identifier) { [weak self] value, _ in
             guard let self else { return }

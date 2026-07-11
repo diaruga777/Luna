@@ -167,7 +167,7 @@ public enum AudioTrimIntelligence {
     /// list), never here.
     public static let instructions = """
     You are cleaning up an article's extracted text so it can be read aloud, \
-    like a podcast. You will be given a numbered list of the article's text \
+    like a narrated article. You will be given a numbered list of the article's text \
     blocks; each entry shows a block's number followed by roughly its first \
     20 words. Identify the numbers of blocks that are NOT main article prose \
     — photo captions, related-link lists, advertisements, bylines, \

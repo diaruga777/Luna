@@ -10,8 +10,8 @@ import LunaURLClassification
 import Foundation
 import WebKit
 
-/// The WKWebView browser tier of the paywall-unlock engine (used only when the user
-/// opts into `ReaderSettings.nonArchiveBypassEnabled`). Two iOS-applicable primitives,
+/// The WKWebView browser tier of the always-on paywall-unlock engine. Two
+/// iOS-applicable primitives,
 /// both driven by the bundled per-site rule table (`SiteUnlockRules`):
 ///
 ///  1. A compiled `WKContentRuleList` that **blocks the metering/paywall scripts** for
@@ -24,8 +24,8 @@ import WebKit
 ///     AMP subscriber sections. Self-guards off archive.today so it never fights the
 ///     CAPTCHA flow.
 ///
-/// Both are inert unless the toggle is on. The rule JSON generation and cleanup JS are
-/// unit-tested; the compiled list is validated on-simulator.
+/// The rule JSON generation and cleanup JS are unit-tested; the compiled list is
+/// validated on-simulator.
 public enum PaywallUnlockRules {
 
     // MARK: - Content blocker (metering/paywall scripts, per host)

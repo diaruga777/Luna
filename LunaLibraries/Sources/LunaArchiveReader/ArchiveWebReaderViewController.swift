@@ -50,6 +50,10 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// flow can't proceed (rate-limited, or the page can't be archived) the cover
     /// stays up and shows the message + an Open-in-Safari escape — not a popup.
     private let loadingOverlay = UIView()
+    /// Five deliberate taps reveal the archive page for troubleshooting without
+    /// exposing a user-facing experimental setting. Once revealed, disabling the
+    /// overlay's interaction lets scroll gestures reach the web view below.
+    private var archiveCoverTapCount = 0
     private let overlaySpinner = DotMatrixSpinnerView(side: 36)
     private let overlayLabel = UILabel()
     /// An "Open in Safari" escape shown INSIDE the overlay alongside an error /
@@ -171,8 +175,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         self.store = store
         self.recorder = recorder
         // Build the plan once so we know both the pre-stage URLs and whether the
-        // the reference paywall rules `.directUnlock` WKWebView technique is in play (only
-        // when the experimental toggle is on).
+        // reference paywall rules `.directUnlock` WKWebView technique is in play.
         let plan = BypassPlan.make(for: articleURL, directHTML: nil)
         self.usesDirectUnlock = plan.webPreStages.contains(.directUnlock)
         self.directUnlockReferer = Self.directUnlockReferer(for: articleURL)
@@ -445,12 +448,13 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     /// view; visible from the start so the user never sees the raw archive page
     /// except when a CAPTCHA is up (`checkStage` reveals it then).
     private func setUpLoadingOverlay() {
-        // Alpha on the BACKGROUND only (not the whole view) so the spinner/label
-        // stay crisp while the experimental setting can make the cover see-through
-        // for debugging. 0.99 = effectively opaque.
-        loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(
-            CGFloat(ReaderSettings.archiveOverlayAlpha))
+        // The cover is effectively opaque until its five-tap escape hatch is used.
+        // Only its background is translucent so the loading controls stay crisp.
+        loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(0.99)
         loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
+        let revealGesture = UITapGestureRecognizer(
+            target: self, action: #selector(archiveCoverTapped(_:)))
+        loadingOverlay.addGestureRecognizer(revealGesture)
 
         overlaySpinner.color = GlassStyle.readingAccent
         overlaySpinner.startAnimating()
@@ -491,6 +495,14 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             stack.trailingAnchor.constraint(lessThanOrEqualTo: loadingOverlay.trailingAnchor, constant: -32),
             overlayLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
         ])
+    }
+
+    @objc private func archiveCoverTapped(_ gesture: UITapGestureRecognizer) {
+        archiveCoverTapCount += 1
+        guard archiveCoverTapCount == 5 else { return }
+
+        loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(0.1)
+        loadingOverlay.isUserInteractionEnabled = false
     }
 
     private static let archiveHomepage = URL(string: "https://archive.is/")! // valid constant
@@ -1076,9 +1088,8 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
             overlayLabel.text = message
             overlayLabel.textColor = .label
             overlaySafariButton.isHidden = (onOpenInBrowser == nil)
-            // Fully opaque so the message reads clearly regardless of the experimental
-            // overlay-alpha setting, and kept above the (now idle) web view.
-            loadingOverlay.backgroundColor = .systemBackground
+            // Keep the normal cover opacity even for a terminal message.
+            loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(0.99)
         }
     }
 }

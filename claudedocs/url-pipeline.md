@@ -17,7 +17,6 @@ Stage 1 builds the determination foundation as NEW pure `ReaderKit` files with c
 .paywalledArticle(hardHost: Bool)          // hardHost ⇒ archive-CAPTCHA-only
 .product(ProductSignal)
 .social(ContentPlatform, itemID: String?)  // x / bluesky / reddit / instagram
-.audio(ContentPlatform, MusicProvider?, itemID: String?)  // music / podcast
 .document(type: String)                     // save-time flag, always wins
 .undetermined                               // table miss + heuristics inconclusive
 ```
@@ -59,9 +58,9 @@ Registry `handlers = [.facebook, .googleNews, .appleNews, .shorteners(redirectSh
 
 `enum PlatformRecognizer` — the ONE place URL→platform rules live, a declarative `[PlatformRule]` table + pure `recognize(_:) -> RecognizedPlatform?`. Types:
 
-- `struct RecognizedPlatform { platform: ContentPlatform; itemID: String?; service: MusicProvider?; var kind: PlatformKind }`.
+- `struct RecognizedPlatform { platform: ContentPlatform; itemID: String?; var kind: PlatformKind }`.
 - `struct PlatformURLParts { host; segments; query; url }` — the parsed pieces handed to a rule.
-- `struct PlatformRule { platform; service; hosts: [String]; recognizes(parts) -> Bool; itemID(parts) -> String? }`. `hosts` match exact-or-subdomain. `recognizes` defaults true (host match is enough); a rule can decline a shared host (Spotify splits music vs podcast by path; Bluesky requires a `/post/`).
+- `struct PlatformRule { platform; hosts: [String]; recognizes(parts) -> Bool; itemID(parts) -> String? }`. `hosts` match exact-or-subdomain. `recognizes` defaults true (host match is enough); a rule can decline a shared host (for example, Bluesky requires a `/post/`).
 
 
 `PlatformClassifier` / `PlatformRegistry` / `NonTextualContent` are UNCHANGED in Stage 1 (still back the live pipeline); Stage 3 shims them to the recognizer and deletes the dead per-module `classify`.

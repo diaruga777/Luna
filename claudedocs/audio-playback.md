@@ -1,6 +1,6 @@
 # Audio Playback (Read-Aloud)
 
-Podcasts-grade read-aloud for Luna Reader: offline-rendered speech through a
+High-quality read-aloud for Luna Reader: offline-rendered speech through a
 long-lived audio engine, background playback with Now Playing/remote
 commands, a persistent mini-player, autoplay-next-article, and an
 audio-specific trimming pass that speaks a cleaned-up subset of the visual
@@ -80,7 +80,7 @@ whole-block-only contract, or reader word-highlighting breaks.
   legacy `SpeechController` calls `removeTarget(nil)` on the same shared
   commands — see the file's "LEGACY-CONFLICT HANDOFF" comment.
 - **`AudioSessionCoordinator`** — `.playback` + `.spokenAudio`, no mixing
-  (Podcasts semantics). Pauses without deactivating on interruption `.began`;
+  (spoken-audio semantics). Pauses without deactivating on interruption `.began`;
   resumes only if `.shouldResume` on `.ended`. `.oldDeviceUnavailable` route
   change pauses (keeps session active); `.newDeviceAvailable` (e.g. AirPods
   connecting) is a deliberate no-op — never auto-resumes. User pause

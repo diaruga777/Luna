@@ -224,17 +224,16 @@ public final class ReadingListIngestor {
         _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem, replayID: UUID?
     ) async {
         await ingestPlatformItem(
-            item, match: PlatformMatch(platform: platform, itemID: itemID, sourceService: nil))
+            item, match: PlatformMatch(platform: platform, itemID: itemID))
         await terminateNonArticle(replayID, itemID: item.id, note: "video \(platform)")
     }
 
-    /// Ingests a recognized social/audio platform outcome (best-effort metadata).
+    /// Ingests a recognized social platform outcome (best-effort metadata).
     fileprivate func handlePlatform(
-        _ platform: ContentPlatform, service: MusicProvider?, itemID: String?,
-        for item: ReadingListItem, replayID: UUID?
+        _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem, replayID: UUID?
     ) async {
         await ingestPlatformItem(
-            item, match: PlatformMatch(platform: platform, itemID: itemID, sourceService: service))
+            item, match: PlatformMatch(platform: platform, itemID: itemID))
         await terminateNonArticle(replayID, itemID: item.id, note: "platform \(platform)")
     }
 
@@ -410,9 +409,6 @@ public final class ReadingListIngestor {
             title: metadata?.title,
             creator: metadata?.creator,
             thumbnailFileName: thumbnailFileName,
-            mediaCreatorName: metadata?.mediaCreatorName,
-            mediaItemTitle: metadata?.mediaItemTitle,
-            mediaSourceService: match.sourceService,
             for: item.id)
 
         // Auto-download the post's media to Photos when enabled for this platform.
@@ -682,9 +678,7 @@ public struct IngestorOutcomePresenter: OutcomePresenter {
         case let .video(platform, itemID):
             await ingestor.handleVideo(platform, itemID: itemID, for: item, replayID: replayID)
         case let .social(platform, itemID):
-            await ingestor.handlePlatform(platform, service: nil, itemID: itemID, for: item, replayID: replayID)
-        case let .audio(platform, service, itemID):
-            await ingestor.handlePlatform(platform, service: service, itemID: itemID, for: item, replayID: replayID)
+            await ingestor.handlePlatform(platform, itemID: itemID, for: item, replayID: replayID)
         case let .document(type):
             await ingestor.handleDocument(type: type, for: item, replayID: replayID)
         case let .needsArchive(title):

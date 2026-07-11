@@ -991,12 +991,31 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
                     // the loaded article up; extensions finish via `onExtracted`).
                     self.loadingOverlay.isHidden = true
                     _ = self.store.saveContent(content, for: item)
+                    self.captureUnlockedWebArchive(for: item)
                     SharedDiagnosticLog.record(
                         "archive: extracted + saved (bodyLen=\(content.bodyTextLength))", category: "archive")
                     self.recordExtractionSuccess(html: html, content: content)
                     self.onExtracted?()
                 }
             }
+        }
+    }
+
+    /// Captures the fully-loaded, unlocked page now on screen as the item's
+    /// `.webarchive`, so the reader's Original/archive mode shows the SAME full
+    /// article the scroll/RSVP readers do. Without this, a paywalled save has no
+    /// archive of its own: `OriginalPageViewController` falls back to re-loading the
+    /// live URL — and `backfillMissingWebArchives` re-fetches it — both of which hit
+    /// the paywall again and render only the truncated teaser. Capturing off THIS web
+    /// view (which already holds every subresource of the unlocked snapshot) is the
+    /// one moment the full page is in hand. Best-effort: a failure or a too-small
+    /// archive leaves Original on its live-page fallback rather than saving a stub.
+    private func captureUnlockedWebArchive(for item: ReadingListItem) {
+        webView.createWebArchiveData { [weak self] result in
+            guard let self, let data = try? result.get(), data.count > 1024 else { return }
+            self.store.saveWebArchive(data, for: item)
+            SharedDiagnosticLog.record(
+                "archive: captured unlocked .webarchive (\(data.count) bytes)", category: "archive")
         }
     }
 

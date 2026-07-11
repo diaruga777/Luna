@@ -55,17 +55,7 @@ public final class AudioScriptPipeline {
 
     public init(
         store: ReadingListScriptSource = ReadingListStore.shared,
-        modelSessionFactory: @escaping () -> AudioTrimModelSession = {
-            // See the discrepancy note on `AudioCleanupVerdict`: this
-            // project's actual deployment target is iOS 18, below
-            // FoundationModels' iOS 26 minimum, so the real session is only
-            // ever constructed behind this `#available` check.
-            if #available(iOS 26.0, *) {
-                return FoundationModelsTrimSession()
-            } else {
-                return UnavailableTrimSession()
-            }
-        },
+        modelSessionFactory: @escaping () -> AudioTrimModelSession = AudioTrimModelSessionFactory.makeDefault,
         debounceInterval: TimeInterval = 1.5
     ) {
         self.store = store

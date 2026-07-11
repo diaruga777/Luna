@@ -86,6 +86,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     // Read-aloud (audio) playback, present only when audio is enabled.
     private var speech: SpeechController?
+    /// Phase 6: resolves the trimmed script the LEGACY `SpeechController`
+    /// path speaks (Share/Action extensions only — `ReaderAudioLauncher.center`
+    /// is nil there). Created lazily on first extension-path speech start;
+    /// nil for the whole lifetime of a main-app reader, where `center` is
+    /// always installed and this path never runs.
+    private var extensionAudioScriptResolver: ExtensionAudioScriptResolver?
     private let footer = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let footerPlayButton = UIButton(type: .system)
     private let footerRateButton = UIButton(type: .system)
@@ -301,6 +307,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     deinit {
         imageDownloadTask?.cancel()
         speech?.stop()
+        extensionAudioScriptResolver?.cancelInFlightRefinement()
         contentSizeObservation?.invalidate()
     }
 
@@ -868,9 +875,19 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
 
         if speech == nil {
+            // Phase 6: the legacy extension-only path now speaks the TRIMMED
+            // script (best available: cached refined > cached heuristic >
+            // freshly-built heuristic — never blocks on the LLM). The VISUAL
+            // reader (`content`/`rendered`/`wordMap` below) stays untrimmed;
+            // only which blocks are SPOKEN is restricted.
+            let resolver = extensionAudioScriptResolver ?? ExtensionAudioScriptResolver(
+                articlesDirectory: store.articlesDirectory)
+            extensionAudioScriptResolver = resolver
+            let script = resolver.bestAvailableScriptForImmediatePlayback(item: item, content: content)
+            let spokenBlockIndices = Set(script.spokenBlocks.map(\.blockIndex))
             let controller = SpeechController(
                 content: content, rendered: rendered, wordMap: wordMap,
-                title: content.title)
+                title: content.title, spokenBlockIndices: spokenBlockIndices)
             controller.delegate = self
             speech = controller
         }

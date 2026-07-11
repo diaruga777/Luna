@@ -50,15 +50,45 @@ public final class SpeechController: NSObject {
     /// Speed multiplier over the default speech rate.
     private(set) var rateFactor: Float = 1.0
 
-    public init(content: ArticleContent, rendered: RenderedArticle, wordMap: WordMap, title: String) {
-        self.speakable = content.blocks.enumerated()
-            .filter { !$0.element.text.isEmpty }
-            .map { (blockIndex: $0.offset, text: $0.element.text) }
+    /// - Parameter spokenBlockIndices: Phase 6 trimming seam. When non-nil,
+    ///   only blocks whose ORIGINAL `content.blocks` index is a member are
+    ///   spoken (e.g. an extension's best-available `AudioScript.
+    ///   spokenBlocks.map(\.blockIndex)`) — nil (the default) speaks every
+    ///   non-empty block, exactly as before Phase 6. Filtering happens here,
+    ///   not by pre-slicing `content`, so every downstream index (`speakable
+    ///   [].blockIndex`, `blockTextRanges[safe: block.blockIndex]`) still
+    ///   refers to the block's position in the UNTRIMMED, ORIGINAL
+    ///   `content.blocks`/`rendered` — the reader stays untrimmed and visual
+    ///   word-highlighting (keyed by that same original index) keeps working
+    ///   unmodified. See `speakableBlocks(content:spokenBlockIndices:)`.
+    public init(
+        content: ArticleContent, rendered: RenderedArticle, wordMap: WordMap, title: String,
+        spokenBlockIndices: Set<Int>? = nil
+    ) {
+        self.speakable = Self.speakableBlocks(content: content, spokenBlockIndices: spokenBlockIndices)
         self.blockTextRanges = rendered.blockTextRanges
         self.wordMap = wordMap
         self.nowPlayingTitle = title
         super.init()
         synthesizer.delegate = self
+    }
+
+    /// The block list `SpeechController` actually speaks, in order: every
+    /// non-empty block of `content`, additionally restricted to
+    /// `spokenBlockIndices` when given. Each entry keeps its ORIGINAL
+    /// `content.blocks` index — never renumbered/compacted — so every other
+    /// method here (`blockPosition(forAttributedLocation:)`,
+    /// `willSpeakRangeOfSpeechString`) can keep mapping purely through
+    /// `blockTextRanges[safe: block.blockIndex]` regardless of which/how many
+    /// blocks were filtered out. Exposed (not `private`) so it's unit-testable
+    /// in isolation without driving a real `AVSpeechSynthesizer`.
+    static func speakableBlocks(
+        content: ArticleContent, spokenBlockIndices: Set<Int>?
+    ) -> [(blockIndex: Int, text: String)] {
+        content.blocks.enumerated()
+            .filter { !$0.element.text.isEmpty }
+            .filter { spokenBlockIndices?.contains($0.offset) ?? true }
+            .map { (blockIndex: $0.offset, text: $0.element.text) }
     }
 
     deinit {

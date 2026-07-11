@@ -56,7 +56,10 @@ public final class AudioPlaybackPositionStore {
             "wordIndex": position.wordIndex,
             "elapsed": position.elapsed,
             "title": position.title,
-            "savedAt": position.savedAt.timeIntervalSince1970,
+            // Date's native representation — timeIntervalSince1970 round-trips
+            // with sub-second precision loss, which breaks exact equality and
+            // the handoff recency-window boundary.
+            "savedAtRef": position.savedAt.timeIntervalSinceReferenceDate,
         ]
         defaults.set(dict, forKey: Self.key)
     }
@@ -69,11 +72,13 @@ public final class AudioPlaybackPositionStore {
               let elapsed = dict["elapsed"] as? Double,
               let title = dict["title"] as? String
         else { return nil }
-        // Older saves (pre-Phase-6) never wrote "savedAt" — treat those as
-        // saved right now rather than failing the whole load, since a
-        // missing timestamp must never crash the existing cold-relaunch
-        // restore path.
-        let savedAt = (dict["savedAt"] as? Double).map(Date.init(timeIntervalSince1970:)) ?? Date()
+        // Older saves (pre-Phase-6 wrote no timestamp; early Phase 6 wrote
+        // "savedAt" as timeIntervalSince1970) — treat those as saved right
+        // now rather than failing the whole load, since a missing timestamp
+        // must never crash the existing cold-relaunch restore path.
+        let savedAt = (dict["savedAtRef"] as? Double).map(Date.init(timeIntervalSinceReferenceDate:))
+            ?? (dict["savedAt"] as? Double).map(Date.init(timeIntervalSince1970:))
+            ?? Date()
         return Position(itemID: itemID, wordIndex: wordIndex, elapsed: elapsed, title: title, savedAt: savedAt)
     }
 

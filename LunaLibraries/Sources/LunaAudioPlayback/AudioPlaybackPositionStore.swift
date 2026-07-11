@@ -25,12 +25,19 @@ public final class AudioPlaybackPositionStore {
         public var wordIndex: Int
         public var elapsed: TimeInterval
         public var title: String
+        /// When this position was saved — the input to the Phase 6
+        /// extension-handoff recency check (`AudioPlaybackCenter.
+        /// restorableHandoffIfAvailable`/`handoffRecencyWindow`). Defaults to
+        /// "now" so every existing call site (which never passed a
+        /// timestamp) keeps compiling and behaving exactly as before.
+        public var savedAt: Date
 
-        public init(itemID: UUID, wordIndex: Int, elapsed: TimeInterval, title: String) {
+        public init(itemID: UUID, wordIndex: Int, elapsed: TimeInterval, title: String, savedAt: Date = Date()) {
             self.itemID = itemID
             self.wordIndex = wordIndex
             self.elapsed = elapsed
             self.title = title
+            self.savedAt = savedAt
         }
     }
 
@@ -49,6 +56,7 @@ public final class AudioPlaybackPositionStore {
             "wordIndex": position.wordIndex,
             "elapsed": position.elapsed,
             "title": position.title,
+            "savedAt": position.savedAt.timeIntervalSince1970,
         ]
         defaults.set(dict, forKey: Self.key)
     }
@@ -61,7 +69,12 @@ public final class AudioPlaybackPositionStore {
               let elapsed = dict["elapsed"] as? Double,
               let title = dict["title"] as? String
         else { return nil }
-        return Position(itemID: itemID, wordIndex: wordIndex, elapsed: elapsed, title: title)
+        // Older saves (pre-Phase-6) never wrote "savedAt" — treat those as
+        // saved right now rather than failing the whole load, since a
+        // missing timestamp must never crash the existing cold-relaunch
+        // restore path.
+        let savedAt = (dict["savedAt"] as? Double).map(Date.init(timeIntervalSince1970:)) ?? Date()
+        return Position(itemID: itemID, wordIndex: wordIndex, elapsed: elapsed, title: title, savedAt: savedAt)
     }
 
     public func clear() {

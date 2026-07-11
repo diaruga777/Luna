@@ -53,6 +53,37 @@ public struct AudioWordEvent: Equatable {
     }
 }
 
+/// The Phase 6 extension → main-app playback handoff's launch-time preview:
+/// enough to show the mini-player in a paused state (title/thumbnail) before
+/// any playback session exists, WITHOUT starting the engine/session — see
+/// `AudioPlaybackCenter.restorableHandoffIfAvailable()`. Tapping play resumes
+/// via the EXISTING `restorePersistedSessionIfAvailable()`, never a
+/// half-initialized paused state grafted onto this struct.
+public struct AudioPlaybackHandoff: Equatable {
+    public var itemID: UUID
+    public var title: String
+    public var thumbnailFileName: String?
+    public var wordIndex: Int
+    public var elapsed: TimeInterval
+    /// A rough progress estimate (persisted word index over the article's
+    /// total, untrimmed, word count) — good enough for a paused preview's
+    /// progress bar; never the authoritative value a live session computes
+    /// from its actual `AudioScript`.
+    public var progressFraction: Double
+
+    public init(
+        itemID: UUID, title: String, thumbnailFileName: String?, wordIndex: Int,
+        elapsed: TimeInterval, progressFraction: Double
+    ) {
+        self.itemID = itemID
+        self.title = title
+        self.thumbnailFileName = thumbnailFileName
+        self.wordIndex = wordIndex
+        self.elapsed = elapsed
+        self.progressFraction = progressFraction
+    }
+}
+
 /// A point-in-time read of everything the mini-player / Now Playing / reader
 /// highlighting need, computed on demand from the center's internal counters
 /// (see `AudioPlaybackCenter.currentSnapshot`).
@@ -117,6 +148,11 @@ public final class AudioPlaybackCenter {
     /// How many rendered-but-not-yet-fully-heard blocks are allowed to be
     /// scheduled ahead of the playhead at once.
     private static let maxBlocksAhead = 2
+    /// Phase 6 extension → main-app handoff: a persisted position older than
+    /// this is stale and never surfaced as a launch-time paused mini-player
+    /// preview (see `restorableHandoffIfAvailable()`). A named constant per
+    /// the product requirement ("choose ~30 minutes; make it a constant").
+    public static let handoffRecencyWindow: TimeInterval = 30 * 60
 
     // MARK: - Public state
 
@@ -345,6 +381,33 @@ public final class AudioPlaybackCenter {
         else { return false }
         beginPlayback(item: item, content: content, fromWordIndex: position.wordIndex)
         return state != .idle
+    }
+
+    /// Non-mutating peek for the Phase 6 launch-time paused mini-player
+    /// preview: never touches `state`/the engine/the session — a pure read of
+    /// whether a RECENT, still-valid persisted position exists. Returns nil
+    /// when idle-but-no-position, the position is stale (older than
+    /// `handoffRecencyWindow`), or the item/content it names no longer
+    /// exists (deleted since the extension wrote it) — the caller's "do
+    /// nothing" guard per the product requirement. Deliberately does NOT
+    /// build a script (that would defeat "never block playback start" for a
+    /// preview nobody may ever tap) — `progressFraction` uses the
+    /// untrimmed passthrough word count as a good-enough estimate.
+    public func restorableHandoffIfAvailable(now: Date = Date()) -> AudioPlaybackHandoff? {
+        guard case .idle = state else { return nil }
+        guard let position = positionStore.load(),
+              now.timeIntervalSince(position.savedAt) <= Self.handoffRecencyWindow
+        else { return nil }
+        guard let item = store.item(withID: position.itemID),
+              let content = store.content(for: item)
+        else { return nil }
+
+        let totalWords = AudioScript(passthrough: content).totalWordCount
+        let fraction = totalWords > 0 ? min(max(Double(position.wordIndex) / Double(totalWords), 0), 1) : 0
+        let title = position.title.isEmpty ? (item.title ?? content.title) : position.title
+        return AudioPlaybackHandoff(
+            itemID: item.id, title: title, thumbnailFileName: item.thumbnailFileName,
+            wordIndex: position.wordIndex, elapsed: position.elapsed, progressFraction: fraction)
     }
 
     private func pauseInternal(deactivateSessionAfterGrace: Bool) {

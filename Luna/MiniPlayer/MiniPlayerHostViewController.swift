@@ -34,6 +34,13 @@ final class MiniPlayerHostViewController: UIViewController {
     private let miniPlayer = AudioMiniPlayerView()
     private var barMode: AudioMiniPlayerView.BarMode = .hidden
     private var meldObserver: NSObjectProtocol?
+    /// Phase 6 extension → main-app handoff: true while the bar shows a
+    /// PAUSED PREVIEW of a recent extension-persisted position — the center
+    /// itself is still `.idle` (no engine/session exists yet). Cleared the
+    /// moment a real playback state arrives (whether via tapping play here,
+    /// or any other trigger), so the normal `AudioPlaybackObserver`-driven
+    /// display always wins once real state exists.
+    private var isShowingHandoffPreview = false
 
     init(content: UINavigationController) {
         self.contentNavigationController = content
@@ -77,6 +84,7 @@ final class MiniPlayerHostViewController: UIViewController {
         // session before the window existed).
         refreshDisplay()
         updateBar(animated: false)
+        showHandoffPreviewIfAvailable()
     }
 
     override func viewDidLayoutSubviews() {
@@ -89,7 +97,7 @@ final class MiniPlayerHostViewController: UIViewController {
     private func wireControls() {
         let center = AudioPlaybackCenter.shared
         miniPlayer.onSkipBack = { center.skipBackwardParagraph() }
-        miniPlayer.onPlayPause = { center.togglePlayPause() }
+        miniPlayer.onPlayPause = { [weak self] in self?.handlePlayPauseTap() }
         miniPlayer.onSkipForward = { center.skipForwardParagraph() }
         // Rate and autoplay changes don't emit observer callbacks — refresh
         // the display directly after applying them.
@@ -137,6 +145,16 @@ final class MiniPlayerHostViewController: UIViewController {
     }
 
     private func updateBar(animated: Bool) {
+        // A handoff preview overrides the normal state-driven mode: the
+        // center is genuinely `.idle` (nothing built yet), so the ordinary
+        // rule below would say `.hidden` — the whole point of the preview is
+        // showing the bar anyway, paused, until the user acts on it or a
+        // real playback state supersedes it (see `didChangeState`, which
+        // clears the flag first).
+        if isShowingHandoffPreview, case .idle = AudioPlaybackCenter.shared.state {
+            applyBarMode(.full, animated: animated)
+            return
+        }
         let newMode = AudioMiniPlayerView.barMode(
             state: AudioPlaybackCenter.shared.state,
             hasMeldAnchor: validMeldAnchor != nil)
@@ -229,6 +247,44 @@ final class MiniPlayerHostViewController: UIViewController {
         return ReadingListStore.shared.articlesDirectory.appendingPathComponent(fileName).path
     }
 
+    // MARK: - Phase 6: extension → main-app handoff (launch-time paused preview)
+
+    /// Checked once at launch (`viewDidLoad`): if a RECENT extension-persisted
+    /// position exists and nothing is currently playing, shows the bar in a
+    /// paused preview (title/thumbnail visible) — `AudioPlaybackCenter` stays
+    /// `.idle` until the user actually taps play. Does nothing (per the
+    /// product guard) when the position is stale or its item/content is
+    /// gone — `restorableHandoffIfAvailable` already encodes both checks.
+    private func showHandoffPreviewIfAvailable() {
+        guard let handoff = AudioPlaybackCenter.shared.restorableHandoffIfAvailable() else { return }
+        isShowingHandoffPreview = true
+        miniPlayer.apply(.init(
+            title: handoff.title, isUpNext: false,
+            thumbnailPath: thumbnailPath(fileName: handoff.thumbnailFileName),
+            isPlaying: false, rate: AudioSettings.preferredRate,
+            isAutoplayOn: AudioSettings.isAutoplayEnabled))
+        miniPlayer.setProgress(handoff.progressFraction, animated: false)
+        updateBar(animated: true)
+    }
+
+    /// Routes the bar's single play/pause control: a normal toggle once real
+    /// playback state exists, or — while showing the handoff preview — the
+    /// EXISTING full-restore path (`restorePersistedSessionIfAvailable()`),
+    /// never a bespoke "resume from preview" method. If the item/content
+    /// vanished between the preview appearing and this tap (deleted
+    /// meanwhile), the restore silently fails and the bar just hides.
+    private func handlePlayPauseTap() {
+        guard isShowingHandoffPreview else {
+            AudioPlaybackCenter.shared.togglePlayPause()
+            return
+        }
+        isShowingHandoffPreview = false
+        let restored = AudioPlaybackCenter.shared.restorePersistedSessionIfAvailable()
+        if !restored {
+            updateBar(animated: true)
+        }
+    }
+
     // MARK: - Tap-to-return navigation
 
     /// Opens the playing (or announced) article: pops to an already-open
@@ -273,6 +329,10 @@ final class MiniPlayerHostViewController: UIViewController {
 
 extension MiniPlayerHostViewController: AudioPlaybackObserver {
     func audioPlaybackCenter(_ center: AudioPlaybackCenter, didChangeState state: AudioPlaybackState) {
+        // Any real state (from tapping play on the preview, or any other
+        // trigger — e.g. a remote "play" command while this preview shows)
+        // supersedes the handoff preview outright.
+        if isShowingHandoffPreview, state != .idle { isShowingHandoffPreview = false }
         refreshDisplay()
         updateBar(animated: true)
     }

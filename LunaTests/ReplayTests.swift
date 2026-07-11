@@ -248,15 +248,13 @@ final class ReplayTests: XCTestCase {
 
     // MARK: - Resolver bypass-strategy logging
 
-    /// `ArticleResolver.resolve` emits a `bypassStrategy` event (with the strategy's
-    /// stable name) for each silent strategy it tries when the direct fetch isn't
-    /// readable — the events the integration harness replays.
-    func testResolverLogsBypassStrategyAttempts() async {
+    /// Rule-listed unlocks are now browser pre-stages, so the resolver does not
+    /// pretend it made a silent bypass attempt before the archive reader runs it.
+    func testResolverDefersRuleListedUnlockToArchiveReader() async {
         let fetcher = MockArticleFetcher()
         let url = URL(string: "https://nytimes.com/2026/story")!
-        // Direct fetch returns a server-locked paywall stub (not readable) so the
-        // silent bypass strategies run; all of them throw (only the direct URL is
-        // stubbed) → no readable result, but each attempt is logged.
+        // Direct fetch returns a server-locked paywall stub. The on-device unlock
+        // is a WKWebView pre-stage, which the archive reader owns.
         fetcher.htmlByURL = [url.absoluteString: """
             <html><head><meta property="article:content_tier" content="locked"></head>
             <body><p>To continue reading, subscribe now.</p></body></html>
@@ -267,8 +265,7 @@ final class ReplayTests: XCTestCase {
             replayLog: { event in await recorded.append(event) })
 
         let names = await recorded.bypassNames()
-        XCTAssertFalse(names.isEmpty, "expected at least one bypassStrategy event")
-        // Every logged bypass attempt should have failed (no readable stub).
+        XCTAssertTrue(names.isEmpty)
         let succeeded = await recorded.anyBypassSucceeded()
         XCTAssertFalse(succeeded)
     }

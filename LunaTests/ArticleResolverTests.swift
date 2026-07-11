@@ -84,7 +84,7 @@ final class ArticleResolverTests: XCTestCase {
         + #"<script type="application/ld+json">{"@type":"NewsArticle","isAccessibleForFree":false}</script>"#
         + "</body></html>"
 
-    /// Toggle ON + a site unlock rule (WSJ → Referer:Drudge): the resolver runs the
+    /// A site unlock rule (WSJ → Referer:Drudge): the resolver runs the
     /// rule's silent request technique. Here the Drudge-referer fetch returns the full
     /// article, so it wins before any browser-tier / archive fallback.
     func testResolverSilentRefererUnlockWinsForWSJ() async {
@@ -93,15 +93,14 @@ final class ArticleResolverTests: XCTestCase {
         fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML             // direct read = locked
         fetcher.refererHTMLByURL[articleURL.absoluteString] = readableHTML("drudge")  // referer read = full
 
-        let result = await ArticleResolver.resolve(
-            url: articleURL, fetcher: fetcher, nonArchiveBypass: true)
+        let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
         if case .readable = result {} else { return XCTFail("expected readable, got \(result)") }
         // The silent leg used a Drudge-referer fetch (WSJ's rule), not a crawler UA.
         let refererCall = fetcher.calls.first { $0.kind == .referer }
         XCTAssertEqual(refererCall?.referer, "https://www.drudgereport.com/")
     }
 
-    /// Toggle ON + WSJ, but the silent Referer fetch stays locked and there's no
+    /// For WSJ, the silent Referer fetch stays locked and there's no
     /// JSON-LD body: the resolver parks it under its title for the browser-tier /
     /// archive flow rather than returning a locked page.
     func testResolverParksWhenSilentRefererStaysLocked() async {
@@ -110,8 +109,7 @@ final class ArticleResolverTests: XCTestCase {
         // Both the direct AND the Drudge-referer fetch return the same locked teaser.
         fetcher.htmlByURL[articleURL.absoluteString] = lockedHTML
 
-        let result = await ArticleResolver.resolve(
-            url: articleURL, fetcher: fetcher, nonArchiveBypass: true)
+        let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
         XCTAssertEqual(result, .paywalled(title: "NYT Headline"))   // lockedHTML's title
         XCTAssertTrue(fetcher.calls.contains { $0.kind == .referer })
     }
@@ -137,8 +135,7 @@ final class ArticleResolverTests: XCTestCase {
         fetcher.htmlByURL[articleURL.absoluteString] = html
 
         let result = await ArticleResolver.resolve(
-            url: articleURL, fetcher: fetcher,
-            nonArchiveBypass: true, trustsPrefetchedHTML: false)
+            url: articleURL, fetcher: fetcher, trustsPrefetchedHTML: false)
         if case .readable = result {} else { XCTFail("long direct body should be readable, got \(result)") }
         XCTAssertEqual(fetcher.calls.first?.kind, .plain)
     }
@@ -154,12 +151,12 @@ final class ArticleResolverTests: XCTestCase {
 
         let parked = await ArticleResolver.resolve(
             url: articleURL, prefetchedHTML: html, fetcher: MockArticleFetcher(),
-            nonArchiveBypass: true, trustsPrefetchedHTML: false)
+            trustsPrefetchedHTML: false)
         if case .readable = parked { XCTFail("short untrusted prefetch must not bypass the schema lock") }
 
         let result = await ArticleResolver.resolve(
             url: articleURL, prefetchedHTML: html, fetcher: MockArticleFetcher(),
-            nonArchiveBypass: true, trustsPrefetchedHTML: true)
+            trustsPrefetchedHTML: true)
         if case .readable = result {} else { XCTFail("trusted prefetch should be readable, got \(result)") }
     }
 
@@ -172,8 +169,7 @@ final class ArticleResolverTests: XCTestCase {
         // Direct returns a titled locked teaser; every silent strategy + archive fail.
         fetcher.htmlByURL[articleURL.absoluteString] =
             "<html><head><title>WSJ Story</title></head><body><p>Lede only. Subscribe to read.</p></body></html>"
-        let result = await ArticleResolver.resolve(
-            url: articleURL, fetcher: fetcher, nonArchiveBypass: true)
+        let result = await ArticleResolver.resolve(url: articleURL, fetcher: fetcher)
         // WSJ's title survives; the body never became readable.
         XCTAssertEqual(result, .paywalled(title: "WSJ Story"))
     }

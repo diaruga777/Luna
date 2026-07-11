@@ -77,7 +77,7 @@ final class DoubleSavePolicyTests: XCTestCase {
 
     func testIntentKindleOnPlatformItemIsIgnored() {
         var video = item()
-        video.platform = .music
+        video.platform = .tiktok
         XCTAssertEqual(
             decideIntent(
                 existingItem: video,
@@ -97,7 +97,7 @@ final class DoubleSavePolicyTests: XCTestCase {
     func testIntentFriendSendWorksForPlatformItems() {
         // Friend shares email a link, so — unlike Kindle EPUBs — platform items work.
         var video = item()
-        video.platform = .music
+        video.platform = .tiktok
         XCTAssertEqual(
             decideIntent(
                 existingItem: video,

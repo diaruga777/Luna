@@ -32,12 +32,21 @@ struct ArticleEntity: AppEntity, IndexedEntity {
     static var defaultQuery = ArticleEntityQuery()
 
     var displayRepresentation: DisplayRepresentation {
-        let dateText = Self.dateFormatter.string(from: savedDate)
-        let subtitle = sourceHost.isEmpty ? dateText : "\(sourceHost) · \(dateText)"
+        let subtitle = Self.subtitleText(sourceHost: sourceHost, savedDate: savedDate)
         return DisplayRepresentation(title: "\(title)", subtitle: "\(subtitle)")
     }
 
-    private static let dateFormatter: DateFormatter = {
+    /// `"<host> · <date>"`, or just the date when there's no host (a document
+    /// imported via the synthetic `lunadoc://` scheme is still a readable
+    /// article, just with no real web host). Internal (not `private`) so
+    /// `ArticleEntityDisplayTests` can verify the composition directly
+    /// without going through `DisplayRepresentation`/`LocalizedStringResource`.
+    static func subtitleText(sourceHost: String, savedDate: Date) -> String {
+        let dateText = dateFormatter.string(from: savedDate)
+        return sourceHost.isEmpty ? dateText : "\(sourceHost) · \(dateText)"
+    }
+
+    static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .none

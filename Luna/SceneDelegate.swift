@@ -17,6 +17,7 @@ import LunaStorage
 import LunaTransitions
 import LunaURLClassification
 import LunaSend
+import LunaMediaDownload
 import UIKit
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -60,8 +61,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// host (claudedocs/audio-playback-plan.md, Phase 3): the bar floats above
     /// the bottom safe area, survives every push/pop, and hides while idle.
     private func makeMainRootViewController() -> UIViewController {
-        MiniPlayerHostViewController(content: UINavigationController(
-            rootViewController: ReadingListViewController(surface: AppSurfaceConfig.current)))
+        let root: UIViewController = AppSurfaceConfig.current == .downloader
+            ? SavedMediaGridViewController()
+            : ReadingListViewController(surface: AppSurfaceConfig.current)
+        return MiniPlayerHostViewController(content: UINavigationController(rootViewController: root))
     }
 
     /// Pushes the Pending Requests screen onto the reading-list nav once the main
@@ -202,6 +205,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             forSurface: AppSurfaceConfig.current.storageIdentifier)
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
+        SavedMediaStore.shared.purgeExpired()
         ReadingListIngestor.shared.ingestAllPending()
         ArticleSendCoordinator.shared.retryPendingSends()
         Task { await IncomingMailImporter.shared.importNewMail() }

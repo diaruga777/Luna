@@ -51,6 +51,36 @@ public struct MediaDownloadService: MediaDownloading {
         return asset.kind
     }
 
+    public func downloadFirstMediaToAppStorage(
+        from url: URL, title: String?, onProgress: @escaping (Double) -> Void
+    ) async throws -> SavedMediaItem {
+        guard MediaDownloadablePlatform.supports(url.absoluteString) else {
+            throw MediaDownloadError.unsupported
+        }
+        let assets = await resolver.resolveAssets(for: url)
+        guard let asset = assets.first else { throw MediaDownloadError.noMedia }
+
+        let referer = MediaDownloadService.referer(for: url)
+        let fileURL: URL
+        do {
+            fileURL = try await MediaFileDownloader.download(asset, referer: referer, onProgress: onProgress)
+        } catch {
+            throw MediaDownloadError.downloadFailed
+        }
+
+        do {
+            return try SavedMediaStore.shared.addDownloadedFile(
+                fileURL,
+                kind: asset.kind,
+                sourceURLString: url.absoluteString,
+                title: title,
+                fileExtension: fileURL.pathExtension)
+        } catch {
+            try? FileManager.default.removeItem(at: fileURL)
+            throw MediaDownloadError.saveFailed
+        }
+    }
+
     public func downloadFirstMediaToFile(
         from url: URL, onProgress: @escaping (Double) -> Void
     ) async throws -> DownloadedMedia {

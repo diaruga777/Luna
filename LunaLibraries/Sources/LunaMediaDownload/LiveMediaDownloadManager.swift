@@ -50,7 +50,10 @@ public final class LiveMediaDownloadManager: NSObject {
               !AutoDownloadSettings.wasDownloaded(urlString)
         else { return false }
 
-        guard await saver.requestAddAuthorization() else {
+        let canSave = MediaAutoDownloader.isRunningInDownloader
+            ? true
+            : await saver.requestAddAuthorization()
+        guard canSave else {
             await startFailedActivity(
                 urlString: urlString,
                 title: title,
@@ -388,7 +391,16 @@ public final class LiveMediaDownloadManager: NSObject {
         var job = job
         guard job.phase != .suspended else { return }
         do {
-            try await saver.save(fileURL: fileURL, kind: kind)
+            if MediaAutoDownloader.isRunningInDownloader {
+                _ = try SavedMediaStore.shared.addDownloadedFile(
+                    fileURL,
+                    kind: kind,
+                    sourceURLString: job.sourceURLString,
+                    title: job.title,
+                    fileExtension: job.fileExtension)
+            } else {
+                try await saver.save(fileURL: fileURL, kind: kind)
+            }
             AutoDownloadSettings.markDownloaded(job.sourceURLString)
             job.phase = .finished
             job.progress = 1
@@ -663,8 +675,8 @@ private extension LiveMediaDownloadManager {
         case .resolving: message = "Preparing download"
         case .downloading: message = "Downloading"
         case .suspended: message = "Paused. Resume within 5 seconds."
-        case .saving: message = "Saving to Photos"
-        case .finished: message = "Saved to Photos"
+        case .saving: message = MediaAutoDownloader.isRunningInDownloader ? "Saving to Luna" : "Saving to Photos"
+        case .finished: message = MediaAutoDownloader.isRunningInDownloader ? "Saved to Luna" : "Saved to Photos"
         case .failed: message = job.errorMessage ?? "Download failed"
         }
         return LiveMediaDownloadAttributes.ContentState(

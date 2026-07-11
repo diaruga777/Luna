@@ -125,9 +125,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
         // Sweep any downloaded-but-never-saved media preview files orphaned by a
         // previous run that was killed before its preview screen could clean up.
-        // Safe at launch (no preview is open yet); off the main thread to not
-        // block startup.
-        DispatchQueue.global(qos: .utility).async { MediaDownloadStorage.purgeAll() }
+        // Also apply Downloader's saved-media retention policy. Safe at launch
+        // (no preview is open yet); off the main thread to not block startup.
+        DispatchQueue.global(qos: .utility).async {
+            MediaDownloadStorage.purgeAll()
+            SavedMediaStore.shared.purgeExpired()
+        }
 
         // Warm the Wi-Fi reachability monitor (background preloads are Wi-Fi-gated) and
         // run the one-time image-ownership backfill so images shared with pre-existing
@@ -167,6 +170,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         readingListObserver = NotificationCenter.default.addObserver(
             forName: .readingListChanged, object: nil, queue: .main
         ) { [weak self] _ in
+            SavedMediaStore.shared.purgeExpired()
             self?.schedulePriceRefresh(reason: "reading list changed")
         }
 

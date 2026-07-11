@@ -148,6 +148,7 @@ final class ReadingListViewController: UITableViewController {
 
     /// Non-blocking bottom pill for media-download progress/result (created lazily).
     private weak var mediaDownloadStatus: MediaDownloadStatusView?
+    private let photoSaver = PhotoLibrarySaver()
     private var isPresentingSendFailureNotice = false
 
     /// The "catch up" button, on the large-title row; its red dot badge shows when there
@@ -1679,13 +1680,13 @@ final class ReadingListViewController: UITableViewController {
             children.append(shareLink)
             children.append(copyLink)
         }
-        // X / Instagram / TikTok posts: download the post's media to Photos.
+        // X / Instagram / TikTok posts: download the post's media.
         if MediaDownloadablePlatform.supports(item.urlString) {
             let downloadMedia = UIAction(
-                title: "Download Media to Photos",
+                title: "Save to Photos",
                 image: UIImage(systemName: "photo.badge.arrow.down")
             ) { [weak self] _ in
-                self?.downloadMediaToPhotos(item)
+                self?.saveMediaToPhotos(item)
             }
             children.append(downloadMedia)
         }
@@ -1738,7 +1739,11 @@ final class ReadingListViewController: UITableViewController {
     /// Hands the first media item of an X/Instagram/TikTok/Facebook post to the
     /// background media downloader. The Live Activity/background URLSession own
     /// the durable transfer; this pill is only immediate in-app feedback.
-    private func downloadMediaToPhotos(_ item: ReadingListItem) {
+    private func saveMediaToPhotos(_ item: ReadingListItem) {
+        if surface == .downloader {
+            saveLocalDownloaderMediaToPhotos(item)
+            return
+        }
         let status = mediaDownloadStatusView()
         status.startProgress()
         Task { [weak self] in
@@ -1751,6 +1756,41 @@ final class ReadingListViewController: UITableViewController {
                 } else {
                     self?.mediaDownloadStatus?.showResult(
                         message: "Couldn't start the media download.", success: false)
+                }
+            }
+        }
+    }
+
+    private func saveLocalDownloaderMediaToPhotos(_ item: ReadingListItem) {
+        let status = mediaDownloadStatusView()
+        guard let media = SavedMediaStore.shared.item(forURLString: item.urlString) else {
+            status.showResult(message: "Media is still downloading.", success: false)
+            return
+        }
+        status.startProgress()
+        Task { [weak self] in
+            do {
+                guard let self else { return }
+                guard await self.photoSaver.requestAddAuthorization() else {
+                    await MainActor.run {
+                        self.mediaDownloadStatus?.showResult(
+                            message: MediaDownloadError.permissionDenied.message,
+                            success: false)
+                    }
+                    return
+                }
+                let tempURL = MediaDownloadStorage.newFileURL(extension: media.fileURL.pathExtension)
+                try FileManager.default.copyItem(at: media.fileURL, to: tempURL)
+                defer { try? FileManager.default.removeItem(at: tempURL) }
+                try await self.photoSaver.save(fileURL: tempURL, kind: media.kind)
+                await MainActor.run {
+                    self.mediaDownloadStatus?.showResult(message: "Saved to Photos", success: true)
+                }
+            } catch {
+                await MainActor.run {
+                    self?.mediaDownloadStatus?.showResult(
+                        message: "Couldn't save to your photo library.",
+                        success: false)
                 }
             }
         }

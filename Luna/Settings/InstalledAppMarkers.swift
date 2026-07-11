@@ -26,6 +26,13 @@ enum InstalledAppMarkers {
         defaults.set(true, forKey: key(for: AppSurfaceConfig.current))
     }
 
+    /// Whether `surface`'s app has ever recorded itself as installed on this
+    /// device (including the running app itself — its own marker is written
+    /// at every launch, so no special-casing is needed here).
+    static func isInstalled(_ surface: AppSurface) -> Bool {
+        defaults.bool(forKey: key(for: surface))
+    }
+
     /// `lunaInstalled.<surface>` — the suffix matches the app's bundle-id suffix.
     static func key(for surface: AppSurface) -> String {
         switch surface {

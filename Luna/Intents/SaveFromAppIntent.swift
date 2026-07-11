@@ -58,12 +58,16 @@ public struct SaveFromAppIntent: AppIntent {
         // shortcut's own first run); its second fires from wherever the Action
         // Button was actually pressed, once real setup is complete.
         let surface = AppSurfaceConfig.current.storageIdentifier
-        switch ActionButtonOnboardingStore.shared.handleSaveIntentInvoked(
+        switch ActionButtonOnboardingStore.shared.handleProvideContextInvoked(
             appName: app, isCurrentAppLuna: Self.isCurrentAppLuna(comparedTo: app), forSurface: surface
         ) {
-        case .returnOpenLunaToken:
-            return .result(value: ActionButtonOnboardingStore.openLunaToken)
-        case .returnEmpty:
+        case .foregroundThenUnsupported:
+            // TEMPORARY shim (removed with this whole file in commit 8): the old
+            // Shortcut branches on this exact literal with an "Open App → Luna"
+            // action; `openLunaToken` itself was retired since this was its last
+            // live reference.
+            return .result(value: "open-luna")
+        case .unsupported:
             return .result(value: "")
         case .none:
             break
@@ -154,7 +158,9 @@ public struct SaveFromAppIntent: AppIntent {
         guard let url = try? await resolve(query) else { throw SaveError.notFound }
         switch await Self.savePress(urlString: url.absoluteString) {
         case .friendPromptRequested:
-            return ActionButtonOnboardingStore.openLunaToken
+            // TEMPORARY literal (removed with this whole file in commit 8) —
+            // see the note in `perform()`.
+            return "open-luna"
         case .completed:
             return "Saved to Luna."
         }
@@ -165,8 +171,9 @@ public struct SaveFromAppIntent: AppIntent {
         case .friendPromptRequested:
             // Double save with "ask every time": bounce into Luna's friend
             // selector (the pending prompt is already recorded). The Shortcut's
-            // "Open App → Luna" branch keys off this exact token.
-            return ActionButtonOnboardingStore.openLunaToken
+            // "Open App → Luna" branch keys off this exact token. TEMPORARY
+            // literal (removed with this whole file in commit 8).
+            return "open-luna"
         case .completed:
             break
         }

@@ -29,7 +29,7 @@ public enum AppNamePlatform {
 
     /// Whether the app is Shortcuts (supported, but needs no model prompt — the
     /// Action Button onboarding shortcut's first run carries no content of its
-    /// own; see `ActionButtonOnboardingStore.handleSaveIntentInvoked`).
+    /// own; see `ActionButtonOnboardingStore.handleProvideContextInvoked`).
     public static func isShortcuts(forAppName app: String) -> Bool {
         app.lowercased().contains("shortcuts")
     }

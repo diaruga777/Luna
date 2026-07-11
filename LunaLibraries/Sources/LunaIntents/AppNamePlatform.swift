@@ -67,4 +67,8 @@ public enum AppNamePlatform {
             return "Respond with a single line for the post on screen as \"handle ; phrase\" — the author handle, then \" ; \", then a short EXACT quote (5–10 words copied verbatim) from the post's text. If the post's date or time is visible, append \" ; \" and that date (e.g. \"Jun 14, 2026\"). If nothing identifiable is on screen, respond with exactly \"none\"."
         }
     }
+
+    /// The screen-extraction prompt for a Safari webpage: no platform-specific
+    /// fields, just the page's title and site/publication name.
+    public static let safariScreenPrompt = "Respond with a single line for the webpage on screen, in the exact form \"title ; site\" — the page's title, then \" ; \", then the site or publication name if visible, else the domain. If no webpage is identifiable, respond with exactly \"none\"."
 }

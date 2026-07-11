@@ -60,6 +60,19 @@ public enum IntentIngestHelper {
         }
     }
 
+    /// Convenience for callers with an optional double-save surface: routes
+    /// through `handleActionButtonSavePress` when a surface is armed, else
+    /// `handleSavePressWithTimeout` — mirroring the decision `SaveFromAppIntent`
+    /// makes today (double-save only armed for eligible surfaces).
+    public static func handleSavePress(
+        urlString: String, doubleSaveActionSurface surface: String?
+    ) async -> ActionButtonSaveOutcome {
+        guard let surface else {
+            return .completed(savedURLString: await handleSavePressWithTimeout(urlString: urlString))
+        }
+        return await handleActionButtonSavePress(urlString: urlString, doubleSaveActionSurface: surface)
+    }
+
     /// Runs `handleSavePress` raced against a 12 s timeout; nil ⇒ timed out.
     private static func savePressRacingTimeout(
         urlString: String, doubleSaveActionSurface: String?

@@ -105,8 +105,9 @@ setup. The onboarding UI drives/observes it as follows:
   visibly stall the push transition (the "enormous delay" from the email step to
   the Safari step). Everything is now created on first `play()` (from the step's
   own `viewDidAppear`) / `startPictureInPicture()` instead. Loads a bundled mp4
-  (`Luna/Resources/SafariExtensionGuide.mp4` / `Luna/Resources/ActionButtonGuide.mp4`)
-  into an `AVQueuePlayer` with `AVPlayerLooper`. Do NOT set
+  (one matching pair per app surface, such as
+  `Luna/Resources/SafariExtensionGuideDownloader.mp4`) into an `AVQueuePlayer`
+  with `AVPlayerLooper`. Do NOT set
   `player.actionAtItemEnd` — `AVPlayerLooper` requires the default (`.advance`);
   overriding it to `.none` freezes playback at the end of the first pass. And do
   not rebuild a long `AVMutableComposition` here, because that can leave PiP
@@ -143,20 +144,20 @@ setup. The onboarding UI drives/observes it as follows:
 
 ### Regenerating the guide videos
 
-The clips are recorded from the SAME `OnboardingAnimationView` illustrations used
-inline (`.safariExtension` for the Safari clip; `.actionButtonSettings` — a
-fixed-dark mock of Settings → Action Button built specifically for this — for the
-Action Button clip), via `LunaTests/GuideVideoRecorderTests.swift`. Gated behind
-`RECORD_GUIDE_VIDEOS=1` (mirrors the `RECORD_SNAPSHOTS` pattern in
-`SnapshotTesting.swift`; `XCTSkip`s otherwise). It hosts the animation at its own
-fixed intrinsic size in a scene-attached window, waits out the animation's
-start-up delay, then drives a `CADisplayLink` for exactly one
+The clips are recorded from the SAME `OnboardingAnimationView` UIKit elements and
+animations used inline (`.safariExtension` for the Safari clip;
+`.actionButtonSettings` — a fixed-dark mock of Settings → Action Button built
+specifically for this), via `LunaTests/GuideVideoRecorderTests.swift`. The recorder
+generates both clips for Reader, Downloader, and Price Tracker, so PiP carries the
+same app icon as the live UI. It is gated behind `RECORD_GUIDE_VIDEOS=1` (mirrors
+the `RECORD_SNAPSHOTS` pattern in `SnapshotTesting.swift`; `XCTSkip`s otherwise).
+It hosts the animation at its own fixed intrinsic size in a scene-attached window,
+waits out the animation's start-up delay, then drives a `CADisplayLink` for exactly one
 `OnboardingAnimationView.Kind.loopDuration`, rendering each tick's
 `layer.presentation()` (NOT the model layer — this is what captures the
 in-flight `CAKeyframeAnimation` values rather than their static end state) into
 an `AVAssetWriter` H.264 mp4 at ~30fps 2x pixel scale (Safari: 220×360 → 440×720;
-Action Button: 280×300 → 560×600 — even dimensions, required for H.264), ~800kbps
-(clips land around ~250–350KB — well under the ~2MB budget).
+Action Button: 280×300 → 560×600 — even dimensions, required for H.264), ~800kbps.
 
 Three implementation notes that matter if you touch this:
 - **The recording `UIWindow` MUST be attached to a `UIWindowScene`**
@@ -179,8 +180,25 @@ Three implementation notes that matter if you touch this:
   view `transform` — a scaled view in an Auto Layout window shifts its frame and
   crops the capture.
 
-Regenerate with (see CLAUDE.md for the `DEVELOPER_DIR` requirement and simulator
-UDIDs):
+### Build-time regeneration
+
+Each app target has a **Record onboarding PiP guides** build phase immediately
+before Copy Bundle Resources. The phase runs the test recorder only for **Debug
+iOS Simulator** builds and only if either:
+
+- `LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift` changed; or
+- one of the six surface-specific clips is missing.
+
+Its source hash is stored in
+`Luna/Resources/.onboarding-guide-video-source.sha256`. A lock makes parallel
+Reader/Downloader/Price Tracker builds share one recording session. The nested
+test build gets `LUNA_GUIDE_VIDEO_RECORDING=1`, which makes its own build phase a
+no-op and prevents recursion. Device and Archive builds deliberately use the
+last known-good videos; this avoids a simulator test during signing/archive.
+
+If no iOS 26+ simulator is booted, or the recorder fails, the phase emits a
+warning and preserves the existing clips. Start a compatible Simulator and build
+again, or run the recorder manually:
 
 ```sh
 DD=<a derivedDataPath>
@@ -208,14 +226,22 @@ targets, so no project-file changes are needed to pick them up):
 
 ```sh
 ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 \
-  Luna/Resources/SafariExtensionGuide.mp4 Luna/Resources/ActionButtonGuide.mp4
+  Luna/Resources/SafariExtensionGuide{Reader,Downloader,PriceTracker}.mp4 \
+  Luna/Resources/ActionButtonGuide{Reader,Downloader,PriceTracker}.mp4
 ```
+
+`LUNA_SKIP_GUIDE_VIDEO_RECORDING=1` skips the automatic phase for one local
+build. `OnboardingGuideVideo` falls back to the old unsuffixed Reader clips when
+a new surface-specific clip is unavailable, so PiP stays functional while a
+manual re-record is pending.
 
 ## Illustration app icons (`AppIconImage<App>` imagesets)
 
-`OnboardingAnimationView.lunaAppIconImage()` picks the current app's icon for the
-mock UI rows (Dynamic Island confirmation, "Save to Luna" share row, Safari
-extension toggle row, notification banner) by bundle-id suffix. It loads the
+`OnboardingAnimationView.AppIcon` picks the current app's icon for the mock UI
+rows (Dynamic Island confirmation, "Save to Luna" share row, Safari extension
+toggle row, notification banner) by bundle-id suffix. The recorder can inject all
+three identities explicitly, which is why the generated PiP clips also retain
+surface-specific branding. It loads the
 `AppIconImageReader` / `AppIconImageDownloader` / `AppIconImagePriceTracker`
 imagesets in `Luna/Assets.xcassets` — **not** the `AppIcon*` appiconsets, because
 `.appiconset`s are not loadable via `UIImage(named:)`; before these imagesets

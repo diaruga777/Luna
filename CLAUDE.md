@@ -118,11 +118,12 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   app-group entitlement, so the test host crashes at launch (early-exit, "external
   symbol") on app-group container access. Default ad-hoc signing applies the
   entitlement and the app group works on the simulator.
-- **The full suite is green on the iOS 26.x sim: 914 tests, 4 skipped, 0 failures**
+- **The full suite is green on the iOS 26.x sim: 918 tests, 8 skipped, 0 failures**
   (measured after the audio-playback feature landed; the previously-documented "904"
   predates it). The 4 skips are intentional `XCTSkip`s — `CatchUpAndPriceScreenTests
-  .testPriceTracking{,Alerting}EditorSnapshot` and `GuideVideoRecorderTests.testRecord
-  {ActionButton,SafariExtension}Guide` (gated behind `RECORD_GUIDE_VIDEOS=1`). One class,
+  .testPriceTracking{,Alerting}EditorSnapshot` and the six
+  `GuideVideoRecorderTests.testRecord*` methods (gated behind
+  `RECORD_GUIDE_VIDEOS=1`). One class,
   `ArticleAudioEngineTests` (14 tests, real `AVAudioEngine.start()` even in manual/offline
   rendering mode), is environment-fragile: on at least one Mac it reproducibly aborts every
   test with a mediaserverd "RPC timeout, apparently deadlocked" — reproduced across a

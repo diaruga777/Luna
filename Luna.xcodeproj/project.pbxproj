@@ -1088,6 +1088,7 @@
 			buildPhases = (
 				69326230C9193A79E2B04484 /* Sources */,
 				04C4B73342B81E2FE429106D /* Frameworks */,
+				BEE700000000000000000003 /* Record onboarding PiP guides */,
 				6ED0D1662C9D703BF6C0F4BA /* Resources */,
 				2160D2503718567D7AE0E6F6 /* Embed Foundation Extensions */,
 				3D30D1BA1BC66A3464973E88 /* Re-sign embedded extensions (debug) */,
@@ -1311,6 +1312,7 @@
 			buildPhases = (
 				AA1000000000000000000001 /* Sources */,
 				AA0800000000000000000001 /* Frameworks */,
+				BEE700000000000000000001 /* Record onboarding PiP guides */,
 				AA1100000000000000000001 /* Resources */,
 				AA0500000000000000000001 /* Embed Foundation Extensions */,
 				AA9000000000000000000001 /* Re-sign embedded extensions (debug) */,
@@ -1482,6 +1484,7 @@
 			buildPhases = (
 				836705B5BFAEBF1F5E5F928B /* Sources */,
 				A0047EA7E66649097A1AD197 /* Frameworks */,
+				BEE700000000000000000002 /* Record onboarding PiP guides */,
 				A8328BDA696E47B16CE4447A /* Resources */,
 				9836EC78CC443E7D4C813A08 /* Embed Foundation Extensions */,
 				LDCL0000000000000000000F /* Embed App Clips */,
@@ -1870,6 +1873,75 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# Re-sign each embedded extension with the app's OWN resolved signing identity, so an\n# incremental build can never leave an extension signed by a different certificate than\n# the parent app (the recurring \"Embedded binary is not signed with the same certificate\n# as the parent app\" error). Works for both the simulator (identity is ad-hoc \"-\") and a\n# physical device (identity is the app's Apple Development cert). DEBUG ONLY — Release /\n# archive (distribution / TestFlight) signing is left completely untouched.\nif [ \"${CONFIGURATION}\" != \"Debug\" ]; then exit 0; fi\nPLUGINS=\"${CODESIGNING_FOLDER_PATH}/PlugIns\"\n[ -d \"$PLUGINS\" ] || exit 0\nIDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\nfor APPEX in \"$PLUGINS\"/*.appex; do\n  [ -e \"$APPEX\" ] || continue\n  /usr/bin/codesign --force --sign \"$IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$APPEX\"\ndone\n";
+		};
+		BEE700000000000000000001 /* Record onboarding PiP guides */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift",
+				"$(SRCROOT)/scripts/record_onboarding_guide_videos.sh",
+			);
+			name = "Record onboarding PiP guides";
+			outputPaths = (
+				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideReader.mp4",
+				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideDownloader.mp4",
+				"$(SRCROOT)/Luna/Resources/SafariExtensionGuidePriceTracker.mp4",
+				"$(SRCROOT)/Luna/Resources/ActionButtonGuideReader.mp4",
+				"$(SRCROOT)/Luna/Resources/ActionButtonGuideDownloader.mp4",
+				"$(SRCROOT)/Luna/Resources/ActionButtonGuidePriceTracker.mp4",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/record_onboarding_guide_videos.sh\"\n";
+		};
+		BEE700000000000000000002 /* Record onboarding PiP guides */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift",
+				"$(SRCROOT)/scripts/record_onboarding_guide_videos.sh",
+			);
+			name = "Record onboarding PiP guides";
+			outputPaths = (
+				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideReader.mp4",
+				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideDownloader.mp4",
+				"$(SRCROOT)/Luna/Resources/SafariExtensionGuidePriceTracker.mp4",
+				"$(SRCROOT)/Luna/Resources/ActionButtonGuideReader.mp4",
+				"$(SRCROOT)/Luna/Resources/ActionButtonGuideDownloader.mp4",
+				"$(SRCROOT)/Luna/Resources/ActionButtonGuidePriceTracker.mp4",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/record_onboarding_guide_videos.sh\"\n";
+		};
+		BEE700000000000000000003 /* Record onboarding PiP guides */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift",
+				"$(SRCROOT)/scripts/record_onboarding_guide_videos.sh",
+			);
+			name = "Record onboarding PiP guides";
+			outputPaths = (
+				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideReader.mp4",
+				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideDownloader.mp4",
+				"$(SRCROOT)/Luna/Resources/SafariExtensionGuidePriceTracker.mp4",
+				"$(SRCROOT)/Luna/Resources/ActionButtonGuideReader.mp4",
+				"$(SRCROOT)/Luna/Resources/ActionButtonGuideDownloader.mp4",
+				"$(SRCROOT)/Luna/Resources/ActionButtonGuidePriceTracker.mp4",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/record_onboarding_guide_videos.sh\"\n";
 		};
 		F20000000000000000000001 /* Update Safari extension branding */ = {
 			isa = PBXShellScriptBuildPhase;

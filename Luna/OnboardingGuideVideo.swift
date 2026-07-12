@@ -5,6 +5,7 @@
 
 import AVFoundation
 import AVKit
+import LunaSocialUI
 import UIKit
 
 /// A muted, looping "how to" clip kept playing (covered) behind an onboarding
@@ -20,6 +21,21 @@ import UIKit
 /// lazily in `play()`, which runs from the step's `viewDidAppear` instead.
 final class OnboardingGuideVideo: NSObject {
 
+    /// The two visual loops that need to survive an out-of-app onboarding hop.
+    /// Each is generated once per Luna app icon by the Debug-simulator build
+    /// phase, keeping PiP visually consistent with the live UIKit illustration.
+    enum Guide {
+        case safariExtension
+        case actionButton
+
+        fileprivate var baseResourceName: String {
+            switch self {
+            case .safariExtension: return "SafariExtensionGuide"
+            case .actionButton: return "ActionButtonGuide"
+            }
+        }
+    }
+
     /// Hosts the `AVPlayerLayer`. A plain `UIView` subclass so it composes with
     /// `installBackdropView`'s Auto Layout pinning like any other view.
     private final class PlayerLayerView: UIView {
@@ -32,17 +48,20 @@ final class OnboardingGuideVideo: NSObject {
     let playerView: UIView
 
     private let resourceName: String
+    private let fallbackResourceName: String
     private let layerView: PlayerLayerView
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
     private var pipController: AVPictureInPictureController?
     private var didLoad = false
 
-    /// - Parameter resourceName: bundled mp4 base name (without extension), expected
-    ///   under `Luna/Resources/`. Silently does nothing if the resource is missing —
-    ///   playback/PiP calls just become no-ops.
-    init(resourceName: String) {
-        self.resourceName = resourceName
+    /// Resolves a surface-specific bundled MP4 (without extension) from
+    /// `Luna/Resources/`. The unsuffixed, legacy Reader clip remains a fallback so
+    /// PiP is still available if a developer cannot record fresh clips locally.
+    init(guide: Guide) {
+        let baseName = guide.baseResourceName
+        self.resourceName = baseName + Self.currentGuideSuffix
+        self.fallbackResourceName = baseName
         layerView = PlayerLayerView()
         playerView = layerView
         super.init()
@@ -54,7 +73,9 @@ final class OnboardingGuideVideo: NSObject {
     private func loadIfNeeded() {
         guard !didLoad else { return }
         didLoad = true
-        guard let url = Bundle.main.url(forResource: resourceName, withExtension: "mp4") else { return }
+        guard let url = Bundle.main.url(forResource: resourceName, withExtension: "mp4")
+            ?? Bundle.main.url(forResource: fallbackResourceName, withExtension: "mp4")
+        else { return }
 
         let player = AVQueuePlayer()
         player.isMuted = true
@@ -101,6 +122,10 @@ final class OnboardingGuideVideo: NSObject {
     }
 
     private var didConfigureAudioSession = false
+
+    private static var currentGuideSuffix: String {
+        OnboardingAnimationView.AppIcon.currentBundle.guideVideoSuffix
+    }
 
     private func configureAudioSession() {
         // `.playback` (+ background-mode `audio` from Luna.xcconfig) is what keeps

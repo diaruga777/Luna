@@ -129,7 +129,7 @@ public enum OnboardingFlow {
     private static func safariStep(
         stores: OnboardingStores, nav: UINavigationController?, onFinished: @escaping () -> Void
     ) -> UIViewController {
-        let guide = OnboardingGuideVideo(resourceName: "SafariExtensionGuide")
+        let guide = OnboardingGuideVideo(guide: .safariExtension)
         var didAdvance = false
 
         let advance: () -> Void = { [weak nav] in
@@ -246,7 +246,7 @@ public enum OnboardingFlow {
     private static func actionButtonStep(
         stores: OnboardingStores, onFinished: @escaping () -> Void
     ) -> UIViewController {
-        let guide = OnboardingGuideVideo(resourceName: "ActionButtonGuide")
+        let guide = OnboardingGuideVideo(guide: .actionButton)
         var didFinish = false
         var stateObserver: NSObjectProtocol?
 

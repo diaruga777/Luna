@@ -21,15 +21,41 @@ import XCTest
 
 final class GuideVideoRecorderTests: XCTestCase {
 
-    func testRecordSafariExtensionGuide() throws {
-        try recordGuideVideo(kind: .safariExtension, filename: "SafariExtensionGuide")
+    func testRecordSafariExtensionGuideReader() throws {
+        try recordGuideVideo(kind: .safariExtension, appIcon: .reader,
+                             filename: guideFilename(base: "SafariExtensionGuide", appIcon: .reader))
     }
 
-    func testRecordActionButtonGuide() throws {
-        try recordGuideVideo(kind: .actionButtonSettings, filename: "ActionButtonGuide")
+    func testRecordSafariExtensionGuideDownloader() throws {
+        try recordGuideVideo(kind: .safariExtension, appIcon: .downloader,
+                             filename: guideFilename(base: "SafariExtensionGuide", appIcon: .downloader))
+    }
+
+    func testRecordSafariExtensionGuidePriceTracker() throws {
+        try recordGuideVideo(kind: .safariExtension, appIcon: .priceTracker,
+                             filename: guideFilename(base: "SafariExtensionGuide", appIcon: .priceTracker))
+    }
+
+    func testRecordActionButtonGuideReader() throws {
+        try recordGuideVideo(kind: .actionButtonSettings, appIcon: .reader,
+                             filename: guideFilename(base: "ActionButtonGuide", appIcon: .reader))
+    }
+
+    func testRecordActionButtonGuideDownloader() throws {
+        try recordGuideVideo(kind: .actionButtonSettings, appIcon: .downloader,
+                             filename: guideFilename(base: "ActionButtonGuide", appIcon: .downloader))
+    }
+
+    func testRecordActionButtonGuidePriceTracker() throws {
+        try recordGuideVideo(kind: .actionButtonSettings, appIcon: .priceTracker,
+                             filename: guideFilename(base: "ActionButtonGuide", appIcon: .priceTracker))
     }
 
     // MARK: - Recording
+
+    private func guideFilename(base: String, appIcon: OnboardingAnimationView.AppIcon) -> String {
+        base + appIcon.guideVideoSuffix
+    }
 
     /// The illustration's own fixed intrinsic size (`OnboardingAnimationView.init`'s
     /// per-kind `height`/`width`). The recorded clip is this at 2x (context-scaled).
@@ -42,7 +68,8 @@ final class GuideVideoRecorderTests: XCTestCase {
     }
 
     private func recordGuideVideo(
-        kind: OnboardingAnimationView.Kind, filename: String,
+        kind: OnboardingAnimationView.Kind, appIcon: OnboardingAnimationView.AppIcon,
+        filename: String,
         file: StaticString = #filePath, line: UInt = #line
     ) throws {
         guard ProcessInfo.processInfo.environment["RECORD_GUIDE_VIDEOS"] == "1" else {
@@ -68,7 +95,7 @@ final class GuideVideoRecorderTests: XCTestCase {
 
         let natural = naturalSize(for: kind)
 
-        let animation = OnboardingAnimationView(kind: kind)
+        let animation = OnboardingAnimationView(kind: kind, appIcon: appIcon)
         animation.backgroundColor = .systemBackground
 
         let window = UIWindow(windowScene: scene)

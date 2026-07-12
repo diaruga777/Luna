@@ -12,6 +12,40 @@ import UIKit
 /// `start()` lazily builds the illustration and kicks the loop when the step appears.
 public final class OnboardingAnimationView: UIView {
 
+    /// The Luna app identity shown in the miniature system UI. Live onboarding
+    /// derives this from the host app by default; the guide-video recorder passes
+    /// each case explicitly so every standalone app gets a matching PiP clip.
+    public enum AppIcon: CaseIterable {
+        case reader
+        case downloader
+        case priceTracker
+
+        public static var currentBundle: AppIcon {
+            let identifier = Bundle.main.bundleIdentifier ?? ""
+            if identifier.contains(".downloader") { return .downloader }
+            if identifier.contains(".pricetracker") { return .priceTracker }
+            return .reader
+        }
+
+        fileprivate var assetName: String {
+            switch self {
+            case .reader: return "AppIconImageReader"
+            case .downloader: return "AppIconImageDownloader"
+            case .priceTracker: return "AppIconImagePriceTracker"
+            }
+        }
+
+        /// Stable suffix used by the build-time recorder and the bundled guide
+        /// filenames (for example, `SafariExtensionGuideDownloader.mp4`).
+        public var guideVideoSuffix: String {
+            switch self {
+            case .reader: return "Reader"
+            case .downloader: return "Downloader"
+            case .priceTracker: return "PriceTracker"
+            }
+        }
+    }
+
     public enum Kind {
         case notification         // a banner sliding in
         case actionButton         // the Action Button pressed → Dynamic Island confirmation
@@ -38,11 +72,13 @@ public final class OnboardingAnimationView: UIView {
     }
 
     private let kind: Kind
+    private let appIcon: AppIcon
     private let accent = GlassStyle.lunaBrandAccent
     private var didBuildIllustration = false
 
-    public init(kind: Kind) {
+    public init(kind: Kind, appIcon: AppIcon = .currentBundle) {
         self.kind = kind
+        self.appIcon = appIcon
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         // The phone facsimiles are portrait, so they get taller canvases; the
@@ -112,16 +148,7 @@ public final class OnboardingAnimationView: UIView {
         // MUST load the plain `AppIconImage<App>` imageset: app icon sets cannot be
         // loaded through `UIImage(named:)`. These imagesets mirror the standard app
         // icons precisely for in-UI use.
-        let identifier = Bundle.main.bundleIdentifier ?? ""
-        let appIconName: String
-        if identifier.contains(".downloader") {
-            appIconName = "AppIconImageDownloader"
-        } else if identifier.contains(".pricetracker") {
-            appIconName = "AppIconImagePriceTracker"
-        } else {
-            appIconName = "AppIconImageReader"
-        }
-        return UIImage(named: appIconName)
+        return UIImage(named: appIcon.assetName)
     }
 
     // MARK: - Notification banner

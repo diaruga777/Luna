@@ -226,7 +226,13 @@ public final class OnboardingStepViewController: UIViewController {
         animationView?.start()
         foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.onWillEnterForeground?() }
+        ) { [weak self] _ in
+            guard let self else { return }
+            // Repeating UIKit animations are removed when the app is suspended.
+            // Restart the inline guide before reacting to the return from PiP.
+            self.animationView?.start()
+            self.onWillEnterForeground?()
+        }
         onDidAppear?()
     }
 

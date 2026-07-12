@@ -66,7 +66,7 @@ public final class OnboardingAnimationView: UIView {
             case .actionExtension: return 6.5
             case .safariExtension: return 6.8
             case .shortcutInstall: return 5.5
-            case .actionButtonSettings: return 7.0
+            case .actionButtonSettings: return 8.5
             }
         }
     }
@@ -89,7 +89,7 @@ public final class OnboardingAnimationView: UIView {
         case .actionExtension: height = 360; width = 220
         case .safariExtension: height = 360; width = 220
         case .shortcutInstall: height = 300; width = 220
-        case .actionButtonSettings: height = 300; width = 280
+        case .actionButtonSettings: height = 360; width = 220
         case .actionButton: height = 230; width = 260
         default: height = 150; width = 260
         }
@@ -935,6 +935,15 @@ public final class OnboardingAnimationView: UIView {
         sxMenuRipple.translatesAutoresizingMaskIntoConstraints = false
         addressBar.addSubview(sxMenuRipple)
 
+        // Safari's bottom chrome ends above the device home indicator. Keeping the
+        // safe-area strip inside the phone makes the address bar read as Safari UI
+        // instead of looking like it is sitting underneath the system gesture bar.
+        let homeIndicator = UIView()
+        homeIndicator.backgroundColor = .label
+        homeIndicator.layer.cornerRadius = 1.5
+        homeIndicator.translatesAutoresizingMaskIntoConstraints = false
+        addressBar.addSubview(homeIndicator)
+
         // Safari's page menu. It intentionally uses the same compact, bottom-sheet
         // form as Safari's `aA` menu, while keeping just the few rows needed to
         // explain the real path to extension management.
@@ -1010,9 +1019,9 @@ public final class OnboardingAnimationView: UIView {
             addressBar.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
             addressBar.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
             addressBar.bottomAnchor.constraint(equalTo: phone.bottomAnchor),
-            addressBar.heightAnchor.constraint(equalToConstant: 40),
+            addressBar.heightAnchor.constraint(equalToConstant: 52),
             pageMenuButton.leadingAnchor.constraint(equalTo: addressBar.leadingAnchor, constant: 10),
-            pageMenuButton.centerYAnchor.constraint(equalTo: addressBar.centerYAnchor),
+            pageMenuButton.topAnchor.constraint(equalTo: addressBar.topAnchor, constant: 5),
             pageMenuButton.widthAnchor.constraint(equalToConstant: 26),
             pageMenuButton.heightAnchor.constraint(equalToConstant: 26),
             sxMenuRipple.centerXAnchor.constraint(equalTo: pageMenuButton.centerXAnchor),
@@ -1021,14 +1030,18 @@ public final class OnboardingAnimationView: UIView {
             sxMenuRipple.heightAnchor.constraint(equalToConstant: 30),
             urlPill.leadingAnchor.constraint(equalTo: pageMenuButton.trailingAnchor, constant: 6),
             urlPill.trailingAnchor.constraint(equalTo: trailingIcons.leadingAnchor, constant: -8),
-            urlPill.centerYAnchor.constraint(equalTo: addressBar.centerYAnchor),
+            urlPill.centerYAnchor.constraint(equalTo: pageMenuButton.centerYAnchor),
             urlPill.heightAnchor.constraint(equalToConstant: 18),
             urlPlaceholder.centerXAnchor.constraint(equalTo: urlPill.centerXAnchor),
             urlPlaceholder.centerYAnchor.constraint(equalTo: urlPill.centerYAnchor),
             urlPlaceholder.widthAnchor.constraint(equalToConstant: 40),
             urlPlaceholder.heightAnchor.constraint(equalToConstant: 6),
             trailingIcons.trailingAnchor.constraint(equalTo: addressBar.trailingAnchor, constant: -10),
-            trailingIcons.centerYAnchor.constraint(equalTo: addressBar.centerYAnchor),
+            trailingIcons.centerYAnchor.constraint(equalTo: pageMenuButton.centerYAnchor),
+            homeIndicator.centerXAnchor.constraint(equalTo: addressBar.centerXAnchor),
+            homeIndicator.bottomAnchor.constraint(equalTo: addressBar.bottomAnchor, constant: -5),
+            homeIndicator.widthAnchor.constraint(equalToConstant: 54),
+            homeIndicator.heightAnchor.constraint(equalToConstant: 3),
 
             sxMenuShell.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
             sxMenuShell.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
@@ -1068,13 +1081,17 @@ public final class OnboardingAnimationView: UIView {
 
     private func animateSafariExtension() {
         layoutIfNeeded()
-        let menuDrop = CGAffineTransform(translationX: 0, y: sxMenuShell.bounds.height + 8)
-        let extensionsDrop = CGAffineTransform(translationX: 0, y: sxExtShell.bounds.height + 8)
+        // Move hidden sheets beyond the phone's bottom edge, including Safari's
+        // chrome and home-indicator strip. A shell translated by only its own
+        // height remains visibly stacked over the URL bar.
+        let offscreenDistance = sxMenuShell.bounds.height + 60
+        let menuDrop = CGAffineTransform(translationX: 0, y: offscreenDistance)
+        let extensionsDrop = CGAffineTransform(translationX: 0, y: offscreenDistance)
 
         func reset() {
             sxMenuShell.transform = menuDrop
             sxMenuShell.alpha = 1
-            sxExtShell.transform = extensionsDrop
+            sxExtShell.transform = .identity
             sxExtShell.alpha = 0
             sxManageHighlight.alpha = 0
             sxMenuRipple.alpha = 0
@@ -1101,15 +1118,11 @@ public final class OnboardingAnimationView: UIView {
             UIView.addKeyframe(withRelativeStartTime: 0.34, relativeDuration: 0.06) {
                 self.sxManageHighlight.alpha = 1
             }
-            // The page menu closes first. A Safari submenu never remains on-screen
-            // underneath the extensions manager, so keep the two panels separate.
-            UIView.addKeyframe(withRelativeStartTime: 0.42, relativeDuration: 0.10) {
-                self.sxMenuShell.transform = menuDrop
+            // Safari replaces this level in place: dissolve the page menu into
+            // Manage Extensions instead of dropping one sheet and raising another.
+            UIView.addKeyframe(withRelativeStartTime: 0.42, relativeDuration: 0.14) {
+                self.sxMenuShell.alpha = 0
                 self.sxManageHighlight.alpha = 0
-            }
-            // The extensions manager then rises into the same clear sheet area.
-            UIView.addKeyframe(withRelativeStartTime: 0.55, relativeDuration: 0.14) {
-                self.sxExtShell.transform = .identity
                 self.sxExtShell.alpha = 1
             }
             // Flip the Luna toggle on.
@@ -1156,9 +1169,9 @@ public final class OnboardingAnimationView: UIView {
         return v
     }
 
-    /// A Shortcuts-app icon facsimile: a blue-to-purple gradient rounded square
-    /// with a white two-diamond motif approximated by two overlapping rotated
-    /// rounded squares (the real glyph has no exact SF Symbol match).
+    /// A compact recreation of the current Shortcuts icon: deep-violet field and
+    /// two interlocking pink/blue rounded lozenges. It intentionally avoids the
+    /// old white-diamond glyph, which no longer resembles the shipping app icon.
     private func shortcutsAppIcon() -> UIView {
         let icon = siShortcutIcon
         icon.layer.cornerRadius = 8
@@ -1169,32 +1182,35 @@ public final class OnboardingAnimationView: UIView {
         icon.heightAnchor.constraint(equalToConstant: 30).isActive = true
 
         let gradient = CAGradientLayer()
-        gradient.colors = [UIColor.systemBlue.cgColor, UIColor.systemPurple.cgColor]
-        gradient.startPoint = CGPoint(x: 0, y: 0)
-        gradient.endPoint = CGPoint(x: 1, y: 1)
+        gradient.colors = [UIColor(red: 0.30, green: 0.02, blue: 0.65, alpha: 1).cgColor,
+                           UIColor(red: 0.12, green: 0.02, blue: 0.45, alpha: 1).cgColor]
+        gradient.startPoint = CGPoint(x: 0.2, y: 0)
+        gradient.endPoint = CGPoint(x: 0.8, y: 1)
         gradient.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
         icon.layer.insertSublayer(gradient, at: 0)
 
-        func diamond(size: CGFloat, alpha: CGFloat) -> UIView {
+        func lozenge(size: CGSize, color: UIColor) -> UIView {
             let d = UIView()
-            d.backgroundColor = UIColor.white.withAlphaComponent(alpha)
-            d.layer.cornerRadius = size * 0.22
+            d.backgroundColor = color
+            d.layer.cornerRadius = 4
             d.layer.cornerCurve = .continuous
             d.transform = CGAffineTransform(rotationAngle: .pi / 4)
             d.translatesAutoresizingMaskIntoConstraints = false
-            d.widthAnchor.constraint(equalToConstant: size).isActive = true
-            d.heightAnchor.constraint(equalToConstant: size).isActive = true
+            d.widthAnchor.constraint(equalToConstant: size.width).isActive = true
+            d.heightAnchor.constraint(equalToConstant: size.height).isActive = true
             return d
         }
-        let back = diamond(size: 15, alpha: 0.55)
-        let front = diamond(size: 10, alpha: 0.95)
+        let back = lozenge(size: CGSize(width: 16, height: 11),
+                           color: UIColor(red: 0.25, green: 0.33, blue: 0.88, alpha: 1))
+        let front = lozenge(size: CGSize(width: 16, height: 11),
+                            color: UIColor(red: 0.96, green: 0.24, blue: 0.67, alpha: 1))
         icon.addSubview(back)
         icon.addSubview(front)
         NSLayoutConstraint.activate([
-            back.centerXAnchor.constraint(equalTo: icon.centerXAnchor, constant: -2),
-            back.centerYAnchor.constraint(equalTo: icon.centerYAnchor, constant: -2),
-            front.centerXAnchor.constraint(equalTo: icon.centerXAnchor, constant: 3),
-            front.centerYAnchor.constraint(equalTo: icon.centerYAnchor, constant: 3),
+            front.centerXAnchor.constraint(equalTo: icon.centerXAnchor, constant: 1),
+            front.centerYAnchor.constraint(equalTo: icon.centerYAnchor, constant: -4),
+            back.centerXAnchor.constraint(equalTo: icon.centerXAnchor, constant: -1),
+            back.centerYAnchor.constraint(equalTo: icon.centerYAnchor, constant: 4),
         ])
         return icon
     }
@@ -1210,40 +1226,57 @@ public final class OnboardingAnimationView: UIView {
         phone.translatesAutoresizingMaskIntoConstraints = false
         addSubview(phone)
 
-        // A generic "file" card standing in for the bundled .shortcut file.
+        // Begin on Luna's actual shortcut-onboarding step. The little static phone
+        // inside this phone is the intentional one-level "mirror" of the guide;
+        // it communicates what the user is looking at without recursively running
+        // another animation inside itself.
         let page = UIView()
         page.backgroundColor = .secondarySystemBackground
         page.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(page)
-        let fileCard = UIView()
-        fileCard.backgroundColor = .systemBackground
-        fileCard.layer.cornerRadius = 10
-        fileCard.layer.cornerCurve = .continuous
-        fileCard.layer.borderColor = UIColor.separator.cgColor
-        fileCard.layer.borderWidth = 0.5
-        fileCard.translatesAutoresizingMaskIntoConstraints = false
-        page.addSubview(fileCard)
-        let fileIcon = UIImageView(image: UIImage(
-            systemName: "app.connected.to.app.below.fill",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 22)))
-        fileIcon.tintColor = accent
-        fileIcon.contentMode = .center
-        fileIcon.translatesAutoresizingMaskIntoConstraints = false
-        fileCard.addSubview(fileIcon)
-        let fileNamePlaceholder = bar(width: 0.6, height: 6)
-        fileNamePlaceholder.translatesAutoresizingMaskIntoConstraints = false
-        fileNamePlaceholder.widthAnchor.constraint(equalToConstant: 60).isActive = true
-        fileCard.addSubview(fileNamePlaceholder)
+        let nestedPhone = UIView()
+        nestedPhone.backgroundColor = .systemBackground
+        nestedPhone.layer.cornerRadius = 10
+        nestedPhone.layer.borderColor = UIColor.systemGray3.cgColor
+        nestedPhone.layer.borderWidth = 1.5
+        nestedPhone.translatesAutoresizingMaskIntoConstraints = false
+        page.addSubview(nestedPhone)
+        let nestedVisual = UIImageView(image: UIImage(
+            systemName: "square.and.arrow.down.on.square",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)))
+        nestedVisual.tintColor = accent
+        nestedVisual.translatesAutoresizingMaskIntoConstraints = false
+        nestedPhone.addSubview(nestedVisual)
+        let nestedButton = UIView()
+        nestedButton.backgroundColor = accent
+        nestedButton.layer.cornerRadius = 4
+        nestedButton.translatesAutoresizingMaskIntoConstraints = false
+        nestedPhone.addSubview(nestedButton)
+        let stepTitle = UILabel()
+        stepTitle.text = "Save anything, instantly"
+        stepTitle.font = .systemFont(ofSize: 11, weight: .bold)
+        stepTitle.textAlignment = .center
+        stepTitle.translatesAutoresizingMaskIntoConstraints = false
+        page.addSubview(stepTitle)
+        let stepCopy = UILabel()
+        stepCopy.text = "Import Send To Luna into Shortcuts"
+        stepCopy.font = .systemFont(ofSize: 7)
+        stepCopy.textColor = .secondaryLabel
+        stepCopy.textAlignment = .center
+        stepCopy.translatesAutoresizingMaskIntoConstraints = false
+        page.addSubview(stepCopy)
 
-        // Bottom toolbar with a single centered Share button.
+        // The real primary action shown on the onboarding step.
         let toolbar = UIView()
-        toolbar.backgroundColor = .systemBackground
+        toolbar.backgroundColor = accent
+        toolbar.layer.cornerRadius = 9
+        toolbar.layer.cornerCurve = .continuous
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         phone.addSubview(toolbar)
-        let shareIcon = UIImageView(image: UIImage(
-            systemName: "square.and.arrow.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16)))
-        shareIcon.tintColor = accent
-        shareIcon.contentMode = .center
+        let shareIcon = UILabel()
+        shareIcon.text = "Install Shortcut"
+        shareIcon.textColor = .white
+        shareIcon.font = .systemFont(ofSize: 10, weight: .semibold)
         shareIcon.translatesAutoresizingMaskIntoConstraints = false
         toolbar.addSubview(shareIcon)
         siShareRipple.backgroundColor = accent.withAlphaComponent(0.3)
@@ -1298,19 +1331,27 @@ public final class OnboardingAnimationView: UIView {
             page.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
             page.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
             page.bottomAnchor.constraint(equalTo: toolbar.topAnchor),
-            fileCard.centerXAnchor.constraint(equalTo: page.centerXAnchor),
-            fileCard.centerYAnchor.constraint(equalTo: page.centerYAnchor, constant: -10),
-            fileCard.widthAnchor.constraint(equalToConstant: 100),
-            fileCard.heightAnchor.constraint(equalToConstant: 74),
-            fileIcon.topAnchor.constraint(equalTo: fileCard.topAnchor, constant: 10),
-            fileIcon.centerXAnchor.constraint(equalTo: fileCard.centerXAnchor),
-            fileNamePlaceholder.bottomAnchor.constraint(equalTo: fileCard.bottomAnchor, constant: -12),
-            fileNamePlaceholder.centerXAnchor.constraint(equalTo: fileCard.centerXAnchor),
+            nestedPhone.centerXAnchor.constraint(equalTo: page.centerXAnchor),
+            nestedPhone.topAnchor.constraint(equalTo: page.topAnchor, constant: 26),
+            nestedPhone.widthAnchor.constraint(equalToConstant: 58),
+            nestedPhone.heightAnchor.constraint(equalToConstant: 76),
+            nestedVisual.centerXAnchor.constraint(equalTo: nestedPhone.centerXAnchor),
+            nestedVisual.centerYAnchor.constraint(equalTo: nestedPhone.centerYAnchor, constant: -7),
+            nestedButton.leadingAnchor.constraint(equalTo: nestedPhone.leadingAnchor, constant: 9),
+            nestedButton.trailingAnchor.constraint(equalTo: nestedPhone.trailingAnchor, constant: -9),
+            nestedButton.bottomAnchor.constraint(equalTo: nestedPhone.bottomAnchor, constant: -9),
+            nestedButton.heightAnchor.constraint(equalToConstant: 7),
+            stepTitle.topAnchor.constraint(equalTo: nestedPhone.bottomAnchor, constant: 12),
+            stepTitle.leadingAnchor.constraint(equalTo: page.leadingAnchor, constant: 8),
+            stepTitle.trailingAnchor.constraint(equalTo: page.trailingAnchor, constant: -8),
+            stepCopy.topAnchor.constraint(equalTo: stepTitle.bottomAnchor, constant: 5),
+            stepCopy.leadingAnchor.constraint(equalTo: page.leadingAnchor, constant: 8),
+            stepCopy.trailingAnchor.constraint(equalTo: page.trailingAnchor, constant: -8),
 
-            toolbar.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
-            toolbar.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
-            toolbar.bottomAnchor.constraint(equalTo: phone.bottomAnchor),
-            toolbar.heightAnchor.constraint(equalToConstant: 44),
+            toolbar.leadingAnchor.constraint(equalTo: phone.leadingAnchor, constant: 14),
+            toolbar.trailingAnchor.constraint(equalTo: phone.trailingAnchor, constant: -14),
+            toolbar.bottomAnchor.constraint(equalTo: phone.bottomAnchor, constant: -14),
+            toolbar.heightAnchor.constraint(equalToConstant: 32),
             shareIcon.centerXAnchor.constraint(equalTo: toolbar.centerXAnchor),
             shareIcon.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
             siShareRipple.centerXAnchor.constraint(equalTo: shareIcon.centerXAnchor),
@@ -1464,7 +1505,7 @@ public final class OnboardingAnimationView: UIView {
         return axActionRow(icon: icon, trailing: placeholder)
     }
 
-    private func buildActionButtonSettings() {
+    private func legacyBuildActionButtonSettings() {
         let darkScreen = UIView()
         darkScreen.backgroundColor = UIColor(white: 0.06, alpha: 1)
         darkScreen.layer.cornerRadius = 22
@@ -1672,7 +1713,7 @@ public final class OnboardingAnimationView: UIView {
         ])
     }
 
-    private func animateActionButtonSettings() {
+    private func legacyAnimateActionButtonSettings() {
         layoutIfNeeded()
         let pickerOffscreen = CGAffineTransform(
             translationX: absOptionsSheet.bounds.width + 8, y: 0)
@@ -1738,6 +1779,364 @@ public final class OnboardingAnimationView: UIView {
                 self.absCardPrev.alpha = 1
                 self.absChooseRow.alpha = 0
                 self.absChooseRow.transform = CGAffineTransform(translationX: 0, y: 6)
+            }
+        }
+    }
+
+    // MARK: - Current Action Button guide (accurate Settings → Safari sequence)
+
+    private let abSettingsScreen = UIView()
+    private let abSafariScreen = UIView()
+    private let abChooseButton = UIView()
+    private let abLunaChoice = UIView()
+    private let abPressRipple = UIView()
+    private let abIsland = UIView()
+    private let abIslandIcon = UIImageView()
+    private let abIslandCheck = UIImageView(image: UIImage(
+        systemName: "checkmark.circle.fill",
+        withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)))
+    private var abIslandWidth: NSLayoutConstraint!
+    private var abIslandHeight: NSLayoutConstraint!
+
+    /// Recreates the current full-height Action Button Settings presentation from
+    /// the device references: circular back button, tall titanium phone, large
+    /// illuminated hardware control, neighboring action glyphs, page dots, and the
+    /// selected shortcut. The second page is Safari so the guide demonstrates the
+    /// complete job rather than ending as soon as Settings is configured.
+    private func buildActionButtonSettings() {
+        let phone = UIView()
+        phone.backgroundColor = .systemBackground
+        phone.layer.borderColor = UIColor.systemGray3.cgColor
+        phone.layer.borderWidth = 3
+        phone.layer.cornerRadius = 30
+        phone.layer.cornerCurve = .continuous
+        phone.clipsToBounds = true
+        phone.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(phone)
+
+        abSettingsScreen.backgroundColor = .systemBackground
+        abSettingsScreen.translatesAutoresizingMaskIntoConstraints = false
+        phone.addSubview(abSettingsScreen)
+
+        let time = UILabel()
+        time.text = "9:41"
+        time.font = .systemFont(ofSize: 8, weight: .semibold)
+        time.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(time)
+        let statusIsland = UIView()
+        statusIsland.backgroundColor = .black
+        statusIsland.layer.cornerRadius = 6
+        statusIsland.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(statusIsland)
+        let status = UIImageView(image: UIImage(
+            systemName: "wifi", withConfiguration: UIImage.SymbolConfiguration(pointSize: 7, weight: .bold)))
+        status.tintColor = .label
+        status.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(status)
+
+        let backCircle = UIView()
+        backCircle.backgroundColor = .tertiarySystemFill
+        backCircle.layer.cornerRadius = 13
+        backCircle.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(backCircle)
+        let backChevron = UIImageView(image: UIImage(
+            systemName: "chevron.left", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
+        backChevron.tintColor = .label
+        backChevron.translatesAutoresizingMaskIntoConstraints = false
+        backCircle.addSubview(backChevron)
+
+        let device = UIView()
+        device.backgroundColor = .secondarySystemBackground
+        device.layer.cornerRadius = 42
+        device.layer.cornerCurve = .continuous
+        device.layer.borderColor = UIColor.separator.cgColor
+        device.layer.borderWidth = 1
+        device.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(device)
+        let deviceGlow = UIView()
+        deviceGlow.backgroundColor = UIColor.systemGray.withAlphaComponent(0.22)
+        deviceGlow.layer.cornerRadius = 32
+        deviceGlow.translatesAutoresizingMaskIntoConstraints = false
+        device.addSubview(deviceGlow)
+
+        let actionCapsule = UIView()
+        actionCapsule.backgroundColor = accent.withAlphaComponent(0.88)
+        actionCapsule.layer.cornerRadius = 25
+        actionCapsule.layer.cornerCurve = .continuous
+        actionCapsule.layer.borderColor = accent.withAlphaComponent(0.65).cgColor
+        actionCapsule.layer.borderWidth = 3
+        actionCapsule.translatesAutoresizingMaskIntoConstraints = false
+        device.addSubview(actionCapsule)
+        let shortcutGlyph = UIImageView(image: UIImage(
+            systemName: "square.stack.3d.up.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)))
+        shortcutGlyph.tintColor = .white
+        shortcutGlyph.translatesAutoresizingMaskIntoConstraints = false
+        actionCapsule.addSubview(shortcutGlyph)
+
+        let previousGlyph = UIImageView(image: UIImage(
+            systemName: "switch.2", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)))
+        previousGlyph.tintColor = .tertiaryLabel
+        previousGlyph.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(previousGlyph)
+        let nextGlyph = UIImageView(image: UIImage(
+            systemName: "accessibility", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)))
+        nextGlyph.tintColor = .tertiaryLabel
+        nextGlyph.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(nextGlyph)
+
+        let dots = UIStackView()
+        dots.axis = .horizontal
+        dots.spacing = 5
+        dots.translatesAutoresizingMaskIntoConstraints = false
+        for index in 0..<10 {
+            let dot = UIView()
+            dot.backgroundColor = index == 7 ? .label : .tertiaryLabel
+            dot.layer.cornerRadius = 2.5
+            dot.translatesAutoresizingMaskIntoConstraints = false
+            dot.widthAnchor.constraint(equalToConstant: 5).isActive = true
+            dot.heightAnchor.constraint(equalToConstant: 5).isActive = true
+            dots.addArrangedSubview(dot)
+        }
+        abSettingsScreen.addSubview(dots)
+
+        let title = UILabel()
+        title.text = "Shortcut"
+        title.font = .systemFont(ofSize: 19, weight: .bold)
+        title.textAlignment = .center
+        title.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(title)
+        let subtitle = UILabel()
+        subtitle.text = "Open an app or run your\nfavorite shortcut."
+        subtitle.font = .systemFont(ofSize: 9)
+        subtitle.textColor = .secondaryLabel
+        subtitle.textAlignment = .center
+        subtitle.numberOfLines = 2
+        subtitle.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(subtitle)
+
+        abChooseButton.backgroundColor = .systemBlue
+        abChooseButton.layer.cornerRadius = 12
+        abChooseButton.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(abChooseButton)
+        let chooseLabel = UILabel()
+        chooseLabel.text = "Choose a Control…"
+        chooseLabel.textColor = .white
+        chooseLabel.font = .systemFont(ofSize: 10, weight: .semibold)
+        chooseLabel.translatesAutoresizingMaskIntoConstraints = false
+        abChooseButton.addSubview(chooseLabel)
+
+        abLunaChoice.backgroundColor = .tertiarySystemFill
+        abLunaChoice.layer.cornerRadius = 12
+        abLunaChoice.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(abLunaChoice)
+        let lunaIcon = UIImageView(image: lunaAppIconImage())
+        lunaIcon.layer.cornerRadius = 4
+        lunaIcon.clipsToBounds = true
+        lunaIcon.translatesAutoresizingMaskIntoConstraints = false
+        let lunaName = UILabel()
+        lunaName.text = "Send To Luna"
+        lunaName.font = .systemFont(ofSize: 10, weight: .semibold)
+        let lunaStack = UIStackView(arrangedSubviews: [lunaIcon, lunaName])
+        lunaStack.spacing = 6
+        lunaStack.alignment = .center
+        lunaStack.translatesAutoresizingMaskIntoConstraints = false
+        abLunaChoice.addSubview(lunaStack)
+
+        // Safari page used after setup: gray-box website, correct bottom safe-area
+        // order, physical-button feedback, and a Dynamic Island save confirmation.
+        abSafariScreen.backgroundColor = .secondarySystemBackground
+        abSafariScreen.translatesAutoresizingMaskIntoConstraints = false
+        phone.addSubview(abSafariScreen)
+        let webLines = UIStackView(arrangedSubviews: [
+            bar(width: 0.72, height: 10, color: .label.withAlphaComponent(0.65)),
+            bar(width: 0.94, height: 5), bar(width: 0.86, height: 5),
+            bar(width: 0.91, height: 5), bar(width: 0.64, height: 5),
+        ])
+        webLines.axis = .vertical
+        webLines.spacing = 8
+        webLines.alignment = .fill
+        webLines.setCustomSpacing(15, after: webLines.arrangedSubviews[0])
+        webLines.translatesAutoresizingMaskIntoConstraints = false
+        abSafariScreen.addSubview(webLines)
+        let safariChrome = UIView()
+        safariChrome.backgroundColor = .systemBackground
+        safariChrome.translatesAutoresizingMaskIntoConstraints = false
+        abSafariScreen.addSubview(safariChrome)
+        let urlPill = UIView()
+        urlPill.backgroundColor = .secondarySystemBackground
+        urlPill.layer.cornerRadius = 10
+        urlPill.translatesAutoresizingMaskIntoConstraints = false
+        safariChrome.addSubview(urlPill)
+        let urlText = UILabel()
+        urlText.text = "example.com"
+        urlText.font = .systemFont(ofSize: 8, weight: .medium)
+        urlText.textColor = .secondaryLabel
+        urlText.translatesAutoresizingMaskIntoConstraints = false
+        urlPill.addSubview(urlText)
+        let chromeIcons = UIStackView(arrangedSubviews: [toolbarIcon("chevron.left"), toolbarIcon("chevron.right"),
+                                                          toolbarIcon("square.and.arrow.up"), toolbarIcon("square.on.square")])
+        chromeIcons.axis = .horizontal
+        chromeIcons.distribution = .equalSpacing
+        chromeIcons.translatesAutoresizingMaskIntoConstraints = false
+        safariChrome.addSubview(chromeIcons)
+        let home = UIView()
+        home.backgroundColor = .label
+        home.layer.cornerRadius = 1.5
+        home.translatesAutoresizingMaskIntoConstraints = false
+        safariChrome.addSubview(home)
+        let hardwareButton = UIView()
+        hardwareButton.backgroundColor = .systemGray
+        hardwareButton.layer.cornerRadius = 2
+        hardwareButton.translatesAutoresizingMaskIntoConstraints = false
+        abSafariScreen.addSubview(hardwareButton)
+        abPressRipple.backgroundColor = accent.withAlphaComponent(0.38)
+        abPressRipple.layer.cornerRadius = 15
+        abPressRipple.translatesAutoresizingMaskIntoConstraints = false
+        abSafariScreen.addSubview(abPressRipple)
+
+        abIsland.backgroundColor = .black
+        abIsland.layer.cornerRadius = 6
+        abIsland.translatesAutoresizingMaskIntoConstraints = false
+        abSafariScreen.addSubview(abIsland)
+        abIslandIcon.image = lunaAppIconImage()
+        abIslandIcon.layer.cornerRadius = 2
+        abIslandIcon.clipsToBounds = true
+        abIslandIcon.translatesAutoresizingMaskIntoConstraints = false
+        abIsland.addSubview(abIslandIcon)
+        abIslandCheck.tintColor = .systemGreen
+        abIslandCheck.translatesAutoresizingMaskIntoConstraints = false
+        abIsland.addSubview(abIslandCheck)
+        abIslandWidth = abIsland.widthAnchor.constraint(equalToConstant: 34)
+        abIslandHeight = abIsland.heightAnchor.constraint(equalToConstant: 12)
+
+        NSLayoutConstraint.activate([
+            phone.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            phone.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            phone.centerXAnchor.constraint(equalTo: centerXAnchor),
+            phone.widthAnchor.constraint(equalTo: phone.heightAnchor, multiplier: 0.49),
+            abSettingsScreen.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
+            abSettingsScreen.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
+            abSettingsScreen.topAnchor.constraint(equalTo: phone.topAnchor),
+            abSettingsScreen.bottomAnchor.constraint(equalTo: phone.bottomAnchor),
+            time.leadingAnchor.constraint(equalTo: abSettingsScreen.leadingAnchor, constant: 14),
+            time.topAnchor.constraint(equalTo: abSettingsScreen.topAnchor, constant: 10),
+            statusIsland.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor),
+            statusIsland.topAnchor.constraint(equalTo: abSettingsScreen.topAnchor, constant: 8),
+            statusIsland.widthAnchor.constraint(equalToConstant: 46), statusIsland.heightAnchor.constraint(equalToConstant: 13),
+            status.trailingAnchor.constraint(equalTo: abSettingsScreen.trailingAnchor, constant: -14),
+            status.centerYAnchor.constraint(equalTo: time.centerYAnchor),
+            backCircle.leadingAnchor.constraint(equalTo: abSettingsScreen.leadingAnchor, constant: 10),
+            backCircle.topAnchor.constraint(equalTo: abSettingsScreen.topAnchor, constant: 34),
+            backCircle.widthAnchor.constraint(equalToConstant: 26), backCircle.heightAnchor.constraint(equalToConstant: 26),
+            backChevron.centerXAnchor.constraint(equalTo: backCircle.centerXAnchor), backChevron.centerYAnchor.constraint(equalTo: backCircle.centerYAnchor),
+            device.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor),
+            device.topAnchor.constraint(equalTo: abSettingsScreen.topAnchor, constant: 70),
+            device.widthAnchor.constraint(equalToConstant: 80), device.heightAnchor.constraint(equalToConstant: 134),
+            deviceGlow.centerXAnchor.constraint(equalTo: device.centerXAnchor), deviceGlow.centerYAnchor.constraint(equalTo: device.centerYAnchor),
+            deviceGlow.widthAnchor.constraint(equalToConstant: 66), deviceGlow.heightAnchor.constraint(equalToConstant: 120),
+            actionCapsule.centerXAnchor.constraint(equalTo: device.centerXAnchor), actionCapsule.centerYAnchor.constraint(equalTo: device.centerYAnchor),
+            actionCapsule.widthAnchor.constraint(equalToConstant: 48), actionCapsule.heightAnchor.constraint(equalToConstant: 76),
+            shortcutGlyph.centerXAnchor.constraint(equalTo: actionCapsule.centerXAnchor), shortcutGlyph.centerYAnchor.constraint(equalTo: actionCapsule.centerYAnchor),
+            previousGlyph.trailingAnchor.constraint(equalTo: device.leadingAnchor, constant: -12), previousGlyph.centerYAnchor.constraint(equalTo: device.centerYAnchor),
+            nextGlyph.leadingAnchor.constraint(equalTo: device.trailingAnchor, constant: 12), nextGlyph.centerYAnchor.constraint(equalTo: device.centerYAnchor),
+            dots.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), dots.topAnchor.constraint(equalTo: device.bottomAnchor, constant: 9),
+            title.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), title.topAnchor.constraint(equalTo: dots.bottomAnchor, constant: 9),
+            subtitle.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 4),
+            abChooseButton.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), abChooseButton.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 9),
+            abChooseButton.widthAnchor.constraint(equalToConstant: 112), abChooseButton.heightAnchor.constraint(equalToConstant: 26),
+            chooseLabel.centerXAnchor.constraint(equalTo: abChooseButton.centerXAnchor), chooseLabel.centerYAnchor.constraint(equalTo: abChooseButton.centerYAnchor),
+            abLunaChoice.centerXAnchor.constraint(equalTo: abChooseButton.centerXAnchor), abLunaChoice.centerYAnchor.constraint(equalTo: abChooseButton.centerYAnchor),
+            abLunaChoice.widthAnchor.constraint(equalTo: abChooseButton.widthAnchor), abLunaChoice.heightAnchor.constraint(equalTo: abChooseButton.heightAnchor),
+            lunaStack.centerXAnchor.constraint(equalTo: abLunaChoice.centerXAnchor), lunaStack.centerYAnchor.constraint(equalTo: abLunaChoice.centerYAnchor),
+            lunaIcon.widthAnchor.constraint(equalToConstant: 18), lunaIcon.heightAnchor.constraint(equalToConstant: 18),
+
+            abSafariScreen.leadingAnchor.constraint(equalTo: phone.leadingAnchor), abSafariScreen.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
+            abSafariScreen.topAnchor.constraint(equalTo: phone.topAnchor), abSafariScreen.bottomAnchor.constraint(equalTo: phone.bottomAnchor),
+            webLines.topAnchor.constraint(equalTo: abSafariScreen.topAnchor, constant: 48),
+            webLines.leadingAnchor.constraint(equalTo: abSafariScreen.leadingAnchor, constant: 14), webLines.trailingAnchor.constraint(equalTo: abSafariScreen.trailingAnchor, constant: -14),
+            safariChrome.leadingAnchor.constraint(equalTo: abSafariScreen.leadingAnchor), safariChrome.trailingAnchor.constraint(equalTo: abSafariScreen.trailingAnchor),
+            safariChrome.bottomAnchor.constraint(equalTo: abSafariScreen.bottomAnchor), safariChrome.heightAnchor.constraint(equalToConstant: 72),
+            urlPill.topAnchor.constraint(equalTo: safariChrome.topAnchor, constant: 5), urlPill.leadingAnchor.constraint(equalTo: safariChrome.leadingAnchor, constant: 12),
+            urlPill.trailingAnchor.constraint(equalTo: safariChrome.trailingAnchor, constant: -12), urlPill.heightAnchor.constraint(equalToConstant: 22),
+            urlText.centerXAnchor.constraint(equalTo: urlPill.centerXAnchor), urlText.centerYAnchor.constraint(equalTo: urlPill.centerYAnchor),
+            chromeIcons.topAnchor.constraint(equalTo: urlPill.bottomAnchor, constant: 7), chromeIcons.leadingAnchor.constraint(equalTo: safariChrome.leadingAnchor, constant: 18),
+            chromeIcons.trailingAnchor.constraint(equalTo: safariChrome.trailingAnchor, constant: -18), chromeIcons.heightAnchor.constraint(equalToConstant: 16),
+            home.centerXAnchor.constraint(equalTo: safariChrome.centerXAnchor), home.bottomAnchor.constraint(equalTo: safariChrome.bottomAnchor, constant: -5),
+            home.widthAnchor.constraint(equalToConstant: 56), home.heightAnchor.constraint(equalToConstant: 3),
+            hardwareButton.leadingAnchor.constraint(equalTo: abSafariScreen.leadingAnchor, constant: -1), hardwareButton.topAnchor.constraint(equalTo: abSafariScreen.topAnchor, constant: 72),
+            hardwareButton.widthAnchor.constraint(equalToConstant: 5), hardwareButton.heightAnchor.constraint(equalToConstant: 30),
+            abPressRipple.centerXAnchor.constraint(equalTo: hardwareButton.centerXAnchor), abPressRipple.centerYAnchor.constraint(equalTo: hardwareButton.centerYAnchor),
+            abPressRipple.widthAnchor.constraint(equalToConstant: 30), abPressRipple.heightAnchor.constraint(equalToConstant: 30),
+            abIsland.centerXAnchor.constraint(equalTo: abSafariScreen.centerXAnchor), abIsland.topAnchor.constraint(equalTo: abSafariScreen.topAnchor, constant: 9),
+            abIslandWidth, abIslandHeight,
+            abIslandIcon.leadingAnchor.constraint(equalTo: abIsland.leadingAnchor, constant: 6), abIslandIcon.centerYAnchor.constraint(equalTo: abIsland.centerYAnchor),
+            abIslandIcon.widthAnchor.constraint(equalToConstant: 10), abIslandIcon.heightAnchor.constraint(equalToConstant: 10),
+            abIslandCheck.trailingAnchor.constraint(equalTo: abIsland.trailingAnchor, constant: -6), abIslandCheck.centerYAnchor.constraint(equalTo: abIsland.centerYAnchor),
+            abIslandCheck.widthAnchor.constraint(equalToConstant: 10), abIslandCheck.heightAnchor.constraint(equalToConstant: 10),
+        ])
+    }
+
+    private func animateActionButtonSettings() {
+        layoutIfNeeded()
+        let safariOffscreen = CGAffineTransform(translationX: bounds.width, y: 0)
+
+        func reset() {
+            abChooseButton.alpha = 1
+            abLunaChoice.alpha = 0
+            abLunaChoice.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+            abSafariScreen.transform = safariOffscreen
+            abPressRipple.alpha = 0
+            abPressRipple.transform = CGAffineTransform(scaleX: 0.25, y: 0.25)
+            abIslandWidth.constant = 34
+            abIslandHeight.constant = 12
+            abIsland.layer.cornerRadius = 6
+            abIslandIcon.alpha = 0
+            abIslandCheck.alpha = 0
+            layoutIfNeeded()
+        }
+        reset()
+
+        UIView.animateKeyframes(withDuration: 8.5, delay: 0.4, options: [.repeat, .calculationModeCubic]) {
+            // Choose the installed Luna shortcut on the accurate Settings page.
+            UIView.addKeyframe(withRelativeStartTime: 0.12, relativeDuration: 0.08) {
+                self.abChooseButton.transform = CGAffineTransform(scaleX: 0.94, y: 0.94)
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.20, relativeDuration: 0.10) {
+                self.abChooseButton.alpha = 0
+                self.abChooseButton.transform = .identity
+                self.abLunaChoice.alpha = 1
+                self.abLunaChoice.transform = .identity
+            }
+            // Open Safari after setup, on a neutral placeholder website.
+            UIView.addKeyframe(withRelativeStartTime: 0.43, relativeDuration: 0.16) {
+                self.abSafariScreen.transform = .identity
+            }
+            // Press the physical Action Button.
+            UIView.addKeyframe(withRelativeStartTime: 0.66, relativeDuration: 0.06) {
+                self.abPressRipple.alpha = 1
+                self.abPressRipple.transform = .identity
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.72, relativeDuration: 0.06) {
+                self.abPressRipple.alpha = 0
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.70, relativeDuration: 0.12) {
+                self.abIslandWidth.constant = 72
+                self.abIslandHeight.constant = 18
+                self.abIsland.layer.cornerRadius = 9
+                self.layoutIfNeeded()
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.78, relativeDuration: 0.08) {
+                self.abIslandIcon.alpha = 1
+                self.abIslandCheck.alpha = 1
+            }
+            // Slide the completed Safari page away, then reset behind it.
+            UIView.addKeyframe(withRelativeStartTime: 0.94, relativeDuration: 0.06) {
+                self.abSafariScreen.transform = CGAffineTransform(translationX: -self.bounds.width, y: 0)
+                self.abIslandIcon.alpha = 0
+                self.abIslandCheck.alpha = 0
+                self.abLunaChoice.alpha = 0
+                self.abChooseButton.alpha = 1
             }
         }
     }

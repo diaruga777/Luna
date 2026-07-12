@@ -26,9 +26,6 @@ enum SystemSettingsLink {
     /// either), falling back through the same root-Settings cascade as `open()`.
     static func openActionButton() {
         openFirstAvailable([
-            "App-Prefs:root=ACTION_BUTTON", // Settings → Action Button, if it exists
-            "App-Prefs:ActionButton",       // alternate private-scheme spelling
-            "App-Prefs:root=APPS",          // Settings → Apps (iOS 18+)
             "App-Prefs:",                   // root Settings
             UIApplication.openSettingsURLString, // app's own page (always works)
         ])

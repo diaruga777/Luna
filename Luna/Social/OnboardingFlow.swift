@@ -271,7 +271,7 @@ public enum OnboardingFlow {
                 SystemSettingsLink.openActionButton()
             },
             continueTitle: "Done",
-            animation: .actionButton,
+            animation: .actionButtonSettings,
             progress: .init(index: 3, total: totalSteps),
             onContinue: finish)
 

@@ -200,8 +200,9 @@ Paywall unlock + toast:
   above the button's corner (bottom ≈84px + safe area, so the two never overlap),
   fading out after ~3s. The "Read in Luna" button still appears independently.
 
-The setting lives in Settings → Shortcut & Safari ("Read in Luna Button" — a 3-segment
-control). On pre-iOS 27 builds this screen shows only the Safari-button setting; the
+The setting lives in Settings → Shortcut & Safari ("Read in Luna Button" on Reader,
+"Download Button" on Downloader, and "Track in Luna Button" on Price Tracker — a
+3-segment control). On pre-iOS 27 builds this screen shows only the Safari-button setting; the
 Action Button shortcut setup section is hidden. `background.js` relays
 `buttonContext`/`buttonMode`; content scripts can't call `sendNativeMessage` directly.
 

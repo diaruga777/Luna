@@ -344,11 +344,18 @@ final class ReadingListSettingsScreen: NavHeaderTableController {
 // MARK: - Shortcut & Safari
 
 final class ShortcutSettingsScreen: NavHeaderTableController {
-    /// Section 0: the Safari extension's "Read in Luna" button visibility.
+    /// Section 0: the Safari extension's surface-specific button visibility.
     /// Section 1: the Action-Button shortcut rows.
     private enum Section: Int, CaseIterable { case suggestionButton, shortcut }
     private enum Row: Int, CaseIterable { case install, openShortcuts, refreshStatus }
     private var safariStatusText = ""
+    private var safariButtonName: String {
+        switch AppSurfaceConfig.current {
+        case .reader: return "Read in Luna"
+        case .downloader: return "Download"
+        case .priceTracker: return "Track in Luna"
+        }
+    }
     private var visibleSections: [Section] {
         if #available(iOS 27.0, *) { return Section.allCases }
         return [.suggestionButton]
@@ -373,15 +380,14 @@ final class ShortcutSettingsScreen: NavHeaderTableController {
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        visibleSections[section] == .suggestionButton ? "Read in Luna Button" : "Action Button Shortcut"
+        visibleSections[section] == .suggestionButton ? "\(safariButtonName) Button" : "Action Button Shortcut"
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch visibleSections[section] {
         case .suggestionButton:
-            return "When browsing in Safari (with the Luna extension enabled), show a "
-                + "\"Read in Luna\" button to open the page in Luna — unlocking paywalled "
-                + "articles via the in-app reader. Choose when it appears."
+            return "When browsing in Safari (with the Luna extension enabled), show the "
+                + "\"\(safariButtonName)\" button when it applies. Choose when it appears."
         case .shortcut:
             let base = "Save the Safari webpage by pressing the Action Button: enable the Luna Safari extension (Settings → Apps → Safari → Extensions), install the shortcut, then pick \"\(BundledShortcut.displayName)\" in Settings → Action Button.\n\n\(safariStatusText)"
             return base

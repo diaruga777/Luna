@@ -2,6 +2,14 @@
 
 Luna is a weblink reader: links saved from Safari (extension + intent) or pasted in-app are downloaded, stripped to readable text, and read in two reader modes.
 
+## Surface list presentation
+
+Luna Reader and Luna Price Tracker do not show the shared "Reading List" title on
+their home screens. An empty Reader explains how to save reading material; an empty
+Price Tracker prompts the user to track a product. Reader's active items and Price
+Tracker's active/alerting trackers render without a section header, while Reader's
+Archive section keeps its header and controls.
+
 > **Note:** the reader-shared models + ingest helpers moved to `ReaderKit/`
 > (shared with the LunaShare target): `ReadingListItem`, `ReadingListStore`,
 > `ArticleContent`, `ArticleFetcher`, `ArticleExtractor`. Paths below that say

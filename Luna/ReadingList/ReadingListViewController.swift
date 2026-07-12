@@ -146,6 +146,26 @@ final class ReadingListViewController: UITableViewController {
     /// system large title. Combined with the filter control into the table header view.
     private let largeTitleLabel = UILabel()
 
+    /// Reader and Price Tracker deliberately start with content, rather than a generic
+    /// "Reading List" title. Downloader and the combined dev list retain that header.
+    private var showsLargeListHeader: Bool {
+        surface != .reader && surface != .priceTracker
+    }
+
+    /// Reader items and trackers are self-describing cells, so their active sections
+    /// should read as one uninterrupted list. Archive (and exceptional sections) keep
+    /// their headers because they communicate a meaningful state.
+    private func hidesHeader(for section: Section) -> Bool {
+        switch (surface, section) {
+        case (.reader, .reading),
+             (.priceTracker, .priceAlert),
+             (.priceTracker, .priceTracking):
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Non-blocking bottom pill for media-download progress/result (created lazily).
     private weak var mediaDownloadStatus: MediaDownloadStatusView?
     private let photoSaver = PhotoLibrarySaver()
@@ -457,7 +477,46 @@ final class ReadingListViewController: UITableViewController {
         updateCatchUpButton(items: items)
         groups = buildGroups(items: items)
         tableView.reloadData()
+        updateEmptyState()
         presentPendingSendFailureNoticeIfNeeded(items: items)
+    }
+
+    /// Show a surface-specific explanation only when that surface has no rows at all.
+    /// In particular, Reader's Archive remains visible instead of being obscured by an
+    /// empty state.
+    private func updateEmptyState() {
+        guard groups.isEmpty, let surface else {
+            tableView.backgroundView = nil
+            return
+        }
+
+        let message: String
+        switch surface {
+        case .reader:
+            message = "Save articles, documents, and links to read them here."
+        case .priceTracker:
+            message = "Track a product to see its price here."
+        case .downloader:
+            tableView.backgroundView = nil
+            return
+        }
+
+        let label = UILabel()
+        label.text = message
+        label.font = .preferredFont(forTextStyle: .body)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = UIView()
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.layoutMarginsGuide.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: container.layoutMarginsGuide.trailingAnchor),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+        tableView.backgroundView = container
     }
 
     /// Builds the non-empty grouped model (sections × items, in display order) for the
@@ -844,7 +903,7 @@ final class ReadingListViewController: UITableViewController {
         let needsEmailSetup = !EmailAccountStore.shared.isConfigured
         catchUpBadge.isHidden = !(ReadingListSectioning.shouldShowCatchUpDot(items: items)
             || needsEmailSetup)
-        catchUpButton.isHidden = isEditing
+        catchUpButton.isHidden = isEditing || !showsLargeListHeader
     }
 
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -887,6 +946,12 @@ final class ReadingListViewController: UITableViewController {
     /// `tableHeaderView` so it scrolls away under the pinned bar like a system large
     /// title. `showsFilter` includes the filter row.
     private func rebuildTableHeader(showsFilter: Bool) {
+        guard showsLargeListHeader || showsFilter else {
+            catchUpButton.removeFromSuperview()
+            tableHeaderContainer = nil
+            tableView.tableHeaderView = nil
+            return
+        }
         // A `tableHeaderView` is sized by its FRAME (set explicitly at the bottom of this
         // method), so the container must keep `translatesAutoresizingMaskIntoConstraints`
         // = true. With it false, UITableView auto-layouts the header and — lacking a width
@@ -894,38 +959,40 @@ final class ReadingListViewController: UITableViewController {
         // title + filter. Its internal subview constraints still resolve against the frame.
         let container = UIView()
 
-        // Large-title row: "Reading List" leading, catch-up button trailing.
-        let titleRow = UIView()
-        titleRow.translatesAutoresizingMaskIntoConstraints = false
-        largeTitleLabel.text = "Reading List"
-        largeTitleLabel.font = .systemFont(ofSize: 34, weight: .bold)
-        largeTitleLabel.textColor = .label
-        largeTitleLabel.adjustsFontForContentSizeCategory = true
-        largeTitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleRow.addSubview(largeTitleLabel)
-        if catchUpButton.superview != nil { catchUpButton.removeFromSuperview() }
-        titleRow.addSubview(catchUpButton)
-        container.addSubview(titleRow)
+        var bottomAnchor = container.topAnchor
+        if showsLargeListHeader {
+            // Large-title row: "Reading List" leading, catch-up button trailing.
+            let titleRow = UIView()
+            titleRow.translatesAutoresizingMaskIntoConstraints = false
+            largeTitleLabel.text = "Reading List"
+            largeTitleLabel.font = .systemFont(ofSize: 34, weight: .bold)
+            largeTitleLabel.textColor = .label
+            largeTitleLabel.adjustsFontForContentSizeCategory = true
+            largeTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+            titleRow.addSubview(largeTitleLabel)
+            if catchUpButton.superview != nil { catchUpButton.removeFromSuperview() }
+            titleRow.addSubview(catchUpButton)
+            container.addSubview(titleRow)
 
-        NSLayoutConstraint.activate([
-            titleRow.topAnchor.constraint(equalTo: container.topAnchor),
-            titleRow.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            titleRow.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            titleRow.heightAnchor.constraint(equalToConstant: 52),
-            largeTitleLabel.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor, constant: 20),
-            largeTitleLabel.bottomAnchor.constraint(equalTo: titleRow.bottomAnchor, constant: -6),
-            catchUpButton.trailingAnchor.constraint(equalTo: titleRow.trailingAnchor, constant: -16),
-            catchUpButton.centerYAnchor.constraint(equalTo: largeTitleLabel.centerYAnchor),
-            catchUpButton.widthAnchor.constraint(equalToConstant: 34),
-            catchUpButton.heightAnchor.constraint(equalToConstant: 34),
-        ])
-
-        var bottomAnchor = titleRow.bottomAnchor
+            NSLayoutConstraint.activate([
+                titleRow.topAnchor.constraint(equalTo: container.topAnchor),
+                titleRow.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                titleRow.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                titleRow.heightAnchor.constraint(equalToConstant: 52),
+                largeTitleLabel.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor, constant: 20),
+                largeTitleLabel.bottomAnchor.constraint(equalTo: titleRow.bottomAnchor, constant: -6),
+                catchUpButton.trailingAnchor.constraint(equalTo: titleRow.trailingAnchor, constant: -16),
+                catchUpButton.centerYAnchor.constraint(equalTo: largeTitleLabel.centerYAnchor),
+                catchUpButton.widthAnchor.constraint(equalToConstant: 34),
+                catchUpButton.heightAnchor.constraint(equalToConstant: 34),
+            ])
+            bottomAnchor = titleRow.bottomAnchor
+        }
         if showsFilter, let filterRow = filterHeaderView {
             filterRow.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(filterRow)
             NSLayoutConstraint.activate([
-                filterRow.topAnchor.constraint(equalTo: titleRow.bottomAnchor),
+                filterRow.topAnchor.constraint(equalTo: bottomAnchor),
                 filterRow.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 filterRow.trailingAnchor.constraint(equalTo: container.trailingAnchor),
                 filterRow.heightAnchor.constraint(equalToConstant: 44),
@@ -1125,6 +1192,7 @@ final class ReadingListViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
         let group = groups[section]
         let kind = group.section
+        guard !hidesHeader(for: kind) else { return nil }
 
         let header = UIView()
         header.tag = kind.rawValue
@@ -1177,7 +1245,7 @@ final class ReadingListViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        44
+        hidesHeader(for: groups[section].section) ? .leastNormalMagnitude : 44
     }
 
     override func tableView(

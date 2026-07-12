@@ -769,8 +769,16 @@ public final class OnboardingAnimationView: UIView {
             UIView.addKeyframe(withRelativeStartTime: 0.50, relativeDuration: 0.06) {
                 self.axReadHighlight.alpha = 1
             }
-            // The Luna reader (action extension) slides up.
-            UIView.addKeyframe(withRelativeStartTime: 0.58, relativeDuration: 0.14) {
+            // Dismiss the share sheet before showing the action extension. The two
+            // surfaces are separate system presentations, so letting one finish
+            // leaving before the other enters avoids a visually impossible stack.
+            UIView.addKeyframe(withRelativeStartTime: 0.58, relativeDuration: 0.10) {
+                self.axShareSheet.transform = sheetDrop
+                self.axReadHighlight.alpha = 0
+            }
+            // The Luna reader (action extension) then slides up into the now-clear
+            // Safari window.
+            UIView.addKeyframe(withRelativeStartTime: 0.70, relativeDuration: 0.14) {
                 self.axActionCard.transform = .identity
             }
             // Hold, then reset for a seamless loop.
@@ -855,7 +863,7 @@ public final class OnboardingAnimationView: UIView {
         return (track, thumb)
     }
 
-    // MARK: - Safari extension (Safari → page-menu → Manage Extensions → enable Luna)
+    // MARK: - Safari extension (Safari → page menu → Extensions → enable Luna)
 
     private let sxMenuRipple = UIView()
     private let sxMenuShell = UIView()
@@ -927,14 +935,16 @@ public final class OnboardingAnimationView: UIView {
         sxMenuRipple.translatesAutoresizingMaskIntoConstraints = false
         addressBar.addSubview(sxMenuRipple)
 
-        // The page-menu sheet (grey rows + literal "Manage Extensions").
+        // Safari's page menu. It intentionally uses the same compact, bottom-sheet
+        // form as Safari's `aA` menu, while keeping just the few rows needed to
+        // explain the real path to extension management.
         configureSheetShell(sxMenuShell, cornerRadius: 14)
         phone.addSubview(sxMenuShell)
         let menuGrabber = sheetGrabber()
         sxMenuShell.addSubview(menuGrabber)
         let menuRows = UIStackView(arrangedSubviews: [
-            axActionRow(symbol: "doc.text.magnifyingglass", placeholderWidth: 90),
-            axActionRow(symbol: "gearshape", placeholderWidth: 110),
+            literalActionRow(symbol: "textformat", text: "Website Settings"),
+            literalActionRow(symbol: "doc.text.magnifyingglass", text: "Reader"),
             literalActionRow(symbol: "puzzlepiece.extension", text: "Manage Extensions"),
         ])
         menuRows.axis = .vertical
@@ -953,7 +963,11 @@ public final class OnboardingAnimationView: UIView {
         phone.addSubview(sxExtShell)
         let extGrabber = sheetGrabber()
         sxExtShell.addSubview(extGrabber)
-        let extTitle = bar(width: 0.4, height: 8, color: .label.withAlphaComponent(0.6))
+        let extTitle = UILabel()
+        extTitle.text = "Manage Extensions"
+        extTitle.font = .systemFont(ofSize: 12, weight: .semibold)
+        extTitle.textAlignment = .center
+        extTitle.textColor = .label
         extTitle.translatesAutoresizingMaskIntoConstraints = false
         sxExtShell.addSubview(extTitle)
 
@@ -1019,7 +1033,7 @@ public final class OnboardingAnimationView: UIView {
             sxMenuShell.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
             sxMenuShell.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
             sxMenuShell.bottomAnchor.constraint(equalTo: addressBar.topAnchor),
-            sxMenuShell.heightAnchor.constraint(equalTo: phone.heightAnchor, multiplier: 0.34),
+            sxMenuShell.heightAnchor.constraint(equalTo: phone.heightAnchor, multiplier: 0.36),
             menuGrabber.topAnchor.constraint(equalTo: sxMenuShell.topAnchor, constant: 6),
             menuGrabber.centerXAnchor.constraint(equalTo: sxMenuShell.centerXAnchor),
             menuGrabber.widthAnchor.constraint(equalToConstant: 30),
@@ -1035,7 +1049,7 @@ public final class OnboardingAnimationView: UIView {
             sxExtShell.leadingAnchor.constraint(equalTo: phone.leadingAnchor),
             sxExtShell.trailingAnchor.constraint(equalTo: phone.trailingAnchor),
             sxExtShell.bottomAnchor.constraint(equalTo: addressBar.topAnchor),
-            sxExtShell.heightAnchor.constraint(equalTo: phone.heightAnchor, multiplier: 0.34),
+            sxExtShell.heightAnchor.constraint(equalTo: phone.heightAnchor, multiplier: 0.36),
             extGrabber.topAnchor.constraint(equalTo: sxExtShell.topAnchor, constant: 6),
             extGrabber.centerXAnchor.constraint(equalTo: sxExtShell.centerXAnchor),
             extGrabber.widthAnchor.constraint(equalToConstant: 30),
@@ -1055,12 +1069,13 @@ public final class OnboardingAnimationView: UIView {
     private func animateSafariExtension() {
         layoutIfNeeded()
         let menuDrop = CGAffineTransform(translationX: 0, y: sxMenuShell.bounds.height + 8)
-        let menuExitLeft = CGAffineTransform(translationX: -sxMenuShell.bounds.width - 8, y: 0)
-        let extIn = CGAffineTransform(translationX: sxExtShell.bounds.width + 8, y: 0)
+        let extensionsDrop = CGAffineTransform(translationX: 0, y: sxExtShell.bounds.height + 8)
 
         func reset() {
             sxMenuShell.transform = menuDrop
-            sxExtShell.transform = extIn
+            sxMenuShell.alpha = 1
+            sxExtShell.transform = extensionsDrop
+            sxExtShell.alpha = 0
             sxManageHighlight.alpha = 0
             sxMenuRipple.alpha = 0
             sxMenuRipple.transform = CGAffineTransform(scaleX: 0.3, y: 0.3)
@@ -1086,19 +1101,29 @@ public final class OnboardingAnimationView: UIView {
             UIView.addKeyframe(withRelativeStartTime: 0.34, relativeDuration: 0.06) {
                 self.sxManageHighlight.alpha = 1
             }
-            // The extensions list panel slides in over the menu.
-            UIView.addKeyframe(withRelativeStartTime: 0.42, relativeDuration: 0.14) {
-                self.sxMenuShell.transform = menuExitLeft
+            // The page menu closes first. A Safari submenu never remains on-screen
+            // underneath the extensions manager, so keep the two panels separate.
+            UIView.addKeyframe(withRelativeStartTime: 0.42, relativeDuration: 0.10) {
+                self.sxMenuShell.transform = menuDrop
+                self.sxManageHighlight.alpha = 0
+            }
+            // The extensions manager then rises into the same clear sheet area.
+            UIView.addKeyframe(withRelativeStartTime: 0.55, relativeDuration: 0.14) {
                 self.sxExtShell.transform = .identity
+                self.sxExtShell.alpha = 1
             }
             // Flip the Luna toggle on.
-            UIView.addKeyframe(withRelativeStartTime: 0.58, relativeDuration: 0.1) {
+            UIView.addKeyframe(withRelativeStartTime: 0.74, relativeDuration: 0.08) {
                 self.sxToggle.track.backgroundColor = self.accent
                 self.sxToggle.thumb.frame.origin.x = 16
             }
-            // Hold, then reset for a seamless loop.
-            UIView.addKeyframe(withRelativeStartTime: 0.90, relativeDuration: 0.1) {
-                reset()
+            // Dismiss the manager before the next loop starts, with no residual
+            // page-menu panel visible behind it.
+            UIView.addKeyframe(withRelativeStartTime: 0.92, relativeDuration: 0.08) {
+                self.sxExtShell.transform = extensionsDrop
+                self.sxExtShell.alpha = 0
+                self.sxToggle.track.backgroundColor = .systemGray3
+                self.sxToggle.thumb.frame.origin.x = 2
             }
         }
     }
@@ -1359,13 +1384,11 @@ public final class OnboardingAnimationView: UIView {
         }
     }
 
-    // MARK: - Action Button Settings (Settings > Action Button carousel)
+    // MARK: - Action Button Settings (Settings > Action Button)
 
-    // This illustration mocks a fixed, always-dark iOS screen (the Settings >
-    // Action Button picker), independent of the device's own light/dark mode —
-    // it's meant to be recorded standalone to video. So, unlike every other
-    // illustration in this file, its colors are explicit fixed values rather
-    // than the adaptive `.label`/`.systemBackground` family.
+    // This illustration is a deliberately simplified version of the real dark
+    // Settings > Action Button screen. It stays fixed-dark so the recorded guide
+    // looks consistent in PiP, independent of the host app's appearance.
     private let absCardStep: CGFloat = 78
     private let absCarouselStack = UIStackView()
     private let absCardPrev = UIView()
@@ -1450,7 +1473,28 @@ public final class OnboardingAnimationView: UIView {
         darkScreen.translatesAutoresizingMaskIntoConstraints = false
         addSubview(darkScreen)
 
-        // A side-on iPhone silhouette with the Action Button glowing on its edge.
+        // Settings-style navigation and instruction copy establish the screen as
+        // a Settings page before the compact Action Button carousel appears.
+        let settingsBack = UILabel()
+        settingsBack.text = "‹ Settings"
+        settingsBack.font = .systemFont(ofSize: 11, weight: .medium)
+        settingsBack.textColor = UIColor.white.withAlphaComponent(0.68)
+        settingsBack.translatesAutoresizingMaskIntoConstraints = false
+        darkScreen.addSubview(settingsBack)
+        let settingsTitle = UILabel()
+        settingsTitle.text = "Action Button"
+        settingsTitle.font = .systemFont(ofSize: 15, weight: .semibold)
+        settingsTitle.textColor = .white
+        settingsTitle.translatesAutoresizingMaskIntoConstraints = false
+        darkScreen.addSubview(settingsTitle)
+        let settingsInstruction = UILabel()
+        settingsInstruction.text = "Swipe to choose an action"
+        settingsInstruction.font = .systemFont(ofSize: 11)
+        settingsInstruction.textColor = UIColor.white.withAlphaComponent(0.62)
+        settingsInstruction.translatesAutoresizingMaskIntoConstraints = false
+        darkScreen.addSubview(settingsInstruction)
+
+        // A small side-on iPhone silhouette represents the physical Action Button.
         let phoneSilhouette = UIView()
         phoneSilhouette.backgroundColor = UIColor(white: 0.1, alpha: 1)
         phoneSilhouette.layer.cornerRadius = 16
@@ -1469,8 +1513,9 @@ public final class OnboardingAnimationView: UIView {
         actionButtonNub.translatesAutoresizingMaskIntoConstraints = false
         darkScreen.addSubview(actionButtonNub)
 
-        // The carousel: three option cards clipped to a viewport, panned so the
-        // center one reads as the selected option.
+        // The carousel: three option cards clipped to a wide viewport, panned so
+        // the center one reads as the selected Settings action without truncating
+        // the card caption at either edge.
         let carouselClip = UIView()
         carouselClip.clipsToBounds = true
         carouselClip.translatesAutoresizingMaskIntoConstraints = false
@@ -1488,7 +1533,7 @@ public final class OnboardingAnimationView: UIView {
         absCarouselStack.translatesAutoresizingMaskIntoConstraints = false
         carouselClip.addSubview(absCarouselStack)
 
-        // "Choose a Shortcut…" row, fades in below the carousel.
+        // "Choose a Shortcut…" is the real follow-up row after selecting Shortcut.
         absChooseRow.translatesAutoresizingMaskIntoConstraints = false
         darkScreen.addSubview(absChooseRow)
         let chooseLabel = UILabel()
@@ -1509,17 +1554,25 @@ public final class OnboardingAnimationView: UIView {
         absRowRipple.translatesAutoresizingMaskIntoConstraints = false
         absChooseRow.addSubview(absRowRipple)
 
-        // The options sheet (slides up): grey rows + literal "Send To Luna".
+        // Settings pushes a separate shortcut-picker page. Model it as a full
+        // opaque screen that moves in from the right — not as a partially-overlaid
+        // sheet — so controls from both pages never occupy the same visual space.
         absOptionsSheet.backgroundColor = UIColor(white: 0.14, alpha: 1)
-        absOptionsSheet.layer.cornerRadius = 16
-        absOptionsSheet.layer.cornerCurve = .continuous
-        absOptionsSheet.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         absOptionsSheet.clipsToBounds = true
         absOptionsSheet.translatesAutoresizingMaskIntoConstraints = false
         darkScreen.addSubview(absOptionsSheet)
-        let sheetGrabberView = sheetGrabber()
-        sheetGrabberView.backgroundColor = UIColor.white.withAlphaComponent(0.3)
-        absOptionsSheet.addSubview(sheetGrabberView)
+        let pickerBack = UILabel()
+        pickerBack.text = "‹ Action Button"
+        pickerBack.font = .systemFont(ofSize: 11, weight: .medium)
+        pickerBack.textColor = UIColor.white.withAlphaComponent(0.68)
+        pickerBack.translatesAutoresizingMaskIntoConstraints = false
+        absOptionsSheet.addSubview(pickerBack)
+        let pickerTitle = UILabel()
+        pickerTitle.text = "Shortcuts"
+        pickerTitle.font = .systemFont(ofSize: 15, weight: .semibold)
+        pickerTitle.textColor = .white
+        pickerTitle.translatesAutoresizingMaskIntoConstraints = false
+        absOptionsSheet.addSubview(pickerTitle)
 
         let lunaIcon = UIImageView(image: lunaAppIconImage())
         lunaIcon.contentMode = .scaleAspectFit
@@ -1566,25 +1619,33 @@ public final class OnboardingAnimationView: UIView {
             darkScreen.leadingAnchor.constraint(equalTo: leadingAnchor),
             darkScreen.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            phoneSilhouette.leadingAnchor.constraint(equalTo: darkScreen.leadingAnchor, constant: 16),
-            phoneSilhouette.topAnchor.constraint(equalTo: darkScreen.topAnchor, constant: 20),
-            phoneSilhouette.widthAnchor.constraint(equalToConstant: 46),
-            phoneSilhouette.heightAnchor.constraint(equalToConstant: 118),
-            actionButtonNub.trailingAnchor.constraint(equalTo: phoneSilhouette.leadingAnchor, constant: 2),
-            actionButtonNub.centerYAnchor.constraint(equalTo: phoneSilhouette.topAnchor, constant: 30),
-            actionButtonNub.widthAnchor.constraint(equalToConstant: 4),
-            actionButtonNub.heightAnchor.constraint(equalToConstant: 24),
+            settingsBack.leadingAnchor.constraint(equalTo: darkScreen.leadingAnchor, constant: 14),
+            settingsBack.topAnchor.constraint(equalTo: darkScreen.topAnchor, constant: 12),
+            settingsTitle.centerXAnchor.constraint(equalTo: darkScreen.centerXAnchor),
+            settingsTitle.topAnchor.constraint(equalTo: darkScreen.topAnchor, constant: 12),
+            settingsInstruction.centerXAnchor.constraint(equalTo: darkScreen.centerXAnchor),
+            settingsInstruction.topAnchor.constraint(equalTo: settingsTitle.bottomAnchor, constant: 6),
 
-            carouselClip.leadingAnchor.constraint(equalTo: phoneSilhouette.trailingAnchor, constant: 14),
+            phoneSilhouette.centerXAnchor.constraint(equalTo: darkScreen.centerXAnchor),
+            phoneSilhouette.topAnchor.constraint(equalTo: settingsInstruction.bottomAnchor, constant: 8),
+            phoneSilhouette.widthAnchor.constraint(equalToConstant: 34),
+            phoneSilhouette.heightAnchor.constraint(equalToConstant: 52),
+            actionButtonNub.trailingAnchor.constraint(equalTo: phoneSilhouette.leadingAnchor, constant: 2),
+            actionButtonNub.centerYAnchor.constraint(equalTo: phoneSilhouette.topAnchor, constant: 17),
+            actionButtonNub.widthAnchor.constraint(equalToConstant: 4),
+            actionButtonNub.heightAnchor.constraint(equalToConstant: 16),
+
+            carouselClip.topAnchor.constraint(equalTo: phoneSilhouette.bottomAnchor, constant: 8),
+            carouselClip.leadingAnchor.constraint(equalTo: darkScreen.leadingAnchor, constant: 16),
             carouselClip.trailingAnchor.constraint(equalTo: darkScreen.trailingAnchor, constant: -16),
-            carouselClip.centerYAnchor.constraint(equalTo: phoneSilhouette.centerYAnchor),
             carouselClip.heightAnchor.constraint(equalToConstant: 96),
             absCarouselStack.centerXAnchor.constraint(equalTo: carouselClip.centerXAnchor),
             absCarouselStack.centerYAnchor.constraint(equalTo: carouselClip.centerYAnchor),
 
-            absChooseRow.topAnchor.constraint(equalTo: phoneSilhouette.bottomAnchor, constant: 16),
-            absChooseRow.centerXAnchor.constraint(equalTo: darkScreen.centerXAnchor),
-            absChooseRow.heightAnchor.constraint(equalToConstant: 24),
+            absChooseRow.topAnchor.constraint(equalTo: carouselClip.bottomAnchor, constant: 8),
+            absChooseRow.leadingAnchor.constraint(equalTo: darkScreen.leadingAnchor, constant: 20),
+            absChooseRow.trailingAnchor.constraint(equalTo: darkScreen.trailingAnchor, constant: -20),
+            absChooseRow.heightAnchor.constraint(equalToConstant: 28),
             chooseStack.leadingAnchor.constraint(equalTo: absChooseRow.leadingAnchor, constant: 8),
             chooseStack.trailingAnchor.constraint(equalTo: absChooseRow.trailingAnchor, constant: -8),
             chooseStack.centerYAnchor.constraint(equalTo: absChooseRow.centerYAnchor),
@@ -1595,13 +1656,13 @@ public final class OnboardingAnimationView: UIView {
 
             absOptionsSheet.leadingAnchor.constraint(equalTo: darkScreen.leadingAnchor),
             absOptionsSheet.trailingAnchor.constraint(equalTo: darkScreen.trailingAnchor),
+            absOptionsSheet.topAnchor.constraint(equalTo: darkScreen.topAnchor),
             absOptionsSheet.bottomAnchor.constraint(equalTo: darkScreen.bottomAnchor),
-            absOptionsSheet.heightAnchor.constraint(equalTo: darkScreen.heightAnchor, multiplier: 0.44),
-            sheetGrabberView.topAnchor.constraint(equalTo: absOptionsSheet.topAnchor, constant: 8),
-            sheetGrabberView.centerXAnchor.constraint(equalTo: absOptionsSheet.centerXAnchor),
-            sheetGrabberView.widthAnchor.constraint(equalToConstant: 34),
-            sheetGrabberView.heightAnchor.constraint(equalToConstant: 5),
-            sheetRows.topAnchor.constraint(equalTo: sheetGrabberView.bottomAnchor, constant: 12),
+            pickerBack.leadingAnchor.constraint(equalTo: absOptionsSheet.leadingAnchor, constant: 14),
+            pickerBack.topAnchor.constraint(equalTo: absOptionsSheet.topAnchor, constant: 12),
+            pickerTitle.centerXAnchor.constraint(equalTo: absOptionsSheet.centerXAnchor),
+            pickerTitle.topAnchor.constraint(equalTo: absOptionsSheet.topAnchor, constant: 12),
+            sheetRows.topAnchor.constraint(equalTo: pickerTitle.bottomAnchor, constant: 28),
             sheetRows.leadingAnchor.constraint(equalTo: absOptionsSheet.leadingAnchor, constant: 14),
             sheetRows.trailingAnchor.constraint(equalTo: absOptionsSheet.trailingAnchor, constant: -14),
             absSendHighlight.leadingAnchor.constraint(equalTo: sendRow.leadingAnchor, constant: -4),
@@ -1613,7 +1674,8 @@ public final class OnboardingAnimationView: UIView {
 
     private func animateActionButtonSettings() {
         layoutIfNeeded()
-        let sheetDrop = CGAffineTransform(translationX: 0, y: absOptionsSheet.bounds.height + 8)
+        let pickerOffscreen = CGAffineTransform(
+            translationX: absOptionsSheet.bounds.width + 8, y: 0)
         let carouselAtPrev = CGAffineTransform(translationX: absCardStep, y: 0)
 
         func reset() {
@@ -1625,7 +1687,7 @@ public final class OnboardingAnimationView: UIView {
             absChooseRow.alpha = 0
             absChooseRow.transform = CGAffineTransform(translationX: 0, y: 6)
             absRowRipple.alpha = 0
-            absOptionsSheet.transform = sheetDrop
+            absOptionsSheet.transform = pickerOffscreen
             absSendHighlight.alpha = 0
             absCheckmark.alpha = 0
         }
@@ -1652,18 +1714,30 @@ public final class OnboardingAnimationView: UIView {
             UIView.addKeyframe(withRelativeStartTime: 0.49, relativeDuration: 0.05) {
                 self.absRowRipple.alpha = 0
             }
-            // The picker sheet slides up.
-            UIView.addKeyframe(withRelativeStartTime: 0.52, relativeDuration: 0.16) {
+            // Push to the dedicated shortcut-picker page after the tap feedback has
+            // finished. The opaque page enters beside — never over — the Settings
+            // controls, matching a simplified Settings navigation transition.
+            UIView.addKeyframe(withRelativeStartTime: 0.56, relativeDuration: 0.16) {
                 self.absOptionsSheet.transform = .identity
             }
             // Highlight + confirm "Send To Luna".
-            UIView.addKeyframe(withRelativeStartTime: 0.74, relativeDuration: 0.1) {
+            UIView.addKeyframe(withRelativeStartTime: 0.78, relativeDuration: 0.10) {
                 self.absSendHighlight.alpha = 1
                 self.absCheckmark.alpha = 1
             }
-            // Hold, then reset for a seamless loop.
-            UIView.addKeyframe(withRelativeStartTime: 0.92, relativeDuration: 0.08) {
-                reset()
+            // Navigate back offscreen before the next loop, rather than snapping a
+            // visible picker over the original Settings controls.
+            UIView.addKeyframe(withRelativeStartTime: 0.94, relativeDuration: 0.06) {
+                self.absOptionsSheet.transform = pickerOffscreen
+                self.absSendHighlight.alpha = 0
+                self.absCheckmark.alpha = 0
+                self.absCarouselStack.transform = carouselAtPrev
+                self.absCardShortcut.transform = CGAffineTransform(scaleX: 0.85, y: 0.85)
+                self.absCardShortcut.alpha = 0.55
+                self.absCardPrev.transform = .identity
+                self.absCardPrev.alpha = 1
+                self.absChooseRow.alpha = 0
+                self.absChooseRow.transform = CGAffineTransform(translationX: 0, y: 6)
             }
         }
     }

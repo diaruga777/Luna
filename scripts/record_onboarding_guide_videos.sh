@@ -143,5 +143,7 @@ done
 for guide in $GUIDES; do
     /bin/mv -f "${recording_dir}/${guide}" "${RESOURCE_DIR}/${guide}"
 done
-/bin/printf '%s\n' "$source_hash" > "$STAMP_FILE"
+# /usr/bin, not /bin: macOS has no /bin/printf, and the failed exec still
+# truncated the stamp via its redirection, leaving it empty.
+/usr/bin/printf '%s\n' "$source_hash" > "$STAMP_FILE"
 echo "note: Recorded and embedded current onboarding PiP guides."

@@ -47,8 +47,8 @@ final class OnboardingGuideVideo: NSObject {
     /// `OnboardingStepViewController.installBackdropView(_:)`.
     let playerView: UIView
 
-    private let resourceName: String
-    private let fallbackResourceName: String
+    private let surfaceResourceName: String
+    private let fallbackResourceNames: [String]
     private let layerView: PlayerLayerView
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
@@ -60,8 +60,9 @@ final class OnboardingGuideVideo: NSObject {
     /// PiP is still available if a developer cannot record fresh clips locally.
     init(guide: Guide) {
         let baseName = guide.baseResourceName
-        self.resourceName = baseName + Self.currentGuideSuffix
-        self.fallbackResourceName = baseName
+        let surfaceName = baseName + Self.currentGuideSuffix
+        self.surfaceResourceName = surfaceName
+        self.fallbackResourceNames = [surfaceName, baseName]
         layerView = PlayerLayerView()
         playerView = layerView
         super.init()
@@ -73,8 +74,10 @@ final class OnboardingGuideVideo: NSObject {
     private func loadIfNeeded() {
         guard !didLoad else { return }
         didLoad = true
-        guard let url = Bundle.main.url(forResource: resourceName, withExtension: "mp4")
-            ?? Bundle.main.url(forResource: fallbackResourceName, withExtension: "mp4")
+        let candidates = [surfaceResourceName + Self.currentAppearanceSuffix] + fallbackResourceNames
+        guard let url = candidates.lazy.compactMap({
+            Bundle.main.url(forResource: $0, withExtension: "mp4")
+        }).first
         else { return }
 
         let player = AVQueuePlayer()
@@ -125,6 +128,18 @@ final class OnboardingGuideVideo: NSObject {
 
     private static var currentGuideSuffix: String {
         OnboardingAnimationView.AppIcon.currentBundle.guideVideoSuffix
+    }
+
+    /// Resolve appearance when the AV stack is first loaded, not when the step is
+    /// constructed. A user can change system appearance while onboarding is alive;
+    /// the clip entering PiP must match the interface at playback start.
+    private static var currentAppearanceSuffix: String {
+        let style = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .traitCollection.userInterfaceStyle ?? UITraitCollection.current.userInterfaceStyle
+        return style == .dark ? "Dark" : "Light"
     }
 
     private func configureAudioSession() {

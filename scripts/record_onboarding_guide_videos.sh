@@ -27,12 +27,12 @@ SOURCE_FILE="${SRCROOT}/LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationVi
 RESOURCE_DIR="${SRCROOT}/Luna/Resources"
 STAMP_FILE="${RESOURCE_DIR}/.onboarding-guide-video-source.sha256"
 GUIDES="\
-SafariExtensionGuideReader.mp4 \
-SafariExtensionGuideDownloader.mp4 \
-SafariExtensionGuidePriceTracker.mp4 \
-ActionButtonGuideReader.mp4 \
-ActionButtonGuideDownloader.mp4 \
-ActionButtonGuidePriceTracker.mp4"
+SafariExtensionGuideReaderLight.mp4 SafariExtensionGuideReaderDark.mp4 \
+SafariExtensionGuideDownloaderLight.mp4 SafariExtensionGuideDownloaderDark.mp4 \
+SafariExtensionGuidePriceTrackerLight.mp4 SafariExtensionGuidePriceTrackerDark.mp4 \
+ActionButtonGuideReaderLight.mp4 ActionButtonGuideReaderDark.mp4 \
+ActionButtonGuideDownloaderLight.mp4 ActionButtonGuideDownloaderDark.mp4 \
+ActionButtonGuidePriceTrackerLight.mp4 ActionButtonGuidePriceTrackerDark.mp4"
 
 if [ ! -f "$SOURCE_FILE" ]; then
     echo "warning: Onboarding PiP-guide source is missing: $SOURCE_FILE"
@@ -139,7 +139,7 @@ for guide in $GUIDES; do
 done
 
 # The test writes to a private directory. Replace source resources only after all
-# six clips exist, so a failed recording can never leave a half-updated set.
+# all twelve clips exist, so a failed recording can never leave a half-updated set.
 for guide in $GUIDES; do
     /bin/mv -f "${recording_dir}/${guide}" "${RESOURCE_DIR}/${guide}"
 done

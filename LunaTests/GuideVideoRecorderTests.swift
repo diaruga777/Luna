@@ -23,38 +23,70 @@ final class GuideVideoRecorderTests: XCTestCase {
 
     func testRecordSafariExtensionGuideReader() throws {
         try recordGuideVideo(kind: .safariExtension, appIcon: .reader,
-                             filename: guideFilename(base: "SafariExtensionGuide", appIcon: .reader))
+                             style: .light, filename: guideFilename(base: "SafariExtensionGuide", appIcon: .reader, style: .light))
     }
 
     func testRecordSafariExtensionGuideDownloader() throws {
         try recordGuideVideo(kind: .safariExtension, appIcon: .downloader,
-                             filename: guideFilename(base: "SafariExtensionGuide", appIcon: .downloader))
+                             style: .light, filename: guideFilename(base: "SafariExtensionGuide", appIcon: .downloader, style: .light))
     }
 
     func testRecordSafariExtensionGuidePriceTracker() throws {
         try recordGuideVideo(kind: .safariExtension, appIcon: .priceTracker,
-                             filename: guideFilename(base: "SafariExtensionGuide", appIcon: .priceTracker))
+                             style: .light, filename: guideFilename(base: "SafariExtensionGuide", appIcon: .priceTracker, style: .light))
     }
 
     func testRecordActionButtonGuideReader() throws {
         try recordGuideVideo(kind: .actionButtonSettings, appIcon: .reader,
-                             filename: guideFilename(base: "ActionButtonGuide", appIcon: .reader))
+                             style: .light, filename: guideFilename(base: "ActionButtonGuide", appIcon: .reader, style: .light))
     }
 
     func testRecordActionButtonGuideDownloader() throws {
         try recordGuideVideo(kind: .actionButtonSettings, appIcon: .downloader,
-                             filename: guideFilename(base: "ActionButtonGuide", appIcon: .downloader))
+                             style: .light, filename: guideFilename(base: "ActionButtonGuide", appIcon: .downloader, style: .light))
     }
 
     func testRecordActionButtonGuidePriceTracker() throws {
         try recordGuideVideo(kind: .actionButtonSettings, appIcon: .priceTracker,
-                             filename: guideFilename(base: "ActionButtonGuide", appIcon: .priceTracker))
+                             style: .light, filename: guideFilename(base: "ActionButtonGuide", appIcon: .priceTracker, style: .light))
+    }
+
+    func testRecordSafariExtensionGuideReaderDark() throws {
+        try recordGuideVideo(kind: .safariExtension, appIcon: .reader,
+                             style: .dark, filename: guideFilename(base: "SafariExtensionGuide", appIcon: .reader, style: .dark))
+    }
+
+    func testRecordSafariExtensionGuideDownloaderDark() throws {
+        try recordGuideVideo(kind: .safariExtension, appIcon: .downloader,
+                             style: .dark, filename: guideFilename(base: "SafariExtensionGuide", appIcon: .downloader, style: .dark))
+    }
+
+    func testRecordSafariExtensionGuidePriceTrackerDark() throws {
+        try recordGuideVideo(kind: .safariExtension, appIcon: .priceTracker,
+                             style: .dark, filename: guideFilename(base: "SafariExtensionGuide", appIcon: .priceTracker, style: .dark))
+    }
+
+    func testRecordActionButtonGuideReaderDark() throws {
+        try recordGuideVideo(kind: .actionButtonSettings, appIcon: .reader,
+                             style: .dark, filename: guideFilename(base: "ActionButtonGuide", appIcon: .reader, style: .dark))
+    }
+
+    func testRecordActionButtonGuideDownloaderDark() throws {
+        try recordGuideVideo(kind: .actionButtonSettings, appIcon: .downloader,
+                             style: .dark, filename: guideFilename(base: "ActionButtonGuide", appIcon: .downloader, style: .dark))
+    }
+
+    func testRecordActionButtonGuidePriceTrackerDark() throws {
+        try recordGuideVideo(kind: .actionButtonSettings, appIcon: .priceTracker,
+                             style: .dark, filename: guideFilename(base: "ActionButtonGuide", appIcon: .priceTracker, style: .dark))
     }
 
     // MARK: - Recording
 
-    private func guideFilename(base: String, appIcon: OnboardingAnimationView.AppIcon) -> String {
-        base + appIcon.guideVideoSuffix
+    private func guideFilename(
+        base: String, appIcon: OnboardingAnimationView.AppIcon, style: UIUserInterfaceStyle
+    ) -> String {
+        base + appIcon.guideVideoSuffix + (style == .dark ? "Dark" : "Light")
     }
 
     /// The illustration's own fixed intrinsic size (`OnboardingAnimationView.init`'s
@@ -62,13 +94,14 @@ final class GuideVideoRecorderTests: XCTestCase {
     private func naturalSize(for kind: OnboardingAnimationView.Kind) -> CGSize {
         switch kind {
         case .safariExtension: return CGSize(width: 220, height: 360)
-        case .actionButtonSettings: return CGSize(width: 280, height: 300)
+        case .actionButtonSettings: return CGSize(width: 220, height: 360)
         default: return CGSize(width: 260, height: 150)
         }
     }
 
     private func recordGuideVideo(
         kind: OnboardingAnimationView.Kind, appIcon: OnboardingAnimationView.AppIcon,
+        style: UIUserInterfaceStyle,
         filename: String,
         file: StaticString = #filePath, line: UInt = #line
     ) throws {
@@ -100,7 +133,7 @@ final class GuideVideoRecorderTests: XCTestCase {
 
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: natural)
-        window.overrideUserInterfaceStyle = .light
+        window.overrideUserInterfaceStyle = style
         window.backgroundColor = .systemBackground
         window.addSubview(animation)
         // The illustration carries its own fixed width/height constraints (== natural),

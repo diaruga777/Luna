@@ -10,6 +10,7 @@ import LunaSocialUI
 import LunaStorage
 import LunaTransitions
 import LunaURLClassification
+import Photos
 import UIKit
 
 final class SavedMediaGridViewController: UICollectionViewController {
@@ -19,6 +20,7 @@ final class SavedMediaGridViewController: UICollectionViewController {
     private let store = SavedMediaStore.shared
     private let photoSaver = PhotoLibrarySaver()
     private var items: [SavedMediaItem] = []
+    private var isReconcilingPhotos = false
     private lazy var dataSource = makeDataSource()
 
     init() {
@@ -172,6 +174,7 @@ final class SavedMediaGridViewController: UICollectionViewController {
         }
         dataSource.apply(snapshot, animatingDifferences: view.window != nil)
         collectionView.backgroundView = items.isEmpty ? EmptyMediaView() : nil
+        reconcilePhotosReferencesIfAuthorized()
     }
 
     @objc private func settingsTapped() {
@@ -202,6 +205,10 @@ final class SavedMediaGridViewController: UICollectionViewController {
 
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard indexPath.item < items.count else { return }
+        if case .undownloaded = items[indexPath.item].storageState {
+            startDownload(items[indexPath.item])
+            return
+        }
         // The viewer marks the initially-shown item (and every item paged to
         // afterwards) as opened itself — see SavedMediaViewerViewController.markOpened.
         let viewer = SavedMediaViewerViewController(items: items, initialIndex: indexPath.item, grid: self)
@@ -229,22 +236,36 @@ final class SavedMediaGridViewController: UICollectionViewController {
         guard indexPath.item < items.count else { return nil }
         let item = items[indexPath.item]
         return UIContextMenuConfiguration(actionProvider: { _ in
-            UIMenu(children: [
-                UIAction(title: "Share", image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
-                    self?.share(item, sourceIndexPath: indexPath)
-                },
-                UIAction(title: "Save to Photos", image: UIImage(systemName: "photo.badge.plus")) { [weak self] _ in
-                    self?.saveToPhotos(item)
-                },
-                UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
-                    self?.deleteSavedItem(for: item)
-                },
-            ])
+            var actions: [UIMenuElement] = []
+            switch item.storageState {
+            case .undownloaded:
+                actions.append(UIAction(
+                    title: "Download", image: UIImage(systemName: "arrow.down.circle")
+                ) { [weak self] _ in self?.startDownload(item) })
+            case .localFile:
+                actions.append(UIAction(
+                    title: "Share", image: UIImage(systemName: "square.and.arrow.up")
+                ) { [weak self] _ in self?.share(item, sourceIndexPath: indexPath) })
+                actions.append(UIAction(
+                    title: "Save to Photos", image: UIImage(systemName: "photo.badge.plus")
+                ) { [weak self] _ in self?.saveToPhotos(item) })
+            case .photosReference:
+                actions.append(UIAction(
+                    title: "Share", image: UIImage(systemName: "square.and.arrow.up")
+                ) { [weak self] _ in self?.share(item, sourceIndexPath: indexPath) })
+            }
+            actions.append(UIAction(
+                title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
+            ) { [weak self] _ in self?.deleteSavedItem(for: item) })
+            return UIMenu(children: actions)
         })
     }
 
     private func share(_ item: SavedMediaItem, sourceIndexPath: IndexPath) {
-        let activity = UIActivityViewController(activityItems: [item.fileURL], applicationActivities: nil)
+        guard let backing = providerBacking(for: item),
+              let provider = MediaItemProviderFactory.makeProvider(for: backing)
+        else { return }
+        let activity = UIActivityViewController(activityItems: [provider], applicationActivities: nil)
         if let cell = collectionView.cellForItem(at: sourceIndexPath) {
             activity.popoverPresentationController?.sourceView = cell
             activity.popoverPresentationController?.sourceRect = cell.bounds
@@ -255,16 +276,22 @@ final class SavedMediaGridViewController: UICollectionViewController {
     private func saveToPhotos(_ item: SavedMediaItem) {
         Task { @MainActor in
             do {
-                guard await photoSaver.requestAddAuthorization() else {
+                guard case .localFile = item.storageState,
+                      let fileURL = item.fileURL,
+                      let kind = item.kind
+                else { return }
+                guard await photoSaver.requestReadAuthorization() else {
                     presentAlert(
                         title: "Photos Access Needed",
                         message: "Allow photo library access in Settings to save media.")
                     return
                 }
-                let tempURL = MediaDownloadStorage.newFileURL(extension: item.fileURL.pathExtension)
-                try FileManager.default.copyItem(at: item.fileURL, to: tempURL)
+                let tempURL = MediaDownloadStorage.newFileURL(extension: fileURL.pathExtension)
+                try FileManager.default.copyItem(at: fileURL, to: tempURL)
                 defer { try? FileManager.default.removeItem(at: tempURL) }
-                try await photoSaver.save(fileURL: tempURL, kind: item.kind)
+                let localIdentifier = try await photoSaver.save(fileURL: tempURL, kind: kind)
+                _ = try store.transitionToPhotosReference(
+                    item.id, localIdentifier: localIdentifier, kind: kind)
                 presentAlert(title: "Saved to Photos", message: "The media was added to your photo library.")
             } catch {
                 presentAlert(title: "Save Failed", message: "Couldn't save this media to Photos.")
@@ -279,10 +306,58 @@ final class SavedMediaGridViewController: UICollectionViewController {
     }
 
     private func deleteSavedItem(for item: SavedMediaItem) {
+        AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)
         if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
             ReadingListStore.shared.delete(saved)
-        } else {
-            store.delete(item)
+        }
+        store.delete(item)
+    }
+
+    private func startDownload(_ item: SavedMediaItem) {
+        Task {
+            _ = await LiveMediaDownloadManager.shared.start(
+                urlString: item.sourceURLString, title: item.title)
+        }
+    }
+
+    private func providerBacking(for item: SavedMediaItem) -> MediaItemProviderBacking? {
+        switch item.storageState {
+        case .undownloaded:
+            return nil
+        case .localFile:
+            return item.fileURL.map(MediaItemProviderBacking.localFile)
+        case .photosReference(let identifier, _, _):
+            guard let kind = item.kind else { return nil }
+            return .photo(localIdentifier: identifier, kind: kind)
+        }
+    }
+
+    /// A Photos identifier that no longer resolves is a deletion only when Luna has
+    /// read permission. Without permission, an empty fetch is not evidence of deletion.
+    private func reconcilePhotosReferencesIfAuthorized() {
+        guard !isReconcilingPhotos,
+              items.contains(where: { $0.photosLocalIdentifier != nil })
+        else { return }
+        isReconcilingPhotos = true
+        Task { @MainActor in
+            let authorized = await photoSaver.requestReadAuthorization()
+            defer { isReconcilingPhotos = false }
+            guard authorized else { return }
+            var snapshot = dataSource.snapshot()
+            let photoIDs = items.compactMap { item in
+                item.photosLocalIdentifier == nil ? nil : item.id
+            }
+            if !photoIDs.isEmpty {
+                snapshot.reconfigureItems(photoIDs)
+                await dataSource.apply(snapshot, animatingDifferences: false)
+            }
+            let missing = items.filter { item in
+                guard let identifier = item.photosLocalIdentifier else { return false }
+                return photoSaver.fetchAsset(localIdentifier: identifier) == nil
+            }
+            for item in missing {
+                deleteSavedItem(for: item)
+            }
         }
     }
 }
@@ -295,6 +370,8 @@ private final class SavedMediaCell: UICollectionViewCell {
     private let scrimLayer = CAGradientLayer()
     private let scrimView = UIView()
     private let glyphView = UIImageView(image: UIImage(systemName: "play.fill"))
+    private var photoRequestID: PHImageRequestID = PHInvalidImageRequestID
+    private var representedItemID: UUID?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -338,14 +415,53 @@ private final class SavedMediaCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        if photoRequestID != PHInvalidImageRequestID {
+            PHImageManager.default().cancelImageRequest(photoRequestID)
+        }
+        photoRequestID = PHInvalidImageRequestID
+        representedItemID = nil
         imageView.image = nil
+        imageView.preferredSymbolConfiguration = nil
         glyphView.isHidden = true
         scrimView.isHidden = true
     }
 
     func configure(_ item: SavedMediaItem?) {
         guard let item else { return }
-        if let url = item.thumbnailURL, let image = UIImage(contentsOfFile: url.path) {
+        representedItemID = item.id
+        contentView.backgroundColor = .secondarySystemBackground
+
+        if case .undownloaded = item.storageState {
+            imageView.image = UIImage(systemName: "arrow.down.circle.dotted")
+                ?? UIImage(systemName: "arrow.down.circle")
+            imageView.tintColor = .secondaryLabel
+            imageView.contentMode = .center
+            imageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+                pointSize: 34, weight: .regular)
+            glyphView.isHidden = true
+            scrimView.isHidden = true
+            return
+        }
+
+        if let identifier = item.photosLocalIdentifier,
+           let asset = PHAsset.fetchAssets(
+            withLocalIdentifiers: [identifier], options: nil).firstObject {
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .opportunistic
+            options.resizeMode = .fast
+            options.isNetworkAccessAllowed = true
+            photoRequestID = PHImageManager.default().requestImage(
+                for: asset,
+                targetSize: CGSize(width: 600, height: 600),
+                contentMode: .aspectFill,
+                options: options
+            ) { [weak self] image, _ in
+                guard let self, self.representedItemID == item.id, let image else { return }
+                self.imageView.image = image
+                self.imageView.contentMode = .scaleAspectFill
+                self.imageView.tintColor = nil
+            }
+        } else if let url = item.thumbnailURL, let image = UIImage(contentsOfFile: url.path) {
             imageView.image = image
             imageView.contentMode = .scaleAspectFill
             imageView.tintColor = nil
@@ -356,7 +472,7 @@ private final class SavedMediaCell: UICollectionViewCell {
         }
         // SavedMediaItem carries no duration today, so we show the play glyph
         // (as before) plus the scrim behind it — no duration text plumbing added.
-        let isPlayable = item.kind != .image
+        let isPlayable = item.kind == .video || item.kind == .gif
         glyphView.isHidden = !isPlayable
         scrimView.isHidden = !isPlayable
     }

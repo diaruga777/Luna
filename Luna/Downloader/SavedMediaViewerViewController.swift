@@ -12,6 +12,7 @@ import AVKit
 import LunaMediaDownload
 import LunaStorage
 import LunaTransitions
+import Photos
 import UIKit
 
 /// A page hosted by the viewer's `UIPageViewController`, identified by the saved
@@ -93,9 +94,31 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
     }
 
     private func makePage(for item: SavedMediaItem) -> UIViewController & SavedMediaPage {
-        switch item.kind {
-        case .video: return SavedMediaVideoPageViewController(item: item)
-        case .image, .gif: return SavedMediaImagePageViewController(item: item)
+        switch item.storageState {
+        case .undownloaded:
+            return SavedMediaUndownloadedPageViewController(item: item) {
+                Task {
+                    _ = await LiveMediaDownloadManager.shared.start(
+                        urlString: item.sourceURLString, title: item.title)
+                }
+            }
+        case .localFile:
+            if item.kind == .video, let fileURL = item.fileURL {
+                return SavedMediaVideoPageViewController(itemID: item.id, backing: .local(fileURL))
+            }
+            return SavedMediaImagePageViewController(
+                itemID: item.id, backing: item.fileURL.map(MediaImageBacking.local))
+        case .photosReference(let identifier, _, _):
+            if item.kind == .video {
+                return SavedMediaVideoPageViewController(
+                    itemID: item.id,
+                    backing: .photos(identifier),
+                    onMissingPhotosAsset: { [weak self] in self?.removeMissingPhotosItem(item.id) })
+            }
+            return SavedMediaImagePageViewController(
+                itemID: item.id,
+                backing: .photos(identifier),
+                onMissingPhotosAsset: { [weak self] in self?.removeMissingPhotosItem(item.id) })
         }
     }
 
@@ -114,11 +137,24 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
         // "current item vanished" handling as an external/cross-process deletion, so
         // deleting removes the page, advances to the next item, and pops only when
         // nothing is left, Photos-style, from one code path.
+        AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)
         if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
             ReadingListStore.shared.delete(saved)
-        } else {
-            SavedMediaStore.shared.delete(item)
         }
+        SavedMediaStore.shared.delete(item)
+    }
+
+    private func removeMissingPhotosItem(_ itemID: UUID) {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited,
+              let item = SavedMediaStore.shared.item(id: itemID),
+              item.photosLocalIdentifier != nil
+        else { return }
+        AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)
+        if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
+            ReadingListStore.shared.delete(saved)
+        }
+        SavedMediaStore.shared.delete(item)
     }
 
     @objc private func handleMediaChanged() {
@@ -193,29 +229,84 @@ extension SavedMediaViewerViewController: UIPageViewControllerDataSource, UIPage
 
 /// A video page — plain `AVPlayerViewController` with autoplay, matching the previous
 /// viewer's behavior.
+private enum MediaVideoBacking {
+    case local(URL)
+    case photos(String)
+}
+
 private final class SavedMediaVideoPageViewController: AVPlayerViewController, SavedMediaPage {
     let itemID: UUID
+    private let backing: MediaVideoBacking
+    private let onMissingPhotosAsset: (() -> Void)?
 
-    init(item: SavedMediaItem) {
-        self.itemID = item.id
+    init(
+        itemID: UUID,
+        backing: MediaVideoBacking,
+        onMissingPhotosAsset: (() -> Void)? = nil
+    ) {
+        self.itemID = itemID
+        self.backing = backing
+        self.onMissingPhotosAsset = onMissingPhotosAsset
         super.init(nibName: nil, bundle: nil)
-        player = AVPlayer(url: item.fileURL)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        switch backing {
+        case .local(let fileURL):
+            player = AVPlayer(url: fileURL)
+        case .photos(let identifier):
+            Task { @MainActor [weak self] in
+                guard let self,
+                      await PhotoLibrarySaver().requestReadAuthorization()
+                else { return }
+                guard let asset = PHAsset.fetchAssets(
+                    withLocalIdentifiers: [identifier], options: nil).firstObject
+                else {
+                    self.onMissingPhotosAsset?()
+                    return
+                }
+                let options = PHVideoRequestOptions()
+                options.deliveryMode = .automatic
+                options.isNetworkAccessAllowed = true
+                PHImageManager.default().requestAVAsset(forVideo: asset, options: options) {
+                    [weak self] asset, _, _ in
+                    guard let asset else { return }
+                    DispatchQueue.main.async {
+                        self?.player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+                        self?.player?.play()
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// An image/GIF page: a zoomable scroll view (double-tap to zoom, like Photos — kept
 /// simple: min 1x, max ~4x). Loosely cribbed from LunaReaderUI's ImageLightboxViewController.
+private enum MediaImageBacking {
+    case local(URL)
+    case photos(String)
+}
+
 private final class SavedMediaImagePageViewController: UIViewController, UIScrollViewDelegate, SavedMediaPage {
     let itemID: UUID
-    private let fileURL: URL
+    private let backing: MediaImageBacking?
+    private let onMissingPhotosAsset: (() -> Void)?
     private let scrollView = UIScrollView()
     private let imageView = UIImageView()
+    private var photoRequestID: PHImageRequestID = PHInvalidImageRequestID
 
-    init(item: SavedMediaItem) {
-        self.itemID = item.id
-        self.fileURL = item.fileURL
+    init(
+        itemID: UUID,
+        backing: MediaImageBacking?,
+        onMissingPhotosAsset: (() -> Void)? = nil
+    ) {
+        self.itemID = itemID
+        self.backing = backing
+        self.onMissingPhotosAsset = onMissingPhotosAsset
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -234,9 +325,9 @@ private final class SavedMediaImagePageViewController: UIViewController, UIScrol
         scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(scrollView)
 
-        imageView.image = UIImage(contentsOfFile: fileURL.path)
         imageView.contentMode = .scaleAspectFit
         scrollView.addSubview(imageView)
+        loadImage()
         layoutImageViewToFit()
 
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
@@ -249,6 +340,56 @@ private final class SavedMediaImagePageViewController: UIViewController, UIScrol
         scrollView.frame = view.bounds
         if scrollView.zoomScale <= scrollView.minimumZoomScale {
             layoutImageViewToFit()
+        }
+    }
+
+    deinit {
+        if photoRequestID != PHInvalidImageRequestID {
+            PHImageManager.default().cancelImageRequest(photoRequestID)
+        }
+    }
+
+    private func loadImage() {
+        switch backing {
+        case .local(let fileURL):
+            imageView.image = UIImage(contentsOfFile: fileURL.path)
+        case .photos(let identifier):
+            Task { @MainActor [weak self] in
+                guard let self,
+                      await PhotoLibrarySaver().requestReadAuthorization()
+                else { return }
+                guard let asset = PHAsset.fetchAssets(
+                    withLocalIdentifiers: [identifier], options: nil).firstObject
+                else {
+                    self.onMissingPhotosAsset?()
+                    return
+                }
+                self.requestPhotoImage(for: asset)
+            }
+        case nil:
+            imageView.image = UIImage(systemName: "exclamationmark.triangle")
+            imageView.tintColor = .tertiaryLabel
+        }
+    }
+
+    private func requestPhotoImage(for asset: PHAsset) {
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .exact
+        options.isNetworkAccessAllowed = true
+        let scale = view.window?.screen.scale ?? UIScreen.main.scale
+        let targetSize = CGSize(
+            width: max(view.bounds.width, 1) * scale,
+            height: max(view.bounds.height, 1) * scale)
+        photoRequestID = PHImageManager.default().requestImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFit,
+            options: options
+        ) { [weak self] image, _ in
+            guard let self, let image else { return }
+            self.imageView.image = image
+            self.layoutImageViewToFit()
         }
     }
 
@@ -289,5 +430,38 @@ private final class SavedMediaImagePageViewController: UIViewController, UIScrol
                 to: CGRect(x: point.x - width / 2, y: point.y - height / 2, width: width, height: height),
                 animated: true)
         }
+    }
+}
+
+private final class SavedMediaUndownloadedPageViewController: UIViewController, SavedMediaPage {
+    let itemID: UUID
+    private let download: () -> Void
+
+    init(item: SavedMediaItem, download: @escaping () -> Void) {
+        itemID = item.id
+        self.download = download
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .secondarySystemBackground
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: "arrow.down.circle.dotted")
+            ?? UIImage(systemName: "arrow.down.circle")
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 52, weight: .regular)
+        configuration.baseForegroundColor = .secondaryLabel
+        let button = UIButton(configuration: configuration)
+        button.accessibilityLabel = "Download media"
+        button.addAction(UIAction { [weak self] _ in self?.download() }, for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            button.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
     }
 }

@@ -26,26 +26,36 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         super.viewDidLoad()
     }
 
-    // Downloader: retention + preview switch. Sibling apps: preview switch +
-    // the existing per-platform explicit Photos auto-save toggles.
-    override func numberOfSections(in tableView: UITableView) -> Int { 2 }
+    // Downloader: retention + completion actions + preview switch. Sibling apps:
+    // preview switch + the existing per-platform explicit Photos auto-save toggles.
+    override func numberOfSections(in tableView: UITableView) -> Int { isDownloader ? 3 : 2 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        if isDownloader { return section == 0 ? 2 : 1 }
+        if isDownloader { return section == 0 ? 2 : (section == 1 ? 2 : 1) }
         return section == 0 ? 1 : platforms.count
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        if isDownloader { return section == 0 ? "Saved Media" : nil }
+        if isDownloader {
+            switch section {
+            case 0: return "Local Files"
+            case 1: return "After Downloading"
+            default: return nil
+            }
+        }
         return section == 1 ? "Auto-Save to Photos by Platform" : nil
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if isDownloader {
-            if section == 0 {
+            switch section {
+            case 0:
                 return "Files saved in Luna Downloader are deleted automatically after the selected number of days. Turn retention off to keep files until you delete them."
+            case 1:
+                return "Photos-backed downloads stay in your photo library. Clipboard copies use the downloaded file, including for videos."
+            default:
+                return "When on, the action extension downloads a saved post's media automatically and shows it inline. Turn off to download manually with a button."
             }
-            return "When on, the action extension downloads a saved post's media automatically and shows it inline. Turn off to download manually with a button."
         } else {
             if section == 0 {
                 return "When on, the action extension downloads a saved post's media automatically and shows it inline. Turn off to download manually with a button."
@@ -60,9 +70,14 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         if !isDownloader {
             return indexPath.section == 0 ? autoDownloadCell() : platformCell(at: indexPath.row)
         }
-        if indexPath.section == 1 { return autoDownloadCell() }
-        if indexPath.row == 0 { return retentionDaysCell() }
-        return retentionDisabledCell()
+        switch indexPath.section {
+        case 0:
+            return indexPath.row == 0 ? retentionDaysCell() : retentionDisabledCell()
+        case 1:
+            return indexPath.row == 0 ? autoSaveToPhotosCell() : autoCopyToClipboardCell()
+        default:
+            return autoDownloadCell()
+        }
     }
 
     private func platformCell(at index: Int) -> UITableViewCell {
@@ -124,6 +139,32 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         return cell
     }
 
+    private func autoSaveToPhotosCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = "Auto-Save to Photos"
+        content.image = UIImage(systemName: "photo.badge.arrow.down")
+        cell.contentConfiguration = content
+        cell.accessoryView = makeToggle(
+            isOn: AutoDownloadSettings.autoSaveDownloadsToPhotos,
+            action: #selector(autoSaveToPhotosToggled(_:)))
+        return cell
+    }
+
+    private func autoCopyToClipboardCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = "Copy Downloads to Clipboard"
+        content.image = UIImage(systemName: "doc.on.clipboard")
+        cell.contentConfiguration = content
+        cell.accessoryView = makeToggle(
+            isOn: AutoDownloadSettings.autoCopyDownloadsToClipboard,
+            action: #selector(autoCopyToClipboardToggled(_:)))
+        return cell
+    }
+
     /// The master "Auto-download media" row. No Photos prompt here — downloading
     /// inline doesn't touch Photos; the prompt happens when the user saves.
     private func autoDownloadCell() -> UITableViewCell {
@@ -143,6 +184,14 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
 
     @objc private func masterToggled(_ sender: UISwitch) {
         AutoDownloadSettings.autoDownloadMediaInPreview = sender.isOn
+    }
+
+    @objc private func autoSaveToPhotosToggled(_ sender: UISwitch) {
+        AutoDownloadSettings.autoSaveDownloadsToPhotos = sender.isOn
+    }
+
+    @objc private func autoCopyToClipboardToggled(_ sender: UISwitch) {
+        AutoDownloadSettings.autoCopyDownloadsToClipboard = sender.isOn
     }
 
     @objc private func retentionDaysChanged(_ sender: UIStepper) {

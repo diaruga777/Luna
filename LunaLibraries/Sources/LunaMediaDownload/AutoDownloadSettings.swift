@@ -14,6 +14,23 @@ public enum AutoDownloadSettings {
     private static let appGroupID = AppConfig.appGroupID
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
 
+    private static let autoSaveDownloadsToPhotosKey = "autoSaveDownloadsToPhotos"
+    private static let autoCopyDownloadsToClipboardKey = "autoCopyDownloadsToClipboard"
+
+    /// Whether completed Downloader downloads should be saved into Photos.
+    /// Defaults to ON so new installs use Photos-backed storage automatically.
+    public static var autoSaveDownloadsToPhotos: Bool {
+        get { (defaults.object(forKey: autoSaveDownloadsToPhotosKey) as? Bool) ?? true }
+        set { defaults.set(newValue, forKey: autoSaveDownloadsToPhotosKey) }
+    }
+
+    /// Whether a completed download should also be copied to the system clipboard.
+    /// Defaults to OFF; completion code places a file-backed item provider there.
+    public static var autoCopyDownloadsToClipboard: Bool {
+        get { (defaults.object(forKey: autoCopyDownloadsToClipboardKey) as? Bool) ?? false }
+        set { defaults.set(newValue, forKey: autoCopyDownloadsToClipboardKey) }
+    }
+
     /// Platforms that support auto-download, in display order.
     public static let platforms: [ContentPlatform] = [.x, .instagram, .tiktok, .facebook]
 

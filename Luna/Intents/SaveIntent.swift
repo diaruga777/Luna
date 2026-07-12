@@ -1,0 +1,174 @@
+//
+//  SaveIntent.swift
+//  Luna
+//
+//  App Intent definition (kept in the app target for App Intents discovery).
+//  The pieces are all in LunaIntents: the vision seam
+//  (`ScreenCaptureModelSessionFactory`), digest double-press detection
+//  (`ScreenshotDigest`/`ScreenshotDoublePress`), response parsing
+//  (`SaveResponseParsing`), and the save routing (`PlatformFieldSave` /
+//  `SafariPageSave`).
+//
+
+import AppIntents
+import LunaIntents
+import LunaStorage
+import LunaMediaDownload
+import Foundation
+
+/// Second step of the Action Button capture flow: given the current app and a
+/// screenshot of it, runs the app-specific screen-extraction prompt through the
+/// in-process FoundationModels vision session (Private Cloud Compute when
+/// available, else the on-device model), parses the " ; "-joined response, and
+/// saves the matching post/page through the action-button save path
+/// (double-save preserved). A near-immediate repeat of the same screenshot
+/// skips the model and re-runs the previous save so the configured double-save
+/// action fires. Returns nothing on success; throws descriptive errors.
+struct SaveIntent: AppIntent, ForegroundContinuableIntent {
+    init() {}
+    static let title: LocalizedStringResource = "Save"
+    static let description = IntentDescription("""
+        Second step of the Action Button shortcut. Pass the current app (from \
+        Get Current App) and a screenshot of it; Luna reads the screen with an \
+        on-device/Private Cloud Compute model and saves the matching post or \
+        page.
+        """)
+    static let openAppWhenRun: Bool = false
+
+    @Parameter(title: "App", description: "The current app, from Get Current App.")
+    var app: String
+
+    @Parameter(
+        title: "Screenshot",
+        description: "A screenshot of the current app's screen.",
+        supportedContentTypes: [.image])
+    var screenshot: IntentFile
+
+    enum SaveError: Error, CustomLocalizedStringResourceConvertible {
+        case unsupportedApp
+        case modelUnavailable
+        case networkUnavailable
+        case quotaLimitReached
+        case serviceUnavailable
+        case nothingIdentifiable
+        case notFound
+
+        var localizedStringResource: LocalizedStringResource {
+            switch self {
+            case .unsupportedApp:
+                return "Luna can't save from this app."
+            case .modelUnavailable:
+                // ITMS-90626: never mention Apple/Siri in intent-visible strings.
+                return "Screen analysis isn't available on this device."
+            case .networkUnavailable:
+                return "Screen analysis needs a network connection. Try again when you're back online."
+            case .quotaLimitReached:
+                return "You've hit the screen-analysis limit for now. Try again later."
+            case .serviceUnavailable:
+                return "Screen analysis is temporarily unavailable. Try again in a moment."
+            case .nothingIdentifiable:
+                return "Couldn't identify anything to save on this screen."
+            case .notFound:
+                return "Couldn't find a matching post or page to save."
+            }
+        }
+
+        init(modelError: ScreenCaptureModelError) {
+            switch modelError {
+            case .modelUnavailable: self = .modelUnavailable
+            case .networkFailure: self = .networkUnavailable
+            case .quotaLimitReached: self = .quotaLimitReached
+            case .serviceUnavailable, .other: self = .serviceUnavailable
+            }
+        }
+    }
+
+    func perform() async throws -> some IntentResult {
+        let imageData = screenshot.data
+        guard let digest = ScreenshotDigest.digest(forImageData: imageData) else {
+            // Undecodable image data — the model couldn't read it either.
+            throw SaveError.nothingIdentifiable
+        }
+
+        // Double-press: a near-immediate repeat of the same screenshot skips
+        // the model and re-runs the previous save, so the configured
+        // double-save action (Kindle / friend / prompt) fires.
+        if case .treatAsDoublePress(let savedURLString) = ScreenshotDoublePress.decide(
+            newDigest: digest, previous: ScreenshotDoublePressStore.last()
+        ) {
+            let outcome = await IntentIngestHelper.handleSavePress(
+                urlString: savedURLString,
+                doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
+            ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
+            if case .friendPromptRequested = outcome {
+                try? await requestToContinueInForeground()
+            }
+            return .result()
+        }
+
+        let isSafari = AppNamePlatform.isSafari(forAppName: app)
+        let prompt: String
+        if isSafari {
+            prompt = AppNamePlatform.safariScreenPrompt
+        } else if let screenPrompt = AppNamePlatform.screenPrompt(forAppName: app) {
+            prompt = screenPrompt
+        } else {
+            throw SaveError.unsupportedApp
+        }
+
+        let session = ScreenCaptureModelSessionFactory.makeDefault()
+        guard session.isAvailable else { throw SaveError.modelUnavailable }
+        let response: String
+        do {
+            response = try await session.extract(prompt: prompt, imageData: imageData)
+        } catch let error as ScreenCaptureModelError {
+            throw SaveError(modelError: error)
+        }
+
+        let fields = SaveResponseParsing.parseFields(from: response)
+        guard !fields.isEmpty else { throw SaveError.nothingIdentifiable }
+
+        let outcome: IntentIngestHelper.ActionButtonSaveOutcome
+        do {
+            if isSafari {
+                outcome = try await SafariPageSave.save(
+                    title: fields[0],
+                    site: fields.count > 1 ? fields[1] : nil,
+                    doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
+            } else if let platform = AppNamePlatform.platform(forAppName: app) {
+                outcome = try await PlatformFieldSave.save(
+                    platform: platform, fields: fields,
+                    doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
+            } else {
+                throw SaveError.unsupportedApp
+            }
+        } catch let error as PlatformFieldSave.SaveError {
+            switch error {
+            case .notFound: throw SaveError.notFound
+            case .missingValues: throw SaveError.nothingIdentifiable
+            }
+        } catch let error as SafariPageSave.SaveError {
+            switch error {
+            case .notFound: throw SaveError.notFound
+            }
+        }
+
+        let savedURLString: String?
+        switch outcome {
+        case .completed(let saved): savedURLString = saved
+        case .friendPromptRequested(let saved): savedURLString = saved
+        }
+        if let savedURLString {
+            ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
+            // Auto-download (Downloader setting; the helper checks it itself):
+            // exactly what the old "4:<url>" token / DownloadIntent path did.
+            _ = await MediaAutoDownloader.startLiveActivityIfEnabled(forURLString: savedURLString)
+        }
+        if case .friendPromptRequested = outcome {
+            // Foreground Luna so the friend selector (pending prompt already
+            // recorded) can appear.
+            try? await requestToContinueInForeground()
+        }
+        return .result()
+    }
+}

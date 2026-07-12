@@ -34,7 +34,7 @@ final class IntentQueryTests: XCTestCase {
         XCTAssertEqual(BlueskyPostQuery.searchQuery(handle: "  ", text: "just text"), "just text")
     }
 
-    // MARK: - SaveFromApp single-string parsing
+    // MARK: - Save-intent single-string response parsing
 
     func testParseFieldsSplitsOnDelimiterAndTrims() {
         XCTAssertEqual(

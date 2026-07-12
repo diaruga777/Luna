@@ -28,7 +28,7 @@ public enum ActionButtonOnboardingState: Int, Sendable {
     case awaitingShortcutRun = 2
     /// Back in Luna, on the action-button setup screen. Reached either by actually
     /// running the freshly-imported shortcut once (which invokes
-    /// `SaveFromAppIntent` from the Shortcuts app), or by the one-shot foreground
+    /// the Provide Context intent from the Shortcuts app), or by the one-shot foreground
     /// skip for a user who imported it but never ran it.
     case actionButtonSetup = 4
     /// The user tapped the deep link into Settings → Action Button.
@@ -127,8 +127,7 @@ public final class ActionButtonOnboardingStore {
         setState(.awaitingActionButton, forSurface: surface)
     }
 
-    /// Called at the very top of the Provide Context intent's decision logic
-    /// (currently: `SaveFromAppIntent.perform()`, until the intent swap), before
+    /// Called at the very top of `ProvideContextIntent.perform()`, before
     /// any real decision work, so the shortcut round-trips can hijack the
     /// invocation instead of performing (or skipping) a real save.
     ///

@@ -7,7 +7,7 @@ import Foundation
 
 /// Splits the on-device model's single response string (produced from a screen
 /// prompt — see `AppNamePlatform.screenPrompt`/`safariScreenPrompt`) into its
-/// " ; "-joined fields. Relocated verbatim from `SaveFromAppIntent.parseFields`.
+/// " ; "-joined fields. Used by the Save intent's screenshot capture path.
 public enum SaveResponseParsing {
 
     /// Splits the model's single response string into its " ; "-joined fields,

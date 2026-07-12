@@ -8,15 +8,15 @@ import Foundation
 
 /// Maps the current-app name (from Shortcuts' "Get Current App") to a content
 /// platform, and supplies the screen-extraction prompt per platform.
-/// Shared by the generic save intent and the screen-prompt intent.
+/// Shared by the Provide Context and Save intents.
 public enum AppNamePlatform {
 
     /// Whether the current app is one Luna knows how to save from — a recognized
     /// content platform, Safari (whose plain page URL is saved directly), or the
     /// Shortcuts app (the Action Button onboarding shortcut's own first run — no
-    /// content to save, `SaveFromAppIntent` intercepts it before any save logic
-    /// runs). Unknown apps are unsupported; the screen-prompt intent returns
-    /// "unsupported" for them.
+    /// content to save, the Provide Context intent intercepts it before any save
+    /// logic runs). Unknown apps are unsupported (Provide Context returns 0 for
+    /// them).
     public static func isSupported(forAppName app: String) -> Bool {
         platform(forAppName: app) != nil || isSafari(forAppName: app) || isShortcuts(forAppName: app)
     }
@@ -47,13 +47,14 @@ public enum AppNamePlatform {
     }
 
     /// The screen-extraction prompt for pulling identifying metadata from a
-    /// screenshot of `app`, or nil when none applies (Safari, unknown apps). The
-    /// caller appends the screenshot and runs prompt+image through an image model,
-    /// then passes the model's single response string straight to "Save from App".
+    /// screenshot of `app`, or nil when none applies (Safari — see
+    /// `safariScreenPrompt` — and unknown apps). The
+    /// Save intent runs prompt+screenshot through the in-process vision session
+    /// and parses the model's single response string.
     ///
     /// Each prompt instructs the model to return one line containing exactly the
-    /// fields "Save from App" parses for that app, joined by " ; " — matching
-    /// `SaveFromAppIntent.parseFields`. "none" means nothing identifiable is on
+    /// fields the Save intent parses for that app, joined by " ; " — matching
+    /// `SaveResponseParsing.parseFields`. "none" means nothing identifiable is on
     /// screen; the save intent treats it (and any error/empty response) as nothing
     /// to save.
     public static func screenPrompt(forAppName app: String) -> String? {

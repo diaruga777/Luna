@@ -11,67 +11,20 @@ import AppIntents
 struct LunaShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
-            intent: LunaSafariPageIntent(),
+            intent: ProvideContextIntent(),
             phrases: [
-                "Save this page with \(.applicationName)",
-                "Save the current page with \(.applicationName)",
+                "Provide context to \(.applicationName)",
             ],
-            shortTitle: "Save Safari Page",
-            systemImageName: "safari"
+            shortTitle: "Provide Context",
+            systemImageName: "questionmark.app"
         )
         AppShortcut(
-            intent: SaveLinkIntent(),
+            intent: SaveIntent(),
             phrases: [
-                "Save link with \(.applicationName)",
+                "Save this screen with \(.applicationName)",
             ],
-            shortTitle: "Save Link",
-            systemImageName: "link.badge.plus"
-        )
-        AppShortcut(
-            intent: FindBlueskyPostIntent(),
-            phrases: [
-                "Save a Bluesky post with \(.applicationName)",
-            ],
-            shortTitle: "Save Bluesky Post",
-            systemImageName: "bubble.left.and.bubble.right"
-        )
-        AppShortcut(
-            intent: FindRedditPostIntent(),
-            phrases: [
-                "Save a Reddit post with \(.applicationName)",
-            ],
-            shortTitle: "Save Reddit Post",
-            systemImageName: "bubble.left.and.text.bubble.right"
-        )
-        AppShortcut(
-            intent: SaveXPostIntent(),
-            phrases: ["Save an X post with \(.applicationName)"],
-            shortTitle: "Save X Post",
-            systemImageName: "bubble.left"
-        )
-        AppShortcut(
-            intent: SaveTikTokIntent(),
-            phrases: ["Save a TikTok with \(.applicationName)"],
-            shortTitle: "Save TikTok",
-            systemImageName: "play.rectangle"
-        )
-        AppShortcut(
-            intent: SaveInstagramPostIntent(),
-            phrases: ["Save an Instagram post with \(.applicationName)"],
-            shortTitle: "Save Instagram Post",
-            systemImageName: "camera"
-        )
-        AppShortcut(
-            intent: SaveFromAppIntent(),
-            phrases: ["Save from the current app with \(.applicationName)"],
-            shortTitle: "Save from App",
+            shortTitle: "Save",
             systemImageName: "square.and.arrow.down.on.square"
-        )
-        AppShortcut(
-            intent: ScreenAnalysisPromptIntent(),
-            phrases: ["Get the screen prompt with \(.applicationName)"],
-            shortTitle: "Screen Analysis Prompt",
-            systemImageName: "text.viewfinder"
         )
         AppShortcut(
             intent: ReadArticleIntent(),

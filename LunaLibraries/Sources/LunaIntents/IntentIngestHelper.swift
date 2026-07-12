@@ -12,16 +12,18 @@ import Foundation
 /// call into.
 public enum IntentIngestHelper {
 
-    /// What an Action Button save press produced, for `SaveFromAppIntent`.
+    /// What an Action Button save press produced, for the Provide Context /
+    /// Save App Intents.
     public enum ActionButtonSaveOutcome {
         /// Save/send handled (or duplicate). `savedURLString` is the URL that
         /// ended up saved, nil when the outcome couldn't be determined before
         /// the timeout.
         case completed(savedURLString: String?)
         /// Double save with "ask every time" — the pending friend prompt is
-        /// recorded; the intent should return the open-Luna token so the
-        /// Shortcut foregrounds the app into the friend selector.
-        case friendPromptRequested
+        /// recorded; the intent should foreground the app so the friend
+        /// selector can appear. `savedURLString` is the saved item's URL (the
+        /// item exists before the prompt is answered).
+        case friendPromptRequested(savedURLString: String)
     }
 
     /// Handles a save press (save+ingest, double-press send, or ignore), giving
@@ -49,8 +51,8 @@ public enum IntentIngestHelper {
         urlString: String, doubleSaveActionSurface surface: String
     ) async -> ActionButtonSaveOutcome {
         switch await savePressRacingTimeout(urlString: urlString, doubleSaveActionSurface: surface) {
-        case .some(.friendPromptRequested):
-            return .friendPromptRequested
+        case .some(.friendPromptRequested(let item)):
+            return .friendPromptRequested(savedURLString: item.urlString)
         case .some(.saved(let item)), .some(.sentToEreaders(let item)), .some(.sentToFriends(let item)):
             return .completed(savedURLString: item.urlString)
         case .some(.ignored):
@@ -62,8 +64,9 @@ public enum IntentIngestHelper {
 
     /// Convenience for callers with an optional double-save surface: routes
     /// through `handleActionButtonSavePress` when a surface is armed, else
-    /// `handleSavePressWithTimeout` — mirroring the decision `SaveFromAppIntent`
-    /// makes today (double-save only armed for eligible surfaces).
+    /// `handleSavePressWithTimeout` — mirroring the decision the Provide
+    /// Context / Save intents make (double-save only armed for eligible
+    /// surfaces).
     public static func handleSavePress(
         urlString: String, doubleSaveActionSurface surface: String?
     ) async -> ActionButtonSaveOutcome {

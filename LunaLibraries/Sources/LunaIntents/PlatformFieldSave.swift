@@ -7,8 +7,8 @@ import LunaModels
 import LunaPlatforms
 import Foundation
 
-/// Lifted from `SaveFromAppIntent.perform()`'s inline per-platform routing
-/// switch: given a platform and the " ; "-joined fields parsed from the model's
+/// The Save intent's per-platform save routing: given a platform and the
+/// " ; "-joined fields parsed from the model's
 /// screen-read response (`SaveResponseParsing.parseFields`), validates the field
 /// count for that platform, runs the platform's search (Bluesky/Reddit's own
 /// search APIs; X/TikTok/Instagram/Facebook via keyless `SocialPostFinder`), and

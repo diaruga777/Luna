@@ -50,9 +50,12 @@ Article flow:
    which returns the app's `SafariSuggestionMode` (`never` / `all` / `onlyLocked`, default
    `all`) from the App Group (`SafariSuggestionSettings`, key `safariSuggestionMode`).
 2. If `never`, or the page isn't an article, or (`onlyLocked`) the page isn't locked, it
-   does nothing. A page is an article when its host is a known news/article host
-   (`isKnownArticleHost` — see "Shared news-host list" below) OR the DOM scorer accepts it
-   (`looksLikeArticle`). A page is "locked" for `onlyLocked` when its host is a known
+   does nothing. A page is an article when the DOM is **not** an obvious index/listing
+   and either its host is a known news/article host (`isKnownArticleHost` — see "Shared
+   news-host list" below) OR the DOM scorer accepts it (`looksLikeArticle`). An index
+   vetoes both paths: 4+ `<article>` elements, a whole-page link density above 0.5, or
+   explicit landing/collection/search/site JSON-LD paired with at least five distinct
+   headline-sized destination links. A page is "locked" for `onlyLocked` when its host is a known
    hard-paywall site (`isKnownHardPaywallHost`) OR it shows paywall markers (`looksPaywalled`
    — a JS mirror of `PaywallDetector`: gate markers + `isAccessibleForFree` + `content_tier`).
 3. Otherwise it injects a Luna-indigo (`#5856D6`) "Read in Luna" capsule button. Tapping it
@@ -72,14 +75,16 @@ that exact data through the generated `LunaSafari/Resources/news_hosts.generated
 (`self.__LUNA_NEWS_HOSTS`), which `background.js` injects immediately before `content.js`.
 `NewsSitesJSParityTests` regenerates it (`TEST_RUNNER_RECORD_NEWS_HOSTS=1`) from the Swift
 arrays and, without that flag, fails the suite if the committed file drifts — so the two
-sides can never disagree on which hosts are article/news sites. A known article host is an
-article regardless of the DOM scorer; a known hard-paywall host also counts as "locked" for
-the `onlyLocked` mode. This is the single generalized rule — no site is hardcoded in the
+sides can never disagree on which hosts are article/news sites. A known article host rescues
+a thin teaser **unless** the DOM is structurally an index/listing (so a publisher's root or
+section page does not get a reader pill); a known hard-paywall host also counts as "locked"
+for the `onlyLocked` mode. This is the single generalized rule — no site is hardcoded in the
 extension; `afr.com` is simply one entry in the shared list.
 
-**Article heuristic (`looksLikeArticle`).** The FALLBACK scorer for hosts NOT on the shared
-list above — a lightweight Readability-style scorer, JS-only, since it only decides button
-visibility; the app re-classifies properly on save via `LunaIngest`.
+**Article heuristic (`looksLikeArticle`).** The fallback prose scorer for pages that are not
+rescued by the shared host list — a lightweight Readability-style scorer, JS-only, since it
+only decides button visibility; the app re-classifies properly on save via `LunaIngest`. The
+index/listing veto above runs before both the host fallback and this scorer.
 - Hard negatives (any one disqualifies the page): 4+ `<article>` elements (a teaser
   feed); whole-page link density (all `<a>` text ÷ `document.body.innerText`) above 0.5;
   a `docs`/`documentation`/`api`/`reference`/`sdk`/`changelog` first-or-second URL path

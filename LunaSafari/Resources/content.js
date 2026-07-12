@@ -58,7 +58,7 @@
                 if (trackTarget) { injectLunaButton(trackTarget); }
                 return;
             }
-            if (!isKnownArticleHost() && !looksLikeArticle()) {
+            if (!isArticlePage()) {
                 // Some article bodies hydrate late (SPA/client-rendered pages) --
                 // give the DOM a chance to settle, then re-check once. (A known
                 // article host classifies immediately, so it never reaches here.)
@@ -84,7 +84,7 @@
     // One-shot re-check of just the article branch (mirrors the tail of the
     // `buttonContext` handler above) for the 2500ms SPA retry.
     function tryInjectArticleButton(mode, resp) {
-        if (!isKnownArticleHost() && !looksLikeArticle()) { return; }
+        if (!isArticlePage()) { return; }
         if (mode === "onlyLocked" && !pageIsLocked()) { return; }
         var target = readTarget(resp);
         if (target) { injectLunaButton(target); }
@@ -276,14 +276,14 @@
     window.__lunaRecognizedPlatformPage = recognizedPlatformPage;
     window.__lunaShouldShowDownloadPillForPlatform = shouldShowDownloadPillForPlatform;
 
-    // The app recognizes news/article sites by URL host alone (NewsSites.hardPaywall /
-    // .free in LunaURLClassification, via KnownSite.matches' host-suffix test) with no
-    // DOM inspection. The Safari extension shares that exact host data through the
-    // generated `news_hosts.generated.js` (injected before this file by background.js;
-    // guarded against drift by NewsSitesJSParityTests), so a known article host is
-    // treated as an article even when the rendered DOM is too thin for the scorer above
-    // (e.g. a metered site's truncated teaser body). This is what keeps the extension
-    // and the main app applying the SAME classification rule rather than two heuristics.
+    // The app recognizes news/article sites by URL host (NewsSites.hardPaywall / .free
+    // in LunaURLClassification, via KnownSite.matches' host-suffix test). The Safari
+    // extension shares that exact host data through the generated
+    // `news_hosts.generated.js` (injected before this file by background.js; guarded
+    // against drift by NewsSitesJSParityTests), so a known article host can still rescue
+    // a metered page whose rendered teaser is too thin for the prose scorer. Host
+    // recognition is deliberately a FALLBACK, however: a publisher homepage / section
+    // index is on the same host and must never gain a reader pill just for that reason.
     function knownNewsHosts(key) {
         var data = (typeof self !== "undefined") ? self.__LUNA_NEWS_HOSTS : undefined;
         return (data && data[key]) || [];
@@ -305,12 +305,85 @@
         return isKnownHardPaywallHost() || looksPaywalled();
     }
 
-    // Combined article verdict (host list OR DOM scorer), exposed for the bare-WKWebView
-    // test harness. Mirrors the gate used in the buttonContext handler above.
-    window.__lunaIsArticlePage = function () {
+    // Combined article verdict, exposed for the bare-WKWebView test harness. An obvious
+    // index/listing page vetoes BOTH paths. Otherwise a known news host rescues a thin
+    // paywall teaser, while unknown hosts still need the prose scorer to pass.
+    function isArticlePage() {
+        if (looksLikeNonArticleIndex()) { return false; }
         return isKnownArticleHost() || looksLikeArticle();
-    };
+    }
+    window.__lunaIsArticlePage = isArticlePage;
     window.__lunaIsKnownHardPaywallHost = isKnownHardPaywallHost;
+
+    // An index is not something Luna can read as one article, even when its publisher
+    // is in the known-news host list. These are intentionally structural signals rather
+    // than site names:
+    //   * repeated <article>s or a link-dense page are universal listing shapes;
+    //   * a page declaring itself as a landing / collection / search / site page AND
+    //     exposing a cluster of headline-sized links is a publisher front/section page.
+    // Requiring both metadata and the visible link cluster for the latter avoids
+    // rejecting a genuine article merely because it also declares generic WebPage data.
+    function looksLikeNonArticleIndex() {
+        var body = document.body;
+        if (!body) { return false; }
+        if (document.querySelectorAll("article").length >= 4) { return true; }
+        if (wholePageLinkDensity(body) > 0.5) { return true; }
+        return declaresListingPage() && headlineLinkCount() >= 5;
+    }
+
+    function declaresListingPage() {
+        var scripts = document.querySelectorAll('script[type="application/ld+json"]');
+        var combined = "";
+        for (var i = 0; i < scripts.length; i++) { combined += " " + (scripts[i].textContent || "").toLowerCase(); }
+        // `landing_homepage` is used by CNN and similar publisher fronts. The schema
+        // types cover category, search, and site indexes without assigning meaning to a
+        // generic WebPage declaration, which many real articles legitimately include.
+        if (/landing[ _-]?(home)?page|front[ _-]?page/.test(combined)) { return true; }
+        return /"@type"\s*:\s*"(?:collectionpage|searchresultspage|itemlist|website)"/.test(combined)
+            || /"@type"\s*:\s*\[[^\]]*"(?:collectionpage|searchresultspage|itemlist|website)"/.test(combined);
+    }
+
+    // Counts distinct, substantial destination links outside chrome. A story-card grid
+    // normally has many of these; article pages may have a related-links rail, but not
+    // enough to combine with the explicit listing metadata above.
+    function headlineLinkCount() {
+        var links = document.querySelectorAll("a[href]");
+        var destinations = Object.create(null);
+        var count = 0;
+        for (var i = 0; i < links.length; i++) {
+            var link = links[i];
+            if (headlineLinkIsChrome(link)) { continue; }
+            var text = (link.innerText || "").replace(/\s+/g, " ").trim();
+            if (text.length < 25) { continue; }
+            var href = (link.getAttribute("href") || "").trim();
+            if (!href || href.charAt(0) === "#" || /^(javascript:|mailto:|tel:)/i.test(href)) { continue; }
+            if (destinations[href]) { continue; }
+            destinations[href] = true;
+            count += 1;
+            if (count >= 5) { return count; }
+        }
+        return count;
+    }
+
+    // Story cards are intentionally counted above, so this cannot reuse
+    // `ancestorDisqualifies` (which quite correctly rejects `.card` for prose
+    // extraction). For a headline link we only exclude actual site chrome.
+    function headlineLinkIsChrome(node) {
+        var current = node;
+        for (var depth = 0; current && depth <= 5; depth++) {
+            var tag = (current.tagName || "").toLowerCase();
+            if (tag === "nav" || tag === "header" || tag === "footer") { return true; }
+            var className = typeof current.className === "string" ? current.className : "";
+            var combined = (className + " " + (current.id || "")).trim();
+            if (/(nav|menu|footer|header|breadcrumb|pagination|cookie|account|social|share)/i.test(combined)
+                && !/(article|body|content|main|story|post|entry)/i.test(combined)) {
+                return true;
+            }
+            if (current === document.body) { break; }
+            current = current.parentElement;
+        }
+        return false;
+    }
 
     // Sum of `<a>` innerText inside `root`, divided by `root`'s own innerText
     // length -- a whole-page link density above 0.5 flags a listing/nav-heavy page.

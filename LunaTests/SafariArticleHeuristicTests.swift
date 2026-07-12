@@ -287,6 +287,38 @@ final class SafariArticleHeuristicTests: XCTestCase {
         XCTAssertTrue(evaluate("window.__lunaIsKnownHardPaywallHost()", html: html, urlString: afrURL))
     }
 
+    /// A publisher front page is not one readable work. It can live on a known-news
+    /// host and contain plenty of visible teaser copy, so the host fallback alone is
+    /// insufficient. The landing-page schema plus a cluster of headline links is the
+    /// general, site-agnostic index signal that must veto it.
+    func testKnownNewsLandingPageWithHeadlineGridIsNotArticle() {
+        var cards = ""
+        for index in 0..<6 {
+            cards += """
+            <section class="story-card">
+              <a href="/2026/07/12/story-\(index)"><h2>
+                Major developing story number \(index) has a detailed headline
+              </h2></a>
+              <p>\(prose(130))</p>
+            </section>
+            """
+        }
+        let html = """
+        <html><head>
+          <meta property="og:type" content="website">
+          <script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"WebPage",
+             "additionalType":"landing_homepage","name":"News front page"}
+          </script>
+        </head><body><main>\(cards)</main></body></html>
+        """
+
+        XCTAssertFalse(evaluate(
+            "window.__lunaLooksLikeArticle()", html: html, urlString: "https://edition.cnn.com/"))
+        XCTAssertFalse(evaluate(
+            "window.__lunaIsArticlePage()", html: html, urlString: "https://edition.cnn.com/"))
+    }
+
     /// (B) Control: the identical thin teaser on a host NOT in the shared list gets no
     /// host rescue and correctly fails the DOM scorer -- proving the fix keys on the
     /// shared host data, not blanket acceptance of thin pages.

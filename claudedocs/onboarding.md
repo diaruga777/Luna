@@ -155,8 +155,9 @@ invocations during setup. The onboarding UI drives/observes it as follows:
 
 The clips are recorded from the SAME `OnboardingAnimationView` UIKit elements and
 animations used inline (`.safariExtension` for the Safari clip;
-`.actionButtonSettings` — the same current-theme Settings → Safari → button-press
-sequence used inline), via `LunaTests/GuideVideoRecorderTests.swift`. The recorder
+`.actionButtonSettings` — the same current-theme Settings root → Action Button
+→ swipe to Shortcut → choose shortcut → iOS app-switch transition → Safari
+→ button-press sequence used inline), via `LunaTests/GuideVideoRecorderTests.swift`. The recorder
 generates light and dark variants for Reader, Downloader, and Price Tracker, so PiP
 carries the same app icon and appearance as the live UI. It is gated behind
 `RECORD_GUIDE_VIDEOS=1` (mirrors
@@ -246,6 +247,14 @@ a new surface-specific clip is unavailable, so PiP stays functional while a
 manual re-record is pending.
 
 ## Illustration app icons (`AppIconImage<App>` imagesets)
+
+The Shortcuts share-sheet item uses the real current 400×400 Shortcuts PNG from
+Apple's Shortcuts User Guide asset host, bundled as
+`Luna/Assets.xcassets/ShortcutsAppIcon.imageset`; do not replace it with an SF
+Symbol approximation. The shortcut-install phone uses the same 0.49 portrait
+width:height proportion as the Safari/Action Button phones. Its one-level nested
+guide placeholder is deliberately neutral gray geometry (no Luna glyph or live
+recursion).
 
 `OnboardingAnimationView.AppIcon` picks the current app's icon for the mock UI
 rows (Dynamic Island confirmation, "Save to Luna" share row, Safari extension

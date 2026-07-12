@@ -365,14 +365,9 @@ public final class SavedNonTextualViewController: UIViewController {
         }
     }
 
-    /// In Luna Downloader the app-owned media library (`SavedMediaStore`) is the
-    /// home grid's data source and the primary save destination, so a `ready`
-    /// preview is persisted there automatically — a shared post appears in the grid
-    /// with no extra tap (the "Save to Photos" button stays an explicit Photos
-    /// export). A COPY is stored so the live preview file remains playable / usable
-    /// for that export; marking the URL downloaded dedupes the main app's ingest
-    /// funnel so it never re-downloads the same post. No-op in sibling apps, whose
-    /// media flow stays Photos-only.
+    /// Persists a Downloader preview according to the global storage policy. A copy
+    /// is used so the inline preview remains playable while the durable backing is
+    /// committed as either a PhotoKit identifier or an app-group file.
     private func persistToDownloaderLibraryIfNeeded(_ media: DownloadedMedia) {
         guard MediaAutoDownloader.isRunningInDownloader, !didPersistToLibrary else { return }
         didPersistToLibrary = true
@@ -384,9 +379,45 @@ public final class SavedNonTextualViewController: UIViewController {
             let copy = MediaDownloadStorage.newFileURL(extension: previewURL.pathExtension)
             do {
                 try FileManager.default.copyItem(at: previewURL, to: copy)
-                _ = try SavedMediaStore.shared.addDownloadedFile(
-                    copy, kind: kind, sourceURLString: sourceURLString, title: title)
+                let store = SavedMediaStore.shared
+                let pending = try store.ensureUndownloaded(
+                    id: ReadingListStore.shared.item(forURLString: sourceURLString)?.id ?? UUID(),
+                    sourceURLString: sourceURLString,
+                    title: title)
+                let saved: SavedMediaItem
+                let photoSaver = PhotoLibrarySaver()
+                if AutoDownloadSettings.autoSaveDownloadsToPhotos,
+                   await photoSaver.requestReadAuthorization() {
+                    do {
+                        let identifier = try await photoSaver.save(
+                            fileURL: copy, kind: kind, shouldMoveFile: false)
+                        guard let item = try store.transitionToPhotosReference(
+                            pending.id, localIdentifier: identifier, kind: kind)
+                        else { throw MediaDownloadError.saveFailed }
+                        saved = item
+                        try? FileManager.default.removeItem(at: copy)
+                    } catch {
+                        saved = try store.addDownloadedFile(
+                            copy, kind: kind, sourceURLString: sourceURLString, title: title)
+                    }
+                } else {
+                    saved = try store.addDownloadedFile(
+                        copy, kind: kind, sourceURLString: sourceURLString, title: title)
+                }
                 AutoDownloadSettings.markDownloaded(sourceURLString)
+                if AutoDownloadSettings.autoCopyDownloadsToClipboard {
+                    await MainActor.run {
+                        switch saved.storageState {
+                        case .localFile:
+                            if let url = saved.fileURL { _ = MediaPasteboard.copy(.localFile(url)) }
+                        case .photosReference(let identifier, _, _):
+                            _ = MediaPasteboard.copy(.photo(
+                                localIdentifier: identifier, kind: kind))
+                        case .undownloaded:
+                            break
+                        }
+                    }
+                }
             } catch {
                 try? FileManager.default.removeItem(at: copy)
             }
@@ -464,7 +495,11 @@ public final class SavedNonTextualViewController: UIViewController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await downloadService.saveDownloadedMediaToPhotos(media)
+                let identifier = try await downloadService.saveDownloadedMediaToPhotos(media)
+                if let local = SavedMediaStore.shared.item(forURLString: articleURLString) {
+                    _ = try SavedMediaStore.shared.transitionToPhotosReference(
+                        local.id, localIdentifier: identifier, kind: media.kind)
+                }
                 // PhotoKit moved the file into the library — no temp file to clean up.
                 await MainActor.run { self.unsavedPreviewFileURL = nil }
                 AutoDownloadSettings.markDownloaded(articleURLString)

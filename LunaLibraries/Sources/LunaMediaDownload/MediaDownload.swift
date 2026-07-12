@@ -70,8 +70,19 @@ public protocol SocialMediaResolving {
 public protocol PhotoLibrarySaving {
     /// Requests add-only Photos authorization, returning whether it's granted.
     func requestAddAuthorization() async -> Bool
-    /// Saves the file at `fileURL` (of the given kind) to the photo library.
-    func save(fileURL: URL, kind: MediaAsset.Kind) async throws
+    /// Requests read/write Photos access so saved identifiers can be resolved later.
+    func requestReadAuthorization() async -> Bool
+    /// Saves the file at `fileURL` (of the given kind) to the photo library and
+    /// returns PhotoKit's durable local identifier for the created asset.
+    func save(
+        fileURL: URL, kind: MediaAsset.Kind, shouldMoveFile: Bool
+    ) async throws -> String
+}
+
+public extension PhotoLibrarySaving {
+    func save(fileURL: URL, kind: MediaAsset.Kind) async throws -> String {
+        try await save(fileURL: fileURL, kind: kind, shouldMoveFile: true)
+    }
 }
 
 /// A media item downloaded to a local file (in the temp dir), ready to preview
@@ -136,5 +147,5 @@ public protocol MediaDownloading {
 
     /// Saves an already-downloaded media file to Photos (add-only). Requests
     /// authorization first; throws `MediaDownloadError` on failure.
-    func saveDownloadedMediaToPhotos(_ media: DownloadedMedia) async throws
+    func saveDownloadedMediaToPhotos(_ media: DownloadedMedia) async throws -> String
 }

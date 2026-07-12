@@ -1831,7 +1831,14 @@ final class ReadingListViewController: UITableViewController {
         Task { [weak self] in
             do {
                 guard let self else { return }
-                guard await self.photoSaver.requestAddAuthorization() else {
+                guard let fileURL = media.fileURL, let kind = media.kind else {
+                    await MainActor.run {
+                        self.mediaDownloadStatus?.showResult(
+                            message: "Media is no longer available locally.", success: false)
+                    }
+                    return
+                }
+                guard await self.photoSaver.requestReadAuthorization() else {
                     await MainActor.run {
                         self.mediaDownloadStatus?.showResult(
                             message: MediaDownloadError.permissionDenied.message,
@@ -1839,10 +1846,12 @@ final class ReadingListViewController: UITableViewController {
                     }
                     return
                 }
-                let tempURL = MediaDownloadStorage.newFileURL(extension: media.fileURL.pathExtension)
-                try FileManager.default.copyItem(at: media.fileURL, to: tempURL)
+                let tempURL = MediaDownloadStorage.newFileURL(extension: fileURL.pathExtension)
+                try FileManager.default.copyItem(at: fileURL, to: tempURL)
                 defer { try? FileManager.default.removeItem(at: tempURL) }
-                try await self.photoSaver.save(fileURL: tempURL, kind: media.kind)
+                let identifier = try await self.photoSaver.save(fileURL: tempURL, kind: kind)
+                _ = try SavedMediaStore.shared.transitionToPhotosReference(
+                    media.id, localIdentifier: identifier, kind: kind)
                 await MainActor.run {
                     self.mediaDownloadStatus?.showResult(message: "Saved to Photos", success: true)
                 }

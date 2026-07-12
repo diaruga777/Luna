@@ -12,20 +12,130 @@ import UIKit
 import UniformTypeIdentifiers
 
 public struct SavedMediaItem: Codable, Identifiable, Equatable {
+    public enum StorageState: Codable, Equatable {
+        case undownloaded
+        case localFile(fileName: String)
+        /// `pendingLocal*` make the destructive half of local -> Photos recoverable:
+        /// the Photos identifier is committed first, then these files are removed and
+        /// the pending names are cleared in a second atomic manifest write.
+        case photosReference(
+            localIdentifier: String,
+            pendingLocalFileName: String?,
+            pendingThumbnailFileName: String?)
+
+        private enum CodingKeys: String, CodingKey {
+            case type, fileName, localIdentifier, pendingLocalFileName, pendingThumbnailFileName
+        }
+        private enum Kind: String, Codable { case undownloaded, localFile, photosReference }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            switch try container.decode(Kind.self, forKey: .type) {
+            case .undownloaded:
+                self = .undownloaded
+            case .localFile:
+                self = .localFile(fileName: try container.decode(String.self, forKey: .fileName))
+            case .photosReference:
+                self = .photosReference(
+                    localIdentifier: try container.decode(String.self, forKey: .localIdentifier),
+                    pendingLocalFileName: try container.decodeIfPresent(
+                        String.self, forKey: .pendingLocalFileName),
+                    pendingThumbnailFileName: try container.decodeIfPresent(
+                        String.self, forKey: .pendingThumbnailFileName))
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .undownloaded:
+                try container.encode(Kind.undownloaded, forKey: .type)
+            case .localFile(let fileName):
+                try container.encode(Kind.localFile, forKey: .type)
+                try container.encode(fileName, forKey: .fileName)
+            case .photosReference(let identifier, let pendingFile, let pendingThumbnail):
+                try container.encode(Kind.photosReference, forKey: .type)
+                try container.encode(identifier, forKey: .localIdentifier)
+                try container.encodeIfPresent(pendingFile, forKey: .pendingLocalFileName)
+                try container.encodeIfPresent(pendingThumbnail, forKey: .pendingThumbnailFileName)
+            }
+        }
+    }
+
     public let id: UUID
     public var sourceURLString: String
     public var title: String?
     public var dateSaved: Date
-    public var kind: MediaAsset.Kind
-    public var fileName: String
+    /// Nil until resolution/download establishes the actual resource type.
+    public var kind: MediaAsset.Kind?
+    public var storageState: StorageState
     public var thumbnailFileName: String?
 
-    public var fileURL: URL {
-        SavedMediaStore.shared.mediaDirectory.appendingPathComponent(fileName)
+    public var fileName: String? {
+        guard case .localFile(let fileName) = storageState else { return nil }
+        return fileName
+    }
+
+    public var photosLocalIdentifier: String? {
+        guard case .photosReference(let identifier, _, _) = storageState else { return nil }
+        return identifier
+    }
+
+    public var fileURL: URL? {
+        fileName.map { SavedMediaStore.shared.mediaDirectory.appendingPathComponent($0) }
     }
 
     public var thumbnailURL: URL? {
         thumbnailFileName.map { SavedMediaStore.shared.thumbnailDirectory.appendingPathComponent($0) }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, sourceURLString, title, dateSaved, kind, storageState, fileName, thumbnailFileName
+    }
+
+    public init(
+        id: UUID, sourceURLString: String, title: String?, dateSaved: Date,
+        kind: MediaAsset.Kind?, storageState: StorageState,
+        thumbnailFileName: String?
+    ) {
+        self.id = id
+        self.sourceURLString = sourceURLString
+        self.title = title
+        self.dateSaved = dateSaved
+        self.kind = kind
+        self.storageState = storageState
+        self.thumbnailFileName = thumbnailFileName
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        sourceURLString = try container.decode(String.self, forKey: .sourceURLString)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        dateSaved = try container.decode(Date.self, forKey: .dateSaved)
+        kind = try container.decodeIfPresent(MediaAsset.Kind.self, forKey: .kind)
+        thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
+        if let state = try container.decodeIfPresent(StorageState.self, forKey: .storageState) {
+            storageState = state
+        } else if let legacyFileName = try container.decodeIfPresent(String.self, forKey: .fileName),
+                  !legacyFileName.isEmpty {
+            storageState = .localFile(fileName: legacyFileName)
+        } else {
+            storageState = .undownloaded
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(sourceURLString, forKey: .sourceURLString)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encode(dateSaved, forKey: .dateSaved)
+        try container.encodeIfPresent(kind, forKey: .kind)
+        try container.encode(storageState, forKey: .storageState)
+        try container.encodeIfPresent(thumbnailFileName, forKey: .thumbnailFileName)
+        // Continue writing the legacy key for local rows during the rollout.
+        try container.encodeIfPresent(fileName, forKey: .fileName)
     }
 }
 
@@ -78,6 +188,7 @@ public final class SavedMediaStore {
 
     private let lock = NSLock()
     private let fm = FileManager.default
+    private let overrideContainerURL: URL?
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -90,12 +201,15 @@ public final class SavedMediaStore {
         return decoder
     }()
 
-    public init() {}
+    public init(containerURL: URL? = nil) {
+        self.overrideContainerURL = containerURL
+    }
 
     public var directory: URL {
         let fallback = fm.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? fm.temporaryDirectory
-        let base = fm.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)
+        let base = overrideContainerURL
+            ?? fm.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)
             ?? fallback
         let dir = base.appendingPathComponent("SavedMedia", isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -122,7 +236,11 @@ public final class SavedMediaStore {
     public func items() -> [SavedMediaItem] {
         lock.lock()
         defer { lock.unlock() }
-        return loadUnlocked().sorted { $0.dateSaved < $1.dateSaved }
+        var items = loadUnlocked()
+        if recoverInterruptedTransitionsUnlocked(&items) {
+            try? saveUnlocked(items)
+        }
+        return items.sorted { $0.dateSaved < $1.dateSaved }
     }
 
     public func item(id: UUID) -> SavedMediaItem? {
@@ -131,6 +249,58 @@ public final class SavedMediaStore {
 
     public func item(forURLString urlString: String) -> SavedMediaItem? {
         items().first { $0.sourceURLString == urlString }
+    }
+
+    /// Ensures every Downloader save has a durable manifest row before download
+    /// begins. Existing local/Photos state wins; metadata is filled in without
+    /// replacing the stable identity supplied by the reading-list item.
+    @discardableResult
+    public func ensureUndownloaded(
+        id: UUID,
+        sourceURLString: String,
+        title: String? = nil,
+        kind: MediaAsset.Kind? = nil,
+        dateSaved: Date = Date()
+    ) throws -> SavedMediaItem {
+        lock.lock()
+        var items = loadUnlocked()
+        if let index = items.firstIndex(where: {
+            $0.id == id || $0.sourceURLString == sourceURLString
+        }) {
+            if items[index].title == nil { items[index].title = title }
+            if items[index].kind == nil { items[index].kind = kind }
+            if items[index].id != id {
+                // A legacy local row may predate stable reading-list identity. Keep
+                // its established id rather than creating a duplicate row.
+            }
+            do {
+                try saveUnlocked(items)
+            } catch {
+                lock.unlock()
+                throw error
+            }
+            let result = items[index]
+            lock.unlock()
+            return result
+        }
+        let item = SavedMediaItem(
+            id: id,
+            sourceURLString: sourceURLString,
+            title: title,
+            dateSaved: dateSaved,
+            kind: kind,
+            storageState: .undownloaded,
+            thumbnailFileName: nil)
+        items.append(item)
+        do {
+            try saveUnlocked(items)
+        } catch {
+            lock.unlock()
+            throw error
+        }
+        lock.unlock()
+        notifyChanged()
+        return item
     }
 
     @discardableResult
@@ -142,9 +312,15 @@ public final class SavedMediaStore {
         fileExtension ext: String? = nil,
         dateSaved: Date = Date()
     ) throws -> SavedMediaItem {
-        let id = UUID()
+        lock.lock()
+        var items = loadUnlocked()
+        let existingIndex = items.firstIndex { $0.sourceURLString == sourceURLString }
+        let id = existingIndex.map { items[$0].id } ?? UUID()
+        lock.unlock()
         let cleanExt = Self.cleanExtension(ext ?? fileURL.pathExtension, kind: kind)
-        let fileName = "\(id.uuidString).\(cleanExt)"
+        // A fresh name keeps an existing durable local backing intact until the
+        // replacement manifest has committed successfully.
+        let fileName = "\(id.uuidString)-\(UUID().uuidString).\(cleanExt)"
         let destination = mediaDirectory.appendingPathComponent(fileName)
         try? fm.removeItem(at: destination)
         try fm.moveItem(at: fileURL, to: destination)
@@ -156,34 +332,89 @@ public final class SavedMediaStore {
             title: title,
             dateSaved: dateSaved,
             kind: kind,
-            fileName: fileName,
+            storageState: .localFile(fileName: fileName),
             thumbnailFileName: thumbnailName)
         lock.lock()
-        var items = loadUnlocked()
+        items = loadUnlocked()
         let replaced = items.filter { $0.sourceURLString == sourceURLString }
         items.removeAll { $0.sourceURLString == sourceURLString }
         items.append(item)
-        saveUnlocked(items)
-        lock.unlock()
-        for old in replaced {
-            try? fm.removeItem(at: old.fileURL)
-            if let thumbnailURL = old.thumbnailURL { try? fm.removeItem(at: thumbnailURL) }
+        do {
+            try saveUnlocked(items)
+            lock.unlock()
+        } catch {
+            lock.unlock()
+            try? fm.removeItem(at: destination)
+            if let thumbnailName {
+                try? fm.removeItem(at: thumbnailDirectory.appendingPathComponent(thumbnailName))
+            }
+            throw error
         }
-        NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
-        postCrossProcessChange()
+        for old in replaced where old.id != item.id || old.fileName != item.fileName {
+            removeLocalFiles(for: old)
+        }
+        notifyChanged()
         return item
+    }
+
+    /// Commits a PhotoKit durable identifier before deleting the app-owned file.
+    /// If the process stops between those operations, `items()` resumes cleanup
+    /// from the pending names stored in the Photos state.
+    @discardableResult
+    public func transitionToPhotosReference(
+        _ itemID: UUID, localIdentifier: String, kind: MediaAsset.Kind? = nil
+    ) throws -> SavedMediaItem? {
+        lock.lock()
+        var items = loadUnlocked()
+        guard let index = items.firstIndex(where: { $0.id == itemID }) else {
+            lock.unlock()
+            return nil
+        }
+        let pendingFile = items[index].fileName
+        let pendingThumbnail = items[index].thumbnailFileName
+        if items[index].kind == nil { items[index].kind = kind }
+        items[index].storageState = .photosReference(
+            localIdentifier: localIdentifier,
+            pendingLocalFileName: pendingFile,
+            pendingThumbnailFileName: pendingThumbnail)
+        items[index].thumbnailFileName = nil
+        do {
+            try saveUnlocked(items)
+        } catch {
+            lock.unlock()
+            throw error
+        }
+        lock.unlock()
+
+        let cleanupFinished = removePendingFiles(
+            fileName: pendingFile, thumbnailFileName: pendingThumbnail)
+
+        lock.lock()
+        items = loadUnlocked()
+        if cleanupFinished,
+           let refreshed = items.firstIndex(where: { $0.id == itemID }),
+           case .photosReference(let identifier, _, _) = items[refreshed].storageState,
+           identifier == localIdentifier {
+            items[refreshed].storageState = .photosReference(
+                localIdentifier: identifier,
+                pendingLocalFileName: nil,
+                pendingThumbnailFileName: nil)
+            try? saveUnlocked(items)
+        }
+        let result = items.first(where: { $0.id == itemID })
+        lock.unlock()
+        notifyChanged()
+        return result
     }
 
     public func delete(_ item: SavedMediaItem) {
         lock.lock()
         var items = loadUnlocked()
         items.removeAll { $0.id == item.id }
-        saveUnlocked(items)
+        try? saveUnlocked(items)
         lock.unlock()
-        try? fm.removeItem(at: item.fileURL)
-        if let thumbnailURL = item.thumbnailURL { try? fm.removeItem(at: thumbnailURL) }
-        NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
-        postCrossProcessChange()
+        removeLocalFiles(for: item)
+        notifyChanged()
     }
 
     /// Applies the age-based retention policy. Saved media is app-owned: it is the
@@ -198,37 +429,112 @@ public final class SavedMediaStore {
         let ageExpired: [SavedMediaItem]
         if let days = MediaRetentionSettings.retentionDays {
             let cutoff = now.addingTimeInterval(-TimeInterval(days) * 24 * 60 * 60)
-            ageExpired = items.filter { $0.dateSaved < cutoff }
+            ageExpired = items.filter { item in
+                guard item.dateSaved < cutoff else { return false }
+                if case .localFile = item.storageState { return true }
+                return false
+            }
         } else {
             ageExpired = []
         }
-        let expiredIDs = Set(ageExpired.map(\.id))
-        guard !expiredIDs.isEmpty else {
+        guard !ageExpired.isEmpty else {
             lock.unlock()
             return
         }
-        let kept = items.filter { !expiredIDs.contains($0.id) }
-        let expired = items.filter { expiredIDs.contains($0.id) }
-        saveUnlocked(kept)
-        lock.unlock()
-        for item in expired {
-            try? fm.removeItem(at: item.fileURL)
-            if let thumbnailURL = item.thumbnailURL { try? fm.removeItem(at: thumbnailURL) }
+        let expiredIDs = Set(ageExpired.map(\.id))
+        var updated = items
+        for index in updated.indices where expiredIDs.contains(updated[index].id) {
+            updated[index].storageState = .undownloaded
+            updated[index].thumbnailFileName = nil
         }
-        NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
-        postCrossProcessChange()
+        do {
+            try saveUnlocked(updated)
+        } catch {
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        for item in ageExpired { removeLocalFiles(for: item) }
+        notifyChanged()
     }
 
     private func loadUnlocked() -> [SavedMediaItem] {
         guard let data = try? Data(contentsOf: manifestURL),
               let items = try? decoder.decode([SavedMediaItem].self, from: data)
         else { return [] }
-        return items.filter { fm.fileExists(atPath: mediaDirectory.appendingPathComponent($0.fileName).path) }
+        return items
     }
 
-    private func saveUnlocked(_ items: [SavedMediaItem]) {
-        guard let data = try? encoder.encode(items) else { return }
-        try? data.write(to: manifestURL, options: [.atomic])
+    private func saveUnlocked(_ items: [SavedMediaItem]) throws {
+        let data = try encoder.encode(items)
+        try data.write(to: manifestURL, options: [.atomic])
+    }
+
+    /// Repairs interrupted Photos cleanup and local rows whose backing file was
+    /// externally removed. Returns whether the manifest needs a follow-up write.
+    private func recoverInterruptedTransitionsUnlocked(_ items: inout [SavedMediaItem]) -> Bool {
+        var changed = false
+        for index in items.indices {
+            switch items[index].storageState {
+            case .undownloaded:
+                break
+            case .localFile(let fileName):
+                guard !fm.fileExists(atPath: mediaDirectory.appendingPathComponent(fileName).path)
+                else { continue }
+                if let thumbnail = items[index].thumbnailFileName {
+                    try? fm.removeItem(at: thumbnailDirectory.appendingPathComponent(thumbnail))
+                }
+                items[index].storageState = .undownloaded
+                items[index].thumbnailFileName = nil
+                changed = true
+            case .photosReference(let identifier, let pendingFile, let pendingThumbnail):
+                guard pendingFile != nil || pendingThumbnail != nil else { continue }
+                guard removePendingFiles(
+                    fileName: pendingFile, thumbnailFileName: pendingThumbnail)
+                else { continue }
+                items[index].storageState = .photosReference(
+                    localIdentifier: identifier,
+                    pendingLocalFileName: nil,
+                    pendingThumbnailFileName: nil)
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    @discardableResult
+    private func removePendingFiles(fileName: String?, thumbnailFileName: String?) -> Bool {
+        if let fileName {
+            try? fm.removeItem(at: mediaDirectory.appendingPathComponent(fileName))
+        }
+        if let thumbnailFileName {
+            try? fm.removeItem(at: thumbnailDirectory.appendingPathComponent(thumbnailFileName))
+        }
+        let fileGone = fileName.map {
+            !fm.fileExists(atPath: mediaDirectory.appendingPathComponent($0).path)
+        } ?? true
+        let thumbnailGone = thumbnailFileName.map {
+            !fm.fileExists(atPath: thumbnailDirectory.appendingPathComponent($0).path)
+        } ?? true
+        return fileGone && thumbnailGone
+    }
+
+    private func removeLocalFiles(for item: SavedMediaItem) {
+        switch item.storageState {
+        case .localFile(let fileName):
+            removePendingFiles(fileName: fileName, thumbnailFileName: item.thumbnailFileName)
+        case .photosReference(_, let pendingFile, let pendingThumbnail):
+            removePendingFiles(fileName: pendingFile, thumbnailFileName: pendingThumbnail)
+        case .undownloaded:
+            if let thumbnail = item.thumbnailFileName {
+                removePendingFiles(fileName: nil, thumbnailFileName: thumbnail)
+            }
+        }
+    }
+
+    private func notifyChanged() {
+        NotificationCenter.default.post(name: .savedMediaChanged, object: nil)
+        postCrossProcessChange()
     }
 
     private func makeThumbnail(for fileURL: URL, kind: MediaAsset.Kind, id: UUID) -> String? {

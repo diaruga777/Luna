@@ -6,6 +6,8 @@
 	<string>$(APP_GROUP_ID)</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Luna saves photos, GIFs, and videos you download from social posts to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Luna loads media you saved to Photos so it can be shared again.</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>

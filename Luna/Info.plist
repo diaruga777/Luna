@@ -14,6 +14,8 @@
 	<false/>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Luna saves photos, GIFs, and videos you download from social posts to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Luna loads media you saved to Photos so it remains available in Downloader.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<!-- $(LUNA_URL_SCHEME) is set per app target (lunareader / lunadownloader /

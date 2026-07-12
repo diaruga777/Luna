@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaStorage
 
 /// Resolves → downloads → saves a social post's first media item to Photos.
 /// Used by both entry points (the action extension button + the reading list
@@ -41,7 +42,7 @@ public struct MediaDownloadService: MediaDownloading {
         }
 
         do {
-            try await saver.save(fileURL: fileURL, kind: asset.kind)
+            _ = try await saver.save(fileURL: fileURL, kind: asset.kind)
         } catch {
             try? FileManager.default.removeItem(at: fileURL)
             throw MediaDownloadError.saveFailed
@@ -57,6 +58,10 @@ public struct MediaDownloadService: MediaDownloading {
         guard MediaDownloadablePlatform.supports(url.absoluteString) else {
             throw MediaDownloadError.unsupported
         }
+        let pending = try SavedMediaStore.shared.ensureUndownloaded(
+            id: ReadingListStore.shared.item(forURLString: url.absoluteString)?.id ?? UUID(),
+            sourceURLString: url.absoluteString,
+            title: title)
         let assets = await resolver.resolveAssets(for: url)
         guard let asset = assets.first else { throw MediaDownloadError.noMedia }
 
@@ -68,13 +73,32 @@ public struct MediaDownloadService: MediaDownloading {
             throw MediaDownloadError.downloadFailed
         }
 
+        if AutoDownloadSettings.autoSaveDownloadsToPhotos,
+           await saver.requestReadAuthorization() {
+            do {
+                let identifier = try await saver.save(
+                    fileURL: fileURL, kind: asset.kind, shouldMoveFile: false)
+                guard let item = try SavedMediaStore.shared.transitionToPhotosReference(
+                    pending.id, localIdentifier: identifier, kind: asset.kind)
+                else { throw MediaDownloadError.saveFailed }
+                try? FileManager.default.removeItem(at: fileURL)
+                await copyToClipboardIfEnabled(item)
+                return item
+            } catch {
+                // The completed file remains available because PhotoKit was told not
+                // to move it. Preserve it locally when Photos cannot become backing.
+            }
+        }
+
         do {
-            return try SavedMediaStore.shared.addDownloadedFile(
+            let item = try SavedMediaStore.shared.addDownloadedFile(
                 fileURL,
                 kind: asset.kind,
                 sourceURLString: url.absoluteString,
                 title: title,
                 fileExtension: fileURL.pathExtension)
+            await copyToClipboardIfEnabled(item)
+            return item
         } catch {
             try? FileManager.default.removeItem(at: fileURL)
             throw MediaDownloadError.saveFailed
@@ -102,14 +126,28 @@ public struct MediaDownloadService: MediaDownloading {
         }
     }
 
-    public func saveDownloadedMediaToPhotos(_ media: DownloadedMedia) async throws {
-        guard await saver.requestAddAuthorization() else {
+    public func saveDownloadedMediaToPhotos(_ media: DownloadedMedia) async throws -> String {
+        guard await saver.requestReadAuthorization() else {
             throw MediaDownloadError.permissionDenied
         }
         do {
-            try await saver.save(fileURL: media.fileURL, kind: media.kind)
+            return try await saver.save(fileURL: media.fileURL, kind: media.kind)
         } catch {
             throw MediaDownloadError.saveFailed
+        }
+    }
+
+    @MainActor
+    private func copyToClipboardIfEnabled(_ item: SavedMediaItem) {
+        guard AutoDownloadSettings.autoCopyDownloadsToClipboard,
+              let kind = item.kind else { return }
+        switch item.storageState {
+        case .localFile:
+            if let fileURL = item.fileURL { _ = MediaPasteboard.copy(.localFile(fileURL)) }
+        case .photosReference(let identifier, _, _):
+            _ = MediaPasteboard.copy(.photo(localIdentifier: identifier, kind: kind))
+        case .undownloaded:
+            break
         }
     }
 

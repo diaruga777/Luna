@@ -26,25 +26,100 @@ public struct PhotoLibrarySaver: PhotoLibrarySaving {
         }
     }
 
-    public func save(fileURL: URL, kind: MediaAsset.Kind) async throws {
+    /// Requests read/write authorization, which is required to resolve a durable
+    /// local identifier back to its PhotoKit asset on subsequent launches.
+    public func requestReadAuthorization() async -> Bool {
+        switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
+        case .authorized, .limited:
+            return true
+        case .notDetermined:
+            return await withCheckedContinuation { continuation in
+                PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+                    continuation.resume(returning: status == .authorized || status == .limited)
+                }
+            }
+        default:
+            return false
+        }
+    }
+
+    /// Fetches an asset by the durable identifier returned from `save`. This does
+    /// not prompt; callers should establish read authorization at an appropriate
+    /// UI boundary first.
+    public func fetchAsset(localIdentifier: String) -> PHAsset? {
+        PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject
+    }
+
+    /// Writes the original PhotoKit resource to a file without materializing the
+    /// media as `Data`. iCloud-backed resources may download on demand.
+    public func writeResource(
+        localIdentifier: String,
+        kind: MediaAsset.Kind,
+        to destinationURL: URL
+    ) async throws {
+        guard await requestReadAuthorization() else {
+            throw MediaDownloadError.permissionDenied
+        }
+        guard let asset = fetchAsset(localIdentifier: localIdentifier),
+              let resource = Self.preferredResource(for: asset, kind: kind)
+        else {
+            throw MediaDownloadError.noMedia
+        }
+        try? FileManager.default.removeItem(at: destinationURL)
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHAssetResourceManager.default().writeData(
+                for: resource, toFile: destinationURL, options: options
+            ) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    public func save(
+        fileURL: URL, kind: MediaAsset.Kind, shouldMoveFile: Bool
+    ) async throws -> String {
         // GIFs and stills are photo resources; mp4s are video resources.
         let resourceType: PHAssetResourceType = kind == .video ? .video : .photo
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        return try await withCheckedThrowingContinuation { continuation in
+            var localIdentifier: String?
             PHPhotoLibrary.shared().performChanges {
                 let request = PHAssetCreationRequest.forAsset()
                 // Stamp with the current save time (not the post's original/embedded
                 // date) so the saved item always sorts as the newest in Photos.
                 request.creationDate = Date()
                 let options = PHAssetResourceCreationOptions()
-                options.shouldMoveFile = true   // consume the temp file
+                options.shouldMoveFile = shouldMoveFile
                 request.addResource(with: resourceType, fileURL: fileURL, options: options)
+                localIdentifier = request.placeholderForCreatedAsset?.localIdentifier
             } completionHandler: { success, error in
-                if success {
-                    continuation.resume()
+                if success, let localIdentifier {
+                    continuation.resume(returning: localIdentifier)
                 } else {
                     continuation.resume(throwing: error ?? MediaDownloadError.saveFailed)
                 }
             }
+        }
+    }
+
+    private static func preferredResource(
+        for asset: PHAsset, kind: MediaAsset.Kind
+    ) -> PHAssetResource? {
+        let resources = PHAssetResource.assetResources(for: asset)
+        switch kind {
+        case .video:
+            return resources.first(where: { $0.type == .fullSizeVideo })
+                ?? resources.first(where: { $0.type == .video })
+                ?? resources.first(where: { $0.type == .pairedVideo })
+        case .gif, .image:
+            return resources.first(where: { $0.type == .fullSizePhoto })
+                ?? resources.first(where: { $0.type == .photo })
+                ?? resources.first(where: { $0.type == .alternatePhoto })
         }
     }
 }

@@ -78,4 +78,10 @@ public enum AutoDownloadSettings {
         if list.count > downloadedCap { list.removeFirst(list.count - downloadedCap) }
         defaults.set(list, forKey: downloadedKey)
     }
+
+    public static func unmarkDownloaded(_ urlString: String) {
+        var list = (defaults.array(forKey: downloadedKey) as? [String]) ?? []
+        list.removeAll { $0 == urlString }
+        defaults.set(list, forKey: downloadedKey)
+    }
 }

@@ -50,6 +50,15 @@ public final class LiveMediaDownloadManager: NSObject {
               !AutoDownloadSettings.wasDownloaded(urlString)
         else { return false }
 
+        if MediaAutoDownloader.isRunningInDownloader {
+            let readingItem = ReadingListStore.shared.item(forURLString: urlString)
+            try? SavedMediaStore.shared.ensureUndownloaded(
+                id: readingItem?.id ?? UUID(),
+                sourceURLString: urlString,
+                title: title ?? readingItem?.title,
+                dateSaved: readingItem?.dateAdded ?? Date())
+        }
+
         let canSave = MediaAutoDownloader.isRunningInDownloader
             ? true
             : await saver.requestAddAuthorization()
@@ -392,14 +401,11 @@ public final class LiveMediaDownloadManager: NSObject {
         guard job.phase != .suspended else { return }
         do {
             if MediaAutoDownloader.isRunningInDownloader {
-                _ = try SavedMediaStore.shared.addDownloadedFile(
-                    fileURL,
-                    kind: kind,
-                    sourceURLString: job.sourceURLString,
-                    title: job.title,
-                    fileExtension: job.fileExtension)
+                let item = try await finishDownloaderStorage(
+                    job: job, fileURL: fileURL, kind: kind)
+                await copyToClipboardIfEnabled(item)
             } else {
-                try await saver.save(fileURL: fileURL, kind: kind)
+                _ = try await saver.save(fileURL: fileURL, kind: kind)
             }
             AutoDownloadSettings.markDownloaded(job.sourceURLString)
             job.phase = .finished
@@ -411,6 +417,46 @@ public final class LiveMediaDownloadManager: NSObject {
             store.remove(job.id)
         } catch {
             await failJob(job, message: MediaDownloadError.saveFailed.message)
+        }
+    }
+
+    private func finishDownloaderStorage(
+        job: LiveMediaDownloadJob, fileURL: URL, kind: MediaAsset.Kind
+    ) async throws -> SavedMediaItem {
+        if AutoDownloadSettings.autoSaveDownloadsToPhotos,
+           await saver.requestReadAuthorization(),
+           let pending = SavedMediaStore.shared.item(forURLString: job.sourceURLString) {
+            do {
+                let identifier = try await saver.save(
+                    fileURL: fileURL, kind: kind, shouldMoveFile: false)
+                if let item = try SavedMediaStore.shared.transitionToPhotosReference(
+                    pending.id, localIdentifier: identifier, kind: kind) {
+                    try? FileManager.default.removeItem(at: fileURL)
+                    return item
+                }
+            } catch {
+                // Keep the completed transfer as an app-owned file below.
+            }
+        }
+        return try SavedMediaStore.shared.addDownloadedFile(
+            fileURL,
+            kind: kind,
+            sourceURLString: job.sourceURLString,
+            title: job.title,
+            fileExtension: job.fileExtension)
+    }
+
+    @MainActor
+    private func copyToClipboardIfEnabled(_ item: SavedMediaItem) {
+        guard AutoDownloadSettings.autoCopyDownloadsToClipboard,
+              let kind = item.kind else { return }
+        switch item.storageState {
+        case .localFile:
+            if let url = item.fileURL { _ = MediaPasteboard.copy(.localFile(url)) }
+        case .photosReference(let identifier, _, _):
+            _ = MediaPasteboard.copy(.photo(localIdentifier: identifier, kind: kind))
+        case .undownloaded:
+            break
         }
     }
 

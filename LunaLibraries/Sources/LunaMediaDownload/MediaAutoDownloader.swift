@@ -4,6 +4,7 @@
 //
 
 import LunaURLClassification
+import LunaStorage
 import Foundation
 
 /// Saves a just-ingested social post's media. Luna Downloader always stores
@@ -30,6 +31,7 @@ public enum MediaAutoDownloader {
     public static func runIfEnabledAwaiting(
         forURLString urlString: String, service: MediaDownloading = MediaDownloadService()
     ) async -> Bool {
+        ensureUndownloaded(urlString)
         guard isEnabled(forURLString: urlString),
               !AutoDownloadSettings.wasDownloaded(urlString),
               let url = URL(string: urlString)
@@ -53,8 +55,19 @@ public enum MediaAutoDownloader {
     /// lifetimes (Shortcuts/App Intents and share/action extensions).
     @discardableResult
     public static func startLiveActivityIfEnabled(forURLString urlString: String) async -> Bool {
+        ensureUndownloaded(urlString)
         guard isEnabled(forURLString: urlString) else { return false }
         return await LiveMediaDownloadManager.shared.start(urlString: urlString)
+    }
+
+    private static func ensureUndownloaded(_ urlString: String) {
+        guard isRunningInDownloader,
+              let item = ReadingListStore.shared.item(forURLString: urlString) else { return }
+        try? SavedMediaStore.shared.ensureUndownloaded(
+            id: item.id,
+            sourceURLString: item.urlString,
+            title: item.title,
+            dateSaved: item.dateAdded)
     }
 
     /// Whether the running process belongs to Luna Downloader (the app OR one of its

@@ -1881,17 +1881,9 @@
 			files = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift",
-				"$(SRCROOT)/scripts/record_onboarding_guide_videos.sh",
 			);
 			name = "Record onboarding PiP guides";
 			outputPaths = (
-				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideReader.mp4",
-				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideDownloader.mp4",
-				"$(SRCROOT)/Luna/Resources/SafariExtensionGuidePriceTracker.mp4",
-				"$(SRCROOT)/Luna/Resources/ActionButtonGuideReader.mp4",
-				"$(SRCROOT)/Luna/Resources/ActionButtonGuideDownloader.mp4",
-				"$(SRCROOT)/Luna/Resources/ActionButtonGuidePriceTracker.mp4",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -1904,17 +1896,9 @@
 			files = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift",
-				"$(SRCROOT)/scripts/record_onboarding_guide_videos.sh",
 			);
 			name = "Record onboarding PiP guides";
 			outputPaths = (
-				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideReader.mp4",
-				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideDownloader.mp4",
-				"$(SRCROOT)/Luna/Resources/SafariExtensionGuidePriceTracker.mp4",
-				"$(SRCROOT)/Luna/Resources/ActionButtonGuideReader.mp4",
-				"$(SRCROOT)/Luna/Resources/ActionButtonGuideDownloader.mp4",
-				"$(SRCROOT)/Luna/Resources/ActionButtonGuidePriceTracker.mp4",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -1927,17 +1911,9 @@
 			files = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift",
-				"$(SRCROOT)/scripts/record_onboarding_guide_videos.sh",
 			);
 			name = "Record onboarding PiP guides";
 			outputPaths = (
-				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideReader.mp4",
-				"$(SRCROOT)/Luna/Resources/SafariExtensionGuideDownloader.mp4",
-				"$(SRCROOT)/Luna/Resources/SafariExtensionGuidePriceTracker.mp4",
-				"$(SRCROOT)/Luna/Resources/ActionButtonGuideReader.mp4",
-				"$(SRCROOT)/Luna/Resources/ActionButtonGuideDownloader.mp4",
-				"$(SRCROOT)/Luna/Resources/ActionButtonGuidePriceTracker.mp4",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

@@ -152,6 +152,12 @@ final class ReadingListViewController: UITableViewController {
         surface != .reader && surface != .priceTracker
     }
 
+    /// Reader dropped the large title but must keep the catch-up entry point: a slim
+    /// row between the pinned bar and the list, holding just the catch-up button.
+    private var showsCatchUpRow: Bool {
+        surface == .reader
+    }
+
     /// Reader items and trackers are self-describing cells, so their active sections
     /// should read as one uninterrupted list. Archive (and exceptional sections) keep
     /// their headers because they communicate a meaningful state.
@@ -903,7 +909,7 @@ final class ReadingListViewController: UITableViewController {
         let needsEmailSetup = !EmailAccountStore.shared.isConfigured
         catchUpBadge.isHidden = !(ReadingListSectioning.shouldShowCatchUpDot(items: items)
             || needsEmailSetup)
-        catchUpButton.isHidden = isEditing || !showsLargeListHeader
+        catchUpButton.isHidden = isEditing || !(showsLargeListHeader || showsCatchUpRow)
     }
 
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -941,12 +947,13 @@ final class ReadingListViewController: UITableViewController {
     }
 
     /// Builds the scrolling table-header content: the large "Reading List" title row
-    /// (with the catch-up button on its trailing edge) and — when applicable — the
+    /// (with the catch-up button on its trailing edge) — or, on Reader, a slim row
+    /// with just the catch-up button — and — when applicable — the
     /// Articles / Media / Price filter row beneath it. Sized to fit and assigned as the
     /// `tableHeaderView` so it scrolls away under the pinned bar like a system large
     /// title. `showsFilter` includes the filter row.
     private func rebuildTableHeader(showsFilter: Bool) {
-        guard showsLargeListHeader || showsFilter else {
+        guard showsLargeListHeader || showsCatchUpRow || showsFilter else {
             catchUpButton.removeFromSuperview()
             tableHeaderContainer = nil
             tableView.tableHeaderView = nil
@@ -987,6 +994,26 @@ final class ReadingListViewController: UITableViewController {
                 catchUpButton.heightAnchor.constraint(equalToConstant: 34),
             ])
             bottomAnchor = titleRow.bottomAnchor
+        } else if showsCatchUpRow {
+            // No large title: just the catch-up button on the trailing edge, giving
+            // the list some breathing room below the pinned bar.
+            let catchUpRow = UIView()
+            catchUpRow.translatesAutoresizingMaskIntoConstraints = false
+            if catchUpButton.superview != nil { catchUpButton.removeFromSuperview() }
+            catchUpRow.addSubview(catchUpButton)
+            container.addSubview(catchUpRow)
+
+            NSLayoutConstraint.activate([
+                catchUpRow.topAnchor.constraint(equalTo: container.topAnchor),
+                catchUpRow.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                catchUpRow.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                catchUpRow.heightAnchor.constraint(equalToConstant: 44),
+                catchUpButton.trailingAnchor.constraint(equalTo: catchUpRow.trailingAnchor, constant: -16),
+                catchUpButton.centerYAnchor.constraint(equalTo: catchUpRow.centerYAnchor),
+                catchUpButton.widthAnchor.constraint(equalToConstant: 34),
+                catchUpButton.heightAnchor.constraint(equalToConstant: 34),
+            ])
+            bottomAnchor = catchUpRow.bottomAnchor
         }
         if showsFilter, let filterRow = filterHeaderView {
             filterRow.translatesAutoresizingMaskIntoConstraints = false

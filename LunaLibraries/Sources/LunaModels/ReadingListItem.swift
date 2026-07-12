@@ -189,8 +189,8 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// Last delivery time for one destination.
     public func dateSent(for destinationID: String) -> Date? { datesSent[destinationID] }
 
-    public init(urlString: String) {
-        self.id = UUID()
+    public init(urlString: String, id: UUID = UUID()) {
+        self.id = id
         self.urlString = urlString
         self.title = nil
         self.dateAdded = Date()
@@ -278,7 +278,12 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.priceTracker = priceTracker
     }
 
-    /// A stable UUID derived from a seed string (so fixtures get reproducible ids).
+    #endif
+
+    /// A stable UUID derived from a seed string, so the same input maps to the same
+    /// id across runs — used for reproducible test fixtures and for transient items
+    /// whose identity must stay stable across re-creations (e.g. unsaved rabbit-hole
+    /// pages, re-embedded on every mode/audio toggle).
     public static func deterministicUUID(from seed: String) -> UUID {
         var hash: UInt64 = 0xcbf29ce484222325
         for byte in seed.utf8 {
@@ -296,7 +301,6 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
             bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
             bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
     }
-    #endif
 
     /// Legacy single-destination send keys, read only to migrate old reading-list
     /// JSON into the per-destination `sendStates`/`datesSent` (folded under the

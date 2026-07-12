@@ -704,10 +704,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private func readerItem(for url: URL) -> ReadingListItem {
         var item = ReadingListStore.shared.item(forURLString: url.absoluteString)
             ?? ReadingListItem(
-                seed: "rabbithole:\(url.absoluteString)",
                 urlString: url.absoluteString,
-                title: descriptor.title,
-                dateAdded: Date())
+                id: ReadingListItem.deterministicUUID(from: "rabbithole:\(url.absoluteString)"))
         item.state = .ready
         item.title = descriptor.title ?? item.title
         item.lastScrollOffset = descriptor.scrollOffset

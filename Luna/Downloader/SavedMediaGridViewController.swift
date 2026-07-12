@@ -351,6 +351,11 @@ final class SavedMediaGridViewController: UICollectionViewController {
                 snapshot.reconfigureItems(photoIDs)
                 await dataSource.apply(snapshot, animatingDifferences: false)
             }
+            // Limited access can hide a still-existing asset, so absence is proof
+            // of deletion only with full read/write authorization.
+            guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
+                return
+            }
             let missing = items.filter { item in
                 guard let identifier = item.photosLocalIdentifier else { return false }
                 return photoSaver.fetchAsset(localIdentifier: identifier) == nil

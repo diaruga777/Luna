@@ -58,9 +58,10 @@ the manifest commit and file cleanup.
 The grid reconciles Photos references when `.readWrite` authorization is available.
 If `PHAsset.fetchAssets(withLocalIdentifiers:)` no longer finds an asset, Luna deletes the
 Downloader item and clears its download-dedup marker, so saving the URL again can download
-it again. Reconciliation is skipped for denied or restricted access. PhotoKit reports
-limited authorization as readable, so only assets visible to that limited selection can
-resolve; changing the selection can therefore make a reference appear deleted.
+it again. Reconciliation is skipped for denied/restricted access and for `.limited`
+access, where a nil fetch can mean "not selected" rather than deleted. Limited access can
+still display selected assets, but Luna only interprets absence as deletion with full
+`.authorized` read/write access.
 
 Local retention (default seven days, configurable 1–30 days or disabled) applies only to
 `.localFile` rows. Expiry deletes local files and returns the row to `.undownloaded`;

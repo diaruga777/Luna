@@ -146,7 +146,8 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
 
     private func removeMissingPhotosItem(_ itemID: UUID) {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard status == .authorized || status == .limited,
+        // With limited access a nil fetch may mean "not selected", not deleted.
+        guard status == .authorized,
               let item = SavedMediaStore.shared.item(id: itemID),
               item.photosLocalIdentifier != nil
         else { return }

@@ -1,221 +1,164 @@
 # Social Media Download
 
-Downloads still images, GIFs, and videos from **X, Instagram, TikTok, and Facebook** posts.
-In **Luna Downloader**, supported saves always download the first media item into Luna's
-app-owned saved-media library; sibling apps can still save to the user's photo library
-(PhotoKit) from their legacy manual/opt-in paths. If a post has multiple media items, the **first** is taken. Mirrors
-public web downloaders (twittervideodownloader, snapinsta, …) with keyless, client-side
-extraction.
+Luna downloads the first still image, GIF, or video from supported X, Instagram,
+TikTok, and Facebook posts. Resolution is keyless/client-side and therefore best effort.
 
-## Entry points
+## Downloader storage model
 
-1. **Action extension ("Luna it")** — `ShareKit/SavedNonTextualViewController` shows a
-   **fixed-height inline media preview** for X/Instagram/TikTok/Facebook posts (gated on
-   `MediaDownloadablePlatform.supports`). Unlike the old static-poster preview, it
-   downloads the **actual media file** and shows it inline, driven by a small **state
-   machine** (`MediaState`: `pending` / `downloading` / `ready(DownloadedMedia)` /
-   `failed`). The preview area reserves constant space from load (so neither the elements
-   above nor the friend list below shift), hosting a spinner, the still/poster image
-   (`.scaleAspectFit`), a video play overlay, a pending media icon, and a load-failure
-   placeholder. The flow:
-   - **Auto vs pending** — gated on the master `AutoDownloadSettings.autoDownloadMediaInPreview`
-     setting (App Group, **default ON**). ON → `startMediaDownload()` runs on appear
-     (`downloading`: large spinner + progress bar). OFF → starts `pending` (media icon +
-     **"Download media"** button; tapping it starts the download).
-   - **Download** — `MediaDownloadService.downloadFirstMediaToFile(from:onProgress:)`
-     streams the first asset to a temp file **without** touching Photos (no permission
-     prompt while previewing). On success → `ready`; on failure → `failed` (error + retry
-     via the same button).
-   - **Inline display** — in `ready`, an image/gif renders downsampled (ImageIO, max 1400);
-     a **video** renders a poster frame (`AVAssetImageGenerator`) with a red play overlay,
-     and **tapping the preview plays it** in an `AVPlayerViewController`. The still is
-     persisted into the shared store as the platform card thumbnail (`setThumbnail`).
-   - **Auto-persist into the app library (Downloader only)** — the moment the media is
-     `ready`, `persistToDownloaderLibraryIfNeeded` moves a **copy** of the downloaded file
-     into `SavedMediaStore` (the grid's data source) and marks the URL downloaded, so a
-     shared post shows up in the home grid with no extra tap. This is what makes saves
-     actually land in the Downloader; without it the file only ever reached Photos and the
-     grid stayed empty (the in-app ingest funnel's dedup then skipped it, because the
-     preview download had already set `markDownloaded`). No-op in sibling apps, whose media
-     flow stays Photos-only. A COPY is stored so the live preview file remains playable and
-     usable for the explicit Photos export below.
-   - **Save to Photos** — a **"Save to Photos"** button enables once `ready`. Tapping it
-     calls `MediaDownloadService.saveDownloadedMediaToPhotos` (requests add-only auth, then
-     `PhotoLibrarySaver.save`), marks the URL downloaded (`AutoDownloadSettings.markDownloaded`),
-     and **marks the reading-list item read** (`ReadingListStore.markReadState(.read,…)` —
-     NEW: saving now consumes the item). On success it becomes a green "Saved to Photos"
-     checkmark; on failure it shows the error and re-enables. On Downloader this is a pure
-     Photos export — the app-library copy already exists from the auto-persist step.
-2. **Downloader saved-media grid** — the Downloader app's root screen is
-   `SavedMediaGridViewController`, a Photos-parity chronological grid backed by
-   `SavedMediaStore`:
-   - **Cell geometry** — edge-to-edge, hairline (1pt) gaps between cells, zero outer
-     section insets, exactly-square cells (item width computed explicitly per section —
-     `SavedMediaGridViewController.columnLayout(width:gap:)`, unit-tested in
-     `LunaTests/SavedMediaGridLayoutTests.swift` — rather than left to fractional
-     dimensions resolving against the group). 3 columns at an iPhone-portrait width,
-     scaling up with no cap for landscape/iPad. Video/GIF cells show a bottom-edge scrim
-     behind the play glyph (no duration label yet — `SavedMediaItem` carries no duration).
-   - **Viewer** — tapping an item pushes `SavedMediaViewerViewController`, a
-     `UIPageViewController` paging horizontally through the grid's items (one page per
-     item): `AVPlayerViewController` for videos (autoplay on arrival, pause on
-     page-away), a simple zoomable scroll view (double-tap to zoom) for stills/GIFs.
-     Deleting the current item, opening it, or paging to a new one all route through the
-     same store-notification handler the grid uses (see below), so "remove the page,
-     advance to the next item, pop only when nothing's left" and "mark as opened" are one
-     code path shared with cross-process/cross-surface changes.
-   - **Zoom transition** — the push/pop into/out of the viewer uses iOS 18's
-     `preferredTransition = .zoom(sourceViewProvider:)`, zooming to/from the grid CELL of
-     whichever item is currently on screen in the viewer (scrolling it into view first if
-     off-screen via `SavedMediaGridViewController.gridCellView(for:)`) — not necessarily
-     the cell originally tapped, since the user may have paged elsewhere. The app's global
-     `DotMatrixNavigationDelegate` (`LunaTransitions`) would otherwise force its own
-     pixel-wipe on every push/pop; `SavedMediaViewerViewController` opts out by conforming
-     to `LunaTransitions.DotMatrixTransitionExempt`, a marker protocol the delegate checks
-     on both endpoints of a push/pop (and in its edge-pan gesture's `shouldBegin`) to step
-     aside and let the system transition — and its own interactive dismiss gesture — run
-     instead. Any other VC that needs to own its transition can adopt the same protocol.
-   - Context menus (from the grid) expose Share, Save to Photos, and Delete. The old
-     reading-list UI remains the root only for Reader, Price Tracker, and debug/test
-     combined-list surfaces.
-3. **Reading list row long-press** — `ReadingListViewController.saveMediaToPhotos`
-   adds a **"Save to Photos"** action (`photo.badge.arrow.down`) for the same
-   platforms. Progress + result show in a **non-blocking bottom pill**
-   (`MediaDownloadStatusView`, `isUserInteractionEnabled=false`) — the list stays
-   tappable and the pill is a subview of the list so it never appears over the reader.
-   The explicit action remains Photos-oriented. On Downloader it uses the already-local
-   `SavedMediaStore` file and copies that file to PhotoKit; it does not re-download.
-   Downloader's local file persistence is automatic on save and is not exposed as a
-   separate "save locally" command.
-4. **Downloader App Clip** — `LunaDownloaderClip` launches from a web URL whose query
-   carries the source media URL (`url`, `source`, `sourceURL`, or `u`). It uses
-   `MediaDownloadService.downloadFirstMediaToFile(from:onProgress:)`, so it never
-   requests Photos access or calls PhotoKit. The clip shows a simple foreground progress
-   screen and, once the file is ready, immediately presents `UIActivityViewController`
-   with the downloaded file URL so the user can save or send it through system services.
-   If automatic presentation is interrupted, the completion screen exposes a share button
-   backed by the same activity controller.
+Every Downloader save has one durable `SavedMediaItem` row and exactly one visible
+`StorageState`:
 
-## Core (`ReaderKit/MediaDownload/`, shared by app + action ext)
+1. **`undownloaded`** — the URL is saved, but no media backing exists yet. The grid
+   shows a dotted-outline download glyph on a grey square. Selecting it starts the
+   download instead of opening the viewer.
+2. **`localFile(fileName:)`** — the media file lives under the shared App Group at
+   `SavedMedia/Files`; an optional generated thumbnail lives in `SavedMedia/Thumbnails`.
+3. **`photosReference(localIdentifier:…)`** — the manifest keeps PhotoKit's durable
+   `PHAsset.localIdentifier`, not a duplicate media file. Grid thumbnails, image data,
+   videos, sharing, and clipboard exports resolve the asset through PhotoKit each time.
 
-- **`MediaDownload.swift`** — `MediaAsset` (`url` + `Kind` = image/gif/video),
-  `MediaDownloadError` (with `.message`), `MediaDownloadablePlatform` (supported set =
-  `.x/.instagram/.tiktok/.facebook`, `supports(urlString)` via `PlatformRecognizer`), and the
-  protocols `SocialMediaResolving` / `PhotoLibrarySaving` / `MediaDownloading`.
-- **`SocialMediaResolver.swift`** — `resolveAssets(for:)` dispatches by platform; fetch
-  is injectable (`Fetch` closure) so the **pure parsers** are unit-tested:
-  - `XMediaParser` — fxtwitter JSON `https://api.fxtwitter.com/status/<id>`; uses
-    `tweet.media.all` (ordered, typed: photo→image, video/gif→video=mp4), falls back to
-    `videos`/`photos`.
-  - `TikTokMediaParser` — the page's `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">`
-    JSON → `…webapp.video-detail.itemInfo.itemStruct` or shared-link reflow
-    `…webapp.reflow.video.detail.itemInfo.itemStruct`: `imagePost.images[].imageURL.urlList[0]`
-    (photo carousel) else `video.playAddr` (no-watermark) / `video.downloadAddr`.
-  - `InstagramMediaParser` — the resolver fetches the **`/p/{code}/embed/captioned/`
-    page FIRST** and parses its `contextJSON` blob (`assetsFromEmbedContextJSON`): a
-    JSON-encoded string holding `gql_data.shortcode_media`, from which it reads
-    `video_url` (GraphVideo / `is_video`), `display_url` (image), or an
-    `edge_sidecar_to_children` carousel — clean URLs straight from parsed JSON. This is
-    the only reliable keyless source for a reel's real video; the crawler `og:` tags
-    now expose ONLY the poster still behind a login wall, so the OLD og-first order
-    saved a still from every video reel. Fallbacks (in order): legacy regex
-    `assets(fromHTML:)` (`"video_url"` / `"display_url"` / `og:` tags; `unescape` fixes
-    `&`,`\/`,`&amp;`), then the post page's `og:` tags via `facebookexternalhit/1.1`.
-  - `FacebookMediaParser` — the resolver fetches the **full page with a browser UA
-    FIRST** and parses the real playable video URL out of the inline JSON
-    (`browser_native_hd_url` / `playable_url_quality_hd` / `hd_src` first, then the SD
-    variants; `unescape` fixes `\/`,`&`,`&amp;`), then og:video, then the og:image
-    poster. Same fix as Instagram: a reel's crawler `og:` tags expose ONLY the poster
-    still behind a login wall, so the OLD og-first `resolveFacebook` saved a static image
-    from every video reel. If the browser-UA page yields nothing it falls back to the
-    `facebookexternalhit/1.1` og-unfurl (video, then poster image).
-  - Requests use a desktop Safari UA (`MediaDownloadHTTP.browserUserAgent`).
-- **`SavedMediaStore.swift`** — app-group backed durable saved-media manifest
-  (`savedMedia.json`) plus local files/thumbnails under `SavedMedia/Files` and
-  `SavedMedia/Thumbnails`. `MediaRetentionSettings` defaults to 7 days, clamps to 1-30
-  days, or disables expiry when set to nil. Purging (`purgeExpired`) runs on app launch and
-  foreground and is **age-based only** — saved media is app-owned (the grid's content,
-  deleted explicitly from the grid or aged out), NOT tied to reading-list membership.
-  (An earlier orphan rule that deleted any item whose `sourceURLString` wasn't in the
-  reading list silently wiped freshly-saved media once the ingest funnel unwrapped/
-  normalized the URL, since the stored copy keeps the pre-unwrap source URL.)
-- **`MediaDownloadService.swift`** — `downloadFirstMediaToPhotos(from:onProgress:)`:
-  guards `supports`, requests add-only auth FIRST, resolves, downloads the first asset,
-  saves. `downloadFirstMediaToAppStorage(from:title:onProgress:)` resolves/downloads and
-  moves the file into `SavedMediaStore` without Photos permission. The split path for the
-  action-extension inline preview is
-  `downloadFirstMediaToFile(from:onProgress:)` (resolves + downloads to a temp file, **no**
-  Photos prompt → returns `DownloadedMedia { fileURL, kind }`) and
-  `saveDownloadedMediaToPhotos(_:)` (requests auth, then saves). `MediaFileDownloader`
-  (URLSessionDownloadDelegate) streams to a temp file with progress and picks the extension
-  by kind + MIME (`fileExtension`). TikTok downloads set a `https://www.tiktok.com/` Referer.
-- **`PhotoLibrarySaver.swift`** — `.addOnly` authorization; `PHAssetCreationRequest`
-  `addResource(with: .video/.photo, fileURL:, options.shouldMoveFile=true)`.
+`SavedMediaStore.ensureUndownloaded` creates the manifest row before transfer and uses
+the reading-list UUID as its stable identity. Existing manifests with the old required
+`fileName` field decode as `.localFile`, so migration does not lose downloads. If a local
+file disappears, store recovery changes the row back to `.undownloaded`.
 
-## Cross-process reload (Darwin notification bridge)
+### Download destination
 
-A save/delete made by the action/share extension happens in a DIFFERENT OS process from
-the running app, so `SavedMediaStore`'s in-process `NotificationCenter` posts
-(`.savedMediaChanged`) never reach it — the grid could go stale until the app was fully
-relaunched. `SavedMediaStore` now also posts a Darwin notification (name
-`"\(AppConfig.appGroupID).savedMediaChanged"`, via `CFNotificationCenterGetDarwinNotifyCenter()`)
-at the same 3 mutation sites (`addDownloadedFile`, `delete`, `purgeExpired`). Any surface
-that wants the bridge calls the idempotent `SavedMediaStore.startObservingCrossProcessChanges()`
-once (the grid does this in `viewDidLoad`); it registers a C-callback Darwin observer
-(classic static-callback pattern — Darwin callbacks can't capture context) that re-posts
-the in-process `.savedMediaChanged` on the main queue. Receiving our own process's echo
-just causes one harmless extra reload.
+`AutoDownloadSettings.autoSaveDownloadsToPhotos` is App-Group backed and defaults to
+**on**:
 
-Darwin notifications are dropped while the app is suspended, so the grid ALSO reloads on
-`UIApplication.didBecomeActiveNotification` (in addition to the existing
-`willEnterForegroundNotification` purge+reload) — this catches iPad multitasking, where
-the app can stay foregrounded the whole time an extension runs alongside it, and cases
-where only `didBecomeActive` (not a full foreground transition) fires. `reload()` also
-`reconfigureItems` for ids that persisted across a reload (their thumbnail may have only
-just been written), not just `appendItems`, since the diffable data source only reloads
-new/removed identities by default.
+- On: a completed download is written to Photos and the returned durable identifier is
+  committed as `.photosReference`.
+- Off: the download is moved into App Group storage as `.localFile`.
+- If automatic Photos authorization/save fails, Luna preserves the completed bytes as a
+  local file rather than discarding the download.
 
-While the viewer is open, the same `.savedMediaChanged` (and `.readingListChanged`)
-posts refresh its item list too; if the currently-displayed item vanished (deleted
-elsewhere, or by the viewer's own trash button — see above), it shows the next available
-item or pops if none are left, matching Photos.
+All Downloader completion paths use this policy: foreground ingest/App Intents
+(`MediaDownloadService`), background URLSession/Live Activity
+(`LiveMediaDownloadManager`), and the share/action-extension inline preview
+(`SavedNonTextualViewController`). The bounded downloaded-URL list prevents those paths
+from saving the same post twice.
 
-## Auto-download and retention settings
+### Local to Photos transition
 
-`Settings → Auto-Download Media` (`AutoDownloadSettingsScreen`) has two sections, both
-stored in the App Group (`group.com.hsanabria.luna`, readable by app + extensions):
+Manual **Save to Photos** copies the local file to a PhotoKit staging URL. After PhotoKit
+confirms the save and returns an identifier, `transitionToPhotosReference` performs a
+crash-recoverable two-write transaction:
 
-1. **Saved Media retention** (`MediaRetentionSettings`) — default 7 days, configurable
-   from 1-30 days, or **Keep Until Deleted** to disable automatic deletion.
-2. **Master "Auto-download media"** toggle (`autoDownloadMediaInPreview`, **default ON**)
-   — controls whether the action extension's inline preview auto-downloads on appear vs
-   starts pending with a manual button. No Photos prompt (downloading inline doesn't touch
-   Photos).
+1. atomically commit `.photosReference` together with the old local file/thumbnail names
+   as pending deletion;
+2. delete those files durably, then atomically clear the pending names.
 
-`MediaAutoDownloader.runIfEnabled(forURLString:)` is called from the ingest funnel
-(`ReadingListIngestor.ingestPlatformItem`). Downloader bundles always return enabled for
-supported platforms and persist to `SavedMediaStore`; sibling apps still honor legacy
-per-platform defaults if those keys exist. The download is **awaited** in the ingest
-funnel (`runIfEnabledAwaiting`), so an app intent finishes the download before returning.
-A bounded dedup list (`AutoDownloadSettings.markDownloaded`/`wasDownloaded`) means a post
-downloaded in one process isn't downloaded again when the main app re-ingests it.
+`SavedMediaStore.items()` finishes interrupted pending deletions on the next load. Thus a
+confirmed Photos save never reverts to local merely because the process stopped between
+the manifest commit and file cleanup.
+
+### Photos deletion and authorization
+
+The grid reconciles Photos references when `.readWrite` authorization is available.
+If `PHAsset.fetchAssets(withLocalIdentifiers:)` no longer finds an asset, Luna deletes the
+Downloader item and clears its download-dedup marker, so saving the URL again can download
+it again. Reconciliation is skipped for denied or restricted access. PhotoKit reports
+limited authorization as readable, so only assets visible to that limited selection can
+resolve; changing the selection can therefore make a reference appear deleted.
+
+Local retention (default seven days, configurable 1–30 days or disabled) applies only to
+`.localFile` rows. Expiry deletes local files and returns the row to `.undownloaded`;
+Photos references remain governed by the user's Photos library.
+
+## Entry points and UI
+
+- **Main Downloader grid** — `SavedMediaGridViewController` displays all three states in
+  chronological order. Downloaded local and Photos items open
+  `SavedMediaViewerViewController`; undownloaded items start a transfer. Local rows offer
+  **Save to Photos**; Photos-backed rows do not offer a redundant save action.
+- **Viewer** — local images/videos open from their App Group file. Photos-backed images
+  load with PhotoKit image-data APIs and Photos-backed videos load through
+  `PHImageManager.requestAVAsset`. Paging, deletion, autoplay/pause, and the zoom
+  transition remain common to both backings.
+- **Share and action extensions** — `SavedNonTextualViewController` retains its inline
+  preview state machine (`pending`, `downloading`, `ready`, `failed`). The separate
+  `autoDownloadMediaInPreview` setting, also default on, decides whether preview download
+  starts automatically. Once ready, Downloader persists through the same destination
+  policy above; sibling apps retain their legacy Photos behavior.
+- **Ingest, App Intents, and short-lived extensions** —
+  `ReadingListIngestor.ingestPlatformItem` calls `MediaAutoDownloader`; short-lived
+  processes hand work to `LiveMediaDownloadManager` so system background transfer and the
+  Live Activity survive process suspension.
+- **Legacy reading-list long press** — manual Save to Photos remains available in the
+  combined/debug list and uses the same confirmed local-to-Photos transition for
+  Downloader rows.
+- **Downloader App Clip** — downloads to a temporary file and presents the system share
+  sheet. It does not become part of the durable three-state store or request Photos
+  directly.
+
+The grid and viewer observe both `.savedMediaChanged` and `.readingListChanged`.
+`SavedMediaStore` also posts an App-Group-specific Darwin notification for mutations made
+in another process; the grid bridges it back to `.savedMediaChanged` and reloads on app
+activation because Darwin notifications may be dropped while suspended.
+
+## Clipboard completion action
+
+`AutoDownloadSettings.autoCopyDownloadsToClipboard` defaults to **off**. When enabled,
+every successful Downloader completion places one `NSItemProvider` on
+`UIPasteboard.general.itemProviders` after the final durable storage state is known:
+
+- local state uses `NSItemProvider(contentsOf: fileURL)`;
+- Photos state registers a lazy file representation which resolves the durable asset ID
+  and streams the selected `PHAssetResource` to a temporary file on demand.
+
+This includes videos. Luna never assigns video `Data` to the pasteboard, so copying does
+not eagerly materialize a large movie in memory. `MediaItemProviderFactory` and
+`MediaPasteboard` contain the common implementation.
+
+## Settings
+
+Downloader's `Settings → Auto-Download Media` screen has three groups:
+
+1. **Local Files** — retention days and Keep Until Deleted.
+2. **After Downloading** — **Auto-Save to Photos** (default on) and **Copy Downloads to
+   Clipboard** (default off).
+3. **Auto-download media** — whether the extension preview starts downloading
+   automatically (default on).
+
+All values live in the App Group so the app, App Intents, share/action extensions, and
+background completion code make the same decision. Reader/Price Tracker continue to show
+their legacy per-platform Photos auto-save controls.
+
+## Core implementation
+
+- `MediaDownload.swift` defines `MediaAsset`, supported platforms, errors, and the
+  resolver/downloader/Photo-library protocols.
+- `SocialMediaResolver.swift` dispatches to pure parsers for X, Instagram, TikTok, and
+  Facebook. X uses fxtwitter JSON; TikTok parses hydration/reflow JSON; Instagram prefers
+  embed `contextJSON`; Facebook prefers playable URLs in browser-page JSON. Instagram and
+  Facebook fall back to Open Graph media. TikTok media requests set its required Referer.
+- `MediaDownloadService.swift` resolves and streams remote media to a temporary file,
+  then applies Downloader destination and clipboard policy. Downloads never hold a full
+  video in memory.
+- `LiveMediaDownloadManager.swift` implements the equivalent background-transfer path.
+- `SavedMediaStore.swift` owns `savedMedia.json`, the three-state model, legacy decoding,
+  local files/thumbnails, retention, and crash recovery.
+- `PhotoLibrarySaver.swift` requests authorization, creates `.photo`/`.video` resources
+  with `shouldMoveFile`, returns `placeholderForCreatedAsset.localIdentifier`, fetches by
+  identifier, and streams original resources with iCloud network access allowed.
+- `MediaItemProvider.swift` builds lazy file-backed providers for local and Photos media
+  and contains the main-actor pasteboard helper.
 
 ## Permissions
 
-`NSPhotoLibraryAddUsageDescription` is in both `Luna/Info.plist` and
-`Luna Action Extension/Info.plist`.
+Both add and read access are required: add access creates the asset; `.readWrite` access
+lets Downloader resolve its durable identifier later. `NSPhotoLibraryAddUsageDescription`
+and `NSPhotoLibraryUsageDescription` are present in the shared app, action-extension, and
+share-extension Info plists. The share plist needs both because downloadable media opens
+`SavedNonTextualViewController` on both extension surfaces.
 
-## Caveats (best-effort, like the web tools)
+## Caveats and tests
 
-Keyless extraction depends on third-party/undocumented endpoints that change and may be
-rate-limited or login-walled: Instagram video relies on the embed `contextJSON` (verified
-working for reels); if Instagram drops it the fallbacks yield only the poster still.
-TikTok shared `/t/...` links redirect to canonical pages whose media can live under the
-reflow scope; `playAddr` can still 403 without page cookies. The parsers are tested; live
-extraction is not guaranteed end-to-end. Twitter "GIFs" are mp4 and save as videos.
+Undocumented media endpoints can change, rate-limit, or return only a poster. Twitter
+“GIFs” are MP4 videos; TikTok CDN URLs may reject requests without expected cookies.
 
-## Tests
-
-`LunaTests/SocialMediaResolverTests.swift` — platform support, X/TikTok/Instagram parsers
-(incl. fallbacks + unescape), `fileExtension` mapping, and resolver dispatch via an
-injected fetch. Network is not hit.
+Parser and extension mapping are covered by `SocialMediaResolverTests`; three-state
+storage, migration, settings defaults, retention, and transition recovery are covered by
+the SavedMedia/AutoDownload tests. End-to-end live extraction and real PhotoKit library
+mutation still require device/simulator integration testing.

@@ -19,9 +19,12 @@ public enum MailCredential: Equatable {
 /// goes in App-Group `UserDefaults` so all three apps and the extensions see
 /// the same account. The **secret** goes in the Keychain, keyed by kind.
 ///
-/// The account is created/used in the main app process, so the Keychain items
-/// need no shared access group. The secrets are migratable and iCloud-Keychain
-/// synchronizable so device transfer/restore can preserve the connected account.
+/// The Keychain items live in the shared App-Group access group (see
+/// `CredentialKeychain`) so all three apps read one credential — that's what
+/// lets a second Luna app's onboarding collapse to the "Email already
+/// connected" step instead of asking the user to sign in again. The secrets
+/// are migratable and iCloud-Keychain synchronizable so device
+/// transfer/restore can preserve the connected account.
 public final class EmailAccountStore {
 
     public static let shared = EmailAccountStore()

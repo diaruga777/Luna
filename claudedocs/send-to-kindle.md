@@ -114,6 +114,8 @@ the signed `Date` header (→ switch to a presigned URL if uploads 403).
   `CredentialKeychain`: `kSecAttrAccessibleAfterFirstUnlock` (migratable, not
   `ThisDeviceOnly`) plus `kSecAttrSynchronizable=true`, so encrypted device restore
   and iCloud Keychain can preserve them when the user's system settings allow it.
+  Items are stored in the shared App-Group keychain access group so all three Luna
+  apps see one credential (legacy private-group items migrate on first read).
 
 ## Model & store
 

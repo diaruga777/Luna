@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LunaAppConfig
 import os
 import Security
 
@@ -13,10 +14,22 @@ import Security
 /// device-bound keys. Use a migratable class so encrypted device backups can
 /// restore them, and mark them synchronizable so iCloud Keychain can carry them
 /// between the user's trusted devices when enabled.
+///
+/// Items live in the shared App-Group keychain access group (on iOS the
+/// app-group entitlement doubles as a keychain access group), so a credential
+/// saved in any one Luna app is readable by the other apps in the suite —
+/// that's what lets a second app's onboarding skip the email sign-in. Items
+/// written before this sharing existed sit in each app's private access group;
+/// `readData` migrates such an item into the shared group when it's the only
+/// copy found.
 public enum CredentialKeychain {
     private static let logger = Logger(subsystem: "luna", category: "keychain")
 
     public static let accessibleClass = kSecAttrAccessibleAfterFirstUnlock
+
+    /// The keychain access group every Luna credential is stored in — the
+    /// shared App Group, so all apps in the suite see one set of credentials.
+    public static var sharedAccessGroup: String { AppConfig.appGroupID }
 
     public static func read(service: String, account: String) -> String? {
         guard let data = readData(service: service, account: account) else { return nil }
@@ -24,15 +37,10 @@ public enum CredentialKeychain {
     }
 
     public static func readData(service: String, account: String) -> Data? {
-        var query = baseQuery(service: service, account: account, synchronizable: kSecAttrSynchronizableAny)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data
-        else { return nil }
-        return data
+        if let data = copyData(service: service, account: account, accessGroup: sharedAccessGroup) {
+            return data
+        }
+        return migrateLegacyItem(service: service, account: account)
     }
 
     public static func write(_ value: String?, service: String, account: String) {
@@ -44,6 +52,7 @@ public enum CredentialKeychain {
         guard let value, !value.isEmpty else { return }
 
         var insert = baseQuery(service: service, account: account, synchronizable: true)
+        insert[kSecAttrAccessGroup as String] = sharedAccessGroup
         insert[kSecValueData as String] = value
         insert[kSecAttrAccessible as String] = accessibleClass
         let status = SecItemAdd(insert as CFDictionary, nil)
@@ -52,6 +61,10 @@ public enum CredentialKeychain {
         }
     }
 
+    /// Deletes every copy of the item this process can reach — the shared-group
+    /// item AND any legacy private-group leftover (no access-group filter means
+    /// all accessible groups), so a cleared credential can't resurrect later
+    /// through the legacy-migration read path.
     public static func delete(service: String, account: String) {
         SecItemDelete(baseQuery(
             service: service, account: account, synchronizable: kSecAttrSynchronizableAny
@@ -70,5 +83,38 @@ public enum CredentialKeychain {
             query[kSecAttrSynchronizable as String] = synchronizable
         }
         return query
+    }
+
+    // MARK: - Internals
+
+    private static func copyData(
+        service: String, account: String, accessGroup: String?
+    ) -> Data? {
+        var query = baseQuery(
+            service: service, account: account, synchronizable: kSecAttrSynchronizableAny)
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data
+        else { return nil }
+        return data
+    }
+
+    /// Pre-suite builds wrote the item into this app's own private access group,
+    /// invisible to the other Luna apps. Called only after a shared-group miss:
+    /// an unscoped search covers every group this process can reach, so any hit
+    /// here is a legacy item — rewrite it into the shared group (`write` first
+    /// deletes all reachable copies) and return it.
+    private static func migrateLegacyItem(service: String, account: String) -> Data? {
+        guard let data = copyData(service: service, account: account, accessGroup: nil)
+        else { return nil }
+        write(data, service: service, account: account)
+        logger.info("Migrated \(account, privacy: .public) into the shared access group")
+        return data
     }
 }

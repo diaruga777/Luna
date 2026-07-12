@@ -9,7 +9,12 @@
 ## Step order
 
 1. **Email** (`emailStep` / `existingAccountStep`, index 0) — skippable; connects
-   the email account send/receive shares run through. Unchanged by this work.
+   the email account send/receive shares run through. When the shared account is
+   already configured — metadata in App-Group defaults, secret in the shared
+   App-Group keychain access group (`CredentialKeychain.sharedAccessGroup`), so a
+   sign-in in ANY of the three apps counts — `OnboardingFlow.make` collapses the
+   whole flow to the single `existingAccountStep` ("Email already connected" →
+   Finish), skipping the login and the Safari/Action-Button steps.
 2. **Safari extension** (`safariStep`, index 1) — animation `.safariExtension`.
    "Open Safari" sets the Safari takeover-pending flag, starts the Safari guide
    video's PiP, and opens a Wikipedia URL so the user can exercise the extension

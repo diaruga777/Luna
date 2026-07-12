@@ -9,7 +9,7 @@ background.js (tabs.onActivated / tabs.onUpdated)
   → browser.runtime.sendNativeMessage("application.id", {url})
   → SafariWebExtensionHandler (extension process, NSExtensionRequestHandling)
   → App Group UserDefaults (group.com.hsanabria.luna): lastSafariURL, lastSafariURLDate
-  → read by SafariURLStore (app) / SaveLinkIntent
+  → read by SafariURLStore (app; the Provide Context intent's fresh-URL save)
 ```
 
 ## Key files

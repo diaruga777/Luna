@@ -1,5 +1,8 @@
 # Audit 01 — Wrapper Unwrapping (Pipeline Stage 1)
 
+> **Historical snapshot.** Intent names below predate the two-intent capture
+> flow (`ProvideContextIntent`/`SaveIntent`, 2026-07) — see `../app-intents.md`.
+
 Read-only audit of the URL-unwrapping stage: turning a wrapper/redirect URL into
 the real underlying article URL, ideally offline & deterministically, as the
 first thing that runs on any incoming URL.

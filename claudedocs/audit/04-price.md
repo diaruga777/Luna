@@ -1,5 +1,8 @@
 # Audit 04 — Price-Monitoring Metadata
 
+> **Historical snapshot.** Intent names below predate the two-intent capture
+> flow (`ProvideContextIntent`/`SaveIntent`, 2026-07) — see `../app-intents.md`.
+
 Audit of the shop/product price-extraction component: once a URL is classified as a
 product page, extract name + price + currency (+ image/id), support multi-store
 tracking and background refresh. Focus: composability, surface parity, determinism,

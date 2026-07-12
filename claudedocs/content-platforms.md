@@ -26,6 +26,13 @@ The reading list renders cached art when present, otherwise the platform logo.
 Tapping uses the module's native-app link first, then an embed, then the in-app
 browser.
 
+Platform posts can also be captured without a link via the Action Button
+screenshot flow (`app-intents.md`): the Save intent's vision model reads the
+platform app's screen and `PlatformFieldSave` finds the post through the
+platform's search (`BlueskyPostQuery`/`RedditPostQuery`) or the keyless
+`SocialPostFinder` (X/TikTok/Instagram/Facebook), then saves the resolved URL
+through the normal ingest path above.
+
 ## Tests
 
 Platform recognition and presentation are covered by the platform parser and

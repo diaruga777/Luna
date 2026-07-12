@@ -22,7 +22,7 @@ the Info.plist key `LunaAppGroupID` read by the `LunaAppConfig` library (`AppCon
 — the in-code identifier. Entitlements reference `$(APP_GROUP_ID)`.
 
 **Shared store + surfacing.** Any link saved through ANY app (share sheet, action
-extension, SaveLink App Intent, Safari extension) is classified by the shared
+extension, App Intents, Safari extension) is classified by the shared
 `LunaIngest.IngestPipeline` into a `ContentKind` and written to the one shared
 `readingList.json`. Each app shows only its category: `ReadingListViewController(surface:)`
 takes an `AppSurface` (in `LunaReadingListUI`) chosen at launch from the bundle-id suffix

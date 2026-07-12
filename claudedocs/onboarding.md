@@ -63,8 +63,8 @@ Settings deep links used elsewhere in this flow. The state lives in
 
 See `claudedocs/app-intents.md` for the full state machine
 (`notStarted → installTapped → awaitingShortcutRun → actionButtonSetup →
-awaitingActionButton → done`) and how `SaveFromAppIntent` intercepts saves during
-setup. The onboarding UI drives/observes it as follows:
+awaitingActionButton → done`) and how `ProvideContextIntent` intercepts
+invocations during setup. The onboarding UI drives/observes it as follows:
 
 - **`shortcutInstallStep`**: "Install Shortcut" → `beginInstallStep` +
   `BundledShortcut.presentInstaller`. "Continue" → `setState(.actionButtonSetup)`
@@ -75,7 +75,7 @@ setup. The onboarding UI drives/observes it as follows:
   `actionButtonStep` (once — a `didAdvance` flag, and the notification observer is
   torn down on advance). This covers both ways `.actionButtonSetup` gets set: the
   freshly-imported shortcut's own first run (from the Shortcuts app, via
-  `handleSaveIntentInvoked`), or the one-shot "installed but never ran it" skip
+  `handleProvideContextInvoked`), or the one-shot "installed but never ran it" skip
   (`handleAppForegrounded`, fired from `SceneDelegate.sceneWillEnterForeground`).
 - **`actionButtonStep`**: "Open Settings" → `markSettingsDeeplinkTapped` + starts
   the Action Button guide PiP + `SystemSettingsLink.openActionButton()`. "Done" →
@@ -284,7 +284,7 @@ it behaves like a fresh install and remains fully traversable/testable from Sett
   screens during replay, so a configured app can still experience those steps
   again.
 - **Action Button replay bridge**: lifecycle callbacks (`AppDelegate`) and
-  `SaveFromAppIntent` run outside the onboarding view controller and always talk to
+  `ProvideContextIntent` run outside the onboarding view controller and always talk to
   `ActionButtonOnboardingStore.shared`, so a scratch action-button store cannot
   observe the real shortcut/action-button round trips. `OnboardingStores.ephemeral()`
   snapshots the current real per-surface Action Button state, temporarily sets it to
@@ -300,11 +300,13 @@ it behaves like a fresh install and remains fully traversable/testable from Sett
 ## Manual follow-up (cannot be automated)
 
 The bundled `Luna/Resources/Send To Luna.shortcut` is a **signed** file this
-codebase cannot regenerate. If the shortcut's steps ever need to change (e.g. to
-match a new `ActionButtonOnboardingStore.openLunaToken` value, or new intent
-parameters), it must be re-authored and re-exported by hand in the Shortcuts app:
-branch on the Save From App result equalling `"open-luna"` → "Open App → Luna";
-otherwise fall through to whatever the result string implies (e.g. a `"4:"`-prefixed
-result offers a download — see `claudedocs/app-intents.md`). Export it, rename to
+codebase cannot regenerate. It must be re-authored and re-exported by hand in
+the Shortcuts app whenever the intents change — **owed right now for the
+two-intent flow** (see `claudedocs/app-intents.md`): Get Current App → Provide
+Context(app) → If result = 2 → Take Screenshot → Save(app, screenshot). No
+other branches — the old "open-luna"/"4:<url>" token branches are gone
+(foregrounding and auto-download happen in-intent). Export it, rename to
 `Send To Luna.shortcut`, and drop it into `Luna/Resources/` (same
-filesystem-synchronized group as the guide videos above).
+filesystem-synchronized group as the guide videos above). This is a clean
+break: previously-installed copies reference deleted intents and must be
+reinstalled via Settings → Install Shortcut.

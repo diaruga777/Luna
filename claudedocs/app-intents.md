@@ -1,87 +1,135 @@
 # App Intents (`Luna/Intents/`)
 
-All save actions are `AppIntent`s. They appear in the Shortcuts **action search**
-when discoverable; the ones in `LunaShortcuts` (`AppShortcutsProvider`) also show
-prominently at the top of the app's Shortcuts page + Spotlight.
+The Action Button capture flow is **two intents** — `ProvideContextIntent` +
+`SaveIntent` — plus `ReadArticleIntent` (background read-aloud via Siri, see
+`claudedocs/audio-playback.md`'s "Siri" section). The intent structs live in the
+app target (App Intents discovery requires it); all business logic lives in the
+`LunaIntents` library, unit-tested behind pure functions and the vision seam.
 
 > **Hard limit: an `AppShortcutsProvider` may list AT MOST 10 `AppShortcut`s.**
 > Exceeding it is a HALTING build error in `appintentsmetadataprocessor` — and
 > then NO AppIntents metadata is exported at all (every intent disappears from
-> Shortcuts). Keep `LunaShortcuts.appShortcuts` ≤ 10.
+> Shortcuts). `LunaShortcuts.appShortcuts` currently lists 3 (Provide Context,
+> Save, Read Article).
 
 To check what's actually registered, inspect the built metadata:
 `Luna.app/Metadata.appintents/extract.actionsdata` (JSON; `autoShortcuts` = the
 provider list, `actions` = all discoverable intents).
 
-## The 10 prominent App Shortcuts (`LunaShortcuts.swift`)
+## The shortcut shape
 
-`LunaSafariPageIntent`, `SaveLinkIntent`, `FindBlueskyPostIntent`,
-`FindRedditPostIntent`, `SaveXPostIntent`, `SaveTikTokIntent`,
-`SaveInstagramPostIntent`, `SaveFromAppIntent`, `ScreenAnalysisPromptIntent`,
-`ReadArticleIntent` (Phase 7 — background read-aloud via Siri, see
-`claudedocs/audio-playback.md`'s "Siri" section). That's exactly the
-provider's hard cap of 10 — any new prominent shortcut must first retire one
-of these. Facebook remains discoverable in action search but is not in the
-prominent list.
+**Get Current App → Provide Context(app) → If result = 2 → Take Screenshot →
+Save(app, screenshot).** No other branches. The old flow's magic return tokens
+(`"open-luna"`, `"4:<url>"`) are gone — foregrounding happens in-intent (below)
+and auto-download is started by `SaveIntent` itself.
 
-## Per-platform save intents (precise params, not vague search strings)
+## `ProvideContextIntent` (`app: String?`) → `Int`
 
-  search (needs sign-in).
-- **Bluesky** (`FindBlueskyPostIntent`): `handle` + `text` → `from:<handle> <text>`
-  (`BlueskyPostQuery`).
-- **Reddit** (`FindRedditPostIntent`): `subreddit` + `title` + optional `author` →
-  `<title> subreddit:<sub> author:<user>` (`RedditPostQuery`).
-- **X / TikTok / Instagram / Facebook** (`PlatformLinkIntents.swift`): each takes
-  the author `handle` + a content phrase and/or timestamp and FINDS the post link
-  via `SocialPostFinder`. It tries progressively looser keyless DuckDuckGo HTML
-  queries — quoted phrase → unquoted → no `site:` filter — sanitizes the phrase
-  (strips quotes, caps length), then `bestMatch` keeps only post-shaped URLs on the
-  platform's hosts and prefers one whose path contains the handle. No public search
-  API exists, so this is best-effort.
+First, the **onboarding hijack**: `ActionButtonOnboardingStore.shared
+.handleProvideContextInvoked(appName:isCurrentAppLuna:forSurface:)` gets the
+invocation before any decision work (see "Action Button onboarding" below).
+`.foregroundThenUnsupported` → foreground Luna, return 0; `.unsupported` →
+return 0; `.none` → proceed.
 
-## Generic / AI flow
+Then the pure decision table (`LunaIntents.ProvideContextDecision.decide`,
+evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):
 
-- **`SaveFromAppIntent`** (`app`, `details: String`, both optional): FIRST, before
-  any save work, gives the Action Button onboarding state machine
-  (`LunaStorage.ActionButtonOnboardingStore.handleSaveIntentInvoked`) a chance to
-  intercept the call — see "Action Button onboarding" below. If it doesn't
-  intercept, routes by the current app to the right per-platform save. `details` is
-  the **single** response string the on-device model produced for that app's
-  screen; `parseFields` splits it on `" ; "` (trimming, dropping empties;
-  Bluesky `handle ; phrase`, Reddit `subreddit ; title ; author`, and
-  X/TikTok/Instagram/Facebook `handle ; phrase ; date?` (the prompt asks for an exact short quote and appends
-  the post date/time when visible — the optional timestamp field helps the
-  lookup). Safari and unknown apps may pass an empty/nil `details` — a `http…` link
-  in the response is used if present, else `SafariURLStore.lastURL` (the tracked
-  page). Returns `"Saved to Luna."` on a normal save, or `"4:<url>"` when a
-  media-downloadable link was saved but auto-download is off (the shortcut can
-  branch on the `4:` prefix to offer downloading). In Luna Reader, a repeat save
-  of the same URL within 7 s runs the configured **double-save action** (send to
-  Kindle / send to friend — see `double-save.md`); its ask-every-time path
-  returns the `"open-luna"` token so the shortcut foregrounds Luna into the
-  friend selector.
-- **`ScreenAnalysisPromptIntent`** (`app`, optional): returns the per-app prompt
-  (`AppNamePlatform.screenPrompt`) telling an image model to read the current app's
-  screen and respond with a **single line** in exactly the `" ; "`-joined format
-  `SaveFromAppIntent.parseFields` expects, or `"none"`. Returns the exact string
-  `"unsupported"` when the current app is neither a known platform, Safari, nor
-  Shortcuts (`AppNamePlatform.isSupported` is false — the shortcut branches on it),
-  and `""` for a supported app that needs no prompt (Safari → the tracked page URL
-  is saved; Shortcuts → see below). The bundled shortcut: Get Current App → Screen
-  Analysis Prompt → (screenshot + prompt → image model) → Save from App (`details` =
-  that model response string). A model error / "none" passes through as empty →
-  nothing to save (Safari still saves the tracked URL).
+| `app` | conditions | result |
+|---|---|---|
+| nil / empty (lock screen) | — | **0** |
+| Safari | `SafariURLStore.isFresh()` (URL present, ≤ 72 h) | **1** — saves `lastURL` NOW via the action-button path |
+| Safari | URL stale/absent, vision model available | **2** |
+| Safari | URL stale/absent, no vision model | **0** |
+| Shortcuts (outside onboarding) | — | **0** (no meaningful screenshot of Shortcuts' own UI) |
+| Platform app (tiktok/instagram/x/facebook/bluesky/reddit) | owning surface (all → Downloader) not installed | **0** |
+| Platform app | installed, no vision model | **0** |
+| Platform app | installed, vision model available | **2** |
+| Unrecognized | — | **0** |
+
+Inputs: `AppNamePlatform.{isSafari,isShortcuts,platform}(forAppName:)`;
+`owningSurfaceInstalled` = running app IS Downloader ||
+`InstalledAppMarkers.isInstalled(.downloader)` (markers written every launch);
+`visionModelAvailable` = `ScreenCaptureModelSessionFactory.makeDefault()
+.isAvailable`. The immediate Safari save (1) goes through
+`IntentIngestHelper.handleSavePress` with the Reader-only double-save surface
+armed (see `double-save.md`); a friend-prompt outcome foregrounds Luna.
+
+## `SaveIntent` (`app: String`, `screenshot: IntentFile`) → nothing
+
+1. **Digest double-press skip** — `ScreenshotDigest.digest(forImageData:)`
+   (32×32 grayscale, CoreGraphics-only) vs `ScreenshotDoublePressStore.last()`
+   (App-Group single-slot: digest + date + saved URL).
+   `ScreenshotDoublePress.decide` treats a visually-similar screenshot within
+   `SavePressPolicy.intentDoublePressWindow` (7 s) as an Action Button
+   double-press: **no model call** — the previous save is re-run so the
+   configured double-save action fires (Kindle / friend / prompt), and the
+   snapshot timestamp is refreshed. `ScreenshotDigest.similarityThreshold`
+   still needs on-device tuning against status-bar clock/Dynamic Island noise.
+2. Otherwise: prompt = `AppNamePlatform.safariScreenPrompt` ("title ; site")
+   for Safari, else the per-platform `screenPrompt(forAppName:)`; run
+   prompt+image through the vision seam (below); parse with
+   `SaveResponseParsing.parseFields` (" ; " split, "none"/empty → no fields →
+   `nothingIdentifiable`).
+3. Route: Safari → `SafariPageSave.save(title:site:...)` (quoted-title
+   DuckDuckGo search, non-article-host filter, first survivor — known-fuzzy,
+   flagged for device QA); platforms → `PlatformFieldSave.save(platform:
+   fields:...)` (bluesky = handle+phrase via `BlueskyPostQuery`, reddit =
+   subreddit+title+author? via `RedditPostQuery`, x/tiktok/instagram/facebook =
+   handle+phrase+date? via `SocialPostFinder`). Both are double-save-aware and
+   return `IntentIngestHelper.ActionButtonSaveOutcome`, whose cases carry the
+   saved URL string.
+4. On success: `ScreenshotDoublePressStore.record(digest:savedURLString:)`,
+   then `MediaAutoDownloader.startLiveActivityIfEnabled(forURLString:)` — the
+   helper itself checks the Downloader auto-download setting (exactly what the
+   old `"4:<url>"` token / `DownloadIntent` did). A `friendPromptRequested`
+   outcome foregrounds Luna.
+5. Errors are thrown as `SaveError: CustomLocalizedStringResourceConvertible`
+   (`unsupportedApp`, `modelUnavailable`, `networkUnavailable`,
+   `quotaLimitReached`, `serviceUnavailable`, `nothingIdentifiable`,
+   `notFound`). The happy path returns no value.
+
+## The vision seam (compiler + availability double gate)
+
+FoundationModels' image input (`Attachment`, `PromptRepresentable`) and
+`PrivateCloudComputeLanguageModel` are **iOS 27.0-only and completely absent
+from iPhoneOS26.2.sdk**, so all vision/PCC code is double-gated behind the
+seam in `LunaIntents`:
+
+- `ScreenCaptureModelSession` (protocol + `ScreenCaptureModelError` +
+  always-unavailable stub) — ungated, unit-testable with fakes.
+- `FoundationModelsScreenCaptureSession` — whole file `#if compiler(>=6.4)`,
+  class `@available(iOS 27.0, *)`. PCC model when available (vision-capable),
+  else the on-device `SystemLanguageModel` when it has `.vision`.
+- `ScreenCaptureModelSessionFactory.makeDefault()` — the ONE place the gate
+  lives; everything above it sees only the protocol.
+
+**Consequence:** App Store builds archived with stable Xcode 26.2 compile the
+stub, so `visionModelAvailable` is false and **screenshot capture returns 0 in
+released builds until archives move to Xcode 27 GM**. The Safari fresh-URL
+path (return 1) works everywhere. Dev builds (Xcode 27 beta) on an iOS 27
+device with Apple Intelligence enabled get the full flow.
+
+## Foregrounding
+
+Both intents conform to `ForegroundContinuableIntent` and call
+`requestToContinueInForeground()` (suspends, foregrounds the app, then the
+intent continues and returns its result). It's deprecated in iOS 26 in favor
+of `supportedModes: IntentModes` + `continueInForeground()`, but remains
+functional (introduced 16.4, present in both SDKs); one code path beats mixing
+the two mechanisms on the same intent type. Used for: the onboarding
+bounce-back, and the double-save "ask every time" friend prompt —
+`ReadingListIngestor` records the pending prompt, the intent foregrounds, and
+`SceneDelegate.applyPendingFriendPrompt()` presents `SendToFriendSheet`.
 
 ## Action Button onboarding (`LunaStorage.ActionButtonOnboardingStore`)
 
 The iOS 27+ Action Button is set up by importing the bundled `Send To
-Luna.shortcut` (Get Current App → Screen Analysis Prompt → [screenshot + prompt →
-image model] → Save from App) and assigning it to the Action Button in Settings.
-Both `SaveFromAppIntent` invocations that happen DURING this setup — one from the
-Shortcuts app's own first run, one from wherever the Action Button is actually
-pressed — need to behave differently from a normal save; `AppNamePlatform` treats
-app name **"Shortcuts"** exactly like Safari (`isShortcuts(forAppName:)`; supported,
-no screen prompt) so the first of these never reaches "unsupported".
+Luna.shortcut` and assigning it to the Action Button in Settings. Both
+`ProvideContextIntent` invocations that happen DURING this setup — one from
+the Shortcuts app's own first run, one from wherever the Action Button is
+actually pressed — are hijacked before any decision work.
+`AppNamePlatform.isShortcuts(forAppName:)` recognizes the first of these
+("Shortcuts" is otherwise unsupported, return 0).
 
 `ActionButtonOnboardingStore` (`LunaLibraries/Sources/LunaStorage/`) is a
 per-surface (`AppSurface.storageIdentifier`: `"reader"`/`"downloader"`/
@@ -91,18 +139,53 @@ per-surface (`AppSurface.storageIdentifier`: `"reader"`/`"downloader"`/
   → `handleAppForegrounded`/`handleAppBackgrounded` (track the Luna↔Shortcuts↔Settings
   round trip),
 - the onboarding UI → `beginInstallStep` / `markSettingsDeeplinkTapped`,
-- `SaveFromAppIntent.perform()` → `handleSaveIntentInvoked(appName:isCurrentAppLuna:forSurface:)`,
-  called before any save logic. It returns `.returnOpenLunaToken` (the intent
-  returns `ActionButtonOnboardingStore.openLunaToken`, i.e. `"open-luna"` — the
-  bundled shortcut's own "Open App → Luna" branch keys off this exact string),
-  `.returnEmpty` (returns `""` — Luna is already frontmost, no bounce-back needed;
-  the in-app UI reacts to `ActionButtonOnboardingStore.stateDidChangeNotification`
-  instead), or `.none` (no interception — the normal save flow proceeds
-  untouched).
+- `ProvideContextIntent.perform()` →
+  `handleProvideContextInvoked(appName:isCurrentAppLuna:forSurface:)`, called
+  before any decision work. It returns a `ProvideContextInterception`:
+  `.foregroundThenUnsupported` (foreground Luna in-intent, then return 0 — the
+  freshly-imported shortcut's first run, or real setup completing while another
+  app was frontmost), `.unsupported` (return 0 without foregrounding — Luna is
+  already frontmost; the in-app UI reacts to
+  `ActionButtonOnboardingStore.stateDidChangeNotification` instead), or `.none`
+  (no interception — the normal decision flow proceeds).
 
 `SystemSettingsLink.openActionButton()` deep-links Settings → Action Button
 (`App-Prefs:root=ACTION_BUTTON`, falling back through the same private-scheme
 cascade as `open()`).
+
+## Bundled shortcut + user setup
+
+`Luna/Resources/Send To Luna.shortcut` is an AEA1-signed `.shortcut` bundle
+(display name = `BundledShortcut.displayName`). Settings → "Install Shortcut"
+(`BundledShortcut.presentInstaller`) shares the bundled file to the Shortcuts
+app (`shortcuts://import-workflow?url=` REJECTS local file URLs, so install
+stays share-sheet based).
+
+> **Manual step (signed file, cannot be generated by this codebase): the
+> bundled shortcut must be re-authored by hand** in the Shortcuts app to the
+> new shape — Get Current App → Provide Context(app) → If result = 2 → Take
+> Screenshot → Save(app, screenshot) — exported, renamed to
+> `Send To Luna.shortcut`, and dropped into `Luna/Resources/`. This is a
+> **clean break**: old installs (the Screen Analysis Prompt / Save from App
+> chain) reference deleted intents and must be reinstalled via Settings →
+> Install Shortcut.
+
+User setup:
+1. Enable the Safari extension (see `safari-extension.md`) — feeds
+   `SafariURLStore` for the no-screenshot Safari save.
+2. Settings → Install Shortcut → share to Shortcuts → Add Shortcut. First run
+   prompts to allow sharing app info with Luna; choose Always Allow.
+3. Settings → Action Button → Shortcut → pick "Send To Luna".
+
+The Action Button shortcut setup section is hidden below iOS 27. Action Button
+can't be assigned programmatically; the simulator has no Action Button (test
+by running the shortcut from the Shortcuts app). On-device QA still owed: real
+Action Button run on an iOS 27 device (FM vision/PCC can't run in CI sims),
+digest threshold tuning, and the fuzzy Safari title→search save across sites.
+
+The Live Activity widget's Suspend/Resume intents
+(`LunaMediaDownload.LiveMediaDownloadManager`) are a separate flow, untouched
+by the capture intents.
 
 > **ITMS-90626**: an App Intent `title`/`description`/parameter string must NEVER
 > contain "apple" or Siri references, or App Store processing silently drops the

@@ -1,5 +1,9 @@
 # Double-save action — plan
 
+> **Historical snapshot** (implemented; living doc: `double-save.md`). Intent
+> names below predate the two-intent capture flow (`ProvideContextIntent`/
+> `SaveIntent`, 2026-07) — see `app-intents.md`.
+
 Feature: in **Luna Reader**, when the user saves the **exact same URL twice within
 7 seconds via the Save App Intent** (Action Button path only — NOT share sheet /
 action extension / Safari extension / mail import), trigger a configurable action:

@@ -1,12 +1,16 @@
 # Double-save action (Reader, Action Button only)
 
 Saving the **exact same URL twice within 7 seconds** through the **Action
-Button's Save App Intent** (`SaveFromAppIntent`) in **Luna Reader** runs a
-configurable action on the already-saved item. No other save surface triggers
-it: share/action/Safari extensions, paste, manual add, `SaveLinkIntent`, mail
-import, and the other two apps all keep plain save semantics, as does the
-pre-existing **legacy in-app double-save regime** (12 s window, ereader
-destinations whose App-Intents mode is "Double Save" — see below).
+Button intents** (`ProvideContextIntent`'s immediate Safari save and
+`SaveIntent`'s screenshot save — see `app-intents.md`) in **Luna Reader** runs
+a configurable action on the already-saved item. `SaveIntent` additionally
+detects the repeat press by screenshot **digest** (a visually-similar
+screenshot within the same 7 s window re-runs the previous save with no model
+call), since a second screenshot of the same screen resolves to the same URL.
+No other save surface triggers it: share/action/Safari extensions, paste,
+manual add, mail import, and the other two apps all keep plain save semantics,
+as does the pre-existing **legacy in-app double-save regime** (12 s window,
+ereader destinations whose App-Intents mode is "Double Save" — see below).
 
 ## Setting (Settings → Email & Sending → Double Save; Reader only)
 
@@ -22,9 +26,10 @@ destinations whose App-Intents mode is "Double Save" — see below).
 
 ## Flow
 
-`SaveFromAppIntent` (and only it) calls
-`IntentIngestHelper.handleActionButtonSavePress(urlString:doubleSaveActionSurface:)`
-when `AppSurfaceConfig.current == .reader`; that threads
+The Action Button intents (and only they) call
+`IntentIngestHelper.handleSavePress(urlString:doubleSaveActionSurface:)` with a
+non-nil surface when `AppSurfaceConfig.current == .reader`
+(`ActionButtonIntentSupport.doubleSaveSurface`); that threads
 `doubleSaveActionSurface` into `ReadingListIngestor.handleSavePress`, which
 resolves the configured action (`resolvedIntentAction`) and passes it as
 `SavePressPolicy.decide(intentAction:)`:
@@ -38,10 +43,10 @@ resolves the configured action (`resolvedIntentAction`) and passes it as
     `EmailShareCenter.shared.send(item:to:)` (errors are logged to the
     diagnostic log, never fail the intent) → result `.sentToFriends`.
   - `.promptFriendSelector` → the ingestor records the pending friend prompt
-    and returns `.friendPromptRequested`; the intent then returns
-    `ActionButtonOnboardingStore.openLunaToken` (`"open-luna"`), which the
-    bundled shortcut's existing "Open App → Luna" branch keys off — no shortcut
-    changes needed. On foreground, `SceneDelegate.applyPendingFriendPrompt()`
+    and returns `.friendPromptRequested`; the intent then foregrounds Luna
+    itself via `ForegroundContinuableIntent.requestToContinueInForeground()`
+    (no shortcut branch involved). On foreground,
+    `SceneDelegate.applyPendingFriendPrompt()`
     consumes the prompt (only once the main UI is up, so onboarding never
     swallows it) and presents `SendToFriendSheet` for the item.
   - A repeat press with `intentAction` armed NEVER falls back into the legacy

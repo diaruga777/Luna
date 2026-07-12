@@ -48,7 +48,7 @@ Sources other than App Intents default to the legacy "all saves" behavior
 
 ## Gating (save-press state machine)
 
-All save entry points (`LunaSafariPageIntent`, `SaveLinkIntent`, in-app add)
+All save entry points (the Action Button intents, in-app add)
 funnel through `ReadingListIngestor.handleSavePress(urlString:source:)`:
 
 1. URL not in list → save (tagged with `source`) + ingest.

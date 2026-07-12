@@ -1265,15 +1265,17 @@ public final class OnboardingAnimationView: UIView {
         let grabber = sheetGrabber()
         siShareSheet.addSubview(grabber)
 
+        // Three apps, not four: the fourth left no room between icons and forced
+        // the one real caption ("Shortcuts") to truncate.
         let generic1 = iconWithCaption(axAppIcon(), caption: captionPlaceholder())
-        let generic2 = iconWithCaption(axAppIcon(), caption: captionPlaceholder())
         let shortcutsCaption = UILabel()
         shortcutsCaption.text = "Shortcuts"
         shortcutsCaption.font = .systemFont(ofSize: 9, weight: .medium)
         shortcutsCaption.textColor = .label
+        shortcutsCaption.setContentCompressionResistancePriority(.required, for: .horizontal)
         let shortcutsItem = iconWithCaption(shortcutsAppIcon(), caption: shortcutsCaption)
-        let generic3 = iconWithCaption(axAppIcon(), caption: captionPlaceholder())
-        let appsRow = UIStackView(arrangedSubviews: [generic1, generic2, shortcutsItem, generic3])
+        let generic2 = iconWithCaption(axAppIcon(), caption: captionPlaceholder())
+        let appsRow = UIStackView(arrangedSubviews: [generic1, shortcutsItem, generic2])
         appsRow.axis = .horizontal
         appsRow.distribution = .equalSpacing
         appsRow.alignment = .top
@@ -1346,8 +1348,8 @@ public final class OnboardingAnimationView: UIView {
             grabber.widthAnchor.constraint(equalToConstant: 34),
             grabber.heightAnchor.constraint(equalToConstant: 5),
             appsRow.topAnchor.constraint(equalTo: grabber.bottomAnchor, constant: 14),
-            appsRow.leadingAnchor.constraint(equalTo: siShareSheet.leadingAnchor, constant: 14),
-            appsRow.trailingAnchor.constraint(equalTo: siShareSheet.trailingAnchor, constant: -14),
+            appsRow.leadingAnchor.constraint(equalTo: siShareSheet.leadingAnchor, constant: 10),
+            appsRow.trailingAnchor.constraint(equalTo: siShareSheet.trailingAnchor, constant: -10),
             siShortcutRipple.centerXAnchor.constraint(equalTo: shortcutsItem.centerXAnchor),
             siShortcutRipple.centerYAnchor.constraint(equalTo: siShortcutIcon.centerYAnchor),
             siShortcutRipple.widthAnchor.constraint(equalToConstant: 38),
@@ -1768,24 +1770,39 @@ public final class OnboardingAnimationView: UIView {
     private let abActionButtonRowHighlight = UIView()
     private let abSafariScreen = UIView()
     private let abActionCapsule = UIView()
-    private let abControlGlyph = UIImageView(image: UIImage(
-        systemName: "switch.2", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)))
-    private let abShortcutGlyph = UIImageView(image: UIImage(
-        systemName: "square.stack.3d.up.fill",
-        withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)))
-    private let abActionTitle = UILabel()
-    private let abActionSubtitle = UILabel()
-    private let abChooseLabel = UILabel()
+    // The carousel is two horizontally-sliding glyph strips sharing one set of
+    // slot positions: a dim strip on the Settings screen and a white copy inside
+    // the clipping capsule. Panning both one slot moves each glyph between the
+    // side positions and the capsule window, exactly like the real screen.
+    private let abOuterGlyphStrip = UIView()
+    private let abInnerGlyphStrip = UIView()
+    private let abCarouselStep: CGFloat = 64
+    private let abDotControls = UIView()
+    private let abDotShortcut = UIView()
+    private let abControlsTitle = UILabel()
+    private let abControlsSubtitle = UILabel()
+    private let abShortcutTitle = UILabel()
+    private let abShortcutSubtitle = UILabel()
     private let abChooseButton = UIView()
     private let abLunaChoice = UIView()
+    private let abHardwareButton = UIView()
     private let abPressRipple = UIView()
     private let abIsland = UIView()
     private let abIslandIcon = UIImageView()
     private let abIslandCheck = UIImageView(image: UIImage(
         systemName: "checkmark.circle.fill",
-        withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)))
+        withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)))
     private var abIslandWidth: NSLayoutConstraint!
     private var abIslandHeight: NSLayoutConstraint!
+
+    /// One carousel glyph at the Action Button screen's standard symbol size.
+    private func abCarouselGlyph(_ symbol: String, tint: UIColor) -> UIImageView {
+        let glyph = UIImageView(image: UIImage(
+            systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)))
+        glyph.tintColor = tint
+        glyph.translatesAutoresizingMaskIntoConstraints = false
+        return glyph
+    }
 
     /// Recreates the current full-height Action Button Settings presentation from
     /// the device references: circular back button, tall titanium phone, large
@@ -1848,37 +1865,53 @@ public final class OnboardingAnimationView: UIView {
         deviceGlow.translatesAutoresizingMaskIntoConstraints = false
         device.addSubview(deviceGlow)
 
-        abActionCapsule.backgroundColor = accent.withAlphaComponent(0.88)
+        // Slots left→right: the previous action, Controls (starts in the capsule
+        // window), Shortcut, then Accessibility waiting one slot further out.
+        let carouselSymbols = ["flashlight.on.fill", "switch.2", "square.stack.3d.up.fill", "accessibility"]
+        abOuterGlyphStrip.translatesAutoresizingMaskIntoConstraints = false
+        abSettingsScreen.addSubview(abOuterGlyphStrip)
+
+        // The capsule is a sibling of (not inside) `device` so it stacks above the
+        // dim strip; fully opaque so that strip never ghosts through, and clipping
+        // so the white strip only shows through the capsule window.
+        abActionCapsule.backgroundColor = accent
         abActionCapsule.layer.cornerRadius = 25
         abActionCapsule.layer.cornerCurve = .continuous
         abActionCapsule.layer.borderColor = accent.withAlphaComponent(0.65).cgColor
         abActionCapsule.layer.borderWidth = 3
+        abActionCapsule.clipsToBounds = true
         abActionCapsule.translatesAutoresizingMaskIntoConstraints = false
-        device.addSubview(abActionCapsule)
-        abControlGlyph.tintColor = .white
-        abControlGlyph.translatesAutoresizingMaskIntoConstraints = false
-        abActionCapsule.addSubview(abControlGlyph)
-        abShortcutGlyph.tintColor = .white
-        abShortcutGlyph.translatesAutoresizingMaskIntoConstraints = false
-        abActionCapsule.addSubview(abShortcutGlyph)
+        abSettingsScreen.addSubview(abActionCapsule)
+        abInnerGlyphStrip.translatesAutoresizingMaskIntoConstraints = false
+        abActionCapsule.addSubview(abInnerGlyphStrip)
 
-        let previousGlyph = UIImageView(image: UIImage(
-            systemName: "switch.2", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)))
-        previousGlyph.tintColor = .tertiaryLabel
-        previousGlyph.translatesAutoresizingMaskIntoConstraints = false
-        abSettingsScreen.addSubview(previousGlyph)
-        let nextGlyph = UIImageView(image: UIImage(
-            systemName: "accessibility", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)))
-        nextGlyph.tintColor = .tertiaryLabel
-        nextGlyph.translatesAutoresizingMaskIntoConstraints = false
-        abSettingsScreen.addSubview(nextGlyph)
+        var glyphConstraints: [NSLayoutConstraint] = []
+        for (index, symbol) in carouselSymbols.enumerated() {
+            let offset = CGFloat(index - 1) * abCarouselStep
+            let outer = abCarouselGlyph(symbol, tint: .tertiaryLabel)
+            abOuterGlyphStrip.addSubview(outer)
+            let inner = abCarouselGlyph(symbol, tint: .white)
+            abInnerGlyphStrip.addSubview(inner)
+            glyphConstraints += [
+                outer.centerXAnchor.constraint(equalTo: abOuterGlyphStrip.centerXAnchor, constant: offset),
+                outer.centerYAnchor.constraint(equalTo: abOuterGlyphStrip.centerYAnchor),
+                inner.centerXAnchor.constraint(equalTo: abInnerGlyphStrip.centerXAnchor, constant: offset),
+                inner.centerYAnchor.constraint(equalTo: abInnerGlyphStrip.centerYAnchor),
+            ]
+        }
+        NSLayoutConstraint.activate(glyphConstraints)
 
         let dots = UIStackView()
         dots.axis = .horizontal
         dots.spacing = 5
         dots.translatesAutoresizingMaskIntoConstraints = false
         for index in 0..<10 {
-            let dot = UIView()
+            let dot: UIView
+            switch index {
+            case 7: dot = abDotControls
+            case 8: dot = abDotShortcut
+            default: dot = UIView()
+            }
             dot.backgroundColor = index == 7 ? .label : .tertiaryLabel
             dot.layer.cornerRadius = 2.5
             dot.translatesAutoresizingMaskIntoConstraints = false
@@ -1888,24 +1921,38 @@ public final class OnboardingAnimationView: UIView {
         }
         abSettingsScreen.addSubview(dots)
 
-        abActionTitle.text = "Controls"
-        abActionTitle.font = .systemFont(ofSize: 19, weight: .bold)
-        abActionTitle.textAlignment = .center
-        abActionTitle.translatesAutoresizingMaskIntoConstraints = false
-        abSettingsScreen.addSubview(abActionTitle)
-        abActionSubtitle.text = "Quickly access your favorite Control."
-        abActionSubtitle.font = .systemFont(ofSize: 9)
-        abActionSubtitle.textColor = .secondaryLabel
-        abActionSubtitle.textAlignment = .center
-        abActionSubtitle.numberOfLines = 2
-        abActionSubtitle.translatesAutoresizingMaskIntoConstraints = false
-        abSettingsScreen.addSubview(abActionSubtitle)
+        // Titles and subtitles come as per-page pairs crossfaded by alpha: setting
+        // `.text` inside a keyframe block applies immediately at setup (text is
+        // not animatable), so a single mutated label never visibly changes pages.
+        func configurePageTitle(_ label: UILabel, _ text: String) {
+            label.text = text
+            label.font = .systemFont(ofSize: 19, weight: .bold)
+            label.textAlignment = .center
+            label.translatesAutoresizingMaskIntoConstraints = false
+            abSettingsScreen.addSubview(label)
+        }
+        func configurePageSubtitle(_ label: UILabel, _ text: String) {
+            label.text = text
+            label.font = .systemFont(ofSize: 9)
+            label.textColor = .secondaryLabel
+            label.textAlignment = .center
+            label.numberOfLines = 2
+            label.translatesAutoresizingMaskIntoConstraints = false
+            abSettingsScreen.addSubview(label)
+        }
+        configurePageTitle(abControlsTitle, "Controls")
+        configurePageSubtitle(abControlsSubtitle, "Quickly access your favorite Control.")
+        configurePageTitle(abShortcutTitle, "Shortcut")
+        configurePageSubtitle(abShortcutSubtitle, "Open an app or run your\nfavorite shortcut.")
 
+        // The choose button belongs to the Shortcut page only; it fades in after
+        // the carousel lands there, so its label never needs to change.
         abChooseButton.backgroundColor = .systemBlue
         abChooseButton.layer.cornerRadius = 12
         abChooseButton.translatesAutoresizingMaskIntoConstraints = false
         abSettingsScreen.addSubview(abChooseButton)
-        abChooseLabel.text = "Choose a Control…"
+        let abChooseLabel = UILabel()
+        abChooseLabel.text = "Choose a Shortcut…"
         abChooseLabel.textColor = .white
         abChooseLabel.font = .systemFont(ofSize: 10, weight: .semibold)
         abChooseLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -2002,7 +2049,9 @@ public final class OnboardingAnimationView: UIView {
         connectivityGroup.translatesAutoresizingMaskIntoConstraints = false
         abRootSettingsScreen.addSubview(connectivityGroup)
         let connectivityRows = UIStackView(arrangedSubviews: [
-            rootRow(symbol: "bolt.horizontal.fill", title: "Bluetooth", color: .systemBlue),
+            // Wi-Fi, not Bluetooth: SF Symbols has no Bluetooth rune, and every
+            // bolt stand-in reads as the Messenger logo at this size.
+            rootRow(symbol: "wifi", title: "Wi-Fi", color: .systemBlue),
             rootRow(symbol: "antenna.radiowaves.left.and.right", title: "Cellular", color: .systemGreen),
             rootRow(symbol: "battery.100percent", title: "Battery", color: .systemGreen),
         ])
@@ -2072,13 +2121,12 @@ public final class OnboardingAnimationView: UIView {
         home.layer.cornerRadius = 1.5
         home.translatesAutoresizingMaskIntoConstraints = false
         safariChrome.addSubview(home)
-        let hardwareButton = UIView()
-        hardwareButton.backgroundColor = .systemGray
-        hardwareButton.layer.cornerRadius = 2
-        hardwareButton.translatesAutoresizingMaskIntoConstraints = false
-        abSafariScreen.addSubview(hardwareButton)
+        abHardwareButton.backgroundColor = .systemGray
+        abHardwareButton.layer.cornerRadius = 2
+        abHardwareButton.translatesAutoresizingMaskIntoConstraints = false
+        abSafariScreen.addSubview(abHardwareButton)
         abPressRipple.backgroundColor = accent.withAlphaComponent(0.38)
-        abPressRipple.layer.cornerRadius = 15
+        abPressRipple.layer.cornerRadius = 22
         abPressRipple.translatesAutoresizingMaskIntoConstraints = false
         abSafariScreen.addSubview(abPressRipple)
 
@@ -2087,11 +2135,13 @@ public final class OnboardingAnimationView: UIView {
         abIsland.translatesAutoresizingMaskIntoConstraints = false
         abSafariScreen.addSubview(abIsland)
         abIslandIcon.image = lunaAppIconImage()
-        abIslandIcon.layer.cornerRadius = 2
+        abIslandIcon.contentMode = .scaleAspectFit
+        abIslandIcon.layer.cornerRadius = 3
         abIslandIcon.clipsToBounds = true
         abIslandIcon.translatesAutoresizingMaskIntoConstraints = false
         abIsland.addSubview(abIslandIcon)
         abIslandCheck.tintColor = .systemGreen
+        abIslandCheck.contentMode = .scaleAspectFit
         abIslandCheck.translatesAutoresizingMaskIntoConstraints = false
         abIsland.addSubview(abIslandCheck)
         abIslandWidth = abIsland.widthAnchor.constraint(equalToConstant: 34)
@@ -2124,16 +2174,22 @@ public final class OnboardingAnimationView: UIView {
             deviceGlow.widthAnchor.constraint(equalToConstant: 66), deviceGlow.heightAnchor.constraint(equalToConstant: 120),
             abActionCapsule.centerXAnchor.constraint(equalTo: device.centerXAnchor), abActionCapsule.centerYAnchor.constraint(equalTo: device.centerYAnchor),
             abActionCapsule.widthAnchor.constraint(equalToConstant: 48), abActionCapsule.heightAnchor.constraint(equalToConstant: 76),
-            abControlGlyph.centerXAnchor.constraint(equalTo: abActionCapsule.centerXAnchor), abControlGlyph.centerYAnchor.constraint(equalTo: abActionCapsule.centerYAnchor),
-            abShortcutGlyph.centerXAnchor.constraint(equalTo: abActionCapsule.centerXAnchor), abShortcutGlyph.centerYAnchor.constraint(equalTo: abActionCapsule.centerYAnchor),
-            previousGlyph.trailingAnchor.constraint(equalTo: device.leadingAnchor, constant: -12), previousGlyph.centerYAnchor.constraint(equalTo: device.centerYAnchor),
-            nextGlyph.leadingAnchor.constraint(equalTo: device.trailingAnchor, constant: 12), nextGlyph.centerYAnchor.constraint(equalTo: device.centerYAnchor),
+            abOuterGlyphStrip.centerXAnchor.constraint(equalTo: abActionCapsule.centerXAnchor),
+            abOuterGlyphStrip.centerYAnchor.constraint(equalTo: abActionCapsule.centerYAnchor),
+            abOuterGlyphStrip.widthAnchor.constraint(equalToConstant: 0), abOuterGlyphStrip.heightAnchor.constraint(equalToConstant: 0),
+            abInnerGlyphStrip.centerXAnchor.constraint(equalTo: abActionCapsule.centerXAnchor),
+            abInnerGlyphStrip.centerYAnchor.constraint(equalTo: abActionCapsule.centerYAnchor),
+            abInnerGlyphStrip.widthAnchor.constraint(equalToConstant: 0), abInnerGlyphStrip.heightAnchor.constraint(equalToConstant: 0),
             dots.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), dots.topAnchor.constraint(equalTo: device.bottomAnchor, constant: 9),
-            abActionTitle.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), abActionTitle.topAnchor.constraint(equalTo: dots.bottomAnchor, constant: 9),
-            abActionSubtitle.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), abActionSubtitle.topAnchor.constraint(equalTo: abActionTitle.bottomAnchor, constant: 4),
-            abActionSubtitle.leadingAnchor.constraint(greaterThanOrEqualTo: abSettingsScreen.leadingAnchor, constant: 10),
-            abActionSubtitle.trailingAnchor.constraint(lessThanOrEqualTo: abSettingsScreen.trailingAnchor, constant: -10),
-            abChooseButton.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), abChooseButton.topAnchor.constraint(equalTo: abActionSubtitle.bottomAnchor, constant: 9),
+            abControlsTitle.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), abControlsTitle.topAnchor.constraint(equalTo: dots.bottomAnchor, constant: 9),
+            abShortcutTitle.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), abShortcutTitle.topAnchor.constraint(equalTo: dots.bottomAnchor, constant: 9),
+            abControlsSubtitle.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), abControlsSubtitle.topAnchor.constraint(equalTo: abControlsTitle.bottomAnchor, constant: 4),
+            abControlsSubtitle.leadingAnchor.constraint(greaterThanOrEqualTo: abSettingsScreen.leadingAnchor, constant: 10),
+            abControlsSubtitle.trailingAnchor.constraint(lessThanOrEqualTo: abSettingsScreen.trailingAnchor, constant: -10),
+            abShortcutSubtitle.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), abShortcutSubtitle.topAnchor.constraint(equalTo: abControlsTitle.bottomAnchor, constant: 4),
+            abShortcutSubtitle.leadingAnchor.constraint(greaterThanOrEqualTo: abSettingsScreen.leadingAnchor, constant: 10),
+            abShortcutSubtitle.trailingAnchor.constraint(lessThanOrEqualTo: abSettingsScreen.trailingAnchor, constant: -10),
+            abChooseButton.centerXAnchor.constraint(equalTo: abSettingsScreen.centerXAnchor), abChooseButton.topAnchor.constraint(equalTo: abShortcutSubtitle.bottomAnchor, constant: 9),
             abChooseButton.widthAnchor.constraint(equalToConstant: 112), abChooseButton.heightAnchor.constraint(equalToConstant: 26),
             abChooseLabel.centerXAnchor.constraint(equalTo: abChooseButton.centerXAnchor), abChooseLabel.centerYAnchor.constraint(equalTo: abChooseButton.centerYAnchor),
             abLunaChoice.centerXAnchor.constraint(equalTo: abChooseButton.centerXAnchor), abLunaChoice.centerYAnchor.constraint(equalTo: abChooseButton.centerYAnchor),
@@ -2175,16 +2231,16 @@ public final class OnboardingAnimationView: UIView {
             chromeIcons.trailingAnchor.constraint(equalTo: safariChrome.trailingAnchor, constant: -18), chromeIcons.heightAnchor.constraint(equalToConstant: 16),
             home.centerXAnchor.constraint(equalTo: safariChrome.centerXAnchor), home.bottomAnchor.constraint(equalTo: safariChrome.bottomAnchor, constant: -5),
             home.widthAnchor.constraint(equalToConstant: 56), home.heightAnchor.constraint(equalToConstant: 3),
-            hardwareButton.leadingAnchor.constraint(equalTo: abSafariScreen.leadingAnchor, constant: -1), hardwareButton.topAnchor.constraint(equalTo: abSafariScreen.topAnchor, constant: 72),
-            hardwareButton.widthAnchor.constraint(equalToConstant: 5), hardwareButton.heightAnchor.constraint(equalToConstant: 30),
-            abPressRipple.centerXAnchor.constraint(equalTo: hardwareButton.centerXAnchor), abPressRipple.centerYAnchor.constraint(equalTo: hardwareButton.centerYAnchor),
-            abPressRipple.widthAnchor.constraint(equalToConstant: 30), abPressRipple.heightAnchor.constraint(equalToConstant: 30),
+            abHardwareButton.leadingAnchor.constraint(equalTo: abSafariScreen.leadingAnchor, constant: -1), abHardwareButton.topAnchor.constraint(equalTo: abSafariScreen.topAnchor, constant: 72),
+            abHardwareButton.widthAnchor.constraint(equalToConstant: 5), abHardwareButton.heightAnchor.constraint(equalToConstant: 30),
+            abPressRipple.centerXAnchor.constraint(equalTo: abHardwareButton.centerXAnchor), abPressRipple.centerYAnchor.constraint(equalTo: abHardwareButton.centerYAnchor),
+            abPressRipple.widthAnchor.constraint(equalToConstant: 44), abPressRipple.heightAnchor.constraint(equalToConstant: 44),
             abIsland.centerXAnchor.constraint(equalTo: abSafariScreen.centerXAnchor), abIsland.topAnchor.constraint(equalTo: abSafariScreen.topAnchor, constant: 9),
             abIslandWidth, abIslandHeight,
-            abIslandIcon.leadingAnchor.constraint(equalTo: abIsland.leadingAnchor, constant: 6), abIslandIcon.centerYAnchor.constraint(equalTo: abIsland.centerYAnchor),
-            abIslandIcon.widthAnchor.constraint(equalToConstant: 10), abIslandIcon.heightAnchor.constraint(equalToConstant: 10),
-            abIslandCheck.trailingAnchor.constraint(equalTo: abIsland.trailingAnchor, constant: -6), abIslandCheck.centerYAnchor.constraint(equalTo: abIsland.centerYAnchor),
-            abIslandCheck.widthAnchor.constraint(equalToConstant: 10), abIslandCheck.heightAnchor.constraint(equalToConstant: 10),
+            abIslandIcon.leadingAnchor.constraint(equalTo: abIsland.leadingAnchor, constant: 8), abIslandIcon.centerYAnchor.constraint(equalTo: abIsland.centerYAnchor),
+            abIslandIcon.widthAnchor.constraint(equalToConstant: 14), abIslandIcon.heightAnchor.constraint(equalToConstant: 14),
+            abIslandCheck.trailingAnchor.constraint(equalTo: abIsland.trailingAnchor, constant: -8), abIslandCheck.centerYAnchor.constraint(equalTo: abIsland.centerYAnchor),
+            abIslandCheck.widthAnchor.constraint(equalToConstant: 16), abIslandCheck.heightAnchor.constraint(equalToConstant: 16),
         ])
     }
 
@@ -2204,19 +2260,23 @@ public final class OnboardingAnimationView: UIView {
             abSettingsScreen.transform = pageOffscreen
             abSettingsScreen.layer.cornerRadius = 0
             abSettingsScreen.clipsToBounds = true
-            abControlGlyph.alpha = 1
-            abShortcutGlyph.alpha = 0
-            abActionCapsule.transform = .identity
-            abActionTitle.text = "Controls"
-            abActionSubtitle.text = "Quickly access your favorite Control."
-            abChooseLabel.text = "Choose a Control…"
-            abChooseButton.alpha = 1
+            abOuterGlyphStrip.transform = .identity
+            abInnerGlyphStrip.transform = .identity
+            abDotControls.backgroundColor = .label
+            abDotShortcut.backgroundColor = .tertiaryLabel
+            abControlsTitle.alpha = 1
+            abControlsSubtitle.alpha = 1
+            abShortcutTitle.alpha = 0
+            abShortcutSubtitle.alpha = 0
+            abChooseButton.alpha = 0
             abChooseButton.transform = .identity
             abLunaChoice.alpha = 0
             abLunaChoice.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
             abSafariScreen.transform = pageOffscreen
             abSafariScreen.layer.cornerRadius = 18
             abSafariScreen.clipsToBounds = true
+            abHardwareButton.backgroundColor = .systemGray
+            abHardwareButton.transform = .identity
             abPressRipple.alpha = 0
             abPressRipple.transform = CGAffineTransform(scaleX: 0.25, y: 0.25)
             abIslandWidth.constant = 34
@@ -2224,6 +2284,7 @@ public final class OnboardingAnimationView: UIView {
             abIsland.layer.cornerRadius = 6
             abIslandIcon.alpha = 0
             abIslandCheck.alpha = 0
+            abIslandCheck.transform = CGAffineTransform(scaleX: 0.3, y: 0.3)
             layoutIfNeeded()
         }
         reset()
@@ -2244,17 +2305,27 @@ public final class OnboardingAnimationView: UIView {
                 self.abRootSettingsScreen.alpha = 0
                 self.abSettingsScreen.transform = .identity
             }
-            // Swipe the Action Button carousel from Controls to Shortcut.
-            UIView.addKeyframe(withRelativeStartTime: 0.28, relativeDuration: 0.07) {
-                self.abActionCapsule.transform = CGAffineTransform(translationX: -18, y: 0)
-                self.abControlGlyph.alpha = 0
+            // Swipe the carousel one slot: both glyph strips pan together, so
+            // Controls slides out of the capsule window into the dim side slot
+            // while Shortcut slides in — the way real Settings pans — and the
+            // page dot advances with it.
+            UIView.addKeyframe(withRelativeStartTime: 0.28, relativeDuration: 0.12) {
+                let pan = CGAffineTransform(translationX: -self.abCarouselStep, y: 0)
+                self.abOuterGlyphStrip.transform = pan
+                self.abInnerGlyphStrip.transform = pan
+                self.abDotControls.backgroundColor = .tertiaryLabel
+                self.abDotShortcut.backgroundColor = .label
+                self.abControlsTitle.alpha = 0
+                self.abControlsSubtitle.alpha = 0
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.35, relativeDuration: 0.08) {
-                self.abActionCapsule.transform = .identity
-                self.abShortcutGlyph.alpha = 1
-                self.abActionTitle.text = "Shortcut"
-                self.abActionSubtitle.text = "Open an app or run your\nfavorite shortcut."
-                self.abChooseLabel.text = "Choose a Shortcut…"
+            // Only once the carousel has landed on Shortcut do its title,
+            // subtitle, and the "Choose a Shortcut…" button belong on screen.
+            UIView.addKeyframe(withRelativeStartTime: 0.36, relativeDuration: 0.06) {
+                self.abShortcutTitle.alpha = 1
+                self.abShortcutSubtitle.alpha = 1
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.40, relativeDuration: 0.05) {
+                self.abChooseButton.alpha = 1
             }
             // Choose the installed Luna shortcut.
             UIView.addKeyframe(withRelativeStartTime: 0.46, relativeDuration: 0.06) {
@@ -2288,21 +2359,45 @@ public final class OnboardingAnimationView: UIView {
                 self.abSafariScreen.transform = .identity
                 self.abSafariScreen.layer.cornerRadius = 0
             }
-            // Press the physical Action Button.
-            UIView.addKeyframe(withRelativeStartTime: 0.86, relativeDuration: 0.05) {
+            // Press the physical Action Button: the button itself depresses and
+            // lights up in the accent while a wide ripple blooms outward, so the
+            // press registers instead of reading as a faint blink.
+            UIView.addKeyframe(withRelativeStartTime: 0.84, relativeDuration: 0.03) {
+                self.abHardwareButton.backgroundColor = self.accent
+                self.abHardwareButton.transform = CGAffineTransform(translationX: 1.5, y: 0)
                 self.abPressRipple.alpha = 1
                 self.abPressRipple.transform = .identity
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.91, relativeDuration: 0.04) {
+            UIView.addKeyframe(withRelativeStartTime: 0.87, relativeDuration: 0.04) {
                 self.abPressRipple.alpha = 0
+                self.abPressRipple.transform = CGAffineTransform(scaleX: 1.5, y: 1.5)
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.87, relativeDuration: 0.07) {
-                self.abIslandWidth.constant = 72
-                self.abIslandHeight.constant = 18
-                self.abIsland.layer.cornerRadius = 9
+            UIView.addKeyframe(withRelativeStartTime: 0.90, relativeDuration: 0.03) {
+                self.abHardwareButton.backgroundColor = .systemGray
+                self.abHardwareButton.transform = .identity
+            }
+            // The Dynamic Island expands into an oversized confirmation — larger
+            // than real usage, deliberately, so the checkmark is unmissable —
+            // and the checkmark pops in with a small overshoot.
+            UIView.addKeyframe(withRelativeStartTime: 0.85, relativeDuration: 0.05) {
+                self.abIslandWidth.constant = 84
+                self.abIslandHeight.constant = 26
+                self.abIsland.layer.cornerRadius = 13
                 self.layoutIfNeeded()
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.92, relativeDuration: 0.04) {
+            UIView.addKeyframe(withRelativeStartTime: 0.90, relativeDuration: 0.03) {
+                self.abIslandIcon.alpha = 1
+                self.abIslandCheck.alpha = 1
+                self.abIslandCheck.transform = CGAffineTransform(scaleX: 1.25, y: 1.25)
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.93, relativeDuration: 0.03) {
+                self.abIslandCheck.transform = .identity
+            }
+            // Pin Safari (and the confirmation) in place through the hold: cubic
+            // keyframe interpolation otherwise starts drifting toward the exit
+            // keyframe early and drags the checkmark offscreen mid-confirmation.
+            UIView.addKeyframe(withRelativeStartTime: 0.93, relativeDuration: 0.05) {
+                self.abSafariScreen.transform = .identity
                 self.abIslandIcon.alpha = 1
                 self.abIslandCheck.alpha = 1
             }

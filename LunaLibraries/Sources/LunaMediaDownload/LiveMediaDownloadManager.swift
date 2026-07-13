@@ -16,6 +16,51 @@ import UIKit
 import ActivityKit
 #endif
 
+public enum LiveMediaDownloadOwnership: String, Codable {
+    case downloader
+    case invokingApp
+}
+
+public enum LiveMediaDownloadStartPolicy {
+    public static func downloaderShouldStart(
+        storageState: SavedMediaItem.StorageState?
+    ) -> Bool {
+        switch storageState {
+        case .localFile, .photosReference: return false
+        case .undownloaded, .none: return true
+        }
+    }
+}
+
+/// Whether a Downloader-owned start should be deferred until Wi-Fi rather than
+/// starting immediately. Pulled out as a pure function so all four inputs are
+/// covered by unit tests without needing a live `URLSession`/network stack.
+public enum WiFiOnlyDownloadGate {
+    public static func shouldDefer(
+        ownership: LiveMediaDownloadOwnership, manual: Bool,
+        wifiOnlyEnabled: Bool, isOnWiFi: Bool
+    ) -> Bool {
+        ownership == .downloader && !manual && wifiOnlyEnabled && !isOnWiFi
+    }
+}
+
+extension Notification.Name {
+    /// Posted with `userInfo: ["sourceURLString": String, "progress": Double]`
+    /// (progress key ABSENT means "no active job, reset to static state") each
+    /// time a Downloader-owned job's live progress changes, so the grid can
+    /// update a single cell's ring without a full reload. Grid-facing only —
+    /// unrelated to `.savedMediaChanged`, which fires on durable storage-state
+    /// transitions (completion/deletion), not in-flight progress ticks.
+    public static let downloaderJobProgressChanged = Notification.Name("Luna.downloaderJobProgressChanged")
+}
+
+private func postDownloaderJobProgress(sourceURLString: String, progress: Double?) {
+    var userInfo: [AnyHashable: Any] = ["sourceURLString": sourceURLString]
+    if let progress { userInfo["progress"] = progress }
+    NotificationCenter.default.post(
+        name: .downloaderJobProgressChanged, object: nil, userInfo: userInfo)
+}
+
 public final class LiveMediaDownloadManager: NSObject {
     public static let shared = LiveMediaDownloadManager()
 
@@ -42,24 +87,53 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     @discardableResult
-    public func start(urlString: String, title: String? = nil) async -> Bool {
+    public func start(
+        urlString: String,
+        title: String? = nil,
+        ownership: LiveMediaDownloadOwnership? = nil,
+        manual: Bool = false
+    ) async -> Bool {
         await reapExpiredSuspensions()
 
         guard MediaDownloadablePlatform.supports(urlString),
-              let sourceURL = URL(string: urlString),
-              !AutoDownloadSettings.wasDownloaded(urlString)
+              let sourceURL = URL(string: urlString)
         else { return false }
 
-        if MediaAutoDownloader.isRunningInDownloader {
+        let ownership = ownership ?? (MediaAutoDownloader.isRunningInDownloader
+            ? .downloader : .invokingApp)
+        if ownership == .downloader {
             let readingItem = ReadingListStore.shared.item(forURLString: urlString)
-            try? SavedMediaStore.shared.ensureUndownloaded(
+            let savedItem = try? SavedMediaStore.shared.ensureUndownloaded(
                 id: readingItem?.id ?? UUID(),
                 sourceURLString: urlString,
                 title: title ?? readingItem?.title,
                 dateSaved: readingItem?.dateAdded ?? Date())
+            if !LiveMediaDownloadStartPolicy.downloaderShouldStart(
+                storageState: savedItem?.storageState
+            ) {
+                // The durable Downloader library, not the legacy URL marker, is
+                // authoritative for Downloader-owned completion.
+                AutoDownloadSettings.markDownloaded(urlString)
+                return false
+            } else {
+                // Repair state left by an interrupted/crashed inline download or
+                // by an older sibling-app Photos save. Such a marker must not
+                // suppress creation/restart of the Downloader background job.
+                AutoDownloadSettings.unmarkDownloaded(urlString)
+            }
+            if WiFiOnlyDownloadGate.shouldDefer(
+                ownership: ownership, manual: manual,
+                wifiOnlyEnabled: AutoDownloadSettings.wifiOnlyDownloads,
+                isOnWiFi: NetworkReachability.shared.isOnWiFi
+            ) {
+                AutoDownloadSettings.markPendingWiFiDownload(urlString)
+                return false
+            }
+        } else if AutoDownloadSettings.wasDownloaded(urlString) {
+            return false
         }
 
-        let canSave = MediaAutoDownloader.isRunningInDownloader
+        let canSave = ownership == .downloader
             ? true
             : await saver.requestAddAuthorization()
         guard canSave else {
@@ -71,9 +145,13 @@ public final class LiveMediaDownloadManager: NSObject {
             return false
         }
 
-        if let existing = store.jobs().first(where: {
+        if var existing = store.jobs().first(where: {
             $0.sourceURLString == urlString && !$0.isTerminal
         }) {
+            if ownership == .downloader && !existing.isDownloaderOwned {
+                existing.ownership = .downloader
+                store.upsert(existing)
+            }
             await updateActivity(for: existing)
             return true
         }
@@ -94,9 +172,13 @@ public final class LiveMediaDownloadManager: NSObject {
             errorKind: nil,
             resolveAttempts: 0,
             mediaAttempts: 0,
-            suspendDeadline: nil
+            suspendDeadline: nil,
+            ownership: ownership
         )
         store.upsert(job)
+        if job.isDownloaderOwned {
+            postDownloaderJobProgress(sourceURLString: job.sourceURLString, progress: 0)
+        }
         await startActivity(for: job)
 
         guard let resolve = Self.resolveRequest(for: sourceURL) else {
@@ -146,6 +228,36 @@ public final class LiveMediaDownloadManager: NSObject {
         for job in store.jobs().filter({ !$0.isTerminal }) {
             Task { await updateActivity(for: job) }
         }
+    }
+
+    /// Retries every download that `wifiOnlyDownloads` deferred, if the setting
+    /// is still on and we're actually on Wi-Fi now. Called opportunistically on
+    /// Wi-Fi reconnect, app launch/foreground, and the next background-refresh
+    /// task. A no-op (not just per-item, the whole sweep) when either condition
+    /// fails, so it's cheap to call from every one of those triggers.
+    public func resumePendingWiFiDownloads() async {
+        guard AutoDownloadSettings.wifiOnlyDownloads, NetworkReachability.shared.isOnWiFi else { return }
+        for urlString in AutoDownloadSettings.pendingWiFiDownloadURLs() {
+            _ = await start(urlString: urlString, ownership: .downloader)
+        }
+    }
+
+    /// Starts every Wi-Fi-deferred download right away, ignoring current
+    /// network type — used when the user turns `wifiOnlyDownloads` back off,
+    /// so already-deferred items don't keep waiting for the next opportunistic
+    /// trigger.
+    public func startAllPendingWiFiDownloads() async {
+        for urlString in AutoDownloadSettings.pendingWiFiDownloadURLs() {
+            _ = await start(urlString: urlString, ownership: .downloader, manual: true)
+        }
+    }
+
+    /// Live progress (0...1) of a non-terminal Downloader-owned job for this
+    /// source URL, or `nil` if none is running — used by the grid to decide
+    /// whether a cell shows the progress ring or the static "undownloaded" icon.
+    public func currentDownloadProgress(forSourceURLString urlString: String) -> Double? {
+        guard let job = store.job(forSourceURLString: urlString), job.isDownloaderOwned else { return nil }
+        return job.progress
     }
 
     public func suspend(jobID: String) async {
@@ -400,7 +512,7 @@ public final class LiveMediaDownloadManager: NSObject {
         var job = job
         guard job.phase != .suspended else { return }
         do {
-            if MediaAutoDownloader.isRunningInDownloader {
+            if job.isDownloaderOwned {
                 let item = try await finishDownloaderStorage(
                     job: job, fileURL: fileURL, kind: kind)
                 await copyToClipboardIfEnabled(item)
@@ -408,6 +520,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 _ = try await saver.save(fileURL: fileURL, kind: kind)
             }
             AutoDownloadSettings.markDownloaded(job.sourceURLString)
+            AutoDownloadSettings.unmarkPendingWiFiDownload(job.sourceURLString)
             job.phase = .finished
             job.progress = 1
             job.errorMessage = nil
@@ -531,6 +644,9 @@ public final class LiveMediaDownloadManager: NSObject {
         var job = job
         job.fail(message: message, kind: errorKind)
         store.upsert(job)
+        if job.isDownloaderOwned {
+            postDownloaderJobProgress(sourceURLString: job.sourceURLString, progress: nil)
+        }
         await updateActivity(for: job)
         await endActivity(for: job, dismissalDelay: Self.failureDismissalDelay)
         store.remove(job.id)
@@ -541,6 +657,9 @@ public final class LiveMediaDownloadManager: NSObject {
         await endActivity(for: job, dismissalDelay: 0)
         store.removeFiles(for: job)
         store.remove(job.id)
+        if job.isDownloaderOwned {
+            postDownloaderJobProgress(sourceURLString: job.sourceURLString, progress: nil)
+        }
     }
 }
 
@@ -560,9 +679,13 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
               var job = store.job(id: jobID),
               job.phase != .suspended
         else { return }
+        let previousPercent = Int(job.progress * 100)
         job.phase = .downloading
         job.progress = min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
         store.upsert(job)
+        if job.isDownloaderOwned, Int(job.progress * 100) != previousPercent {
+            postDownloaderJobProgress(sourceURLString: job.sourceURLString, progress: job.progress)
+        }
         Task { await updateActivity(for: job) }
     }
 
@@ -659,7 +782,12 @@ private extension LiveMediaDownloadManager {
             sourceURLString: job.sourceURLString,
             title: job.title)
         let state = activityState(for: job)
-        _ = try? Activity.request(attributes: attributes, contentState: state, pushType: nil)
+        do {
+            _ = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
+        } catch {
+            SharedDiagnosticLog.record(
+                "live activity request failed: \(error)", category: "media-download")
+        }
         #endif
     }
 
@@ -684,7 +812,8 @@ private extension LiveMediaDownloadManager {
             errorKind: errorKind,
             resolveAttempts: 0,
             mediaAttempts: 0,
-            suspendDeadline: nil
+            suspendDeadline: nil,
+            ownership: MediaAutoDownloader.isRunningInDownloader ? .downloader : .invokingApp
         )
         job.fail(message: message, kind: errorKind)
         await startActivity(for: job)
@@ -721,8 +850,8 @@ private extension LiveMediaDownloadManager {
         case .resolving: message = "Preparing download"
         case .downloading: message = "Downloading"
         case .suspended: message = "Paused. Resume within 5 seconds."
-        case .saving: message = MediaAutoDownloader.isRunningInDownloader ? "Saving to Luna" : "Saving to Photos"
-        case .finished: message = MediaAutoDownloader.isRunningInDownloader ? "Saved to Luna" : "Saved to Photos"
+        case .saving: message = job.isDownloaderOwned ? "Saving to Luna" : "Saving to Photos"
+        case .finished: message = job.isDownloaderOwned ? "Saved to Luna" : "Saved to Photos"
         case .failed: message = job.errorMessage ?? "Download failed"
         }
         return LiveMediaDownloadAttributes.ContentState(
@@ -741,7 +870,7 @@ private extension LiveMediaDownloadManager {
     #endif
 }
 
-private struct LiveMediaDownloadJob: Codable, Equatable {
+struct LiveMediaDownloadJob: Codable, Equatable {
     enum Phase: String, Codable {
         case resolving
         case downloading
@@ -771,8 +900,16 @@ private struct LiveMediaDownloadJob: Codable, Equatable {
     var resolveAttempts: Int
     var mediaAttempts: Int
     var suspendDeadline: Date?
+    /// Nil only for jobs written by older builds. Those retain the former
+    /// Bundle.main inference while every new job carries explicit ownership.
+    var ownership: LiveMediaDownloadOwnership?
 
     var isTerminal: Bool { phase == .finished || phase == .failed }
+
+    var isDownloaderOwned: Bool {
+        ownership == .downloader
+            || (ownership == nil && MediaAutoDownloader.isRunningInDownloader)
+    }
 
     var mediaAssetKind: MediaAsset.Kind {
         switch mediaKind {
@@ -826,6 +963,10 @@ private final class JobStore {
 
     func job(id: String) -> LiveMediaDownloadJob? {
         jobs().first { $0.id == id }
+    }
+
+    func job(forSourceURLString urlString: String) -> LiveMediaDownloadJob? {
+        jobs().first { $0.sourceURLString == urlString && !$0.isTerminal }
     }
 
     func upsert(_ job: LiveMediaDownloadJob) {

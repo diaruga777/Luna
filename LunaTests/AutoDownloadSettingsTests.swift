@@ -10,6 +10,8 @@ import XCTest
 final class AutoDownloadSettingsTests: XCTestCase {
     private let photosKey = "autoSaveDownloadsToPhotos"
     private let clipboardKey = "autoCopyDownloadsToClipboard"
+    private let wifiOnlyKey = "wifiOnlyDownloads"
+    private let pendingWiFiKey = "pendingWiFiDownloads"
 
     private var defaults: UserDefaults {
         UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard
@@ -51,5 +53,57 @@ final class AutoDownloadSettingsTests: XCTestCase {
             XCTAssertFalse(AutoDownloadSettings.autoSaveDownloadsToPhotos)
             XCTAssertTrue(AutoDownloadSettings.autoCopyDownloadsToClipboard)
         }
+    }
+
+    func testWiFiOnlyDownloadsDefaultsOffAndRoundTrips() {
+        let previous = defaults.object(forKey: wifiOnlyKey)
+        defer { restore(previous, forKey: wifiOnlyKey) }
+
+        defaults.removeObject(forKey: wifiOnlyKey)
+        XCTAssertFalse(AutoDownloadSettings.wifiOnlyDownloads)
+
+        AutoDownloadSettings.wifiOnlyDownloads = true
+        XCTAssertTrue(AutoDownloadSettings.wifiOnlyDownloads)
+    }
+
+    func testPendingWiFiDownloadsMarkAndUnmark() {
+        let previous = defaults.object(forKey: pendingWiFiKey)
+        defer { restore(previous, forKey: pendingWiFiKey) }
+        defaults.removeObject(forKey: pendingWiFiKey)
+
+        let url = "https://www.tiktok.com/@luna/video/999"
+        XCTAssertFalse(AutoDownloadSettings.pendingWiFiDownloadURLs().contains(url))
+
+        AutoDownloadSettings.markPendingWiFiDownload(url)
+        XCTAssertTrue(AutoDownloadSettings.pendingWiFiDownloadURLs().contains(url))
+        // Marking twice doesn't duplicate the entry.
+        AutoDownloadSettings.markPendingWiFiDownload(url)
+        XCTAssertEqual(AutoDownloadSettings.pendingWiFiDownloadURLs().filter { $0 == url }.count, 1)
+
+        AutoDownloadSettings.unmarkPendingWiFiDownload(url)
+        XCTAssertFalse(AutoDownloadSettings.pendingWiFiDownloadURLs().contains(url))
+    }
+
+    func testDownloaderInstallationMarkerIsSharedAndStaleByDesign() {
+        let key = LunaInstallationMarkers.downloaderKey
+        let previous = defaults.object(forKey: key)
+        defer { restore(previous, forKey: key) }
+
+        defaults.removeObject(forKey: key)
+        XCTAssertFalse(LunaInstallationMarkers.downloaderWasInstalled)
+        LunaInstallationMarkers.recordInstalled(surfaceIdentifier: "downloader")
+        XCTAssertTrue(LunaInstallationMarkers.downloaderWasInstalled)
+    }
+
+    func testDownloaderIntentPreflightOnlyAcceptsDownloadableMedia() {
+        XCTAssertTrue(MediaAutoDownloader.shouldStartDownloaderIntentDownload(
+            forURLString: "https://www.tiktok.com/@luna/video/123",
+            downloaderWasInstalled: true))
+        XCTAssertFalse(MediaAutoDownloader.shouldStartDownloaderIntentDownload(
+            forURLString: "https://example.com/article",
+            downloaderWasInstalled: true))
+        XCTAssertFalse(MediaAutoDownloader.shouldStartDownloaderIntentDownload(
+            forURLString: "https://www.tiktok.com/@luna/video/123",
+            downloaderWasInstalled: false))
     }
 }

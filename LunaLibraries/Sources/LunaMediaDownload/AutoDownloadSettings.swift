@@ -31,6 +31,42 @@ public enum AutoDownloadSettings {
         set { defaults.set(newValue, forKey: autoCopyDownloadsToClipboardKey) }
     }
 
+    private static let wifiOnlyDownloadsKey = "wifiOnlyDownloads"
+
+    /// Whether Downloader-owned downloads should be deferred while on cellular.
+    /// Defaults to OFF (download on any network). Manual per-item retries
+    /// (tap/long-press/viewer download button) always bypass this.
+    public static var wifiOnlyDownloads: Bool {
+        get { (defaults.object(forKey: wifiOnlyDownloadsKey) as? Bool) ?? false }
+        set { defaults.set(newValue, forKey: wifiOnlyDownloadsKey) }
+    }
+
+    // URLs whose download was deferred specifically by `wifiOnlyDownloads` (not
+    // just "undownloaded for some other reason", e.g. a platform's auto-download
+    // toggle being off) — so the opportunistic Wi-Fi/launch/background-refresh
+    // resume sweep only ever retries items IT deferred. A bounded recent list,
+    // same shape as `autoDownloadedURLs`.
+    private static let pendingWiFiDownloadsKey = "pendingWiFiDownloads"
+    private static let pendingWiFiDownloadsCap = 300
+
+    public static func markPendingWiFiDownload(_ urlString: String) {
+        var list = (defaults.array(forKey: pendingWiFiDownloadsKey) as? [String]) ?? []
+        guard !list.contains(urlString) else { return }
+        list.append(urlString)
+        if list.count > pendingWiFiDownloadsCap { list.removeFirst(list.count - pendingWiFiDownloadsCap) }
+        defaults.set(list, forKey: pendingWiFiDownloadsKey)
+    }
+
+    public static func unmarkPendingWiFiDownload(_ urlString: String) {
+        var list = (defaults.array(forKey: pendingWiFiDownloadsKey) as? [String]) ?? []
+        list.removeAll { $0 == urlString }
+        defaults.set(list, forKey: pendingWiFiDownloadsKey)
+    }
+
+    public static func pendingWiFiDownloadURLs() -> [String] {
+        (defaults.array(forKey: pendingWiFiDownloadsKey) as? [String]) ?? []
+    }
+
     /// Platforms that support auto-download, in display order.
     public static let platforms: [ContentPlatform] = [.x, .instagram, .tiktok, .facebook]
 

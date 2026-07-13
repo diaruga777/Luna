@@ -265,9 +265,7 @@ final class ReadingListSettingsScreen: NavHeaderTableController {
 
     override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        Section(rawValue: section) == .display ? 2 : 1
-    }
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 2 }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         Section(rawValue: section) == .preload ? "Preload Links" : nil
@@ -280,7 +278,8 @@ final class ReadingListSettingsScreen: NavHeaderTableController {
         case .preload:
             return "Preload the content of links in a saved article (and links on those "
                 + "pages, up to this depth) in the background, so tapping a link opens "
-                + "instantly. 0 turns preloading off."
+                + "instantly. 0 turns preloading off. Preloading uses any network by "
+                + "default; turn on Wi-Fi Only to restrict it to Wi-Fi."
         }
     }
 
@@ -299,6 +298,10 @@ final class ReadingListSettingsScreen: NavHeaderTableController {
             content.text = "Reading Progress"
             cell.accessoryView = makeToggle(
                 isOn: ReaderSettings.showReadingProgress, action: #selector(progressToggled(_:)))
+        case .preload where indexPath.row == 0:
+            content.text = "Wi-Fi Only"
+            cell.accessoryView = makeToggle(
+                isOn: ReaderSettings.preloadWiFiOnly, action: #selector(preloadWiFiOnlyToggled(_:)))
         case .preload:
             content.text = "Preload Depth"
             // The current depth shows as the value1 detail text (left of the stepper),
@@ -325,11 +328,18 @@ final class ReadingListSettingsScreen: NavHeaderTableController {
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
     }
 
+    @objc private func preloadWiFiOnlyToggled(_ toggle: UISwitch) {
+        ReaderSettings.preloadWiFiOnly = toggle.isOn
+        // Turning the restriction off lets any trees deferred while off
+        // Wi-Fi proceed immediately over cellular.
+        if !toggle.isOn { PreloadCoordinator.shared.resumeIncomplete() }
+    }
+
     @objc private func preloadDepthChanged(_ stepper: UIStepper) {
         ReaderSettings.preloadDepth = Int(stepper.value)
         // Refresh the detail number in place — reloadRows would rebuild the stepper
         // mid-touch and break press-and-hold autorepeat.
-        let ip = IndexPath(row: 0, section: Section.preload.rawValue)
+        let ip = IndexPath(row: 1, section: Section.preload.rawValue)
         if let cell = tableView.cellForRow(at: ip) {
             var content = cell.contentConfiguration as? UIListContentConfiguration
                 ?? cell.defaultContentConfiguration()

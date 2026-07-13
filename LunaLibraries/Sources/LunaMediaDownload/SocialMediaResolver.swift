@@ -35,7 +35,7 @@ public struct SocialMediaResolver: SocialMediaResolving {
         case .facebook:
             return await resolveFacebook(url: url)
         case .reddit:
-            return await resolveReddit(itemID: recognized.itemID)
+            return await resolveReddit(url: url, itemID: recognized.itemID)
         default:
             return []
         }
@@ -153,12 +153,32 @@ public struct SocialMediaResolver: SocialMediaResolving {
     /// the same post id from both — simpler and more robust than reconstructing
     /// `.json` from the original URL string (which would need to follow redd.it's
     /// redirect and strip share-tracking query params).
-    private func resolveReddit(itemID: String?) async -> [MediaAsset] {
-        guard let itemID, let url = URL(string: "https://www.reddit.com/comments/\(itemID).json") else {
-            return []
+    private func resolveReddit(url: URL, itemID: String?) async -> [MediaAsset] {
+        let resolvedID: String?
+        if let itemID {
+            resolvedID = itemID
+        } else {
+            resolvedID = await Self.resolveRedditShareLinkPostID(url)
         }
-        guard let data = await fetch(jsonRequest(url)) else { return [] }
+        guard let id = resolvedID,
+              let jsonURL = URL(string: "https://www.reddit.com/comments/\(id).json")
+        else { return [] }
+        guard let data = await fetch(jsonRequest(jsonURL)) else { return [] }
         return RedditMediaParser.asset(fromListingJSON: data).map { [$0] } ?? []
+    }
+
+    /// Reddit's own app-native share links (`/r/<sub>/s/<token>`) carry no post id
+    /// — the token only resolves via a live HTTP redirect (which `URLSession`
+    /// follows automatically) to the canonical permalink. A real network fetch
+    /// (not the injectable `fetch`, which exists to make the PARSERS testable
+    /// against fixtures — there's no parsing here, just reading off the final URL).
+    private static func resolveRedditShareLinkPostID(_ url: URL) async -> String? {
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let finalURL = response.url
+        else { return nil }
+        return PlatformRecognizer.recognize(finalURL.absoluteString)?.itemID
     }
 
     // MARK: - Requests

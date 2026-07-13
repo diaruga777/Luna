@@ -72,6 +72,36 @@ final class ReaderResumePositionResolverTests: XCTestCase {
             openOffsetY: 100, currentOffsetY: 100 - threshold))
     }
 
+    // MARK: - Fast-fling-to-extreme guard (shouldCountLanding)
+
+    func testSlowLandingAnywhereCounts() {
+        // A deliberate, readable-pace scroll always updates the position — including
+        // one that ends right at an edge (someone reading to the very top/bottom).
+        XCTAssertTrue(ReaderResumePositionResolver.shouldCountLanding(
+            atExtreme: false, speedPointsPerSecond: 0))
+        XCTAssertTrue(ReaderResumePositionResolver.shouldCountLanding(
+            atExtreme: true, speedPointsPerSecond: 0))
+        let readable = ReaderResumePositionResolver.readableScrollSpeedPointsPerSecond - 1
+        XCTAssertTrue(ReaderResumePositionResolver.shouldCountLanding(
+            atExtreme: true, speedPointsPerSecond: readable))
+    }
+
+    func testFastFlingToExtremeDoesNotCount() {
+        // The safety rule: a fling faster than a human could read that lands on the
+        // very start/end is a glance, not a reposition — it must NOT move the position.
+        let fast = ReaderResumePositionResolver.readableScrollSpeedPointsPerSecond + 1
+        XCTAssertFalse(ReaderResumePositionResolver.shouldCountLanding(
+            atExtreme: true, speedPointsPerSecond: fast))
+    }
+
+    func testFastFlingThatStopsMidArticleStillCounts() {
+        // Only the extremes are protected — a fast scroll that settles mid-article is
+        // still a real reposition.
+        let fast = ReaderResumePositionResolver.readableScrollSpeedPointsPerSecond + 1000
+        XCTAssertTrue(ReaderResumePositionResolver.shouldCountLanding(
+            atExtreme: false, speedPointsPerSecond: fast))
+    }
+
     // MARK: - Fresh open (no carried index) still resumes from where you are
 
     func testFreshOpenWithoutCarriedIndexIsHandledByCaller() {

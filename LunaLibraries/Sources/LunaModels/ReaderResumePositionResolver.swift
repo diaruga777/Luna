@@ -33,6 +33,27 @@ public enum ReaderResumePositionResolver {
         abs(currentOffsetY - openOffsetY) >= scrolledPastThresholdPoints
     }
 
+    /// The fastest a scroll can move and still plausibly be someone *reading* their
+    /// way to a spot rather than flinging past it. Comfortable reading tops out around
+    /// ~400 wpm; at body-text line metrics that is well under ~120 pt/s of travel, so
+    /// this generous ceiling clears deliberate reading (even fast skimming) yet sits
+    /// far below an inertial fling (thousands of pt/s). Used only to disqualify a fast
+    /// fling that lands on the very start or end — see `shouldCountLanding`.
+    public static let readableScrollSpeedPointsPerSecond: CGFloat = 600
+
+    /// Whether a scroll that has just settled should update the shared reading
+    /// position. The safety rule: a fast fling to the very START or END of the article
+    /// (glancing at the top/bottom, then flinging back) must NOT move the persisted
+    /// position — only a landing the reader could have *read* their way to counts.
+    ///
+    /// So a landing is disqualified only when BOTH hold: it is at an extreme edge, and
+    /// it arrived faster than a human could read. Every other landing counts — a fast
+    /// fling that stops MID-article, or a slow, deliberate scroll all the way to an
+    /// edge.
+    public static func shouldCountLanding(atExtreme: Bool, speedPointsPerSecond: CGFloat) -> Bool {
+        !(atExtreme && speedPointsPerSecond > readableScrollSpeedPointsPerSecond)
+    }
+
     /// The word index the scroll reader should report as its current reading
     /// position, given the index it was opened with and the evidence gathered
     /// while it was on screen.

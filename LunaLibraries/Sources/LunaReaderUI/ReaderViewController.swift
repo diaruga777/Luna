@@ -353,7 +353,9 @@ public final class ReaderViewController: UIViewController {
             rsvp.onMovedAwayFromEnd = { [weak self] in self?.unmarkReadIfAutoMarkedThisSession() }
             child = rsvp
         case .original:
-            child = OriginalPageViewController(item: item, store: store)
+            // The archive keeps its OWN scroll place, disjoint from the shared
+            // scroll/RSVP reading position carried between the text modes.
+            child = OriginalPageViewController(item: item, store: store, persistsScrollOffset: true)
         }
 
         addChild(child)

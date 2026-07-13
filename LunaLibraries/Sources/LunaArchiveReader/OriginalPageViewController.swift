@@ -13,14 +13,24 @@ import WebKit
 /// from parsed reader content. It prefers the locally captured artifact and only
 /// reaches back to the network as a fallback, when a web save's `.webarchive`
 /// capture is missing (so the always-offered Original mode is never blank).
-public final class OriginalPageViewController: UIViewController {
+public final class OriginalPageViewController: UIViewController, WKNavigationDelegate {
     private var item: ReadingListItem?
     private var store: ReadingListStore
     private let webView: WKWebView
+    /// The archive's OWN scroll position to restore once its content finishes loading,
+    /// kept fully disjoint from the scroll/RSVP reading position. Consumed once per load.
+    private var pendingRestoreOffset: Double?
+    /// When true this reader restores from / persists to `item.lastOriginalScrollOffset`
+    /// itself (the plain reader path). RabbitHole leaves this false and drives the
+    /// offset through its per-layer descriptor instead.
+    private let persistsScrollOffset: Bool
 
-    public init(item: ReadingListItem, store: ReadingListStore) {
+    public init(item: ReadingListItem, store: ReadingListStore,
+                savedScrollOffset: Double? = nil, persistsScrollOffset: Bool = false) {
         self.item = item
         self.store = store
+        self.persistsScrollOffset = persistsScrollOffset
+        self.pendingRestoreOffset = savedScrollOffset ?? (persistsScrollOffset ? item.lastOriginalScrollOffset : nil)
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         self.webView = WKWebView(frame: .zero, configuration: configuration)
@@ -38,10 +48,14 @@ public final class OriginalPageViewController: UIViewController {
     public required init?(coder: NSCoder) { fatalError("not used") }
 
     public var contentScrollView: UIScrollView { webView.scrollView }
+    /// The archive's current (disjoint) scroll offset, for the host to persist.
+    public var currentScrollOffset: Double { Double(webView.scrollView.contentOffset.y) }
 
-    public func configure(item: ReadingListItem, store: ReadingListStore = .shared) {
+    public func configure(item: ReadingListItem, store: ReadingListStore = .shared,
+                          savedScrollOffset: Double? = nil) {
         self.item = item
         self.store = store
+        self.pendingRestoreOffset = savedScrollOffset
         guard isViewLoaded else { return }
         webView.stopLoading()
         loadOriginal()
@@ -55,6 +69,7 @@ public final class OriginalPageViewController: UIViewController {
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
         webView.underPageBackgroundColor = .systemBackground
+        webView.navigationDelegate = self
         view.addSubview(webView)
         NSLayoutConstraint.activate([
             webView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -64,6 +79,25 @@ public final class OriginalPageViewController: UIViewController {
         ])
 
         loadOriginal()
+    }
+
+    public override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        guard persistsScrollOffset, let item else { return }
+        store.saveReaderExitPosition(lastOriginalScrollOffset: currentScrollOffset, for: item.id)
+    }
+
+    /// Restore the archive's own saved offset once its content has laid out. A tiny
+    /// deferral lets the scroll view settle its content size first so the offset lands.
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let offset = pendingRestoreOffset, offset > 0 else { return }
+        pendingRestoreOffset = nil
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let scroll = self.webView.scrollView
+            let maxY = max(0, scroll.contentSize.height - scroll.bounds.height)
+            scroll.setContentOffset(CGPoint(x: 0, y: min(CGFloat(offset), maxY)), animated: false)
+        }
     }
 
     private func loadOriginal() {

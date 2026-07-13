@@ -469,11 +469,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             ReaderAudioLauncher.pauseIfPlaying(itemID: itemID)
         }
         guard isArticle else { return }
-        // The re-embed restores from `descriptor.scrollOffset`, which is only
-        // written on dive/pop/background — capture the live position first or
-        // the article jumps back to the last-persisted one.
-        syncScrollOffset()
-        embedReader(mode: readerMode, forceReembed: true)
+        // The re-embed restores the reading position from the descriptor, which is only
+        // written on dive/pop/background — capture the live position first or the
+        // article jumps back to the last-persisted one.
+        syncReadingPosition()
+        embedReader(mode: readerMode, forceReembed: true, triggersFullContentLoad: true)
     }
 
     @objc private func saveTapped() {
@@ -494,9 +494,10 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     public func setMode(_ mode: ReadingListItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }
-        // The new mode's reader resumes from `descriptor.scrollOffset`; sync it
-        // now (the crossfade embeds synchronously, before any persist runs).
-        syncScrollOffset()
+        // Capture the OUTGOING mode's reading position into the descriptor now (the
+        // crossfade embeds synchronously, before any persist runs) so the incoming
+        // mode resumes from it.
+        syncReadingPosition()
         // Keep the control's live selection on the new mode (it's already there when this
         // came from `modeChanged`; a no-op then, but needed for programmatic mode changes).
         // The control's OWN selection move uses UIKit's stock selection animation — no
@@ -510,7 +511,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         // (Falls back to a plain crossfade when the pixel-wipe is off / unavailable.)
         let contentRegion = Self.contentWipeRegion(in: view.bounds)
         DotMatrixCrossfade.run(in: view, direction: .random, region: contentRegion) { [weak self] in
-            self?.embedReader(mode: mode)
+            self?.embedReader(mode: mode, triggersFullContentLoad: true)
         }
         descriptor.readerMode = mode
         onModeChanged?(mode)
@@ -651,7 +652,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         view.setNeedsLayout()
     }
 
-    private func embedReader(mode: ReadingListItem.ReaderMode, forceReembed: Bool = false) {
+    /// - Parameter triggersFullContentLoad: whether the embedded scroll reader should
+    ///   run its progressive-load Phase 2 (full render) itself. False only for the
+    ///   INITIAL layer reveal, where the host's stacked wipe drives it via
+    ///   `entryAnimationDidFinish`; true for every mode-switch / audio re-embed, where
+    ///   no reveal animation fires — without it the scroll reader would stay stuck on
+    ///   its ~700-char Phase-1 prefix ("only the first couple sentences").
+    private func embedReader(mode: ReadingListItem.ReaderMode, forceReembed: Bool = false,
+                             triggersFullContentLoad: Bool = false) {
         guard let content = articleContent, let url = descriptor.url else { return }
         if mode == .original {
             guard readerMode != .original || forceReembed else { return }
@@ -660,8 +668,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             var transient = ReadingListItem(urlString: url.absoluteString)
             transient.state = .ready
             transient.title = descriptor.title
-            originalReader.configure(item: transient)
-            showPreloadedChild(originalReader)
+            // Restore the archive's OWN disjoint offset — never the shared reading position.
+            originalReader.configure(item: transient, savedScrollOffset: descriptor.originalScrollOffset)
+            showPreloadedChild(originalReader, triggersFullContentLoad: triggersFullContentLoad)
             readerMode = .original
             return
         }
@@ -679,7 +688,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             }
             scrollReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
             scrollReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
-            showPreloadedChild(scrollReader)
+            showPreloadedChild(scrollReader, triggersFullContentLoad: triggersFullContentLoad)
         case .rsvp:
             rsvpReader.configureForReuse(item: readerItem, content: content, audioEnabled: audioOn)
             rsvpReader.onLinkActivated = { [weak self] url in self?.onLinkActivated?(url, nil) }
@@ -708,6 +717,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
                 id: ReadingListItem.deterministicUUID(from: "rabbithole:\(url.absoluteString)"))
         item.state = .ready
         item.title = descriptor.title ?? item.title
+        // Feed the shared scroll/RSVP reading position from the descriptor: the word
+        // anchor plus, when the scroll reader still owns it, the exact pixels. The
+        // archive's own offset (`descriptor.originalScrollOffset`) is kept disjoint and
+        // routed straight to the original reader in `embedReader`, never here.
+        item.lastWordIndex = descriptor.wordIndex
         item.lastScrollOffset = descriptor.scrollOffset
         return item
     }
@@ -734,7 +748,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             readState: .opened, readingProgress: auto.priorProgress, for: auto.id)
     }
 
-    private func showPreloadedChild(_ child: UIViewController) {
+    private func showPreloadedChild(_ child: UIViewController, triggersFullContentLoad: Bool = false) {
         for candidate in [scrollReader, rsvpReader, originalReader] {
             candidate.view.isHidden = candidate !== child
         }
@@ -747,8 +761,11 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         // layer's current focus state (else the whole switched-to reader is untappable —
         // e.g. RSVP after a mode switch). Only the focused layer's active child takes touches.
         child.view.isUserInteractionEnabled = (currentRole == .focused)
+        // On the initial reveal the host drives Phase 2 via `entryAnimationDidFinish`
+        // (aligned with the stacked wipe); on a mode-switch / audio re-embed no reveal
+        // fires, so let the reader run Phase 2 itself or it stays on the prefix.
         (child as? ScrollReaderViewController)?
-            .activateVisibleReader(deferFullContentUntilHostCompletion: true)
+            .activateVisibleReader(deferFullContentUntilHostCompletion: !triggersFullContentLoad)
     }
 
     private func removeLiveWebView() {
@@ -783,15 +800,24 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         return nil
     }
 
-    /// Current vertical scroll offset, snapshotted for persistence.
-    public var currentScrollOffset: Double {
-        guard let scroll = contentScrollView else { return descriptor.scrollOffset }
-        return Double(scroll.contentOffset.y)
-    }
-
-    /// Capture the current scroll offset into the descriptor (call before persisting).
-    public func syncScrollOffset() {
-        descriptor.scrollOffset = currentScrollOffset
+    /// Capture the active mode's reading position into the descriptor (call before a
+    /// mode switch or persist). Each mode writes ONLY its own state so the archive can
+    /// never clobber the shared scroll/RSVP position (the old bug):
+    ///  • scroll → the shared word + its exact pixels;
+    ///  • RSVP → the shared word, and it clears the exact pixels (no pixels exist);
+    ///  • original → its own disjoint offset, leaving the shared position untouched.
+    public func syncReadingPosition() {
+        guard isArticle else { return }
+        switch readerMode {
+        case .scroll, .highlight:
+            descriptor.wordIndex = scrollReader.currentReadingWordIndex
+            descriptor.scrollOffset = Double(scrollReader.currentReadingScrollOffsetY)
+        case .rsvp:
+            descriptor.wordIndex = rsvpReader.currentReadingWordIndex
+            descriptor.scrollOffset = nil
+        case .original:
+            descriptor.originalScrollOffset = originalReader.currentScrollOffset
+        }
     }
 
     /// Best-effort text of the line containing the tapped link range, for the bottom

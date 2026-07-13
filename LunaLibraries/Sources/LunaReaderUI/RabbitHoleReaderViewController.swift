@@ -275,7 +275,9 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private func rootDescriptor() -> RabbitHoleLayerDescriptor {
         RabbitHoleLayerDescriptor(
             urlString: rootItem.urlString,
-            scrollOffset: rootItem.lastScrollOffset ?? 0,
+            wordIndex: rootItem.lastWordIndex,
+            scrollOffset: rootItem.lastScrollOffset,
+            originalScrollOffset: rootItem.lastOriginalScrollOffset ?? 0,
             readerMode: rootItem.lastReaderMode ?? .scroll,
             title: rootItem.title ?? rootContent.title,
             bottomLipText: nil)
@@ -784,10 +786,19 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     @objc private func persist() {
         guard !layers.isEmpty else { return }
-        for layer in layers { layer.syncScrollOffset() }
+        for layer in layers { layer.syncReadingPosition() }
         stackStore.save(RabbitHoleStack(layers: layers.map { $0.descriptor }), forRootID: rootItem.id)
         if let root = layers.first {
-            store.setLastScrollOffset(root.descriptor.scrollOffset, for: rootItem.id)
+            // Mirror the root layer's shared reading position (word + exact pixels, the
+            // pixels cleared when RSVP owns it) and its disjoint archive offset onto the
+            // durable item, so a plain reopen restores both consistently.
+            let d = root.descriptor
+            store.saveReaderExitPosition(
+                scrollOffset: d.scrollOffset,
+                clearScrollOffset: d.scrollOffset == nil,
+                lastWordIndex: d.wordIndex,
+                lastOriginalScrollOffset: d.originalScrollOffset,
+                for: rootItem.id)
             // Persist the root's reader mode onto the durable item too. The stack file
             // isn't enough: `RabbitHoleStackStore.save` DELETES a single-layer (undived)
             // trail, so a plain read that only switched mode would lose it. Writing it to

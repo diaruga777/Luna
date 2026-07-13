@@ -45,6 +45,22 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// far enough to count as a deliberate reposition (vs. just opening/closing).
     private var openContentOffsetY: CGFloat?
 
+    /// The last reading position that "counted" — updated only when a scroll settles
+    /// somewhere the reader could have read their way to (see `handleScrollSettled`).
+    /// Seeded at open so a mere open/close never moves it. This is what the shared
+    /// scroll/RSVP position falls back to when a fast fling to the very start/end must
+    /// be ignored (`landedGlanceFling`).
+    private var committedWordIndex: Int?
+    private var committedOffsetY: CGFloat = 0
+    /// True when the most recent scroll settled at the very start/end after a fling
+    /// faster than a human could read — a glance, not a reposition. While set, the
+    /// reported shared position stays at `committedWordIndex`/`committedOffsetY`.
+    /// Cleared by any scroll that counts.
+    private var landedGlanceFling = false
+    /// Fling speed (points/second) captured from the drag's end velocity, consumed
+    /// once when the scroll settles.
+    private var pendingFlingSpeedPointsPerSecond: CGFloat = 0
+
     private var item: ReadingListItem
     private var content: ArticleContent
     private var rendered: RenderedArticle
@@ -205,6 +221,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         didStartPlayback = false
         shareFooterVisible = false
         openContentOffsetY = nil
+        committedWordIndex = nil
+        committedOffsetY = 0
+        landedGlanceFling = false
+        pendingFlingSpeedPointsPerSecond = 0
         highlightedRange = nil
         followPlayback = true
 
@@ -252,11 +272,22 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         if let saved = item.lastScrollOffset, saved > CGFloat(UIScreen.main.bounds.height) {
             return true
         }
-        // A carried-in word index (mode switch) beyond the budget's worth of words.
-        let carried = (!audioEnabled) ? resumeWordIndex : nil
-        if let carried, carried > 0 {
+        // The word we'll actually resume from on open: a carried-in mode-switch index
+        // wins; otherwise the shared persisted word, but only when there's no exact
+        // offset to restore from instead (the hybrid rule in `applyInitialScrollPosition`).
+        let resumeWord: Int?
+        if audioEnabled {
+            resumeWord = nil
+        } else if let carried = resumeWordIndex {
+            resumeWord = carried
+        } else if item.lastScrollOffset == nil {
+            resumeWord = item.lastWordIndex
+        } else {
+            resumeWord = nil
+        }
+        if let resumeWord, resumeWord > 0 {
             // Rough word-budget: count words in the leading blocks up to the
-            // character budget; a carried index past that won't be in the prefix.
+            // character budget; a resume index past that won't be in the prefix.
             var chars = 0
             var words = 0
             for block in content.blocks {
@@ -265,7 +296,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 words += block.text.split(whereSeparator: { $0.isWhitespace }).count
                 chars += block.text.count
             }
-            if carried >= words { return true }
+            if resumeWord >= words { return true }
         }
         return false
     }
@@ -285,6 +316,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public var currentReadingWordIndex: Int? {
         if let speech, let word = speech.currentWordIndex { return word }
 
+        // A fast fling to the very start/end is a glance, not a reposition: keep the
+        // last position that counted rather than reporting the edge.
+        if landedGlanceFling { return committedWordIndex }
+
         guard let resumeIndex = explicitResumeWordIndex else {
             return firstFullyVisibleWordIndex()
         }
@@ -300,6 +335,15 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             resumeIndex: resumeIndex,
             scrolledPastThreshold: scrolled,
             firstFullyVisibleIndex: firstFullyVisibleWordIndex())
+    }
+
+    /// The exact content offset paired with `currentReadingWordIndex` — the scroll
+    /// reader's contribution to the hybrid shared position (`lastWordIndex` is the
+    /// portable anchor; this is the pixel-exact restore for a pure scroll reopen).
+    /// Falls back to the committed offset while a glance fling is being ignored.
+    public var currentReadingScrollOffsetY: CGFloat {
+        if landedGlanceFling { return committedOffsetY }
+        return textView.contentOffset.y
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
@@ -423,7 +467,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var hasInitialScrollPosition: Bool {
         if let resume = explicitResumeWordIndex, !audioEnabled,
            wordMap.attributedRange(forWord: resume) != nil { return true }
-        return item.lastScrollOffset != nil
+        if item.lastScrollOffset != nil { return true }
+        if let word = item.lastWordIndex,
+           wordMap.attributedRange(forWord: word) != nil { return true }
+        return false
     }
 
     public override func viewDidLayoutSubviews() {
@@ -660,18 +707,30 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     }
 
     private func applyInitialScrollPosition() {
-        // Carried in from another mode (plain scroll only): place that word 25%
-        // from the top. Audio mode starts playback at the carried word and
-        // follow-scroll centers it.
+        // Restore the reading position under the hybrid shared-position rule:
+        //  • a word carried in from another mode this session wins outright (25% down);
+        //  • else, when the scroll reader still owns the position, its exact pixels
+        //    (`lastScrollOffset`) restore precisely;
+        //  • else the RSVP reader last moved the shared position (it cleared the exact
+        //    offset), so resume from the shared word (`lastWordIndex`) at 25% down.
+        // Audio mode starts playback at the carried word and follow-scroll centers it.
         if let resume = explicitResumeWordIndex, !audioEnabled,
            wordMap.attributedRange(forWord: resume) != nil {
             scrollWord(resume, toFractionFromTop: 0.25)
         } else if let saved = item.lastScrollOffset {
             restoreScroll(to: CGFloat(saved))
+        } else if let word = item.lastWordIndex,
+                  wordMap.attributedRange(forWord: word) != nil {
+            scrollWord(word, toFractionFromTop: 0.25)
         }
         // Baseline for "has the user scrolled since opening?" (the carried
         // position must survive a plain open/close untouched).
         openContentOffsetY = textView.contentOffset.y
+        // Seed the committed reading position so a mere open/close — or a glance fling
+        // before any real scroll — never moves the shared position off where we opened.
+        committedWordIndex = explicitResumeWordIndex ?? firstFullyVisibleWordIndex()
+        committedOffsetY = textView.contentOffset.y
+        landedGlanceFling = false
     }
 
     private func revealContent() {
@@ -737,10 +796,15 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             let visibleBottom = textView.contentOffset.y + textView.bounds.height
             progress = Double(visibleBottom / textView.contentSize.height)
         }
+        // Persist the SHARED reading position (word + exact pixels together, so a pure
+        // scroll reopen restores precisely and a switch to RSVP resumes at the same
+        // word). `currentReadingWordIndex`/`currentReadingScrollOffsetY` already fold in
+        // the glance-fling guard, so a fast fling to the very start/end doesn't move it.
         store.saveReaderExitPosition(
-            scrollOffset: Double(textView.contentOffset.y),
+            scrollOffset: Double(currentReadingScrollOffsetY),
             readingProgress: progress,
             lastSpokenWordIndex: speech?.currentWordIndex,
+            lastWordIndex: currentReadingWordIndex,
             for: item.id)
     }
 
@@ -960,6 +1024,53 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             }
             followPlayback = false
         }
+    }
+
+    /// UIKit hands the fling speed here (points/ms) — capture it (as points/s) so the
+    /// settle handler can tell a deliberate scroll from a glance fling.
+    public func scrollViewWillEndDragging(
+        _ scrollView: UIScrollView, withVelocity velocity: CGPoint,
+        targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+        pendingFlingSpeedPointsPerSecond = abs(velocity.y) * 1000
+    }
+
+    /// A drag that ends without inertia settles immediately.
+    public func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate { handleScrollSettled() }
+    }
+
+    /// A flung scroll settles when its inertia stops.
+    public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        handleScrollSettled()
+    }
+
+    /// Decide whether the position the scroll just settled at should update the shared
+    /// reading position. A fast fling that lands on the very start/end is a glance and
+    /// is ignored (the committed position stays put); everything else counts.
+    private func handleScrollSettled() {
+        let counts = ReaderResumePositionResolver.shouldCountLanding(
+            atExtreme: isAtExtremeEdge(),
+            speedPointsPerSecond: pendingFlingSpeedPointsPerSecond)
+        pendingFlingSpeedPointsPerSecond = 0
+        if counts {
+            committedWordIndex = firstFullyVisibleWordIndex() ?? committedWordIndex
+            committedOffsetY = textView.contentOffset.y
+            landedGlanceFling = false
+        } else {
+            landedGlanceFling = true
+        }
+    }
+
+    /// Whether the current offset sits at the very top or bottom of the scrollable
+    /// range (within a hair), reusing the same clamp bounds as `clampedContentOffsetY`.
+    private func isAtExtremeEdge() -> Bool {
+        let minOffset = -textView.adjustedContentInset.top
+        let maxOffset = max(
+            minOffset,
+            textView.contentSize.height + textView.adjustedContentInset.bottom - textView.bounds.height)
+        let y = textView.contentOffset.y
+        let tolerance: CGFloat = 8
+        return y <= minOffset + tolerance || y >= maxOffset - tolerance
     }
 
     /// Notifies the host when the end-of-article share footer is at least partly

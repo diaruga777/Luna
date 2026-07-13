@@ -1153,11 +1153,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     private func saveProgress() {
         // Persisted in the shared token space (see resolveResumeFrame), in ONE
-        // coordinated store cycle instead of two back-to-back mutations.
+        // coordinated store cycle instead of two back-to-back mutations. Moving the
+        // shared position here (play/scrub/slip) makes the scroll reader's exact
+        // pixel offset stale — it no longer corresponds to `lastWordIndex` — so clear
+        // it; the scroll reader then resumes from the word instead (the hybrid rule).
         let wordIndex = engine.tokenIndex(forFrameIndex: currentIndex) ?? currentIndex
         let progress = engine.words.count > 1
             ? Double(currentIndex) / Double(engine.words.count - 1) : nil
         store.saveReaderExitPosition(
+            clearScrollOffset: true,
             readingProgress: progress, lastWordIndex: wordIndex, for: item.id)
     }
 

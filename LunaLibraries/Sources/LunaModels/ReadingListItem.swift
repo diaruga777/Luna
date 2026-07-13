@@ -81,8 +81,16 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     public var lastWordIndex: Int?
     public var readState: ReadState
     public var lastReaderMode: ReaderMode?
-    /// Scroll reader resume position (content offset).
+    /// Scroll reader resume position (content offset). Part of the shared scroll/RSVP
+    /// reading position: the exact pixels for `lastWordIndex`, kept ONLY while it still
+    /// corresponds to it. The RSVP reader moves the shared position in word space with
+    /// no pixels, so it clears this to nil — a nil offset means "resume from
+    /// `lastWordIndex` by word" (see `ScrollReaderViewController`).
     public var lastScrollOffset: Double?
+    /// Original/archive reader resume position (web-view content offset), kept fully
+    /// DISJOINT from the shared scroll/RSVP position above — the archive is a separate
+    /// snapshot and its scroll place must not move (or be moved by) the reader text.
+    public var lastOriginalScrollOffset: Double?
     /// Read-aloud resume position (word index); non-nil once audio has played.
     public var lastSpokenWordIndex: Int?
     /// Total words in the extracted article (for reading-time estimates).
@@ -202,6 +210,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.readState = .unopened
         self.lastReaderMode = nil
         self.lastScrollOffset = nil
+        self.lastOriginalScrollOffset = nil
         self.lastSpokenWordIndex = nil
         self.wordCount = nil
         self.readingProgress = nil
@@ -258,6 +267,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.readState = readState
         self.lastReaderMode = lastReaderMode
         self.lastScrollOffset = nil
+        self.lastOriginalScrollOffset = nil
         self.lastSpokenWordIndex = nil
         self.wordCount = wordCount
         self.readingProgress = readingProgress
@@ -338,6 +348,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         readState = Self.tolerant(ReadState.self, container, .readState) ?? .unopened
         lastReaderMode = Self.tolerant(ReaderMode.self, container, .lastReaderMode)
         lastScrollOffset = try container.decodeIfPresent(Double.self, forKey: .lastScrollOffset)
+        lastOriginalScrollOffset = try container.decodeIfPresent(Double.self, forKey: .lastOriginalScrollOffset)
         lastSpokenWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastSpokenWordIndex)
         wordCount = try container.decodeIfPresent(Int.self, forKey: .wordCount)
         readingProgress = try container.decodeIfPresent(Double.self, forKey: .readingProgress)

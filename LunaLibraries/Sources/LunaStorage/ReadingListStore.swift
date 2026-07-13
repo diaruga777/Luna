@@ -224,16 +224,32 @@ public final class ReadingListStore {
     /// main thread. nil parameters leave their field untouched; `lastWordIndex`
     /// lets the RSVP reader batch its exit save the same way the scroll reader
     /// does (`setLastWordIndex` remains for callers that persist it alone).
+    /// - Parameter clearScrollOffset: when true, sets `lastScrollOffset` to nil (the
+    ///   RSVP reader moves the shared position in word space with no pixels, so the
+    ///   stored exact offset no longer corresponds to `lastWordIndex` and must be
+    ///   invalidated). Distinct from a nil `scrollOffset`, which leaves it untouched.
+    /// - Parameter lastOriginalScrollOffset: the archive reader's own disjoint offset.
     public func saveReaderExitPosition(
-        scrollOffset: Double? = nil, readingProgress: Double? = nil,
+        scrollOffset: Double? = nil, clearScrollOffset: Bool = false,
+        readingProgress: Double? = nil,
         lastSpokenWordIndex: Int? = nil, lastWordIndex: Int? = nil,
+        lastOriginalScrollOffset: Double? = nil,
         for itemID: UUID
     ) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             var changed = false
-            if let scrollOffset, all[index].lastScrollOffset != scrollOffset {
+            if clearScrollOffset {
+                if all[index].lastScrollOffset != nil {
+                    all[index].lastScrollOffset = nil
+                    changed = true
+                }
+            } else if let scrollOffset, all[index].lastScrollOffset != scrollOffset {
                 all[index].lastScrollOffset = scrollOffset
+                changed = true
+            }
+            if let lastOriginalScrollOffset, all[index].lastOriginalScrollOffset != lastOriginalScrollOffset {
+                all[index].lastOriginalScrollOffset = lastOriginalScrollOffset
                 changed = true
             }
             if let readingProgress {

@@ -45,20 +45,57 @@ public enum WiFiOnlyDownloadGate {
 }
 
 extension Notification.Name {
-    /// Posted with `userInfo: ["sourceURLString": String, "progress": Double]`
-    /// (progress key ABSENT means "no active job, reset to static state") each
-    /// time a Downloader-owned job's live progress changes, so the grid can
-    /// update a single cell's ring without a full reload. Grid-facing only —
-    /// unrelated to `.savedMediaChanged`, which fires on durable storage-state
-    /// transitions (completion/deletion), not in-flight progress ticks.
+    /// Posted with `userInfo: ["sourceURLString": String, "progress": Double,
+    /// "snapshot": DownloaderJobSnapshot]` (progress/snapshot keys ABSENT means
+    /// "no active job, reset to static state") each time a Downloader-owned
+    /// job's live state changes, so the grid can update a single cell's ring
+    /// without a full reload and the footer status view can mirror the Live
+    /// Activity. Grid/footer-facing only — unrelated to `.savedMediaChanged`,
+    /// which fires on durable storage-state transitions (completion/deletion),
+    /// not in-flight progress ticks.
     public static let downloaderJobProgressChanged = Notification.Name("Luna.downloaderJobProgressChanged")
 }
 
-private func postDownloaderJobProgress(sourceURLString: String, progress: Double?) {
-    var userInfo: [AnyHashable: Any] = ["sourceURLString": sourceURLString]
+/// The phase of a Downloader-owned job, mirrored for consumers outside this
+/// module (the footer status view) that can't see the internal job type.
+public enum DownloaderJobPhase: String {
+    case resolving
+    case downloading
+    case suspended
+    case saving
+    case finished
+    case failed
+}
+
+/// A snapshot of a Downloader-owned job's public-facing state — everything the
+/// footer status view needs to mirror the Live Activity (title, phase/message,
+/// progress, thumbnail).
+public struct DownloaderJobSnapshot: Equatable {
+    public let sourceURLString: String
+    public let title: String
+    public let phase: DownloaderJobPhase
+    public let progress: Double
+    public let message: String
+    public let thumbnailFileName: String?
+}
+
+private func postDownloaderJobProgress(job: LiveMediaDownloadJob, progress: Double?) {
+    var userInfo: [AnyHashable: Any] = [
+        "sourceURLString": job.sourceURLString,
+        "snapshot": job.downloaderSnapshot,
+    ]
     if let progress { userInfo["progress"] = progress }
     NotificationCenter.default.post(
         name: .downloaderJobProgressChanged, object: nil, userInfo: userInfo)
+}
+
+/// Signals that a Downloader-owned job is gone with no result to show (a
+/// suspended job torn down after the resume grace period expires) — the
+/// footer/grid should reset to the static "undownloaded" state immediately.
+private func postDownloaderJobEnded(sourceURLString: String) {
+    NotificationCenter.default.post(
+        name: .downloaderJobProgressChanged, object: nil,
+        userInfo: ["sourceURLString": sourceURLString])
 }
 
 public final class LiveMediaDownloadManager: NSObject {
@@ -181,7 +218,7 @@ public final class LiveMediaDownloadManager: NSObject {
         )
         store.upsert(job)
         if job.isDownloaderOwned {
-            postDownloaderJobProgress(sourceURLString: job.sourceURLString, progress: 0)
+            postDownloaderJobProgress(job: job, progress: 0)
         }
         await startActivity(for: job)
 
@@ -204,6 +241,9 @@ public final class LiveMediaDownloadManager: NSObject {
         job.phase = .downloading
         store.upsert(job)
         Task { await updateActivity(for: job) }
+        if job.isDownloaderOwned {
+            postDownloaderJobProgress(job: job, progress: job.progress)
+        }
 
         if let audioURL = asset.audioURL {
             startRedditMuxedDownload(
@@ -217,6 +257,9 @@ public final class LiveMediaDownloadManager: NSObject {
                 updated.thumbnailFileName = await makeThumbnail(from: asset.url, jobID: job.id)
                 store.upsert(updated)
                 await updateActivity(for: updated)
+                if updated.isDownloaderOwned {
+                    postDownloaderJobProgress(job: updated, progress: updated.progress)
+                }
             }
         }
 
@@ -281,6 +324,9 @@ public final class LiveMediaDownloadManager: NSObject {
         job.suspendDeadline = Date().addingTimeInterval(Self.suspensionGracePeriod)
         store.upsert(job)
         await updateActivity(for: job)
+        if job.isDownloaderOwned {
+            postDownloaderJobProgress(job: job, progress: job.progress)
+        }
         await cancelTasks(jobID: jobID)
 
         Task {
@@ -305,6 +351,9 @@ public final class LiveMediaDownloadManager: NSObject {
             job.phase = .downloading
             store.upsert(job)
             await updateActivity(for: job)
+            if job.isDownloaderOwned {
+                postDownloaderJobProgress(job: job, progress: job.progress)
+            }
             var request = URLRequest(url: assetURL, timeoutInterval: 60)
             request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
             if sourceURL.host?.lowercased().contains("tiktok") == true {
@@ -317,6 +366,9 @@ public final class LiveMediaDownloadManager: NSObject {
             job.resolveKind = resolve.kind
             store.upsert(job)
             await updateActivity(for: job)
+            if job.isDownloaderOwned {
+                postDownloaderJobProgress(job: job, progress: job.progress)
+            }
             startTask(resolve.request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
         } else {
             await tearDownSuspendedJob(job)
@@ -519,6 +571,9 @@ public final class LiveMediaDownloadManager: NSObject {
             job.progress = 1
             store.upsert(job)
             Task { await updateActivity(for: job) }
+            if job.isDownloaderOwned {
+                postDownloaderJobProgress(job: job, progress: 1)
+            }
             Task { await save(job: job, fileURL: destination, kind: kind) }
         } catch {
             Task { await failJob(job, message: MediaDownloadError.downloadFailed.message) }
@@ -604,7 +659,7 @@ public final class LiveMediaDownloadManager: NSObject {
         job.progress = progress
         store.upsert(job)
         if job.isDownloaderOwned {
-            postDownloaderJobProgress(sourceURLString: job.sourceURLString, progress: progress)
+            postDownloaderJobProgress(job: job, progress: progress)
         }
         Task { await updateActivity(for: job) }
     }
@@ -662,6 +717,9 @@ public final class LiveMediaDownloadManager: NSObject {
             job.errorMessage = nil
             store.upsert(job)
             await updateActivity(for: job)
+            if job.isDownloaderOwned {
+                postDownloaderJobProgress(job: job, progress: 1)
+            }
             await endActivity(for: job)
             store.remove(job.id)
         } catch {
@@ -782,7 +840,7 @@ public final class LiveMediaDownloadManager: NSObject {
         job.fail(message: message, kind: errorKind)
         store.upsert(job)
         if job.isDownloaderOwned {
-            postDownloaderJobProgress(sourceURLString: job.sourceURLString, progress: nil)
+            postDownloaderJobProgress(job: job, progress: nil)
         }
         await updateActivity(for: job)
         await endActivity(for: job, dismissalDelay: Self.failureDismissalDelay)
@@ -795,7 +853,7 @@ public final class LiveMediaDownloadManager: NSObject {
         store.removeFiles(for: job)
         store.remove(job.id)
         if job.isDownloaderOwned {
-            postDownloaderJobProgress(sourceURLString: job.sourceURLString, progress: nil)
+            postDownloaderJobEnded(sourceURLString: job.sourceURLString)
         }
     }
 }
@@ -821,7 +879,7 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
         job.progress = min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
         store.upsert(job)
         if job.isDownloaderOwned, Int(job.progress * 100) != previousPercent {
-            postDownloaderJobProgress(sourceURLString: job.sourceURLString, progress: job.progress)
+            postDownloaderJobProgress(job: job, progress: job.progress)
         }
         Task { await updateActivity(for: job) }
     }
@@ -911,7 +969,12 @@ private extension LiveMediaDownloadAttributes.ContentState.Phase {
 #endif
 
 private extension LiveMediaDownloadManager {
-    func startActivity(for job: LiveMediaDownloadJob) async {
+    /// `announce` fires a system alert (banner + sound) the moment the Live
+    /// Activity appears, so a download starting reads as more than a silent
+    /// Dynamic Island update. Suppressed for `startFailedActivity`, which
+    /// never actually starts a download — only its (single) end-of-life alert
+    /// should fire there.
+    func startActivity(for job: LiveMediaDownloadJob, announce: Bool = true) async {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let attributes = LiveMediaDownloadAttributes(
@@ -920,7 +983,13 @@ private extension LiveMediaDownloadManager {
             title: job.title)
         let state = activityState(for: job)
         do {
-            _ = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
+            let activity = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
+            if announce {
+                await activity.update(
+                    using: state,
+                    alertConfiguration: AlertConfiguration(
+                        title: "Download started", body: "\(job.title)", sound: .default))
+            }
         } catch {
             SharedDiagnosticLog.record(
                 "live activity request failed: \(error)", category: "media-download")
@@ -954,7 +1023,7 @@ private extension LiveMediaDownloadManager {
             ownership: MediaAutoDownloader.isRunningInDownloader ? .downloader : .invokingApp
         )
         job.fail(message: message, kind: errorKind)
-        await startActivity(for: job)
+        await startActivity(for: job, announce: false)
         await endActivity(for: job, dismissalDelay: Self.failureDismissalDelay)
     }
 
@@ -973,8 +1042,26 @@ private extension LiveMediaDownloadManager {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *) else { return }
         let state = activityState(for: job)
+        // A final alert right before ending — a silent Dynamic Island collapse
+        // is easy to miss, so both a successful finish and a failure surface
+        // as a system alert (banner + sound), matching the one at start. Not
+        // for a user-canceled (still `.suspended` when torn down) job — that's
+        // an intentional dismissal, not a result worth alerting about.
+        var alert: AlertConfiguration?
+        switch job.phase {
+        case .finished, .failed:
+            alert = AlertConfiguration(
+                title: job.phase == .failed ? "Download failed" : "Download finished",
+                body: "\(job.title)",
+                sound: .default)
+        default:
+            alert = nil
+        }
         for activity in Activity<LiveMediaDownloadAttributes>.activities
             where activity.attributes.jobID == job.id {
+            if let alert {
+                await activity.update(using: state, alertConfiguration: alert)
+            }
             await activity.end(using: state, dismissalPolicy: .after(Date(timeIntervalSinceNow: dismissalDelay)))
         }
         #endif
@@ -983,20 +1070,11 @@ private extension LiveMediaDownloadManager {
     #if canImport(ActivityKit)
     @available(iOS 16.1, *)
     func activityState(for job: LiveMediaDownloadJob) -> LiveMediaDownloadAttributes.ContentState {
-        let message: String
-        switch job.phase {
-        case .resolving: message = "Preparing download"
-        case .downloading: message = "Downloading"
-        case .suspended: message = "Paused. Resume within 5 seconds."
-        case .saving: message = job.isDownloaderOwned ? "Saving to Luna" : "Saving to Photos"
-        case .finished: message = job.isDownloaderOwned ? "Saved to Luna" : "Saved to Photos"
-        case .failed: message = job.errorMessage ?? "Download failed"
-        }
-        return LiveMediaDownloadAttributes.ContentState(
+        LiveMediaDownloadAttributes.ContentState(
             phase: .init(jobPhase: job.phase),
             progress: job.progress,
             mediaKind: .init(rawJobValue: job.mediaKind),
-            message: message,
+            message: job.statusMessage,
             thumbnailFileName: job.thumbnailFileName,
             // Reopen the app this download is running in — each app registers
             // only its own scheme now, so this can't hardcode Reader's.
@@ -1065,6 +1143,30 @@ struct LiveMediaDownloadJob: Codable, Equatable {
         errorMessage = message
         errorKind = kind
         suspendDeadline = nil
+    }
+
+    /// The human-readable status line shown by both the Live Activity and the
+    /// Downloader footer status view — kept as one source of truth so the two
+    /// surfaces never drift.
+    var statusMessage: String {
+        switch phase {
+        case .resolving: return "Preparing download"
+        case .downloading: return "Downloading"
+        case .suspended: return "Paused. Resume within 5 seconds."
+        case .saving: return isDownloaderOwned ? "Saving to Luna" : "Saving to Photos"
+        case .finished: return isDownloaderOwned ? "Saved to Luna" : "Saved to Photos"
+        case .failed: return errorMessage ?? "Download failed"
+        }
+    }
+
+    var downloaderSnapshot: DownloaderJobSnapshot {
+        DownloaderJobSnapshot(
+            sourceURLString: sourceURLString,
+            title: title,
+            phase: DownloaderJobPhase(rawValue: phase.rawValue) ?? .failed,
+            progress: progress,
+            message: statusMessage,
+            thumbnailFileName: thumbnailFileName)
     }
 }
 

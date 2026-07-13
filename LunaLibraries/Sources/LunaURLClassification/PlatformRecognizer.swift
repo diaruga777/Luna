@@ -130,14 +130,14 @@ public enum PlatformRecognizer {
         return segments[authorIndex + 3]
     }
 
-    /// Reddit — an individual post permalink ONLY: `/comments/<id>`,
-    /// `/r|user|u/<name>/comments/<id>`, `/gallery/<id>`, or `redd.it/<id>`. Unlike a
-    /// host-only match, a bare subreddit or home feed does NOT classify (mirroring
-    /// bluesky's post-only shape and the Safari content-script gate): only a post is
-    /// a recognized item.
+    /// Reddit — an individual post permalink: `/comments/<id>`,
+    /// `/r|user|u/<name>/comments/<id>`, `/gallery/<id>`, `redd.it/<id>`, or the
+    /// app-native share link `/r/<name>/s/<token>`. Unlike a host-only match, a bare
+    /// subreddit or home feed does NOT classify (mirroring bluesky's post-only shape
+    /// and the Safari content-script gate): only a post is a recognized item.
     public static let reddit = PlatformRule(
         platform: .reddit, hosts: ["reddit.com", "redd.it"],
-        recognizes: { redditPostID($0) != nil },
+        recognizes: { redditPostID($0) != nil || redditShareToken($0) != nil },
         itemID: { redditPostID($0) })
 
     /// The base-36 post id for a Reddit POST permalink, or nil. Structural matching
@@ -158,6 +158,20 @@ public enum PlatformRecognizer {
         }
         if first == "gallery" { return nonEmpty(1) }
         return nil
+    }
+
+    /// The opaque share token from Reddit's own app-native share link,
+    /// `/r/<name>/s/<token>` — an increasingly common share format that carries no
+    /// decodable post id. Reddit only resolves it via a live HTTP redirect to the
+    /// canonical permalink, so (mirroring TikTok's short vm./vt. links) this is
+    /// recognized as a Reddit post but `itemID` stays nil; callers that need the
+    /// real post follow the redirect themselves.
+    private static func redditShareToken(_ parts: PlatformURLParts) -> String? {
+        let segments = parts.segments
+        guard segments.first == "r", segments.count > 3, !segments[1].isEmpty, segments[2] == "s",
+              !segments[3].isEmpty
+        else { return nil }
+        return segments[3]
     }
 
     /// TikTok — `/@user/video/<numeric id>` (short `vm.`/`vt.` links recognized,

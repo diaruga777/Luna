@@ -63,6 +63,19 @@ final class PlatformParsersTests: XCTestCase {
         XCTAssertEqual(PlatformRecognizer.recognize("https://redd.it/1abc2d")?.itemID, "1abc2d")
     }
 
+    /// Reddit's own app-native share links (`/r/<sub>/s/<token>`) are recognized as
+    /// a Reddit post (they need a live HTTP redirect to resolve to a real post,
+    /// which pure recognition can't do), but — mirroring TikTok's short links —
+    /// `itemID` stays nil since the token isn't a decodable post id.
+    func testRedditShareLinkIsRecognizedWithNilItemID() {
+        let shareLink = PlatformRecognizer.recognize("https://www.reddit.com/r/WhatsWrongWithYourDog/s/qRjWPbZ2bo")
+        XCTAssertEqual(shareLink?.platform, .reddit)
+        XCTAssertNil(shareLink?.itemID)
+
+        XCTAssertNil(PlatformRecognizer.recognize("https://www.reddit.com/r/pics/s/"))
+        XCTAssertNil(PlatformRecognizer.recognize("https://www.reddit.com/r//s/abc"))
+    }
+
     func testInstagramShortcode() {
         XCTAssertEqual(
             InstagramLink.shortcode(from: "https://www.instagram.com/reel/CxYz123/"), "CxYz123")

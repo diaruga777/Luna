@@ -537,17 +537,47 @@ public enum RedditMediaParser {
 
         let hasAudio = redditVideo["has_audio"] as? Bool ?? false
         guard hasAudio else { return MediaAsset(url: videoURL, kind: .video) }
-        return MediaAsset(url: videoURL, kind: .video, audioURL: audioURL(forVideoURL: videoURL))
+        let dashManifestURL = (redditVideo["dash_url"] as? String).flatMap { URL(string: unescape($0)) }
+        return MediaAsset(
+            url: videoURL, kind: .video,
+            audioURL: audioURL(forVideoURL: videoURL),
+            dashManifestURL: dashManifestURL)
     }
 
+    /// Reddit consistently serves a video's audio track at this sibling path
+    /// (confirmed against real `DASHPlaylist.mpd` manifests — its audio
+    /// `Representation`'s own `<BaseURL>` is literally the plain string
+    /// `audio`, resolved against the same `/{videoID}/` directory every
+    /// resolution's video file lives in — not `DASH_audio.mp4`, which was
+    /// this code's previous, incorrect guess).
     private static func audioURL(forVideoURL videoURL: URL) -> URL? {
         guard var components = URLComponents(url: videoURL, resolvingAgainstBaseURL: false) else { return nil }
         var segments = components.path.split(separator: "/").map(String.init)
         guard !segments.isEmpty else { return nil }
-        segments[segments.count - 1] = "DASH_audio.mp4"
+        segments[segments.count - 1] = "audio"
         components.path = "/" + segments.joined(separator: "/")
         components.query = nil
         return components.url
+    }
+
+    /// The audio track's URL straight from Reddit's DASH manifest —
+    /// authoritative (unlike the fixed-path guess above, which every public
+    /// v.redd.it downloader still uses as a fast path, but this is the actual
+    /// discovery mechanism), used as a fallback when that guess's actual
+    /// download fails. Each `Representation` nests its own `<BaseURL>` (a
+    /// relative filename, e.g. `audio`); the audio one is identified by its
+    /// `mimeType="audio/mp4"` — reliable enough for a light scrape without
+    /// pulling in a full XML parser.
+    public static func audioURL(fromDASHManifest xml: String, manifestURL: URL) -> URL? {
+        for block in xml.components(separatedBy: "<Representation")
+        where block.lowercased().contains("audio/mp4") {
+            guard let raw = firstGroup(in: block, pattern: "<BaseURL>(.*?)</BaseURL>") else { continue }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let resolved = URL(string: trimmed, relativeTo: manifestURL)?.absoluteURL {
+                return resolved
+            }
+        }
+        return nil
     }
 }
 

@@ -19,6 +19,13 @@ import Network
 public final class NetworkReachability {
     public static let shared = NetworkReachability()
 
+    /// Posted when the path transitions from NOT-on-Wi-Fi to on-Wi-Fi, so
+    /// features deferred while off Wi-Fi (Downloader's Wi-Fi-only downloads,
+    /// Reader's Wi-Fi-only preload) can resume immediately instead of waiting
+    /// for the next foreground/background-task. Posted on the monitor's own
+    /// background queue, not main.
+    public static let wifiAvailableNotification = Notification.Name("NetworkReachability.wifiAvailable")
+
     private let monitor = NWPathMonitor()
     private let lock = NSLock()
     private var path: NWPath?
@@ -26,7 +33,11 @@ public final class NetworkReachability {
     private init() {
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
+            let wasOnWiFi = self.isOnWiFi
             self.lock.lock(); self.path = path; self.lock.unlock()
+            if !wasOnWiFi, self.isOnWiFi {
+                NotificationCenter.default.post(name: Self.wifiAvailableNotification, object: nil)
+            }
         }
         monitor.start(queue: DispatchQueue(label: "inc.putty.clip.reachability"))
     }

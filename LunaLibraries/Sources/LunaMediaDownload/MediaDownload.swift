@@ -22,11 +22,18 @@ public struct MediaAsset: Equatable {
     /// that host video and audio as two independent files rather than one
     /// playable URL. `nil` for every other platform's single-URL assets.
     public let audioURL: URL?
+    /// The DASH manifest listing `audioURL`'s real location — `audioURL` itself
+    /// is a filename-convention guess (Reddit doesn't hand back the audio URL
+    /// directly), so this is the authoritative fallback `RedditAudioFetcher`
+    /// consults if that guess (and a second, legacy-convention guess) both
+    /// fail to actually download. `nil` for every non-Reddit asset.
+    public let dashManifestURL: URL?
 
-    public init(url: URL, kind: Kind, audioURL: URL? = nil) {
+    public init(url: URL, kind: Kind, audioURL: URL? = nil, dashManifestURL: URL? = nil) {
         self.url = url
         self.kind = kind
         self.audioURL = audioURL
+        self.dashManifestURL = dashManifestURL
     }
 }
 

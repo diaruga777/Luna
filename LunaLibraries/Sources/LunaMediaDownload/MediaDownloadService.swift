@@ -151,9 +151,12 @@ public struct MediaDownloadService: MediaDownloading {
         }
     }
 
-    /// TikTok media CDNs require the tiktok.com Referer; others download bare.
+    /// TikTok and Reddit media CDNs require their site's Referer; others download bare.
     private static func referer(for url: URL) -> String? {
-        (url.host?.lowercased().contains("tiktok") ?? false) ? "https://www.tiktok.com/" : nil
+        let host = url.host?.lowercased() ?? ""
+        if host.contains("tiktok") { return "https://www.tiktok.com/" }
+        if host.contains("reddit") || host == "redd.it" { return "https://www.reddit.com/" }
+        return nil
     }
 }
 
@@ -165,8 +168,48 @@ public final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
     public static func download(
         _ asset: MediaAsset, referer: String?, onProgress: @escaping (Double) -> Void
     ) async throws -> URL {
+        if let audioURL = asset.audioURL {
+            return try await downloadAndMux(
+                videoURL: asset.url, audioURL: audioURL, referer: referer, onProgress: onProgress)
+        }
         let downloader = MediaFileDownloader(asset: asset, onProgress: onProgress)
         return try await downloader.run(referer: referer)
+    }
+
+    /// Reddit hosts video and audio as two separate files — downloads both
+    /// (reusing this same downloader instance-per-stream) and muxes them with
+    /// `MediaMuxer`. If the audio companion can't be fetched (its URL is a
+    /// derived guess, not one Reddit hands back directly — see
+    /// `RedditMediaParser`), degrades gracefully to the silent video rather
+    /// than failing the whole download.
+    private static func downloadAndMux(
+        videoURL: URL, audioURL: URL, referer: String?, onProgress: @escaping (Double) -> Void
+    ) async throws -> URL {
+        let videoFile = try await MediaFileDownloader(
+            asset: MediaAsset(url: videoURL, kind: .video),
+            onProgress: { onProgress($0 * 0.45) }
+        ).run(referer: referer)
+
+        guard let audioFile = try? await MediaFileDownloader(
+            asset: MediaAsset(url: audioURL, kind: .video),
+            onProgress: { onProgress(0.45 + $0 * 0.35) }
+        ).run(referer: referer) else {
+            onProgress(1)
+            return videoFile
+        }
+
+        let muxedURL = MediaDownloadStorage.newFileURL(extension: "mp4")
+        do {
+            try await MediaMuxer.mux(videoURL: videoFile, audioURL: audioFile, outputURL: muxedURL)
+            try? FileManager.default.removeItem(at: videoFile)
+            try? FileManager.default.removeItem(at: audioFile)
+            onProgress(1)
+            return muxedURL
+        } catch {
+            try? FileManager.default.removeItem(at: audioFile)
+            onProgress(1)
+            return videoFile
+        }
     }
 
     private let asset: MediaAsset

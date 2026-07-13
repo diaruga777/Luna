@@ -204,7 +204,8 @@ public final class LiveMediaDownloadManager: NSObject {
         Task { await updateActivity(for: job) }
 
         if let audioURL = asset.audioURL {
-            startRedditMuxedDownload(for: job, videoURL: asset.url, audioURL: audioURL)
+            startRedditMuxedDownload(
+                for: job, videoURL: asset.url, audioURL: audioURL, dashManifestURL: asset.dashManifestURL)
             return
         }
 
@@ -532,7 +533,9 @@ public final class LiveMediaDownloadManager: NSObject {
     /// audio companion (a derived URL, not one Reddit hands back directly —
     /// see `RedditMediaParser`) can't be fetched, degrades to the silent
     /// video rather than failing the whole download.
-    private func startRedditMuxedDownload(for job: LiveMediaDownloadJob, videoURL: URL, audioURL: URL) {
+    private func startRedditMuxedDownload(
+        for job: LiveMediaDownloadJob, videoURL: URL, audioURL: URL, dashManifestURL: URL?
+    ) {
         let jobID = job.id
         Task {
             // Re-fetches current job state right before each terminal action
@@ -547,7 +550,10 @@ public final class LiveMediaDownloadManager: NSObject {
                 let videoFile = try await plainDownload(videoURL)
                 self.reportProgress(jobID: jobID, progress: 0.5)
 
-                guard let audioFile = try? await plainDownload(audioURL) else {
+                guard let audioFile = await RedditAudioFetcher.fetch(
+                    primaryAudioURL: audioURL, dashManifestURL: dashManifestURL,
+                    referer: "https://www.reddit.com/")
+                else {
                     self.reportProgress(jobID: jobID, progress: 1)
                     guard let current = currentlyRunningJob() else { return }
                     finalizeDownloadedFile(job: current, temporaryLocation: videoFile, fileExtension: "mp4", kind: .video)

@@ -170,33 +170,37 @@ public final class MediaFileDownloader: NSObject, URLSessionDownloadDelegate {
     ) async throws -> URL {
         if let audioURL = asset.audioURL {
             return try await downloadAndMux(
-                videoURL: asset.url, audioURL: audioURL, referer: referer, onProgress: onProgress)
+                videoURL: asset.url, audioURL: audioURL, dashManifestURL: asset.dashManifestURL,
+                referer: referer, onProgress: onProgress)
         }
         let downloader = MediaFileDownloader(asset: asset, onProgress: onProgress)
         return try await downloader.run(referer: referer)
     }
 
-    /// Reddit hosts video and audio as two separate files — downloads both
-    /// (reusing this same downloader instance-per-stream) and muxes them with
-    /// `MediaMuxer`. If the audio companion can't be fetched (its URL is a
-    /// derived guess, not one Reddit hands back directly — see
-    /// `RedditMediaParser`), degrades gracefully to the silent video rather
-    /// than failing the whole download.
+    /// Reddit hosts video and audio as two separate files — downloads the
+    /// video, resolves+downloads the audio via `RedditAudioFetcher` (its URL
+    /// is a guess, not one Reddit hands back directly, so that tries a couple
+    /// of fallbacks), and muxes them with `MediaMuxer`. If the audio still
+    /// can't be fetched, degrades gracefully to the silent video rather than
+    /// failing the whole download.
     private static func downloadAndMux(
-        videoURL: URL, audioURL: URL, referer: String?, onProgress: @escaping (Double) -> Void
+        videoURL: URL, audioURL: URL, dashManifestURL: URL?, referer: String?,
+        onProgress: @escaping (Double) -> Void
     ) async throws -> URL {
         let videoFile = try await MediaFileDownloader(
             asset: MediaAsset(url: videoURL, kind: .video),
-            onProgress: { onProgress($0 * 0.45) }
+            onProgress: { onProgress($0 * 0.4) }
         ).run(referer: referer)
+        onProgress(0.4)
 
-        guard let audioFile = try? await MediaFileDownloader(
-            asset: MediaAsset(url: audioURL, kind: .video),
-            onProgress: { onProgress(0.45 + $0 * 0.35) }
-        ).run(referer: referer) else {
+        guard let audioFile = await RedditAudioFetcher.fetch(
+            primaryAudioURL: audioURL, dashManifestURL: dashManifestURL,
+            referer: referer ?? "https://www.reddit.com/")
+        else {
             onProgress(1)
             return videoFile
         }
+        onProgress(0.8)
 
         let muxedURL = MediaDownloadStorage.newFileURL(extension: "mp4")
         do {

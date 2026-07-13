@@ -54,7 +54,27 @@ final class SavedMediaGridViewController: UICollectionViewController {
         // whole time an extension runs alongside it, and plain didBecomeActive returns).
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleJobProgressChanged(_:)),
+            name: .downloaderJobProgressChanged, object: nil)
         reload()
+    }
+
+    /// Live per-item download progress: updates just the affected visible
+    /// cell's ring in place, no full grid reload (so the fill animates
+    /// smoothly). A cell not currently visible picks up the right state next
+    /// time it's configured (`SavedMediaCell.configure` does the same
+    /// synchronous lookup).
+    @objc private func handleJobProgressChanged(_ notification: Notification) {
+        guard let urlString = notification.userInfo?["sourceURLString"] as? String else { return }
+        let progress = notification.userInfo?["progress"] as? Double
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for case let cell as SavedMediaCell in self.collectionView.visibleCells
+            where cell.representsSourceURLString(urlString) {
+                cell.updateProgress(progress)
+            }
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -198,7 +218,16 @@ final class SavedMediaGridViewController: UICollectionViewController {
                 .trimmingCharacters(in: .whitespacesAndNewlines),
                   let normalized = URLUnwrapper.ingestURL(from: entered, allowBareHost: true)
             else { return }
-            Task { await ReadingListIngestor.shared.handleSavePress(urlString: normalized.absoluteString) }
+            Task {
+                let urlString = normalized.absoluteString
+                _ = await ReadingListIngestor.shared.handleSavePress(urlString: urlString)
+                guard MediaDownloadablePlatform.supports(urlString) else { return }
+                // A duplicate reading-list save still needs to resume an
+                // undownloaded/interrupted Downloader media row.
+                _ = await DownloaderIntentPhotoPermission.requestIfNeeded()
+                _ = await LiveMediaDownloadManager.shared.start(
+                    urlString: urlString, ownership: .downloader)
+            }
         })
         DotMatrixModal.present(alert, from: self)
     }
@@ -331,8 +360,11 @@ final class SavedMediaGridViewController: UICollectionViewController {
 
     private func startDownload(_ item: SavedMediaItem) {
         Task {
+            // Tap-to-download and the long-press "Download" action are both
+            // explicit "download this exact item now" gestures, so both bypass
+            // the Wi-Fi-only setting (unlike the opportunistic resume sweep).
             _ = await LiveMediaDownloadManager.shared.start(
-                urlString: item.sourceURLString, title: item.title)
+                urlString: item.sourceURLString, title: item.title, manual: true)
         }
     }
 
@@ -392,8 +424,11 @@ private final class SavedMediaCell: UICollectionViewCell {
     private let scrimView = UIView()
     private let glyphView = UIImageView(image: UIImage(systemName: "play.fill"))
     private let photosBadgeView = PhotosReferenceBadgeView()
+    private let progressRing = CircularProgressView()
     private var photoRequestID: PHImageRequestID = PHInvalidImageRequestID
     private var representedItemID: UUID?
+    private var representedSourceURLString: String?
+    private var isShowingUndownloadedState = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -412,10 +447,13 @@ private final class SavedMediaCell: UICollectionViewCell {
         glyphView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)
         glyphView.translatesAutoresizingMaskIntoConstraints = false
         photosBadgeView.translatesAutoresizingMaskIntoConstraints = false
+        progressRing.isHidden = true
+        progressRing.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(imageView)
         contentView.addSubview(scrimView)
         contentView.addSubview(glyphView)
         contentView.addSubview(photosBadgeView)
+        contentView.addSubview(progressRing)
         NSLayoutConstraint.activate([
             imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
@@ -431,6 +469,10 @@ private final class SavedMediaCell: UICollectionViewCell {
             photosBadgeView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
             photosBadgeView.widthAnchor.constraint(equalToConstant: 24),
             photosBadgeView.heightAnchor.constraint(equalToConstant: 24),
+            progressRing.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            progressRing.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            progressRing.widthAnchor.constraint(equalToConstant: 36),
+            progressRing.heightAnchor.constraint(equalToConstant: 36),
         ])
     }
 
@@ -448,30 +490,63 @@ private final class SavedMediaCell: UICollectionViewCell {
         }
         photoRequestID = PHInvalidImageRequestID
         representedItemID = nil
+        representedSourceURLString = nil
+        isShowingUndownloadedState = false
         imageView.image = nil
         imageView.preferredSymbolConfiguration = nil
         glyphView.isHidden = true
         scrimView.isHidden = true
         photosBadgeView.isHidden = true
+        progressRing.isHidden = true
+    }
+
+    /// Whether this cell is currently displaying `urlString`'s undownloaded/
+    /// downloading state — used by the grid to route a live progress
+    /// notification to the right visible cell.
+    func representsSourceURLString(_ urlString: String) -> Bool {
+        isShowingUndownloadedState && representedSourceURLString == urlString
+    }
+
+    /// Live update from `.downloaderJobProgressChanged`, called only on a cell
+    /// that `representsSourceURLString` confirmed is showing this URL's
+    /// undownloaded state — a stale notification arriving after the item
+    /// completed (and the cell was reconfigured to a thumbnail by the normal
+    /// `.savedMediaChanged` reload) is a no-op.
+    func updateProgress(_ progress: Double?) {
+        guard isShowingUndownloadedState else { return }
+        if let progress {
+            progressRing.progress = progress
+            progressRing.isHidden = false
+            imageView.image = nil
+        } else {
+            progressRing.isHidden = true
+            imageView.image = UIImage(systemName: "arrow.down.circle.dotted")
+                ?? UIImage(systemName: "arrow.down.circle")
+        }
     }
 
     func configure(_ item: SavedMediaItem?) {
         guard let item else { return }
         representedItemID = item.id
+        representedSourceURLString = item.sourceURLString
         contentView.backgroundColor = .secondarySystemBackground
         photosBadgeView.isHidden = item.photosLocalIdentifier == nil
 
         if case .undownloaded = item.storageState {
-            imageView.image = UIImage(systemName: "arrow.down.circle.dotted")
-                ?? UIImage(systemName: "arrow.down.circle")
+            isShowingUndownloadedState = true
             imageView.tintColor = .secondaryLabel
             imageView.contentMode = .center
             imageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
                 pointSize: 34, weight: .regular)
             glyphView.isHidden = true
             scrimView.isHidden = true
+            let progress = LiveMediaDownloadManager.shared.currentDownloadProgress(
+                forSourceURLString: item.sourceURLString)
+            updateProgress(progress)
             return
         }
+        isShowingUndownloadedState = false
+        progressRing.isHidden = true
 
         if let identifier = item.photosLocalIdentifier,
            let asset = PHAsset.fetchAssets(
@@ -505,6 +580,56 @@ private final class SavedMediaCell: UICollectionViewCell {
         let isPlayable = item.kind == .video || item.kind == .gif
         glyphView.isHidden = !isPlayable
         scrimView.isHidden = !isPlayable
+    }
+}
+
+/// A ring that fills clockwise from 0 to `progress` (0...1), for the grid's
+/// "downloading" cell state. Track + progress arc as two `CAShapeLayer`s so
+/// updates are a cheap `strokeEnd` animation rather than a redraw.
+private final class CircularProgressView: UIView {
+    var progress: Double = 0 {
+        didSet {
+            let clamped = min(1, max(0, progress))
+            let animation = CABasicAnimation(keyPath: "strokeEnd")
+            animation.fromValue = progressLayer.presentation()?.strokeEnd ?? oldValue
+            animation.toValue = clamped
+            animation.duration = 0.2
+            progressLayer.strokeEnd = clamped
+            progressLayer.add(animation, forKey: "strokeEnd")
+        }
+    }
+
+    private let trackLayer = CAShapeLayer()
+    private let progressLayer = CAShapeLayer()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+        trackLayer.fillColor = UIColor.clear.cgColor
+        trackLayer.strokeColor = UIColor.white.withAlphaComponent(0.35).cgColor
+        trackLayer.lineWidth = 3
+        progressLayer.fillColor = UIColor.clear.cgColor
+        progressLayer.strokeColor = UIColor.white.cgColor
+        progressLayer.lineWidth = 3
+        progressLayer.lineCap = .round
+        progressLayer.strokeEnd = 0
+        layer.addSublayer(trackLayer)
+        layer.addSublayer(progressLayer)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let radius = min(bounds.width, bounds.height) / 2 - 2
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let path = UIBezierPath(
+            arcCenter: center, radius: radius,
+            startAngle: -.pi / 2, endAngle: .pi * 1.5,
+            clockwise: true)
+        trackLayer.path = path.cgPath
+        progressLayer.path = path.cgPath
     }
 }
 

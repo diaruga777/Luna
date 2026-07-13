@@ -111,8 +111,9 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
         case .undownloaded:
             return SavedMediaUndownloadedPageViewController(item: item) {
                 Task {
+                    // Explicit "download this item" tap — bypasses Wi-Fi-only.
                     _ = await LiveMediaDownloadManager.shared.start(
-                        urlString: item.sourceURLString, title: item.title)
+                        urlString: item.sourceURLString, title: item.title, manual: true)
                 }
             }
         case .localFile:

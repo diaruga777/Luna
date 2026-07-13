@@ -163,9 +163,9 @@ public final class PreloadCoordinator {
             allowsBackgroundTask: allowsBackgroundTask)
     }
 
-    /// Wraps `crawl` with the single-run claim, the Wi-Fi gate (background/speculative
-    /// preloads are Wi-Fi-only), and a brief background window so a crawl started on save
-    /// survives a short backgrounding.
+    /// Wraps `crawl` with the single-run claim, the optional `ReaderSettings.preloadWiFiOnly`
+    /// gate, and a brief background window so a crawl started on save survives a short
+    /// backgrounding.
     private func performCrawl(rootID: UUID, seedLinks: [URL], allowsBackgroundTask: Bool = true) async {
         guard claim(rootID) else { return }
         defer { unclaim(rootID) }
@@ -173,10 +173,12 @@ public final class PreloadCoordinator {
         if !allowsBackgroundTask {
             guard await Self.isApplicationActive else { return }
         }
-        guard NetworkReachability.shared.isOnWiFi else {
-            SharedDiagnosticLog.record(
-                "preload deferred (not on Wi-Fi): \(rootID.uuidString)", category: "preload")
-            return
+        if ReaderSettings.preloadWiFiOnly {
+            guard NetworkReachability.shared.isOnWiFi else {
+                SharedDiagnosticLog.record(
+                    "preload deferred (Wi-Fi only, not on Wi-Fi): \(rootID.uuidString)", category: "preload")
+                return
+            }
         }
         var bgTask: UIBackgroundTaskIdentifier = .invalid
         let expiration = CancellationFlag()

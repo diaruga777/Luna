@@ -27,6 +27,7 @@ public enum ReaderSettings {
     private static let lastReaderModeKey = "lastReaderMode"
     private static let rsvpModeKey = "rsvpDisplayMode"
     private static let preloadDepthKey = "linkPreloadDepth"
+    private static let preloadWiFiOnlyKey = "preloadWiFiOnly"
     private static let accentKey = "readerAccentColor"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
 
@@ -79,6 +80,16 @@ public enum ReaderSettings {
                 min(max(newValue, preloadDepthRange.lowerBound), preloadDepthRange.upperBound),
                 forKey: preloadDepthKey)
         }
+    }
+
+    /// Whether background link preloading is restricted to Wi-Fi. Orthogonal to
+    /// `preloadDepth` (depth alone still governs whether/how deep preloading
+    /// runs; this only decides which networks it may use — a no-op when depth
+    /// is 0). Defaults to OFF: preload crawls run on any network, including
+    /// cellular. Turning this ON restores the historical Wi-Fi-only behavior.
+    public static var preloadWiFiOnly: Bool {
+        get { (defaults.object(forKey: preloadWiFiOnlyKey) as? Bool) ?? false }
+        set { defaults.set(newValue, forKey: preloadWiFiOnlyKey) }
     }
 
     /// Reader text size multiplier (Safari-Reader-style Aa control).

@@ -185,6 +185,23 @@ final class PreloadStoreTests: XCTestCase {
         XCTAssertEqual(ReaderSettings.preloadDepth, 0)
     }
 
+    func testPreloadWiFiOnlyDefaultsOffAndRoundTrips() {
+        let defaults = UserDefaults(suiteName: ReaderSettings.appGroupID) ?? .standard
+        let original = defaults.object(forKey: "preloadWiFiOnly")
+        defer {
+            if let original { defaults.set(original, forKey: "preloadWiFiOnly") }
+            else { defaults.removeObject(forKey: "preloadWiFiOnly") }
+        }
+
+        defaults.removeObject(forKey: "preloadWiFiOnly")
+        XCTAssertFalse(ReaderSettings.preloadWiFiOnly)
+
+        ReaderSettings.preloadWiFiOnly = true
+        XCTAssertTrue(ReaderSettings.preloadWiFiOnly)
+        ReaderSettings.preloadWiFiOnly = false
+        XCTAssertFalse(ReaderSettings.preloadWiFiOnly)
+    }
+
     // MARK: - Ephemeral (session) ownership — the +1-depth speculative preloads
 
     func testSessionOnlyOwnedEntryDeletedOnRelease() {

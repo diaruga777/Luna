@@ -56,7 +56,9 @@ Dev with Xcode 27 beta / iOS 27 simulator; archive/upload with stable Xcode 26.2
 
 ## Agent workflow
 
-- Commit completed work in small, logical chunks as it is verified. Do not bundle unrelated changes into the same commit.
+- Always commit completed work in small, logical chunks as you go — don't wait for
+  explicit permission each time, and don't batch everything into one commit at the
+  end of a task. Do not bundle unrelated changes into the same commit.
 
 ## Module structure
 

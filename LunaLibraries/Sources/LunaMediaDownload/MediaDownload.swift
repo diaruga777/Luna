@@ -18,10 +18,15 @@ public struct MediaAsset: Equatable {
     }
     public let url: URL
     public let kind: Kind
+    /// A separate audio-only stream to mux with `url`, for platforms (Reddit)
+    /// that host video and audio as two independent files rather than one
+    /// playable URL. `nil` for every other platform's single-URL assets.
+    public let audioURL: URL?
 
-    public init(url: URL, kind: Kind) {
+    public init(url: URL, kind: Kind, audioURL: URL? = nil) {
         self.url = url
         self.kind = kind
+        self.audioURL = audioURL
     }
 }
 
@@ -50,7 +55,7 @@ public enum MediaDownloadError: Error {
 /// list row's long-press menu) both gate on this.
 public enum MediaDownloadablePlatform {
     /// The platforms whose posts expose downloadable still/gif/video media.
-    public static let supported: Set<ContentPlatform> = [.x, .instagram, .tiktok, .facebook]
+    public static let supported: Set<ContentPlatform> = [.x, .instagram, .tiktok, .facebook, .reddit]
 
     /// Whether `urlString` is a post on a platform we can pull media from.
     public static func supports(_ urlString: String) -> Bool {

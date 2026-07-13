@@ -375,6 +375,7 @@ private final class SavedMediaCell: UICollectionViewCell {
     private let scrimLayer = CAGradientLayer()
     private let scrimView = UIView()
     private let glyphView = UIImageView(image: UIImage(systemName: "play.fill"))
+    private let photosBadgeView = PhotosReferenceBadgeView()
     private var photoRequestID: PHImageRequestID = PHInvalidImageRequestID
     private var representedItemID: UUID?
 
@@ -394,9 +395,11 @@ private final class SavedMediaCell: UICollectionViewCell {
         glyphView.tintColor = .white
         glyphView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)
         glyphView.translatesAutoresizingMaskIntoConstraints = false
+        photosBadgeView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(imageView)
         contentView.addSubview(scrimView)
         contentView.addSubview(glyphView)
+        contentView.addSubview(photosBadgeView)
         NSLayoutConstraint.activate([
             imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
@@ -408,6 +411,10 @@ private final class SavedMediaCell: UICollectionViewCell {
             scrimView.heightAnchor.constraint(equalToConstant: 32),
             glyphView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
             glyphView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
+            photosBadgeView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -6),
+            photosBadgeView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
+            photosBadgeView.widthAnchor.constraint(equalToConstant: 24),
+            photosBadgeView.heightAnchor.constraint(equalToConstant: 24),
         ])
     }
 
@@ -429,12 +436,14 @@ private final class SavedMediaCell: UICollectionViewCell {
         imageView.preferredSymbolConfiguration = nil
         glyphView.isHidden = true
         scrimView.isHidden = true
+        photosBadgeView.isHidden = true
     }
 
     func configure(_ item: SavedMediaItem?) {
         guard let item else { return }
         representedItemID = item.id
         contentView.backgroundColor = .secondarySystemBackground
+        photosBadgeView.isHidden = item.photosLocalIdentifier == nil
 
         if case .undownloaded = item.storageState {
             imageView.image = UIImage(systemName: "arrow.down.circle.dotted")

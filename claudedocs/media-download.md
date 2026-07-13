@@ -16,6 +16,8 @@ Every Downloader save has one durable `SavedMediaItem` row and exactly one visib
 3. **`photosReference(localIdentifier:…)`** — the manifest keeps PhotoKit's durable
    `PHAsset.localIdentifier`, not a duplicate media file. Grid thumbnails, image data,
    videos, sharing, and clipboard exports resolve the asset through PhotoKit each time.
+   A small multicolor Photos rosette appears in the grid's top-right corner and in the
+   fullscreen viewer so this backing is visible at a glance.
 
 `SavedMediaStore.ensureUndownloaded` creates the manifest row before transfer and uses
 the reading-list UUID as its stable identity. Existing manifests with the old required

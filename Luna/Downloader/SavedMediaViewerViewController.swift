@@ -30,6 +30,7 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
         transitionStyle: .scroll,
         navigationOrientation: .horizontal,
         options: [.interPageSpacing: 40])
+    private let photosBadgeView = PhotosReferenceBadgeView()
 
     init(items: [SavedMediaItem], initialIndex: Int, grid: SavedMediaGridViewController) {
         self.items = items
@@ -65,6 +66,17 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
         view.addSubview(pageViewController.view)
         pageViewController.didMove(toParent: self)
 
+        photosBadgeView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(photosBadgeView)
+        NSLayoutConstraint.activate([
+            photosBadgeView.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -14),
+            photosBadgeView.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 14),
+            photosBadgeView.widthAnchor.constraint(equalToConstant: 34),
+            photosBadgeView.heightAnchor.constraint(equalToConstant: 34),
+        ])
+
         // Mutations from ANY surface (this viewer's own trash button, the grid's
         // context menu, or another process via the Darwin bridge) route through the
         // same store notifications — refresh whenever either fires.
@@ -78,6 +90,7 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
             return
         }
         let item = items[currentIndex]
+        updatePhotosBadge(for: item)
         title = item.title ?? item.sourceURLString
         let page = makePage(for: item)
         pageViewController.setViewControllers([page], direction: .forward, animated: false)
@@ -128,6 +141,10 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
         }
     }
 
+    private func updatePhotosBadge(for item: SavedMediaItem) {
+        photosBadgeView.isHidden = item.photosLocalIdentifier == nil
+    }
+
     @objc private func deleteCurrent() {
         guard items.indices.contains(currentIndex) else { return }
         let item = items[currentIndex]
@@ -167,7 +184,8 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
             navigationController?.popViewController(animated: true)
             return
         }
-        if let currentID, items.contains(where: { $0.id == currentID }) {
+        if let currentID, let current = items.first(where: { $0.id == currentID }) {
+            updatePhotosBadge(for: current)
             return // Current item is still here — nothing to move, just kept `items` fresh.
         }
 
@@ -175,6 +193,7 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
         // available item at the same (clamped) position, like Photos does.
         currentIndex = min(currentIndex, items.count - 1)
         let item = items[currentIndex]
+        updatePhotosBadge(for: item)
         title = item.title ?? item.sourceURLString
         let page = makePage(for: item)
         pageViewController.setViewControllers([page], direction: .forward, animated: true)
@@ -222,6 +241,7 @@ extension SavedMediaViewerViewController: UIPageViewControllerDataSource, UIPage
         else { return }
         currentIndex = idx
         let item = items[idx]
+        updatePhotosBadge(for: item)
         title = item.title ?? item.sourceURLString
         (current as? SavedMediaVideoPageViewController)?.player?.play()
         markOpened(item)

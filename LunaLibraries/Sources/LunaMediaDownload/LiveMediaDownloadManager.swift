@@ -200,6 +200,12 @@ public final class LiveMediaDownloadManager: NSObject {
         job.phase = .downloading
         store.upsert(job)
         Task { await updateActivity(for: job) }
+
+        if let audioURL = asset.audioURL {
+            startRedditMuxedDownload(for: job, videoURL: asset.url, audioURL: audioURL)
+            return
+        }
+
         if asset.kind != .video {
             Task {
                 var updated = job
@@ -366,6 +372,17 @@ public final class LiveMediaDownloadManager: NSObject {
         case .facebook:
             resolveURL = url
             kind = url.host?.lowercased() == "fb.watch" ? "facebookShort" : "facebook"
+        case .reddit:
+            // The public, subreddit-agnostic listing endpoint works for any
+            // recognized permalink shape (a full `/r/.../comments/<id>/...`
+            // permalink or a `redd.it/<id>` short link both resolve to the
+            // same post id here), so there's no need to reconstruct `.json`
+            // from the original URL string.
+            guard let id = recognized.itemID,
+                  let url = URL(string: "https://www.reddit.com/comments/\(id).json")
+            else { return nil }
+            resolveURL = url
+            kind = "reddit"
         default:
             return nil
         }
@@ -396,6 +413,8 @@ public final class LiveMediaDownloadManager: NSObject {
         case "facebook", "facebookShort":
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return FacebookMediaParser.assets(fromHTML: html).first
+        case "reddit":
+            return RedditMediaParser.asset(fromListingJSON: data)
         default:
             return nil
         }
@@ -440,7 +459,6 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     private func finish(job: LiveMediaDownloadJob, downloadedTo location: URL, response: URLResponse?) {
-        var job = job
         guard job.phase != .suspended else { return }
         let http = response as? HTTPURLResponse
         if let http, !(200..<300).contains(http.statusCode) {
@@ -456,10 +474,21 @@ public final class LiveMediaDownloadManager: NSObject {
         let ext = MediaFileDownloader.fileExtension(
             for: MediaAsset(url: URL(string: job.assetURLString ?? job.sourceURLString)!, kind: kind),
             mimeType: http?.mimeType)
+        finalizeDownloadedFile(job: job, temporaryLocation: location, fileExtension: ext, kind: kind)
+    }
+
+    /// The shared move-into-place / thumbnail / save tail, common to the
+    /// normal single-URL download-task flow above and the Reddit dual-stream
+    /// mux flow below (which has no `URLResponse` to check against — its own
+    /// two fetches already threw on failure).
+    private func finalizeDownloadedFile(
+        job: LiveMediaDownloadJob, temporaryLocation: URL, fileExtension ext: String, kind: MediaAsset.Kind
+    ) {
+        var job = job
         let destination = JobStore.downloadURL(fileName: "\(job.id).\(ext)")
         do {
             try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: location, to: destination)
+            try FileManager.default.moveItem(at: temporaryLocation, to: destination)
             if kind == .video, job.thumbnailFileName == nil {
                 job.thumbnailFileName = makeVideoThumbnail(from: destination, jobID: job.id)
             }
@@ -471,6 +500,85 @@ public final class LiveMediaDownloadManager: NSObject {
         } catch {
             Task { await failJob(job, message: MediaDownloadError.downloadFailed.message) }
         }
+    }
+
+    /// Reddit hosts video and audio as two separate CDN files (its DASH
+    /// pipeline) rather than one playable URL, so this bypasses the shared
+    /// background-session task/delegate state machine above (built around one
+    /// URL producing one file) and does its own plain async fetch + mux,
+    /// finishing through the same `finalizeDownloadedFile` tail as everything
+    /// else. Reddit clips are short, so this deliberately doesn't retrofit the
+    /// resumable-background-task machinery for a two-stream case. If the
+    /// audio companion (a derived URL, not one Reddit hands back directly —
+    /// see `RedditMediaParser`) can't be fetched, degrades to the silent
+    /// video rather than failing the whole download.
+    private func startRedditMuxedDownload(for job: LiveMediaDownloadJob, videoURL: URL, audioURL: URL) {
+        let jobID = job.id
+        Task {
+            // Re-fetches current job state right before each terminal action
+            // (rather than trusting the snapshot captured when this Task was
+            // started) so a suspend that raced with these fetches is honored.
+            func currentlyRunningJob() -> LiveMediaDownloadJob? {
+                guard let current = self.store.job(id: jobID), current.phase != .suspended else { return nil }
+                return current
+            }
+
+            do {
+                let videoFile = try await plainDownload(videoURL)
+                self.reportProgress(jobID: jobID, progress: 0.5)
+
+                guard let audioFile = try? await plainDownload(audioURL) else {
+                    self.reportProgress(jobID: jobID, progress: 1)
+                    guard let current = currentlyRunningJob() else { return }
+                    finalizeDownloadedFile(job: current, temporaryLocation: videoFile, fileExtension: "mp4", kind: .video)
+                    return
+                }
+                self.reportProgress(jobID: jobID, progress: 0.8)
+
+                let muxedURL = MediaDownloadStorage.newFileURL(extension: "mp4")
+                let finalFile: URL
+                do {
+                    try await MediaMuxer.mux(videoURL: videoFile, audioURL: audioFile, outputURL: muxedURL)
+                    try? FileManager.default.removeItem(at: videoFile)
+                    finalFile = muxedURL
+                } catch {
+                    finalFile = videoFile
+                }
+                try? FileManager.default.removeItem(at: audioFile)
+                self.reportProgress(jobID: jobID, progress: 1)
+                guard let current = currentlyRunningJob() else { return }
+                finalizeDownloadedFile(job: current, temporaryLocation: finalFile, fileExtension: "mp4", kind: .video)
+            } catch {
+                guard let current = currentlyRunningJob() else { return }
+                await failJob(current, message: MediaDownloadError.downloadFailed.message)
+            }
+        }
+    }
+
+    /// A plain (non-background-session) streamed download to a temp file,
+    /// used only by the Reddit mux path above.
+    private func plainDownload(_ url: URL) async throws -> URL {
+        var request = URLRequest(url: url, timeoutInterval: 60)
+        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("https://www.reddit.com/", forHTTPHeaderField: "Referer")
+        let (location, response) = try await URLSession.shared.download(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw MediaDownloadError.downloadFailed
+        }
+        let destination = MediaDownloadStorage.newFileURL(extension: "mp4")
+        try FileManager.default.moveItem(at: location, to: destination)
+        return destination
+    }
+
+    private func reportProgress(jobID: String, progress: Double) {
+        guard var job = store.job(id: jobID), job.phase != .suspended else { return }
+        job.phase = .downloading
+        job.progress = progress
+        store.upsert(job)
+        if job.isDownloaderOwned {
+            postDownloaderJobProgress(sourceURLString: job.sourceURLString, progress: progress)
+        }
+        Task { await updateActivity(for: job) }
     }
 
     private func finishResolve(job: LiveMediaDownloadJob, downloadedTo location: URL, response: URLResponse?) {

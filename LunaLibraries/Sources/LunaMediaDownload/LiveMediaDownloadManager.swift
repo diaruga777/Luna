@@ -95,6 +95,8 @@ public final class LiveMediaDownloadManager: NSObject {
     ) async -> Bool {
         await reapExpiredSuspensions()
 
+        let urlString = await Self.canonicalRedditURLStringIfNeeded(urlString)
+
         guard MediaDownloadablePlatform.supports(urlString),
               let sourceURL = URL(string: urlString)
         else { return false }
@@ -324,6 +326,24 @@ public final class LiveMediaDownloadManager: NSObject {
             where job.phase == .suspended && (job.suspendDeadline ?? .distantPast) <= now {
             await tearDownSuspendedJob(job)
         }
+    }
+
+    /// Reddit's own app-native share links (`/r/<sub>/s/<token>`) carry no post id
+    /// — the token only resolves via a live HTTP redirect (which `URLSession`
+    /// follows automatically) to the canonical permalink, which every downstream
+    /// step here (ensureUndownloaded's dedup key, `resolveRequest`'s `.reddit`
+    /// case, etc.) needs a real post id for. A no-op for every other URL shape.
+    private static func canonicalRedditURLStringIfNeeded(_ urlString: String) async -> String {
+        guard let recognized = PlatformRecognizer.recognize(urlString),
+              recognized.platform == .reddit, recognized.itemID == nil,
+              let url = URL(string: urlString)
+        else { return urlString }
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let finalURL = response.url
+        else { return urlString }
+        return finalURL.absoluteString
     }
 
     private static func title(for url: URL) -> String {

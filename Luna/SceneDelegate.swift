@@ -220,6 +220,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         Task { await IncomingMailImporter.shared.importNewMail() }
         // Resume any link preloading left incomplete (interrupted save / new depth).
         PreloadCoordinator.shared.resumeIncomplete()
+        // Resume any downloads a Wi-Fi-only policy deferred, now that we're
+        // foregrounding (possibly on Wi-Fi for the first time since they queued).
+        if AppSurfaceConfig.current == .downloader {
+            Task { await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads() }
+        }
         // A notification tapped while the app was backgrounded.
         applyPendingNotificationRoute()
         // A double save with "ask every time" bounced the user into Luna: present

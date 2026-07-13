@@ -35,6 +35,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     private static let priceRefreshTaskID = "com.hsanabria.luna.priceRefresh"
     private static let priceRefreshInterval: TimeInterval = 12 * 60 * 60
     private var readingListObserver: NSObjectProtocol?
+    private var wifiAvailableObserver: NSObjectProtocol?
 
     func application(
         _ application: UIApplication,
@@ -179,6 +180,21 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             SavedMediaStore.shared.purgeExpired()
             self?.schedulePriceRefresh(reason: "reading list changed")
         }
+        // Resume whatever a Wi-Fi-only network policy deferred, the instant
+        // Wi-Fi reconnects — the app-launch/foreground and background-refresh
+        // resumes below cover the other two triggers.
+        wifiAvailableObserver = NotificationCenter.default.addObserver(
+            forName: NetworkReachability.wifiAvailableNotification, object: nil, queue: nil
+        ) { _ in
+            switch AppSurfaceConfig.current {
+            case .downloader:
+                Task { await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads() }
+            case .reader:
+                PreloadCoordinator.shared.resumeIncomplete()
+            case .priceTracker:
+                break
+            }
+        }
 
         // Read incoming mail (Luna shares + newsletters) — all surfaces.
         Task { await IncomingMailImporter.shared.importNewMail() }
@@ -234,6 +250,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         work = Task {
             await IncomingMailImporter.shared.importNewMail()
             ArticleSendCoordinator.shared.retryPendingSends()
+            // Backstop for Wi-Fi-only downloads: the live reconnect observer and
+            // the launch/foreground resume (see SceneDelegate) handle the fast
+            // paths; this covers the case where the app was never reopened.
+            if AppSurfaceConfig.current == .downloader {
+                await LiveMediaDownloadManager.shared.resumePendingWiFiDownloads()
+            }
             task.setTaskCompleted(success: !Task.isCancelled)
         }
     }

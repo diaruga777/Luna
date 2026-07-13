@@ -305,12 +305,28 @@ final class SavedMediaGridViewController: UICollectionViewController {
         DotMatrixModal.present(alert, from: self)
     }
 
-    private func deleteSavedItem(for item: SavedMediaItem) {
-        AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)
-        if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
-            ReadingListStore.shared.delete(saved)
+    func deleteSavedItem(for item: SavedMediaItem, onFailure: (() -> Void)? = nil) {
+        Task { @MainActor [weak self] in
+            do {
+                if let localIdentifier = item.photosLocalIdentifier {
+                    try await self?.photoSaver.deleteAsset(localIdentifier: localIdentifier)
+                }
+                guard let self else { return }
+                AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)
+                if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
+                    ReadingListStore.shared.delete(saved)
+                }
+                self.store.delete(item)
+            } catch {
+                if let onFailure {
+                    onFailure()
+                } else {
+                    self?.presentAlert(
+                        title: "Photos Access Needed",
+                        message: "Allow Photos access in Settings to delete this media from Photos.")
+                }
+            }
         }
-        store.delete(item)
     }
 
     private func startDownload(_ item: SavedMediaItem) {

@@ -50,6 +50,39 @@ public struct PhotoLibrarySaver: PhotoLibrarySaving {
         PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject
     }
 
+    /// Deletes the asset represented by a saved Photos local identifier.
+    ///
+    /// A missing asset is already deleted, so this is an idempotent no-op when
+    /// full Photos access confirms that the identifier no longer resolves. With
+    /// limited access, a missing fetch may simply mean that the asset is outside
+    /// the selected set, so deletion is rejected rather than removing Luna's
+    /// reference without being able to remove the Photos asset too.
+    public func deleteAsset(localIdentifier: String) async throws {
+        guard await requestReadAuthorization() else {
+            throw MediaDownloadError.permissionDenied
+        }
+
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard let asset = fetchAsset(localIdentifier: localIdentifier) else {
+            guard status == .authorized else {
+                throw MediaDownloadError.permissionDenied
+            }
+            return
+        }
+
+        try await withCheckedThrowingContinuation { continuation in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.deleteAssets([asset] as NSArray)
+            } completionHandler: { success, error in
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: error ?? MediaDownloadError.saveFailed)
+                }
+            }
+        }
+    }
+
     /// Writes the original PhotoKit resource to a file without materializing the
     /// media as `Data`. iCloud-backed resources may download on demand.
     public func writeResource(

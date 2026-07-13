@@ -148,17 +148,14 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
     @objc private func deleteCurrent() {
         guard items.indices.contains(currentIndex) else { return }
         let item = items[currentIndex]
-        // NotificationCenter posts are synchronous, so the store's `.savedMediaChanged`
-        // (or `.readingListChanged`, for the ReadingListStore-owned path) fires
-        // `handleMediaChanged()` before this call returns — reusing the exact same
-        // "current item vanished" handling as an external/cross-process deletion, so
-        // deleting removes the page, advances to the next item, and pops only when
-        // nothing is left, Photos-style, from one code path.
-        AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)
-        if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
-            ReadingListStore.shared.delete(saved)
+        // Route through the grid so the grid context menu and full-screen viewer
+        // share the same Photos-backed deletion behavior. Store notifications then
+        // drive the existing current-item handling below.
+        grid?.deleteSavedItem(for: item) { [weak self] in
+            self?.presentAlert(
+                title: "Photos Access Needed",
+                message: "Allow Photos access in Settings to delete this media from Photos.")
         }
-        SavedMediaStore.shared.delete(item)
     }
 
     private func removeMissingPhotosItem(_ itemID: UUID) {
@@ -168,11 +165,13 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
               let item = SavedMediaStore.shared.item(id: itemID),
               item.photosLocalIdentifier != nil
         else { return }
-        AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)
-        if let saved = ReadingListStore.shared.item(forURLString: item.sourceURLString) {
-            ReadingListStore.shared.delete(saved)
-        }
-        SavedMediaStore.shared.delete(item)
+        grid?.deleteSavedItem(for: item)
+    }
+
+    private func presentAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        DotMatrixModal.present(alert, from: self)
     }
 
     @objc private func handleMediaChanged() {

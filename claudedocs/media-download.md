@@ -65,6 +65,12 @@ access, where a nil fetch can mean "not selected" rather than deleted. Limited a
 still display selected assets, but Luna only interprets absence as deletion with full
 `.authorized` read/write access.
 
+Deleting a Photos-backed item from either the Downloader grid or fullscreen viewer first
+deletes the referenced `PHAsset` through `PHPhotoLibrary`, then removes the Downloader and
+reading-list records. If Photos access is denied, or limited access cannot resolve the
+asset, the Luna records are retained until the user grants sufficient access. A Photos
+asset that was already deleted is treated as an idempotent successful deletion.
+
 Local retention (default seven days, configurable 1–30 days or disabled) applies only to
 `.localFile` rows. Expiry deletes local files and returns the row to `.undownloaded`;
 Photos references remain governed by the user's Photos library.

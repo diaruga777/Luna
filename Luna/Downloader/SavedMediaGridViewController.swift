@@ -6,6 +6,7 @@
 import LunaDesignSystem
 import LunaMediaDownload
 import LunaReadingList
+import LunaReadingListUI
 import LunaSocialUI
 import LunaStorage
 import LunaTransitions
@@ -19,6 +20,7 @@ final class SavedMediaGridViewController: UICollectionViewController {
     private let header = NavHeaderBar()
     private let store = SavedMediaStore.shared
     private let photoSaver = PhotoLibrarySaver()
+    private let downloadFooter = DownloaderProgressFooterView()
     private var items: [SavedMediaItem] = []
     private var isReconcilingPhotos = false
     private lazy var dataSource = makeDataSource()
@@ -37,6 +39,7 @@ final class SavedMediaGridViewController: UICollectionViewController {
         collectionView.dataSource = dataSource
         header.mount(in: self)
         setHeaderControls()
+        mountDownloadFooter()
         // Bridges saves/deletes made by the action/share extension (a DIFFERENT process,
         // so the in-process .savedMediaChanged post below never reaches it) back to a
         // .savedMediaChanged post here via a Darwin notification. Idempotent.
@@ -169,6 +172,23 @@ final class SavedMediaGridViewController: UICollectionViewController {
         header.setManagedHeight(topSafeAreaInset: view.safeAreaInsets.top)
         collectionView.contentInset.top = NavHeaderBar.barHeight
         collectionView.verticalScrollIndicatorInsets.top = NavHeaderBar.barHeight
+    }
+
+    /// Floats the download-progress footer above the grid, bottom-anchored to the
+    /// safe area — mirrors the Live Activity / action-extension download UI so a
+    /// Downloader-owned job started from anywhere (grid tap, add-by-URL, share
+    /// extension) reads the same in-app. Purely informational; the grid stays
+    /// fully scrollable/tappable underneath it.
+    private func mountDownloadFooter() {
+        view.addSubview(downloadFooter)
+        NSLayoutConstraint.activate([
+            downloadFooter.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor, constant: 16),
+            downloadFooter.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor, constant: -16),
+            downloadFooter.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+        ])
     }
 
     @objc private func applicationForegrounded() {

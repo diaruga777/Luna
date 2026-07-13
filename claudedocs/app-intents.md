@@ -52,7 +52,10 @@ Inputs: `AppNamePlatform.{isSafari,isShortcuts,platform}(forAppName:)`;
 `visionModelAvailable` = `ScreenCaptureModelSessionFactory.makeDefault()
 .isAvailable`. The immediate Safari save (1) goes through
 `IntentIngestHelper.handleSavePress` with the Reader-only double-save surface
-armed (see `double-save.md`); a friend-prompt outcome foregrounds Luna.
+armed (see `double-save.md`). Because return 1 bypasses `SaveIntent`,
+`ProvideContextIntent` also sends a downloadable tracked Safari URL through the
+shared permission-aware Downloader/Live Activity handoff before returning; a
+friend-prompt outcome foregrounds Luna.
 
 ## `SaveIntent` (`app: String`, `screenshot: IntentFile`) → nothing
 
@@ -78,11 +81,17 @@ armed (see `double-save.md`); a friend-prompt outcome foregrounds Luna.
    handle+phrase+date? via `SocialPostFinder`). Both are double-save-aware and
    return `IntentIngestHelper.ActionButtonSaveOutcome`, whose cases carry the
    saved URL string.
-4. On success: `ScreenshotDoublePressStore.record(digest:savedURLString:)`,
-   then `MediaAutoDownloader.startLiveActivityIfEnabled(forURLString:)` — the
-   helper itself checks the Downloader auto-download setting (exactly what the
-   old `"4:<url>"` token / `DownloadIntent` did). A `friendPromptRequested`
-   outcome foregrounds Luna.
+4. On success the reading-list row is persisted immediately and ingestion continues
+   best-effort, so metadata work cannot consume the intent's 12-second budget. If the
+   shared `lunaInstalled.downloader` marker exists and the URL is downloadable,
+   `MediaAutoDownloader.startDownloaderIntentDownload` starts exactly one Downloader-owned
+   background job regardless of the invoking host or per-platform toggles. Reader,
+   Downloader, and Price Tracker each embed the shared Live Activity widget source.
+   The platform finder's resolved URL is carried separately from the save outcome, so a
+   duplicate/double-save timeout cannot suppress the media handoff.
+   Downloader's shared “Save Downloads to Photos” preference is honored: an undetermined
+   read/write permission request foregrounds the invoking app first; denial falls back to
+   the shared local media library. A `friendPromptRequested` outcome also foregrounds Luna.
 5. Errors are thrown as `SaveError: CustomLocalizedStringResourceConvertible`
    (`unsupportedApp`, `modelUnavailable`, `networkUnavailable`,
    `quotaLimitReached`, `serviceUnavailable`, `nothingIdentifiable`,

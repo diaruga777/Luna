@@ -16,6 +16,23 @@ import Foundation
 /// no music/podcast case (that platform support was retired in `7c34cd69`).
 public enum PlatformFieldSave {
 
+    /// Keeps the URL resolved by the platform search independent from the save
+    /// result. A duplicate/double-save may legitimately return no saved URL
+    /// before the App Intent timeout, but media handoff must still use the URL
+    /// the finder already resolved.
+    public struct Result {
+        public let resolvedURLString: String
+        public let outcome: IntentIngestHelper.ActionButtonSaveOutcome
+
+        public init(
+            resolvedURLString: String,
+            outcome: IntentIngestHelper.ActionButtonSaveOutcome
+        ) {
+            self.resolvedURLString = resolvedURLString
+            self.outcome = outcome
+        }
+    }
+
     public enum SaveError: Error {
         /// The search/find step came up empty.
         case notFound
@@ -25,7 +42,7 @@ public enum PlatformFieldSave {
 
     public static func save(
         platform: ContentPlatform, fields: [String], doubleSaveActionSurface: String?
-    ) async throws -> IntentIngestHelper.ActionButtonSaveOutcome {
+    ) async throws -> Result {
         switch platform {
         case .bluesky:
             // handle + phrase.
@@ -36,8 +53,7 @@ public enum PlatformFieldSave {
             guard !query.isEmpty else { throw SaveError.missingValues }
             guard let url = try? await BlueskySearchClient().topPostURL(query: query)
             else { throw SaveError.notFound }
-            return await IntentIngestHelper.handleSavePress(
-                urlString: url.absoluteString, doubleSaveActionSurface: doubleSaveActionSurface)
+            return await saveResolvedURL(url, doubleSaveActionSurface: doubleSaveActionSurface)
 
         case .reddit:
             // subreddit + title, optional author.
@@ -49,8 +65,7 @@ public enum PlatformFieldSave {
             guard !query.isEmpty else { throw SaveError.missingValues }
             guard let url = try? await RedditSearchClient().topPostURL(query: query)
             else { throw SaveError.notFound }
-            return await IntentIngestHelper.handleSavePress(
-                urlString: url.absoluteString, doubleSaveActionSurface: doubleSaveActionSurface)
+            return await saveResolvedURL(url, doubleSaveActionSurface: doubleSaveActionSurface)
 
         case .x, .tiktok, .instagram, .facebook:
             // handle + phrase, optional date.
@@ -62,9 +77,17 @@ public enum PlatformFieldSave {
                 platform: finderPlatform, handle: handle,
                 content: phrase, timestamp: fields.dropFirst(2).first)
             else { throw SaveError.notFound }
-            return await IntentIngestHelper.handleSavePress(
-                urlString: url.absoluteString, doubleSaveActionSurface: doubleSaveActionSurface)
+            return await saveResolvedURL(url, doubleSaveActionSurface: doubleSaveActionSurface)
         }
+    }
+
+    private static func saveResolvedURL(
+        _ url: URL, doubleSaveActionSurface: String?
+    ) async -> Result {
+        let urlString = url.absoluteString
+        let outcome = await IntentIngestHelper.handleSavePress(
+            urlString: urlString, doubleSaveActionSurface: doubleSaveActionSurface)
+        return Result(resolvedURLString: urlString, outcome: outcome)
     }
 
     private static func finderPlatform(for platform: ContentPlatform) -> SocialPostFinder.Platform? {

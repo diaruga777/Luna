@@ -91,7 +91,7 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
         }
         let item = items[currentIndex]
         updatePhotosBadge(for: item)
-        title = item.title ?? item.sourceURLString
+        title = item.displayTitle
         let page = makePage(for: item)
         pageViewController.setViewControllers([page], direction: .forward, animated: false)
         (page as? SavedMediaVideoPageViewController)?.player?.play()
@@ -194,7 +194,7 @@ final class SavedMediaViewerViewController: UIViewController, DotMatrixTransitio
         currentIndex = min(currentIndex, items.count - 1)
         let item = items[currentIndex]
         updatePhotosBadge(for: item)
-        title = item.title ?? item.sourceURLString
+        title = item.displayTitle
         let page = makePage(for: item)
         pageViewController.setViewControllers([page], direction: .forward, animated: true)
         (page as? SavedMediaVideoPageViewController)?.player?.play()
@@ -242,7 +242,7 @@ extension SavedMediaViewerViewController: UIPageViewControllerDataSource, UIPage
         currentIndex = idx
         let item = items[idx]
         updatePhotosBadge(for: item)
-        title = item.title ?? item.sourceURLString
+        title = item.displayTitle
         (current as? SavedMediaVideoPageViewController)?.player?.play()
         markOpened(item)
     }

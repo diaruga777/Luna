@@ -84,4 +84,98 @@ final class SavedMediaStoreTests: XCTestCase {
         XCTAssertEqual(repaired.storageState, .undownloaded)
         XCTAssertNil(repaired.thumbnailFileName)
     }
+
+    func testEnsureUndownloadedDedupesByPlatformItemIDAcrossDifferentlyShapedURLs() throws {
+        let first = try store.ensureUndownloaded(
+            id: UUID(), sourceURLString: "https://www.reddit.com/r/test/comments/abc123/some_title/",
+            title: "First shape")
+        XCTAssertEqual(first.platformItemID, "abc123")
+
+        // A share-link's resolved permalink for the SAME post, under a fresh id
+        // (as if the reading list never recognized it as the same item) — must
+        // merge into the existing row instead of creating a second one.
+        let second = try store.ensureUndownloaded(
+            id: UUID(), sourceURLString: "https://redd.it/abc123", title: nil)
+        XCTAssertEqual(second.id, first.id)
+        XCTAssertEqual(store.items().count, 1)
+    }
+
+    func testAddDownloadedFileDedupesByPlatformItemIDAndPreservesCreator() throws {
+        _ = try store.ensureUndownloaded(
+            id: UUID(), sourceURLString: "https://www.reddit.com/r/test/comments/xyz789/title/",
+            title: "Example", creator: "u/example")
+
+        let source = root.appendingPathComponent("source.mp4")
+        try Data("video".utf8).write(to: source)
+        let local = try store.addDownloadedFile(
+            source, kind: .video, sourceURLString: "https://redd.it/xyz789", title: nil)
+
+        XCTAssertEqual(store.items().count, 1)
+        XCTAssertEqual(local.title, "Example")
+        XCTAssertEqual(local.creator, "u/example")
+        XCTAssertEqual(local.platformItemID, "xyz789")
+    }
+
+    func testExistingDownloadedItemMatchesUndownloadedOnlyAfterDownload() throws {
+        let urlString = "https://x.com/example/status/42"
+        _ = try store.ensureUndownloaded(id: UUID(), sourceURLString: urlString, title: "Example")
+        XCTAssertNil(store.existingDownloadedItem(forURLString: urlString))
+
+        let source = root.appendingPathComponent("source.jpg")
+        try Data("image".utf8).write(to: source)
+        _ = try store.addDownloadedFile(source, kind: .image, sourceURLString: urlString, title: "Example")
+
+        let existing = try XCTUnwrap(store.existingDownloadedItem(forURLString: urlString))
+        XCTAssertEqual(existing.sourceURLString, urlString)
+    }
+
+    func testExistingDownloadedItemMatchesByPlatformItemID() throws {
+        _ = try store.ensureUndownloaded(
+            id: UUID(), sourceURLString: "https://www.reddit.com/r/test/comments/dup1/title/",
+            title: "Example")
+        let source = root.appendingPathComponent("source.jpg")
+        try Data("image".utf8).write(to: source)
+        _ = try store.addDownloadedFile(
+            source, kind: .image,
+            sourceURLString: "https://www.reddit.com/r/test/comments/dup1/title/", title: "Example")
+
+        // A share-link token for the same post — different URL text, same platform item.
+        let existing = try XCTUnwrap(
+            store.existingDownloadedItem(forURLString: "https://redd.it/dup1"))
+        XCTAssertEqual(existing.platformItemID, "dup1")
+    }
+
+    func testDisplayTitleFallsBackTitleThenCreatorThenURL() throws {
+        let urlString = "https://x.com/example/status/99"
+        let titled = try store.ensureUndownloaded(
+            id: UUID(), sourceURLString: urlString, title: "A title", creator: "A creator")
+        XCTAssertEqual(titled.displayTitle, "A title")
+
+        let creatorOnly = try store.ensureUndownloaded(
+            id: UUID(), sourceURLString: "https://x.com/example/status/100", creator: "A creator")
+        XCTAssertEqual(creatorOnly.displayTitle, "A creator")
+
+        let neither = try store.ensureUndownloaded(
+            id: UUID(), sourceURLString: "https://x.com/example/status/101")
+        XCTAssertEqual(neither.displayTitle, "https://x.com/example/status/101")
+    }
+
+    func testBackgroundMutationDeliversChangeNotificationOnMainThread() {
+        let changed = expectation(description: "saved media changed on main thread")
+        let token = NotificationCenter.default.addObserver(
+            forName: .savedMediaChanged, object: nil, queue: nil
+        ) { _ in
+            XCTAssertTrue(Thread.isMainThread)
+            changed.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let store = try! XCTUnwrap(store)
+        DispatchQueue.global().async {
+            _ = try? store.ensureUndownloaded(
+                id: UUID(), sourceURLString: "https://x.com/example/status/3")
+        }
+
+        wait(for: [changed], timeout: 2)
+    }
 }

@@ -20,6 +20,19 @@
                ReferencedContainer = "container:Luna.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "NO"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "6C65D0274C393548D3654967"
+               BuildableName = "LunaPriceTracker.app"
+               ReferencedContainer = "container:Luna.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -57,7 +70,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AAE000000000000000000000"
             BuildableName = "Luna.app"
-            BlueprintName = "Luna"
             ReferencedContainer = "container:Luna.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

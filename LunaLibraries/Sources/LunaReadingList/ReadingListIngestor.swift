@@ -411,10 +411,15 @@ public final class ReadingListIngestor {
             thumbnailFileName: thumbnailFileName,
             for: item.id)
 
-        // Auto-download the post's media to Photos when enabled for this platform.
-        // Awaited so an app intent finishes the download before it returns; dedup'd
-        // so it never double-saves a post already downloaded by the share extension.
-        await MediaAutoDownloader.runIfEnabledAwaiting(forURLString: item.urlString)
+        // Downloader always uses the system-owned background job so direct paste,
+        // App Intents, and retries converge on one durable path + Live Activity.
+        // Sibling non-intent entry points retain their legacy awaited Photos path.
+        if MediaAutoDownloader.isRunningInDownloader {
+            _ = await LiveMediaDownloadManager.shared.start(
+                urlString: item.urlString, title: item.title, ownership: .downloader)
+        } else if item.effectiveCaptureSource != .appIntent {
+            await MediaAutoDownloader.runIfEnabledAwaiting(forURLString: item.urlString)
+        }
     }
 
     /// Kicks off ingestion for everything not yet ready (app launch / foreground).
@@ -559,6 +564,13 @@ public final class ReadingListIngestor {
         switch decision {
         case .saveNew:
             let item = store.add(urlString: urlString, source: source)
+            if source == .appIntent {
+                // Persist and return the URL promptly. Extraction/classification is
+                // best-effort background work and must not consume the intent budget.
+                Task { await self.ingest(item, prefetchedHTML: prefetchedHTML,
+                                         trustsPrefetchedHTML: trustsPrefetchedHTML) }
+                return .saved(item)
+            }
             await ingest(item, prefetchedHTML: prefetchedHTML,
                          trustsPrefetchedHTML: trustsPrefetchedHTML)
             return .saved(item)

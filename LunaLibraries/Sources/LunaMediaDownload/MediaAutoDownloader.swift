@@ -60,6 +60,24 @@ public enum MediaAutoDownloader {
         return await LiveMediaDownloadManager.shared.start(urlString: urlString)
     }
 
+    /// App Intents always hand downloadable media to the Downloader-owned background
+    /// path when the Downloader has ever launched, independent of platform toggles.
+    public static func shouldStartDownloaderIntentDownload(
+        forURLString urlString: String,
+        downloaderWasInstalled: Bool = LunaInstallationMarkers.downloaderWasInstalled
+    ) -> Bool {
+        guard downloaderWasInstalled,
+              let platform = PlatformRecognizer.recognize(urlString)?.platform
+        else { return false }
+        return MediaDownloadablePlatform.supported.contains(platform)
+    }
+
+    public static func startDownloaderIntentDownload(forURLString urlString: String) async -> Bool {
+        guard shouldStartDownloaderIntentDownload(forURLString: urlString) else { return false }
+        return await LiveMediaDownloadManager.shared.start(
+            urlString: urlString, ownership: .downloader)
+    }
+
     private static func ensureUndownloaded(_ urlString: String) {
         guard isRunningInDownloader,
               let item = ReadingListStore.shared.item(forURLString: urlString) else { return }
@@ -67,6 +85,7 @@ public enum MediaAutoDownloader {
             id: item.id,
             sourceURLString: item.urlString,
             title: item.title,
+            creator: item.channelName,
             dateSaved: item.dateAdded)
     }
 

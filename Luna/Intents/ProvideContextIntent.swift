@@ -9,6 +9,7 @@
 
 import AppIntents
 import LunaIntents
+import LunaMediaDownload
 import LunaStorage
 import Foundation
 
@@ -94,10 +95,19 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 // nothing silently.
                 throw ProvideContextError.noTrackedPage
             }
-            switch await IntentIngestHelper.handleSavePress(
+            let outcome = await IntentIngestHelper.handleSavePress(
                 urlString: urlString,
                 doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface
+            )
+            // Return-1 is the complete Safari fast path: it never invokes
+            // SaveIntent, so it must hand downloadable tracked URLs to the
+            // Downloader background manager itself.
+            await ActionButtonIntentSupport.startDownloaderDownloadIfNeeded(
+                for: urlString
             ) {
+                try? await requestToContinueInForeground()
+            }
+            switch outcome {
             case .friendPromptRequested:
                 // Double save with "ask every time": the pending friend prompt
                 // is recorded; foreground Luna so the selector can appear.
@@ -112,6 +122,32 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 
 /// Shared plumbing for the two Action Button intents (Provide Context + Save).
 enum ActionButtonIntentSupport {
+
+    /// One media handoff shared by ProvideContext's return-1 Safari fast path
+    /// and SaveIntent's screenshot/search path. `foreground` is invoked only
+    /// when a first read/write Photos authorization prompt needs a visible host.
+    static func startDownloaderDownloadIfNeeded(
+        for urlString: String,
+        foreground: () async -> Void
+    ) async {
+        guard MediaAutoDownloader.shouldStartDownloaderIntentDownload(
+            forURLString: urlString)
+        else {
+            SharedDiagnosticLog.record(
+                "intent media handoff skipped: downloaderInstalled=\(LunaInstallationMarkers.downloaderWasInstalled), supported=\(MediaDownloadablePlatform.supports(urlString))",
+                category: "media-download")
+            return
+        }
+        if DownloaderIntentPhotoPermission.requiresForegroundRequest {
+            await foreground()
+        }
+        let photosAuthorized = await DownloaderIntentPhotoPermission.requestIfNeeded()
+        let started = await MediaAutoDownloader.startDownloaderIntentDownload(
+            forURLString: urlString)
+        SharedDiagnosticLog.record(
+            "intent media handoff: started=\(started), photosAuthorized=\(photosAuthorized)",
+            category: "media-download")
+    }
 
     /// The double-save action (send to Kindle / friend on a repeat press within
     /// 7 s) is armed only for the Reader app's Action Button saves — every other

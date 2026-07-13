@@ -4,7 +4,7 @@
 //
 
 import LunaReadingListUI
-import LunaStorage
+import LunaMediaDownload
 import Foundation
 
 /// App-Group markers recording which Luna apps exist on this device. Each app
@@ -17,20 +17,17 @@ import Foundation
 /// app); the extensions treat that as best-effort — the shared store still
 /// surfaces a saved item on its proper surface.
 enum InstalledAppMarkers {
-    private static var defaults: UserDefaults {
-        UserDefaults(suiteName: ReadingListStore.appGroupID) ?? .standard
-    }
-
     /// Records the running app's surface as installed. Called at every launch.
     static func recordCurrentApp() {
-        defaults.set(true, forKey: key(for: AppSurfaceConfig.current))
+        LunaInstallationMarkers.recordInstalled(
+            surfaceIdentifier: AppSurfaceConfig.current.storageIdentifier)
     }
 
     /// Whether `surface`'s app has ever recorded itself as installed on this
     /// device (including the running app itself — its own marker is written
     /// at every launch, so no special-casing is needed here).
     static func isInstalled(_ surface: AppSurface) -> Bool {
-        defaults.bool(forKey: key(for: surface))
+        LunaInstallationMarkers.wasInstalled(surfaceIdentifier: surface.storageIdentifier)
     }
 
     /// `lunaInstalled.<surface>` — the suffix matches the app's bundle-id suffix.

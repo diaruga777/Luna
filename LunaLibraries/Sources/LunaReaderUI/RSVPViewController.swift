@@ -141,6 +141,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private var linkPillURL: URL?
     private var linkPillHideTimer: Timer?
     private let playPauseTap = UITapGestureRecognizer()
+    /// Press-and-hold on the display area halves playback speed until release;
+    /// applies only to the silent WPM/chunk timer — read-aloud paces itself via TTS.
+    private let pressAndHoldGesture = UILongPressGestureRecognizer()
+    private var isSpeedHeld = false
+    /// Wall-clock start/length of the in-flight WPM/chunk interval, so a
+    /// hold or release mid-word rescales the REMAINING time instead of
+    /// restarting the word's full duration.
+    private var intervalStart: Date?
+    private var intervalDuration: TimeInterval?
 
     /// Horizontal position of the focal (ORP) column, as a fraction of width.
     private static let focalFraction: CGFloat = 0.4
@@ -298,6 +307,16 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         playPauseTap.addTarget(self, action: #selector(togglePlayPause))
         playPauseTap.delegate = self
         view.addGestureRecognizer(playPauseTap)
+
+        pressAndHoldGesture.addTarget(self, action: #selector(handlePressAndHold))
+        pressAndHoldGesture.delegate = self
+        // Shorter than the 0.5s default so slow-motion engages promptly for
+        // RSVP's fast word cadence. `require(toFail:)` below doesn't delay a
+        // genuine tap — the long-press fails the instant a touch lifts early,
+        // not after this duration elapses.
+        pressAndHoldGesture.minimumPressDuration = 0.35
+        view.addGestureRecognizer(pressAndHoldGesture)
+        playPauseTap.require(toFail: pressAndHoldGesture)
 
         applyDisplayMode()
         if displayMode == .phrases { currentChunkIndex = chunkIndex(forWord: currentIndex) }
@@ -894,6 +913,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         isPlaying = false
         timer?.invalidate()
         timer = nil
+        isSpeedHeld = false
+        intervalStart = nil
+        intervalDuration = nil
         // Only touch speech/audio in read-aloud mode — the silent reader must
         // never instantiate the synthesizer or claim the audio session.
         if isSpeechMode {
@@ -953,12 +975,66 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         isPlaying ? pause() : play()
     }
 
+    // MARK: - Press-and-hold slow-motion
+
+    @objc private func handlePressAndHold(_ gesture: UILongPressGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+            beginSpeedHold()
+        case .ended, .cancelled, .failed:
+            endSpeedHold()
+        default:
+            break
+        }
+    }
+
+    /// Halves playback speed by doubling the REMAINING time of the in-flight
+    /// word/chunk interval (rather than restarting its full duration), and
+    /// marks intervals scheduled while still held as slow too.
+    private func beginSpeedHold() {
+        guard isPlaying, !isSpeechMode, !isSpeedHeld else { return }
+        isSpeedHeld = true
+        rescaleRunningInterval(by: 2)
+    }
+
+    /// Restores normal speed, again rescaling the in-flight interval's
+    /// remaining time rather than jumping straight to the next word.
+    private func endSpeedHold() {
+        guard isSpeedHeld else { return }
+        isSpeedHeld = false
+        rescaleRunningInterval(by: 0.5)
+    }
+
+    private func rescaleRunningInterval(by factor: Double) {
+        guard let start = intervalStart, let duration = intervalDuration, timer != nil else { return }
+        let remaining = max(0, duration - Date().timeIntervalSince(start)) * factor
+        let isPhrases = displayMode == .phrases
+        startTimer(remaining) { [weak self] in
+            isPhrases ? self?.advanceChunk() : self?.advance()
+        }
+    }
+
+    /// Doubles a WPM-timer duration while the display area is press-and-held.
+    private func effectiveDuration(_ base: TimeInterval) -> TimeInterval {
+        isSpeedHeld ? base * 2 : base
+    }
+
+    /// Schedules `handler` after `interval`, recording the interval's
+    /// wall-clock start/length so a hold/release mid-word can rescale the
+    /// REMAINING time (see `rescaleRunningInterval`).
+    private func startTimer(_ interval: TimeInterval, handler: @escaping () -> Void) {
+        timer?.invalidate()
+        intervalStart = Date()
+        intervalDuration = interval
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { _ in
+            handler()
+        }
+    }
+
     // MARK: Words-mode timer
 
     private func scheduleNext() {
-        timer?.invalidate()
-        let interval = engine.duration(at: currentIndex, wpm: wpm)
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+        startTimer(effectiveDuration(engine.duration(at: currentIndex, wpm: wpm))) { [weak self] in
             self?.advance()
         }
     }
@@ -987,10 +1063,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     // MARK: Phrases-mode timer
 
     private func scheduleNextChunk() {
-        timer?.invalidate()
         guard chunks.indices.contains(currentChunkIndex) else { return }
-        let interval = ChunkPlanner.duration(for: chunks[currentChunkIndex], wpm: wpm)
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+        startTimer(effectiveDuration(ChunkPlanner.duration(for: chunks[currentChunkIndex], wpm: wpm))) { [weak self] in
             self?.advanceChunk()
         }
     }

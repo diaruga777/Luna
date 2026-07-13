@@ -102,6 +102,11 @@ public extension PhotoLibrarySaving {
 public struct DownloadedMedia: Equatable {
     public let fileURL: URL
     public let kind: MediaAsset.Kind
+
+    public init(fileURL: URL, kind: MediaAsset.Kind) {
+        self.fileURL = fileURL
+        self.kind = kind
+    }
 }
 
 /// Disk location for transient downloaded media files. Durable Downloader saves

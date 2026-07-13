@@ -24,6 +24,19 @@ the reading-list UUID as its stable identity. Existing manifests with the old re
 `fileName` field decode as `.localFile`, so migration does not lose downloads. If a local
 file disappears, store recovery changes the row back to `.undownloaded`.
 
+Each row also carries best-effort `platform`/`platformItemID` (from
+`PlatformRecognizer.recognize`, purely parsed from the URL — no network) and `creator`
+(from the same platform metadata fetch that populates the reading-list item's title).
+Every write path (`ensureUndownloaded`, `addDownloadedFile`) matches an incoming save
+against existing rows by exact URL OR, failing that, by `platform` + `platformItemID`, so
+a share-link token and its resolved permalink — or any other differently-shaped URL for
+the same post — dedupe onto one row instead of creating a duplicate and re-downloading.
+`SavedMediaStore.existingDownloadedItem(forURLString:)` uses the same matching to find a
+row that's ALREADY `.localFile`/`.photosReference`, so callers can show it instead of
+fetching again; `matchingItem(forURLString:)` does the same match regardless of storage
+state. `SavedMediaItem.displayTitle` falls back title → creator → raw URL — the rule every
+UI surface uses instead of ever showing the URL when metadata was fetched.
+
 ### Download destination
 
 `AutoDownloadSettings.autoSaveDownloadsToPhotos` is App-Group backed and defaults to
@@ -86,14 +99,27 @@ Photos references remain governed by the user's Photos library.
   `PHImageManager.requestAVAsset`. Paging, deletion, autoplay/pause, and the zoom
   transition remain common to both backings.
 - **Share and action extensions** — `SavedNonTextualViewController` retains its inline
-  preview state machine (`pending`, `downloading`, `ready`, `failed`). The separate
-  `autoDownloadMediaInPreview` setting, also default on, decides whether preview download
-  starts automatically. Once ready, Downloader persists through the same destination
-  policy above; sibling apps retain their legacy Photos behavior.
-- **Ingest, App Intents, and short-lived extensions** —
-  `ReadingListIngestor.ingestPlatformItem` calls `MediaAutoDownloader`; short-lived
-  processes hand work to `LiveMediaDownloadManager` so system background transfer and the
-  Live Activity survive process suspension.
+  preview state machine (`pending`, `downloading`, `ready`, `alreadyDownloaded`, `failed`).
+  Before deciding to auto-download or wait for a tap, it checks
+  `SavedMediaStore.existingDownloadedItem(forURLString:)`; a duplicate link renders
+  directly from the existing local file or Photos asset (`alreadyDownloaded`) with no
+  network fetch — Save-to-Photos stays enabled for a local-file duplicate (still copies it
+  to Photos) and is disabled once the match is already Photos-backed. The separate
+  `autoDownloadMediaInPreview` setting, also default on, decides whether a genuinely new
+  link starts downloading automatically. Once ready, Downloader persists through the same
+  destination policy above; sibling apps retain their legacy Photos behavior.
+- **Ingest, App Intents, and short-lived extensions** — normal ingestion calls
+  `MediaAutoDownloader`, while `.appIntent` ingestion deliberately skips the awaited inline
+  downloader. The intent persists its row first, then hands a supported URL directly to one
+  `LiveMediaDownloadManager` job. When Downloader has ever launched, that job carries explicit
+  Downloader ownership across relaunches, creates/maintains `SavedMediaStore` state, honors
+  Downloader's shared Photos and clipboard settings in every host, and falls back to shared
+  local storage when Photos permission is denied. Reader and Price Tracker embed host-prefixed
+  copies of the same Live Activity widget configuration as Downloader.
+  Downloader-owned dedup is based on the durable `SavedMediaStore` state: a stale
+  `autoDownloadedURLs` marker never suppresses a missing or `.undownloaded` row, so an
+  interrupted/crashed save is restartable by pasting the URL again. Store-change notifications
+  from background jobs are marshalled onto the main queue before UIKit grid observers run.
 - **Legacy reading-list long press** — manual Save to Photos remains available in the
   combined/debug list and uses the same confirmed local-to-Photos transition for
   Downloader rows.

@@ -100,6 +100,11 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                 urlString: savedURLString,
                 doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
+            await ActionButtonIntentSupport.startDownloaderDownloadIfNeeded(
+                for: savedURLString
+            ) {
+                try? await requestToContinueInForeground()
+            }
             if case .friendPromptRequested = outcome {
                 try? await requestToContinueInForeground()
             }
@@ -129,6 +134,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         guard !fields.isEmpty else { throw SaveError.nothingIdentifiable }
 
         let outcome: IntentIngestHelper.ActionButtonSaveOutcome
+        var resolvedPlatformURLString: String?
         do {
             if isSafari {
                 outcome = try await SafariPageSave.save(
@@ -136,9 +142,11 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                     site: fields.count > 1 ? fields[1] : nil,
                     doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
             } else if let platform = AppNamePlatform.platform(forAppName: app) {
-                outcome = try await PlatformFieldSave.save(
+                let result = try await PlatformFieldSave.save(
                     platform: platform, fields: fields,
                     doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
+                outcome = result.outcome
+                resolvedPlatformURLString = result.resolvedURLString
             } else {
                 throw SaveError.unsupportedApp
             }
@@ -160,9 +168,16 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         }
         if let savedURLString {
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
-            // Auto-download (Downloader setting; the helper checks it itself):
-            // exactly what the old "4:<url>" token / DownloadIntent path did.
-            _ = await MediaAutoDownloader.startLiveActivityIfEnabled(forURLString: savedURLString)
+        }
+        // Use the platform finder's resolved URL even when duplicate/double-save
+        // handling times out and reports no saved URL. Download handoff is an
+        // independent consequence of resolving downloadable media.
+        if let downloadURLString = resolvedPlatformURLString ?? savedURLString {
+            await ActionButtonIntentSupport.startDownloaderDownloadIfNeeded(
+                for: downloadURLString
+            ) {
+                try? await requestToContinueInForeground()
+            }
         }
         if case .friendPromptRequested = outcome {
             // Foreground Luna so the friend selector (pending prompt already
@@ -171,4 +186,5 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         }
         return .result()
     }
+
 }

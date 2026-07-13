@@ -11,6 +11,7 @@ import LunaModels
 import AVKit
 import CoreMedia
 import ImageIO
+import Photos
 import UIKit
 
 /// Shown by the action extension for non-textual content (a video, post, etc.):
@@ -45,6 +46,10 @@ public final class SavedNonTextualViewController: UIViewController {
         case downloading
         /// The file is on disk and shown inline; "Save to Photos" is enabled.
         case ready(DownloadedMedia)
+        /// This link is a duplicate of media already downloaded to the Downloader's
+        /// library (matched by URL or durable platform item id) — shown inline from
+        /// the EXISTING local file / Photos asset with no network fetch at all.
+        case alreadyDownloaded(SavedMediaItem)
         /// Download failed; show the error and let the user retry.
         case failed(message: String)
     }
@@ -272,7 +277,13 @@ public final class SavedNonTextualViewController: UIViewController {
     /// otherwise rest in the pending state until the user taps Download.
     private func beginMediaFlow() {
         guard MediaDownloadablePlatform.supports(articleURLString) else { return }
-        if AutoDownloadSettings.autoDownloadMediaInPreview {
+        if let existing = SavedMediaStore.shared.existingDownloadedItem(forURLString: articleURLString) {
+            // Already in the library under this URL or the same platform item id
+            // (e.g. a share-link token whose resolved permalink was saved earlier) —
+            // show it as-is instead of re-fetching from the network.
+            didPersistToLibrary = true
+            applyMediaState(.alreadyDownloaded(existing))
+        } else if AutoDownloadSettings.autoDownloadMediaInPreview {
             startMediaDownload()
         } else {
             applyMediaState(.pending)
@@ -328,6 +339,25 @@ public final class SavedNonTextualViewController: UIViewController {
             showReadyPreview(media)
             persistToDownloaderLibraryIfNeeded(media)
 
+        case .alreadyDownloaded(let item):
+            previewSpinner.stopAnimating()
+            pendingIconView.isHidden = true
+            downloadButton.isHidden = true
+            downloadProgress.isHidden = true
+            downloadStatus.isHidden = true
+            shareButton.isEnabled = true
+            // Already in Photos: there's nothing more to save. Still a local-only
+            // file: leave Save-to-Photos enabled so the user can push it there too.
+            if item.photosLocalIdentifier != nil {
+                saveButton.isEnabled = false
+                var config = saveButton.configuration
+                config?.title = "Saved to Photos"
+                saveButton.configuration = config
+            } else {
+                saveButton.isEnabled = true
+            }
+            showAlreadyDownloadedPreview(item)
+
         case .failed(let message):
             previewSpinner.stopAnimating()
             pendingIconView.isHidden = false
@@ -372,7 +402,9 @@ public final class SavedNonTextualViewController: UIViewController {
         guard MediaAutoDownloader.isRunningInDownloader, !didPersistToLibrary else { return }
         didPersistToLibrary = true
         let sourceURLString = articleURLString
-        let title = ReadingListStore.shared.item(forURLString: sourceURLString)?.title
+        let readingItem = ReadingListStore.shared.item(forURLString: sourceURLString)
+        let title = readingItem?.title
+        let creator = readingItem?.channelName
         let previewURL = media.fileURL
         let kind = media.kind
         Task.detached {
@@ -381,9 +413,10 @@ public final class SavedNonTextualViewController: UIViewController {
                 try FileManager.default.copyItem(at: previewURL, to: copy)
                 let store = SavedMediaStore.shared
                 let pending = try store.ensureUndownloaded(
-                    id: ReadingListStore.shared.item(forURLString: sourceURLString)?.id ?? UUID(),
+                    id: readingItem?.id ?? UUID(),
                     sourceURLString: sourceURLString,
-                    title: title)
+                    title: title,
+                    creator: creator)
                 let saved: SavedMediaItem
                 let photoSaver = PhotoLibrarySaver()
                 if AutoDownloadSettings.autoSaveDownloadsToPhotos,
@@ -398,11 +431,13 @@ public final class SavedNonTextualViewController: UIViewController {
                         try? FileManager.default.removeItem(at: copy)
                     } catch {
                         saved = try store.addDownloadedFile(
-                            copy, kind: kind, sourceURLString: sourceURLString, title: title)
+                            copy, kind: kind, sourceURLString: sourceURLString, title: title,
+                            creator: creator)
                     }
                 } else {
                     saved = try store.addDownloadedFile(
-                        copy, kind: kind, sourceURLString: sourceURLString, title: title)
+                        copy, kind: kind, sourceURLString: sourceURLString, title: title,
+                        creator: creator)
                 }
                 AutoDownloadSettings.markDownloaded(sourceURLString)
                 if AutoDownloadSettings.autoCopyDownloadsToClipboard {
@@ -457,59 +492,168 @@ public final class SavedNonTextualViewController: UIViewController {
         }
     }
 
-    /// Tapping the preview plays the downloaded video in an AVPlayerViewController.
+    /// Shows a link already downloaded to the Downloader's library, from the
+    /// EXISTING file/Photos asset — no network fetch. Mirrors `showReadyPreview`'s
+    /// visuals (still renders directly; video shows a poster + play overlay).
+    private func showAlreadyDownloadedPreview(_ item: SavedMediaItem) {
+        switch item.storageState {
+        case .localFile:
+            guard let fileURL = item.fileURL, let kind = item.kind else {
+                previewImageView.isHidden = true
+                previewPlaceholder.isHidden = false
+                return
+            }
+            showReadyPreview(DownloadedMedia(fileURL: fileURL, kind: kind))
+        case .photosReference(let identifier, _, _):
+            previewImageView.isHidden = false
+            playOverlay.isHidden = item.kind != .video
+            Task { [weak self] in
+                let image = await Self.photosPreviewImage(identifier: identifier)
+                await MainActor.run {
+                    guard let self else { return }
+                    if let image {
+                        self.previewImageView.image = image
+                        self.previewPlaceholder.isHidden = true
+                    } else {
+                        self.previewImageView.isHidden = true
+                        self.previewPlaceholder.isHidden = false
+                    }
+                }
+            }
+        case .undownloaded:
+            previewImageView.isHidden = true
+            previewPlaceholder.isHidden = false
+        }
+    }
+
+    /// Tapping the preview plays the downloaded video in an AVPlayerViewController —
+    /// from the fresh temp file (`.ready`) or the already-downloaded item's own
+    /// local file / Photos asset (`.alreadyDownloaded`).
     @objc private func previewTapped() {
-        guard case .ready(let media) = mediaState, media.kind == .video else { return }
-        // Route to `.playback` so the video's audio is heard even when the ring/silent
-        // switch is on. Without this the extension inherits the default ambient session,
-        // which the hardware silent switch mutes — hence the "plays fine from Photos,
-        // silent in place" symptom.
+        switch mediaState {
+        case .ready(let media) where media.kind == .video:
+            playVideo(url: media.fileURL)
+        case .alreadyDownloaded(let item) where item.kind == .video:
+            if let fileURL = item.fileURL {
+                playVideo(url: fileURL)
+            } else if let identifier = item.photosLocalIdentifier {
+                Task { [weak self] in
+                    guard let asset = await Self.photosVideoAsset(identifier: identifier) else { return }
+                    await MainActor.run { self?.playVideo(asset: asset) }
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    /// Presents an `AVPlayerViewController` for `url`, routed to `.playback` so the
+    /// video's audio is heard even when the ring/silent switch is on — the extension
+    /// otherwise inherits the default ambient session, which the hardware silent
+    /// switch mutes (the "plays fine from Photos, silent in place" symptom).
+    private func playVideo(url: URL) {
+        playVideo(asset: AVURLAsset(url: url))
+    }
+
+    private func playVideo(asset: AVAsset) {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .moviePlayback)
         try? session.setActive(true)
-        let player = AVPlayer(url: media.fileURL)
+        let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
         let playerVC = AVPlayerViewController()
         playerVC.player = player
         present(playerVC, animated: true) { player.play() }
     }
 
-    /// Presents the system share sheet with the downloaded source media file.
+    /// Presents the system share sheet with the downloaded source media file — the
+    /// fresh temp file (`.ready`), the already-downloaded item's own local file, or
+    /// (Photos-backed) a short-lived local export of the Photos asset. All local
+    /// reads/exports — never a network re-fetch.
     private func shareDownloadedMedia() {
-        guard case .ready(let media) = mediaState else { return }
+        switch mediaState {
+        case .ready(let media):
+            presentShareSheet(for: media.fileURL)
+        case .alreadyDownloaded(let item):
+            if let fileURL = item.fileURL {
+                presentShareSheet(for: fileURL)
+            } else if let identifier = item.photosLocalIdentifier {
+                Task { [weak self] in
+                    guard let url = await Self.exportPhotosAsset(
+                        identifier: identifier, kind: item.kind ?? .image)
+                    else { return }
+                    await MainActor.run { self?.presentShareSheet(for: url) }
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    private func presentShareSheet(for fileURL: URL) {
         let activity = UIActivityViewController(
-            activityItems: [media.fileURL], applicationActivities: nil)
+            activityItems: [fileURL], applicationActivities: nil)
         activity.popoverPresentationController?.sourceView = shareButton
         activity.popoverPresentationController?.sourceRect = shareButton.bounds
         present(activity, animated: true)
     }
 
     /// Requests Photos add access and saves the downloaded file, then marks the item
-    /// READ in the reading list (new behavior — saving counts as consuming it).
+    /// READ in the reading list (new behavior — saving counts as consuming it). Only
+    /// reachable for `.ready` (a fresh temp file PhotoKit moves) or an already-downloaded
+    /// `.localFile` duplicate (a COPY is saved, then the library's own file is retired via
+    /// `transitionToPhotosReference` — the button is disabled/hidden once already `.photosReference`).
     private func saveToPhotos() {
-        guard case .ready(let media) = mediaState else { return }
-        saveButton.isEnabled = false
+        switch mediaState {
+        case .ready(let media):
+            saveButton.isEnabled = false
+            showSavingStatus()
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let identifier = try await self.downloadService.saveDownloadedMediaToPhotos(media)
+                    if let local = SavedMediaStore.shared.item(forURLString: self.articleURLString) {
+                        _ = try SavedMediaStore.shared.transitionToPhotosReference(
+                            local.id, localIdentifier: identifier, kind: media.kind)
+                    }
+                    // PhotoKit moved the file into the library — no temp file to clean up.
+                    await MainActor.run { self.unsavedPreviewFileURL = nil }
+                    AutoDownloadSettings.markDownloaded(self.articleURLString)
+                    self.markItemRead()
+                    await MainActor.run { self.finishSave(message: "Saved to Photos", success: true) }
+                } catch {
+                    let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
+                    await MainActor.run { self.finishSave(message: message, success: false) }
+                }
+            }
+        case .alreadyDownloaded(let item) where item.fileURL != nil:
+            let fileURL = item.fileURL!
+            let kind = item.kind ?? .image
+            saveButton.isEnabled = false
+            showSavingStatus()
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let identifier = try await PhotoLibrarySaver().save(
+                        fileURL: fileURL, kind: kind, shouldMoveFile: false)
+                    _ = try SavedMediaStore.shared.transitionToPhotosReference(
+                        item.id, localIdentifier: identifier, kind: kind)
+                    AutoDownloadSettings.markDownloaded(self.articleURLString)
+                    self.markItemRead()
+                    await MainActor.run { self.finishSave(message: "Saved to Photos", success: true) }
+                } catch {
+                    let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
+                    await MainActor.run { self.finishSave(message: message, success: false) }
+                }
+            }
+        default:
+            break
+        }
+    }
+
+    private func showSavingStatus() {
         downloadStatus.text = "Saving to Photos…"
         downloadStatus.textColor = .secondaryLabel
         downloadStatus.isHidden = false
-
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let identifier = try await downloadService.saveDownloadedMediaToPhotos(media)
-                if let local = SavedMediaStore.shared.item(forURLString: articleURLString) {
-                    _ = try SavedMediaStore.shared.transitionToPhotosReference(
-                        local.id, localIdentifier: identifier, kind: media.kind)
-                }
-                // PhotoKit moved the file into the library — no temp file to clean up.
-                await MainActor.run { self.unsavedPreviewFileURL = nil }
-                AutoDownloadSettings.markDownloaded(articleURLString)
-                markItemRead()
-                await MainActor.run { self.finishSave(message: "Saved to Photos", success: true) }
-            } catch {
-                let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
-                await MainActor.run { self.finishSave(message: message, success: false) }
-            }
-        }
     }
 
     @MainActor
@@ -583,6 +727,83 @@ public final class SavedNonTextualViewController: UIViewController {
                 }
             }
         }
+    }
+
+    /// A downsampled still/poster for a Photos-backed asset — a local Photos read,
+    /// never a network fetch (the item is already in the user's library).
+    private static func photosPreviewImage(
+        identifier: String, maxPixelSize: CGFloat = 1400
+    ) async -> UIImage? {
+        guard await PhotoLibrarySaver().requestReadAuthorization(),
+              let asset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject
+        else { return nil }
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .exact
+        options.isNetworkAccessAllowed = true
+        return await withCheckedContinuation { continuation in
+            PHImageManager.default().requestImage(
+                for: asset,
+                targetSize: CGSize(width: maxPixelSize, height: maxPixelSize),
+                contentMode: .aspectFit,
+                options: options
+            ) { image, _ in continuation.resume(returning: image) }
+        }
+    }
+
+    /// The playable `AVAsset` for a Photos-backed video, for tap-to-play.
+    private static func photosVideoAsset(identifier: String) async -> AVAsset? {
+        guard await PhotoLibrarySaver().requestReadAuthorization(),
+              let asset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject
+        else { return nil }
+        let options = PHVideoRequestOptions()
+        options.deliveryMode = .automatic
+        options.isNetworkAccessAllowed = true
+        return await withCheckedContinuation { continuation in
+            PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, _ in
+                continuation.resume(returning: avAsset)
+            }
+        }
+    }
+
+    /// A short-lived local file for sharing a Photos-backed asset — an image is
+    /// exported via its original data; a video reuses its backing file URL when
+    /// PhotoKit provides one (it does for on-device assets, which a just-downloaded
+    /// item always is) or falls back to an export session otherwise.
+    private static func exportPhotosAsset(identifier: String, kind: MediaAsset.Kind) async -> URL? {
+        guard await PhotoLibrarySaver().requestReadAuthorization(),
+              let asset = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject
+        else { return nil }
+        if kind == .video {
+            let options = PHVideoRequestOptions()
+            options.deliveryMode = .highQualityFormat
+            options.isNetworkAccessAllowed = true
+            let avAsset: AVAsset? = await withCheckedContinuation { continuation in
+                PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, _ in
+                    continuation.resume(returning: avAsset)
+                }
+            }
+            if let urlAsset = avAsset as? AVURLAsset { return urlAsset.url }
+            guard let avAsset,
+                  let export = AVAssetExportSession(asset: avAsset, presetName: AVAssetExportPresetHighestQuality)
+            else { return nil }
+            let destination = MediaDownloadStorage.newFileURL(extension: "mov")
+            try? FileManager.default.removeItem(at: destination)
+            do {
+                try await export.export(to: destination, as: .mov)
+                return destination
+            } catch {
+                return nil
+            }
+        }
+        let options = PHContentEditingInputRequestOptions()
+        options.isNetworkAccessAllowed = true
+        let input: PHContentEditingInput? = await withCheckedContinuation { continuation in
+            asset.requestContentEditingInput(with: options) { input, _ in
+                continuation.resume(returning: input)
+            }
+        }
+        return input?.fullSizeImageURL
     }
 
     /// Styles `badge` as a system-style play button: a frosted dark circle with a

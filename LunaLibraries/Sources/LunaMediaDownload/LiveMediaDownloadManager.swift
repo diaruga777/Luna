@@ -103,12 +103,13 @@ public final class LiveMediaDownloadManager: NSObject {
 
         let ownership = ownership ?? (MediaAutoDownloader.isRunningInDownloader
             ? .downloader : .invokingApp)
+        let readingItem = ReadingListStore.shared.item(forURLString: urlString)
         if ownership == .downloader {
-            let readingItem = ReadingListStore.shared.item(forURLString: urlString)
             let savedItem = try? SavedMediaStore.shared.ensureUndownloaded(
                 id: readingItem?.id ?? UUID(),
                 sourceURLString: urlString,
                 title: title ?? readingItem?.title,
+                creator: readingItem?.channelName,
                 dateSaved: readingItem?.dateAdded ?? Date())
             if !LiveMediaDownloadStartPolicy.downloaderShouldStart(
                 storageState: savedItem?.storageState
@@ -165,6 +166,7 @@ public final class LiveMediaDownloadManager: NSObject {
             assetURLString: nil,
             mediaKind: "unknown",
             title: title ?? Self.title(for: sourceURL),
+            creator: readingItem?.channelName,
             resolveKind: nil,
             phase: .resolving,
             progress: 0,
@@ -672,7 +674,7 @@ public final class LiveMediaDownloadManager: NSObject {
     ) async throws -> SavedMediaItem {
         if AutoDownloadSettings.autoSaveDownloadsToPhotos,
            await saver.requestReadAuthorization(),
-           let pending = SavedMediaStore.shared.item(forURLString: job.sourceURLString) {
+           let pending = SavedMediaStore.shared.matchingItem(forURLString: job.sourceURLString) {
             do {
                 let identifier = try await saver.save(
                     fileURL: fileURL, kind: kind, shouldMoveFile: false)
@@ -690,6 +692,7 @@ public final class LiveMediaDownloadManager: NSObject {
             kind: kind,
             sourceURLString: job.sourceURLString,
             title: job.title,
+            creator: job.creator,
             fileExtension: job.fileExtension)
     }
 
@@ -937,6 +940,7 @@ private extension LiveMediaDownloadManager {
             assetURLString: nil,
             mediaKind: "unknown",
             title: title ?? "Media download",
+            creator: nil,
             resolveKind: nil,
             phase: .failed,
             progress: 0,
@@ -1024,6 +1028,9 @@ struct LiveMediaDownloadJob: Codable, Equatable {
     var assetURLString: String?
     var mediaKind: String
     var title: String
+    /// Best-effort creator/author name (from the reading-list item's fetched
+    /// platform metadata), carried through to `SavedMediaStore` on completion.
+    var creator: String?
     var resolveKind: String?
     var phase: Phase
     var progress: Double

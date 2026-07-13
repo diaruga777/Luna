@@ -34,6 +34,8 @@ public struct SocialMediaResolver: SocialMediaResolving {
             return await resolveInstagram(url: url, shortcode: recognized.itemID)
         case .facebook:
             return await resolveFacebook(url: url)
+        case .reddit:
+            return await resolveReddit(itemID: recognized.itemID)
         default:
             return []
         }
@@ -143,6 +145,20 @@ public struct SocialMediaResolver: SocialMediaResolving {
             return [MediaAsset(url: url, kind: .video)]
         }
         return []
+    }
+
+    /// Reddit's public, subreddit-agnostic listing endpoint (`/comments/<id>.json`)
+    /// works for any recognized permalink shape (`reddit.com/r/.../comments/<id>/...`
+    /// or a `redd.it/<id>` short link) since `PlatformRecognizer` already extracts
+    /// the same post id from both — simpler and more robust than reconstructing
+    /// `.json` from the original URL string (which would need to follow redd.it's
+    /// redirect and strip share-tracking query params).
+    private func resolveReddit(itemID: String?) async -> [MediaAsset] {
+        guard let itemID, let url = URL(string: "https://www.reddit.com/comments/\(itemID).json") else {
+            return []
+        }
+        guard let data = await fetch(jsonRequest(url)) else { return [] }
+        return RedditMediaParser.asset(fromListingJSON: data).map { [$0] } ?? []
     }
 
     // MARK: - Requests
@@ -468,6 +484,51 @@ public enum FacebookMediaParser {
         return []
     }
 
+}
+
+/// Parses Reddit's public listing JSON (`/comments/<id>.json`) into the
+/// post's video asset. Crossposts carry no media of their own — their
+/// `crosspost_parent_list[0]` is the actual source. Reddit-hosted videos with
+/// sound serve video and audio as two separate DASH files (there's no single
+/// muxed URL to download); the audio companion is derived from the video
+/// URL's current, well-established naming convention (`DASH_<res>.mp4`
+/// alongside `DASH_audio.mp4`) rather than by parsing the DASH/HLS manifest —
+/// if a future post doesn't follow it, the download degrades to a silent
+/// video instead of failing (see `MediaFileDownloader`/`LiveMediaDownloadManager`).
+public enum RedditMediaParser {
+    public static func asset(fromListingJSON data: Data) -> MediaAsset? {
+        guard let listings = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              let first = listings.first as? [String: Any],
+              let listing = first["data"] as? [String: Any],
+              let children = listing["children"] as? [[String: Any]],
+              var post = children.first?["data"] as? [String: Any]
+        else { return nil }
+
+        if let crossposts = post["crosspost_parent_list"] as? [[String: Any]],
+           let original = crossposts.first {
+            post = original
+        }
+
+        guard let redditVideo = (post["secure_media"] as? [String: Any])?["reddit_video"] as? [String: Any]
+            ?? (post["media"] as? [String: Any])?["reddit_video"] as? [String: Any],
+              let fallback = redditVideo["fallback_url"] as? String,
+              let videoURL = URL(string: unescape(fallback))
+        else { return nil }
+
+        let hasAudio = redditVideo["has_audio"] as? Bool ?? false
+        guard hasAudio else { return MediaAsset(url: videoURL, kind: .video) }
+        return MediaAsset(url: videoURL, kind: .video, audioURL: audioURL(forVideoURL: videoURL))
+    }
+
+    private static func audioURL(forVideoURL videoURL: URL) -> URL? {
+        guard var components = URLComponents(url: videoURL, resolvingAgainstBaseURL: false) else { return nil }
+        var segments = components.path.split(separator: "/").map(String.init)
+        guard !segments.isEmpty else { return nil }
+        segments[segments.count - 1] = "DASH_audio.mp4"
+        components.path = "/" + segments.joined(separator: "/")
+        components.query = nil
+        return components.url
+    }
 }
 
 /// Unescapes the JSON/HTML-encoded URLs social pages embed in markup.

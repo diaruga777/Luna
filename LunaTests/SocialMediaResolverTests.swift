@@ -171,7 +171,7 @@ final class SocialMediaResolverTests: XCTestCase {
         ])
     }
 
-    func testTikTokVideoResolvesAsVideoAndRedditIsNotAutoDownloadable() {
+    func testTikTokVideoResolvesAsVideoAndRedditIsAutoDownloadable() {
         let tiktokHTML = #"""
         <script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
         {"__DEFAULT_SCOPE__":{"webapp.video-detail":{"itemInfo":{"itemStruct":{"video":{"playAddr":"https://video.example.com/tiktok.mp4"}}}}}}
@@ -184,7 +184,7 @@ final class SocialMediaResolverTests: XCTestCase {
 
         let reddit = "https://www.reddit.com/r/videos/comments/abc123/title/"
         XCTAssertEqual(PlatformRecognizer.recognize(reddit)?.platform, .reddit)
-        XCTAssertFalse(MediaDownloadablePlatform.supports(reddit))
+        XCTAssertTrue(MediaDownloadablePlatform.supports(reddit))
     }
 
     func testTikTokSharedLinkReflowPayloadResolvesAsVideo() async {

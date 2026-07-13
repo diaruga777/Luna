@@ -26,21 +26,32 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         super.viewDidLoad()
     }
 
-    // Downloader: retention + completion actions + preview switch. Sibling apps:
-    // preview switch + the existing per-platform explicit Photos auto-save toggles.
-    override func numberOfSections(in tableView: UITableView) -> Int { isDownloader ? 3 : 2 }
+    // Downloader: retention + network policy + completion actions + preview
+    // switch. Sibling apps: preview switch + the existing per-platform
+    // explicit Photos auto-save toggles.
+    private enum DownloaderSection: Int { case retention, network, completion, preview }
+
+    override func numberOfSections(in tableView: UITableView) -> Int { isDownloader ? 4 : 2 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        if isDownloader { return section == 0 ? 2 : (section == 1 ? 2 : 1) }
+        if isDownloader {
+            switch DownloaderSection(rawValue: section)! {
+            case .retention: return 2
+            case .network: return 1
+            case .completion: return 2
+            case .preview: return 1
+            }
+        }
         return section == 0 ? 1 : platforms.count
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         if isDownloader {
-            switch section {
-            case 0: return "Local Files"
-            case 1: return "After Downloading"
-            default: return nil
+            switch DownloaderSection(rawValue: section)! {
+            case .retention: return "Local Files"
+            case .network: return "Network"
+            case .completion: return "After Downloading"
+            case .preview: return nil
             }
         }
         return section == 1 ? "Auto-Save to Photos by Platform" : nil
@@ -48,12 +59,14 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         if isDownloader {
-            switch section {
-            case 0:
+            switch DownloaderSection(rawValue: section)! {
+            case .retention:
                 return "Files saved in Luna Downloader are deleted automatically after the selected number of days. Turn retention off to keep files until you delete them."
-            case 1:
+            case .network:
+                return "Downloads started on cellular wait for Wi-Fi. They still download right away when you tap or long-press an item to download it manually."
+            case .completion:
                 return "Photos-backed downloads stay in your photo library. Clipboard copies use the downloaded file, including for videos."
-            default:
+            case .preview:
                 return "When on, the action extension downloads a saved post's media automatically and shows it inline. Turn off to download manually with a button."
             }
         } else {
@@ -70,12 +83,14 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         if !isDownloader {
             return indexPath.section == 0 ? autoDownloadCell() : platformCell(at: indexPath.row)
         }
-        switch indexPath.section {
-        case 0:
+        switch DownloaderSection(rawValue: indexPath.section)! {
+        case .retention:
             return indexPath.row == 0 ? retentionDaysCell() : retentionDisabledCell()
-        case 1:
+        case .network:
+            return wifiOnlyCell()
+        case .completion:
             return indexPath.row == 0 ? autoSaveToPhotosCell() : autoCopyToClipboardCell()
-        default:
+        case .preview:
             return autoDownloadCell()
         }
     }
@@ -139,6 +154,19 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         return cell
     }
 
+    private func wifiOnlyCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = "Wi-Fi Only"
+        content.image = UIImage(systemName: "wifi")
+        cell.contentConfiguration = content
+        cell.accessoryView = makeToggle(
+            isOn: AutoDownloadSettings.wifiOnlyDownloads,
+            action: #selector(wifiOnlyToggled(_:)))
+        return cell
+    }
+
     private func autoSaveToPhotosCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
@@ -184,6 +212,14 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
 
     @objc private func masterToggled(_ sender: UISwitch) {
         AutoDownloadSettings.autoDownloadMediaInPreview = sender.isOn
+    }
+
+    @objc private func wifiOnlyToggled(_ sender: UISwitch) {
+        AutoDownloadSettings.wifiOnlyDownloads = sender.isOn
+        guard !sender.isOn else { return }
+        // The restriction just lifted — don't make already-deferred items wait
+        // for the next opportunistic trigger.
+        Task { await LiveMediaDownloadManager.shared.startAllPendingWiFiDownloads() }
     }
 
     @objc private func autoSaveToPhotosToggled(_ sender: UISwitch) {

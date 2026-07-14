@@ -9,5 +9,10 @@ LunaLibraries/.build/
 # DerivedData
 DerivedData/
 .build-dd/
+.build-dd*/
+
+# Xcode and SwiftPM generated state
+**/-Xcc/
+**/.swiftpm/
 
 *.DS_Store

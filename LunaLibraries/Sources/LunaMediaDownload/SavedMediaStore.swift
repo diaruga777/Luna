@@ -666,6 +666,38 @@ public final class SavedMediaStore {
     }
 }
 
+/// The supported ages for automatically removing locally downloaded media.
+public enum MediaRetentionOption: Int, CaseIterable, Sendable {
+    case never = 0
+    case oneDay = 1
+    case twoDays = 2
+    case oneWeek = 7
+    case twoWeeks = 14
+    case oneMonth = 30
+
+    public var days: Int? {
+        self == .never ? nil : rawValue
+    }
+
+    public var displayName: String {
+        switch self {
+        case .never: return "Never"
+        case .oneDay: return "After 1 day"
+        case .twoDays: return "After 2 days"
+        case .oneWeek: return "After 1 week"
+        case .twoWeeks: return "After 2 weeks"
+        case .oneMonth: return "After 1 month"
+        }
+    }
+
+    /// Maps the old free-form 1–30 day setting to the closest supported choice.
+    public static func closest(to days: Int) -> MediaRetentionOption {
+        allCases.min {
+            abs($0.rawValue - days) < abs($1.rawValue - days)
+        } ?? .never
+    }
+}
+
 public enum MediaRetentionSettings {
     private static var defaults: UserDefaults {
         UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard
@@ -673,20 +705,34 @@ public enum MediaRetentionSettings {
     private static let disabledKey = "savedMediaRetention.disabled"
     private static let daysKey = "savedMediaRetention.days"
 
-    public static var retentionDays: Int? {
+    /// The single retention choice shown by Downloader Settings.
+    ///
+    /// An absent setting now means `.never`. The old disabled flag is still
+    /// understood so existing installations keep their previous choice.
+    public static var option: MediaRetentionOption {
         get {
-            if defaults.bool(forKey: disabledKey) { return nil }
-            let stored = defaults.integer(forKey: daysKey)
-            return stored == 0 ? 7 : min(30, max(1, stored))
+            if defaults.bool(forKey: disabledKey) { return .never }
+            guard let stored = defaults.object(forKey: daysKey) as? Int else {
+                return .never
+            }
+            return MediaRetentionOption(rawValue: stored)
+                ?? MediaRetentionOption.closest(to: stored)
         }
         set {
-            if let newValue {
-                defaults.set(false, forKey: disabledKey)
-                defaults.set(min(30, max(1, newValue)), forKey: daysKey)
-            } else {
+            if newValue == .never {
                 defaults.set(true, forKey: disabledKey)
+                defaults.removeObject(forKey: daysKey)
+            } else {
+                defaults.set(false, forKey: disabledKey)
+                defaults.set(newValue.rawValue, forKey: daysKey)
             }
         }
+    }
+
+    /// Day-based compatibility API used by the purge path and older callers.
+    public static var retentionDays: Int? {
+        get { option.days }
+        set { option = newValue.map(MediaRetentionOption.closest) ?? .never }
     }
 }
 

@@ -10,12 +10,11 @@ import LunaTransitions
 import UIKit
 
 /// Media download and retention controls. Downloader saves supported media into
-/// app-owned storage automatically; the retention rows control when those local
+/// app-owned storage automatically; the retention control sets when those local
 /// files are cleaned up.
 final class AutoDownloadSettingsScreen: NavHeaderTableController {
     private let platforms = AutoDownloadSettings.platforms
     private let saver = PhotoLibrarySaver()
-    private let daysLabel = UILabel()
     private var isDownloader: Bool { AppSurfaceConfig.current == .downloader }
 
     init() { super.init(style: .insetGrouped) }
@@ -36,7 +35,7 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if isDownloader {
             switch DownloaderSection(rawValue: section)! {
-            case .retention: return 2
+            case .retention: return 1
             case .network: return 1
             case .completion: return 2
             case .preview: return 1
@@ -61,7 +60,7 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         if isDownloader {
             switch DownloaderSection(rawValue: section)! {
             case .retention:
-                return "Files saved in Luna Downloader are deleted automatically after the selected number of days. Turn retention off to keep files until you delete them."
+                return "Choose when locally downloaded files are deleted. Never keeps them until you delete them."
             case .network:
                 return "Downloads started on cellular wait for Wi-Fi. They still download right away when you tap or long-press an item to download it manually."
             case .completion:
@@ -85,7 +84,7 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         }
         switch DownloaderSection(rawValue: indexPath.section)! {
         case .retention:
-            return indexPath.row == 0 ? retentionDaysCell() : retentionDisabledCell()
+            return retentionCell()
         case .network:
             return wifiOnlyCell()
         case .completion:
@@ -115,42 +114,31 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         return cell
     }
 
-    private func retentionDaysCell() -> UITableViewCell {
+    private func retentionCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        cell.selectionStyle = .none
         var content = cell.defaultContentConfiguration()
         content.text = "Delete After"
         content.image = UIImage(systemName: "calendar.badge.clock")
         cell.contentConfiguration = content
 
-        let stepper = UIStepper()
-        stepper.minimumValue = 1
-        stepper.maximumValue = 30
-        stepper.value = Double(MediaRetentionSettings.retentionDays ?? 7)
-        stepper.addTarget(self, action: #selector(retentionDaysChanged(_:)), for: .valueChanged)
-
-        daysLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
-        daysLabel.textColor = .secondaryLabel
-        updateDaysLabel()
-        let stack = UIStackView(arrangedSubviews: [daysLabel, stepper])
-        stack.axis = .horizontal
-        stack.alignment = .center
-        stack.spacing = 10
-        cell.accessoryView = stack
-        return cell
-    }
-
-    private func retentionDisabledCell() -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-        cell.selectionStyle = .none
-        var content = cell.defaultContentConfiguration()
-        content.text = "Keep Until Deleted"
-        content.image = UIImage(systemName: "infinity")
-        cell.contentConfiguration = content
-        let toggle = UISwitch()
-        toggle.isOn = MediaRetentionSettings.retentionDays == nil
-        toggle.addTarget(self, action: #selector(retentionDisabledChanged(_:)), for: .valueChanged)
-        cell.accessoryView = toggle
+        let button = UIButton(type: .system)
+        button.setTitle(MediaRetentionSettings.option.displayName, for: .normal)
+        button.accessibilityIdentifier = "deleteAfterPicker"
+        button.accessibilityLabel = "Delete After"
+        button.showsMenuAsPrimaryAction = true
+        button.menu = UIMenu(children: MediaRetentionOption.allCases.map { option in
+            UIAction(
+                title: option.displayName,
+                state: option == MediaRetentionSettings.option ? .on : .off
+            ) { [weak self] _ in
+                MediaRetentionSettings.option = option
+                self?.tableView.reloadRows(
+                    at: [IndexPath(row: 0, section: DownloaderSection.retention.rawValue)],
+                    with: .none)
+            }
+        })
+        button.sizeToFit()
+        cell.accessoryView = button
         return cell
     }
 
@@ -230,17 +218,6 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         AutoDownloadSettings.autoCopyDownloadsToClipboard = sender.isOn
     }
 
-    @objc private func retentionDaysChanged(_ sender: UIStepper) {
-        MediaRetentionSettings.retentionDays = Int(sender.value)
-        updateDaysLabel()
-        tableView.reloadRows(at: [IndexPath(row: 1, section: 0)], with: .none)
-    }
-
-    @objc private func retentionDisabledChanged(_ sender: UISwitch) {
-        MediaRetentionSettings.retentionDays = sender.isOn ? nil : 7
-        tableView.reloadRows(at: [IndexPath(row: 0, section: 0)], with: .none)
-    }
-
     @objc private func platformToggled(_ sender: UISwitch) {
         let platform = platforms[sender.tag]
         guard sender.isOn else {
@@ -273,12 +250,4 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         DotMatrixModal.present(alert, from: self)
     }
 
-    private func updateDaysLabel() {
-        if let days = MediaRetentionSettings.retentionDays {
-            daysLabel.text = "\(days) day\(days == 1 ? "" : "s")"
-        } else {
-            daysLabel.text = "Off"
-        }
-        daysLabel.sizeToFit()
-    }
 }

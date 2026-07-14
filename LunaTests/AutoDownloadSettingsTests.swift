@@ -12,6 +12,8 @@ final class AutoDownloadSettingsTests: XCTestCase {
     private let clipboardKey = "autoCopyDownloadsToClipboard"
     private let wifiOnlyKey = "wifiOnlyDownloads"
     private let pendingWiFiKey = "pendingWiFiDownloads"
+    private let retentionDisabledKey = "savedMediaRetention.disabled"
+    private let retentionDaysKey = "savedMediaRetention.days"
 
     private var defaults: UserDefaults {
         UserDefaults(suiteName: AppConfig.appGroupID) ?? .standard
@@ -20,9 +22,13 @@ final class AutoDownloadSettingsTests: XCTestCase {
     private func preservingSettings(_ body: () -> Void) {
         let previousPhotos = defaults.object(forKey: photosKey)
         let previousClipboard = defaults.object(forKey: clipboardKey)
+        let previousRetentionDisabled = defaults.object(forKey: retentionDisabledKey)
+        let previousRetentionDays = defaults.object(forKey: retentionDaysKey)
         defer {
             restore(previousPhotos, forKey: photosKey)
             restore(previousClipboard, forKey: clipboardKey)
+            restore(previousRetentionDisabled, forKey: retentionDisabledKey)
+            restore(previousRetentionDays, forKey: retentionDaysKey)
         }
         body()
     }
@@ -52,6 +58,26 @@ final class AutoDownloadSettingsTests: XCTestCase {
 
             XCTAssertFalse(AutoDownloadSettings.autoSaveDownloadsToPhotos)
             XCTAssertTrue(AutoDownloadSettings.autoCopyDownloadsToClipboard)
+        }
+    }
+
+    func testRetentionDefaultsToNever() {
+        preservingSettings {
+            defaults.removeObject(forKey: retentionDisabledKey)
+            defaults.removeObject(forKey: retentionDaysKey)
+
+            XCTAssertEqual(MediaRetentionSettings.option, .never)
+            XCTAssertNil(MediaRetentionSettings.retentionDays)
+        }
+    }
+
+    func testRetentionOptionsRoundTrip() {
+        preservingSettings {
+            for option in MediaRetentionOption.allCases {
+                MediaRetentionSettings.option = option
+                XCTAssertEqual(MediaRetentionSettings.option, option)
+                XCTAssertEqual(MediaRetentionSettings.retentionDays, option.days)
+            }
         }
     }
 

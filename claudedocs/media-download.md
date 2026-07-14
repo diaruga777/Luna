@@ -104,7 +104,12 @@ Photos references remain governed by the user's Photos library.
   `SavedMediaStore.existingDownloadedItem(forURLString:)`; a duplicate link renders
   directly from the existing local file or Photos asset (`alreadyDownloaded`) with no
   network fetch — Save-to-Photos stays enabled for a local-file duplicate (still copies it
-  to Photos) and is disabled once the match is already Photos-backed. The separate
+  to Photos) and is disabled once the match is already Photos-backed. The button remains
+  disabled with a green checkmark after either an automatic or manual Photos save. The
+  download and progress rows retain fixed layout slots while their contents change, so
+  completion does not pull the Share/Save controls upward. **Delete and exit** removes a
+  Photos asset first when one backs the item, then removes the Downloader and reading-list
+  records; a Photos permission failure retains the Luna records. The separate
   `autoDownloadMediaInPreview` setting, also default on, decides whether a genuinely new
   link starts downloading automatically. Once ready, Downloader persists through the same
   destination policy above; sibling apps retain their legacy Photos behavior.

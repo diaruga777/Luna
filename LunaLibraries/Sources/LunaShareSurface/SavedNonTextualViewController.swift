@@ -87,10 +87,16 @@ public final class SavedNonTextualViewController: UIViewController {
     // "Downloading…" / hidden (ready), and a "Save to Photos" button enabled once a
     // file exists. A status label carries errors. All hold layout space from load.
     private let downloadButton = UIButton(type: .system)
+    private let downloadButtonSlot = UIView()
     private let shareButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
+    private let deleteButton = UIButton(type: .system)
     private let downloadProgress = MoonHorizonProgressBar()
+    private let downloadProgressSlot = UIView()
     private let downloadStatus = UILabel()
+    private var didSaveToPhotos = false
+    private var isDeleting = false
+    private var libraryPersistenceTask: Task<String?, Never>?
 
     public init(articleURLString: String, content: NonTextualContent, onDone: @escaping () -> Void) {
         self.articleURLString = articleURLString
@@ -112,7 +118,7 @@ public final class SavedNonTextualViewController: UIViewController {
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        title = "Saved to Luna"
+        title = "Luna Downloader"
 
         let onDone = self.onDone
         navigationItem.leftBarButtonItem = UIBarButtonItem(
@@ -124,7 +130,7 @@ public final class SavedNonTextualViewController: UIViewController {
         badge.tintColor = GlassStyle.readingAccent
         badge.contentMode = .center
 
-        savedLabel.text = "Saved to your reading list."
+        savedLabel.text = "Saved"
         savedLabel.font = .preferredFont(forTextStyle: .body)
         savedLabel.textColor = .secondaryLabel
         savedLabel.textAlignment = .center
@@ -160,9 +166,13 @@ public final class SavedNonTextualViewController: UIViewController {
     /// The inline media preview + the Download / Save-to-Photos buttons + (hidden)
     /// progress bar / status, shown only for downloadable platforms. The preview
     /// reserves fixed space so nothing above or the friend list below shifts as the
-    /// media state resolves. Returns an empty array for non-downloadable platforms.
+    /// media state resolves. Non-downloadable items still get the destructive exit
+    /// action, but omit the media preview controls.
     private func mediaDownloadViews() -> [UIView] {
-        guard MediaDownloadablePlatform.supports(articleURLString) else { return [] }
+        configureDeleteButton()
+        guard MediaDownloadablePlatform.supports(articleURLString) else {
+            return [deleteButton]
+        }
 
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.backgroundColor = .secondarySystemBackground
@@ -235,9 +245,19 @@ public final class SavedNonTextualViewController: UIViewController {
         downloadButton.configuration = dlConfig
         downloadButton.addAction(
             UIAction { [weak self] _ in self?.startMediaDownload() }, for: .touchUpInside)
+        downloadButtonSlot.translatesAutoresizingMaskIntoConstraints = false
+        downloadButtonSlot.addSubview(downloadButton)
+        downloadButton.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            downloadButtonSlot.heightAnchor.constraint(equalToConstant: 50),
+            downloadButton.topAnchor.constraint(equalTo: downloadButtonSlot.topAnchor),
+            downloadButton.bottomAnchor.constraint(equalTo: downloadButtonSlot.bottomAnchor),
+            downloadButton.leadingAnchor.constraint(equalTo: downloadButtonSlot.leadingAnchor),
+            downloadButton.trailingAnchor.constraint(equalTo: downloadButtonSlot.trailingAnchor),
+        ])
 
         var shareConfig = UIButton.Configuration.tinted()
-        shareConfig.title = "Share media"
+        shareConfig.title = "Share"
         shareConfig.image = UIImage(systemName: "square.and.arrow.up")
         shareConfig.imagePadding = 8
         shareConfig.baseForegroundColor = GlassStyle.readingAccent
@@ -258,6 +278,16 @@ public final class SavedNonTextualViewController: UIViewController {
         saveButton.isEnabled = false
         // Hold layout space (visible but disabled) so the row height is stable.
 
+        downloadProgressSlot.translatesAutoresizingMaskIntoConstraints = false
+        downloadProgressSlot.addSubview(downloadProgress)
+        downloadProgress.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            downloadProgressSlot.heightAnchor.constraint(equalToConstant: 20),
+            downloadProgress.centerYAnchor.constraint(equalTo: downloadProgressSlot.centerYAnchor),
+            downloadProgress.leadingAnchor.constraint(equalTo: downloadProgressSlot.leadingAnchor),
+            downloadProgress.trailingAnchor.constraint(equalTo: downloadProgressSlot.trailingAnchor),
+            downloadProgress.heightAnchor.constraint(equalToConstant: 20),
+        ])
         downloadProgress.isHidden = true
 
         downloadStatus.isHidden = true
@@ -267,8 +297,21 @@ public final class SavedNonTextualViewController: UIViewController {
         downloadStatus.numberOfLines = 0
 
         return [
-            previewContainer, downloadButton, downloadProgress, shareButton, saveButton, downloadStatus
+            previewContainer, downloadButtonSlot, downloadProgressSlot, shareButton, saveButton,
+            deleteButton, downloadStatus
         ]
+    }
+
+    private func configureDeleteButton() {
+        guard deleteButton.configuration == nil else { return }
+        var config = UIButton.Configuration.tinted()
+        config.title = "Delete and exit"
+        config.image = UIImage(systemName: "trash")
+        config.imagePadding = 8
+        config.baseForegroundColor = .systemRed
+        deleteButton.configuration = config
+        deleteButton.addAction(
+            UIAction { [weak self] _ in self?.deleteAndExit() }, for: .touchUpInside)
     }
 
     // MARK: - Media flow (state machine)
@@ -335,7 +378,7 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadProgress.isHidden = true
             downloadStatus.isHidden = true
             shareButton.isEnabled = true
-            saveButton.isEnabled = true
+            setSaveButton(savedToPhotos: didSaveToPhotos)
             showReadyPreview(media)
             persistToDownloaderLibraryIfNeeded(media)
 
@@ -346,16 +389,8 @@ public final class SavedNonTextualViewController: UIViewController {
             downloadProgress.isHidden = true
             downloadStatus.isHidden = true
             shareButton.isEnabled = true
-            // Already in Photos: there's nothing more to save. Still a local-only
-            // file: leave Save-to-Photos enabled so the user can push it there too.
-            if item.photosLocalIdentifier != nil {
-                saveButton.isEnabled = false
-                var config = saveButton.configuration
-                config?.title = "Saved to Photos"
-                saveButton.configuration = config
-            } else {
-                saveButton.isEnabled = true
-            }
+            didSaveToPhotos = item.photosLocalIdentifier != nil
+            setSaveButton(savedToPhotos: didSaveToPhotos)
             showAlreadyDownloadedPreview(item)
 
         case .failed(let message):
@@ -387,10 +422,19 @@ public final class SavedNonTextualViewController: UIViewController {
                         self?.downloadProgress.setProgress(Float(progress), animated: true)
                     }
                 }
-                await MainActor.run { self.applyMediaState(.ready(media)) }
+                await MainActor.run {
+                    guard !self.isDeleting else {
+                        try? FileManager.default.removeItem(at: media.fileURL)
+                        return
+                    }
+                    self.applyMediaState(.ready(media))
+                }
             } catch {
                 let message = (error as? MediaDownloadError)?.message ?? "Couldn't download the media."
-                await MainActor.run { self.applyMediaState(.failed(message: message)) }
+                await MainActor.run {
+                    guard !self.isDeleting else { return }
+                    self.applyMediaState(.failed(message: message))
+                }
             }
         }
     }
@@ -407,7 +451,7 @@ public final class SavedNonTextualViewController: UIViewController {
         let creator = readingItem?.channelName
         let previewURL = media.fileURL
         let kind = media.kind
-        Task.detached {
+        let persistence = Task.detached { () -> String? in
             let copy = MediaDownloadStorage.newFileURL(extension: previewURL.pathExtension)
             do {
                 try FileManager.default.copyItem(at: previewURL, to: copy)
@@ -453,9 +497,19 @@ public final class SavedNonTextualViewController: UIViewController {
                         }
                     }
                 }
+                return saved.photosLocalIdentifier
             } catch {
                 try? FileManager.default.removeItem(at: copy)
+                return nil
             }
+        }
+        libraryPersistenceTask = persistence
+        Task { @MainActor [weak self] in
+            let photosIdentifier = await persistence.value
+            self?.libraryPersistenceTask = nil
+            guard photosIdentifier != nil else { return }
+            self?.didSaveToPhotos = true
+            self?.setSaveButton(savedToPhotos: true)
         }
     }
 
@@ -619,7 +673,7 @@ public final class SavedNonTextualViewController: UIViewController {
                     await MainActor.run { self.unsavedPreviewFileURL = nil }
                     AutoDownloadSettings.markDownloaded(self.articleURLString)
                     self.markItemRead()
-                    await MainActor.run { self.finishSave(message: "Saved to Photos", success: true) }
+                    await MainActor.run { self.finishSave(success: true) }
                 } catch {
                     let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
                     await MainActor.run { self.finishSave(message: message, success: false) }
@@ -639,7 +693,7 @@ public final class SavedNonTextualViewController: UIViewController {
                         item.id, localIdentifier: identifier, kind: kind)
                     AutoDownloadSettings.markDownloaded(self.articleURLString)
                     self.markItemRead()
-                    await MainActor.run { self.finishSave(message: "Saved to Photos", success: true) }
+                    await MainActor.run { self.finishSave(success: true) }
                 } catch {
                     let message = (error as? MediaDownloadError)?.message ?? "Couldn't save the media."
                     await MainActor.run { self.finishSave(message: message, success: false) }
@@ -657,23 +711,71 @@ public final class SavedNonTextualViewController: UIViewController {
     }
 
     @MainActor
-    private func finishSave(message: String, success: Bool) {
-        downloadStatus.text = message
-        downloadStatus.textColor = success ? .secondaryLabel : .systemRed
-        downloadStatus.isHidden = false
+    private func finishSave(message: String = "", success: Bool) {
         if success {
-            var config = saveButton.configuration
-            config?.title = "Saved to Photos"
-            config?.image = UIImage(systemName: "checkmark.circle.fill")
-            config?.baseForegroundColor = .systemGreen
-            saveButton.configuration = config
-            saveButton.isEnabled = false
+            didSaveToPhotos = true
+            setSaveButton(savedToPhotos: true)
+            // The button is the completion state; don't add a transient
+            // duplicate "Saved" status below the controls.
+            downloadStatus.isHidden = true
             UINotificationFeedbackGenerator().notificationOccurred(.success)
-            // Flash the saved checkmark, then dismiss the extension right away.
-            let onDone = self.onDone
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { onDone() }
         } else {
-            saveButton.isEnabled = true
+            downloadStatus.text = message
+            downloadStatus.textColor = .systemRed
+            downloadStatus.isHidden = false
+            setSaveButton(savedToPhotos: didSaveToPhotos)
+        }
+    }
+
+    private func setSaveButton(savedToPhotos: Bool) {
+        var config = saveButton.configuration
+        config?.title = savedToPhotos ? "Saved to Photos" : "Save to Photos"
+        config?.image = UIImage(
+            systemName: savedToPhotos ? "checkmark.circle.fill" : "photo.badge.arrow.down")
+        config?.baseForegroundColor = savedToPhotos ? .systemGreen : GlassStyle.readingAccent
+        saveButton.configuration = config
+        saveButton.isEnabled = !savedToPhotos
+    }
+
+    private func deleteAndExit() {
+        guard !isDeleting else { return }
+        isDeleting = true
+        deleteButton.isEnabled = false
+        downloadButton.isEnabled = false
+        shareButton.isEnabled = false
+        saveButton.isEnabled = false
+        downloadStatus.text = "Deleting…"
+        downloadStatus.textColor = .secondaryLabel
+        downloadStatus.isHidden = false
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                _ = await self.libraryPersistenceTask?.value
+                if let mediaItem = SavedMediaStore.shared.matchingItem(
+                    forURLString: self.articleURLString) {
+                    if let identifier = mediaItem.photosLocalIdentifier {
+                        try await PhotoLibrarySaver().deleteAsset(localIdentifier: identifier)
+                    }
+                    SavedMediaStore.shared.delete(mediaItem)
+                }
+                if let readingItem = ReadingListStore.shared.item(
+                    forURLString: self.articleURLString) {
+                    ReadingListStore.shared.delete(readingItem)
+                }
+                AutoDownloadSettings.unmarkDownloaded(self.articleURLString)
+                await MainActor.run { self.onDone() }
+            } catch {
+                let message = (error as? MediaDownloadError)?.message
+                    ?? "Couldn't delete this media."
+                await MainActor.run {
+                    self.isDeleting = false
+                    self.deleteButton.isEnabled = true
+                    self.downloadStatus.text = message
+                    self.downloadStatus.textColor = .systemRed
+                    self.downloadStatus.isHidden = false
+                }
+            }
         }
     }
 

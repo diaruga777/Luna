@@ -84,9 +84,9 @@ reading-list records. If Photos access is denied, or limited access cannot resol
 asset, the Luna records are retained until the user grants sufficient access. A Photos
 asset that was already deleted is treated as an idempotent successful deletion.
 
-Local retention (default seven days, configurable 1–30 days or disabled) applies only to
-`.localFile` rows. Expiry deletes local files and returns the row to `.undownloaded`;
-Photos references remain governed by the user's Photos library.
+Local retention (default **Never**, with choices of 1 day, 2 days, 1 week, 2 weeks, or
+1 month) applies only to `.localFile` rows. Expiry deletes local files and returns the
+row to `.undownloaded`; Photos references remain governed by the user's Photos library.
 
 ## Entry points and UI
 
@@ -153,12 +153,14 @@ not eagerly materialize a large movie in memory. `MediaItemProviderFactory` and
 
 ## Settings
 
-Downloader's `Settings → Auto-Download Media` screen has three groups:
+Downloader's `Settings → Auto-Download Media` screen has four groups:
 
-1. **Local Files** — retention days and Keep Until Deleted.
-2. **After Downloading** — **Auto-Save to Photos** (default on) and **Copy Downloads to
+1. **Local Files** — one **Delete After** picker: **Never** (the default), **After 1
+   day**, **After 2 days**, **After 1 week**, **After 2 weeks**, or **After 1 month**.
+2. **Network** — **Wi-Fi Only** (default off).
+3. **After Downloading** — **Auto-Save to Photos** (default on) and **Copy Downloads to
    Clipboard** (default off).
-3. **Auto-download media** — whether the extension preview starts downloading
+4. **Auto-download media** — whether the extension preview starts downloading
    automatically (default on).
 
 All values live in the App Group so the app, App Intents, share/action extensions, and

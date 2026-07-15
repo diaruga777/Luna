@@ -33,7 +33,7 @@ public enum EmailLoginFlow {
 
 // MARK: - Step 1: email address
 
-final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
+final class EmailEntryViewController: UIViewController {
 
     private let accountStore: EmailAccountStore
     private let completion: ((Bool) -> Void)?
@@ -60,10 +60,17 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
         field.keyboardType = .emailAddress
         field.autocapitalizationType = .none
         field.autocorrectionType = .no
-        field.textContentType = .emailAddress
+        // This is the username for an account sign-in, even though its syntax is
+        // an email address. `.username` lets iOS and credential providers own the
+        // AutoFill transaction; `.emailAddress` describes generic contact info.
+        field.textContentType = .username
         field.borderStyle = .roundedRect
-        field.delegate = self
+        field.returnKeyType = .continue
         field.translatesAutoresizingMaskIntoConstraints = false
+        // Keep the text field delegate nil. In particular, don't interpose on the
+        // iOS 26 input-suggestion/replacement path used by system and third-party
+        // credential providers. The return key needs only a control action.
+        field.addTarget(self, action: #selector(continueTapped), for: .editingDidEndOnExit)
         // Capture the value as it changes so keyboard AutoFill and password-manager
         // fills — which arrive through the editing-change path (and can drop the
         // field's own `text` when their extension UI backgrounds the app) — stick
@@ -87,45 +94,15 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
             hint.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
             hint.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
         ])
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Establish the system input session only after the field is attached to
+        // the presented window. Starting it from `viewDidLoad` can leave the
+        // credential suggestion bar displaying a choice from a provisional session
+        // that does not deliver its tap to this field.
         field.becomeFirstResponder()
-    }
-
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        continueTapped()
-        return true
-    }
-
-    /// Accept a complete address at the delegate boundary. On iOS 26, keyboard
-    /// AutoFill and credential providers can deliver their suggestion as one
-    /// replacement without subsequently sending `.editingChanged`. Applying that
-    /// replacement ourselves also makes a suggestion replace a partially typed
-    /// prefix instead of being ignored or appended to it.
-    func textField(
-        _ textField: UITextField, shouldChangeCharactersInRanges ranges: [NSValue],
-        replacementString string: String
-    ) -> Bool {
-        acceptCompleteAddress(string, in: textField)
-    }
-
-    /// Some credential-provider input paths still use UIKit's original
-    /// single-range delegate callback, so keep the same behavior there too.
-    func textField(
-        _ textField: UITextField, shouldChangeCharactersIn range: NSRange,
-        replacementString string: String
-    ) -> Bool {
-        acceptCompleteAddress(string, in: textField)
-    }
-
-    private func acceptCompleteAddress(_ replacement: String, in textField: UITextField) -> Bool {
-        guard textField === field,
-              replacement.contains("@"), replacement.contains(".") else { return true }
-        textField.text = replacement
-        enteredAddress = replacement
-        if let end = textField.textRange(from: textField.endOfDocument, to: textField.endOfDocument) {
-            textField.selectedTextRange = end
-        }
-        textField.sendActions(for: .editingChanged)
-        return false
     }
 
     /// Mirror of the field's text, kept current via `.editingChanged` so an

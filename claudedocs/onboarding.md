@@ -15,11 +15,13 @@
    sign-in in ANY of the three apps counts — `OnboardingFlow.make` collapses the
    whole flow to the single `existingAccountStep` ("Email already connected" →
    Finish), skipping the login and the Safari/Action-Button steps.
-   `EmailEntryViewController` uses `.emailAddress` keyboard/content metadata and
-   accepts a complete system or password-manager suggestion directly from both
-   UIKit replacement delegate paths. A full suggested address replaces the whole
-   value whether the field is empty or already contains a typed prefix; ordinary
-   character edits continue through UIKit normally.
+   `EmailEntryViewController` uses the email keyboard but declares the field's
+   content as `.username`, because it is the username for an account sign-in rather
+   than generic contact information. The field deliberately has no text-field
+   delegate: system and third-party credential providers own the native AutoFill
+   insertion path, while the return key is handled as a control action. It becomes
+   first responder in `viewDidAppear`, after attachment to the presented window, so
+   the keyboard and its credential suggestion bar share the final input session.
 2. **Safari extension** (`safariStep`, index 1) — animation `.safariExtension`.
    "Open Safari" sets the Safari takeover-pending flag, starts the Safari guide
    video's PiP, and opens a Wikipedia URL so the user can exercise the extension

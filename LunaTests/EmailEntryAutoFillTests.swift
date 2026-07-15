@@ -10,59 +10,54 @@ import XCTest
 @MainActor
 final class EmailEntryAutoFillTests: XCTestCase {
 
-    func testAutoFillAcceptsCompleteAddressIntoEmptyField() throws {
-        let (controller, field) = try makeSubject()
+    func testFieldUsesCredentialUsernameSemanticsAndEmailKeyboard() throws {
+        let (_, field) = try makeSubject()
 
-        let acceptedByUIKit = controller.textField(
-            field,
-            shouldChangeCharactersInRanges: [NSValue(range: NSRange(location: 0, length: 0))],
-            replacementString: "reader@example.com"
-        )
+        XCTAssertEqual(field.textContentType, .username)
+        XCTAssertEqual(field.keyboardType, .emailAddress)
+        XCTAssertEqual(field.returnKeyType, .continue)
+        XCTAssertNil(field.delegate, "Credential AutoFill must reach the native text field directly")
+    }
 
-        XCTAssertFalse(acceptedByUIKit, "The controller applies a complete AutoFill address itself")
+    func testNativeInputAcceptsCompleteAddressIntoEmptyField() throws {
+        let (_, field) = try makeSubject()
+
+        field.insertText("reader@example.com")
+
         XCTAssertEqual(field.text, "reader@example.com")
     }
 
-    func testAutoFillReplacesPartiallyTypedAddress() throws {
-        let (controller, field) = try makeSubject()
+    func testNativeInputReplacesPartiallyTypedAddress() throws {
+        let (_, field) = try makeSubject()
         field.text = "rea"
+        let wholeField = try XCTUnwrap(
+            field.textRange(from: field.beginningOfDocument, to: field.endOfDocument))
 
-        let acceptedByUIKit = controller.textField(
-            field,
-            shouldChangeCharactersInRanges: [NSValue(range: NSRange(location: 0, length: 3))],
-            replacementString: "reader@example.com"
-        )
+        field.replace(wholeField, withText: "reader@example.com")
 
-        XCTAssertFalse(acceptedByUIKit, "The complete suggestion replaces the existing prefix")
         XCTAssertEqual(field.text, "reader@example.com")
     }
 
-    func testCredentialProviderSingleRangePathAlsoReplacesPrefix() throws {
+    func testReturnKeyUsesControlActionWithoutInstallingDelegate() throws {
         let (controller, field) = try makeSubject()
-        field.text = "rea"
+        let actions = field.actions(
+            forTarget: controller, forControlEvent: .editingDidEndOnExit) ?? []
 
-        let acceptedByUIKit = controller.textField(
-            field,
-            shouldChangeCharactersIn: NSRange(location: 0, length: 3),
-            replacementString: "reader@example.com"
-        )
-
-        XCTAssertFalse(acceptedByUIKit)
-        XCTAssertEqual(field.text, "reader@example.com")
+        XCTAssertTrue(actions.contains("continueTapped"))
+        XCTAssertNil(field.delegate)
     }
 
-    func testOrdinaryTypingIncludingAtSignStillUsesUIKitEditingPath() throws {
+    func testInputSessionStartsAfterFieldIsHostedInWindow() throws {
         let (controller, field) = try makeSubject()
-        field.text = "reader"
+        XCTAssertFalse(field.isFirstResponder)
 
-        let acceptedByUIKit = controller.textField(
-            field,
-            shouldChangeCharactersInRanges: [NSValue(range: NSRange(location: 6, length: 0))],
-            replacementString: "@"
-        )
+        let window = UITestSupport.host(controller)
+        controller.viewDidAppear(false)
 
-        XCTAssertTrue(acceptedByUIKit)
-        XCTAssertEqual(field.text, "reader")
+        XCTAssertTrue(field.isFirstResponder)
+        field.resignFirstResponder()
+        window.isHidden = true
+        window.rootViewController = nil
     }
 
     private func makeSubject() throws -> (EmailEntryViewController, UITextField) {

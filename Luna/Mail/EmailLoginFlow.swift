@@ -60,10 +60,10 @@ final class EmailEntryViewController: UIViewController {
         field.keyboardType = .emailAddress
         field.autocapitalizationType = .none
         field.autocorrectionType = .no
-        // This is the username for an account sign-in, even though its syntax is
-        // an email address. `.username` lets iOS and credential providers own the
-        // AutoFill transaction; `.emailAddress` describes generic contact info.
-        field.textContentType = .username
+        // Prefer the system's fast personal-email suggestion over the credential
+        // manager UI. AutoFill insertion still stays native because this field has
+        // no delegate and starts its input session only after presentation.
+        field.textContentType = .emailAddress
         field.borderStyle = .roundedRect
         field.returnKeyType = .continue
         field.translatesAutoresizingMaskIntoConstraints = false

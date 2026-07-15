@@ -10,13 +10,13 @@ import XCTest
 @MainActor
 final class EmailEntryAutoFillTests: XCTestCase {
 
-    func testFieldUsesCredentialUsernameSemanticsAndEmailKeyboard() throws {
+    func testFieldUsesPersonalEmailAutocompleteAndEmailKeyboard() throws {
         let (_, field) = try makeSubject()
 
-        XCTAssertEqual(field.textContentType, .username)
+        XCTAssertEqual(field.textContentType, .emailAddress)
         XCTAssertEqual(field.keyboardType, .emailAddress)
         XCTAssertEqual(field.returnKeyType, .continue)
-        XCTAssertNil(field.delegate, "Credential AutoFill must reach the native text field directly")
+        XCTAssertNil(field.delegate, "Email autocomplete must reach the native text field directly")
     }
 
     func testNativeInputAcceptsCompleteAddressIntoEmptyField() throws {

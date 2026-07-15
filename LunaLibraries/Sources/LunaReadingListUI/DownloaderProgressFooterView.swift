@@ -23,6 +23,11 @@ public final class DownloaderProgressFooterView: UIView {
     private let progress = MoonHorizonProgressBar()
     private var trackedURLString: String?
     private var hideWorkItem: DispatchWorkItem?
+    /// The footer tracks a single job at a time, and that job's thumbnail file
+    /// doesn't change mid-download — so `apply(_:)`, called on every progress tick,
+    /// only needs to decode once per job and reuse the bitmap for the rest of its ticks.
+    private var cachedThumbnailFileName: String?
+    private var cachedThumbnailImage: UIImage?
 
     public init() {
         super.init(frame: .zero)
@@ -120,9 +125,19 @@ public final class DownloaderProgressFooterView: UIView {
         titleLabel.text = snapshot.title
         messageLabel.text = snapshot.message
         messageLabel.textColor = snapshot.phase == .failed ? .systemRed : .secondaryLabel
-        if let fileName = snapshot.thumbnailFileName,
-           let image = UIImage(contentsOfFile: LiveMediaDownloadAssets.thumbnailURL(fileName: fileName).path) {
-            thumbnail.image = image
+        let thumbnailImage: UIImage?
+        if let fileName = snapshot.thumbnailFileName {
+            if fileName != cachedThumbnailFileName {
+                cachedThumbnailFileName = fileName
+                cachedThumbnailImage = UIImage(
+                    contentsOfFile: LiveMediaDownloadAssets.thumbnailURL(fileName: fileName).path)
+            }
+            thumbnailImage = cachedThumbnailImage
+        } else {
+            thumbnailImage = nil
+        }
+        if let thumbnailImage {
+            thumbnail.image = thumbnailImage
             thumbnail.contentMode = .scaleAspectFill
         } else {
             thumbnail.image = UIImage(systemName: snapshot.phase == .failed

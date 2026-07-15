@@ -3,6 +3,8 @@
 //  LunaAudioPlayback
 //
 
+import ImageIO
+import LunaDesignSystem
 import LunaStorage
 import MediaPlayer
 import UIKit
@@ -191,15 +193,43 @@ public final class NowPlayingCoordinator {
         infoSink.setPlaybackState(isPlaying: snapshot.isAudiblyPlaying)
     }
 
+    /// `pushInfo()` (hence this) runs on the main thread — `notifyObservers` hops
+    /// there before calling observers. `MPMediaItemArtwork`'s request handler,
+    /// though, is called by the system lazily (often off the main thread, and only
+    /// when Control Center/lock screen actually needs to render the artwork), so the
+    /// real decode is deferred there instead of happening eagerly here: reading the
+    /// pixel size up front (a header parse, not a decode) is cheap enough for the
+    /// main thread, but decoding the actual bitmap isn't.
     private func artwork(for itemInfo: AudioPlaybackItemInfo) -> MPMediaItemArtwork? {
         guard let fileName = itemInfo.thumbnailFileName else { return nil }
         if let cachedArtwork, cachedArtwork.fileName == fileName { return cachedArtwork.artwork }
         guard let url = artworkFileURL(fileName),
-              let image = UIImage(contentsOfFile: url.path)
+              let pixelSize = Self.imagePixelSize(at: url)
         else { return nil }
-        let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        let path = url.path
+        let scale = UIScreen.main.scale
+        let artwork = MPMediaItemArtwork(boundsSize: pixelSize) { requestedSize in
+            let maxPixel = max(requestedSize.width, requestedSize.height) * scale
+            // Downsample to whatever size the system actually asked for, rather than
+            // handing back the full-resolution file every time. A decode failure here
+            // (file vanished between the property read above and this call) falls
+            // back to an empty image — the request handler can't return nil.
+            return ImageDownsampling.decode(path: path, scale: scale, maxPixelSize: maxPixel) ?? UIImage()
+        }
         cachedArtwork = (fileName, artwork)
         return artwork
+    }
+
+    /// Reads the image's pixel dimensions from its ImageIO metadata — a header
+    /// parse, not a full decode — so `artwork(for:)` can supply `boundsSize` without
+    /// paying for the bitmap it's trying to avoid decoding eagerly.
+    private static func imagePixelSize(at url: URL) -> CGSize? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat
+        else { return nil }
+        return CGSize(width: width, height: height)
     }
 }
 

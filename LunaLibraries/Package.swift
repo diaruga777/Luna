@@ -87,7 +87,7 @@ let package = Package(
         // LunaAppConfig (App-Group id) and LunaStorage (ReadingListStore access,
         // behind the ReadingListPlaybackStore seam) are Phase 2 additions; UI wiring
         // (mini-player, settings screen) is still later phases.
-        .target(name: "LunaAudioPlayback", dependencies: ["LunaModels", "LunaAppConfig", "LunaStorage"], resources: [
+        .target(name: "LunaAudioPlayback", dependencies: ["LunaModels", "LunaAppConfig", "LunaStorage", "LunaDesignSystem"], resources: [
             .copy("Resources/ChimeTransition.caf"),
             .copy("Resources/ChimeFinal.caf"),
         ]),

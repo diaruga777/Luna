@@ -4,6 +4,7 @@
 //
 
 import LunaReadingList
+import LunaInterop
 import LunaPriceUI
 import LunaReaderUI
 import LunaSocial
@@ -48,6 +49,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Mark this surface installed so any Safari extension host knows which
         // sibling Luna apps its page buttons can deep-link into.
         InstalledAppMarkers.recordCurrentApp()
+        // Cross-app interop purchase (claudedocs/interop-purchase.md): start the
+        // long-lived transaction listener, then sweep this app's current
+        // entitlements in case an update arrived while it was not running.
+        InteropPurchaseController.shared.listenForTransactions()
+        Task { await InteropPurchaseController.shared.checkCurrentEntitlements() }
+
         // Diagnostic-only: the account address just feeds a log line, so defer the
         // Keychain read off the launch frame (a just-rebooted device's Keychain
         // query can be slow).

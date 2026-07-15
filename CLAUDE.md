@@ -45,7 +45,7 @@ Dev with Xcode 27 beta / iOS 27 simulator; archive/upload with stable Xcode 26.2
 > all three apps. UI prose says
 > "Luna"; each app has its own `AppIcon{Reader,Downloader,PriceTracker}` (PNG appiconsets in
 > `SharedIconAssets.xcassets`; `scripts/make_icons.py` is retired — update the PNGs directly).
-> The ACTION extensions use separate `ActionIcon{Reader,Downloader,PriceTracker}` sets: iOS
+> The ACTION extensions use separate `ActionExtensionIcon{Reader,Downloader,PriceTracker}` sets: iOS
 > renders action-extension icons as monochrome templates from the icon's ALPHA channel, so an
 > opaque app icon shows as a solid blob. `scripts/make_action_icons.swift` extracts each glyph
 > directly from the foreground artwork in its committed 1024px `AppIcon*` master (open book,

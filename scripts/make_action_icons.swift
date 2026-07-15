@@ -13,9 +13,9 @@ private let repositoryRoot = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
 private let catalogURL = repositoryRoot.appendingPathComponent("SharedIconAssets.xcassets")
 private let iconNames = [
-    "ActionIconReader",
-    "ActionIconDownloader",
-    "ActionIconPriceTracker",
+    "ActionExtensionIconReader",
+    "ActionExtensionIconDownloader",
+    "ActionExtensionIconPriceTracker",
 ]
 
 private func fail(_ message: String) -> Never {

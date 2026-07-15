@@ -42,7 +42,7 @@ Dev with Xcode 27 beta / iOS 27 simulator; archive/upload with stable Xcode 26.2
 > inbox background refresh are gated to the `.downloader` surface. Action extensions are
 > universal (full `LunaShareSurface`) and render any URL type in all three apps. UI prose says
 > "Luna"; each app has its own faceted-crystal `AppIcon{Reader,Downloader,PriceTracker}`.
-> Action extensions use transparent `ActionIcon{Reader,Downloader,PriceTracker}` appiconsets.
+> Action extensions use transparent `ActionExtensionIcon{Reader,Downloader,PriceTracker}` appiconsets.
 > Each set contains a handmade monochrome 1024px PNG derived from its normal app icon; maintain
 > that artwork directly and do not substitute generic symbols or invent new action artwork.
 > `scripts/make_action_icons.swift` validates the asset type, dimensions, and alpha without

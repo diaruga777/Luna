@@ -2,6 +2,24 @@
 import XCTest
 
 final class LiveMediaDownloadJobTests: XCTestCase {
+    func testFacebookReelBackgroundResolutionStartsWithVideoPlugin() throws {
+        let source = try XCTUnwrap(URL(string:
+            "https://www.facebook.com/reel/1610065874019369/?fs=e&mibextid=wwXIfr&fs=e"))
+
+        let resolve = try XCTUnwrap(LiveMediaDownloadManager.resolveRequest(for: source))
+
+        XCTAssertEqual(resolve.kind, "facebookPlugin")
+        XCTAssertEqual(
+            resolve.request.value(forHTTPHeaderField: "User-Agent"),
+            MediaDownloadHTTP.desktopBrowserUserAgent)
+        XCTAssertEqual(resolve.request.url?.host, "www.facebook.com")
+        XCTAssertEqual(resolve.request.url?.path, "/plugins/video.php")
+        let href = resolve.request.url.flatMap {
+            URLComponents(url: $0, resolvingAgainstBaseURL: false)
+        }?.queryItems?.first(where: { $0.name == "href" })?.value
+        XCTAssertEqual(href, "https://www.facebook.com/reel/1610065874019369/")
+    }
+
     func testDownloaderStartPolicyRestartsMissingAndUndownloadedMedia() {
         XCTAssertTrue(LiveMediaDownloadStartPolicy.downloaderShouldStart(storageState: nil))
         XCTAssertTrue(LiveMediaDownloadStartPolicy.downloaderShouldStart(

@@ -548,7 +548,7 @@ public final class LiveMediaDownloadManager: NSObject {
         }
     }
 
-    private static func resolveRequest(for url: URL) -> (request: URLRequest, kind: String)? {
+    static func resolveRequest(for url: URL) -> (request: URLRequest, kind: String)? {
         guard let recognized = PlatformRecognizer.recognize(url.absoluteString) else { return nil }
         let resolveURL: URL
         let kind: String
@@ -569,8 +569,15 @@ public final class LiveMediaDownloadManager: NSObject {
             resolveURL = url
             kind = "instagramEmbed"
         case .facebook:
-            resolveURL = url
-            kind = url.host?.lowercased() == "fb.watch" ? "facebookShort" : "facebook"
+            // Match SocialMediaResolver's foreground/extension path: Facebook's
+            // logged-out reel page commonly returns HTTP 400 or a poster-only login
+            // wall, while the video plugin exposes the playable hd_src/sd_src MP4.
+            // Keep the stage in resolveKind so a persisted background job can fall
+            // through to the desktop and mobile pages if the plugin has no asset.
+            guard let pluginURL = SocialMediaResolver.facebookVideoPluginURL(for: url)
+            else { return nil }
+            resolveURL = pluginURL
+            kind = "facebookPlugin"
         case .reddit:
             // The public, subreddit-agnostic listing endpoint works for any
             // recognized permalink shape (a full `/r/.../comments/<id>/...`
@@ -589,7 +596,7 @@ public final class LiveMediaDownloadManager: NSObject {
         if kind == "x" {
             request.setValue("application/json", forHTTPHeaderField: "Accept")
         } else {
-            let userAgent = kind == "facebook"
+            let userAgent = kind.hasPrefix("facebook")
                 ? MediaDownloadHTTP.desktopBrowserUserAgent
                 : MediaDownloadHTTP.browserUserAgent
             request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
@@ -609,7 +616,8 @@ public final class LiveMediaDownloadManager: NSObject {
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return InstagramMediaParser.assetsFromEmbedContextJSON(html).first
                 ?? InstagramMediaParser.assets(fromHTML: html).first
-        case "facebook", "facebookShort":
+        case "facebookPlugin", "facebookDesktop", "facebookMobile", "facebookCanonical",
+             "facebook", "facebookShort":
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return FacebookMediaParser.assets(fromHTML: html).first
         case "reddit":
@@ -789,10 +797,11 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     private func finishResolve(job: LiveMediaDownloadJob, downloadedTo location: URL, response: URLResponse?) {
-        var job = job
+        let job = job
         guard job.phase != .suspended else { return }
         let http = response as? HTTPURLResponse
         if let http, !(200..<300).contains(http.statusCode) {
+            if startNextFacebookResolve(after: job, data: nil) { return }
             Task {
                 await retryOrFail(
                     job: job, role: .resolve, response: response,
@@ -808,19 +817,45 @@ public final class LiveMediaDownloadManager: NSObject {
             startMediaDownload(for: job, asset: asset)
             return
         }
-        if job.resolveKind == "facebookShort",
-           let html = String(data: data, encoding: .utf8),
-           let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html) {
-            job.resolveKind = "facebook"
-            store.upsert(job)
-            var request = URLRequest(url: canonical, timeoutInterval: 60)
-            request.setValue(MediaDownloadHTTP.desktopBrowserUserAgent, forHTTPHeaderField: "User-Agent")
-            request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-            startTask(request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
-            return
-        }
+        if startNextFacebookResolve(after: job, data: data) { return }
         Task { await failJob(job, message: MediaDownloadError.noMedia.message) }
         return
+    }
+
+    /// Advances the durable Facebook resolver through the same useful sources as
+    /// `SocialMediaResolver`: plugin embed → desktop page → mobile page → desktop
+    /// canonical page. Returns true after starting the next background task.
+    private func startNextFacebookResolve(
+        after persistedJob: LiveMediaDownloadJob, data: Data?
+    ) -> Bool {
+        guard let sourceURL = URL(string: persistedJob.sourceURLString) else { return false }
+
+        let next: (url: URL, kind: String, userAgent: String)?
+        switch persistedJob.resolveKind {
+        case "facebookPlugin":
+            next = (sourceURL, "facebookDesktop", MediaDownloadHTTP.desktopBrowserUserAgent)
+        case "facebookDesktop", "facebook":
+            next = (sourceURL, "facebookMobile", MediaDownloadHTTP.browserUserAgent)
+        case "facebookMobile", "facebookShort":
+            guard let data,
+                  let html = String(data: data, encoding: .utf8),
+                  let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html),
+                  canonical.absoluteString != sourceURL.absoluteString
+            else { return false }
+            next = (canonical, "facebookCanonical", MediaDownloadHTTP.desktopBrowserUserAgent)
+        default:
+            return false
+        }
+
+        guard let next else { return false }
+        var job = persistedJob
+        job.resolveKind = next.kind
+        store.upsert(job)
+        var request = URLRequest(url: next.url, timeoutInterval: 60)
+        request.setValue(next.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        startTask(request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+        return true
     }
 
     private func save(job: LiveMediaDownloadJob, fileURL: URL, kind: MediaAsset.Kind) async {

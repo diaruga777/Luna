@@ -14,14 +14,21 @@
    App-Group keychain access group (`CredentialKeychain.sharedAccessGroup`), so a
    sign-in in ANY of the three apps counts — `OnboardingFlow.make` collapses the
    whole flow to the single `existingAccountStep` ("Email already connected" →
-   Finish), skipping the login and the Safari/Action-Button steps.
-   `EmailEntryViewController` uses the email keyboard and `.emailAddress` content
-   type so iOS offers the fast personal-email autocomplete rather than opening the
-   password manager. The field deliberately has no text-field delegate: the system
-   owns the native autocomplete insertion path, while the return key is handled as
-   a control action. It becomes first responder in `viewDidAppear`, after attachment
-   to the presented window, so the keyboard suggestion bar and field share the final
-   input session.
+   Finish), skipping the login and the Safari/Action-Button steps. The login
+   sub-flow itself (`EmailEntryViewController` → `CredentialViewController` or
+   Outlook OAuth, `Luna/Mail/`) is a hero/card/button redesign matching this
+   file's `OnboardingStepViewController` visual language, with a full-screen
+   dot-matrix loading cover during verification and a checkmark success beat —
+   see `claudedocs/email-login.md` for the full design (provider inference,
+   autodiscovery, the notification-permission timing, the checkmark animation).
+   `EmailEntryViewController`'s field uses the email keyboard and `.emailAddress`
+   content type so iOS offers the fast personal-email autocomplete rather than
+   opening the password manager. The field deliberately has no text-field
+   delegate: the system owns the native autocomplete insertion path, while the
+   return key is handled as a control action. It becomes first responder in
+   `viewDidAppear`, after attachment to the presented window, so the keyboard
+   suggestion bar and field share the final input session — the same invariant
+   applies to `CredentialViewController`'s password field.
 2. **Safari extension** (`safariStep`, index 1) — animation `.safariExtension`.
    "Open Safari" sets the Safari takeover-pending flag, starts the Safari guide
    video's PiP, and opens a Wikipedia URL so the user can exercise the extension

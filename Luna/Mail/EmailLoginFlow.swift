@@ -73,6 +73,7 @@ final class EmailEntryViewController: UIViewController {
         field.textContentType = .emailAddress
         field.borderStyle = .none
         field.backgroundColor = .clear
+        field.contentVerticalAlignment = .center
         field.returnKeyType = .continue
         field.translatesAutoresizingMaskIntoConstraints = false
         // Keep the text field delegate nil. In particular, don't interpose on the
@@ -95,10 +96,13 @@ final class EmailEntryViewController: UIViewController {
             icon.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
             icon.centerYAnchor.constraint(equalTo: card.centerYAnchor),
             field.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
-            field.centerYAnchor.constraint(equalTo: card.centerYAnchor),
-            // The badge's constraints never change (only its alpha does), so it
-            // never causes a layout jump when it fades in or out.
-            field.trailingAnchor.constraint(lessThanOrEqualTo: providerBadge.leadingAnchor, constant: -8),
+            // Full-height and full-width (up to the badge) so tapping anywhere in
+            // the card focuses the field, not just the sliver its text occupies.
+            field.topAnchor.constraint(equalTo: card.topAnchor),
+            field.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+            // The badge stays installed and only fades (its width change on a
+            // provider switch happens while it's invisible), so no layout jump.
+            field.trailingAnchor.constraint(equalTo: providerBadge.leadingAnchor, constant: -8),
             providerBadge.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
             providerBadge.centerYAnchor.constraint(equalTo: card.centerYAnchor),
         ])
@@ -271,27 +275,30 @@ final class EmailEntryViewController: UIViewController {
         let session = ASWebAuthenticationSession(
             url: url, callbackURLScheme: MicrosoftOAuth.redirectScheme
         ) { [weak self] callback, error in
-            guard let self else { return }
-            if let error {
-                if let authError = error as? ASWebAuthenticationSessionError,
-                   authError.code == .canceledLogin {
-                    // The user backed out of the web sheet — leave the screen
-                    // usable, no error, no cover.
+            // ASWebAuthenticationSession doesn't document which thread delivers
+            // this handler; everything below touches UIKit, so hop to the main
+            // actor before doing anything.
+            Task { @MainActor in
+                guard let self else { return }
+                if let error {
+                    if let authError = error as? ASWebAuthenticationSessionError,
+                       authError.code == .canceledLogin {
+                        // The user backed out of the web sheet — leave the screen
+                        // usable, no error, no cover.
+                        return
+                    }
+                    self.presentError("Outlook sign-in failed. Please try again.")
                     return
                 }
-                self.presentError("Outlook sign-in failed. Please try again.")
-                return
-            }
-            guard let callback,
-                  let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first(where: { $0.name == "code" })?.value
-            else {
-                // A callback without a `code` item is a real failure, not a
-                // cancellation — it must not fail silently.
-                self.presentError("Outlook sign-in failed. Please try again.")
-                return
-            }
-            Task { @MainActor in
+                guard let callback,
+                      let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
+                        .queryItems?.first(where: { $0.name == "code" })?.value
+                else {
+                    // A callback without a `code` item is a real failure, not a
+                    // cancellation — it must not fail silently.
+                    self.presentError("Outlook sign-in failed. Please try again.")
+                    return
+                }
                 // The webview is gone but the token exchange + inbox-filter setup
                 // still run. Cover the (button-bearing) entry screen with a
                 // full-screen dot-matrix spinner so nothing is tappable meanwhile.

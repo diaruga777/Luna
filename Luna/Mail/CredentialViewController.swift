@@ -53,6 +53,7 @@ final class CredentialViewController: UIViewController {
         passwordField.returnKeyType = .go
         passwordField.borderStyle = .none
         passwordField.backgroundColor = .clear
+        passwordField.contentVerticalAlignment = .center
         passwordField.translatesAutoresizingMaskIntoConstraints = false
         // No delegate, same as the email field — return key is a control action.
         passwordField.addTarget(self, action: #selector(signIn), for: .editingDidEndOnExit)
@@ -73,7 +74,9 @@ final class CredentialViewController: UIViewController {
             icon.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
             icon.centerYAnchor.constraint(equalTo: card.centerYAnchor),
             passwordField.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
-            passwordField.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            // Full-height so tapping anywhere in the card focuses the field.
+            passwordField.topAnchor.constraint(equalTo: card.topAnchor),
+            passwordField.bottomAnchor.constraint(equalTo: card.bottomAnchor),
             passwordField.trailingAnchor.constraint(equalTo: revealButton.leadingAnchor, constant: -8),
             revealButton.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
             revealButton.centerYAnchor.constraint(equalTo: card.centerYAnchor),
@@ -167,11 +170,10 @@ final class CredentialViewController: UIViewController {
             UIImage(systemName: passwordField.isSecureTextEntry ? "eye" : "eye.slash"), for: .normal)
     }
 
-    /// Providers other than `.generic` bundle their instructions with a mobile
-    /// share sheet's default insertion behavior in mind — copy/paste from Settings
-    /// or Mail commonly injects display spaces into the grouped app-password code
-    /// ("xxxx xxxx xxxx xxxx"). Strip them all rather than just the edges. Custom
-    /// IMAP servers (`.generic`) are unconstrained free-form passwords that could
+    /// App-password providers (Gmail/iCloud/Yahoo) display the generated code in
+    /// spaced groups ("xxxx xxxx xxxx xxxx"), and copying it commonly carries those
+    /// display spaces along — so strip ALL whitespace, not just the edges. Custom
+    /// IMAP servers (`.generic`) take unconstrained free-form passwords that could
     /// legitimately contain an internal space, so only the edges are trimmed there.
     /// Pure + static so it's unit-testable without a live text field.
     static func normalizedPassword(_ raw: String, providerID: MailProvider.ID) -> String {

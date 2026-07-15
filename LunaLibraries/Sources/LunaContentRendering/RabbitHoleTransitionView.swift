@@ -185,6 +185,25 @@ public final class RabbitHoleTransitionView: UIView {
     public required init?(coder: NSCoder) { fatalError("not used") }
     deinit { link?.invalidate() }
 
+    /// `CADisplayLink(target: self, …)` retains this view until `tick()` invalidates it
+    /// at t≥1 — so an interrupted transition (the overlay returned to
+    /// `DotMatrixTransitionCenter` mid-animation, e.g. a superseding transition or a
+    /// backgrounding tear-down) would otherwise leave the link retaining and ticking
+    /// this view forever offscreen, burning GPU work and leaking the two full-screen
+    /// textures. Leaving the window is the reliable "this transition is done, one way
+    /// or another" signal (normal completion already invalidates the link itself, so
+    /// this is a no-op then); tear down defensively rather than waiting for `tick()` to
+    /// ever reach 1. The completion is dropped, not fired — whoever pulled us from the
+    /// window already knows the transition didn't finish normally.
+    public override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window == nil else { return }
+        link?.invalidate()
+        link = nil
+        animCompletion = nil
+        clearTextures()
+    }
+
     // MARK: - Public driving API
 
     /// Load the before/after snapshots.

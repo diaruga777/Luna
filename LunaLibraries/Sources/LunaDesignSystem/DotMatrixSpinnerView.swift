@@ -320,8 +320,11 @@ public final class DotMatrixSpinnerView: UIView {
                     < Self.checkmarkStrokePosition(dimension: dimension, index: $1)
             }
         let checkmarkSet = Set(checkmarkOrder)
-        let staggerStep: CFTimeInterval = 0.03
-        let resolveDuration: CFTimeInterval = 0.22
+        // Kept small: the mandated 0.35s hold already accounts for most of the
+        // ≈0.5s total beat, so the stagger + resolve animation itself needs to
+        // stay brisk even with a dozen-odd checkmark dots at dimension 7.
+        let staggerStep: CFTimeInterval = 0.01
+        let resolveDuration: CFTimeInterval = 0.12
 
         CATransaction.begin()
         CATransaction.setCompletionBlock {

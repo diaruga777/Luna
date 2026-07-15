@@ -1,6 +1,6 @@
 //
 //  InteropEntitlementTests.swift
-//  LunaInteropTests
+//  LunaTests
 //
 
 import XCTest

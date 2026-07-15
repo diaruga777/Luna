@@ -119,7 +119,6 @@ let package = Package(
         .testTarget(name: "LunaAppConfigTests", dependencies: ["LunaAppConfig"]),
         .testTarget(name: "LunaModelsTests", dependencies: ["LunaModels"]),
         .testTarget(name: "LunaURLClassificationTests", dependencies: ["LunaURLClassification"]),
-        .testTarget(name: "LunaInteropTests", dependencies: ["LunaInterop"]),
         .testTarget(name: "LunaHTMLClassificationTests", dependencies: ["LunaHTMLClassification", "LunaModels"]),
         .testTarget(name: "LunaPaywallBypassTests", dependencies: ["LunaPaywallBypass", "LunaFetch"]),
         .testTarget(name: "LunaPriceMetadataTests", dependencies: ["LunaPriceMetadata"]),

@@ -1,12 +1,15 @@
 //
 //  InteropGateTests.swift
-//  LunaInteropTests
+//  LunaTests
 //
 
 import LunaModels
 import XCTest
 @testable import LunaInterop
 
+/// Covers `InteropGate` — the pure owner/current-surface/paid/installed decision
+/// every cross-app write is checked against (`claudedocs/interop-purchase.md`).
+/// Deliberately network/UIKit/UserDefaults-free: every input is passed in.
 final class InteropGateTests: XCTestCase {
 
     // MARK: - Decision matrix

@@ -1,6 +1,6 @@
 //
 //  InteropSurfaceTests.swift
-//  LunaInteropTests
+//  LunaTests
 //
 
 import XCTest

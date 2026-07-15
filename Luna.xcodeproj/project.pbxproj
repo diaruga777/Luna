@@ -136,6 +136,7 @@
 		7AF7216F62048B1A8C59F9E6 /* LunaPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunaPlatforms */; };
 		7D74667CBC09543524AD4E59 /* LunaArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LunaArchiveReader */; };
 		7E2C368831952671CD7BF66A /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LunaModels */; };
+		7FE8482BB0C9F3DA1394A9EB /* LunaInterop in Frameworks */ = {isa = PBXBuildFile; productRef = C49628C9ED770969CE618EB1 /* LunaInterop */; };
 		803D0D24B44A38A7397BAEAF /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
 		80CE7CB338F6866D7AA929AC /* LunaReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* LunaReadingListUI */; };
 		828C373FE02ADBEC3BC5D19C /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
@@ -500,98 +501,98 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		0F6359E5F1947F76D1DC13EC /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		0F6359E5F1947F76D1DC13EC /* Exceptions for "LunaShare" folder in "LunaPriceTrackerShare" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 2746B738BB4967D72B4784AA /* LunaPriceTrackerShare */;
 		};
-		11BF6D0279EC0EB0310C162F /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		11BF6D0279EC0EB0310C162F /* Exceptions for "LunaShare" folder in "LunaDownloaderShare" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 96905778435E3C7F63FA5E07 /* LunaDownloaderShare */;
 		};
-		1BA4AEE0B8443EEBE988E541 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		1BA4AEE0B8443EEBE988E541 /* Exceptions for "Luna Action Extension" folder in "LunaDownloaderAction" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = A2B18D43A980A2C17A48B019 /* LunaDownloaderAction */;
 		};
-		1CE7EDA84A9EF6FD416248DA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		1CE7EDA84A9EF6FD416248DA /* Exceptions for "Luna" folder in "LunaDownloader" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = AF19C41BA051B4C0892BDA4E /* LunaDownloader */;
 		};
-		60BE25B026183D60EA23D207 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		60BE25B026183D60EA23D207 /* Exceptions for "Luna" folder in "LunaPriceTracker" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 6C65D0274C393548D3654967 /* LunaPriceTracker */;
 		};
-		70C08B3EB91494263C62F319 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		70C08B3EB91494263C62F319 /* Exceptions for "LunaSafari" folder in "LunaPriceTrackerSafari" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 914B0BF1DD6F590D135488AC /* LunaPriceTrackerSafari */;
 		};
-		79583E0F2FE0BAD200C775CA /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		79583E0F2FE0BAD200C775CA /* Exceptions for "Luna Action Extension" folder in "Luna Action Extension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 79583DFB2FE0BAD100C775CA /* Luna Action Extension */;
 		};
-		882C8351B7C877C0F5234404 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		882C8351B7C877C0F5234404 /* Exceptions for "LunaSafari" folder in "LunaDownloaderSafari" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 8B037A04C4B57DCC3B52F210 /* LunaDownloaderSafari */;
 		};
-		AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		AA0600000000000000000001 /* Exceptions for "Luna" folder in "Luna" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = AAE000000000000000000000 /* Luna */;
 		};
-		AA0600000000000000000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		AA0600000000000000000002 /* Exceptions for "LunaSafari" folder in "LunaSafari" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = AAE100000000000000000000 /* LunaSafari */;
 		};
-		AA0600000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		AA0600000000000000000003 /* Exceptions for "LunaShare" folder in "LunaShare" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = AAE300000000000000000000 /* LunaShare */;
 		};
-		D667B7400D02129A1457006D /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		D667B7400D02129A1457006D /* Exceptions for "Luna Action Extension" folder in "LunaPriceTrackerAction" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = BE0F0A63AC930FAA7923DDFC /* LunaPriceTrackerAction */;
 		};
-		LDCL00000000000000000007 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		LDCL00000000000000000007 /* Exceptions for "LunaDownloaderClip" folder in "LunaDownloaderClip" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = LDCL00000000000000000001 /* LunaDownloaderClip */;
 		};
-		LDLA0000000000000000007 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		LDLA0000000000000000007 /* Exceptions for "LunaDownloaderLiveActivity" folder in "LunaDownloaderLiveActivity" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -601,13 +602,97 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		79583E002FE0BAD100C775CA /* Luna Action Extension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (79583E0F2FE0BAD200C775CA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 1BA4AEE0B8443EEBE988E541 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, D667B7400D02129A1457006D /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Luna Action Extension"; sourceTree = "<group>"; };
-		AA0700000000000000000001 /* Luna */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000001 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 1CE7EDA84A9EF6FD416248DA /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 60BE25B026183D60EA23D207 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Luna; sourceTree = "<group>"; };
-		AA0700000000000000000002 /* LunaSafari */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000002 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 882C8351B7C877C0F5234404 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 70C08B3EB91494263C62F319 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaSafari; sourceTree = "<group>"; };
-		AA0700000000000000000003 /* LunaTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = LunaTests; sourceTree = "<group>"; };
-		AA0700000000000000000004 /* LunaShare */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AA0600000000000000000003 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 11BF6D0279EC0EB0310C162F /* PBXFileSystemSynchronizedBuildFileExceptionSet */, 0F6359E5F1947F76D1DC13EC /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaShare; sourceTree = "<group>"; };
-		LDCL00000000000000000008 /* LunaDownloaderClip */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (LDCL00000000000000000007 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaDownloaderClip; sourceTree = "<group>"; };
-		LDLA0000000000000000008 /* LunaDownloaderLiveActivity */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (LDLA0000000000000000007 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LunaDownloaderLiveActivity; sourceTree = "<group>"; };
+		79583E002FE0BAD100C775CA /* Luna Action Extension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				79583E0F2FE0BAD200C775CA /* Exceptions for "Luna Action Extension" folder in "Luna Action Extension" target */,
+				1BA4AEE0B8443EEBE988E541 /* Exceptions for "Luna Action Extension" folder in "LunaDownloaderAction" target */,
+				D667B7400D02129A1457006D /* Exceptions for "Luna Action Extension" folder in "LunaPriceTrackerAction" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = "Luna Action Extension";
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000001 /* Luna */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0600000000000000000001 /* Exceptions for "Luna" folder in "Luna" target */,
+				1CE7EDA84A9EF6FD416248DA /* Exceptions for "Luna" folder in "LunaDownloader" target */,
+				60BE25B026183D60EA23D207 /* Exceptions for "Luna" folder in "LunaPriceTracker" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Luna;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000002 /* LunaSafari */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0600000000000000000002 /* Exceptions for "LunaSafari" folder in "LunaSafari" target */,
+				882C8351B7C877C0F5234404 /* Exceptions for "LunaSafari" folder in "LunaDownloaderSafari" target */,
+				70C08B3EB91494263C62F319 /* Exceptions for "LunaSafari" folder in "LunaPriceTrackerSafari" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaSafari;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000003 /* LunaTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaTests;
+			sourceTree = "<group>";
+		};
+		AA0700000000000000000004 /* LunaShare */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0600000000000000000003 /* Exceptions for "LunaShare" folder in "LunaShare" target */,
+				11BF6D0279EC0EB0310C162F /* Exceptions for "LunaShare" folder in "LunaDownloaderShare" target */,
+				0F6359E5F1947F76D1DC13EC /* Exceptions for "LunaShare" folder in "LunaPriceTrackerShare" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaShare;
+			sourceTree = "<group>";
+		};
+		LDCL00000000000000000008 /* LunaDownloaderClip */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				LDCL00000000000000000007 /* Exceptions for "LunaDownloaderClip" folder in "LunaDownloaderClip" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaDownloaderClip;
+			sourceTree = "<group>";
+		};
+		LDLA0000000000000000008 /* LunaDownloaderLiveActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				LDLA0000000000000000007 /* Exceptions for "LunaDownloaderLiveActivity" folder in "LunaDownloaderLiveActivity" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = LunaDownloaderLiveActivity;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -842,6 +927,7 @@
 				C586707358D74315870A9DF6 /* LunaReadingListUI in Frameworks */,
 				F6E022911E552D80CE371EB3 /* LunaMailAccount in Frameworks */,
 				A3B17B01D056FAFF33FF8155 /* LunaMailTransport in Frameworks */,
+				7FE8482BB0C9F3DA1394A9EB /* LunaInterop in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1521,6 +1607,7 @@
 				3097C2C000FCEA7B5ACE23A8 /* LunaMailAccount */,
 				8909E25ED1F6D19133F69D41 /* LunaMailTransport */,
 				648405211A7DCF06041EDDB6 /* LunaAudioPlayback */,
+				C49628C9ED770969CE618EB1 /* LunaInterop */,
 			);
 			productName = LunaTests;
 			productReference = AA0200000000000000000003 /* LunaTests.xctest */;
@@ -4045,6 +4132,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaTransitions;
+		};
+		C49628C9ED770969CE618EB1 /* LunaInterop */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
+			productName = LunaInterop;
 		};
 		DE798ED2A5DA5A986EE4B864 /* LunaSocial */ = {
 			isa = XCSwiftPackageProductDependency;

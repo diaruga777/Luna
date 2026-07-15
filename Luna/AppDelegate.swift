@@ -182,6 +182,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         readingListObserver = NotificationCenter.default.addObserver(
             forName: .readingListChanged, object: nil, queue: .main
         ) { [weak self] _ in
+            // Deliberately bundles two unrelated follow-ups on one notification: neither
+            // has its own natural trigger, and "the reading list just changed" is a
+            // good-enough proxy for both "some activity happened, take out the trash"
+            // (purge expired saved media) and "prices may be worth checking again soon"
+            // (reschedule the price refresh) — not a sign this observer needs splitting.
+            //
             // purgeExpired() does manifest disk I/O (+ file deletion) under a lock;
             // keep it off the main thread (the store already posts its own change
             // notification back on main).

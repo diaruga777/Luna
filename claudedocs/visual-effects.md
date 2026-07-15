@@ -46,6 +46,20 @@ every download progress bar: the Downloader Live Activity (lock screen + Dynamic
 Island bottom region), the action extension's saved-media screen, the reading list's
 bottom status pill, and the Downloader App Clip.
 
+**Activity pulse.** While progress is mid-flight (fraction in
+(`pulseMinimumFraction`, 1)), a dimmer point of light — the sun point at its former
+brightness (`pulseBloom*Alpha`; the head itself was brightened a step to
+`headBloom*Alpha` when this landed) — periodically sweeps in from the left edge
+along the lit stretch and merges with the head in a brief flare brighter than
+either alone. Cadence/durations live on `MoonHorizonStyle` (`pulseCycleDuration`
+2.6 s, `pulseTravelDuration` 1.1 s, `pulseFlareDuration`). UIKit: a repeating
+`Timer` started/stopped in `didMoveToWindow` fires `CAKeyframeAnimation`s along a
+de Casteljau-trimmed horizon path (`horizonPath(toFraction:in:)`); the flare is
+scheduled separately so it lands on wherever the head actually is by merge time.
+SwiftUI: a repeating `keyframeAnimator` — time-driven, so WidgetKit's frozen Live
+Activity renders just show the initial (invisible) phase; no pulse there, by
+design. Both renderers skip the pulse under Reduce Motion.
+
 ## Dot Matrix pixel-wipe TRANSITIONS (the facade) — region-confined wipes
 
 The **`LunaTransitions`** library wraps the

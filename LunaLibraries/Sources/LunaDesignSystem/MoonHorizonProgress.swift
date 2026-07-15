@@ -66,6 +66,21 @@ public enum MoonHorizonStyle {
         return path
     }
 
+    /// The horizon from the left edge up to a progress fraction — the lit
+    /// stretch the pulse travels. (de Casteljau split of the quadratic at t.)
+    static func horizonPath(toFraction fraction: CGFloat, in rect: CGRect) -> CGPath {
+        let t = min(1, max(0, fraction))
+        let (start, control, _) = horizonControlPoints(in: rect)
+        let path = CGMutablePath()
+        path.move(to: start)
+        path.addQuadCurve(
+            to: point(atFraction: t, in: rect),
+            control: CGPoint(
+                x: start.x + (control.x - start.x) * t,
+                y: start.y + (control.y - start.y) * t))
+        return path
+    }
+
     /// The closed region below the horizon (the moon's surface), for a faint fill.
     public static func surfacePath(in rect: CGRect) -> CGPath {
         let (start, control, end) = horizonControlPoints(in: rect)
@@ -101,6 +116,22 @@ public enum MoonHorizonStyle {
     static let skyGlowPeakAlpha: CGFloat = 0.40
     /// Where (as a fraction of the lit stretch) the ramp passes through midAlpha.
     static let rampMid: CGFloat = 0.55
+
+    // The sun point and the traveling pulse. The head's bloom was brightened a
+    // step when the pulse landed (the inner/outer head alphas below); the pulse
+    // itself glows at the head's former brightness, and the merge flare when
+    // the two meet briefly outshines both.
+    static let headBloomInnerAlpha: CGFloat = 0.70
+    static let headBloomOuterAlpha: CGFloat = 0.22
+    static let pulseBloomInnerAlpha: CGFloat = 0.55
+    static let pulseBloomOuterAlpha: CGFloat = 0.16
+    static let pulseCycleDuration: TimeInterval = 2.6
+    static let pulseTravelDuration: TimeInterval = 1.1
+    /// Fade-in at launch / fade-out into the merge, at either end of the travel.
+    static let pulseFadeDuration: TimeInterval = 0.15
+    static let pulseFlareDuration: TimeInterval = 0.45
+    /// Below this fraction there's no lit stretch worth traveling.
+    static let pulseMinimumFraction: CGFloat = 0.05
 }
 
 // MARK: - UIKit
@@ -108,7 +139,11 @@ public enum MoonHorizonStyle {
 /// A drop-in replacement for a determinate `UIProgressView` drawn as the moon
 /// horizon: dark limb ahead, the faint glow of pre-dawn light gathering behind,
 /// and one brilliant point where the sun peeks over the horizon at the head of
-/// progress. Spans whatever width it's given.
+/// progress. Spans whatever width it's given. While in a window (and progress
+/// is mid-flight), a dimmer point of light periodically sweeps in from the left
+/// and merges with the sun in a brief flare — a heartbeat that shows something
+/// is happening even when the fraction itself isn't moving. Skipped under
+/// Reduce Motion.
 public final class MoonHorizonProgressBar: UIView {
 
     private let surfaceLayer = CAShapeLayer()
@@ -123,6 +158,14 @@ public final class MoonHorizonProgressBar: UIView {
     /// The sun: a steep radial bloom around a white-hot core.
     private let headBloomLayer = CAGradientLayer()
     private let headCoreLayer = CALayer()
+    /// The traveling pulse: a second, dimmer sun point that periodically sweeps
+    /// in from the left edge and merges with the head.
+    private let pulseLayer = CALayer()
+    private let pulseBloomLayer = CAGradientLayer()
+    private let pulseCoreLayer = CALayer()
+    /// The brief burst where pulse and head merge, brighter than either alone.
+    private let flareLayer = CAGradientLayer()
+    private var pulseTimer: Timer?
 
     public private(set) var progress: Float = 0
 
@@ -157,20 +200,43 @@ public final class MoonHorizonProgressBar: UIView {
         }
 
         let bloomDiameter: CGFloat = 26
-        headBloomLayer.type = .radial
-        headBloomLayer.bounds = CGRect(x: 0, y: 0, width: bloomDiameter, height: bloomDiameter)
-        headBloomLayer.startPoint = CGPoint(x: 0.5, y: 0.5)
-        headBloomLayer.endPoint = CGPoint(x: 1, y: 1)
-        headBloomLayer.locations = [0, 0.12, 0.42, 1]
-        layer.addSublayer(headBloomLayer)
-
         let coreDiameter: CGFloat = 3
-        headCoreLayer.bounds = CGRect(x: 0, y: 0, width: coreDiameter, height: coreDiameter)
-        headCoreLayer.cornerRadius = coreDiameter / 2
-        headCoreLayer.shadowOpacity = 1
-        headCoreLayer.shadowRadius = 2.5
-        headCoreLayer.shadowOffset = .zero
+
+        // The pulse sits below the head so it visibly slides underneath and
+        // into the sun as they merge.
+        for bloom: CAGradientLayer in [pulseBloomLayer, headBloomLayer] {
+            bloom.type = .radial
+            bloom.bounds = CGRect(x: 0, y: 0, width: bloomDiameter, height: bloomDiameter)
+            bloom.startPoint = CGPoint(x: 0.5, y: 0.5)
+            bloom.endPoint = CGPoint(x: 1, y: 1)
+            bloom.locations = [0, 0.12, 0.42, 1]
+        }
+        for core: CALayer in [pulseCoreLayer, headCoreLayer] {
+            core.bounds = CGRect(x: 0, y: 0, width: coreDiameter, height: coreDiameter)
+            core.cornerRadius = coreDiameter / 2
+            core.shadowOpacity = 1
+            core.shadowRadius = 2.5
+            core.shadowOffset = .zero
+        }
+        headCoreLayer.shadowRadius = 3
+
+        pulseBloomLayer.position = .zero
+        pulseCoreLayer.position = .zero
+        pulseLayer.addSublayer(pulseBloomLayer)
+        pulseLayer.addSublayer(pulseCoreLayer)
+        pulseLayer.opacity = 0
+        layer.addSublayer(pulseLayer)
+
+        layer.addSublayer(headBloomLayer)
         layer.addSublayer(headCoreLayer)
+
+        flareLayer.type = .radial
+        flareLayer.bounds = CGRect(x: 0, y: 0, width: 34, height: 34)
+        flareLayer.startPoint = CGPoint(x: 0.5, y: 0.5)
+        flareLayer.endPoint = CGPoint(x: 1, y: 1)
+        flareLayer.locations = [0, 0.2, 0.55, 1]
+        flareLayer.opacity = 0
+        layer.addSublayer(flareLayer)
 
         updateAppearanceColors()
         registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
@@ -181,8 +247,26 @@ public final class MoonHorizonProgressBar: UIView {
 
     public required init?(coder: NSCoder) { fatalError("not used") }
 
+    deinit { pulseTimer?.invalidate() }
+
     public override var intrinsicContentSize: CGSize {
         CGSize(width: UIView.noIntrinsicMetric, height: 20)
+    }
+
+    public override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            pulseTimer?.invalidate()
+            pulseTimer = nil
+        } else if pulseTimer == nil {
+            let timer = Timer.scheduledTimer(
+                withTimeInterval: MoonHorizonStyle.pulseCycleDuration, repeats: true
+            ) { [weak self] _ in
+                self?.firePulse()
+            }
+            timer.tolerance = 0.25
+            pulseTimer = timer
+        }
     }
 
     public override func layoutSubviews() {
@@ -224,6 +308,68 @@ public final class MoonHorizonProgressBar: UIView {
         CATransaction.commit()
     }
 
+    /// One pulse cycle: a dim point of light launches from the left edge,
+    /// accelerates along the lit stretch, and merges with the head in a flare.
+    private func firePulse() {
+        guard window != nil, !UIAccessibility.isReduceMotionEnabled else { return }
+        let fraction = CGFloat(progress)
+        guard fraction > MoonHorizonStyle.pulseMinimumFraction, fraction < 1,
+            bounds.width > 0
+        else { return }
+
+        let travel = MoonHorizonStyle.pulseTravelDuration
+        let fade = MoonHorizonStyle.pulseFadeDuration
+
+        let move = CAKeyframeAnimation(keyPath: "position")
+        move.path = MoonHorizonStyle.horizonPath(toFraction: fraction, in: bounds)
+        move.calculationMode = .paced
+        move.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        move.duration = travel
+
+        let glow = CAKeyframeAnimation(keyPath: "opacity")
+        glow.values = [0, 1, 1, 0]
+        glow.keyTimes = [
+            0, NSNumber(value: fade / travel), NSNumber(value: 1 - fade / travel), 1,
+        ]
+        glow.duration = travel
+
+        let group = CAAnimationGroup()
+        group.animations = [move, glow]
+        group.duration = travel
+        pulseLayer.add(group, forKey: "pulse")
+
+        // The merge flare, timed so it swells as the pulse fades into the head.
+        // Scheduled (rather than pre-positioned) so it lands on wherever the
+        // head actually is by then, even if progress advanced mid-flight.
+        DispatchQueue.main.asyncAfter(deadline: .now() + travel - fade) { [weak self] in
+            self?.fireMergeFlare()
+        }
+    }
+
+    private func fireMergeFlare() {
+        guard window != nil, bounds.width > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        flareLayer.position = MoonHorizonStyle.point(atFraction: CGFloat(progress), in: bounds)
+        CATransaction.commit()
+
+        let flash = CAKeyframeAnimation(keyPath: "opacity")
+        flash.values = [0, 1, 0]
+        flash.keyTimes = [0, 0.35, 1]
+        flash.duration = MoonHorizonStyle.pulseFlareDuration
+
+        let swell = CAKeyframeAnimation(keyPath: "transform.scale")
+        swell.values = [0.7, 1.2, 1.35]
+        swell.keyTimes = [0, 0.35, 1]
+        swell.duration = MoonHorizonStyle.pulseFlareDuration
+
+        let group = CAAnimationGroup()
+        group.animations = [flash, swell]
+        group.duration = MoonHorizonStyle.pulseFlareDuration
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        flareLayer.add(group, forKey: "flare")
+    }
+
     private func positionHead() {
         let head = MoonHorizonStyle.point(atFraction: CGFloat(progress), in: bounds)
         headCoreLayer.position = head
@@ -256,12 +402,26 @@ public final class MoonHorizonProgressBar: UIView {
         litGradient.locations = ramp
         headBloomLayer.colors = [
             sunCore.cgColor,
-            sunCore.withAlphaComponent(0.55).cgColor,
-            sunlight.withAlphaComponent(0.16).cgColor,
+            sunCore.withAlphaComponent(MoonHorizonStyle.headBloomInnerAlpha).cgColor,
+            sunlight.withAlphaComponent(MoonHorizonStyle.headBloomOuterAlpha).cgColor,
             sunlight.withAlphaComponent(0).cgColor,
         ]
         headCoreLayer.backgroundColor = sunCore.cgColor
         headCoreLayer.shadowColor = sunCore.cgColor
+        pulseBloomLayer.colors = [
+            sunCore.cgColor,
+            sunCore.withAlphaComponent(MoonHorizonStyle.pulseBloomInnerAlpha).cgColor,
+            sunlight.withAlphaComponent(MoonHorizonStyle.pulseBloomOuterAlpha).cgColor,
+            sunlight.withAlphaComponent(0).cgColor,
+        ]
+        pulseCoreLayer.backgroundColor = sunCore.cgColor
+        pulseCoreLayer.shadowColor = sunCore.cgColor
+        flareLayer.colors = [
+            sunCore.cgColor,
+            sunCore.withAlphaComponent(0.85).cgColor,
+            sunlight.withAlphaComponent(0.35).cgColor,
+            sunlight.withAlphaComponent(0).cgColor,
+        ]
     }
 }
 
@@ -284,9 +444,18 @@ private struct MoonHorizonSurface: Shape {
 /// The moon-horizon progress treatment for SwiftUI surfaces (the download Live
 /// Activity). Same visual language as `MoonHorizonProgressBar`. Built from plain
 /// shapes and gradients so it renders reliably inside WidgetKit.
+/// The animatable state of one pulse cycle: where the traveling point is along
+/// the lit stretch, how visible it is, and how strong the merge flare is.
+private struct MoonPulsePhase {
+    var travel: CGFloat = 0
+    var glow: CGFloat = 0
+    var flare: CGFloat = 0
+}
+
 public struct MoonHorizonProgressView: View {
     private let progress: Double
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(progress: Double) {
         self.progress = min(1, max(0, progress))
@@ -335,8 +504,12 @@ public struct MoonHorizonProgressView: View {
                     .fill(RadialGradient(
                         stops: [
                             .init(color: sunCore, location: 0),
-                            .init(color: sunCore.opacity(0.55), location: 0.12),
-                            .init(color: sunlight.opacity(0.16), location: 0.42),
+                            .init(
+                                color: sunCore.opacity(MoonHorizonStyle.headBloomInnerAlpha),
+                                location: 0.12),
+                            .init(
+                                color: sunlight.opacity(MoonHorizonStyle.headBloomOuterAlpha),
+                                location: 0.42),
                             .init(color: sunlight.opacity(0), location: 1),
                         ],
                         center: .center, startRadius: 0, endRadius: 13))
@@ -345,13 +518,97 @@ public struct MoonHorizonProgressView: View {
                 Circle()
                     .fill(sunCore)
                     .frame(width: 3, height: 3)
-                    .shadow(color: sunCore, radius: 1.5)
+                    .shadow(color: sunCore, radius: 1.8)
                     .position(head)
+                // The traveling pulse + merge flare. Time-driven, so inside
+                // WidgetKit's frozen renders it simply stays at its initial
+                // (invisible) phase; in live contexts it sweeps continuously.
+                if !reduceMotion, progress > Double(MoonHorizonStyle.pulseMinimumFraction),
+                    progress < 1
+                {
+                    Color.clear
+                        .keyframeAnimator(
+                            initialValue: MoonPulsePhase(), repeating: true
+                        ) { content, phase in
+                            content.overlay {
+                                pulseAndFlare(
+                                    phase: phase, rect: rect, head: head,
+                                    sunlight: sunlight, sunCore: sunCore)
+                            }
+                        } keyframes: { _ in
+                            let travel = MoonHorizonStyle.pulseTravelDuration
+                            let fade = MoonHorizonStyle.pulseFadeDuration
+                            let flare = MoonHorizonStyle.pulseFlareDuration
+                            let cycle = MoonHorizonStyle.pulseCycleDuration
+                            KeyframeTrack(\MoonPulsePhase.travel) {
+                                CubicKeyframe(1, duration: travel)
+                                LinearKeyframe(1, duration: cycle - travel)
+                            }
+                            KeyframeTrack(\MoonPulsePhase.glow) {
+                                LinearKeyframe(1, duration: fade)
+                                LinearKeyframe(1, duration: travel - 2 * fade)
+                                LinearKeyframe(0, duration: fade)
+                                LinearKeyframe(0, duration: cycle - travel)
+                            }
+                            KeyframeTrack(\MoonPulsePhase.flare) {
+                                LinearKeyframe(0, duration: travel - fade)
+                                LinearKeyframe(1, duration: 0.35 * flare)
+                                LinearKeyframe(0, duration: 0.65 * flare)
+                                LinearKeyframe(
+                                    0, duration: cycle - travel + fade - flare)
+                            }
+                        }
+                }
             }
         }
         .accessibilityElement()
         .accessibilityLabel("Progress")
         .accessibilityValue("\(Int(progress * 100))%")
+    }
+
+    /// The traveling pulse (a dimmer sun point, at the head's former
+    /// brightness) plus the flare where it merges with the head.
+    @ViewBuilder
+    private nonisolated func pulseAndFlare(
+        phase: MoonPulsePhase, rect: CGRect, head: CGPoint, sunlight: Color, sunCore: Color
+    ) -> some View {
+        let pulsePoint = MoonHorizonStyle.point(
+            atFraction: phase.travel * progress, in: rect)
+        Circle()
+            .fill(RadialGradient(
+                stops: [
+                    .init(color: sunCore, location: 0),
+                    .init(
+                        color: sunCore.opacity(MoonHorizonStyle.pulseBloomInnerAlpha),
+                        location: 0.12),
+                    .init(
+                        color: sunlight.opacity(MoonHorizonStyle.pulseBloomOuterAlpha),
+                        location: 0.42),
+                    .init(color: sunlight.opacity(0), location: 1),
+                ],
+                center: .center, startRadius: 0, endRadius: 13))
+            .frame(width: 26, height: 26)
+            .opacity(phase.glow)
+            .position(pulsePoint)
+        Circle()
+            .fill(sunCore)
+            .frame(width: 3, height: 3)
+            .shadow(color: sunCore, radius: 1.5)
+            .opacity(phase.glow)
+            .position(pulsePoint)
+        Circle()
+            .fill(RadialGradient(
+                stops: [
+                    .init(color: sunCore, location: 0),
+                    .init(color: sunCore.opacity(0.85), location: 0.2),
+                    .init(color: sunlight.opacity(0.35), location: 0.55),
+                    .init(color: sunlight.opacity(0), location: 1),
+                ],
+                center: .center, startRadius: 0, endRadius: 17))
+            .frame(width: 34, height: 34)
+            .scaleEffect(0.7 + 0.65 * phase.flare)
+            .opacity(phase.flare)
+            .position(head)
     }
 
     /// The brightness ramp behind the sun, expressed over the view's full width:

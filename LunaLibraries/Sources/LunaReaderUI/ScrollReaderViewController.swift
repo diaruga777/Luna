@@ -630,7 +630,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         }
     }
 
-    private func image(at point: CGPoint) -> (image: UIImage, frame: CGRect)? {
+    /// Hit-tests `point` against the rendered image ranges — glyph geometry only, no
+    /// disk decode. Used by `shouldReceive`, which runs on every touch during
+    /// scrolling, so it must stay cheap; the actual image bytes are only decoded once
+    /// a tap is confirmed (`image(at:)`).
+    private func imageEntry(at point: CGPoint) -> (entry: (range: NSRange, fileURL: URL), rect: CGRect)? {
         // `point` is in the text view's (content) coordinate space — a scroll view's
         // bounds.origin already IS its contentOffset, so it must NOT be added again.
         // Only the text container inset separates content space from layoutManager
@@ -641,8 +645,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             y: point.y - textView.textContainerInset.top)
         let index = textView.layoutManager.characterIndex(
             for: containerPoint, in: textView.textContainer, fractionOfDistanceBetweenInsertionPoints: nil)
-        guard let entry = rendered.imageRanges.first(where: { NSLocationInRange(index, $0.range) }),
-              let image = UIImage(contentsOfFile: entry.fileURL.path)
+        guard let entry = rendered.imageRanges.first(where: { NSLocationInRange(index, $0.range) })
         else { return nil }
         let glyphRect = textView.layoutManager.boundingRect(forGlyphRange: entry.range, in: textView.textContainer)
         // `characterIndex(for:)` snaps to the NEAREST glyph, so a tap on a link near an
@@ -654,7 +657,17 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // the scroll offset into view space.
         let contentRect = glyphRect.offsetBy(
             dx: textView.textContainerInset.left, dy: textView.textContainerInset.top)
-        return (image, textView.convert(contentRect, to: view))
+        return (entry, textView.convert(contentRect, to: view))
+    }
+
+    /// Full hit-test + decode. Full resolution (not the reader's downsampled inline
+    /// attachment) is intentional here — the lightbox is a zoom-to-inspect view — so
+    /// this must only run for an actual tap/long-press, never per-touch.
+    private func image(at point: CGPoint) -> (image: UIImage, frame: CGRect)? {
+        guard let hit = imageEntry(at: point),
+              let image = UIImage(contentsOfFile: hit.entry.fileURL.path)
+        else { return nil }
+        return (image, hit.rect)
     }
 
     @objc private func imageTapped(_ gesture: UITapGestureRecognizer) {
@@ -667,9 +680,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         // The sentence long-press listens everywhere in the text (it only sets a flag).
         // The inline-image tap keeps its existing restriction: fire only on an image so
-        // link/text taps fall through to UITextView's own handling.
+        // link/text taps fall through to UITextView's own handling. This runs on every
+        // touch during scrolling, so it hit-tests glyph geometry only — no disk decode
+        // (see `imageEntry(at:)`).
         if gestureRecognizer === sentenceLongPress { return true }
-        return image(at: touch.location(in: textView)) != nil
+        return imageEntry(at: touch.location(in: textView)) != nil
     }
 
     public func gestureRecognizer(

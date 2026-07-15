@@ -37,6 +37,13 @@ public final class ReadingListIngestor {
     private var inFlight = Set<UUID>()
     private let lock = NSLock()
 
+    /// Runs `ingestAllPending()`'s enumeration (a full `readingList.json` decode)
+    /// and backfill scans off the caller's thread — it's called synchronously
+    /// from launch, foreground, and pull-to-refresh, none of which should block
+    /// on it.
+    private let sweepQueue = DispatchQueue(
+        label: "com.hsanabria.luna.readingListIngestor.sweep", qos: .utility)
+
     /// Fetches and extracts content for one item. Safe to call repeatedly.
     ///
     /// `forceArticle` skips product-page detection entirely, so the URL is ingested
@@ -423,15 +430,25 @@ public final class ReadingListIngestor {
     }
 
     /// Kicks off ingestion for everything not yet ready (app launch / foreground).
-    public func ingestAllPending() {
-        // `.needsCaptcha` items can only advance when the user solves the archive
-        // CAPTCHA, so a background re-fetch can't help them — retry only the states
-        // that an automated pass can actually move forward.
-        for item in store.items() where item.state == .pending || item.state == .failed {
-            Task { await self.ingest(item) }
+    /// The enumeration (`store.items()` decode) and the two backfill scans run off
+    /// the caller's thread on `sweepQueue`; per-item ingestion was already async
+    /// (`Task { await self.ingest(item) }`) and the backfills already hop to
+    /// `@MainActor` internally for their own store reads, so this only changes
+    /// which thread performs the initial decode + candidate scan.
+    /// `completion` is a test seam: it fires once the sweep body (not the
+    /// fire-and-forget per-item/backfill work it spawns) has run.
+    public func ingestAllPending(completion: (() -> Void)? = nil) {
+        sweepQueue.async {
+            // `.needsCaptcha` items can only advance when the user solves the
+            // archive CAPTCHA, so a background re-fetch can't help them — retry
+            // only the states that an automated pass can actually move forward.
+            for item in self.store.items() where item.state == .pending || item.state == .failed {
+                Task { await self.ingest(item) }
+            }
+            self.backfillMissingWebArchives()
+            self.backfillMissingThumbnails()
+            completion?()
         }
-        backfillMissingWebArchives()
-        backfillMissingThumbnails()
     }
 
     /// True while a thumbnail backfill pass is running, so overlapping

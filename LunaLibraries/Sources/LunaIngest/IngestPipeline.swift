@@ -299,10 +299,20 @@ public enum IngestPipeline {
         case let .paywalled(title):
             return .needsArchive(title: title)
         case .unreadable:
-            // A hard-paywall host or already-archived URL is still readable behind a
-            // user-solved CAPTCHA — park it for the archive reader. A truly
-            // unreachable ordinary page is a genuine failure.
-            if ArticleFetcher.isHardPaywallHost(url) || ArticleFetcher.isArchiveTodayURL(url) {
+            // A browser-only site rule means the background fetch is not the final
+            // authority. Anti-bot front doors such as Reuters/DataDome can reject
+            // URLSession before yielding even a title, while the rule's direct-unlock
+            // WKWebView leg (the same script-blocking path used by the Safari extension)
+            // can still render the article. Preserve that route instead of marking the
+            // item failed before the browser tier gets a chance to run.
+            let hasBrowserRecovery = !BypassPlan.make(
+                for: url, directHTML: directHTML
+            ).webPreStages.isEmpty
+            // A hard-paywall host or already-archived URL is likewise still readable
+            // behind a user-solved CAPTCHA. Only a truly unreachable ordinary page
+            // with no eligible browser recovery is a genuine failure.
+            if hasBrowserRecovery || ArticleFetcher.isHardPaywallHost(url)
+                || ArticleFetcher.isArchiveTodayURL(url) {
                 return .needsArchive(title: ArticleFetcher.articleTitleGuess(from: url))
             }
             return .failed

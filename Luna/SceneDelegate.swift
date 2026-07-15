@@ -214,7 +214,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             forSurface: AppSurfaceConfig.current.storageIdentifier)
         // Items may have been added by the intent while we were backgrounded.
         NotificationCenter.default.post(name: .readingListChanged, object: nil)
-        SavedMediaStore.shared.purgeExpired()
+        // purgeExpired() does manifest disk I/O (+ file deletion) under a lock;
+        // keep it off the main thread (the store already posts its own change
+        // notification back on main).
+        DispatchQueue.global(qos: .utility).async {
+            SavedMediaStore.shared.purgeExpired()
+        }
         ReadingListIngestor.shared.ingestAllPending()
         ArticleSendCoordinator.shared.retryPendingSends()
         Task { await IncomingMailImporter.shared.importNewMail() }

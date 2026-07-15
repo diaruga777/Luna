@@ -177,7 +177,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         readingListObserver = NotificationCenter.default.addObserver(
             forName: .readingListChanged, object: nil, queue: .main
         ) { [weak self] _ in
-            SavedMediaStore.shared.purgeExpired()
+            // purgeExpired() does manifest disk I/O (+ file deletion) under a lock;
+            // keep it off the main thread (the store already posts its own change
+            // notification back on main).
+            DispatchQueue.global(qos: .utility).async {
+                SavedMediaStore.shared.purgeExpired()
+            }
             self?.schedulePriceRefresh(reason: "reading list changed")
         }
         // Resume whatever a Wi-Fi-only network policy deferred, the instant

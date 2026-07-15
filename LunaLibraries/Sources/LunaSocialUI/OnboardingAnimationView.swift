@@ -76,6 +76,15 @@ public final class OnboardingAnimationView: UIView {
     private let accent = GlassStyle.lunaBrandAccent
     private var didBuildIllustration = false
 
+    /// True while this view's loop is meant to be animating (set by `start()`, cleared
+    /// by `stop()`) — distinct from whether CAAnimations are actually PRESENT, since
+    /// UIKit silently strips repeating keyframe animations when the app backgrounds.
+    /// Gates the foreground restart below so a view that was never started (e.g. an
+    /// off-screen onboarding step preloaded but not yet reached) doesn't spontaneously
+    /// start animating just because the app came back to the foreground.
+    private var isRunning = false
+    private var foregroundObserver: NSObjectProtocol?
+
     public init(kind: Kind, appIcon: AppIcon = .currentBundle) {
         self.kind = kind
         self.appIcon = appIcon
@@ -102,6 +111,7 @@ public final class OnboardingAnimationView: UIView {
 
     /// Begins (or restarts) the looping animation. Safe to call repeatedly.
     public func start() {
+        isRunning = true
         buildIfNeeded()
         resetAnimationTree()
         switch kind {
@@ -118,7 +128,46 @@ public final class OnboardingAnimationView: UIView {
     /// Re-entering onboarding from Safari/Settings can otherwise stack multiple
     /// keyframe loops on the same phone mockup.
     public func stop() {
+        isRunning = false
         resetAnimationTree()
+    }
+
+    /// `UIView.animateKeyframes(..., options: [.repeat])` loops are removed by UIKit
+    /// when the app backgrounds, so simply returning to onboarding shows a frozen
+    /// mockup — nothing re-adds the CAAnimations on its own. Restart from scratch
+    /// (`start()` resets the animation tree first, so this can't stack loops) whenever
+    /// the app becomes active while this view is both in a window and was actually
+    /// running before the app backgrounded.
+    public override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            installForegroundObserverIfNeeded()
+        } else {
+            removeForegroundObserver()
+        }
+    }
+
+    private func installForegroundObserverIfNeeded() {
+        guard foregroundObserver == nil else { return }
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isRunning, self.window != nil else { return }
+            self.start()
+        }
+    }
+
+    private func removeForegroundObserver() {
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+        foregroundObserver = nil
+    }
+
+    deinit {
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
     }
 
     private func resetAnimationTree() {

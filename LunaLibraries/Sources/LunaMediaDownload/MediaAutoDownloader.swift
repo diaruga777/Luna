@@ -90,7 +90,7 @@ public enum MediaAutoDownloader {
     }
 
     /// Whether the running process belongs to Luna Downloader (the app OR one of its
-    /// extensions — bundle ids are all `…downloader[.share|.action|.safari]`). Public
+    /// extensions — bundle ids are all `…downloader[.share|.action2|.safari]`). Public
     /// so the share surface can route saves into the app-owned `SavedMediaStore`
     /// (the Downloader grid's data source) rather than Photos.
     public static var isRunningInDownloader: Bool {

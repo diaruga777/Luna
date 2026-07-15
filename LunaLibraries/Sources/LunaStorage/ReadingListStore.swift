@@ -31,6 +31,12 @@ public final class ReadingListStore {
     /// Serializes read-modify-write mutations WITHIN this process. Also guards
     /// `cachedItems`/`cacheToken` — cache reads/writes never happen outside this lock.
     private let mutationLock = NSLock()
+    /// Off-main home for fire-and-forget position writes (`asyncUpdate` below) —
+    /// a serial queue so those writes still apply in submission order relative to
+    /// each other. `mutationLock` still serializes the actual read-modify-write
+    /// against synchronous callers on other threads; this queue only decides
+    /// which thread performs it.
+    private let asyncUpdateQueue = DispatchQueue(label: "com.hsanabria.luna.readingListStore.asyncUpdate")
     /// Serializes read-modify-write mutations ACROSS processes (app, SaveLink
     /// intent, share/action extensions all write `readingList.json`): without it,
     /// two processes that load → modify → save concurrently silently lose one
@@ -198,9 +204,11 @@ public final class ReadingListStore {
     // whole-item writes: callers hold stale copies, and overwriting the whole
     // item silently reverts fields written by other screens in the meantime.
 
-    /// Persists the RSVP resume position.
+    /// Persists the RSVP resume position. Fire-and-forget (see `asyncUpdate`) —
+    /// this is a resume position consumed on the NEXT open, not read back
+    /// immediately after being set.
     public func setLastWordIndex(_ wordIndex: Int, for itemID: UUID) {
-        coordinatedUpdate { all in
+        asyncUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].lastWordIndex != wordIndex else { return false }
             all[index].lastWordIndex = wordIndex
@@ -229,6 +237,10 @@ public final class ReadingListStore {
     ///   stored exact offset no longer corresponds to `lastWordIndex` and must be
     ///   invalidated). Distinct from a nil `scrollOffset`, which leaves it untouched.
     /// - Parameter lastOriginalScrollOffset: the archive reader's own disjoint offset.
+    ///
+    /// Fire-and-forget (see `asyncUpdate`) — called from reader teardown paths
+    /// (often mid pop-transition), and these fields are resume positions consumed
+    /// on the NEXT open, not read back immediately after being set.
     public func saveReaderExitPosition(
         scrollOffset: Double? = nil, clearScrollOffset: Bool = false,
         readingProgress: Double? = nil,
@@ -236,7 +248,7 @@ public final class ReadingListStore {
         lastOriginalScrollOffset: Double? = nil,
         for itemID: UUID
     ) {
-        coordinatedUpdate { all in
+        asyncUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             var changed = false
             if clearScrollOffset {
@@ -271,8 +283,10 @@ public final class ReadingListStore {
         }
     }
 
+    /// Fire-and-forget (see `asyncUpdate`) — a resume position consumed on the
+    /// NEXT open, not read back immediately after being set.
     public func setLastScrollOffset(_ offset: Double, for itemID: UUID) {
-        coordinatedUpdate { all in
+        asyncUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].lastScrollOffset != offset else { return false }
             all[index].lastScrollOffset = offset
@@ -281,8 +295,10 @@ public final class ReadingListStore {
     }
 
     /// Persists the read-aloud resume position (marks audio as having played).
+    /// Fire-and-forget (see `asyncUpdate`) — a resume position consumed on the
+    /// NEXT open, not read back immediately after being set.
     public func setLastSpokenWordIndex(_ wordIndex: Int, for itemID: UUID) {
-        coordinatedUpdate { all in
+        asyncUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].lastSpokenWordIndex != wordIndex else { return false }
             all[index].lastSpokenWordIndex = wordIndex
@@ -291,9 +307,10 @@ public final class ReadingListStore {
     }
 
     /// Persists how far through the article the user has gotten (0…1, only
-    /// ever increases).
+    /// ever increases). Fire-and-forget (see `asyncUpdate`) — a resume position
+    /// consumed on the NEXT open, not read back immediately after being set.
     public func setReadingProgress(_ progress: Double, for itemID: UUID) {
-        coordinatedUpdate { all in
+        asyncUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
             let clamped = min(max(progress, 0), 1)
             guard clamped > (all[index].readingProgress ?? 0) else { return false }
@@ -918,6 +935,26 @@ public final class ReadingListStore {
         let result = coordResult ?? perform(listFileURL)
         if wrote { postChanged() }
         return result
+    }
+
+    /// Runs `coordinatedUpdate` on `asyncUpdateQueue` instead of the caller's own
+    /// thread. Reserved for setters whose callers don't need to observe the
+    /// write's completion or read the field back immediately (resume positions,
+    /// consumed on the NEXT open) — anything with a return value or a read-back
+    /// expectation must stay on synchronous `coordinatedUpdate`/`coordinatedMutate`.
+    /// A queued write targeting an item deleted before it runs is already a safe
+    /// no-op (`coordinatedUpdate`'s own `firstIndex` guard).
+    private func asyncUpdate(_ body: @escaping (inout [ReadingListItem]) -> Bool) {
+        asyncUpdateQueue.async { [weak self] in
+            self?.coordinatedUpdate(body)
+        }
+    }
+
+    /// Test seam: blocks until every `asyncUpdate` queued before this call has
+    /// finished, so tests that write a position field then immediately assert on
+    /// it can do so deterministically instead of racing the background write.
+    public func flushPendingUpdates() {
+        asyncUpdateQueue.sync {}
     }
 
     /// Like `coordinatedMutate` but only writes + notifies when `body` reports a

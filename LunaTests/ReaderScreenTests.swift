@@ -331,6 +331,9 @@ final class ReaderScreenTests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         skipBack.sendActions(for: .touchUpInside)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        // Skipping saves progress via the fire-and-forget saveReaderExitPosition
+        // (WS-F1); flush before reading back so this isn't racing the store queue.
+        ReadingListStore.shared.flushPendingUpdates()
 
         let fresh = ReadingListStore.shared.item(withID: storeItem.id)
         XCTAssertEqual(fresh?.readState, .opened)
@@ -367,6 +370,9 @@ final class ReaderScreenTests: XCTestCase {
 
         slider.sendActions(for: .touchUpInside)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        // saveReaderExitPosition is a fire-and-forget async write (WS-F1); flush
+        // it before reading back so this assertion isn't racing the store queue.
+        ReadingListStore.shared.flushPendingUpdates()
         XCTAssertEqual(ReadingListStore.shared.item(withID: scrubItem.id)?.lastWordIndex, 5,
                        "Ending the scrub gesture should persist the new word index")
     }

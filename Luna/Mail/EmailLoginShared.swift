@@ -31,13 +31,23 @@ enum EmailLoginUI {
         glyph.contentMode = .center
         glyph.translatesAutoresizingMaskIntoConstraints = false
         tile.addSubview(glyph)
+        // Wrapped in a centering container: the screens' vertical stacks use
+        // `.fill` alignment, which would otherwise stretch the tile's required
+        // 96pt width to the full stack width (the same reason
+        // OnboardingStepViewController centers its visual inside a panel).
+        let wrapper = UIView()
+        wrapper.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(tile)
         NSLayoutConstraint.activate([
             tile.widthAnchor.constraint(equalToConstant: 96),
             tile.heightAnchor.constraint(equalToConstant: 96),
             glyph.centerXAnchor.constraint(equalTo: tile.centerXAnchor),
             glyph.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
+            tile.topAnchor.constraint(equalTo: wrapper.topAnchor),
+            tile.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor),
+            tile.centerXAnchor.constraint(equalTo: wrapper.centerXAnchor),
         ])
-        return tile
+        return wrapper
     }
 
     static func titleLabel(_ text: String) -> UILabel {

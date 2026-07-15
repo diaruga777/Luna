@@ -319,6 +319,10 @@ private final class SavedMediaImagePageViewController: UIViewController, UIScrol
     private let scrollView = UIScrollView()
     private let imageView = UIImageView()
     private var photoRequestID: PHImageRequestID = PHInvalidImageRequestID
+    /// Bumped on every `loadImage()` call, so a stale in-flight `.local` decode is
+    /// discarded on delivery. `weak self` alone only covers plain deallocation; this
+    /// also covers a page instance still alive but reloaded/reused meanwhile.
+    private var loadToken: UInt64 = 0
 
     init(
         itemID: UUID,
@@ -373,7 +377,26 @@ private final class SavedMediaImagePageViewController: UIViewController, UIScrol
     private func loadImage() {
         switch backing {
         case .local(let fileURL):
-            imageView.image = UIImage(contentsOfFile: fileURL.path)
+            // Full resolution is intentional here (this is a zoom-to-inspect viewer,
+            // unlike the grid's downsampled thumbnails) — but decode off-main so a
+            // large photo/frame doesn't block the main thread on push.
+            loadToken &+= 1
+            let token = loadToken
+            Task.detached(priority: .userInitiated) { [weak self] in
+                guard let raw = UIImage(contentsOfFile: fileURL.path) else {
+                    await MainActor.run {
+                        guard let self, self.loadToken == token else { return }
+                        self.imageView.image = nil
+                    }
+                    return
+                }
+                let prepared = await raw.byPreparingForDisplay()
+                await MainActor.run {
+                    guard let self, self.loadToken == token else { return }
+                    self.imageView.image = prepared ?? raw
+                    self.layoutImageViewToFit()
+                }
+            }
         case .photos(let identifier):
             Task { @MainActor [weak self] in
                 guard let self,

@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "LunaModels", targets: ["LunaModels"]),
         .library(name: "LunaURLClassification", targets: ["LunaURLClassification"]),
         .library(name: "LunaInterop", targets: ["LunaInterop"]),
+        .library(name: "LunaInteropUI", targets: ["LunaInteropUI"]),
         .library(name: "LunaHTMLClassification", targets: ["LunaHTMLClassification"]),
         .library(name: "LunaPaywallBypass", targets: ["LunaPaywallBypass"]),
         .library(name: "LunaPriceMetadata", targets: ["LunaPriceMetadata"]),
@@ -58,6 +59,13 @@ let package = Package(
         // extension in LunaIngest (which already owns `Outcome`), rather than
         // LunaInterop depending upward on the much heavier LunaIngest.
         .target(name: "LunaInterop", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
+        // The interop prompt (extension + in-app) and the paywall — UIKit, so it
+        // sits one tier above LunaInterop. Deliberately depends on ONLY
+        // LunaInterop + LunaDesignSystem (not LunaTransitions/LunaStorage/etc.):
+        // it's linked into the share/action extensions via LunaShareSurface, and
+        // every host already knows how to wrap its own modal presentation
+        // (`ExtensionHost.presentModally`) in the app's Dot Matrix chrome.
+        .target(name: "LunaInteropUI", dependencies: ["LunaInterop", "LunaURLClassification", "LunaDesignSystem"]),
         .target(name: "LunaHTMLClassification", dependencies: [
             "LunaModels", "LunaURLClassification", "LunaPriceMetadata",
             .product(name: "SwiftSoup", package: "SwiftSoup"),
@@ -111,7 +119,7 @@ let package = Package(
         // LunaAudioPlayback: Phase 6 — `ExtensionAudioScriptWriter` writes a heuristics-only
         // audio script to the cache right after an extension-context article save (see
         // ShareSurfaceDriver.persistArticle); the extensions never call AudioScriptPipeline.install().
-        .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaAudioPlayback", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms", "LunaTransitions"]),
+        .target(name: "LunaShareSurface", dependencies: ["LunaAppConfig", "LunaModels", "LunaStorage", "LunaIngest", "LunaURLClassification", "LunaDesignSystem", "LunaReaderUI", "LunaArchiveReader", "LunaAudioPlayback", "LunaPriceUI", "LunaMediaDownload", "LunaPlatforms", "LunaTransitions", "LunaInterop", "LunaInteropUI"]),
         .target(name: "LunaSocialUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaReaderUI", "LunaReadingList", "LunaSocial", "LunaTransitions"]),
         .target(name: "LunaIntents", dependencies: ["LunaModels", "LunaStorage", "LunaURLClassification", "LunaPlatforms", "LunaReadingList", "LunaSocial", "LunaSend"]),
         .target(name: "LunaReadingListUI", dependencies: ["LunaModels", "LunaStorage", "LunaDesignSystem", "LunaPlatforms", "LunaMediaDownload", "LunaReaderUI", "LunaSend"]),

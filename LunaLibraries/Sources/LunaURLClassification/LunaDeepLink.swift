@@ -64,4 +64,22 @@ public enum LunaDeepLink {
         return URLComponents(url: url, resolvingAgainstBaseURL: false)?
             .queryItems?.first(where: { $0.name == "url" })?.value
     }
+
+    /// `<scheme>://interop` — opens straight to the cross-app-interop paywall
+    /// (`claudedocs/interop-purchase.md`). Used by the interop prompt's
+    /// extension-surface "Open Luna" step (`extensionContext.open`, always this
+    /// app's OWN scheme, since a purchase only ever unlocks/redirects within
+    /// the app the prompt is running in) and by `SceneDelegate`'s routing.
+    public static func interopLink(scheme: String = ownScheme) -> URL? {
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = "interop"
+        return components.url
+    }
+
+    /// True for `<any Luna scheme>://interop`.
+    public static func isInteropLink(_ url: URL) -> Bool {
+        guard let scheme = url.scheme, allSchemes.contains(scheme) else { return false }
+        return url.host == "interop"
+    }
 }

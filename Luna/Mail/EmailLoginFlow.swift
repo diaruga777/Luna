@@ -95,6 +95,39 @@ final class EmailEntryViewController: UIViewController, UITextFieldDelegate {
         return true
     }
 
+    /// Accept a complete address at the delegate boundary. On iOS 26, keyboard
+    /// AutoFill and credential providers can deliver their suggestion as one
+    /// replacement without subsequently sending `.editingChanged`. Applying that
+    /// replacement ourselves also makes a suggestion replace a partially typed
+    /// prefix instead of being ignored or appended to it.
+    func textField(
+        _ textField: UITextField, shouldChangeCharactersInRanges ranges: [NSValue],
+        replacementString string: String
+    ) -> Bool {
+        acceptCompleteAddress(string, in: textField)
+    }
+
+    /// Some credential-provider input paths still use UIKit's original
+    /// single-range delegate callback, so keep the same behavior there too.
+    func textField(
+        _ textField: UITextField, shouldChangeCharactersIn range: NSRange,
+        replacementString string: String
+    ) -> Bool {
+        acceptCompleteAddress(string, in: textField)
+    }
+
+    private func acceptCompleteAddress(_ replacement: String, in textField: UITextField) -> Bool {
+        guard textField === field,
+              replacement.contains("@"), replacement.contains(".") else { return true }
+        textField.text = replacement
+        enteredAddress = replacement
+        if let end = textField.textRange(from: textField.endOfDocument, to: textField.endOfDocument) {
+            textField.selectedTextRange = end
+        }
+        textField.sendActions(for: .editingChanged)
+        return false
+    }
+
     /// Mirror of the field's text, kept current via `.editingChanged` so an
     /// AutoFilled value survives even if the field is cleared on return from a
     /// password-manager extension.

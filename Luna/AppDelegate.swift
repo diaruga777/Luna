@@ -209,8 +209,15 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Read incoming mail (Luna shares + newsletters) — all surfaces.
         Task { await IncomingMailImporter.shared.importNewMail() }
         scheduleMailFetch()
-        schedulePriceRefresh(reason: "launch")
-        refreshOverduePriceTrackersOnLaunch()
+        // Both calls start with a full readingList.json decode
+        // (priceTrackersStalestFirst() -> items()); defer that store read off the
+        // launch frame. BGTaskScheduler and DiagnosticLog are thread-safe, and
+        // each call still runs exactly once per launch — just not synchronously
+        // before didFinishLaunching returns.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.schedulePriceRefresh(reason: "launch")
+            self?.refreshOverduePriceTrackersOnLaunch()
+        }
         return true
     }
 

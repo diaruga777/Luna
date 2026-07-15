@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "LunaAppConfig", targets: ["LunaAppConfig"]),
         .library(name: "LunaModels", targets: ["LunaModels"]),
         .library(name: "LunaURLClassification", targets: ["LunaURLClassification"]),
+        .library(name: "LunaInterop", targets: ["LunaInterop"]),
         .library(name: "LunaHTMLClassification", targets: ["LunaHTMLClassification"]),
         .library(name: "LunaPaywallBypass", targets: ["LunaPaywallBypass"]),
         .library(name: "LunaPriceMetadata", targets: ["LunaPriceMetadata"]),
@@ -48,6 +49,15 @@ let package = Package(
         .target(name: "LunaAppConfig"),
         .target(name: "LunaModels"),
         .target(name: "LunaURLClassification", dependencies: ["LunaModels"]),
+        // Cross-app-interop purchase gate: the App Group "unlocked" flag, the
+        // per-surface owner/installed-marker lookups, and the pure gate decision.
+        // Deliberately kept in the SAME low tier as LunaAppConfig/LunaModels/
+        // LunaURLClassification (no fetch/HTML/UIKit) so it's cheap to link into
+        // the share/action extensions and any future StoreKit-only context. The
+        // `Outcome -> InteropSurface` OWNERSHIP mapping lives one tier up, as an
+        // extension in LunaIngest (which already owns `Outcome`), rather than
+        // LunaInterop depending upward on the much heavier LunaIngest.
+        .target(name: "LunaInterop", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
         .target(name: "LunaHTMLClassification", dependencies: [
             "LunaModels", "LunaURLClassification", "LunaPriceMetadata",
             .product(name: "SwiftSoup", package: "SwiftSoup"),
@@ -64,7 +74,7 @@ let package = Package(
         .target(name: "LunaTransitions", dependencies: ["LunaContentRendering", "LunaDesignSystem", "LunaAppConfig", "LunaModels"]),
         .target(name: "LunaFetch", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),
         .target(name: "LunaIngest", dependencies: [
-            "LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaAppConfig", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup"),]),
+            "LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch", "LunaPaywallBypass", "LunaAppConfig", "LunaPriceMetadata", "LunaInterop", .product(name: "SwiftSoup", package: "SwiftSoup"),]),
         .target(name: "LunaStorage", dependencies: ["LunaAppConfig", "LunaModels", "LunaURLClassification"]),
         .target(name: "LunaDocuments", dependencies: ["LunaModels"]),
         .target(name: "LunaEpub", dependencies: ["LunaModels"]),
@@ -109,6 +119,7 @@ let package = Package(
         .testTarget(name: "LunaAppConfigTests", dependencies: ["LunaAppConfig"]),
         .testTarget(name: "LunaModelsTests", dependencies: ["LunaModels"]),
         .testTarget(name: "LunaURLClassificationTests", dependencies: ["LunaURLClassification"]),
+        .testTarget(name: "LunaInteropTests", dependencies: ["LunaInterop"]),
         .testTarget(name: "LunaHTMLClassificationTests", dependencies: ["LunaHTMLClassification", "LunaModels"]),
         .testTarget(name: "LunaPaywallBypassTests", dependencies: ["LunaPaywallBypass", "LunaFetch"]),
         .testTarget(name: "LunaPriceMetadataTests", dependencies: ["LunaPriceMetadata"]),

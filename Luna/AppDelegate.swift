@@ -48,8 +48,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // Mark this surface installed so any Safari extension host knows which
         // sibling Luna apps its page buttons can deep-link into.
         InstalledAppMarkers.recordCurrentApp()
-        let account = EmailAccountStore.shared.account?.address ?? "none"
-        DiagnosticLog.shared.record("email account: \(account)", category: "mail")
+        // Diagnostic-only: the account address just feeds a log line, so defer the
+        // Keychain read off the launch frame (a just-rebooted device's Keychain
+        // query can be slow).
+        DispatchQueue.global(qos: .utility).async {
+            let account = EmailAccountStore.shared.account?.address ?? "none"
+            DiagnosticLog.shared.record("email account: \(account)", category: "mail")
+        }
 
         // Install the in-app "Read instead" behavior for the price-tracking editor
         // (now shared with the extensions in ShareKit, which can't reference the

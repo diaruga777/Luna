@@ -481,20 +481,79 @@ final class ReadingListViewController: UITableViewController {
         let items = store.items()
         updateFilterVisibility(items: items)
         updateCatchUpButton(items: items)
-        groups = buildGroups(items: items)
-        tableView.reloadData()
+        applyReloadedGroups(buildGroups(items: items))
         updateEmptyState()
         presentPendingSendFailureNoticeIfNeeded(items: items)
     }
 
-    /// Show a surface-specific explanation only when that surface has no rows at all.
-    /// In particular, Reader's Archive remains visible instead of being obscured by an
-    /// empty state.
-    private func updateEmptyState() {
-        guard groups.isEmpty, let surface else {
-            tableView.backgroundView = nil
+    /// Swaps `groups` to the freshly-built model with the same id-keyed diff the filter
+    /// path uses (`ReadingListDiff`), instead of unconditionally `reloadData()`-ing —
+    /// ingest bursts, price refreshes, and read-state flips all route through `reload()`,
+    /// so a blanket reload was rebuilding every visible cell (and cancelling any in-flight
+    /// row animation) on every store mutation. Falls back to a full `reloadData()` for the
+    /// cases the diff can't reason about:
+    /// - first load / any empty↔non-empty flip (nothing meaningful to diff, and the table
+    ///   may not have an established baseline yet)
+    /// - a pasteboard row on either side: `buildGroups` synthesizes it fresh (with a NEW
+    ///   random id) on every call, so it has no stable identity for the differ to match
+    ///   against, and its cell is configured through a path `reconfigurePersistingCells`
+    ///   doesn't drive
+    private func applyReloadedGroups(_ newGroups: [(section: Section, items: [ReadingListItem])]) {
+        let oldGroups = groups
+        let hasPasteboardRow = { (groups: [(section: Section, items: [ReadingListItem])]) in
+            groups.contains { $0.section == .pasteboard }
+        }
+        guard !oldGroups.isEmpty, !newGroups.isEmpty,
+              !hasPasteboardRow(oldGroups), !hasPasteboardRow(newGroups) else {
+            groups = newGroups
+            tableView.reloadData()
             return
         }
+
+        // A collapsed section renders zero rows (`numberOfRowsInSection` returns 0 for
+        // it), so its items must never generate row-level diff ops — an insert/delete
+        // would target a row index the table doesn't currently have and crash
+        // `performBatchUpdates`. Blank out a collapsed section's item ids for the diff
+        // (both sides, since collapse state can't change mid-`reload()`) so it only ever
+        // contributes whole-section ops, which don't reference row counts. `groups`
+        // itself still keeps the real items, so expanding it later renders correctly.
+        func diffModel(_ groups: [(section: Section, items: [ReadingListItem])]) -> [ReadingListGroup] {
+            groups.map { group in
+                ReadingListGroup(
+                    section: group.section,
+                    itemIDs: isCollapsed(group.section) ? [] : group.items.map(\.id))
+            }
+        }
+        let diff = ReadingListDiff.compute(old: diffModel(oldGroups), new: diffModel(newGroups))
+
+        guard !diff.isEmpty else {
+            // Structurally unchanged, but `.readingListChanged` fired for a reason — an
+            // item's CONTENT likely changed (title/thumbnail arrived, read state
+            // flipped, price updated). Reconfigure every persisting row in place;
+            // nothing moved, so there's nothing to animate.
+            groups = newGroups
+            reconfigurePersistingCells(in: diff.persistingItemIDs)
+            return
+        }
+
+        tableView.performBatchUpdates { [weak self] in
+            guard let self else { return }
+            self.groups = newGroups
+            self.tableView.deleteSections(diff.deletedSections, with: .automatic)
+            self.tableView.insertSections(diff.insertedSections, with: .automatic)
+            self.tableView.deleteRows(at: diff.deletedRows, with: .automatic)
+            self.tableView.insertRows(at: diff.insertedRows, with: .automatic)
+        } completion: { [weak self] _ in
+            self?.reconfigurePersistingCells(in: diff.persistingItemIDs)
+        }
+    }
+
+    /// Show a surface-specific explanation only when that surface has no rows at all.
+    /// In particular, Reader's Archive remains visible instead of being obscured by an
+    /// empty state. Built once and toggled rather than rebuilt every reload — the
+    /// message never changes since it's derived from the fixed `surface`.
+    private lazy var emptyStateView: UIView? = {
+        guard let surface else { return nil }
 
         let message: String
         switch surface {
@@ -503,8 +562,7 @@ final class ReadingListViewController: UITableViewController {
         case .priceTracker:
             message = "Track a product to see its price here."
         case .downloader:
-            tableView.backgroundView = nil
-            return
+            return nil
         }
 
         let label = UILabel()
@@ -522,7 +580,11 @@ final class ReadingListViewController: UITableViewController {
             label.trailingAnchor.constraint(equalTo: container.layoutMarginsGuide.trailingAnchor),
             label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
-        tableView.backgroundView = container
+        return container
+    }()
+
+    private func updateEmptyState() {
+        tableView.backgroundView = groups.isEmpty ? emptyStateView : nil
     }
 
     /// Builds the non-empty grouped model (sections × items, in display order) for the

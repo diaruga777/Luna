@@ -449,6 +449,9 @@ private final class SavedMediaCell: UICollectionViewCell {
     private var representedItemID: UUID?
     private var representedSourceURLString: String?
     private var isShowingUndownloadedState = false
+    /// Bumped on every reuse/reconfigure so a `DownsampledImageLoader` decode that
+    /// resolves after this cell has been recycled for different content is discarded.
+    private var loadToken: UInt64 = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -509,6 +512,7 @@ private final class SavedMediaCell: UICollectionViewCell {
             PHImageManager.default().cancelImageRequest(photoRequestID)
         }
         photoRequestID = PHInvalidImageRequestID
+        loadToken &+= 1   // invalidate any in-flight downsample decode
         representedItemID = nil
         representedSourceURLString = nil
         isShowingUndownloadedState = false
@@ -549,6 +553,7 @@ private final class SavedMediaCell: UICollectionViewCell {
         guard let item else { return }
         representedItemID = item.id
         representedSourceURLString = item.sourceURLString
+        loadToken &+= 1   // invalidate any decode started for the previous content
         contentView.backgroundColor = .secondarySystemBackground
         photosBadgeView.isHidden = item.photosLocalIdentifier == nil
 
@@ -586,10 +591,28 @@ private final class SavedMediaCell: UICollectionViewCell {
                 self.imageView.contentMode = .scaleAspectFill
                 self.imageView.tintColor = nil
             }
-        } else if let url = item.thumbnailURL, let image = UIImage(contentsOfFile: url.path) {
-            imageView.image = image
+        } else if let url = item.thumbnailURL {
             imageView.contentMode = .scaleAspectFill
             imageView.tintColor = nil
+            // Cell is always exactly square (see `columnLayout`); a zero bounds means
+            // layout hasn't sized this cell yet (rare — dequeue happens before
+            // attributes are applied in some paths), so fall back to the smallest
+            // configured column width rather than decoding at full resolution.
+            let side = contentView.bounds.width > 0 ? contentView.bounds.width : 130
+            let pointSize = CGSize(width: side, height: side)
+            let scale = window?.screen.scale ?? UIScreen.main.scale
+            let token = loadToken
+            let itemID = item.id
+            DownsampledImageLoader.load(
+                path: url.path, pointSize: pointSize, scale: scale,
+                isStale: { [weak self] in
+                    guard let self else { return true }
+                    return self.loadToken != token || self.representedItemID != itemID
+                }
+            ) { [weak self] image in
+                guard let self, let image else { return }
+                self.imageView.image = image
+            }
         } else {
             imageView.image = UIImage(systemName: item.kind == .video ? "video.fill" : "photo")
             imageView.tintColor = .tertiaryLabel

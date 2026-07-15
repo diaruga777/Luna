@@ -124,7 +124,12 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   Downloader-owned dedup is based on the durable `SavedMediaStore` state: a stale
   `autoDownloadedURLs` marker never suppresses a missing or `.undownloaded` row, so an
   interrupted/crashed save is restartable by pasting the URL again. Store-change notifications
-  from background jobs are marshalled onto the main queue before UIKit grid observers run.
+  and live job-progress notifications from async ingestion / URLSession delegates are marshalled
+  onto the main queue before UIKit grid/footer observers run. A launch pass compares every
+  persisted resolving/downloading job with the background session's real tasks and recreates a
+  missing transfer; pasting the same interrupted URL performs the same repair immediately. New
+  jobs register their background task before notifying UI, so a termination cannot leave a
+  durable forever-resolving job in the old persist-before-task window.
 - **Legacy reading-list long press** — manual Save to Photos remains available in the
   combined/debug list and uses the same confirmed local-to-Photos transition for
   Downloader rows.

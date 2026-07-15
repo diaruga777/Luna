@@ -32,6 +32,18 @@ public enum LiveMediaDownloadStartPolicy {
     }
 }
 
+/// Decides whether a persisted job needs its URLSession transfer recreated after
+/// process death. A background task normally survives relaunch; the restart is
+/// only for the small persist-before-task window (or an otherwise lost task).
+enum LiveMediaDownloadResumePolicy {
+    static func shouldRestart(
+        phase: LiveMediaDownloadJob.Phase, hasActiveTask: Bool
+    ) -> Bool {
+        guard !hasActiveTask else { return false }
+        return phase == .resolving || phase == .downloading
+    }
+}
+
 /// Whether a Downloader-owned start should be deferred until Wi-Fi rather than
 /// starting immediately. Pulled out as a pure function so all four inputs are
 /// covered by unit tests without needing a live `URLSession`/network stack.
@@ -79,23 +91,41 @@ public struct DownloaderJobSnapshot: Equatable {
     public let thumbnailFileName: String?
 }
 
-private func postDownloaderJobProgress(job: LiveMediaDownloadJob, progress: Double?) {
+func postDownloaderJobProgress(job: LiveMediaDownloadJob, progress: Double?) {
     var userInfo: [AnyHashable: Any] = [
         "sourceURLString": job.sourceURLString,
         "snapshot": job.downloaderSnapshot,
     ]
     if let progress { userInfo["progress"] = progress }
-    NotificationCenter.default.post(
-        name: .downloaderJobProgressChanged, object: nil, userInfo: userInfo)
+    let post = {
+        NotificationCenter.default.post(
+            name: .downloaderJobProgressChanged, object: nil, userInfo: userInfo)
+    }
+    // NotificationCenter invokes selector observers synchronously on the posting
+    // thread. The Downloader footer mutates UIKit, while progress originates from
+    // async ingestion and URLSession delegate queues, so UI-facing delivery must
+    // always cross to the main queue first.
+    if Thread.isMainThread {
+        post()
+    } else {
+        DispatchQueue.main.async(execute: post)
+    }
 }
 
 /// Signals that a Downloader-owned job is gone with no result to show (a
 /// suspended job torn down after the resume grace period expires) — the
 /// footer/grid should reset to the static "undownloaded" state immediately.
 private func postDownloaderJobEnded(sourceURLString: String) {
-    NotificationCenter.default.post(
-        name: .downloaderJobProgressChanged, object: nil,
-        userInfo: ["sourceURLString": sourceURLString])
+    let post = {
+        NotificationCenter.default.post(
+            name: .downloaderJobProgressChanged, object: nil,
+            userInfo: ["sourceURLString": sourceURLString])
+    }
+    if Thread.isMainThread {
+        post()
+    } else {
+        DispatchQueue.main.async(execute: post)
+    }
 }
 
 public final class LiveMediaDownloadManager: NSObject {
@@ -192,6 +222,21 @@ public final class LiveMediaDownloadManager: NSObject {
                 existing.ownership = .downloader
                 store.upsert(existing)
             }
+            // A previous process may have died after persisting this job but
+            // before creating its URLSession task. A duplicate paste is an
+            // explicit retry and must repair that orphan instead of returning
+            // success for work that can never advance.
+            let activeJobIDs = await activeTaskJobIDs()
+            if LiveMediaDownloadResumePolicy.shouldRestart(
+                phase: existing.phase,
+                hasActiveTask: activeJobIDs.contains(existing.id)
+            ) {
+                await restartTransfer(for: existing)
+                guard let restarted = store.job(id: existing.id), !restarted.isTerminal else {
+                    return false
+                }
+                existing = restarted
+            }
             await updateActivity(for: existing)
             return true
         }
@@ -216,19 +261,21 @@ public final class LiveMediaDownloadManager: NSObject {
             suspendDeadline: nil,
             ownership: ownership
         )
-        store.upsert(job)
-        if job.isDownloaderOwned {
-            postDownloaderJobProgress(job: job, progress: 0)
-        }
-        await startActivity(for: job)
-
         guard let resolve = Self.resolveRequest(for: sourceURL) else {
+            store.upsert(job)
             await failJob(job, message: MediaDownloadError.unsupported.message)
             return false
         }
         job.resolveKind = resolve.kind
         store.upsert(job)
+        // Register the durable background task before any UI-facing callback.
+        // This closes the persist-without-task window that used to leave a
+        // forever-resolving row if the app terminated during the callback.
         startTask(resolve.request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
+        if job.isDownloaderOwned {
+            postDownloaderJobProgress(job: job, progress: 0)
+        }
+        await startActivity(for: job)
         return true
     }
 
@@ -278,9 +325,86 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     public func resumeLiveActivities() {
-        Task { await reapExpiredSuspensions() }
-        for job in store.jobs().filter({ !$0.isTerminal }) {
-            Task { await updateActivity(for: job) }
+        Task {
+            await reapExpiredSuspensions()
+            let activeJobIDs = await activeTaskJobIDs()
+            for job in store.jobs().filter({ !$0.isTerminal }) {
+                if LiveMediaDownloadResumePolicy.shouldRestart(
+                    phase: job.phase,
+                    hasActiveTask: activeJobIDs.contains(job.id)
+                ) {
+                    await restartTransfer(for: job)
+                }
+                // Restart can reject an invalid persisted URL and remove its job;
+                // never recreate UI/activity state from the stale pre-repair copy.
+                guard let current = store.job(id: job.id), !current.isTerminal else { continue }
+                await updateActivity(for: current)
+                if current.isDownloaderOwned {
+                    postDownloaderJobProgress(job: current, progress: current.progress)
+                }
+            }
+        }
+    }
+
+    /// Job ids currently backed by a real URLSession task. `taskDescription`
+    /// persists with background tasks, making it the join key to `jobs.json`.
+    private func activeTaskJobIDs() async -> Set<String> {
+        await withCheckedContinuation { continuation in
+            session.getAllTasks { tasks in
+                continuation.resume(returning: Set(tasks.compactMap { task in
+                    Self.taskParts(task.taskDescription ?? "")?.jobID
+                }))
+            }
+        }
+    }
+
+    /// Recreates the missing transfer for a persisted resolving/downloading job.
+    /// Used both on launch and when the user pastes the same interrupted URL.
+    private func restartTransfer(for persistedJob: LiveMediaDownloadJob) async {
+        var job = persistedJob
+        switch job.phase {
+        case .resolving:
+            guard let sourceURL = URL(string: job.sourceURLString),
+                  let resolve = Self.resolveRequest(for: sourceURL)
+            else {
+                await failJob(job, message: MediaDownloadError.unsupported.message)
+                return
+            }
+            job.resolveKind = resolve.kind
+            job.errorMessage = nil
+            store.upsert(job)
+            startTask(
+                resolve.request, jobID: job.id,
+                role: .resolve, attempt: job.resolveAttempts)
+
+        case .downloading:
+            guard let assetURLString = job.assetURLString,
+                  let assetURL = URL(string: assetURLString),
+                  let sourceURL = URL(string: job.sourceURLString)
+            else {
+                // Incomplete old/corrupt downloading state can still be rebuilt
+                // from the source resolver instead of remaining stuck forever.
+                job.phase = .resolving
+                job.progress = 0
+                job.assetURLString = nil
+                job.resolveKind = nil
+                store.upsert(job)
+                await restartTransfer(for: job)
+                return
+            }
+            var request = URLRequest(url: assetURL, timeoutInterval: 60)
+            request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+            if sourceURL.host?.lowercased().contains("tiktok") == true {
+                request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
+            }
+            job.errorMessage = nil
+            store.upsert(job)
+            startTask(
+                request, jobID: job.id,
+                role: .media, attempt: job.mediaAttempts)
+
+        case .suspended, .saving, .finished, .failed:
+            return
         }
     }
 

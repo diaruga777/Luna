@@ -37,6 +37,50 @@ final class LiveMediaDownloadJobTests: XCTestCase {
         XCTAssertTrue(decoded.isDownloaderOwned)
     }
 
+    func testResumePolicyRestartsOnlyTransferPhasesWithoutAnActiveTask() {
+        XCTAssertTrue(LiveMediaDownloadResumePolicy.shouldRestart(
+            phase: .resolving, hasActiveTask: false))
+        XCTAssertTrue(LiveMediaDownloadResumePolicy.shouldRestart(
+            phase: .downloading, hasActiveTask: false))
+
+        XCTAssertFalse(LiveMediaDownloadResumePolicy.shouldRestart(
+            phase: .resolving, hasActiveTask: true))
+        XCTAssertFalse(LiveMediaDownloadResumePolicy.shouldRestart(
+            phase: .suspended, hasActiveTask: false))
+        XCTAssertFalse(LiveMediaDownloadResumePolicy.shouldRestart(
+            phase: .saving, hasActiveTask: false))
+        XCTAssertFalse(LiveMediaDownloadResumePolicy.shouldRestart(
+            phase: .finished, hasActiveTask: false))
+        XCTAssertFalse(LiveMediaDownloadResumePolicy.shouldRestart(
+            phase: .failed, hasActiveTask: false))
+    }
+
+    func testBackgroundProgressNotificationIsDeliveredOnMainThread() {
+        let sourceURL = "https://x.com/luna/status/123456789"
+        let delivered = expectation(description: "progress delivered on main thread")
+        let token = NotificationCenter.default.addObserver(
+            forName: .downloaderJobProgressChanged, object: nil, queue: nil
+        ) { notification in
+            guard notification.userInfo?["sourceURLString"] as? String == sourceURL else { return }
+            XCTAssertTrue(Thread.isMainThread)
+            delivered.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let job = LiveMediaDownloadJob(
+            id: "notification-thread", sourceURLString: sourceURL,
+            assetURLString: nil, mediaKind: "unknown", title: "Media",
+            resolveKind: "x", phase: .resolving, progress: 0,
+            thumbnailFileName: nil, fileExtension: nil, errorMessage: nil,
+            errorKind: nil, resolveAttempts: 0, mediaAttempts: 0,
+            suspendDeadline: nil, ownership: .downloader)
+        DispatchQueue.global(qos: .userInitiated).async {
+            postDownloaderJobProgress(job: job, progress: 0)
+        }
+
+        wait(for: [delivered], timeout: 2)
+    }
+
     // MARK: - WiFiOnlyDownloadGate
 
     func testWiFiOnlyGateOnlyDefersDownloaderOwnedAutomaticStartsOffWiFiWhenEnabled() {

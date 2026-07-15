@@ -1037,11 +1037,17 @@ extension LiveMediaDownloadManager: URLSessionDownloadDelegate {
         let phaseChanged = job.phase != .downloading
         job.phase = .downloading
         job.progress = min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        let percentChanged = Int(job.progress * 100) != previousPercent
         store.upsert(job, progressOnly: !phaseChanged)
-        if job.isDownloaderOwned, Int(job.progress * 100) != previousPercent {
+        if job.isDownloaderOwned, percentChanged {
             postDownloaderJobProgress(job: job, progress: job.progress)
         }
-        Task { await updateActivity(for: job) }
+        // activity.update calls burn CPU + ActivityKit's update budget, so
+        // gate on the same whole-percent change as the in-process
+        // notification above; always update on a phase transition.
+        if phaseChanged || percentChanged {
+            Task { await updateActivity(for: job) }
+        }
     }
 
     public func urlSession(

@@ -13,7 +13,9 @@ import UIKit
 
 /// The email-account sign-in flow: enter an address → infer the provider →
 /// either paste an app-specific password (Gmail/iCloud/Yahoo/custom) or run
-/// OAuth (Outlook). Verifies before saving.
+/// OAuth (Outlook). Verifies before saving. See `claudedocs/email-login.md` for
+/// the end-to-end design (autodiscovery, the loading cover, the notification-
+/// permission timing, the checkmark success beat, the AutoFill invariants).
 public enum EmailLoginFlow {
 
     /// Presents the flow modally. `completion(true)` when an account was connected.
@@ -38,7 +40,8 @@ final class EmailEntryViewController: UIViewController {
     private let accountStore: EmailAccountStore
     private let completion: ((Bool) -> Void)?
     private let field = UITextField()
-    private let hint = UILabel()
+    private let providerBadge = ProviderBadgeView()
+    private let continueButton = EmailLoginActionButton(title: "Continue")
 
     init(accountStore: EmailAccountStore, completion: ((Bool) -> Void)?) {
         self.accountStore = accountStore
@@ -49,14 +52,18 @@ final class EmailEntryViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Email Account"
         view.backgroundColor = .systemBackground
+        // The hero owns the title; the nav bar just carries Cancel.
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "Continue", style: .done, target: self, action: #selector(continueTapped))
+
+        let hero = EmailLoginUI.heroTile(symbol: "envelope.badge")
+        let titleLabel = EmailLoginUI.titleLabel("Connect your email")
+        let bodyLabel = EmailLoginUI.bodyLabel(
+            "Luna sends and reads shared articles through your own email account.")
 
         field.placeholder = "you@example.com"
+        field.font = .preferredFont(forTextStyle: .body)
         field.keyboardType = .emailAddress
         field.autocapitalizationType = .none
         field.autocorrectionType = .no
@@ -64,7 +71,8 @@ final class EmailEntryViewController: UIViewController {
         // manager UI. AutoFill insertion still stays native because this field has
         // no delegate and starts its input session only after presentation.
         field.textContentType = .emailAddress
-        field.borderStyle = .roundedRect
+        field.borderStyle = .none
+        field.backgroundColor = .clear
         field.returnKeyType = .continue
         field.translatesAutoresizingMaskIntoConstraints = false
         // Keep the text field delegate nil. In particular, don't interpose on the
@@ -78,21 +86,78 @@ final class EmailEntryViewController: UIViewController {
         field.addTarget(self, action: #selector(addressEdited), for: .editingChanged)
         field.addTarget(self, action: #selector(addressEdited), for: .editingDidEnd)
 
-        hint.text = "Luna sends and reads shared articles through your own email account."
-        hint.font = .preferredFont(forTextStyle: .footnote)
-        hint.textColor = .secondaryLabel
-        hint.numberOfLines = 0
-        hint.translatesAutoresizingMaskIntoConstraints = false
-
-        view.addSubview(field)
-        view.addSubview(hint)
+        let card = EmailLoginUI.fieldCard()
+        let icon = EmailLoginUI.leadingGlyph("envelope")
+        card.addSubview(icon)
+        card.addSubview(field)
+        card.addSubview(providerBadge)
         NSLayoutConstraint.activate([
-            field.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 32),
-            field.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            field.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            hint.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 12),
-            hint.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            hint.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            icon.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            icon.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            field.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
+            field.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            // The badge's constraints never change (only its alpha does), so it
+            // never causes a layout jump when it fades in or out.
+            field.trailingAnchor.constraint(lessThanOrEqualTo: providerBadge.leadingAnchor, constant: -8),
+            providerBadge.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            providerBadge.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+        ])
+
+        let topStack = UIStackView(arrangedSubviews: [hero, titleLabel, bodyLabel, card])
+        topStack.axis = .vertical
+        topStack.alignment = .fill
+        topStack.spacing = 16
+        topStack.setCustomSpacing(24, after: bodyLabel)
+        topStack.translatesAutoresizingMaskIntoConstraints = false
+
+        continueButton.addTarget(self, action: #selector(continueTapped), for: .touchUpInside)
+        continueButton.isEnabled = false
+        view.addSubview(continueButton)
+
+        // A scroll view (rather than plain centering) so a short device + a raised
+        // keyboard never clips the card — matches OnboardingStepViewController's
+        // "scroll when tall, center when it fits" layout.
+        let scroll = UIScrollView()
+        scroll.showsVerticalScrollIndicator = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scroll)
+        let content = UIView()
+        content.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(content)
+        content.addSubview(topStack)
+
+        let contentFillsScroll = content.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor)
+        contentFillsScroll.priority = .defaultLow
+
+        // `keyboardLayoutGuide.topAnchor` already rests at the safe-area bottom
+        // when no keyboard is shown, so this one required constraint alone gives a
+        // sensible resting position AND rides above the keyboard while typing.
+        let aboveKeyboard = continueButton.bottomAnchor.constraint(
+            equalTo: view.keyboardLayoutGuide.topAnchor, constant: -16)
+        aboveKeyboard.priority = .required
+
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: continueButton.topAnchor, constant: -16),
+
+            content.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            content.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
+            contentFillsScroll,
+
+            topStack.topAnchor.constraint(greaterThanOrEqualTo: content.topAnchor, constant: 16),
+            topStack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -16),
+            topStack.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            topStack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            topStack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+
+            continueButton.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            continueButton.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            aboveKeyboard,
         ])
     }
 
@@ -110,8 +175,23 @@ final class EmailEntryViewController: UIViewController {
     /// password-manager extension.
     private var enteredAddress = ""
 
+    private func currentAddressCandidate() -> String {
+        let typed = field.text ?? ""
+        return typed.isEmpty ? enteredAddress : typed
+    }
+
+    /// The existing lightweight validation: no full RFC 5322 parse, just a shape
+    /// check good enough to catch obvious typos before a network round trip.
+    static func isValidAddress(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.contains("@") && trimmed.contains(".")
+    }
+
     @objc private func addressEdited() {
         if let text = field.text, !text.isEmpty { enteredAddress = text }
+        let candidate = currentAddressCandidate().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        providerBadge.setProvider(ProviderBadgeText.text(for: ProviderInference.inferProviderID(for: candidate)))
+        continueButton.isEnabled = Self.isValidAddress(candidate)
     }
 
     @objc private func cancel() { DotMatrixModal.dismiss(self) { self.completion?(false) } }
@@ -123,26 +203,31 @@ final class EmailEntryViewController: UIViewController {
 
     @objc private func continueTapped() {
         guard !isResolving else { return }
-        // Prefer the live field, but fall back to the AutoFill-captured value in
-        // case the field's text was dropped when a password manager filled it.
-        let typed = field.text ?? ""
-        let source = typed.isEmpty ? enteredAddress : typed
-        let address = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard address.contains("@"), address.contains(".") else {
+        let address = currentAddressCandidate().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard Self.isValidAddress(address) else {
             field.shake()
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
             return
         }
-        NotificationManager.requestAuthorization()
         let providerID = ProviderInference.inferProviderID(for: address)
 
         if providerID == .outlook {
             startOutlookOAuth(address: address)
             return
         }
-        // App-password providers (and generic, resolved below).
+        // App-password providers (and generic, resolved below). The only feedback
+        // during this network wait used to be nothing at all — now the button
+        // itself shows it's busy.
         isResolving = true
+        continueButton.setLoading(true)
+        field.isUserInteractionEnabled = false
         Task { @MainActor in
-            defer { isResolving = false }
+            defer {
+                isResolving = false
+                continueButton.setLoading(false)
+                field.isUserInteractionEnabled = true
+                addressEdited()   // re-derive Continue's enabled state
+            }
             let server = await resolveServer(providerID: providerID, address: address)
             let account = EmailAccount(
                 providerID: providerID, address: address, displayName: nil, server: server)
@@ -185,19 +270,40 @@ final class EmailEntryViewController: UIViewController {
 
         let session = ASWebAuthenticationSession(
             url: url, callbackURLScheme: MicrosoftOAuth.redirectScheme
-        ) { [weak self] callback, _ in
+        ) { [weak self] callback, error in
             guard let self else { return }
+            if let error {
+                if let authError = error as? ASWebAuthenticationSessionError,
+                   authError.code == .canceledLogin {
+                    // The user backed out of the web sheet — leave the screen
+                    // usable, no error, no cover.
+                    return
+                }
+                self.presentError("Outlook sign-in failed. Please try again.")
+                return
+            }
             guard let callback,
                   let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
                     .queryItems?.first(where: { $0.name == "code" })?.value
-            else { return }
+            else {
+                // A callback without a `code` item is a real failure, not a
+                // cancellation — it must not fail silently.
+                self.presentError("Outlook sign-in failed. Please try again.")
+                return
+            }
             Task { @MainActor in
                 // The webview is gone but the token exchange + inbox-filter setup
                 // still run. Cover the (button-bearing) entry screen with a
                 // full-screen dot-matrix spinner so nothing is tappable meanwhile.
-                self.showLoadingCover()
-                await self.exchangeOutlookCode(code, verifier: pkce.verifier,
-                                               clientID: clientID, address: address)
+                self.field.resignFirstResponder()
+                let cover = EmailLoginLoadingCover(host: self.navigationController?.view ?? self.view)
+                self.loadingCover = cover
+                // The network round trip below is otherwise dead waiting time —
+                // let the system permission dialog appear over the cover instead
+                // of interrupting the user later at an arbitrary moment.
+                NotificationManager.requestAuthorization()
+                await self.exchangeOutlookCode(
+                    code, verifier: pkce.verifier, clientID: clientID, address: address, cover: cover)
             }
         }
         session.presentationContextProvider = contextProvider
@@ -208,7 +314,7 @@ final class EmailEntryViewController: UIViewController {
 
     @MainActor
     private func exchangeOutlookCode(
-        _ code: String, verifier: String, clientID: String, address: String
+        _ code: String, verifier: String, clientID: String, address: String, cover: EmailLoginLoadingCover
     ) async {
         do {
             var request = URLRequest(url: URL(string: MicrosoftOAuth.tokenEndpoint)!)
@@ -231,9 +337,10 @@ final class EmailEntryViewController: UIViewController {
             if let transport = MailTransportFactory.make() {
                 _ = try? await transport.createLunaFilter()
             }
-            finish()
+            cover.resolveToCheckmark { self.finish() }
         } catch {
-            hideLoadingCover()
+            cover.hide()
+            loadingCover = nil
             presentError("Outlook sign-in failed. Please try again.")
         }
     }
@@ -244,152 +351,11 @@ final class EmailEntryViewController: UIViewController {
 
     // MARK: - Full-screen loading cover
 
-    private var loadingCover: UIView?
-
-    /// A button-free, full-screen cover with a centered dot-matrix spinner. It's
-    /// added to the navigation controller's view so it also hides the Cancel /
-    /// Continue bar buttons — while the OAuth code is exchanged and the account is
-    /// set up, nothing on screen can be tapped. Torn down with the modal on success.
-    private func showLoadingCover() {
-        guard loadingCover == nil else { return }
-        field.resignFirstResponder()
-        let host = navigationController?.view ?? view!
-        let cover = UIView()
-        cover.backgroundColor = .systemBackground
-        cover.isUserInteractionEnabled = true
-        cover.translatesAutoresizingMaskIntoConstraints = false
-
-        let spinner = DotMatrixSpinnerView(side: 40)
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        cover.addSubview(spinner)
-        host.addSubview(cover)
-        NSLayoutConstraint.activate([
-            cover.topAnchor.constraint(equalTo: host.topAnchor),
-            cover.bottomAnchor.constraint(equalTo: host.bottomAnchor),
-            cover.leadingAnchor.constraint(equalTo: host.leadingAnchor),
-            cover.trailingAnchor.constraint(equalTo: host.trailingAnchor),
-            spinner.centerXAnchor.constraint(equalTo: cover.centerXAnchor),
-            spinner.centerYAnchor.constraint(equalTo: cover.centerYAnchor),
-        ])
-        spinner.startAnimating()
-        loadingCover = cover
-    }
-
-    private func hideLoadingCover() {
-        loadingCover?.removeFromSuperview()
-        loadingCover = nil
-    }
+    private var loadingCover: EmailLoginLoadingCover?
 
     private func presentError(_ message: String) {
         let alert = UIAlertController(title: "Sign-in failed", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         DotMatrixModal.present(alert, from: self)
-    }
-}
-
-// MARK: - Step 2: app-specific password
-
-final class CredentialViewController: UIViewController {
-
-    private let account: EmailAccount
-    private let accountStore: EmailAccountStore
-    private let completion: ((Bool) -> Void)?
-    private let passwordField = UITextField()
-    private let spinner = UIActivityIndicatorView(style: .medium)
-
-    init(account: EmailAccount, accountStore: EmailAccountStore, completion: ((Bool) -> Void)?) {
-        self.account = account
-        self.accountStore = accountStore
-        self.completion = completion
-        super.init(nibName: nil, bundle: nil)
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        title = account.provider.displayName
-        view.backgroundColor = .systemBackground
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "Sign In", style: .done, target: self, action: #selector(signIn))
-
-        let instructions = UILabel()
-        instructions.text = account.provider.setupInstructions
-            ?? "Enter an app-specific password for this account."
-        instructions.font = .preferredFont(forTextStyle: .callout)
-        instructions.numberOfLines = 0
-        instructions.translatesAutoresizingMaskIntoConstraints = false
-
-        passwordField.placeholder = "App password"
-        passwordField.isSecureTextEntry = true
-        passwordField.autocapitalizationType = .none
-        passwordField.autocorrectionType = .no
-        passwordField.borderStyle = .roundedRect
-        passwordField.translatesAutoresizingMaskIntoConstraints = false
-
-        let stack = UIStackView(arrangedSubviews: [instructions, passwordField])
-        stack.axis = .vertical
-        stack.spacing = 16
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
-            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-        ])
-
-        if let url = account.provider.appPasswordURL {
-            let button = UIButton(type: .system)
-            button.setTitle("Create an app password…", for: .normal)
-            button.addAction(UIAction { _ in UIApplication.shared.open(url) }, for: .touchUpInside)
-            stack.addArrangedSubview(button)
-        }
-        passwordField.becomeFirstResponder()
-    }
-
-    @objc private func signIn() {
-        let password = (passwordField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !password.isEmpty else { passwordField.shake(); return }
-        navigationItem.rightBarButtonItem = UIBarButtonItem(customView: spinner)
-        spinner.startAnimating()
-
-        Task { @MainActor in
-            do {
-                let transport = try IMAPSMTPTransport(account: account, password: password)
-                try await transport.verifyCredentials()
-                accountStore.save(account, credential: .appPassword(password))
-                DotMatrixModal.dismiss(self) { self.completion?(true) }
-            } catch {
-                spinner.stopAnimating()
-                navigationItem.rightBarButtonItem = UIBarButtonItem(
-                    title: "Sign In", style: .done, target: self, action: #selector(signIn))
-                let alert = UIAlertController(
-                    title: "Couldn't sign in",
-                    message: "Check the address and app password and try again.",
-                    preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "OK", style: .default))
-                DotMatrixModal.present(alert, from: self)
-            }
-        }
-    }
-}
-
-// MARK: - ASWebAuthenticationSession anchor
-
-private final class AuthPresentationContext: NSObject, ASWebAuthenticationPresentationContextProviding {
-    weak var anchor: UIWindow?
-    init(anchor: UIWindow?) { self.anchor = anchor }
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        anchor ?? ASPresentationAnchor()
-    }
-}
-
-private extension UIView {
-    /// A small horizontal shake to signal invalid input.
-    func shake() {
-        let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
-        animation.values = [-8, 8, -6, 6, -3, 3, 0]
-        animation.duration = 0.4
-        layer.add(animation, forKey: "shake")
     }
 }

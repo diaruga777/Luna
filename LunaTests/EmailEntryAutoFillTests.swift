@@ -63,7 +63,18 @@ final class EmailEntryAutoFillTests: XCTestCase {
     private func makeSubject() throws -> (EmailEntryViewController, UITextField) {
         let controller = EmailEntryViewController(accountStore: .shared, completion: nil)
         controller.loadViewIfNeeded()
-        let field = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? UITextField }.first)
+        // The field now sits inside a rounded field-card several levels deep
+        // (scroll view → content → stack → card → field) rather than as a direct
+        // subview of the root view.
+        let field = try XCTUnwrap(findTextField(in: controller.view))
         return (controller, field)
+    }
+
+    private func findTextField(in view: UIView) -> UITextField? {
+        if let field = view as? UITextField { return field }
+        for subview in view.subviews {
+            if let found = findTextField(in: subview) { return found }
+        }
+        return nil
     }
 }

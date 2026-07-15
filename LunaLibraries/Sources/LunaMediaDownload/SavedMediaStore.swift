@@ -218,6 +218,23 @@ public final class SavedMediaStore {
     private let lock = NSLock()
     private let fm = FileManager.default
     private let overrideContainerURL: URL?
+
+    /// In-memory cache of the decoded manifest, valid only while `cacheToken` matches the
+    /// file's current (modification date, size). Filled by `loadUnlocked()` on a cache miss
+    /// and refreshed by `saveUnlocked()` from the array it just wrote — guarded entirely by
+    /// `lock`, mirroring `ReadingListStore`'s stat-token cache.
+    private var cachedItems: [SavedMediaItem]?
+    private var cacheToken: FileStatToken?
+
+    /// A cheap proxy for "has the manifest changed since we last read it" — the manifest IS
+    /// written by other flows (download completion on the URLSession delegate queue, the
+    /// share/action extension in its own process), so every read re-stats the file and only
+    /// trusts the cache when the stat still matches.
+    private struct FileStatToken: Equatable {
+        let modificationDate: Date
+        let size: Int
+    }
+
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -539,16 +556,38 @@ public final class SavedMediaStore {
         notifyChanged()
     }
 
+    /// nil when the manifest doesn't exist (or its attributes can't be read) — such a
+    /// token never matches a previously cached one, so the next read decodes fresh.
+    private func currentFileStatTokenUnlocked() -> FileStatToken? {
+        guard let attributes = try? fm.attributesOfItem(atPath: manifestURL.path),
+              let modificationDate = attributes[.modificationDate] as? Date,
+              let size = attributes[.size] as? Int
+        else { return nil }
+        return FileStatToken(modificationDate: modificationDate, size: size)
+    }
+
     private func loadUnlocked() -> [SavedMediaItem] {
+        let token = currentFileStatTokenUnlocked()
+        if let cachedItems, token != nil, token == cacheToken {
+            return cachedItems
+        }
         guard let data = try? Data(contentsOf: manifestURL),
               let items = try? decoder.decode([SavedMediaItem].self, from: data)
-        else { return [] }
+        else {
+            cachedItems = []
+            cacheToken = token
+            return []
+        }
+        cachedItems = items
+        cacheToken = token
         return items
     }
 
     private func saveUnlocked(_ items: [SavedMediaItem]) throws {
         let data = try encoder.encode(items)
         try data.write(to: manifestURL, options: [.atomic])
+        cachedItems = items
+        cacheToken = currentFileStatTokenUnlocked()
     }
 
     /// Repairs interrupted Photos cleanup and local rows whose backing file was

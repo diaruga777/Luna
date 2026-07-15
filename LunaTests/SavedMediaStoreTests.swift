@@ -160,6 +160,25 @@ final class SavedMediaStoreTests: XCTestCase {
         XCTAssertEqual(neither.displayTitle, "https://x.com/example/status/101")
     }
 
+    /// The manifest is written by other flows/processes (share/action extension,
+    /// download completion), so `items()`'s in-memory cache must re-stat on every
+    /// call and only trust itself when the file is unchanged — never serve a
+    /// stale read once another `SavedMediaStore` instance has written to the
+    /// same manifest.
+    func testItemsCacheRefreshesWhenManifestChangesFromAnotherInstance() throws {
+        _ = try store.ensureUndownloaded(
+            id: UUID(), sourceURLString: "https://x.com/example/status/200", title: "First")
+        XCTAssertEqual(store.items().count, 1, "primes this instance's cache")
+
+        let other = SavedMediaStore(containerURL: root)
+        _ = try other.ensureUndownloaded(
+            id: UUID(), sourceURLString: "https://x.com/example/status/201", title: "Second")
+
+        XCTAssertEqual(
+            store.items().count, 2,
+            "a write from another instance must invalidate the stat-token cache")
+    }
+
     func testBackgroundMutationDeliversChangeNotificationOnMainThread() {
         let changed = expectation(description: "saved media changed on main thread")
         let token = NotificationCenter.default.addObserver(

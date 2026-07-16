@@ -82,4 +82,12 @@ public enum LunaDeepLink {
         guard let scheme = url.scheme, allSchemes.contains(scheme) else { return false }
         return url.host == "interop"
     }
+
+    /// True only for THIS containing app's `<own scheme>://interop` link.
+    /// Scene routing uses the narrower check: although the parser understands
+    /// every Luna scheme, a sibling app must never handle another app's purchase
+    /// hand-off (each app sells and restores its own StoreKit product).
+    public static func isOwnInteropLink(_ url: URL) -> Bool {
+        url.scheme == ownScheme && isInteropLink(url)
+    }
 }

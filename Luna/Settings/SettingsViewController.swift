@@ -7,6 +7,8 @@ import LunaReadingListUI
 import LunaSocialUI
 import LunaReadingList
 import LunaDesignSystem
+import LunaInterop
+import LunaInteropUI
 import LunaStorage
 import LunaModels
 import LunaTransitions
@@ -35,6 +37,7 @@ final class SettingsViewController: NavHeaderTableController {
     private struct Category {
         let title: String
         let symbol: String
+        var detail: (() -> String?)? = nil
         let make: () -> UIViewController
     }
 
@@ -60,6 +63,10 @@ final class SettingsViewController: NavHeaderTableController {
         }
 
         categories.append(contentsOf: [
+            Category(
+                title: "Luna Interoperability", symbol: "arrow.left.arrow.right",
+                detail: { InteropEntitlement.shared.isUnlocked ? "Unlocked" : nil }
+            ) { InteropPaywallViewController() },
             Category(title: "Shortcut & Safari", symbol: "safari") { ShortcutSettingsScreen() },
             Category(title: "Appearance", symbol: "circle.lefthalf.filled") { AppearanceSettingsScreen() },
             Category(title: "Diagnostics", symbol: "ladybug") { DiagnosticsViewController() },
@@ -75,6 +82,13 @@ final class SettingsViewController: NavHeaderTableController {
         super.viewDidLoad()
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // A purchase happens on the pushed paywall. Refresh its row when the
+        // user comes back so the shared entitlement is immediately visible.
+        tableView.reloadData()
+    }
+
     /// Section 1 holds a single "Replay Setup" action (presented modally), kept
     /// out of the pushed `categories` list.
     override func numberOfSections(in tableView: UITableView) -> Int { 2 }
@@ -86,11 +100,12 @@ final class SettingsViewController: NavHeaderTableController {
     override func tableView(
         _ tableView: UITableView, cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
         var content = cell.defaultContentConfiguration()
         if indexPath.section == 0 {
             let category = categories[indexPath.row]
             content.text = category.title
+            content.secondaryText = category.detail?()
             content.image = UIImage(systemName: category.symbol)
             cell.accessoryType = .disclosureIndicator
         } else {

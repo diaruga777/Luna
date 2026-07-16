@@ -92,4 +92,20 @@ final class LunaDeepLinkTests: XCTestCase {
         // fall back to it too.
         XCTAssertEqual(LunaDeepLink.ownScheme, "lunareader")
     }
+
+    func testInteropLinkTargetsOwnSchemeByDefault() {
+        let link = LunaDeepLink.interopLink()
+        XCTAssertEqual(link?.absoluteString, "lunareader://interop")
+        XCTAssertTrue(LunaDeepLink.isOwnInteropLink(link!))
+    }
+
+    func testOwnInteropLinkRejectsSiblingScheme() {
+        let sibling = LunaDeepLink.interopLink(scheme: LunaDeepLink.downloaderScheme)!
+        XCTAssertTrue(LunaDeepLink.isInteropLink(sibling), "the general parser accepts siblings")
+        XCTAssertFalse(LunaDeepLink.isOwnInteropLink(sibling), "scene routing must stay in this app")
+    }
+
+    func testOwnInteropLinkRejectsWrongHost() {
+        XCTAssertFalse(LunaDeepLink.isOwnInteropLink(URL(string: "lunareader://read")!))
+    }
 }

@@ -46,7 +46,9 @@ final class InteropPurchaseControllerTests: XCTestCase {
         let suiteName = "InteropPurchaseControllerTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let entitlement = InteropEntitlement(defaults: defaults)
+        // Pin the build grant off so this test exercises the purchased flag even
+        // though the test bundle itself is a DEBUG build (which is unlocked).
+        let entitlement = InteropEntitlement(defaults: defaults, buildGrant: { nil })
         let controller = InteropPurchaseController(
             productID: "com.acme.luna.reader.interop", entitlement: entitlement)
         XCTAssertFalse(controller.isUnlocked)

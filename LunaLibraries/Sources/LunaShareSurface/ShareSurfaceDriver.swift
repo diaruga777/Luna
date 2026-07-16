@@ -10,6 +10,8 @@ import LunaAudioPlayback
 import LunaMediaDownload
 import LunaStorage
 import LunaIngest
+import LunaInterop
+import LunaInteropUI
 import LunaHTMLClassification
 import LunaURLClassification
 import LunaModels
@@ -41,17 +43,32 @@ public final class ShareSurfaceDriver {
     /// Injectable so tests can drive the pipeline with a mock fetcher / fixtures and
     /// a nil render tier (extension-safe). Production uses the live defaults.
     private let process: (IngestInput) async -> IngestResult
+    /// The cross-app-interop gate over the classified outcome
+    /// (`claudedocs/interop-purchase.md`). Extension saves are always
+    /// `.shareSheet` — a gated source — so the decision only depends on the
+    /// outcome's owner + payment/install state. Injectable so tests can pin
+    /// surface/unlock/install without touching the App Group.
+    private let interopDecision: (Outcome) -> InteropGate.Decision
+    /// The surface the extension is running in, for the prompt's "unlock in
+    /// <this app>" copy + deep link.
+    private let currentSurface: InteropSurface
 
     public init(
         host: ExtensionHost,
         store: ReadingListStore = .shared,
         process: @escaping (IngestInput) async -> IngestResult = {
             await IngestPipeline.processResolved($0)
-        }
+        },
+        interopDecision: @escaping (Outcome) -> InteropGate.Decision = {
+            InteropGate.evaluateForCurrentProcess(owner: $0.interopOwner)
+        },
+        currentSurface: InteropSurface = .current
     ) {
         self.host = host
         self.store = store
         self.process = process
+        self.interopDecision = interopDecision
+        self.currentSurface = currentSurface
     }
 
     /// Runs the shared pipeline for the just-appended `originalURL`, repoints the saved
@@ -79,13 +96,48 @@ public final class ShareSurfaceDriver {
 
     /// The EXHAUSTIVE per-surface presenter over the unified `Outcome` (no `default`,
     /// compiler-checked). Public so the fixture can drive it directly with any Outcome.
+    ///
+    /// The cross-app-interop gate runs FIRST, before any persist
+    /// (`claudedocs/interop-purchase.md`):
+    /// - `.blocked` (unpaid cross-surface): the pending row `ShareViewController`
+    ///   appended before classification is deleted (with its copied document
+    ///   file, via `store.delete`'s `removeFiles`) so NOTHING remains in the
+    ///   store, and the interop prompt (install step if the owner is missing +
+    ///   the pay step) is presented instead of any save UI.
+    /// - `.allowedNeedsInstall` (paid, owner uninstalled): the save proceeds
+    ///   byte-identically to today, and the informational install prompt
+    ///   REPLACES only the silent terminals (the zero-UI share extension's
+    ///   `completeSilently`/checkmark endings) — flows that already present
+    ///   interactive UI (reader, price editor, saved-media screen, archive
+    ///   reader) are left alone rather than stacking a second sheet.
+    /// - `.allowed` (same-surface, or `.failed`'s nil owner): exactly today.
     public func present(_ outcome: Outcome, url: URL) {
         guard let host else { return }
+
+        let decision = interopDecision(outcome)
+        if case let .blocked(owner, ownerInstalled) = decision {
+            discardBlockedSave(url: url)
+            presentInteropPrompt(
+                kind: .blocked(owner: owner, ownerInstalled: ownerInstalled),
+                terminal: { [weak host] in host?.completeSilently() })
+            return
+        }
+        let installNote: InteropPromptKind? = {
+            if case let .allowedNeedsInstall(owner) = decision {
+                return .needsInstall(owner: owner)
+            }
+            return nil
+        }()
+
         switch outcome {
         case let .article(content, html):
             persistArticle(content, html: html, url: url)
             if let mode = host.readerMode {
                 presentReader(url: url, mode: mode, outcome: outcome)
+            } else if let installNote {
+                presentInteropPrompt(
+                    kind: installNote,
+                    terminal: { [weak host] in host?.confirmSavedThenComplete() })
             } else {
                 host.completeSilently()
             }
@@ -98,15 +150,19 @@ public final class ShareSurfaceDriver {
 
         case let .video(platform, itemID):
             persistPlatform(platform, itemID: itemID, url: url)
-            presentNonTextual(.platform(platform, itemID: itemID), url: url)
+            presentNonTextual(.platform(platform, itemID: itemID), url: url, installNote: installNote)
 
         case let .social(platform, itemID):
             persistPlatform(platform, itemID: itemID, url: url)
-            presentNonTextual(.platform(platform, itemID: itemID), url: url)
+            presentNonTextual(.platform(platform, itemID: itemID), url: url, installNote: installNote)
 
         case .document:
             if host.readerMode != nil {
                 host.confirmSavedThenComplete()
+            } else if let installNote {
+                presentInteropPrompt(
+                    kind: installNote,
+                    terminal: { [weak host] in host?.confirmSavedThenComplete() })
             } else {
                 host.completeSilently()
             }
@@ -124,6 +180,31 @@ public final class ShareSurfaceDriver {
                 host.completeSilently()
             }
         }
+    }
+
+    // MARK: - Interop gate (cross-app purchase)
+
+    /// Deletes the pending placeholder row appended before classification, so a
+    /// blocked cross-surface save leaves NOTHING behind. `store.delete` also
+    /// removes every on-disk artifact the row owns — including an imported
+    /// document's copied `Articles/<id>-source.<ext>` file.
+    private func discardBlockedSave(url: URL) {
+        guard let item = store.item(forURLString: url.absoluteString) else { return }
+        store.delete(item)
+    }
+
+    /// Presents the interop prompt in the host's modal chrome. `terminal` runs
+    /// when the user is done: `completeSilently` for a blocked save (nothing
+    /// was saved — never a "Saved" checkmark), `confirmSavedThenComplete` for
+    /// the informational install note (the item IS saved).
+    private func presentInteropPrompt(kind: InteropPromptKind, terminal: @escaping () -> Void) {
+        guard let host else { return }
+        let prompt = InteropPromptViewController(
+            kind: kind,
+            context: .extensionHost(openURL: { [weak host] url in host?.openURL(url) }),
+            currentSurface: currentSurface)
+        prompt.onDone = terminal
+        host.presentModally(prompt)
     }
 
     // MARK: - Store writes (shared shape with the main app's IngestorOutcomePresenter)
@@ -191,8 +272,13 @@ public final class ShareSurfaceDriver {
     /// Routes a non-textual outcome. Downloadable social media always opens the
     /// saved-content screen on BOTH extension surfaces so the user can explicitly
     /// choose the media download. Non-downloadable items retain the share extension's
-    /// silent-save behavior.
-    private func presentNonTextual(_ content: NonTextualContent, url: URL) {
+    /// silent-save behavior — except when a paid cross-surface save needs the
+    /// informational install note (`installNote`), which replaces that silent
+    /// ending (the item is saved either way; `autoDownloadThenComplete` is a
+    /// checkmark-only no-op for a non-downloadable URL, so nothing is lost).
+    private func presentNonTextual(
+        _ content: NonTextualContent, url: URL, installNote: InteropPromptKind? = nil
+    ) {
         guard let host else { return }
         if host.readerMode != nil || MediaDownloadablePlatform.supports(url.absoluteString) {
             let saved = SavedNonTextualViewController(
@@ -200,6 +286,10 @@ public final class ShareSurfaceDriver {
                 host?.confirmSavedThenComplete()
             }
             host.presentModally(saved)
+        } else if let installNote {
+            presentInteropPrompt(
+                kind: installNote,
+                terminal: { [weak host] in host?.confirmSavedThenComplete() })
         } else {
             host.autoDownloadThenComplete(urlString: url.absoluteString)
         }

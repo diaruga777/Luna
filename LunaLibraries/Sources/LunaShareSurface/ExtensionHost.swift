@@ -48,4 +48,10 @@ public protocol ExtensionHost: AnyObject {
     /// Surfaces `message` as visible error text (action extension) or completes
     /// quietly (share extension) — NEVER a misleading "Saved" checkmark on a failure.
     func failOrComplete(_ message: String)
+
+    /// Best-effort deep link into the containing app (`extensionContext.open`
+    /// on the real host — extensions have no `UIApplication.shared`). Used by
+    /// the interop prompt's "unlock in <app>" step; a silent failure is fine
+    /// because the prompt always shows manual fallback instructions too.
+    func openURL(_ url: URL)
 }

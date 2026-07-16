@@ -47,6 +47,18 @@ public enum InteropGate {
         return isInstalled(owner) ? .allowed : .allowedNeedsInstall(owner: owner)
     }
 
+    /// The production decision for the RUNNING process: current surface from
+    /// the bundle id, unlock flag + installed markers from the App Group.
+    /// Callers on gated paths use this; tests use `evaluate` directly with
+    /// injected inputs.
+    public static func evaluateForCurrentProcess(owner: InteropSurface?) -> Decision {
+        evaluate(
+            owner: owner,
+            current: .current,
+            isUnlocked: InteropEntitlement.shared.isUnlocked,
+            isInstalled: { $0.isInstalled })
+    }
+
     /// Whether a save from `source` is subject to interop gating at all.
     /// `.email` and `.friendShare` are background/universal ingestion — saves
     /// arriving that way keep writing cross-surface regardless of payment, no

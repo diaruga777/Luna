@@ -7,6 +7,8 @@ import LunaMediaDownload
 import LunaDesignSystem
 import LunaStorage
 import LunaIngest
+import LunaInterop
+import LunaInteropUI
 import LunaTransitions
 import LunaURLClassification
 import LunaModels
@@ -309,9 +311,7 @@ public final class ShareViewController: UIViewController {
             self.cancelLoadWatchdog()
             let raw = value as? URL
             if let raw, raw.isFileURL {
-                SharedReadingListAppender.appendDocument(sourceURL: raw)
-                SharedDiagnosticLog.record("saved file \(raw.lastPathComponent)", category: "share")
-                self.completeAfterDirectSave()
+                self.saveDocumentDirectly(sourceURL: raw)
             } else if let raw, let url = URLUnwrapper.ingestURL(from: raw.absoluteString) {
                 SharedReadingListAppender.append(urlString: url.absoluteString)
                 SharedDiagnosticLog.record("saved url \(url.absoluteString)", category: "share")
@@ -410,9 +410,57 @@ public final class ShareViewController: UIViewController {
                 self.presentSavedOrReader(url: normalized)
                 return
             }
-            SharedReadingListAppender.appendDocument(sourceURL: url)
-            SharedDiagnosticLog.record("saved document \(url.lastPathComponent)", category: "share")
-            self.completeAfterDirectSave()
+            self.saveDocumentDirectly(sourceURL: url)
+        }
+    }
+
+    /// The direct document-save path — imported files never route through
+    /// `ShareSurfaceDriver` (no classification needed; a file IS a `.document`),
+    /// so the cross-app-interop gate runs here instead
+    /// (`claudedocs/interop-purchase.md`). Documents belong to Luna Reader.
+    /// Blocked saves are checked BEFORE appending, so a blocked document never
+    /// copies its file into the App Group at all — nothing to clean up.
+    /// Synchronous up to the append (the system deletes the source file when
+    /// the provider callback returns, so the copy can't be deferred).
+    private func saveDocumentDirectly(sourceURL: URL) {
+        switch InteropGate.evaluateForCurrentProcess(owner: .reader) {
+        case .allowed:
+            SharedReadingListAppender.appendDocument(sourceURL: sourceURL)
+            SharedDiagnosticLog.record(
+                "saved document \(sourceURL.lastPathComponent)", category: "share")
+            completeAfterDirectSave()
+        case .allowedNeedsInstall(let owner):
+            SharedReadingListAppender.appendDocument(sourceURL: sourceURL)
+            SharedDiagnosticLog.record(
+                "saved document \(sourceURL.lastPathComponent) (owner uninstalled)",
+                category: "share")
+            presentInteropPrompt(kind: .needsInstall(owner: owner), confirmSaved: true)
+        case .blocked(let owner, let ownerInstalled):
+            SharedDiagnosticLog.record(
+                "blocked cross-app document save (unpaid)", category: "share")
+            presentInteropPrompt(
+                kind: .blocked(owner: owner, ownerInstalled: ownerInstalled),
+                confirmSaved: false)
+        }
+    }
+
+    /// Presents the interop prompt for the direct document path. `confirmSaved`
+    /// picks the terminal: the "Saved" checkmark when the item was actually
+    /// appended (install note), a quiet completion when it was blocked.
+    private func presentInteropPrompt(kind: InteropPromptKind, confirmSaved: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let prompt = InteropPromptViewController(
+                kind: kind,
+                context: .extensionHost(openURL: { [weak self] url in self?.openURL(url) }))
+            prompt.onDone = { [weak self] in
+                if confirmSaved {
+                    self?.confirmSavedThenComplete()
+                } else {
+                    self?.completeSilently()
+                }
+            }
+            self.presentModally(prompt)
         }
     }
 
@@ -443,6 +491,14 @@ public final class ShareViewController: UIViewController {
     public func completeSilently() {
         cancelLoadWatchdog()
         complete()
+    }
+
+    /// Best-effort deep link into the containing app (the interop prompt's
+    /// "unlock in <app>" step). Extensions have no `UIApplication.shared`;
+    /// `extensionContext.open` is the sanctioned (if not universally honored)
+    /// route, and the prompt always shows manual fallback instructions too.
+    public func openURL(_ url: URL) {
+        extensionContext?.open(url, completionHandler: nil)
     }
 
     private func completeAfterDirectSave() {

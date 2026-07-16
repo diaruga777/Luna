@@ -434,10 +434,15 @@ final class ReadingListViewController: UITableViewController {
                     guard let self else { return }
                     let resultItem: ReadingListItem?
                     switch result {
-                    case .saved(let saved), .sentToEreaders(let saved),
+                    case .saved(let saved), .savedNeedsOwnerInstall(let saved, _),
+                         .sentToEreaders(let saved),
                          .sentToFriends(let saved), .friendPromptRequested(let saved):
                         resultItem = saved
                     case .ignored: resultItem = nil
+                    case .blockedByInterop:
+                        // Unpaid cross-surface paste — discarded; the ingest
+                        // gate has already shown the interop prompt.
+                        return
                     }
                     let item = resultItem
                         .flatMap { self.store.item(withID: $0.id) }

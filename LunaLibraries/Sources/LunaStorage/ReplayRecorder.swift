@@ -71,6 +71,7 @@ public struct StoredReplay: Equatable, Sendable {
 /// A recorder that does nothing — the default for code paths (and tests) that
 /// don't want to record. Every method is a no-op returning empties.
 public struct NoopReplayRecorder: ReplayRecording {
+    public init() {}
     public func begin(urlString: String, source: ReplaySource) async -> UUID? { nil }
     public func record(_ kind: EventKind, for id: UUID) async {}
     public func attachItemID(_ itemID: UUID, to id: UUID) async {}

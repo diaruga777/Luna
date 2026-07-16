@@ -9,6 +9,7 @@
 
 import AppIntents
 import LunaIntents
+import LunaInterop
 import LunaMediaDownload
 import LunaStorage
 import Foundation
@@ -38,11 +39,16 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 
     enum ProvideContextError: Error, CustomLocalizedStringResourceConvertible {
         case noTrackedPage
+        /// Unpaid cross-surface save (`claudedocs/interop-purchase.md`) — the
+        /// item was discarded; the dialog names the owning app and the unlock.
+        case interopBlocked(message: String)
 
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .noTrackedPage:
                 return "No Safari page tracked yet. Is the Luna extension enabled?"
+            case .interopBlocked(let message):
+                return "\(message)"
             }
         }
     }
@@ -99,21 +105,32 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 urlString: urlString,
                 doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface
             )
-            // Return-1 is the complete Safari fast path: it never invokes
-            // SaveIntent, so it must hand downloadable tracked URLs to the
-            // Downloader background manager itself.
-            await ActionButtonIntentSupport.startDownloaderDownloadIfNeeded(
-                for: urlString
-            ) {
-                try? await requestToContinueInForeground()
-            }
             switch outcome {
             case .friendPromptRequested:
                 // Double save with "ask every time": the pending friend prompt
                 // is recorded; foreground Luna so the selector can appear.
                 try? await requestToContinueInForeground()
             case .completed:
+                // `needsInstallOwner` (paid, owning app missing) is not
+                // surfaced on this fast path — it returns a bare Int for the
+                // Shortcut; the saved item still appears once the app exists.
                 break
+            case let .blockedByInterop(owner, _):
+                // Unpaid cross-surface save: the item was discarded — surface
+                // the unlock dialog instead of a silent nothing.
+                throw ProvideContextError.interopBlocked(
+                    message: IntentIngestHelper.blockedDialogText(
+                        owner: owner,
+                        currentAppName: InteropSurface.current.displayName))
+            }
+            // Return-1 is the complete Safari fast path: it never invokes
+            // SaveIntent, so it must hand downloadable tracked URLs to the
+            // Downloader background manager itself. This runs only AFTER the
+            // interop switch: a blocked save must not start downloader work.
+            await ActionButtonIntentSupport.startDownloaderDownloadIfNeeded(
+                for: urlString
+            ) {
+                try? await requestToContinueInForeground()
             }
             return .result(value: 1)
         }

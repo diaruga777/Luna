@@ -5,6 +5,7 @@
 
 import LunaReadingList
 import LunaInterop
+import LunaInteropUI
 import LunaPriceUI
 import LunaReaderUI
 import LunaSocial
@@ -68,6 +69,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // ingestor): a forced-article re-save, no re-detection back into a tracker.
         PriceTrackingViewController.defaultSaveAsArticle = { urlString in
             Task { await ReadingListIngestor.shared.saveAsArticle(urlString: urlString) }
+        }
+
+        // Interop prompt for blocked / needs-install INTERACTIVE in-app saves
+        // (claudedocs/interop-purchase.md): LunaReadingList can't present UI, so
+        // the app shell installs the presenter (same injected-closure pattern as
+        // defaultSaveAsArticle above). Presents over whatever is frontmost;
+        // a successful inline unlock retries the blocked save via `retry`.
+        ReadingListIngestor.interopPromptPresenter = { kind, retry in
+            guard let presenter = Self.frontmostViewController() else { return }
+            let prompt = InteropPromptViewController(
+                kind: kind, context: .inApp, onUnlocked: retry)
+            let nav = UINavigationController(rootViewController: prompt)
+            DotMatrixModal.present(nav, from: presenter)
         }
 
         // Diagnostics export header shows the connected email account (which lives
@@ -420,5 +434,18 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         )
         config.delegateClass = SceneDelegate.self
         return config
+    }
+
+    /// The frontmost view controller of the key window — where globally-injected
+    /// prompts (the interop prompt) present from, since their trigger (an async
+    /// ingest) has no view-controller context of its own.
+    static func frontmostViewController() -> UIViewController? {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        return top
     }
 }

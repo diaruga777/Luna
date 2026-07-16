@@ -12,6 +12,7 @@
 
 import AppIntents
 import LunaIntents
+import LunaInterop
 import LunaStorage
 import LunaMediaDownload
 import Foundation
@@ -52,11 +53,16 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         case serviceUnavailable
         case nothingIdentifiable
         case notFound
+        /// Unpaid cross-surface save (`claudedocs/interop-purchase.md`) — the
+        /// item was discarded; the dialog names the owning app and the unlock.
+        case interopBlocked(message: String)
 
         var localizedStringResource: LocalizedStringResource {
             switch self {
             case .unsupportedApp:
                 return "Luna can't save from this app."
+            case .interopBlocked(let message):
+                return "\(message)"
             case .modelUnavailable:
                 // ITMS-90626: never mention Apple/Siri in intent-visible strings.
                 return "Screen analysis isn't available on this device."
@@ -83,7 +89,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & ProvidesDialog {
         let imageData = screenshot.data
         guard let digest = ScreenshotDigest.digest(forImageData: imageData) else {
             // Undecodable image data — the model couldn't read it either.
@@ -108,7 +114,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             if case .friendPromptRequested = outcome {
                 try? await requestToContinueInForeground()
             }
-            return .result()
+            return .result(dialog: "Done.")
         }
 
         let isSafari = AppNamePlatform.isSafari(forAppName: app)
@@ -162,9 +168,21 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         }
 
         let savedURLString: String?
+        let needsInstallOwner: InteropSurface?
         switch outcome {
-        case .completed(let saved): savedURLString = saved
-        case .friendPromptRequested(let saved): savedURLString = saved
+        case let .completed(saved, installOwner):
+            savedURLString = saved
+            needsInstallOwner = installOwner
+        case .friendPromptRequested(let saved):
+            savedURLString = saved
+            needsInstallOwner = nil
+        case let .blockedByInterop(owner, _):
+            // Unpaid cross-surface save: the item was discarded
+            // (claudedocs/interop-purchase.md) — the dialog names the owning
+            // app, the unlock, and the direct alternative.
+            throw SaveError.interopBlocked(
+                message: IntentIngestHelper.blockedDialogText(
+                    owner: owner, currentAppName: InteropSurface.current.displayName))
         }
         if let savedURLString {
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
@@ -184,7 +202,14 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             // recorded) can appear.
             try? await requestToContinueInForeground()
         }
-        return .result()
+        if let needsInstallOwner {
+            // Paid cross-surface save with the owning app missing: the save
+            // SUCCEEDED (it's in the shared store) — mention the install.
+            return .result(dialog: IntentDialog(stringLiteral:
+                "Saved. Install \(needsInstallOwner.displayName) to see it there — "
+                + "it's waiting in your shared Luna library."))
+        }
+        return .result(dialog: "Saved to Luna.")
     }
 
 }

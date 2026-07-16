@@ -11,6 +11,8 @@ import LunaSend
 import LunaDocuments
 import LunaStorage
 import LunaIngest
+import LunaInterop
+import LunaInteropUI
 import LunaFetch
 import LunaHTMLClassification
 import LunaURLClassification
@@ -22,15 +24,38 @@ import Foundation
 public final class ReadingListIngestor {
     public static let shared = ReadingListIngestor()
 
-    private let store = ReadingListStore.shared
+    private let store: ReadingListStore
     private let fetcher = ArticleFetcher()
     private let extractor = ArticleExtractor()
     /// Records a `Replay` for each save (diagnostics). `NoopReplayRecorder` keeps
     /// recording off the hot path optional — a save runs identically without it.
     private let recorder: ReplayRecording
+    /// The cross-app-interop gate over a classified outcome
+    /// (`claudedocs/interop-purchase.md`). Injectable so tests can pin
+    /// surface/unlock/install without touching the App Group; the production
+    /// default reads the running process's state.
+    private let interopDecision: (Outcome) -> InteropGate.Decision
 
-    public init(recorder: ReplayRecording = ReplayRecorder.shared) {
+    /// Presents the interop prompt for a blocked / needs-install INTERACTIVE
+    /// in-app save (`.paste`/`.manual` sources only — App Intents get a dialog
+    /// from the intent layer, background sweeps have no UI). Installed by the
+    /// app shell at launch (AppDelegate), same injected-closure pattern as
+    /// `PriceTrackingViewController.defaultSaveAsArticle` — LunaReadingList
+    /// can't know how the app presents modals. `retry` re-runs the save after
+    /// a successful inline unlock (blocked case; nil for install notes).
+    public static var interopPromptPresenter: (
+        @MainActor (InteropPromptKind, _ retry: (() -> Void)?) -> Void)?
+
+    public init(
+        recorder: ReplayRecording = ReplayRecorder.shared,
+        store: ReadingListStore = .shared,
+        interopDecision: @escaping (Outcome) -> InteropGate.Decision = {
+            InteropGate.evaluateForCurrentProcess(owner: $0.interopOwner)
+        }
+    ) {
         self.recorder = recorder
+        self.store = store
+        self.interopDecision = interopDecision
     }
 
     /// IDs currently being ingested, to avoid duplicate concurrent work.
@@ -49,16 +74,27 @@ public final class ReadingListIngestor {
     /// `forceArticle` skips product-page detection entirely, so the URL is ingested
     /// as a normal article even if its page would otherwise be classified as a price
     /// tracker. Used by the "Read instead" override on the price-tracking editor.
+    ///
+    /// The cross-app-interop gate (`claudedocs/interop-purchase.md`) runs on the
+    /// classified outcome before ANY store write: an unpaid cross-surface save is
+    /// discarded (item deleted, nothing remains) and the returned decision says
+    /// so. `.email`/`.friendShare` sources are exempt — background/universal
+    /// ingestion keeps writing cross-surface regardless of payment.
+    /// `allowsInteractivePrompt` is false for the background `ingestAllPending`
+    /// sweep, which discards blocked leftovers silently; interactive saves
+    /// (`.paste`/`.manual`) surface the prompt via `interopPromptPresenter`.
+    @discardableResult
     public func ingest(_ item: ReadingListItem, forceArticle: Bool = false,
                        prefetchedHTML: String? = nil,
-                       trustsPrefetchedHTML: Bool = false) async {
-        guard item.state != .ready, let initialURL = item.url else { return }
+                       trustsPrefetchedHTML: Bool = false,
+                       allowsInteractivePrompt: Bool = true) async -> InteropGate.Decision {
+        guard item.state != .ready, let initialURL = item.url else { return .allowed }
 
         lock.lock()
         let alreadyRunning = inFlight.contains(item.id)
         if !alreadyRunning { inFlight.insert(item.id) }
         lock.unlock()
-        guard !alreadyRunning else { return }
+        guard !alreadyRunning else { return .allowed }
         defer {
             lock.lock()
             inFlight.remove(item.id)
@@ -103,10 +139,38 @@ public final class ReadingListIngestor {
                     await recorder.record(.note("unwrapped URL already saved; dropped"), for: replayID)
                     await recorder.terminate(replayID, state: .failed, finalContent: nil)
                 }
-                return
+                return .allowed
             }
             item = updated
             if let replayID { await recorder.updateItemURL(resolvedURL.absoluteString, for: replayID) }
+        }
+
+        // Cross-app-interop gate — BEFORE the tracker-merge dedup below and before
+        // the presenter, so a blocked outcome can neither merge into an existing
+        // tracker nor write anything else. Exempt sources bypass entirely.
+        let source = item.effectiveCaptureSource
+        let interop: InteropGate.Decision = InteropGate.isGated(source: source)
+            ? interopDecision(result.outcome)
+            : .allowed
+        if case let .blocked(owner, ownerInstalled) = interop {
+            store.delete(item)
+            SharedDiagnosticLog.record(
+                "interop: blocked cross-app save (\(owner.storageIdentifier)) — discarded",
+                category: "ingest")
+            if let replayID {
+                await recorder.record(.note("interop blocked; item discarded"), for: replayID)
+                await recorder.terminate(replayID, state: .failed, finalContent: nil)
+            }
+            if allowsInteractivePrompt, source == .paste || source == .manual {
+                let urlString = resolvedURL.absoluteString
+                await MainActor.run {
+                    Self.interopPromptPresenter?(
+                        .blocked(owner: owner, ownerInstalled: ownerInstalled),
+                        { Task { await ReadingListIngestor.shared.handleSavePress(
+                            urlString: urlString, source: source) } })
+                }
+            }
+            return interop
         }
 
         // Re-save dedup AFTER resolution: if this exact URL is already a store
@@ -126,11 +190,22 @@ public final class ReadingListIngestor {
             }
             postPriceTrackerSaved(itemID: existingTrackerItemID, source: item.effectiveCaptureSource,
                                   isMerge: true, highlightedURL: resolvedURL.absoluteString)
-            return
+            return interop
         }
 
         let presenter = IngestorOutcomePresenter(ingestor: self, url: resolvedURL, replayID: replayID)
         await presenter.present(result.outcome, for: item)
+
+        // Paid cross-surface save with the owning app missing: the save went
+        // through exactly as always (above); interactive sources ALSO get the
+        // informational "install Luna X" note.
+        if case let .allowedNeedsInstall(owner) = interop,
+           allowsInteractivePrompt, source == .paste || source == .manual {
+            await MainActor.run {
+                Self.interopPromptPresenter?(.needsInstall(owner: owner), nil)
+            }
+        }
+        return interop
     }
 
     // MARK: - Outcome handling (the main-app presenter, store-writing)
@@ -442,8 +517,10 @@ public final class ReadingListIngestor {
             // `.needsCaptcha` items can only advance when the user solves the
             // archive CAPTCHA, so a background re-fetch can't help them — retry
             // only the states that an automated pass can actually move forward.
+            // The sweep has no UI: blocked non-exempt leftovers are discarded
+            // silently, while email/friend-share items remain exempt.
             for item in self.store.items() where item.state == .pending || item.state == .failed {
-                Task { await self.ingest(item) }
+                Task { await self.ingest(item, allowsInteractivePrompt: false) }
             }
             self.backfillMissingWebArchives()
             self.backfillMissingThumbnails()
@@ -538,6 +615,16 @@ public final class ReadingListIngestor {
     public enum SavePressResult {
         /// New URL — saved; ingestion may still be running.
         case saved(ReadingListItem)
+        /// New URL — saved, and the classified outcome belongs to `owner`,
+        /// whose app isn't installed (paid cross-surface save). Callers with a
+        /// dialog surface (the Save App Intent) mention installing `owner`.
+        case savedNeedsOwnerInstall(ReadingListItem, owner: InteropSurface)
+        /// New URL whose classified outcome belongs to a DIFFERENT Luna app and
+        /// the interop unlock isn't purchased: the item was DISCARDED — nothing
+        /// remains in the store (`claudedocs/interop-purchase.md`). Interactive
+        /// in-app saves have already shown the interop prompt by the time this
+        /// returns; the Save App Intent turns it into an error dialog.
+        case blockedByInterop(owner: InteropSurface, ownerInstalled: Bool)
         /// Double press — the article was (re)sent to one or more ereaders.
         case sentToEreaders(ReadingListItem)
         /// Double press — the article was emailed to the preset friends.
@@ -581,16 +668,30 @@ public final class ReadingListIngestor {
         switch decision {
         case .saveNew:
             let item = store.add(urlString: urlString, source: source)
-            if source == .appIntent {
+            if source == .appIntent && interopGateCannotFire {
                 // Persist and return the URL promptly. Extraction/classification is
                 // best-effort background work and must not consume the intent budget.
+                // Only when the interop gate can't possibly fire (unlocked + every
+                // sibling app installed): otherwise the intent must WAIT for the
+                // classified outcome so a blocked save can surface an error dialog
+                // instead of silently discarding — the intent layer's own 12 s
+                // race still bounds the wait (a timed-out blocked save is then
+                // discarded by the gate in the background, dialog-less but
+                // store-consistent).
                 Task { await self.ingest(item, prefetchedHTML: prefetchedHTML,
                                          trustsPrefetchedHTML: trustsPrefetchedHTML) }
                 return .saved(item)
             }
-            await ingest(item, prefetchedHTML: prefetchedHTML,
-                         trustsPrefetchedHTML: trustsPrefetchedHTML)
-            return .saved(item)
+            let interop = await ingest(item, prefetchedHTML: prefetchedHTML,
+                                       trustsPrefetchedHTML: trustsPrefetchedHTML)
+            switch interop {
+            case let .blocked(owner, ownerInstalled):
+                return .blockedByInterop(owner: owner, ownerInstalled: ownerInstalled)
+            case let .allowedNeedsInstall(owner):
+                return .savedNeedsOwnerInstall(store.item(withID: item.id) ?? item, owner: owner)
+            case .allowed:
+                return .saved(item)
+            }
         case .sendToEreaders(let destinationIDs):
             // The policy only returns this for an existing item.
             guard let existing else { return .ignored }
@@ -619,6 +720,17 @@ public final class ReadingListIngestor {
         case .ignore:
             return .ignored
         }
+    }
+
+    /// True when the interop gate can't produce anything but `.allowed` for a
+    /// gated source: the unlock is purchased AND every Luna app is installed
+    /// (so `.allowedNeedsInstall` is impossible too). Lets the App Intent save
+    /// keep its fast persist-and-return path in the steady state.
+    private var interopGateCannotFire: Bool {
+        // Same inputs the injected `interopDecision` defaults to; kept separate
+        // because this is a pre-classification shortcut, not a decision.
+        InteropEntitlement.shared.isUnlocked
+            && InteropSurface.allCases.allSatisfy(\.isInstalled)
     }
 
     /// Resolves the configured double-save action into the policy's pure input,
@@ -663,13 +775,44 @@ public final class ReadingListIngestor {
 
     /// Saves a NEW URL whose article content was already fetched (the pasteboard
     /// preview), persisting it directly so we skip a redundant network fetch.
+    ///
+    /// The direct-persist fast path bypasses `ingest`, so the interop gate runs
+    /// here explicitly: the pre-fetched content IS the classified outcome (an
+    /// article — Reader-owned), so a blocked cross-surface paste is refused
+    /// before anything is added, with the same interactive prompt.
     @discardableResult
     public func saveNewWithContent(
         urlString: String, content: ArticleContent, source: CaptureSource = .manual
     ) async -> ReadingListItem? {
         guard let url = URLUnwrapper.ingestURL(from: urlString) else { return nil }
         let urlString = url.absoluteString
+
+        let interop: InteropGate.Decision = InteropGate.isGated(source: source)
+            ? interopDecision(.article(content, html: ""))
+            : .allowed
+        if case let .blocked(owner, ownerInstalled) = interop {
+            SharedDiagnosticLog.record(
+                "interop: blocked cross-app paste save (reader) — refused", category: "ingest")
+            if source == .paste || source == .manual {
+                await MainActor.run {
+                    Self.interopPromptPresenter?(
+                        .blocked(owner: owner, ownerInstalled: ownerInstalled),
+                        { Task { await ReadingListIngestor.shared.saveNewWithContent(
+                            urlString: urlString, content: content, source: source) } })
+                }
+            }
+            return nil
+        }
+
         let item = store.add(urlString: urlString, source: source)
+        defer {
+            if case let .allowedNeedsInstall(owner) = interop,
+               source == .paste || source == .manual {
+                Task { @MainActor in
+                    Self.interopPromptPresenter?(.needsInstall(owner: owner), nil)
+                }
+            }
+        }
         // The pre-fetched content was extracted from `urlString` as given. If that
         // URL is a wrapper (Facebook deep link / Apple-Google News / shortener), the
         // pre-fetched content is the wrapper shell, not the article — so unwrap and

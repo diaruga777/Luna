@@ -215,10 +215,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 trustsPrefetchedHTML: prefetchedHTML != nil)
             let itemID: UUID?
             switch result {
-            case .saved(let item), .sentToEreaders(let item),
+            case .saved(let item), .savedNeedsOwnerInstall(let item, _),
+                 .sentToEreaders(let item),
                  .sentToFriends(let item), .friendPromptRequested(let item):
                 itemID = item.id
             case .ignored: itemID = ReadingListStore.shared.item(forURLString: urlString)?.id
+            case .blockedByInterop:
+                // Unpaid cross-surface save — discarded; the ingest gate has
+                // already shown the interop prompt. Nothing to open.
+                return
             }
             nav.popToRootViewController(animated: false)
             guard let itemID, let item = ReadingListStore.shared.item(withID: itemID),

@@ -74,8 +74,13 @@ public final class InteropPurchaseController {
     }
 
     /// Whether this device already unlocked interop (via this app OR any
-    /// sibling Luna app — the App-Group flag is shared).
+    /// sibling Luna app — the App-Group flag is shared — or a debug/TestFlight
+    /// build grant).
     public var isUnlocked: Bool { entitlement.isUnlocked }
+
+    /// The unlock reason, so UI can distinguish a purchase from a build grant
+    /// ("Unlocked (TestFlight)") and skip offering Buy when nothing is for sale.
+    public var unlockStatus: InteropEntitlement.UnlockStatus { entitlement.status }
 
     /// Loads this app's own product (price + display metadata for the paywall).
     /// A no-op leaving `product` nil if `productID` is empty or the App Store

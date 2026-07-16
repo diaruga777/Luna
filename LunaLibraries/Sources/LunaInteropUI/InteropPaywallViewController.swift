@@ -115,24 +115,41 @@ public final class InteropPaywallViewController: UIViewController {
         }
     }
 
-    /// Renders locked vs unlocked. Single source of truth for both states so a
-    /// purchase/restore mid-screen re-renders consistently.
+    /// Renders locked vs unlocked (by reason). Single source of truth for every
+    /// state so a purchase/restore mid-screen re-renders consistently. A
+    /// build-granted unlock (debug/TestFlight) never offers Buy/Restore and
+    /// says so — it must not imply a purchase happened.
     private func render() {
-        let unlocked = purchaseController.isUnlocked
+        let status = purchaseController.unlockStatus
+        let unlocked = status != .locked
         stateBadge.image = UIImage(
             systemName: unlocked ? "checkmark.circle.fill" : "arrow.left.arrow.right.circle",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 44, weight: .semibold))
         stateBadge.tintColor = unlocked ? .systemGreen : GlassStyle.readingAccent
-        headline.text = unlocked
-            ? "Luna Interoperability is unlocked"
-            : "Save across all Luna apps"
+        switch status {
+        case .purchased:
+            headline.text = "Luna Interoperability is unlocked"
+        case .debugBuild:
+            headline.text = "Luna Interoperability is unlocked (debug build)"
+        case .testFlight:
+            headline.text = "Luna Interoperability is unlocked (TestFlight)"
+        case .locked:
+            headline.text = "Save across all Luna apps"
+        }
         priceLabel.isHidden = unlocked
         buyButton.isHidden = unlocked
         restoreButton.isHidden = unlocked
         restoreCaveat.isHidden = unlocked
-        if unlocked {
+        switch status {
+        case .purchased:
             explainer.text = "Every Luna app on this device can now save any kind of "
                 + "link — articles, videos, and products all land in the right app."
+        case .debugBuild, .testFlight:
+            explainer.text = "All paid features are free on this build — every Luna "
+                + "app on this device can save any kind of link. Nothing was "
+                + "purchased; the App Store version sells this unlock for $1.99."
+        case .locked:
+            break // keep the sales copy set in viewDidLoad
         }
     }
 

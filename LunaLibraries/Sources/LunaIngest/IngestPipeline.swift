@@ -99,6 +99,11 @@ public enum Outcome: Equatable {
 public struct IngestResult: Equatable {
     public let url: URL
     public let outcome: Outcome
+
+    public init(url: URL, outcome: Outcome) {
+        self.url = url
+        self.outcome = outcome
+    }
 }
 
 /// THE single shared ingest pipeline every surface calls. It runs the WHOLE

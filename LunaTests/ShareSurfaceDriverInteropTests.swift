@@ -134,6 +134,33 @@ final class ShareSurfaceDriverInteropTests: XCTestCase {
         XCTAssertTrue(host.presented.first is InteropPromptViewController)
     }
 
+    func testBlockedResolvedWrapperDoesNotDeletePreexistingCanonicalItem() async {
+        let wrapperURL = URL(string: "https://example.com/redirect?id=123")!
+        let canonicalURL = URL(string: "https://bsky.app/profile/someone/post/123")!
+        let existing = store.add(urlString: canonicalURL.absoluteString, source: .manual)
+        _ = store.add(urlString: wrapperURL.absoluteString, source: .shareSheet)
+        let driver = ShareSurfaceDriver(
+            host: host,
+            store: store,
+            process: { _ in
+                IngestResult(
+                    url: canonicalURL,
+                    outcome: .social(.bluesky, itemID: "123"))
+            },
+            interopDecision: { _ in
+                .blocked(owner: .downloader, ownerInstalled: true)
+            },
+            currentSurface: .reader)
+
+        await driver.ingestAndPresent(originalURL: wrapperURL)
+
+        XCTAssertNil(store.item(forURLString: wrapperURL.absoluteString),
+                     "wrapper placeholder is removed by canonical dedup")
+        XCTAssertEqual(store.item(forURLString: canonicalURL.absoluteString)?.id, existing.id,
+                       "blocked cleanup must preserve the older canonical save")
+        XCTAssertTrue(host.presented.first is InteropPromptViewController)
+    }
+
     // MARK: - Same-surface / paid — byte-identical to today
 
     func testSameSurfaceUnpaidSaveIsUntouched() {

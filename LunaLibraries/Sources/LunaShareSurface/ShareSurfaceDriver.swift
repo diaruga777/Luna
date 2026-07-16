@@ -75,6 +75,11 @@ public final class ShareSurfaceDriver {
     /// item to the pipeline's resolved URL, then presents + persists the `Outcome` via
     /// this surface's host.
     public func ingestAndPresent(originalURL: URL, prefetchedHTML: String? = nil) async {
+        // Keep the identity of THIS extension request's placeholder. Resolution
+        // can discover that its canonical URL is already saved and delete the
+        // placeholder; a later blocked decision must never then delete that
+        // pre-existing canonical item merely because it has the resolved URL.
+        let pendingItemID = store.item(forURLString: originalURL.absoluteString)?.id
         let result = await process(IngestInput(
             url: originalURL, source: .shareSheet, prefetchedHTML: prefetchedHTML))
 
@@ -91,7 +96,7 @@ public final class ShareSurfaceDriver {
                 _ = store.updateURL(url.absoluteString, for: item.id)
             }
         }
-        present(result.outcome, url: url)
+        present(result.outcome, url: url, blockedItemID: pendingItemID)
     }
 
     /// The EXHAUSTIVE per-surface presenter over the unified `Outcome` (no `default`,
@@ -111,12 +116,12 @@ public final class ShareSurfaceDriver {
     ///   interactive UI (reader, price editor, saved-media screen, archive
     ///   reader) are left alone rather than stacking a second sheet.
     /// - `.allowed` (same-surface, or `.failed`'s nil owner): exactly today.
-    public func present(_ outcome: Outcome, url: URL) {
+    public func present(_ outcome: Outcome, url: URL, blockedItemID: UUID? = nil) {
         guard let host else { return }
 
         let decision = interopDecision(outcome)
         if case let .blocked(owner, ownerInstalled) = decision {
-            discardBlockedSave(url: url)
+            discardBlockedSave(url: url, itemID: blockedItemID)
             presentInteropPrompt(
                 kind: .blocked(owner: owner, ownerInstalled: ownerInstalled),
                 terminal: { [weak host] in host?.completeSilently() })
@@ -188,7 +193,15 @@ public final class ShareSurfaceDriver {
     /// blocked cross-surface save leaves NOTHING behind. `store.delete` also
     /// removes every on-disk artifact the row owns — including an imported
     /// document's copied `Articles/<id>-source.<ext>` file.
-    private func discardBlockedSave(url: URL) {
+    private func discardBlockedSave(url: URL, itemID: UUID?) {
+        if let itemID {
+            // If wrapper dedup already removed this request's placeholder, the
+            // correct blocked cleanup is a no-op. Do not fall back to URL lookup:
+            // that URL belongs to the older, legitimate save.
+            guard let item = store.item(withID: itemID) else { return }
+            store.delete(item)
+            return
+        }
         guard let item = store.item(forURLString: url.absoluteString) else { return }
         store.delete(item)
     }

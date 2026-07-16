@@ -30,9 +30,6 @@ enum BundledShortcut {
         } catch {
             return
         }
-        let activity = UIActivityViewController(
-            activityItems: [temporaryCopy], applicationActivities: nil)
-        activity.popoverPresentationController?.sourceView = sourceView ?? presenter.view
-        presenter.present(activity, animated: true)
+        UIApplication.shared.open(temporaryCopy)
     }
 }

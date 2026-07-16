@@ -41,8 +41,10 @@ Dev with Xcode 27 beta / iOS 27 simulator; archive/upload with stable Xcode 26.2
 > **Surface gating.** All three apps onboard once (per-app `hasCompletedOnboarding`) with a
 > skippable email-account step (see `claudedocs/incoming-mail.md`). Friend sharing (email-based,
 > `claudedocs/social-sharing.md`) and mail import are universal — all three apps, no per-surface
-> gating. Action extensions are universal (full `LunaShareSurface`) and render any URL type in
-> all three apps. UI prose says
+> gating. Cross-app saves are governed by the one-time Luna Interoperability purchase; ownership,
+> source exemptions, StoreKit/App-Group behavior, and UI flows are documented in
+> `claudedocs/interop-purchase.md`. Action extensions are universal (full `LunaShareSurface`) and
+> render any URL type in all three apps. UI prose says
 > "Luna"; each app has its own `AppIcon{Reader,Downloader,PriceTracker}` (PNG appiconsets in
 > `SharedIconAssets.xcassets`; `scripts/make_icons.py` is retired — update the PNGs directly).
 > The ACTION extensions use separate `ActionExtensionIcon{Reader,Downloader,PriceTracker}` sets: iOS

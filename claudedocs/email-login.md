@@ -8,6 +8,11 @@ Onboarding" flow (`OnboardingFlow`, with an ephemeral `accountStore` — see
 `claudedocs/onboarding.md`), `EmailAndKindleSettingsScreen`, and `CatchUpViewController`
 (inline nudge). It builds a `UINavigationController` with
 `installDotMatrixTransitions()` and presents it via `DotMatrixModal.present`.
+During first-launch onboarding, `OnboardingFlow` instead embeds the same
+`EmailEntryViewController` directly as its root. That mode replaces modal Cancel
+with a top-right **Skip for now** action and advances to the Safari onboarding
+step after a successful credential/OAuth check; all address-entry, provider
+inference, AutoFill, autodiscovery, loading-cover, and success behaviors are shared.
 
 ## Screens
 
@@ -15,6 +20,9 @@ Onboarding" flow (`OnboardingFlow`, with an ephemeral `accountStore` — see
    hero (accent rounded icon tile + 28pt bold title + secondary-label body,
    `OnboardingStepViewController`'s visual language, see below) sits above a
    rounded field card, with a filled "Continue" button pinned above the keyboard.
+   In onboarding this is the first onboarding screen itself, not a second sheet
+   launched from an opt-in screen, and the field still autofocuses from
+   `viewDidAppear`.
 2. **`CredentialViewController`** (`CredentialViewController.swift`, its own
    file) — app-specific password entry, pushed for every provider except
    Outlook. Same hero/card/button treatment; the hero symbol is `key.fill` and

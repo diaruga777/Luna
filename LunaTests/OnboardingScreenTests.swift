@@ -33,7 +33,7 @@ final class OnboardingScreenTests: XCTestCase {
         }
     }
 
-    /// The first step's primary control exists and is laid out.
+    /// The first step embeds email entry directly and keeps its Continue control laid out.
     func testFirstStepHasContinueControl() {
         let steps = OnboardingFlow.stepViewControllersForTesting()
         let first = steps[0]
@@ -72,6 +72,21 @@ final class OnboardingScreenTests: XCTestCase {
         // so an `is` check compiled here can spuriously fail cross-image.
         XCTAssertTrue(OnboardingFlow.isOnboardingStep(nav?.topViewController),
                       "onboarding flow should open on the email step, got \(String(describing: nav?.topViewController))")
+        XCTAssertFalse(nav?.isNavigationBarHidden ?? true)
+        XCTAssertEqual(nav?.topViewController?.navigationItem.rightBarButtonItem?.title, "Skip for now")
+        XCTAssertNotNil(findTextField(in: nav?.topViewController?.view),
+                        "onboarding should contain the email field directly")
+        let emailEntry = nav?.topViewController
+        if let skip = emailEntry?.navigationItem.rightBarButtonItem,
+           let action = skip.action {
+            XCTAssertTrue(UIApplication.shared.sendAction(action, to: skip.target, from: skip, for: nil))
+            XCTAssertFalse(nav?.topViewController === emailEntry,
+                           "Skip for now should advance directly to the next onboarding screen")
+            XCTAssertTrue(nav?.isNavigationBarHidden ?? false,
+                          "the remaining full-bleed onboarding screens should hide email navigation chrome")
+        } else {
+            XCTFail("email onboarding should expose an actionable Skip for now button")
+        }
         XCTAssertFalse(finished)
         _ = window
     }
@@ -136,5 +151,14 @@ final class OnboardingScreenTests: XCTestCase {
         if let button = view as? UIButton { found.append(button) }
         for subview in view.subviews { found.append(contentsOf: allButtons(in: subview)) }
         return found
+    }
+
+    private func findTextField(in view: UIView?) -> UITextField? {
+        guard let view else { return nil }
+        if let field = view as? UITextField { return field }
+        for subview in view.subviews {
+            if let field = findTextField(in: subview) { return field }
+        }
+        return nil
     }
 }

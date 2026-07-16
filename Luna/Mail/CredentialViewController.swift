@@ -19,14 +19,21 @@ final class CredentialViewController: UIViewController {
     private let account: EmailAccount
     private let accountStore: EmailAccountStore
     private let completion: ((Bool) -> Void)?
+    private let dismissOnCompletion: Bool
     private let passwordField = UITextField()
     private let revealButton = UIButton(type: .system)
     private let signInButton = EmailLoginActionButton(title: "Sign In")
 
-    init(account: EmailAccount, accountStore: EmailAccountStore, completion: ((Bool) -> Void)?) {
+    init(
+        account: EmailAccount,
+        accountStore: EmailAccountStore,
+        completion: ((Bool) -> Void)?,
+        dismissOnCompletion: Bool = true
+    ) {
         self.account = account
         self.accountStore = accountStore
         self.completion = completion
+        self.dismissOnCompletion = dismissOnCompletion
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -200,8 +207,13 @@ final class CredentialViewController: UIViewController {
                 let transport = try IMAPSMTPTransport(account: account, password: password)
                 try await transport.verifyCredentials()
                 accountStore.save(account, credential: .appPassword(password))
-                cover.resolveToCheckmark {
-                    DotMatrixModal.dismiss(self) { self.completion?(true) }
+                cover.resolveToCheckmark { [self] in
+                    if dismissOnCompletion {
+                        DotMatrixModal.dismiss(self) { self.completion?(true) }
+                    } else {
+                        cover.hide()
+                        completion?(true)
+                    }
                 }
             } catch {
                 cover.hide()

@@ -62,7 +62,7 @@ public enum OnboardingFlow {
     /// spuriously fail against instances created by the app image. This helper runs
     /// the check in the app image — the same copy `make` builds the steps from.
     public static func isOnboardingStep(_ viewController: UIViewController?) -> Bool {
-        viewController is OnboardingStepViewController
+        viewController is OnboardingStepViewController || viewController is EmailEntryViewController
     }
 
     /// Standalone, ordered onboarding step view controllers for snapshot/navigation
@@ -82,26 +82,27 @@ public enum OnboardingFlow {
     }
     #endif
 
-    /// Skippable step: connect an email account (drives send + receive of shares).
+    /// Skippable email entry, embedded directly as onboarding's first screen.
     private static func emailStep(
         stores: OnboardingStores, nav: UINavigationController, onFinished: @escaping () -> Void
     ) -> UIViewController {
+        var didAdvance = false
         let proceed: () -> Void = { [weak nav] in
+            guard !didAdvance else { return }
+            didAdvance = true
             guard let nav else { return }
+            nav.setNavigationBarHidden(true, animated: false)
             nav.pushViewController(safariStep(stores: stores, nav: nav, onFinished: onFinished), animated: true)
         }
-        return OnboardingStepViewController(
-            symbol: "envelope.badge",
-            title: "Connect your email",
-            body: "Luna sends and receives shared articles through your own email account. "
-                + "Connect it now, or set it up later — you'll see a reminder in your reading list.",
-            primary: .init(title: "Set Up Email") { step in
-                EmailLoginFlow.present(from: step, accountStore: stores.emailAccountStore) { _ in proceed() }
-            },
-            continueTitle: "Skip",
-            animation: nil,
-            progress: .init(index: 0, total: totalSteps),
-            onContinue: proceed)
+        let entry = EmailEntryViewController(
+            accountStore: stores.emailAccountStore,
+            completion: { _ in proceed() },
+            dismissOnCompletion: false,
+            cancellationTitle: "Skip for now")
+        // Email entry and the pushed credential screen need navigation chrome for
+        // Skip/back. The rest of onboarding deliberately remains full-bleed.
+        nav.setNavigationBarHidden(false, animated: false)
+        return entry
     }
 
     private static func existingAccountStep(

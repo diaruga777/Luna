@@ -39,13 +39,22 @@ final class EmailEntryViewController: UIViewController {
 
     private let accountStore: EmailAccountStore
     private let completion: ((Bool) -> Void)?
+    private let dismissOnCompletion: Bool
+    private let cancellationTitle: String?
     private let field = UITextField()
     private let providerBadge = ProviderBadgeView()
     private let continueButton = EmailLoginActionButton(title: "Continue")
 
-    init(accountStore: EmailAccountStore, completion: ((Bool) -> Void)?) {
+    init(
+        accountStore: EmailAccountStore,
+        completion: ((Bool) -> Void)?,
+        dismissOnCompletion: Bool = true,
+        cancellationTitle: String? = nil
+    ) {
         self.accountStore = accountStore
         self.completion = completion
+        self.dismissOnCompletion = dismissOnCompletion
+        self.cancellationTitle = cancellationTitle
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -53,9 +62,16 @@ final class EmailEntryViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        // The hero owns the title; the nav bar just carries Cancel.
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
+        // The hero owns the title. Modal login carries Cancel on the left;
+        // onboarding embeds this screen directly and offers its skip action on
+        // the top right instead.
+        if let cancellationTitle {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                title: cancellationTitle, style: .plain, target: self, action: #selector(cancel))
+        } else {
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
+        }
 
         let hero = EmailLoginUI.heroTile(symbol: "envelope.badge")
         let titleLabel = EmailLoginUI.titleLabel("Connect your email")
@@ -178,6 +194,7 @@ final class EmailEntryViewController: UIViewController {
     /// AutoFilled value survives even if the field is cleared on return from a
     /// password-manager extension.
     private var enteredAddress = ""
+    private var hasCompleted = false
 
     private func currentAddressCandidate() -> String {
         let typed = field.text ?? ""
@@ -198,7 +215,15 @@ final class EmailEntryViewController: UIViewController {
         continueButton.isEnabled = Self.isValidAddress(candidate)
     }
 
-    @objc private func cancel() { DotMatrixModal.dismiss(self) { self.completion?(false) } }
+    @objc private func cancel() {
+        guard !hasCompleted else { return }
+        hasCompleted = true
+        if dismissOnCompletion {
+            DotMatrixModal.dismiss(self) { self.completion?(false) }
+        } else {
+            completion?(false)
+        }
+    }
 
     /// Latched while autodiscovery runs: the return key and Continue button stay
     /// active during the (network) resolve, and repeated taps would push several
@@ -233,10 +258,17 @@ final class EmailEntryViewController: UIViewController {
                 addressEdited()   // re-derive Continue's enabled state
             }
             let server = await resolveServer(providerID: providerID, address: address)
+            // Onboarding's Skip action remains reachable in the navigation bar
+            // during autodiscovery. If it won the race, do not push credentials
+            // over the next onboarding screen when this request comes back.
+            guard !hasCompleted, navigationController?.topViewController === self else { return }
             let account = EmailAccount(
                 providerID: providerID, address: address, displayName: nil, server: server)
             let credential = CredentialViewController(
-                account: account, accountStore: accountStore, completion: completion)
+                account: account,
+                accountStore: accountStore,
+                completion: completion,
+                dismissOnCompletion: dismissOnCompletion)
             navigationController?.pushViewController(credential, animated: true)
         }
     }
@@ -353,7 +385,15 @@ final class EmailEntryViewController: UIViewController {
     }
 
     private func finish() {
-        DotMatrixModal.dismiss(self) { self.completion?(true) }
+        guard !hasCompleted else { return }
+        hasCompleted = true
+        if dismissOnCompletion {
+            DotMatrixModal.dismiss(self) { self.completion?(true) }
+        } else {
+            loadingCover?.hide()
+            loadingCover = nil
+            completion?(true)
+        }
     }
 
     // MARK: - Full-screen loading cover

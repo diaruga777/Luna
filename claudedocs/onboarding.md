@@ -9,13 +9,19 @@
 ## Step order
 
 1. **Email** (`emailStep` / `existingAccountStep`, index 0) — skippable; connects
-   the email account send/receive shares run through. When the shared account is
+   the email account send/receive shares run through. On a fresh setup,
+   `EmailEntryViewController` is the onboarding root itself: its email field is
+   immediately focused, its provider badge still updates as the address is
+   entered, and a top-right **Skip for now** action advances straight to Safari.
+   There is no separate email opt-in screen or modal transition. The inferred
+   provider then follows the unchanged credential-screen or Outlook OAuth path.
+   When the shared account is
    already configured — metadata in App-Group defaults, secret in the shared
    App-Group keychain access group (`CredentialKeychain.sharedAccessGroup`), so a
    sign-in in ANY of the three apps counts — `OnboardingFlow.make` collapses the
    whole flow to the single `existingAccountStep` ("Email already connected" →
    Finish), skipping the login and the Safari/Action-Button steps. The login
-   sub-flow itself (`EmailEntryViewController` → `CredentialViewController` or
+   flow itself (`EmailEntryViewController` → `CredentialViewController` or
    Outlook OAuth, `Luna/Mail/`) is a hero/card/button redesign matching this
    file's `OnboardingStepViewController` visual language, with a full-screen
    dot-matrix loading cover during verification and a checkmark success beat —

@@ -82,9 +82,10 @@ source row into a black silhouette while a separate, uniform veil dims the whole
 so the source never brightens relative to its surroundings. It moves the eclipse to
 zenith under a directional white corona, swaps screens beneath a fully opaque frame, then
 uncovers the destination. The corona sits outside compact source views (the silhouette
-masks its inner half) and inside full-screen sources, where no exterior is visible. A
-soft radial diamond-ring point blooms briefly on the leading edge at zenith and there is
-no full-screen white flash. On pop the uniform veil remains independent while a fully
+masks its inner half) and is drawn inward around the perimeter of full-screen sources,
+where no exterior is visible. It is a source-wide halo, distinct from the soft radial
+diamond-ring point that blooms briefly on the leading edge at zenith; there is no
+full-screen white flash. On pop the uniform veil remains independent while a fully
 opaque black eclipse crosses the entire screen from right to left without fading. It
 never affects Downloader, Price Tracker, search/deep-link opens, reader-internal
 RabbitHole transitions, or any other navigation/modal transition. Simulator builds

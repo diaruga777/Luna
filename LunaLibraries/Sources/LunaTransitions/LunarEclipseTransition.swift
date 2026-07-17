@@ -192,23 +192,17 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         host.clipsToBounds = false
         let silhouette = image?.withRenderingMode(.alwaysTemplate)
 
-        // The corona belongs outside compact sources, where the silhouette occludes
-        // its inner half. A full-screen source has no visible exterior, so place the
-        // same light just inside its leading edge.
+        // The flare is directional, but the corona belongs to the source silhouette:
+        // outside compact views and inside views that fill the transition container.
         let lightCenter = CGPoint(
             x: sourceIsFullScreen ? min(42, host.bounds.width * 0.1) : host.bounds.maxX,
             y: host.bounds.midY
         )
-        let corona = makeRadialLight(
-            diameter: sourceIsFullScreen ? 148 : min(196, max(142, frame.height * 1.25)),
-            center: lightCenter,
-            colors: [
-                UIColor.white.withAlphaComponent(0.82),
-                UIColor.white.withAlphaComponent(0.42),
-                UIColor.white.withAlphaComponent(0.16),
-                UIColor.clear
-            ],
-            locations: [0, 0.18, 0.5, 1]
+        let corona = makeCorona(
+            silhouette: silhouette,
+            bounds: host.bounds,
+            cornerRadius: source.layer.cornerRadius,
+            sourceIsFullScreen: sourceIsFullScreen
         )
         let flare = makeRadialLight(
             diameter: sourceIsFullScreen ? 46 : 38,
@@ -243,6 +237,32 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         }
 
         return (host, corona, flare)
+    }
+
+    private func makeCorona(
+        silhouette: UIImage?,
+        bounds: CGRect,
+        cornerRadius: CGFloat,
+        sourceIsFullScreen: Bool
+    ) -> UIView {
+        if sourceIsFullScreen {
+            return EclipseInteriorCoronaView(cornerRadius: cornerRadius, frame: bounds)
+        }
+
+        // Rendering the white silhouette beneath the black body means only its
+        // shadow escapes. The result follows the complete source outline instead of
+        // collapsing into a second point light at the leading edge.
+        let halo = UIImageView(image: silhouette)
+        halo.frame = bounds
+        halo.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        halo.tintColor = .white
+        halo.clipsToBounds = false
+        halo.layer.masksToBounds = false
+        halo.layer.shadowColor = UIColor.white.cgColor
+        halo.layer.shadowOpacity = 1
+        halo.layer.shadowOffset = .zero
+        halo.layer.shadowRadius = 22
+        return halo
     }
 
     private func makeRadialLight(
@@ -295,6 +315,45 @@ private final class EclipseRadialLightView: UIView {
             endRadius: min(bounds.width, bounds.height) / 2,
             options: .drawsAfterEndLocation
         )
+    }
+}
+
+private final class EclipseInteriorCoronaView: UIView {
+    private let cornerRadius: CGFloat
+
+    init(cornerRadius: CGFloat, frame: CGRect) {
+        self.cornerRadius = cornerRadius
+        super.init(frame: frame)
+        isOpaque = false
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        contentMode = .redraw
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func draw(_ rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        context.setBlendMode(.screen)
+
+        // Nested translucent strokes create a glow that falls inward from every
+        // source edge. The outermost stroke stays inside the full-screen bounds.
+        let depth: CGFloat = 30
+        let steps = 24
+        for step in 0..<steps {
+            let progress = CGFloat(step) / CGFloat(steps - 1)
+            let inset = 1 + progress * depth
+            let alpha = 0.42 * (1 - progress) * (1 - progress)
+            let path = UIBezierPath(
+                roundedRect: bounds.insetBy(dx: inset, dy: inset),
+                cornerRadius: max(0, cornerRadius - inset)
+            )
+            context.setStrokeColor(UIColor.white.withAlphaComponent(alpha).cgColor)
+            context.setLineWidth(2)
+            context.addPath(path.cgPath)
+            context.strokePath()
+        }
     }
 }
 

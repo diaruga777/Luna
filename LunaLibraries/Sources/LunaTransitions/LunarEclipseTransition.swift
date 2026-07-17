@@ -86,18 +86,35 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
             to.layoutIfNeeded()
         }
 
+        let source = sourceView ?? from
+        let sourceFrame = source.convert(source.bounds, to: container)
+
         let dimmer = UIView(frame: container.bounds)
         dimmer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         dimmer.backgroundColor = .black
         dimmer.alpha = 0
+        if isPush {
+            // Keep the tapped row out of the veil. At zenith the black eclipse body
+            // itself closes this hole, preserving a fully opaque handoff frame.
+            let cutout = UIBezierPath(rect: dimmer.bounds)
+            cutout.append(UIBezierPath(
+                roundedRect: sourceFrame,
+                cornerRadius: max(source.layer.cornerRadius, min(18, sourceFrame.height / 2))
+            ))
+            let mask = CAShapeLayer()
+            mask.frame = dimmer.bounds
+            mask.path = cutout.cgPath
+            mask.fillRule = .evenOdd
+            dimmer.layer.mask = mask
+        }
         container.addSubview(dimmer)
 
-        let source = sourceView ?? from
-        let sourceFrame = source.convert(source.bounds, to: container)
         let (eclipse, corona, flare) = makeEclipse(from: source, frame: sourceFrame)
         container.addSubview(eclipse)
         let travel = max(18, sourceFrame.width * 0.16) * (isPush ? -1 : 1)
-        eclipse.transform = CGAffineTransform(translationX: travel, y: 0).scaledBy(x: 0.985, y: 0.985)
+        // Translate at full size so the cutout exposes only the leading edge. Scaling
+        // the body down creates a second, unnatural crescent on the trailing edge.
+        eclipse.transform = CGAffineTransform(translationX: travel, y: 0)
         eclipse.alpha = 0
         corona.alpha = 0.15
         flare.alpha = 0
@@ -123,7 +140,7 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
                 corona.alpha = 0.82
             }
             // A compact diamond-ring point blooms only as the leading edge reaches
-            // zenith. It never paints white over the rest of the screen.
+            // zenith. Its radial falloff avoids a solid white disc or hard cutoff.
             UIView.addKeyframe(withRelativeStartTime: 0.76, relativeDuration: 0.24) {
                 flare.alpha = 1
                 flare.transform = .identity
@@ -132,6 +149,9 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
             // The black veil is now alpha 1, so this is the only moment at which the
             // navigation hierarchy changes which real screen is visible.
             UIView.performWithoutAnimation {
+                // Seal the push cutout before changing screens. The egress should
+                // uncover the destination uniformly from an entirely black frame.
+                dimmer.layer.mask = nil
                 to.alpha = 1
                 if !isPush { from.alpha = 0 }
             }
@@ -168,53 +188,82 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         host.clipsToBounds = false
         let silhouette = image?.withRenderingMode(.alwaysTemplate)
 
-        // The corona is a radial point OUTSIDE the silhouette. Since it is below the
-        // black body, no white is painted within the eclipse's bounds; a single point
-        // at the directional extreme is brightest, falling off into the outer halo.
-        let haloInset: CGFloat = 34
-        let corona = UIView(frame: host.bounds.insetBy(dx: -haloInset, dy: -haloInset))
-        corona.isUserInteractionEnabled = false
-        let halo = CAGradientLayer()
-        halo.type = .radial
-        halo.frame = corona.bounds
-        let brightPointX: CGFloat = direction == .push ? 0.90 : 0.10
-        let edgeX: CGFloat = direction == .push ? 1.0 : 0.0
-        halo.startPoint = CGPoint(x: brightPointX, y: 0.5)
-        halo.endPoint = CGPoint(x: edgeX, y: 0.5)
-        halo.colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0.28).cgColor, UIColor.clear.cgColor]
-        halo.locations = [0, 0.24, 1]
-        corona.layer.addSublayer(halo)
-        host.addSubview(corona)
+        let lightCenter = CGPoint(
+            // A pop uses the full-screen source, so move the corona inward rather
+            // than centring it beyond the left edge where it cannot be seen.
+            x: direction == .push ? host.bounds.maxX : min(34, host.bounds.width * 0.085),
+            y: host.bounds.midY
+        )
+        let corona = makeRadialLight(
+            diameter: direction == .push ? 82 : 106,
+            center: lightCenter,
+            colors: [
+                UIColor.white.withAlphaComponent(0.32),
+                UIColor.white.withAlphaComponent(0.13),
+                UIColor.clear
+            ],
+            locations: [0, 0.3, 1]
+        )
+        let flare = makeRadialLight(
+            diameter: direction == .push ? 34 : 42,
+            center: lightCenter,
+            colors: [
+                UIColor.white,
+                UIColor.white.withAlphaComponent(0.86),
+                UIColor.white.withAlphaComponent(0.34),
+                UIColor.white.withAlphaComponent(0.08),
+                UIColor.clear
+            ],
+            locations: [0, 0.04, 0.17, 0.43, 1]
+        )
+
+        // On push the light is below the body. The source snapshot's antialiased
+        // silhouette naturally occludes its inner half instead of drawing a hard dot.
+        if direction == .push {
+            host.addSubview(corona)
+            host.addSubview(flare)
+        }
 
         let black = UIImageView(image: silhouette)
         black.tintColor = .black
         black.frame = host.bounds
         black.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        black.layer.shadowColor = UIColor.white.cgColor
-        // Keep the surrounding halo restrained: the radial corona above supplies the
-        // one unmistakable peak rather than turning the whole leading edge white.
-        black.layer.shadowRadius = 4
-        black.layer.shadowOpacity = 0.08
-        black.layer.shadowOffset = CGSize(width: direction == .push ? 4 : -4, height: 0)
         host.addSubview(black)
 
-        let flareDiameter: CGFloat = 5
-        let flare = UIView(frame: CGRect(
-            x: direction == .push ? host.bounds.maxX - flareDiameter / 2 : -flareDiameter / 2,
-            y: host.bounds.midY - flareDiameter / 2,
-            width: flareDiameter,
-            height: flareDiameter
-        ))
-        flare.isUserInteractionEnabled = false
-        flare.backgroundColor = .white
-        flare.layer.cornerRadius = flareDiameter / 2
-        flare.layer.shadowColor = UIColor.white.cgColor
-        flare.layer.shadowOpacity = 1
-        flare.layer.shadowRadius = 15
-        flare.layer.shadowOffset = .zero
-        host.addSubview(flare)
+        // A pop's eclipse fills the host, so its glow must be above the body and
+        // inset into the screen. Otherwise both light layers are clipped off-screen.
+        if direction == .pop {
+            host.addSubview(corona)
+            host.addSubview(flare)
+        }
 
         return (host, corona, flare)
+    }
+
+    private func makeRadialLight(
+        diameter: CGFloat,
+        center: CGPoint,
+        colors: [UIColor],
+        locations: [NSNumber]
+    ) -> UIView {
+        let light = UIView(frame: CGRect(
+            x: center.x - diameter / 2,
+            y: center.y - diameter / 2,
+            width: diameter,
+            height: diameter
+        ))
+        light.isUserInteractionEnabled = false
+        light.backgroundColor = .clear
+
+        let gradient = CAGradientLayer()
+        gradient.type = .radial
+        gradient.frame = light.bounds
+        gradient.startPoint = CGPoint(x: 0.5, y: 0.5)
+        gradient.endPoint = CGPoint(x: 1, y: 0.5)
+        gradient.colors = colors.map(\.cgColor)
+        gradient.locations = locations
+        light.layer.addSublayer(gradient)
+        return light
     }
 }
 

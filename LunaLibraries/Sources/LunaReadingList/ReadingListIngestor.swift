@@ -493,10 +493,12 @@ public final class ReadingListIngestor {
             thumbnailFileName: thumbnailFileName,
             for: item.id)
 
-        // Downloader always uses the system-owned background job so direct paste,
-        // App Intents, and retries converge on one durable path + Live Activity.
-        // Sibling non-intent entry points retain their legacy awaited Photos path.
-        if MediaAutoDownloader.isRunningInDownloader {
+        // Downloader normally uses the system-owned background job. App Intents
+        // own their media handoff after the save result is known so the user's
+        // setting can choose awaited file return or the same Live Activity path
+        // without racing a second transfer from this ingestion task.
+        if MediaAutoDownloader.isRunningInDownloader,
+           item.effectiveCaptureSource != .appIntent {
             _ = await LiveMediaDownloadManager.shared.start(
                 urlString: item.urlString, title: item.title, ownership: .downloader)
         } else if item.effectiveCaptureSource != .appIntent {

@@ -115,12 +115,17 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   destination policy above; sibling apps retain their legacy Photos behavior.
 - **Ingest, App Intents, and short-lived extensions** — normal ingestion calls
   `MediaAutoDownloader`, while `.appIntent` ingestion deliberately skips the awaited inline
-  downloader. The intent persists its row first, then hands a supported URL directly to one
-  `LiveMediaDownloadManager` job. When Downloader has ever launched, that job carries explicit
-  Downloader ownership across relaunches, creates/maintains `SavedMediaStore` state, honors
-  Downloader's shared Photos and clipboard settings in every host, and falls back to shared
-  local storage when Photos permission is denied. Reader and Price Tracker embed host-prefixed
-  copies of the same Live Activity widget configuration as Downloader.
+  downloader and any automatic Downloader-host Live Activity; the Save/Provide Context intent
+  owns the single handoff after the reading-list result is known. **Return Downloaded Media**
+  (`AutoDownloadSettings.returnMediaFromAppIntents`, App-Group-backed, default on) awaits the
+  durable Downloader download and exposes the completed static image/GIF/video to Shortcuts as
+  an optional `IntentFile` property on the returned transient entity. It reuses existing local
+  files; Photos-backed rows are copied to a transient file for the result. Turning the setting
+  off retains the former `LiveMediaDownloadManager` background job and returns no media file.
+  When Downloader has ever launched, both modes carry Downloader ownership, create/maintain
+  `SavedMediaStore` state, honor Downloader's shared Photos and clipboard settings in every
+  host, and fall back to shared local storage when Photos permission is denied. Reader and
+  Price Tracker embed host-prefixed copies of the same Live Activity widget configuration.
   Downloader-owned dedup is based on the durable `SavedMediaStore` state: a stale
   `autoDownloadedURLs` marker never suppresses a missing or `.undownloaded` row, so an
   interrupted/crashed save is restartable by pasting the URL again. Store-change notifications

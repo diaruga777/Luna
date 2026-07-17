@@ -16,6 +16,7 @@ public enum AutoDownloadSettings {
 
     private static let autoSaveDownloadsToPhotosKey = "autoSaveDownloadsToPhotos"
     private static let autoCopyDownloadsToClipboardKey = "autoCopyDownloadsToClipboard"
+    private static let returnMediaFromAppIntentsKey = "returnMediaFromAppIntents"
 
     /// Whether completed Downloader downloads should be saved into Photos.
     /// Defaults to ON so new installs use Photos-backed storage automatically.
@@ -29,6 +30,14 @@ public enum AutoDownloadSettings {
     public static var autoCopyDownloadsToClipboard: Bool {
         get { (defaults.object(forKey: autoCopyDownloadsToClipboardKey) as? Bool) ?? false }
         set { defaults.set(newValue, forKey: autoCopyDownloadsToClipboardKey) }
+    }
+
+    /// Whether Action Button App Intents await media downloads and return the
+    /// completed image/video file to Shortcuts. Defaults to ON. When disabled,
+    /// intents retain the Live Activity-backed background handoff.
+    public static var returnMediaFromAppIntents: Bool {
+        get { (defaults.object(forKey: returnMediaFromAppIntentsKey) as? Bool) ?? true }
+        set { defaults.set(newValue, forKey: returnMediaFromAppIntentsKey) }
     }
 
     private static let wifiOnlyDownloadsKey = "wifiOnlyDownloads"

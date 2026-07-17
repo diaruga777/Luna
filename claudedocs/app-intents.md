@@ -1,4 +1,4 @@
-# App Intents (`Luna/Intents/`)
+# App Intents (`Luna/Mail/Intents/`)
 
 The Action Button capture flow is **two intents** — `ProvideContextIntent` +
 `SaveIntent` — plus `ReadArticleIntent` (background read-aloud via Siri, see
@@ -18,33 +18,38 @@ provider list, `actions` = all discoverable intents).
 
 ## The shortcut shape
 
-**Get Current App → Provide Context(app) → If result = 2 → Take Screenshot →
-Save(app, screenshot).** No other branches. The old flow's magic return tokens
+**Get Current App → Provide Context(app) → If result.outcome = Requires Screenshot →
+Take Screenshot → Save(app, screenshot).** No other branches. The old flow's magic return tokens
 (`"open-luna"`, `"4:<url>"`) are gone — foregrounding happens in-intent (below)
-and auto-download is started by `SaveIntent` itself.
+and media download is coordinated by the intent that completes the save.
 
-## `ProvideContextIntent` (`app: String?`) → `Int`
+## `ProvideContextIntent` (`app: String?`) → `ProvideContextResultEntity`
+
+The return value is a `TransientAppEntity` with an `outcome:
+ProvideContextOutcome` (`AppEnum`) and optional `media: IntentFile`. The outcome
+is `.done`, `.unhandled`, or `.requiresScreenshot`; transient entities are result
+values only and are not queryable.
 
 First, the **onboarding hijack**: `ActionButtonOnboardingStore.shared
 .handleProvideContextInvoked(appName:isCurrentAppLuna:forSurface:)` gets the
 invocation before any decision work (see "Action Button onboarding" below).
-`.foregroundThenUnsupported` → foreground Luna, return 0; `.unsupported` →
-return 0; `.none` → proceed.
+`.foregroundThenUnsupported` → foreground Luna, return `.unhandled`;
+`.unsupported` → return `.unhandled`; `.none` → proceed.
 
 Then the pure decision table (`LunaIntents.ProvideContextDecision.decide`,
 evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):
 
 | `app` | conditions | result |
 |---|---|---|
-| nil / empty (lock screen) | — | **0** |
-| Safari | `SafariURLStore.isFresh()` (URL present, ≤ 72 h) | **1** — saves `lastURL` NOW via the action-button path |
-| Safari | URL stale/absent, vision model available | **2** |
-| Safari | URL stale/absent, no vision model | **0** |
-| Shortcuts (outside onboarding) | — | **0** (no meaningful screenshot of Shortcuts' own UI) |
-| Platform app (tiktok/instagram/x/facebook/bluesky/reddit) | owning surface (all → Downloader) not installed | **0** |
-| Platform app | installed, no vision model | **0** |
-| Platform app | installed, vision model available | **2** |
-| Unrecognized | — | **0** |
+| nil / empty (lock screen) | — | **unhandled** |
+| Safari | `SafariURLStore.isFresh()` (URL present, ≤ 72 h) | **done** — saves `lastURL` NOW via the action-button path |
+| Safari | URL stale/absent, vision model available | **requiresScreenshot** |
+| Safari | URL stale/absent, no vision model | **unhandled** |
+| Shortcuts (outside onboarding) | — | **unhandled** (no meaningful screenshot of Shortcuts' own UI) |
+| Platform app (tiktok/instagram/x/facebook/bluesky/reddit) | owning surface (all → Downloader) not installed | **unhandled** |
+| Platform app | installed, no vision model | **unhandled** |
+| Platform app | installed, vision model available | **requiresScreenshot** |
+| Unrecognized | — | **unhandled** |
 
 Inputs: `AppNamePlatform.{isSafari,isShortcuts,platform}(forAppName:)`;
 `owningSurfaceInstalled` = running app IS Downloader ||
@@ -52,12 +57,18 @@ Inputs: `AppNamePlatform.{isSafari,isShortcuts,platform}(forAppName:)`;
 `visionModelAvailable` = `ScreenCaptureModelSessionFactory.makeDefault()
 .isAvailable`. The immediate Safari save (1) goes through
 `IntentIngestHelper.handleSavePress` with the Reader-only double-save surface
-armed (see `double-save.md`). Because return 1 bypasses `SaveIntent`,
+armed (see `double-save.md`). Because `.done` bypasses `SaveIntent`,
 `ProvideContextIntent` also sends a downloadable tracked Safari URL through the
-shared permission-aware Downloader/Live Activity handoff before returning; a
-friend-prompt outcome foregrounds Luna.
+shared permission-aware Downloader handoff before returning. With **Return
+Downloaded Media** on (the default), it awaits completion and attaches the static
+image/GIF/video as `media`; with the setting off, it starts the existing Live
+Activity-backed background download and returns `media = nil`. A friend-prompt
+outcome foregrounds Luna.
 
-## `SaveIntent` (`app: String`, `screenshot: IntentFile`) → nothing
+## `SaveIntent` (`app: String`, `screenshot: IntentFile`) → `SaveResultEntity`
+
+The return value is a `TransientAppEntity` with optional `media: IntentFile`.
+Non-media saves and background-download mode return `media = nil`.
 
 1. **Digest double-press skip** — `ScreenshotDigest.digest(forImageData:)`
    (32×32 grayscale, CoreGraphics-only) vs `ScreenshotDoublePressStore.last()`
@@ -84,9 +95,13 @@ friend-prompt outcome foregrounds Luna.
 4. On success the reading-list row is persisted immediately and ingestion continues
    best-effort, so metadata work cannot consume the intent's 12-second budget. If the
    shared `lunaInstalled.downloader` marker exists and the URL is downloadable,
-   `MediaAutoDownloader.startDownloaderIntentDownload` starts exactly one Downloader-owned
-   background job regardless of the invoking host or per-platform toggles. Reader,
-   Downloader, and Price Tracker each embed the shared Live Activity widget source.
+   the intent performs exactly one Downloader-owned media handoff regardless of the
+   invoking host or per-platform toggles. `AutoDownloadSettings.returnMediaFromAppIntents`
+   is App-Group-backed and defaults on: on awaits `MediaDownloadService`, reuses an
+   already-downloaded local/Photos-backed item when present, and returns an `IntentFile`;
+   off calls `MediaAutoDownloader.startDownloaderIntentDownload` for the prior Live
+   Activity-backed background behavior. Reader, Downloader, and Price Tracker each embed
+   the shared Live Activity widget source.
    The platform finder's resolved URL is carried separately from the save outcome, so a
    duplicate/double-save timeout cannot suppress the media handoff.
    Downloader's shared “Save Downloads to Photos” preference is honored: an undetermined
@@ -95,7 +110,7 @@ friend-prompt outcome foregrounds Luna.
 5. Errors are thrown as `SaveError: CustomLocalizedStringResourceConvertible`
    (`unsupportedApp`, `modelUnavailable`, `networkUnavailable`,
    `quotaLimitReached`, `serviceUnavailable`, `nothingIdentifiable`,
-   `notFound`). The happy path returns no value.
+   `notFound`). The happy path returns `SaveResultEntity`.
 
 ## The vision seam (compiler + availability double gate)
 
@@ -113,9 +128,9 @@ seam in `LunaIntents`:
   lives; everything above it sees only the protocol.
 
 **Consequence:** App Store builds archived with stable Xcode 26.2 compile the
-stub, so `visionModelAvailable` is false and **screenshot capture returns 0 in
+stub, so `visionModelAvailable` is false and **screenshot capture is unhandled in
 released builds until archives move to Xcode 27 GM**. The Safari fresh-URL
-path (return 1) works everywhere. Dev builds (Xcode 27 beta) on an iOS 27
+path (`.done`) works everywhere. Dev builds (Xcode 27 beta) on an iOS 27
 device with Apple Intelligence enabled get the full flow.
 
 ## Foregrounding
@@ -138,7 +153,7 @@ Luna.shortcut` and assigning it to the Action Button in Settings. Both
 the Shortcuts app's own first run, one from wherever the Action Button is
 actually pressed — are hijacked before any decision work.
 `AppNamePlatform.isShortcuts(forAppName:)` recognizes the first of these
-("Shortcuts" is otherwise unsupported, return 0).
+("Shortcuts" is otherwise `.unhandled`).
 
 `ActionButtonOnboardingStore` (`LunaLibraries/Sources/LunaStorage/`) is a
 per-surface (`AppSurface.storageIdentifier`: `"reader"`/`"downloader"`/
@@ -151,9 +166,9 @@ per-surface (`AppSurface.storageIdentifier`: `"reader"`/`"downloader"`/
 - `ProvideContextIntent.perform()` →
   `handleProvideContextInvoked(appName:isCurrentAppLuna:forSurface:)`, called
   before any decision work. It returns a `ProvideContextInterception`:
-  `.foregroundThenUnsupported` (foreground Luna in-intent, then return 0 — the
+  `.foregroundThenUnsupported` (foreground Luna in-intent, then return `.unhandled` — the
   freshly-imported shortcut's first run, or real setup completing while another
-  app was frontmost), `.unsupported` (return 0 without foregrounding — Luna is
+  app was frontmost), `.unsupported` (return `.unhandled` without foregrounding — Luna is
   already frontmost; the in-app UI reacts to
   `ActionButtonOnboardingStore.stateDidChangeNotification` instead), or `.none`
   (no interception — the normal decision flow proceeds).
@@ -172,7 +187,8 @@ stays share-sheet based).
 
 > **Manual step (signed file, cannot be generated by this codebase): the
 > bundled shortcut must be re-authored by hand** in the Shortcuts app to the
-> new shape — Get Current App → Provide Context(app) → If result = 2 → Take
+> new shape — Get Current App → Provide Context(app) → If result.outcome is
+> Requires Screenshot → Take
 > Screenshot → Save(app, screenshot) — exported, renamed to
 > `Send To Luna.shortcut`, and dropped into `Luna/Resources/`. This is a
 > **clean break**: old installs (the Screen Analysis Prompt / Save from App

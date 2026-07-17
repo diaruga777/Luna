@@ -10,6 +10,7 @@ import XCTest
 final class AutoDownloadSettingsTests: XCTestCase {
     private let photosKey = "autoSaveDownloadsToPhotos"
     private let clipboardKey = "autoCopyDownloadsToClipboard"
+    private let intentMediaKey = "returnMediaFromAppIntents"
     private let wifiOnlyKey = "wifiOnlyDownloads"
     private let pendingWiFiKey = "pendingWiFiDownloads"
     private let retentionDisabledKey = "savedMediaRetention.disabled"
@@ -22,11 +23,13 @@ final class AutoDownloadSettingsTests: XCTestCase {
     private func preservingSettings(_ body: () -> Void) {
         let previousPhotos = defaults.object(forKey: photosKey)
         let previousClipboard = defaults.object(forKey: clipboardKey)
+        let previousIntentMedia = defaults.object(forKey: intentMediaKey)
         let previousRetentionDisabled = defaults.object(forKey: retentionDisabledKey)
         let previousRetentionDays = defaults.object(forKey: retentionDaysKey)
         defer {
             restore(previousPhotos, forKey: photosKey)
             restore(previousClipboard, forKey: clipboardKey)
+            restore(previousIntentMedia, forKey: intentMediaKey)
             restore(previousRetentionDisabled, forKey: retentionDisabledKey)
             restore(previousRetentionDays, forKey: retentionDaysKey)
         }
@@ -45,9 +48,11 @@ final class AutoDownloadSettingsTests: XCTestCase {
         preservingSettings {
             defaults.removeObject(forKey: photosKey)
             defaults.removeObject(forKey: clipboardKey)
+            defaults.removeObject(forKey: intentMediaKey)
 
             XCTAssertTrue(AutoDownloadSettings.autoSaveDownloadsToPhotos)
             XCTAssertFalse(AutoDownloadSettings.autoCopyDownloadsToClipboard)
+            XCTAssertTrue(AutoDownloadSettings.returnMediaFromAppIntents)
         }
     }
 
@@ -55,9 +60,11 @@ final class AutoDownloadSettingsTests: XCTestCase {
         preservingSettings {
             AutoDownloadSettings.autoSaveDownloadsToPhotos = false
             AutoDownloadSettings.autoCopyDownloadsToClipboard = true
+            AutoDownloadSettings.returnMediaFromAppIntents = false
 
             XCTAssertFalse(AutoDownloadSettings.autoSaveDownloadsToPhotos)
             XCTAssertTrue(AutoDownloadSettings.autoCopyDownloadsToClipboard)
+            XCTAssertFalse(AutoDownloadSettings.returnMediaFromAppIntents)
         }
     }
 

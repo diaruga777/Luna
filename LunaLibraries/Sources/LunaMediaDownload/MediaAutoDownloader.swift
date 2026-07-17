@@ -78,6 +78,67 @@ public enum MediaAutoDownloader {
             urlString: urlString, ownership: .downloader)
     }
 
+    /// Completes a Downloader-owned App Intent download before returning and
+    /// exposes the resulting local bytes for a Shortcut result. Existing
+    /// durable downloads are reused without another network fetch. A
+    /// Photos-backed item is copied to a transient file because `IntentFile`
+    /// needs an on-disk resource it can hand to Shortcuts.
+    public static func downloadForDownloaderIntentAwaiting(
+        forURLString urlString: String,
+        service: MediaDownloading = MediaDownloadService()
+    ) async -> DownloadedMedia? {
+        guard shouldStartDownloaderIntentDownload(forURLString: urlString),
+              let url = URL(string: urlString)
+        else { return nil }
+
+        if let existing = SavedMediaStore.shared.existingDownloadedItem(
+            forURLString: urlString
+        ) {
+            return await intentMedia(from: existing)
+        }
+
+        do {
+            let item = try await service.downloadFirstMediaToAppStorage(
+                from: url,
+                title: ReadingListStore.shared.item(forURLString: urlString)?.title,
+                onProgress: { _ in })
+            AutoDownloadSettings.markDownloaded(urlString)
+            return await intentMedia(from: item)
+        } catch {
+            AutoDownloadSettings.unmarkDownloaded(urlString)
+            return nil
+        }
+    }
+
+    private static func intentMedia(from item: SavedMediaItem) async -> DownloadedMedia? {
+        guard let kind = item.kind else { return nil }
+        switch item.storageState {
+        case .localFile:
+            guard let fileURL = item.fileURL,
+                  FileManager.default.fileExists(atPath: fileURL.path)
+            else { return nil }
+            return DownloadedMedia(fileURL: fileURL, kind: kind)
+        case .photosReference(let identifier, _, _):
+            let ext: String
+            switch kind {
+            case .image: ext = "jpg"
+            case .gif: ext = "gif"
+            case .video: ext = "mp4"
+            }
+            let fileURL = MediaDownloadStorage.newFileURL(extension: ext)
+            do {
+                try await PhotoLibrarySaver().writeResource(
+                    localIdentifier: identifier, kind: kind, to: fileURL)
+                return DownloadedMedia(fileURL: fileURL, kind: kind)
+            } catch {
+                try? FileManager.default.removeItem(at: fileURL)
+                return nil
+            }
+        case .undownloaded:
+            return nil
+        }
+    }
+
     private static func ensureUndownloaded(_ urlString: String) {
         guard isRunningInDownloader,
               let item = ReadingListStore.shared.item(forURLString: urlString) else { return }

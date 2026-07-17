@@ -28,15 +28,16 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
     // Downloader: retention + network policy + completion actions + preview
     // switch. Sibling apps: preview switch + the existing per-platform
     // explicit Photos auto-save toggles.
-    private enum DownloaderSection: Int { case retention, network, completion, preview }
+    private enum DownloaderSection: Int { case retention, network, shortcuts, completion, preview }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { isDownloader ? 4 : 2 }
+    override func numberOfSections(in tableView: UITableView) -> Int { isDownloader ? 5 : 2 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if isDownloader {
             switch DownloaderSection(rawValue: section)! {
             case .retention: return 1
             case .network: return 1
+            case .shortcuts: return 1
             case .completion: return 2
             case .preview: return 1
             }
@@ -49,6 +50,7 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
             switch DownloaderSection(rawValue: section)! {
             case .retention: return "Local Files"
             case .network: return "Network"
+            case .shortcuts: return "Shortcuts"
             case .completion: return "After Downloading"
             case .preview: return nil
             }
@@ -63,6 +65,8 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
                 return "Choose when locally downloaded files are deleted. Never keeps them until you delete them."
             case .network:
                 return "Downloads started on cellular wait for Wi-Fi. They still download right away when you tap or long-press an item to download it manually."
+            case .shortcuts:
+                return "When on, Save and Provide Context wait for media to finish downloading and return the image or video to your shortcut. When off, downloading continues in the background with a Live Activity."
             case .completion:
                 return "Photos-backed downloads stay in your photo library. Clipboard copies use the downloaded file, including for videos."
             case .preview:
@@ -87,6 +91,8 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
             return retentionCell()
         case .network:
             return wifiOnlyCell()
+        case .shortcuts:
+            return returnMediaFromShortcutsCell()
         case .completion:
             return indexPath.row == 0 ? autoSaveToPhotosCell() : autoCopyToClipboardCell()
         case .preview:
@@ -168,6 +174,19 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
         return cell
     }
 
+    private func returnMediaFromShortcutsCell() -> UITableViewCell {
+        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        var content = cell.defaultContentConfiguration()
+        content.text = "Return Downloaded Media"
+        content.image = UIImage(systemName: "arrow.down.doc")
+        cell.contentConfiguration = content
+        cell.accessoryView = makeToggle(
+            isOn: AutoDownloadSettings.returnMediaFromAppIntents,
+            action: #selector(returnMediaFromShortcutsToggled(_:)))
+        return cell
+    }
+
     private func autoCopyToClipboardCell() -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
@@ -212,6 +231,10 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
 
     @objc private func autoSaveToPhotosToggled(_ sender: UISwitch) {
         AutoDownloadSettings.autoSaveDownloadsToPhotos = sender.isOn
+    }
+
+    @objc private func returnMediaFromShortcutsToggled(_ sender: UISwitch) {
+        AutoDownloadSettings.returnMediaFromAppIntents = sender.isOn
     }
 
     @objc private func autoCopyToClipboardToggled(_ sender: UISwitch) {

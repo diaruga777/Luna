@@ -24,7 +24,8 @@ import Foundation
 /// saves the matching post/page through the action-button save path
 /// (double-save preserved). A near-immediate repeat of the same screenshot
 /// skips the model and re-runs the previous save so the configured double-save
-/// action fires. Returns nothing on success; throws descriptive errors.
+/// action fires. Returns a transient entity containing the downloaded image or
+/// video when synchronous intent media is enabled; throws descriptive errors.
 struct SaveIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
     static let title: LocalizedStringResource = "Save"
@@ -89,7 +90,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<SaveResultEntity> & ProvidesDialog {
         let imageData = screenshot.data
         guard let digest = ScreenshotDigest.digest(forImageData: imageData) else {
             // Undecodable image data — the model couldn't read it either.
@@ -106,7 +107,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
                 urlString: savedURLString,
                 doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
             ScreenshotDoublePressStore.record(digest: digest, savedURLString: savedURLString)
-            await ActionButtonIntentSupport.startDownloaderDownloadIfNeeded(
+            let media = await ActionButtonIntentSupport.downloadMediaIfNeeded(
                 for: savedURLString
             ) {
                 try? await requestToContinueInForeground()
@@ -114,7 +115,7 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
             if case .friendPromptRequested = outcome {
                 try? await requestToContinueInForeground()
             }
-            return .result(dialog: "Done.")
+            return .result(value: SaveResultEntity(media: media), dialog: "Done.")
         }
 
         let isSafari = AppNamePlatform.isSafari(forAppName: app)
@@ -190,12 +191,15 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         // Use the platform finder's resolved URL even when duplicate/double-save
         // handling times out and reports no saved URL. Download handoff is an
         // independent consequence of resolving downloadable media.
+        let media: IntentFile?
         if let downloadURLString = resolvedPlatformURLString ?? savedURLString {
-            await ActionButtonIntentSupport.startDownloaderDownloadIfNeeded(
+            media = await ActionButtonIntentSupport.downloadMediaIfNeeded(
                 for: downloadURLString
             ) {
                 try? await requestToContinueInForeground()
             }
+        } else {
+            media = nil
         }
         if case .friendPromptRequested = outcome {
             // Foreground Luna so the friend selector (pending prompt already
@@ -205,11 +209,13 @@ struct SaveIntent: AppIntent, ForegroundContinuableIntent {
         if let needsInstallOwner {
             // Paid cross-surface save with the owning app missing: the save
             // SUCCEEDED (it's in the shared store) — mention the install.
-            return .result(dialog: IntentDialog(stringLiteral:
-                "Saved. Install \(needsInstallOwner.displayName) to see it there — "
-                + "it's waiting in your shared Luna library."))
+            return .result(
+                value: SaveResultEntity(media: media),
+                dialog: IntentDialog(stringLiteral:
+                    "Saved. Install \(needsInstallOwner.displayName) to see it there — "
+                    + "it's waiting in your shared Luna library."))
         }
-        return .result(dialog: "Saved to Luna.")
+        return .result(value: SaveResultEntity(media: media), dialog: "Saved to Luna.")
     }
 
 }

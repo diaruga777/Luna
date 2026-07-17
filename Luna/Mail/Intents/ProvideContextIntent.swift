@@ -13,24 +13,20 @@ import LunaInterop
 import LunaMediaDownload
 import LunaStorage
 import Foundation
+import UniformTypeIdentifiers
 
 /// First step of the Action Button capture flow. Pass the current app (from
 /// Get Current App); the intent decides what the Shortcut should do next and
-/// returns:
-///
-/// - **0** — unsupported: nothing to capture here; the Shortcut just exits.
-/// - **1** — saved: Safari with a fresh tracked page URL; the intent saved it
-///   itself through the action-button save path (double-save preserved). Done.
-/// - **2** — screenshot needed: the Shortcut should take a screenshot and pass
-///   it (plus the app name) to the Save intent.
+/// returns a transient entity whose outcome is `.unhandled`, `.done`, or
+/// `.requiresScreenshot`. A completed synchronous media download is attached
+/// to the entity for the Shortcut to display or pass onward.
 struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
     static let title: LocalizedStringResource = "Provide Context"
     static let description = IntentDescription("""
         First step of the Action Button shortcut. Pass the current app (from Get \
-        Current App). Returns 0 when there's nothing to capture (stop), 1 when \
-        the current Safari page was saved directly (done), and 2 when a \
-        screenshot is needed (take one and pass it to Save).
+        Current App). Returns a structured outcome telling the shortcut whether \
+        the page is done, unhandled, or requires a screenshot.
         """)
     static let openAppWhenRun: Bool = false
 
@@ -53,7 +49,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         }
     }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<Int> {
+    func perform() async throws -> some IntentResult & ReturnsValue<ProvideContextResultEntity> {
         // Before any decision work: let the Action Button onboarding state
         // machine hijack this invocation if it's mid-flight for this surface.
         // Its first interception fires from the Shortcuts app (the freshly
@@ -68,11 +64,11 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             ) {
             case .foregroundThenUnsupported:
                 // Bounce the user back into Luna (in-app onboarding reacts to
-                // the state change). A declined prompt still returns 0.
+                // the state change). A declined prompt remains unhandled.
                 try? await requestToContinueInForeground()
-                return .result(value: 0)
+                return .result(value: ProvideContextResultEntity(outcome: .unhandled))
             case .unsupported:
-                return .result(value: 0)
+                return .result(value: ProvideContextResultEntity(outcome: .unhandled))
             case .none:
                 break
             }
@@ -92,9 +88,9 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 
         switch decision {
         case .unsupported:
-            return .result(value: 0)
+            return .result(value: ProvideContextResultEntity(outcome: .unhandled))
         case .screenshotNeeded:
-            return .result(value: 2)
+            return .result(value: ProvideContextResultEntity(outcome: .requiresScreenshot))
         case .saveImmediately:
             guard let urlString = SafariURLStore.lastURL, !urlString.isEmpty else {
                 // Shouldn't happen (freshness implies a URL) — but never save
@@ -112,8 +108,8 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 try? await requestToContinueInForeground()
             case .completed:
                 // `needsInstallOwner` (paid, owning app missing) is not
-                // surfaced on this fast path — it returns a bare Int for the
-                // Shortcut; the saved item still appears once the app exists.
+                // surfaced on this fast path; the saved item still appears
+                // once the app exists.
                 break
             case let .blockedByInterop(owner, _):
                 // Unpaid cross-surface save: the item was discarded — surface
@@ -123,16 +119,16 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                         owner: owner,
                         currentAppName: InteropSurface.current.displayName))
             }
-            // Return-1 is the complete Safari fast path: it never invokes
+            // The complete Safari fast path never invokes
             // SaveIntent, so it must hand downloadable tracked URLs to the
-            // Downloader background manager itself. This runs only AFTER the
-            // interop switch: a blocked save must not start downloader work.
-            await ActionButtonIntentSupport.startDownloaderDownloadIfNeeded(
+            // Downloader itself. This runs only AFTER the interop switch: a
+            // blocked save must not start downloader work.
+            let media = await ActionButtonIntentSupport.downloadMediaIfNeeded(
                 for: urlString
             ) {
                 try? await requestToContinueInForeground()
             }
-            return .result(value: 1)
+            return .result(value: ProvideContextResultEntity(outcome: .done, media: media))
         }
     }
 }
@@ -140,30 +136,45 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 /// Shared plumbing for the two Action Button intents (Provide Context + Save).
 enum ActionButtonIntentSupport {
 
-    /// One media handoff shared by ProvideContext's return-1 Safari fast path
+    /// One media handoff shared by ProvideContext's completed Safari fast path
     /// and SaveIntent's screenshot/search path. `foreground` is invoked only
     /// when a first read/write Photos authorization prompt needs a visible host.
-    static func startDownloaderDownloadIfNeeded(
+    static func downloadMediaIfNeeded(
         for urlString: String,
         foreground: () async -> Void
-    ) async {
+    ) async -> IntentFile? {
         guard MediaAutoDownloader.shouldStartDownloaderIntentDownload(
             forURLString: urlString)
         else {
             SharedDiagnosticLog.record(
                 "intent media handoff skipped: downloaderInstalled=\(LunaInstallationMarkers.downloaderWasInstalled), supported=\(MediaDownloadablePlatform.supports(urlString))",
                 category: "media-download")
-            return
+            return nil
         }
         if DownloaderIntentPhotoPermission.requiresForegroundRequest {
             await foreground()
         }
         let photosAuthorized = await DownloaderIntentPhotoPermission.requestIfNeeded()
-        let started = await MediaAutoDownloader.startDownloaderIntentDownload(
-            forURLString: urlString)
-        SharedDiagnosticLog.record(
-            "intent media handoff: started=\(started), photosAuthorized=\(photosAuthorized)",
-            category: "media-download")
+        if AutoDownloadSettings.returnMediaFromAppIntents {
+            let media = await MediaAutoDownloader.downloadForDownloaderIntentAwaiting(
+                forURLString: urlString)
+            SharedDiagnosticLog.record(
+                "intent media handoff: synchronous=true, completed=\(media != nil), photosAuthorized=\(photosAuthorized)",
+                category: "media-download")
+            guard let media else { return nil }
+            let type: UTType = media.kind == .video ? .movie : .image
+            return IntentFile(
+                fileURL: media.fileURL,
+                filename: media.fileURL.lastPathComponent,
+                type: type)
+        } else {
+            let started = await MediaAutoDownloader.startDownloaderIntentDownload(
+                forURLString: urlString)
+            SharedDiagnosticLog.record(
+                "intent media handoff: synchronous=false, started=\(started), photosAuthorized=\(photosAuthorized)",
+                category: "media-download")
+            return nil
+        }
     }
 
     /// The double-save action (send to Kindle / friend on a repeat press within

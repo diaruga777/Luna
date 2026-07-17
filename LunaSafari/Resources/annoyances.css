@@ -1,0 +1,53 @@
+/*
+ * Luna's deliberately narrow annoyance layer. These are consent-management
+ * containers and explicit popup variants, not ad slots: inline/display ads stay
+ * visible so publishers keep their ordinary advertising support.
+ *
+ * Loaded declaratively at document_start so known overlays are hidden before the
+ * first paint. annoyances.js rejects optional cookies where a safe action exists,
+ * handles late/unknown overlays, and restores scrolling.
+ */
+
+.luna-annoyance-hidden,
+#onetrust-banner-sdk,
+#onetrust-consent-sdk > #onetrust-banner-sdk,
+.onetrust-pc-dark-filter,
+#CybotCookiebotDialog,
+#CybotCookiebotDialogBodyUnderlay,
+#didomi-host,
+#didomi-popup,
+.didomi-popup-backdrop,
+#qc-cmp2-container,
+.qc-cmp2-container,
+[id^="sp_message_container_"],
+iframe[id^="sp_message_iframe_"],
+#trustarc-banner-overlay,
+#trustarc-banner-container,
+.truste_overlay,
+.truste_box_overlay,
+.osano-cm-window,
+.osano-cm-dialog,
+.cky-consent-container,
+.cky-overlay,
+#cookie-law-info-bar,
+.cli-modal-backdrop,
+.cli-modal,
+#cmplz-cookiebanner-container,
+.cmplz-cookiebanner,
+.cmplz-soft-cookiewall,
+#consent_blackbar,
+#klaro .cookie-modal,
+#klaro .cookie-notice,
+.klaro .cookie-modal,
+.klaro .cookie-notice,
+[id*="cookie-banner" i],
+[class*="cookie-banner" i],
+[id*="cookie-consent" i],
+[class*="cookie-consent" i],
+[id*="consent-banner" i],
+[class*="consent-banner" i] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}

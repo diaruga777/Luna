@@ -16,10 +16,50 @@ background.js (tabs.onActivated / tabs.onUpdated)
 
 - `LunaSafari/Resources/manifest.json` — MV3; `background.page` (event page — iOS kills MV3 service workers) **with `"persistent": false`** and a numeric-keyed `icons` map — both are REQUIRED by App Store Connect upload validation (ITMS error 90849 otherwise); permissions `nativeMessaging`, `tabs`; `host_permissions: <all_urls>` (needed to read tab URLs; user grants "All Websites").
 - `LunaSafari/Resources/background.js` — listens `tabs.onActivated` + `tabs.onUpdated` (active tab, url change or load complete), dedupes, sends native message.
+- `LunaSafari/Resources/annoyances.css` + `annoyances.js` — declarative, all-frame
+  `document_start` suppression for cookie consent and intrusive popovers; intentionally
+  leaves ordinary inline/display ads intact.
 - `LunaSafari/SafariWebExtensionHandler.swift` — principal class (`NSExtensionPointIdentifier = com.apple.Safari.web-extension` in `LunaSafari/Info.plist`); writes via `SharedSafariURL`.
 - `LunaSafari/SharedSafariURL.swift` — App Group defaults writer (key constants duplicated in app-side `SafariURLStore` — no shared framework in this small project).
 
 Target: `LunaSafari`, bundle `com.hsanabria.luna.safari`, app-extension product embedded in Luna.app/PlugIns. Resources flatten into the appex root (Safari requires manifest.json at bundle root on iOS).
+
+## Annoyance suppression (not an ad blocker)
+
+The extension hides cookie dialogs and intrusive overlays before first paint without
+turning Luna into a general ad blocker. `manifest.json` declaratively loads
+`annoyances.css` and `annoyances.js` at `document_start` on every HTTP(S) frame (including
+about:blank child frames). This is separate from the later, programmatic `content.js`
+injection used by the Luna action pill.
+
+- **Before-paint layer:** `annoyances.css` contains a compact set of stable CMP container
+  selectors (OneTrust, Cookiebot, Didomi, Sourcepoint, TrustArc, Osano, CookieYes,
+  Complianz, Klaro, and common cookie/consent banner names). Safari applies it before page
+  content renders, so known dialogs do not flash while JavaScript waits for hydration.
+- **Privacy-preserving consent:** `annoyances.js` clicks a CMP's explicit reject action or
+  an exact localized `Reject all` / `Necessary only` equivalent. It never clicks an
+  accept action and does not guess from vague labels such as “Continue” or “Save.” It
+  retries briefly because server-rendered banners can exist before their framework has
+  attached click handlers. When no safe reject action exists, the notice is hidden and
+  scrolling is restored, but Luna does not fabricate a consent string or enable optional
+  cookies.
+- **Late and unfamiliar UI:** a MutationObserver begins at `document_start`, before the
+  first page paint, and handles DOM-hydrated CMPs plus open shadow roots. Its generic
+  popover fallback requires BOTH overlay structure (`dialog`/`aria-modal`, an overlay
+  name plus fixed positioning, or substantial fixed viewport coverage) and narrow
+  annoyance language for newsletter capture, push notifications, app-install prompts,
+  surveys, ad-block nags, or ad interstitials.
+- **Safety boundary:** no network rule or cosmetic selector targets ad slots, ad iframes,
+  sponsored cards, or generic `ad` classes. Inline ads therefore remain visible. Login,
+  one-time-code, checkout, billing, and payment dialogs are protected. A generic popover
+  appearing immediately after a pointer/touch/key interaction is also preserved, so Luna
+  does not erase a dialog the user intentionally opened; cookie consent remains suppressed.
+- **Scroll recovery:** after suppressing an overlay, the script removes common scroll-lock
+  state only from `<html>` / `<body>`. It does not rewrite the article DOM.
+- **Tests:** `SafariAnnoyanceSuppressionTests` evaluates the production JS in a bare
+  `WKWebView` and verifies OneTrust rejection, generic necessary-only selection,
+  newsletter-overlay suppression, preservation of inline advertising and login UI, and
+  the immediate-user-action guard.
 
 ## "Read in Luna" / "Download in Luna" / "Track in Luna" button
 

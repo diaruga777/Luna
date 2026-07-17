@@ -20,6 +20,16 @@
         "declarativeNetRequest", "declarativeNetRequestWithHostAccess"
     ],
     "host_permissions": ["<all_urls>"],
+    "content_scripts": [
+        {
+            "matches": ["http://*/*", "https://*/*"],
+            "css": ["annoyances.css"],
+            "js": ["annoyances.js"],
+            "run_at": "document_start",
+            "all_frames": true,
+            "match_about_blank": true
+        }
+    ],
     "declarative_net_request": {
         "rule_resources": [
             { "id": "referer", "enabled": false, "path": "rules_referer.json" },

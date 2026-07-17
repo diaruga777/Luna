@@ -30,6 +30,7 @@ public enum ReaderSettings {
     private static let preloadWiFiOnlyKey = "preloadWiFiOnly"
     private static let accentKey = "readerAccentColor"
     private static let migratedKey = "readerSettingsMigratedToAppGroup"
+    private static let linkPreviewPositionsKey = "linkRSVPPreviewWordPositions"
 
     /// One-time copy of settings previously kept in standard defaults into the
     /// App Group (so the extension sees them). Call once at app launch.
@@ -127,6 +128,25 @@ public enum ReaderSettings {
             return value == 0 ? 300 : value
         }
         set { defaults.set(newValue, forKey: wpmKey) }
+    }
+
+    /// Resume positions for links previewed without first saving them. Saved reading-list
+    /// items continue to use their normal `lastWordIndex`; this URL-keyed fallback gives
+    /// transient link previews the same exit/resume behavior.
+    public static func linkPreviewWordIndex(for canonicalURLString: String) -> Int {
+        let positions = defaults.dictionary(forKey: linkPreviewPositionsKey) as? [String: Int]
+        return max(0, positions?[canonicalURLString] ?? 0)
+    }
+
+    public static func setLinkPreviewWordIndex(_ index: Int, for canonicalURLString: String) {
+        var positions = defaults.dictionary(forKey: linkPreviewPositionsKey) as? [String: Int] ?? [:]
+        positions[canonicalURLString] = max(0, index)
+        // Keep this tiny even after years of browsing; dictionary order is not meaningful,
+        // so trim arbitrary old entries once the practical ceiling is crossed.
+        if positions.count > 500 {
+            for key in positions.keys.prefix(positions.count - 500) { positions.removeValue(forKey: key) }
+        }
+        defaults.set(positions, forKey: linkPreviewPositionsKey)
     }
 
     /// The reader highlight/focus accent (RSVP reticule + ORP letter + scroll/

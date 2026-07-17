@@ -122,6 +122,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// enclosing sentence. Kept as a stored reference so the gesture delegate can tell
     /// it apart from the inline-image tap (which shares this delegate).
     private var sentenceLongPress: UILongPressGestureRecognizer?
+    /// Link-only hold interaction. Retained because the source view does not retain
+    /// the helper that owns its recognizer.
+    private var linkPreviewInteraction: LinkRSVPPreviewInteraction?
+    private var resumesAudioAfterLinkPreview = false
     /// Set by the long-press on `.began`; the first non-empty selection change that
     /// follows snaps to the enclosing sentence, then clears this so later drag-handle
     /// adjustments are left alone.
@@ -431,6 +435,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         textView.addGestureRecognizer(longPress)
         sentenceLongPress = longPress
 
+        linkPreviewInteraction = LinkRSVPPreviewInteraction(
+            host: self,
+            sourceView: textView,
+            resolveURL: { [weak self] point in self?.link(at: point)?.url },
+            sourcePlaybackChanged: { [weak self] active in self?.setLinkPreviewAudioSuspended(active) })
+
         configureFooter()
 
         // In-app (seam installed) the center drives read-aloud: subscribe to its
@@ -683,7 +693,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // link/text taps fall through to UITextView's own handling. This runs on every
         // touch during scrolling, so it hit-tests glyph geometry only — no disk decode
         // (see `imageEntry(at:)`).
-        if gestureRecognizer === sentenceLongPress { return true }
+        if gestureRecognizer === sentenceLongPress {
+            // A link hold belongs to the miniature RSVP interaction, not sentence
+            // selection. Plain-text holds retain the existing sentence expansion.
+            return link(at: touch.location(in: textView)) == nil
+        }
         return imageEntry(at: touch.location(in: textView)) != nil
     }
 
@@ -1139,31 +1153,72 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         return defaultAction
     }
 
-    /// Long-press on an inline link → save or share that link.
+    /// Inline-link holds are owned by `LinkRSVPPreviewInteraction`. Returning nil
+    /// suppresses UIKit's second, duplicated link menu after our preview begins.
     public func textView(
         _ textView: UITextView,
         menuConfigurationFor textItem: UITextItem,
         defaultMenu: UIMenu
     ) -> UITextItem.MenuConfiguration? {
-        guard case .link(let url) = textItem.content else {
+        guard case .link = textItem.content else {
             return UITextItem.MenuConfiguration(menu: defaultMenu)
         }
-        let save = UIAction(title: "Save to Luna", image: UIImage(systemName: "plus.circle")) { [weak self] _ in
-            self?.shareProvider?.saveLink(urlString: url.absoluteString)
+        return nil
+    }
+
+    /// Exact link hit test for the custom hold recognizer. UITextView owns the
+    /// point→text-position and text-range→rect conversions so content offsets,
+    /// text-container insets, line padding, and wrapped links all stay in the
+    /// same coordinate space as the finger. Checking the actual selection rects
+    /// prevents `closestPosition(to:)` from snapping nearby plain text to a link.
+    private func link(at point: CGPoint) -> (url: URL, range: NSRange)? {
+        guard let position = textView.closestPosition(to: point) else { return nil }
+        let rawIndex = textView.offset(from: textView.beginningOfDocument, to: position)
+        let length = textView.attributedText.length
+        guard length > 0 else { return nil }
+
+        // A touch on the trailing half of a glyph can resolve to the insertion
+        // point after it, so consider that preceding character as well.
+        for index in [min(rawIndex, length - 1), max(0, rawIndex - 1)] {
+            var range = NSRange(location: 0, length: 0)
+            let value = textView.attributedText.attribute(.link, at: index, effectiveRange: &range)
+            let url: URL?
+            if let resolved = value as? URL { url = resolved }
+            else if let string = value as? String { url = URL(string: string) }
+            else { url = nil }
+            guard let url,
+                  let start = textView.position(from: textView.beginningOfDocument,
+                                                offset: range.location),
+                  let end = textView.position(from: start, offset: range.length),
+                  let textRange = textView.textRange(from: start, to: end) else { continue }
+            let hit = textView.selectionRects(for: textRange).contains {
+                !$0.rect.isEmpty && $0.rect.insetBy(dx: -4, dy: -4).contains(point)
+            }
+            if hit { return (url, range) }
         }
-        let share = UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
-            guard let self else { return }
-            let activity = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-            activity.popoverPresentationController?.sourceView = self.textView
-            self.present(activity, animated: true)
+        return nil
+    }
+
+    private func setLinkPreviewAudioSuspended(_ suspended: Bool) {
+        if suspended {
+            if let center = ReaderAudioLauncher.center,
+               center.currentItemInfo?.itemID == item.id,
+               center.currentSnapshot.isAudiblyPlaying {
+                resumesAudioAfterLinkPreview = true
+                center.pause()
+            } else if speech?.isPlaying == true {
+                resumesAudioAfterLinkPreview = true
+                speech?.pause()
+            }
+        } else if resumesAudioAfterLinkPreview {
+            resumesAudioAfterLinkPreview = false
+            if let center = ReaderAudioLauncher.center,
+               center.currentItemInfo?.itemID == item.id {
+                center.resume()
+            } else {
+                speech?.resume()
+            }
         }
-        let copy = UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { _ in
-            UIPasteboard.general.string = url.absoluteString
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-        }
-        // Only offer Save when there's a provider to save through.
-        let custom = shareProvider != nil ? [save, share, copy] : [share, copy]
-        return UITextItem.MenuConfiguration(menu: UIMenu(children: custom + defaultMenu.children))
     }
 
     // MARK: - Highlight & share (text selection)

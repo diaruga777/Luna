@@ -140,6 +140,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private let linkPill = UIButton(type: .system)
     private var linkPillURL: URL?
     private var linkPillHideTimer: Timer?
+    private var linkPreviewInteraction: LinkRSVPPreviewInteraction?
+    private var wasPlayingBeforeLinkPreview = false
     private let playPauseTap = UITapGestureRecognizer()
     /// Press-and-hold on the display area halves playback speed until release;
     /// applies only to the silent WPM/chunk timer — read-aloud paces itself via TTS.
@@ -298,6 +300,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         configurePhraseLabel()
         configureContext()
         configureLinkPill()
+        configureLinkPreview()
         configureControls()
 
         // NB: the audio session is NOT touched here — only when read-aloud
@@ -577,6 +580,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     @objc private func linkPillTapped() {
         guard let url = linkPillURL else { return }
+        activateLink(url)
+    }
+
+    private func activateLink(_ url: URL) {
         pause()
         if let onLinkActivated {
             onLinkActivated(url)
@@ -589,6 +596,28 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             cutY: view.bounds.midY, topHalf: nil, bottomHalf: nil)
         inline.modalPresentationStyle = .overFullScreen
         present(inline, animated: false)
+    }
+
+    private func configureLinkPreview() {
+        linkPreviewInteraction = LinkRSVPPreviewInteraction(
+            host: self,
+            sourceView: linkPill,
+            resolveURL: { [weak self] _ in self?.linkPillURL },
+            sourcePlaybackChanged: { [weak self] previewIsActive in
+                guard let self else { return }
+                if previewIsActive {
+                    self.wasPlayingBeforeLinkPreview = self.isPlaying
+                    if let center = self.speechCenter, self.centerOwnsItem,
+                       center.currentSnapshot.isAudiblyPlaying {
+                        center.pause()
+                    } else if self.isPlaying {
+                        self.pause()
+                    }
+                } else if self.wasPlayingBeforeLinkPreview {
+                    self.wasPlayingBeforeLinkPreview = false
+                    self.play()
+                }
+            })
     }
 
     private func configureControls() {

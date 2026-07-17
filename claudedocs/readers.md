@@ -88,6 +88,37 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
 - `ReaderKit/ChunkPlanner.swift` + `ReaderKit/ReadingHeuristics.swift` — pure, unit-tested phrase engine driving the **Phrases** sub-mode (no `WordMap`/NSRange — it builds directly from the `RSVPEngine` word stream). `ChunkPlanner.chunks(words:)` groups words into phrases (≤5 words / ≤30 chars, never ending on a determiner/preposition, breaking before phrase starters and at clause/sentence ends); `duration(for:wpm:)` weights per-word time by `ReadingHeuristics.difficultyFactor` (function words 0.6, long/≥4-syllable 1.35–1.7, numeric ≥1.4) plus a punctuation pause, floored at `minimumDisplay` (0.28s) so phrases stay legible at high WPM. `ReadingHeuristics` holds the function-word sets (binders / phrase-starters), a vowel-group syllable estimate, and the difficulty model.
 - `ReaderKit/RSVPViewController.swift` — hosts both sub-modes (`subModeControl`, default from `ReaderSettings.rsvpMode`). **Words**: word positioned so the ORP letter (tinted in the reading accent) sits on a fixed focal column (40% width) between two glass reticule marks (`GlassStyle.reticuleMark()`); context shows only while paused. **Phrases**: the chunk's words shown over two lines (`phraseLabel`, `numberOfLines = 2`, smaller proportional font, shrink-to-fit safety net) behind a glass `phrasePanel` (`GlassStyle.focusPanel()`), with `previousContextLabel`/`nextContextLabel` ALWAYS visible and re-filled on every advance (excluding the words in the reticule); with audio on, `willSpeakRangeOfSpeechString` advances the displayed phrase to follow the spoken word and tints that word. Shared across both: tap = play/pause; scrubber (accent tint, pauses while scrubbing) — scrubbing/skip snap to the containing phrase in Phrases; **±25-word skip buttons**; ±25 wpm buttons (persisted via `ReaderSettings.baseWPM`, 100–900, default 300); "% · wpm" status; light haptic at sentence/paragraph ends; resume via `ReadingListItem.lastWordIndex` saved on pause/close.
   - **Skip = ±25 words, playback-state-preserving** (`skip(by:)`): target = `RSVPEngine.skipTarget(currentIndex:by:wordCount:)` (pure, clamped to `0…lastWord`, unit-tested for both ends / ±25 / short / empty docs). It captures `wasPlaying`, tears down the active engine (WPM timer in silent mode, synthesizer in read-aloud mode) WITHOUT flipping the play/pause glyph, seeks (`currentIndex` + displayed word + scrubber + status), then restores the exact prior state — resumes from the new word (`scheduleNext`/`speakCurrentSentence`) if it was playing, stays paused otherwise. Never toggles play/pause, never restarts from the beginning, never desyncs the displayed word from the engine; the audio session is left untouched so read-aloud resumes seamlessly.
+
+### Link-hold mini RSVP preview
+
+Long-pressing an inline link in Scroll, or the current link pill in RSVP, opens
+`LunaReaderUI/LinkRSVPPreview.swift`: a compact glass RSVP reader that exists only for
+the lifetime of that finger unless locked. It resolves the linked article from the saved
+item, preload cache, or a fresh extraction. Playback begins with the complete page title
+(`Resuming: <title>` when its word index is nonzero) held for at least 1.4 seconds, then
+continues at the saved position. The focus region is permanently two lines high; only the
+title uses both lines, shrinking and finally ellipsizing if necessary, so switching to the
+single-line ORP word display never changes popover geometry.
+
+The hold gesture is a single state machine (`LinkRSVPPreviewGesturePolicy`, unit-tested in
+`LinkRSVPPreviewGesturePolicyTests`): horizontal movement beyond a 24pt dead zone scales
+playback continuously from half to double the saved WPM without changing
+`ReaderSettings.baseWPM`; dragging fully left pauses and reveals the preceding/following
+word context. The card prefers an anchor 38pt above the held finger, falling below it only
+when the top safe area leaves insufficient room. The initial hold uses the system-style
+medium link haptic; both vertical directions produce three very-soft, increasing ticks near
+their threshold and one medium confirmation tick on crossing it. 56pt down arms a low-alpha
+lock and releasing keeps the preview open until an outside tap; the lock fades while the card
+grows a glass chin containing play/pause, ±25 WPM, ±25-word skip, and read-aloud controls.
+56pt up pauses playback and fades in the one canonical link menu
+(Share Link / Copy Link / Open Link); Open Link uses the Safari compass icon and hands the
+URL to the system browser outside Luna. The menu supports drag-to-highlight and
+release-to-select. Moving
+back below the upward threshold fades the menu out and resumes. Normal release saves the
+current token index and dismisses. Saved links write their regular `lastWordIndex` and clear
+the stale scroll offset; unsaved links use a bounded App-Group URL→word map in
+`ReaderSettings`, so they also resume across preview sessions. The Scroll reader suppresses
+its former duplicated UIKit link menu; its plain-text sentence-selection hold is unchanged.
 - `Luna/Settings/ReaderSettings.swift` — base WPM in standard defaults (also adjustable in Settings screen slider).
 
 ## Header bar

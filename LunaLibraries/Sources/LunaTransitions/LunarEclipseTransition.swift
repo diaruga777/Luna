@@ -80,6 +80,9 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         else { container.insertSubview(to, belowSubview: from) }
         to.frame = context.finalFrame(for: context.viewController(forKey: .to)!)
         to.layoutIfNeeded()
+        // The destination must not leak into stages 1–2. It is revealed only at
+        // zenith, while the eclipse/overlays still cover that instantaneous swap.
+        to.alpha = 0
 
         let dimmer = UIView(frame: container.bounds)
         dimmer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -87,74 +90,104 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         dimmer.alpha = 0
         container.addSubview(dimmer)
 
+        // This is deliberately separate from `dimmer`: the black veil can begin its
+        // normal fade while a brief, unmistakable full-screen white corona flashes.
+        let flash = UIView(frame: container.bounds)
+        flash.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        flash.backgroundColor = .white
+        flash.alpha = 0
+
         let source = sourceView ?? from
         let sourceFrame = source.convert(source.bounds, to: container)
-        let eclipse = makeEclipse(from: source, frame: sourceFrame)
+        let (eclipse, corona) = makeEclipse(from: source, frame: sourceFrame)
         container.addSubview(eclipse)
+        container.addSubview(flash)
         let travel = max(18, sourceFrame.width * 0.16) * (isPush ? -1 : 1)
         eclipse.transform = CGAffineTransform(translationX: travel, y: 0).scaledBy(x: 0.985, y: 0.985)
         eclipse.alpha = 0
+        corona.alpha = 0.22
         if !isPush { from.alpha = 1 }
 
         let duration = transitionDuration(using: context)
+        // 50ms in production; slow-motion expands the same visual beat too.
+        let flashFadeFraction = (0.05 * Self.durationScale) / duration
         UIView.animateKeyframes(withDuration: duration, delay: 0, options: [.calculationModeLinear]) {
             // Stage 1: the entire scene is swallowed by shadow.
             UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.43) { dimmer.alpha = 0.78 }
-            // Stage 2: the slightly undersized black row crosses to its zenith.
+            // Stage 2: the slightly undersized black row crosses to its zenith. Its
+            // corona lives BEHIND the body, so white can only be seen outside it.
             UIView.addKeyframe(withRelativeStartTime: 0.43, relativeDuration: 0.25) {
                 eclipse.alpha = 1
                 eclipse.transform = .identity
+                corona.alpha = 1
             }
-            // Stage 3: a brief corona flash, then a slower uncovering of the destination.
-            UIView.addKeyframe(withRelativeStartTime: 0.68, relativeDuration: 0.055) {
-                dimmer.alpha = 0.96
+            // Stage 3: the source/destination swap is instantaneous at zenith. The
+            // bright layer peaks and falls in 0.05s while the black veil fades away
+            // over the rest of the normal release duration.
+            UIView.addKeyframe(withRelativeStartTime: 0.68, relativeDuration: 0) {
+                to.alpha = 1
                 if !isPush { from.alpha = 0 }
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.735, relativeDuration: 0.265) {
+            UIView.addKeyframe(withRelativeStartTime: 0.68, relativeDuration: 0.32) {
                 dimmer.alpha = 0
                 eclipse.alpha = 0
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.68, relativeDuration: 0.015) {
+                flash.alpha = 0.48
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.695, relativeDuration: flashFadeFraction) {
+                flash.alpha = 0
             }
         } completion: { _ in
             let completed = !context.transitionWasCancelled
             if context.transitionWasCancelled { from.alpha = 1 }
+            to.alpha = 1
             dimmer.removeFromSuperview()
             eclipse.removeFromSuperview()
+            flash.removeFromSuperview()
             context.completeTransition(completed)
         }
 
     }
 
-    private func makeEclipse(from source: UIView, frame: CGRect) -> UIView {
+    private func makeEclipse(from source: UIView, frame: CGRect) -> (UIView, UIView) {
         let image = source.lunarEclipseSnapshot()
         let host = UIView(frame: frame)
         host.backgroundColor = .clear
+        host.clipsToBounds = false
         let silhouette = image?.withRenderingMode(.alwaysTemplate)
+
+        // The corona is a radial point OUTSIDE the silhouette. Since it is below the
+        // black body, no white is painted within the eclipse's bounds; a single point
+        // at the directional extreme is brightest, falling off into the outer halo.
+        let haloInset: CGFloat = 34
+        let corona = UIView(frame: host.bounds.insetBy(dx: -haloInset, dy: -haloInset))
+        corona.isUserInteractionEnabled = false
+        let halo = CAGradientLayer()
+        halo.type = .radial
+        halo.frame = corona.bounds
+        let brightPointX: CGFloat = direction == .push ? 0.90 : 0.10
+        let edgeX: CGFloat = direction == .push ? 1.0 : 0.0
+        halo.startPoint = CGPoint(x: brightPointX, y: 0.5)
+        halo.endPoint = CGPoint(x: edgeX, y: 0.5)
+        halo.colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0.28).cgColor, UIColor.clear.cgColor]
+        halo.locations = [0, 0.24, 1]
+        corona.layer.addSublayer(halo)
+        host.addSubview(corona)
+
         let black = UIImageView(image: silhouette)
         black.tintColor = .black
         black.frame = host.bounds
         black.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         black.layer.shadowColor = UIColor.white.cgColor
-        black.layer.shadowRadius = 11
-        black.layer.shadowOpacity = 0.82
+        // Keep the surrounding halo restrained: the radial corona above supplies the
+        // one unmistakable peak rather than turning the whole leading edge white.
+        black.layer.shadowRadius = 7
+        black.layer.shadowOpacity = 0.32
         black.layer.shadowOffset = CGSize(width: direction == .push ? 4 : -4, height: 0)
         host.addSubview(black)
 
-        // A narrow, clipped white crescent rides the leading edge; the shadow becomes
-        // the full halo at zenith. The radial point makes the trailing/leading extreme
-        // visibly brightest, matching push/pop direction respectively.
-        let glow = UIImageView(image: silhouette)
-        glow.tintColor = .white
-        glow.frame = host.bounds
-        glow.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        let crescent = CAGradientLayer()
-        crescent.frame = glow.bounds
-        crescent.startPoint = CGPoint(x: direction == .push ? 0 : 1, y: 0.5)
-        crescent.endPoint = CGPoint(x: direction == .push ? 1 : 0, y: 0.5)
-        crescent.colors = [UIColor.white.withAlphaComponent(0.94).cgColor, UIColor.clear.cgColor]
-        crescent.locations = [0, 0.23]
-        glow.layer.mask = crescent
-        host.addSubview(glow)
-        return host
+        return (host, corona)
     }
 }
 

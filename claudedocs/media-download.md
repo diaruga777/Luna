@@ -122,6 +122,9 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   an optional `IntentFile` property on the returned transient entity. It reuses existing local
   files; Photos-backed rows are copied to a transient file for the result. Turning the setting
   off retains the former `LiveMediaDownloadManager` background job and returns no media file.
+  Intent exports use a sanitized item title or platform base name (for example
+  `tiktok.mp4`) as the actual temporary URL filename and declare its concrete file type,
+  rather than leaking the durable UUID-backed library filename to Shortcuts.
   When Downloader has ever launched, both modes carry Downloader ownership, create/maintain
   `SavedMediaStore` state, honor Downloader's shared Photos and clipboard settings in every
   host, and fall back to shared local storage when Photos permission is denied. Reader and

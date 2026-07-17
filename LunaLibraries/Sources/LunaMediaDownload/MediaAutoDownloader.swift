@@ -112,30 +112,102 @@ public enum MediaAutoDownloader {
 
     private static func intentMedia(from item: SavedMediaItem) async -> DownloadedMedia? {
         guard let kind = item.kind else { return nil }
+        let fileName = IntentMediaExportNaming.fileName(
+            title: item.title,
+            sourceURLString: item.sourceURLString,
+            kind: kind,
+            sourceExtension: item.fileURL?.pathExtension)
+        let exportURL = MediaDownloadStorage.newIntentExportURL(fileName: fileName)
         switch item.storageState {
         case .localFile:
-            guard let fileURL = item.fileURL,
-                  FileManager.default.fileExists(atPath: fileURL.path)
+            guard let sourceURL = item.fileURL,
+                  FileManager.default.fileExists(atPath: sourceURL.path)
             else { return nil }
-            return DownloadedMedia(fileURL: fileURL, kind: kind)
-        case .photosReference(let identifier, _, _):
-            let ext: String
-            switch kind {
-            case .image: ext = "jpg"
-            case .gif: ext = "gif"
-            case .video: ext = "mp4"
+            do {
+                // Keep the durable UUID-backed library file untouched while
+                // handing Shortcuts a URL whose final path component is the
+                // human-readable filename it will preserve when sharing.
+                do {
+                    try FileManager.default.linkItem(at: sourceURL, to: exportURL)
+                } catch {
+                    try FileManager.default.copyItem(at: sourceURL, to: exportURL)
+                }
+                return DownloadedMedia(fileURL: exportURL, kind: kind)
+            } catch {
+                try? FileManager.default.removeItem(at: exportURL.deletingLastPathComponent())
+                return nil
             }
-            let fileURL = MediaDownloadStorage.newFileURL(extension: ext)
+        case .photosReference(let identifier, _, _):
             do {
                 try await PhotoLibrarySaver().writeResource(
-                    localIdentifier: identifier, kind: kind, to: fileURL)
-                return DownloadedMedia(fileURL: fileURL, kind: kind)
+                    localIdentifier: identifier, kind: kind, to: exportURL)
+                return DownloadedMedia(fileURL: exportURL, kind: kind)
             } catch {
-                try? FileManager.default.removeItem(at: fileURL)
+                try? FileManager.default.removeItem(at: exportURL.deletingLastPathComponent())
                 return nil
             }
         case .undownloaded:
             return nil
+        }
+    }
+
+    /// Produces the filename Shortcuts and share destinations see for media
+    /// returned from an App Intent. The export URL uses this name as its last
+    /// path component; it is not merely `IntentFile` presentation metadata.
+    public enum IntentMediaExportNaming {
+        public static func fileName(
+            title: String?,
+            sourceURLString: String,
+            kind: MediaAsset.Kind,
+            sourceExtension: String? = nil
+        ) -> String {
+            let titleStem = title.flatMap(sanitizedStem)
+            let fallbackStem = PlatformRecognizer.recognize(sourceURLString)?.platform.rawValue
+                ?? URL(string: sourceURLString).flatMap(hostStem)
+                ?? "media"
+            let stem = titleStem ?? sanitizedStem(fallbackStem) ?? "media"
+            return "\(stem).\(fileExtension(kind: kind, sourceExtension: sourceExtension))"
+        }
+
+        private static func sanitizedStem(_ value: String) -> String? {
+            let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " -_"))
+            let scalars = value.unicodeScalars.map {
+                allowed.contains($0) ? Character(String($0)) : " "
+            }
+            let collapsed = String(scalars)
+                .split(whereSeparator: \.isWhitespace)
+                .joined(separator: " ")
+                .trimmingCharacters(in: CharacterSet(charactersIn: " .-_"))
+            guard !collapsed.isEmpty else { return nil }
+            return String(collapsed.prefix(80))
+                .trimmingCharacters(in: CharacterSet(charactersIn: " .-_"))
+        }
+
+        private static func hostStem(_ url: URL) -> String? {
+            guard let host = url.host?.lowercased() else { return nil }
+            let labels = host.split(separator: ".").map(String.init)
+            guard !labels.isEmpty else { return nil }
+            if labels.count >= 2 {
+                return labels[labels.count - 2]
+            }
+            return labels[0]
+        }
+
+        private static func fileExtension(
+            kind: MediaAsset.Kind,
+            sourceExtension: String?
+        ) -> String {
+            switch kind {
+            case .video:
+                return "mp4"
+            case .gif:
+                return "gif"
+            case .image:
+                let ext = sourceExtension?.lowercased() ?? ""
+                return ["jpg", "jpeg", "png", "heic", "heif", "webp"].contains(ext)
+                    ? ext
+                    : "jpg"
+            }
         }
     }
 

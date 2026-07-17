@@ -128,6 +128,18 @@ public enum MediaDownloadStorage {
         directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
     }
 
+    /// A unique directory lets simultaneous intent exports use the same friendly
+    /// filename without collisions while preserving that filename as the URL's
+    /// final path component for Shortcuts and share destinations.
+    public static func newIntentExportURL(fileName: String) -> URL {
+        let exportDirectory = directory
+            .appendingPathComponent("IntentExports", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: exportDirectory, withIntermediateDirectories: true)
+        return exportDirectory.appendingPathComponent(fileName)
+    }
+
     /// Deletes every file in the media-downloads directory. Called once at app
     /// launch to reclaim orphans from a previous run that was terminated before its
     /// preview view controller could delete its own file.

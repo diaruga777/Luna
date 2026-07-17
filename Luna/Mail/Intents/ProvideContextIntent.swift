@@ -162,7 +162,8 @@ enum ActionButtonIntentSupport {
                 "intent media handoff: synchronous=true, completed=\(media != nil), photosAuthorized=\(photosAuthorized)",
                 category: "media-download")
             guard let media else { return nil }
-            let type: UTType = media.kind == .video ? .movie : .image
+            let type = UTType(filenameExtension: media.fileURL.pathExtension)
+                ?? (media.kind == .video ? .mpeg4Movie : .image)
             return IntentFile(
                 fileURL: media.fileURL,
                 filename: media.fileURL.lastPathComponent,

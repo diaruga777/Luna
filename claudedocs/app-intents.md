@@ -101,7 +101,10 @@ Non-media saves and background-download mode return `media = nil`.
    already-downloaded local/Photos-backed item when present, and returns an `IntentFile`;
    off calls `MediaAutoDownloader.startDownloaderIntentDownload` for the prior Live
    Activity-backed background behavior. Reader, Downloader, and Price Tracker each embed
-   the shared Live Activity widget source.
+   the shared Live Activity widget source. Synchronous results are materialized at a
+   temporary URL whose last path component is a sanitized saved-item title (or platform
+   base name such as `tiktok.mp4`) and use the concrete file UTI, so downstream Share
+   actions preserve a valid extension instead of exposing the durable UUID storage name.
    The platform finder's resolved URL is carried separately from the save outcome, so a
    duplicate/double-save timeout cannot suppress the media handoff.
    Downloader's shared “Save Downloads to Photos” preference is honored: an undetermined

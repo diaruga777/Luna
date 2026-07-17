@@ -48,11 +48,11 @@ public enum LunarEclipseTransitionCenter {
 private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTransitioning {
     enum Direction { case push, pop }
 
-    // These are intentionally comparable to a stock push/pop. In a DEBUG simulator
-    // launch, add -lunarEclipseSlowMotion to make each phase five times slower.
+    // Keep simulator tuning deliberately slow. This is a compile-time branch so frame
+    // inspection does not depend on a scheme argument surviving a Blitz/Xcode launch.
     private static var durationScale: TimeInterval {
-        #if DEBUG
-        return ProcessInfo.processInfo.arguments.contains("-lunarEclipseSlowMotion") ? 5 : 1
+        #if targetEnvironment(simulator)
+        return 12
         #else
         return 1
         #endif
@@ -93,30 +93,24 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         dimmer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         dimmer.backgroundColor = .black
         dimmer.alpha = 0
-        if isPush {
-            // Keep the tapped row out of the veil. At zenith the black eclipse body
-            // itself closes this hole, preserving a fully opaque handoff frame.
-            let cutout = UIBezierPath(rect: dimmer.bounds)
-            cutout.append(UIBezierPath(
-                roundedRect: sourceFrame,
-                cornerRadius: max(source.layer.cornerRadius, min(18, sourceFrame.height / 2))
-            ))
-            let mask = CAShapeLayer()
-            mask.frame = dimmer.bounds
-            mask.path = cutout.cgPath
-            mask.fillRule = .evenOdd
-            dimmer.layer.mask = mask
-        }
         container.addSubview(dimmer)
 
-        let (eclipse, corona, flare) = makeEclipse(from: source, frame: sourceFrame)
+        let sourceIsFullScreen = sourceFrame.width >= container.bounds.width - 1
+            && sourceFrame.height >= container.bounds.height - 1
+        let (eclipse, corona, flare) = makeEclipse(
+            from: source,
+            frame: sourceFrame,
+            sourceIsFullScreen: sourceIsFullScreen
+        )
         container.addSubview(eclipse)
-        let travel = max(18, sourceFrame.width * 0.16) * (isPush ? -1 : 1)
-        // Translate at full size so the cutout exposes only the leading edge. Scaling
-        // the body down creates a second, unnatural crescent on the trailing edge.
+        let travel = isPush
+            ? -max(18, sourceFrame.width * 0.16)
+            : container.bounds.width
         eclipse.transform = CGAffineTransform(translationX: travel, y: 0)
-        eclipse.alpha = 0
-        corona.alpha = 0.15
+        // The pop is a hard black slab crossing the already-dimmed scene. It must not
+        // share the dimmer's fade or the leading edge becomes a grey dissolve.
+        eclipse.alpha = isPush ? 0 : 1
+        corona.alpha = isPush ? 0.2 : 1
         flare.alpha = 0
         flare.transform = CGAffineTransform(scaleX: 0.45, y: 0.45)
         if !isPush { from.alpha = 1 }
@@ -135,9 +129,9 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         ) {
             UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 1) {
                 dimmer.alpha = 1
-                eclipse.alpha = 1
+                if isPush { eclipse.alpha = 1 }
                 eclipse.transform = .identity
-                corona.alpha = 0.82
+                corona.alpha = 1
             }
             // A compact diamond-ring point blooms only as the leading edge reaches
             // zenith. Its radial falloff avoids a solid white disc or hard cutoff.
@@ -149,9 +143,6 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
             // The black veil is now alpha 1, so this is the only moment at which the
             // navigation hierarchy changes which real screen is visible.
             UIView.performWithoutAnimation {
-                // Seal the push cutout before changing screens. The egress should
-                // uncover the destination uniformly from an entirely black frame.
-                dimmer.layer.mask = nil
                 to.alpha = 1
                 if !isPush { from.alpha = 0 }
             }
@@ -163,8 +154,17 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
             ) {
                 UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 1) {
                     dimmer.alpha = 0
-                    eclipse.alpha = 0
-                    corona.alpha = 0
+                    if isPush {
+                        eclipse.alpha = 0
+                        corona.alpha = 0
+                    } else {
+                        // Continue the same right-to-left pass after zenith. Keeping
+                        // alpha at one preserves the eclipse's hard black leading edge.
+                        eclipse.transform = CGAffineTransform(
+                            translationX: -container.bounds.width,
+                            y: 0
+                        )
+                    }
                 }
                 UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.22) {
                     flare.alpha = 0
@@ -181,31 +181,37 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         }
     }
 
-    private func makeEclipse(from source: UIView, frame: CGRect) -> (UIView, UIView, UIView) {
+    private func makeEclipse(
+        from source: UIView,
+        frame: CGRect,
+        sourceIsFullScreen: Bool
+    ) -> (UIView, UIView, UIView) {
         let image = source.lunarEclipseSnapshot()
         let host = UIView(frame: frame)
         host.backgroundColor = .clear
         host.clipsToBounds = false
         let silhouette = image?.withRenderingMode(.alwaysTemplate)
 
+        // The corona belongs outside compact sources, where the silhouette occludes
+        // its inner half. A full-screen source has no visible exterior, so place the
+        // same light just inside its leading edge.
         let lightCenter = CGPoint(
-            // A pop uses the full-screen source, so move the corona inward rather
-            // than centring it beyond the left edge where it cannot be seen.
-            x: direction == .push ? host.bounds.maxX : min(34, host.bounds.width * 0.085),
+            x: sourceIsFullScreen ? min(42, host.bounds.width * 0.1) : host.bounds.maxX,
             y: host.bounds.midY
         )
         let corona = makeRadialLight(
-            diameter: direction == .push ? 82 : 106,
+            diameter: sourceIsFullScreen ? 148 : min(196, max(142, frame.height * 1.25)),
             center: lightCenter,
             colors: [
-                UIColor.white.withAlphaComponent(0.32),
-                UIColor.white.withAlphaComponent(0.13),
+                UIColor.white.withAlphaComponent(0.82),
+                UIColor.white.withAlphaComponent(0.42),
+                UIColor.white.withAlphaComponent(0.16),
                 UIColor.clear
             ],
-            locations: [0, 0.3, 1]
+            locations: [0, 0.18, 0.5, 1]
         )
         let flare = makeRadialLight(
-            diameter: direction == .push ? 34 : 42,
+            diameter: sourceIsFullScreen ? 46 : 38,
             center: lightCenter,
             colors: [
                 UIColor.white,
@@ -217,9 +223,9 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
             locations: [0, 0.04, 0.17, 0.43, 1]
         )
 
-        // On push the light is below the body. The source snapshot's antialiased
-        // silhouette naturally occludes its inner half instead of drawing a hard dot.
-        if direction == .push {
+        // Compact sources put the light below the body so the snapshot masks the
+        // interior half and leaves only an exterior corona.
+        if !sourceIsFullScreen {
             host.addSubview(corona)
             host.addSubview(flare)
         }
@@ -230,9 +236,8 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         black.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         host.addSubview(black)
 
-        // A pop's eclipse fills the host, so its glow must be above the body and
-        // inset into the screen. Otherwise both light layers are clipped off-screen.
-        if direction == .pop {
+        // A full-screen eclipse puts its corona above the body on the interior side.
+        if sourceIsFullScreen {
             host.addSubview(corona)
             host.addSubview(flare)
         }

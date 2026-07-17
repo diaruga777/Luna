@@ -78,16 +78,18 @@ each window-creation site — `SceneDelegate`, the `DotMatrixModal` cover window
 **Lunar Eclipse Transition** toggle. When enabled (and Reduce Motion is off), it replaces
 the Dot Matrix navigation wipe only for a native-reader push started by tapping a Reader
 list row, and for that reader's corresponding pop. `LunarEclipseTransition` snapshots the
-source row into a slightly undersized black silhouette and dims the surrounding scene
-through a source-shaped cutout, leaving the row undimmed. It moves the eclipse to zenith
-under a directional white corona, closes the cutout to fully opaque black, swaps screens
-beneath the veil, then uncovers the destination. A soft radial diamond-ring point blooms
-briefly on the leading edge at zenith; the eclipse silhouette masks its inner half and
-there is no full-screen white flash. The pop mirrors the motion from right-to-left with
-the corona and bright point inset from the left screen edge. It never affects
-Downloader, Price Tracker, search/deep-link opens, reader-internal RabbitHole transitions,
-or any other navigation/modal transition. DEBUG builds accept
-`-lunarEclipseSlowMotion` to multiply the same timing by five for visual tuning.
+source row into a black silhouette while a separate, uniform veil dims the whole scene,
+so the source never brightens relative to its surroundings. It moves the eclipse to
+zenith under a directional white corona, swaps screens beneath a fully opaque frame, then
+uncovers the destination. The corona sits outside compact source views (the silhouette
+masks its inner half) and inside full-screen sources, where no exterior is visible. A
+soft radial diamond-ring point blooms briefly on the leading edge at zenith and there is
+no full-screen white flash. On pop the uniform veil remains independent while a fully
+opaque black eclipse crosses the entire screen from right to left without fading. It
+never affects Downloader, Price Tracker, search/deep-link opens, reader-internal
+RabbitHole transitions, or any other navigation/modal transition. Simulator builds
+compile with a 12x duration multiplier for frame-by-frame visual tuning; device builds
+retain production timing.
 
 Surfaces: `DotMatrixCrossfade` (in-place view change), `DotMatrixBatch` (table row
 updates), `DotMatrixModal` (modal present/dismiss — see below),

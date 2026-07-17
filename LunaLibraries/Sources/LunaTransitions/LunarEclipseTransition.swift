@@ -246,24 +246,50 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         colors: [UIColor],
         locations: [NSNumber]
     ) -> UIView {
-        let light = UIView(frame: CGRect(
+        let light = EclipseRadialLightView(colors: colors, locations: locations)
+        light.frame = CGRect(
             x: center.x - diameter / 2,
             y: center.y - diameter / 2,
             width: diameter,
             height: diameter
-        ))
-        light.isUserInteractionEnabled = false
-        light.backgroundColor = .clear
-
-        let gradient = CAGradientLayer()
-        gradient.type = .radial
-        gradient.frame = light.bounds
-        gradient.startPoint = CGPoint(x: 0.5, y: 0.5)
-        gradient.endPoint = CGPoint(x: 1, y: 0.5)
-        gradient.colors = colors.map(\.cgColor)
-        gradient.locations = locations
-        light.layer.addSublayer(gradient)
+        )
         return light
+    }
+}
+
+private final class EclipseRadialLightView: UIView {
+    private let gradient: CGGradient?
+
+    init(colors: [UIColor], locations: [NSNumber]) {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let cgColors: [CGColor] = colors.map(\.cgColor)
+        let stops: [CGFloat] = locations.map { CGFloat(truncating: $0) }
+        gradient = CGGradient(
+            colorsSpace: colorSpace,
+            colors: cgColors as CFArray,
+            locations: stops
+        )
+        super.init(frame: .zero)
+        isOpaque = false
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        contentMode = .redraw
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func draw(_ rect: CGRect) {
+        guard let gradient, let context = UIGraphicsGetCurrentContext() else { return }
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        context.drawRadialGradient(
+            gradient,
+            startCenter: center,
+            startRadius: 0,
+            endCenter: center,
+            endRadius: min(bounds.width, bounds.height) / 2,
+            options: .drawsAfterEndLocation
+        )
     }
 }
 

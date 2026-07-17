@@ -13,6 +13,7 @@ public enum AppearanceSettings {
 
     private static let interfaceStyleKey = "appearanceInterfaceStyle"
     private static let animatedTransitionsKey = "animatedTransitionsEnabled"
+    private static let lunarEclipseReaderTransitionKey = "lunarEclipseReaderTransitionEnabled"
 
     /// The interface style the app forces regardless of the device setting.
     public enum InterfaceStyle: String, CaseIterable {
@@ -47,6 +48,13 @@ public enum AppearanceSettings {
     public static var animatedTransitionsEnabled: Bool {
         get { (defaults.object(forKey: animatedTransitionsKey) as? Bool) ?? true }
         set { defaults.set(newValue, forKey: animatedTransitionsKey) }
+    }
+
+    /// An opt-in, Reader-only alternative to the Dot Matrix navigation wipe. It is
+    /// deliberately off by default while the motion is being evaluated.
+    public static var lunarEclipseReaderTransitionEnabled: Bool {
+        get { (defaults.object(forKey: lunarEclipseReaderTransitionKey) as? Bool) ?? false }
+        set { defaults.set(newValue, forKey: lunarEclipseReaderTransitionKey) }
     }
 
     /// Applies the current `interfaceStyle` override to a window. Call at every

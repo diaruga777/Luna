@@ -74,7 +74,16 @@ Both `AppearanceSettings` preferences are user-facing under **Settings → Appea
 live to every connected scene's windows (`AppearanceSettings.apply(to:)`, also called at
 each window-creation site — `SceneDelegate`, the `DotMatrixModal` cover window, and the
 `DotMatrixKeyboardReveal` cover window), and a **Motion** toggle bound to
-`animatedTransitionsEnabled`.
+`animatedTransitionsEnabled`. Luna Reader additionally exposes an off-by-default
+**Lunar Eclipse Transition** toggle. When enabled (and Reduce Motion is off), it replaces
+the Dot Matrix navigation wipe only for a native-reader push started by tapping a Reader
+list row, and for that reader's corresponding pop. `LunarEclipseTransition` snapshots the
+source row into a slightly undersized black silhouette, dims the scene, moves the eclipse
+to zenith under a directional white corona, then flashes and uncovers the destination;
+the pop mirrors it from right-to-left with the bright point on the left. It never affects
+Downloader, Price Tracker, search/deep-link opens, reader-internal RabbitHole transitions,
+or any other navigation/modal transition. DEBUG builds accept
+`-lunarEclipseSlowMotion` to multiply the same timing by five for visual tuning.
 
 Surfaces: `DotMatrixCrossfade` (in-place view change), `DotMatrixBatch` (table row
 updates), `DotMatrixModal` (modal present/dismiss — see below),

@@ -1504,13 +1504,17 @@ final class ReadingListViewController: UITableViewController {
             previewPasteboardCandidate()
             return
         }
-        open(item(at: indexPath), presenter: self)
+        open(item(at: indexPath), presenter: self, transitionSourceView: tableView.cellForRow(at: indexPath))
     }
 
     /// Opens an item presenting from `presenter` (the reading list, or the search
     /// screen): platform/video/media via `openItem`, a hard-paywalled article via
     /// the archive web view, else the in-app reader pushed on `presenter`'s nav.
-    func open(_ item: ReadingListItem, presenter: UIViewController) {
+    func open(
+        _ item: ReadingListItem,
+        presenter: UIViewController,
+        transitionSourceView: UIView? = nil
+    ) {
         if item.isPriceTracker {
             // Opening an alerting tracker acknowledges its alert, so the row stops
             // floating to the top of the list and rejoins the price-tracking section.
@@ -1540,6 +1544,12 @@ final class ReadingListViewController: UITableViewController {
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
             transition: DotMatrixRabbitHoleTransition())
+        // This alternate transition is intentionally available only from a real Reader
+        // list-row tap. Other readers (search, deep links, the two sibling apps) retain
+        // their existing navigation treatment.
+        if surface == .reader, let transitionSourceView {
+            LunarEclipseTransitionCenter.prepare(reader: reader, sourceView: transitionSourceView)
+        }
         presenter.navigationController?.pushViewController(reader, animated: true)
     }
 

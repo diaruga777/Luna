@@ -7,7 +7,8 @@ import LunaDesignSystem
 import UIKit
 
 /// App-wide appearance: the interface-style (System / Light / Dark) override and
-/// whether the animated Dot Matrix transitions play.
+/// whether the animated Dot Matrix transitions play, plus the Reader-only Lunar
+/// Eclipse experiment.
 final class AppearanceSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable { case theme, motion }
@@ -22,7 +23,9 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
 
     override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 1 }
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        Section(rawValue: section) == .motion && AppSurfaceConfig.current == .reader ? 2 : 1
+    }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
@@ -37,7 +40,8 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
         case .motion:
             return "When off, Luna uses the standard system transitions instead of the "
                 + "animated ones. They are also disabled automatically when Reduce Motion "
-                + "is on in your system accessibility settings."
+                + "is on in your system accessibility settings. Lunar Eclipse is an opt-in "
+                + "alternative used only when Luna Reader opens or closes an article."
         }
     }
 
@@ -51,11 +55,16 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
             let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
             cell.selectionStyle = .none
             var content = cell.defaultContentConfiguration()
-            content.text = "Animated Transitions"
+            let isLunarEclipse = indexPath.row == 1
+            content.text = isLunarEclipse ? "Lunar Eclipse Transition" : "Animated Transitions"
             cell.contentConfiguration = content
             cell.accessoryView = makeToggle(
-                isOn: AppearanceSettings.animatedTransitionsEnabled,
-                action: #selector(animatedTransitionsToggled(_:)))
+                isOn: isLunarEclipse
+                    ? AppearanceSettings.lunarEclipseReaderTransitionEnabled
+                    : AppearanceSettings.animatedTransitionsEnabled,
+                action: isLunarEclipse
+                    ? #selector(lunarEclipseTransitionToggled(_:))
+                    : #selector(animatedTransitionsToggled(_:)))
             return cell
         }
     }
@@ -97,5 +106,9 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
 
     @objc private func animatedTransitionsToggled(_ toggle: UISwitch) {
         AppearanceSettings.animatedTransitionsEnabled = toggle.isOn
+    }
+
+    @objc private func lunarEclipseTransitionToggled(_ toggle: UISwitch) {
+        AppearanceSettings.lunarEclipseReaderTransitionEnabled = toggle.isOn
     }
 }

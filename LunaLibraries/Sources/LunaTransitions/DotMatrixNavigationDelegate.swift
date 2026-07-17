@@ -44,6 +44,11 @@ public final class DotMatrixNavigationDelegate: NSObject, UINavigationController
         animationControllerFor operation: UINavigationController.Operation,
         from fromVC: UIViewController,
         to toVC: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+        if let animator = LunarEclipseTransitionCenter.animator(
+            for: operation, from: fromVC, to: toVC
+        ) {
+            return animator
+        }
         guard DotMatrixTransitionCenter.shared.isEnabled else { return nil }
         // Step aside for a VC that manages its own transition (e.g. the media viewer's
         // iOS 18 zoom transition) on BOTH the push into it and the later pop out of it.

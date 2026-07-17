@@ -76,13 +76,15 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         }
         let container = context.containerView
         let isPush = direction == .push
-        if isPush { container.addSubview(to) }
-        else { container.insertSubview(to, belowSubview: from) }
-        to.frame = context.finalFrame(for: context.viewController(forKey: .to)!)
-        to.layoutIfNeeded()
-        // The destination must not leak into stages 1–2. It is revealed only at
-        // zenith, while the eclipse/overlays still cover that instantaneous swap.
-        to.alpha = 0
+        // Hide the destination before it enters the hierarchy. Adding it first leaves
+        // UIKit one commit in which the fully laid-out reader can appear above the list.
+        UIView.performWithoutAnimation {
+            to.alpha = 0
+            to.frame = context.finalFrame(for: context.viewController(forKey: .to)!)
+            if isPush { container.addSubview(to) }
+            else { container.insertSubview(to, belowSubview: from) }
+            to.layoutIfNeeded()
+        }
 
         let dimmer = UIView(frame: container.bounds)
         dimmer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -90,67 +92,76 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         dimmer.alpha = 0
         container.addSubview(dimmer)
 
-        // This is deliberately separate from `dimmer`: the black veil can begin its
-        // normal fade while a brief, unmistakable full-screen white corona flashes.
-        let flash = UIView(frame: container.bounds)
-        flash.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        flash.backgroundColor = .white
-        flash.alpha = 0
-
         let source = sourceView ?? from
         let sourceFrame = source.convert(source.bounds, to: container)
-        let (eclipse, corona) = makeEclipse(from: source, frame: sourceFrame)
+        let (eclipse, corona, flare) = makeEclipse(from: source, frame: sourceFrame)
         container.addSubview(eclipse)
-        container.addSubview(flash)
         let travel = max(18, sourceFrame.width * 0.16) * (isPush ? -1 : 1)
         eclipse.transform = CGAffineTransform(translationX: travel, y: 0).scaledBy(x: 0.985, y: 0.985)
         eclipse.alpha = 0
-        corona.alpha = 0.22
+        corona.alpha = 0.15
+        flare.alpha = 0
+        flare.transform = CGAffineTransform(scaleX: 0.45, y: 0.45)
         if !isPush { from.alpha = 1 }
 
         let duration = transitionDuration(using: context)
-        // 50ms in production; slow-motion expands the same visual beat too.
-        let flashFadeFraction = (0.05 * Self.durationScale) / duration
-        UIView.animateKeyframes(withDuration: duration, delay: 0, options: [.calculationModeLinear]) {
-            // Stage 1: the entire scene is swallowed by shadow.
-            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.43) { dimmer.alpha = 0.78 }
-            // Stage 2: the slightly undersized black row crosses to its zenith. Its
-            // corona lives BEHIND the body, so white can only be seen outside it.
-            UIView.addKeyframe(withRelativeStartTime: 0.43, relativeDuration: 0.25) {
+        let ingressDuration = duration * 0.68
+        let egressDuration = duration - ingressDuration
+
+        // Ingress ends at a genuinely opaque zenith. Keeping ingress and egress as
+        // separate animators gives the view swap a real boundary instead of relying
+        // on a zero-duration keyframe, which Core Animation may interpolate across.
+        UIView.animateKeyframes(
+            withDuration: ingressDuration,
+            delay: 0,
+            options: [.calculationModeCubic]
+        ) {
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 1) {
+                dimmer.alpha = 1
                 eclipse.alpha = 1
                 eclipse.transform = .identity
-                corona.alpha = 1
+                corona.alpha = 0.82
             }
-            // Stage 3: the source/destination swap is instantaneous at zenith. The
-            // bright layer peaks and falls in 0.05s while the black veil fades away
-            // over the rest of the normal release duration.
-            UIView.addKeyframe(withRelativeStartTime: 0.68, relativeDuration: 0) {
+            // A compact diamond-ring point blooms only as the leading edge reaches
+            // zenith. It never paints white over the rest of the screen.
+            UIView.addKeyframe(withRelativeStartTime: 0.76, relativeDuration: 0.24) {
+                flare.alpha = 1
+                flare.transform = .identity
+            }
+        } completion: { _ in
+            // The black veil is now alpha 1, so this is the only moment at which the
+            // navigation hierarchy changes which real screen is visible.
+            UIView.performWithoutAnimation {
                 to.alpha = 1
                 if !isPush { from.alpha = 0 }
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.68, relativeDuration: 0.32) {
-                dimmer.alpha = 0
-                eclipse.alpha = 0
-            }
-            UIView.addKeyframe(withRelativeStartTime: 0.68, relativeDuration: 0.015) {
-                flash.alpha = 0.48
-            }
-            UIView.addKeyframe(withRelativeStartTime: 0.695, relativeDuration: flashFadeFraction) {
-                flash.alpha = 0
-            }
-        } completion: { _ in
-            let completed = !context.transitionWasCancelled
-            if context.transitionWasCancelled { from.alpha = 1 }
-            to.alpha = 1
-            dimmer.removeFromSuperview()
-            eclipse.removeFromSuperview()
-            flash.removeFromSuperview()
-            context.completeTransition(completed)
-        }
 
+            UIView.animateKeyframes(
+                withDuration: egressDuration,
+                delay: 0,
+                options: [.calculationModeCubic]
+            ) {
+                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 1) {
+                    dimmer.alpha = 0
+                    eclipse.alpha = 0
+                    corona.alpha = 0
+                }
+                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.22) {
+                    flare.alpha = 0
+                    flare.transform = CGAffineTransform(scaleX: 1.35, y: 1.35)
+                }
+            } completion: { _ in
+                let completed = !context.transitionWasCancelled
+                if context.transitionWasCancelled { from.alpha = 1 }
+                to.alpha = 1
+                dimmer.removeFromSuperview()
+                eclipse.removeFromSuperview()
+                context.completeTransition(completed)
+            }
+        }
     }
 
-    private func makeEclipse(from source: UIView, frame: CGRect) -> (UIView, UIView) {
+    private func makeEclipse(from source: UIView, frame: CGRect) -> (UIView, UIView, UIView) {
         let image = source.lunarEclipseSnapshot()
         let host = UIView(frame: frame)
         host.backgroundColor = .clear
@@ -182,12 +193,28 @@ private final class LunarEclipseAnimator: NSObject, UIViewControllerAnimatedTran
         black.layer.shadowColor = UIColor.white.cgColor
         // Keep the surrounding halo restrained: the radial corona above supplies the
         // one unmistakable peak rather than turning the whole leading edge white.
-        black.layer.shadowRadius = 7
-        black.layer.shadowOpacity = 0.32
+        black.layer.shadowRadius = 4
+        black.layer.shadowOpacity = 0.08
         black.layer.shadowOffset = CGSize(width: direction == .push ? 4 : -4, height: 0)
         host.addSubview(black)
 
-        return (host, corona)
+        let flareDiameter: CGFloat = 5
+        let flare = UIView(frame: CGRect(
+            x: direction == .push ? host.bounds.maxX - flareDiameter / 2 : -flareDiameter / 2,
+            y: host.bounds.midY - flareDiameter / 2,
+            width: flareDiameter,
+            height: flareDiameter
+        ))
+        flare.isUserInteractionEnabled = false
+        flare.backgroundColor = .white
+        flare.layer.cornerRadius = flareDiameter / 2
+        flare.layer.shadowColor = UIColor.white.cgColor
+        flare.layer.shadowOpacity = 1
+        flare.layer.shadowRadius = 15
+        flare.layer.shadowOffset = .zero
+        host.addSubview(flare)
+
+        return (host, corona, flare)
     }
 }
 

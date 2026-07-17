@@ -78,9 +78,11 @@ each window-creation site — `SceneDelegate`, the `DotMatrixModal` cover window
 **Lunar Eclipse Transition** toggle. When enabled (and Reduce Motion is off), it replaces
 the Dot Matrix navigation wipe only for a native-reader push started by tapping a Reader
 list row, and for that reader's corresponding pop. `LunarEclipseTransition` snapshots the
-source row into a slightly undersized black silhouette, dims the scene, moves the eclipse
-to zenith under a directional white corona, then flashes and uncovers the destination;
-the pop mirrors it from right-to-left with the bright point on the left. It never affects
+source row into a slightly undersized black silhouette, dims the scene to fully opaque,
+moves the eclipse to zenith under a directional white corona, swaps screens beneath the
+black veil, then uncovers the destination. A single diamond-ring point blooms briefly on
+the leading edge at zenith; there is no full-screen white flash. The pop mirrors it
+from right-to-left with the bright point on the left. It never affects
 Downloader, Price Tracker, search/deep-link opens, reader-internal RabbitHole transitions,
 or any other navigation/modal transition. DEBUG builds accept
 `-lunarEclipseSlowMotion` to multiply the same timing by five for visual tuning.

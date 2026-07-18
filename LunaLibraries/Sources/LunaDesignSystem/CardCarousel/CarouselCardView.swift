@@ -23,7 +23,12 @@ public final class CarouselCardView: UIView {
 
     private let muteButton = UIButton(type: .system)
     private let dimOverlay = UIView()
-    private let borderView = UIView()
+    /// A real Liquid Glass surface clipped to a narrow rounded ring. Unlike a
+    /// flat stroke, this refracts whatever card content is directly beneath
+    /// the edge and therefore stays visible on both light and dark pages.
+    private let borderView = UIVisualEffectView(effect: GlassStyle.barEffect())
+    private let borderMask = CAShapeLayer()
+    private let borderHighlight = CAShapeLayer()
     private var topLeadingAccessory: UIView?
 
     public override init(frame: CGRect) {
@@ -47,16 +52,18 @@ public final class CarouselCardView: UIView {
         dimOverlay.isUserInteractionEnabled = false
         addSubview(dimOverlay)
 
-        // A subtle glass rim delineating the card from a same-tone screen
+        // A Liquid Glass rim delineating the card from a same-tone screen
         // background (style-gated by the host; fades with the carousel chrome
         // during immersion). Sits above the dim overlay so side cards keep
         // their outline while dimmed.
         borderView.frame = bounds
         borderView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         borderView.isUserInteractionEnabled = false
-        borderView.layer.cornerRadius = Self.cornerRadius
-        borderView.layer.cornerCurve = .continuous
-        borderView.layer.borderWidth = 1
+        borderMask.fillRule = .evenOdd
+        borderView.layer.mask = borderMask
+        borderHighlight.fillColor = UIColor.clear.cgColor
+        borderHighlight.lineWidth = 0.75
+        borderView.layer.addSublayer(borderHighlight)
         borderView.isHidden = true
         addSubview(borderView)
         applyBorderColor()
@@ -87,6 +94,24 @@ public final class CarouselCardView: UIView {
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
 
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        let outer = UIBezierPath(
+            roundedRect: bounds, cornerRadius: Self.cornerRadius)
+        let rimWidth: CGFloat = 3
+        let innerRect = bounds.insetBy(dx: rimWidth, dy: rimWidth)
+        outer.append(UIBezierPath(
+            roundedRect: innerRect,
+            cornerRadius: max(0, Self.cornerRadius - rimWidth)))
+        borderMask.frame = bounds
+        borderMask.path = outer.cgPath
+
+        borderHighlight.frame = bounds
+        borderHighlight.path = UIBezierPath(
+            roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+            cornerRadius: Self.cornerRadius - 0.5).cgPath
+    }
+
     /// Installs a content view controller's view, filling the card.
     public func installContentView(_ view: UIView) {
         view.frame = contentContainer.bounds
@@ -111,7 +136,7 @@ public final class CarouselCardView: UIView {
     }
 
     private func applyBorderColor() {
-        borderView.layer.borderColor =
+        borderHighlight.strokeColor =
             GlassStyle.glassBorderColor.resolvedColor(with: traitCollection).cgColor
     }
 

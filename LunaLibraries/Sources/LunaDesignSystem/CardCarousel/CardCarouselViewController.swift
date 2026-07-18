@@ -36,6 +36,11 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void)
+    /// Strip title for `.titles`-style scrubbers.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        titleForCardAt index: Int
+    ) -> String?
     /// Optional small accessory pinned to the card's top-leading corner.
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -46,8 +51,32 @@ public protocol CardCarouselDataSource: AnyObject {
 public extension CardCarouselDataSource {
     func carousel(
         _ carousel: CardCarouselViewController,
+        titleForCardAt index: Int
+    ) -> String? { nil }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
         topLeadingAccessoryForCardAt index: Int
     ) -> UIView? { nil }
+}
+
+/// Per-surface tuning, set BEFORE the carousel's view loads.
+public struct CardCarouselStyle {
+    /// Points of a neighboring card visible inside the screen edge.
+    public var peek: CGFloat = 14
+    /// Extra horizontal inset applied only to the centered card.
+    public var edgeGap: CGFloat = 30
+    public var sideScale: CGFloat = 0.92
+    public var verticalPadding: CGFloat = 12
+    /// Ignore the 9:16 aspect and take all available height and width.
+    public var fillsVertically = false
+    /// Horizontal swipes INSIDE the centered card page too (for content that
+    /// doesn't scrub, e.g. embedded readers). Recognized simultaneously with
+    /// the content's own gestures, gated to strongly-horizontal drags.
+    public var pagesOnInCardSwipes = false
+    public var scrubberStyle: CarouselScrubberView.Style = .thumbnails
+
+    public init() {}
 }
 
 public protocol CardCarouselDelegate: AnyObject {
@@ -58,6 +87,12 @@ public protocol CardCarouselDelegate: AnyObject {
         _ carousel: CardCarouselViewController,
         contextMenuForCardAt index: Int
     ) -> UIContextMenuConfiguration?
+    /// The centered card was tapped and its content is not playable (playable
+    /// content consumes the tap as pause/play). The tap does NOT cancel
+    /// touches, so content-level taps (links) still land.
+    func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int)
+    /// The centered card was long-pressed (fires alongside any context menu).
+    func carousel(_ carousel: CardCarouselViewController, didLongPressCenteredCardAt index: Int)
 }
 
 public extension CardCarouselDelegate {
@@ -66,6 +101,8 @@ public extension CardCarouselDelegate {
         _ carousel: CardCarouselViewController,
         contextMenuForCardAt index: Int
     ) -> UIContextMenuConfiguration? { nil }
+    func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {}
+    func carousel(_ carousel: CardCarouselViewController, didLongPressCenteredCardAt index: Int) {}
 }
 
 public final class CardCarouselViewController: UIViewController {
@@ -77,6 +114,9 @@ public final class CardCarouselViewController: UIViewController {
     /// muted, playback while unmuted). Hosts with their own audio coordination
     /// can turn this off.
     public var managesAudioSession = true
+
+    /// Per-surface tuning. Set BEFORE the carousel's view loads.
+    public var style = CardCarouselStyle()
 
     public private(set) var currentIndex = 0
     public private(set) var isSoundMuted = true
@@ -98,8 +138,10 @@ public final class CardCarouselViewController: UIViewController {
     private var pendingReload: (deferred: Bool, index: Int?) = (false, nil)
 
     private let cardArea = UIView()
-    private let scrubber = CarouselScrubberView()
-    private var previewOverlay: UIImageView?
+    private lazy var scrubber = CarouselScrubberView(style: style.scrubberStyle)
+    private var previewOverlay: UIView?
+    private var previewImageView: UIImageView?
+    private var previewTitleLabel: UILabel?
 
     private var playbackPan: UIPanGestureRecognizer!
     private var pagePan: UIPanGestureRecognizer!
@@ -157,6 +199,10 @@ public final class CardCarouselViewController: UIViewController {
         }
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        // Let content-level taps (links inside an embedded reader, buttons)
+        // land as well — the carousel's tap is additive, never stealing.
+        tap.cancelsTouchesInView = false
+        tap.delegate = self
         cardArea.addGestureRecognizer(tap)
 
         playbackPan = UIPanGestureRecognizer(target: self, action: #selector(handleScrubPan(_:)))
@@ -166,6 +212,11 @@ public final class CardCarouselViewController: UIViewController {
         pagePan = UIPanGestureRecognizer(target: self, action: #selector(handlePagePan(_:)))
         pagePan.delegate = self
         cardArea.addGestureRecognizer(pagePan)
+
+        let longPress = UILongPressGestureRecognizer(
+            target: self, action: #selector(handleLongPress(_:)))
+        longPress.delegate = self
+        cardArea.addGestureRecognizer(longPress)
     }
 
     public override func viewDidLayoutSubviews() {
@@ -173,7 +224,13 @@ public final class CardCarouselViewController: UIViewController {
         let size = cardArea.bounds.size
         guard size.width > 0, size.height > 0 else { return }
         if metrics?.containerSize != size {
-            metrics = CardCarouselMetrics.resolve(containerSize: size)
+            metrics = CardCarouselMetrics.resolve(
+                containerSize: size,
+                peek: style.peek,
+                edgeGap: style.edgeGap,
+                sideScale: style.sideScale,
+                verticalPadding: style.verticalPadding,
+                fillsVertically: style.fillsVertically)
         }
         guard !isTransitioning else { return }
         for slot in slots.values { applyRestingLayout(to: slot) }
@@ -226,6 +283,11 @@ public final class CardCarouselViewController: UIViewController {
     /// The card view showing `index`, if mounted — e.g. a share-sheet popover source.
     public func cardView(at index: Int) -> UIView? {
         slots[index]?.card
+    }
+
+    /// The content controller mounted for `index`, if any.
+    public func contentController(at index: Int) -> CardContentViewController? {
+        slots[index]?.content
     }
 
     /// Pages by `step` cards. Single steps run the eclipse transition (unless
@@ -454,18 +516,45 @@ public final class CardCarouselViewController: UIViewController {
         guard count > 0, !isTransitioning else { return }
         slots[currentIndex]?.content.setPlaying(false)
         if previewOverlay == nil {
-            let overlay = UIImageView()
-            overlay.contentMode = .scaleAspectFit
+            let overlay = UIView()
             overlay.backgroundColor = .secondarySystemBackground
             overlay.layer.cornerRadius = CarouselCardView.cornerRadius
             overlay.layer.cornerCurve = .continuous
             overlay.clipsToBounds = true
+            switch style.scrubberStyle {
+            case .thumbnails:
+                let imageView = UIImageView()
+                imageView.contentMode = .scaleAspectFit
+                imageView.frame = overlay.bounds
+                imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                overlay.addSubview(imageView)
+                previewImageView = imageView
+            case .titles:
+                let label = UILabel()
+                label.font = .preferredFont(forTextStyle: .title2)
+                label.textColor = .label
+                label.textAlignment = .center
+                label.numberOfLines = 0
+                label.translatesAutoresizingMaskIntoConstraints = false
+                overlay.addSubview(label)
+                NSLayoutConstraint.activate([
+                    label.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 24),
+                    label.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -24),
+                    label.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+                ])
+                previewTitleLabel = label
+            }
             cardArea.addSubview(overlay)
             previewOverlay = overlay
             layoutPreviewOverlay()
         }
-        dataSource?.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
-            DispatchQueue.main.async { self?.previewOverlay?.image = image }
+        switch style.scrubberStyle {
+        case .thumbnails:
+            dataSource?.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
+                DispatchQueue.main.async { self?.previewImageView?.image = image }
+            }
+        case .titles:
+            previewTitleLabel?.text = dataSource?.carousel(self, titleForCardAt: index)
         }
     }
 
@@ -476,6 +565,8 @@ public final class CardCarouselViewController: UIViewController {
     private func removeScrubPreview() {
         previewOverlay?.removeFromSuperview()
         previewOverlay = nil
+        previewImageView = nil
+        previewTitleLabel = nil
     }
 
     private func commitScrub(to index: Int) {
@@ -495,8 +586,13 @@ public final class CardCarouselViewController: UIViewController {
     private func loadAllThumbnails() {
         guard let dataSource else { return }
         for index in 0..<count {
-            dataSource.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
-                DispatchQueue.main.async { self?.scrubber.setThumbnail(image, at: index) }
+            switch style.scrubberStyle {
+            case .thumbnails:
+                dataSource.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
+                    DispatchQueue.main.async { self?.scrubber.setThumbnail(image, at: index) }
+                }
+            case .titles:
+                scrubber.setTitle(dataSource.carousel(self, titleForCardAt: index), at: index)
             }
         }
     }
@@ -506,15 +602,33 @@ public final class CardCarouselViewController: UIViewController {
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         guard count > 0, !isTransitioning else { return }
         let location = gesture.location(in: cardArea)
+        // The tap doesn't cancel touches, so a control (mute button, download
+        // button) handles its own tap — don't double-trigger card behavior.
+        if let hit = cardArea.hitTest(location, with: nil),
+           sequence(first: hit, next: { [weak cardArea] in $0 === cardArea ? nil : $0.superview })
+               .contains(where: { $0 is UIControl }) {
+            return
+        }
         let center = centeredCardFrame()
         if center.contains(location) {
-            guard let content = slots[currentIndex]?.content, content.isPlayable else { return }
-            content.setPlaying(!content.isPlaying)
+            guard let content = slots[currentIndex]?.content else { return }
+            if content.isPlayable {
+                content.setPlaying(!content.isPlaying)
+            } else {
+                delegate?.carousel(self, didTapCenteredCardAt: currentIndex)
+            }
         } else if location.x > center.maxX {
             page(by: 1)
         } else if location.x < center.minX {
             page(by: -1)
         }
+    }
+
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, count > 0, !isTransitioning,
+              centeredCardFrame().contains(gesture.location(in: cardArea))
+        else { return }
+        delegate?.carousel(self, didLongPressCenteredCardAt: currentIndex)
     }
 
     /// Interactive paging: a horizontal drag starting on the insets beside the
@@ -650,12 +764,32 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
             return abs(velocity.x) > abs(velocity.y)
         }
         if gestureRecognizer === pagePan {
-            // Pans on the insets beside the card page interactively.
-            guard !insideCenter, !isTransitioning else { return false }
+            guard !isTransitioning else { return false }
             let velocity = pagePan.velocity(in: cardArea)
+            if insideCenter {
+                // Inside the card, paging is opt-in (embedded readers) and only
+                // for strongly-horizontal drags, so it never fights the
+                // content's own vertical scrolling.
+                guard style.pagesOnInCardSwipes else { return false }
+                return abs(velocity.x) > abs(velocity.y) * 1.5
+            }
+            // Pans on the insets beside the card always page interactively.
             return abs(velocity.x) > abs(velocity.y)
         }
         return true
+    }
+
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        // The in-card page pan and the additive tap/long-press must coexist
+        // with gestures inside the embedded content (scroll views, links).
+        if gestureRecognizer === pagePan {
+            return style.pagesOnInCardSwipes
+        }
+        return gestureRecognizer is UITapGestureRecognizer
+            || gestureRecognizer is UILongPressGestureRecognizer
     }
 }
 

@@ -2,18 +2,27 @@
 //  CarouselScrubberView.swift
 //  LunaDesignSystem
 //
-//  The scrub area under the cards: one small 9:16 thumbnail per card. Dragging
-//  through it previews cards continuously (much faster than paging one by one);
+//  The scrub area under the cards: one small preview per card. Dragging through
+//  it previews cards continuously (much faster than paging one by one);
 //  releasing commits the index under the finger. A quick flick instead pages a
 //  single card. The strip scrolls itself to keep the selection visible when
-//  there are more thumbnails than fit.
+//  there are more previews than fit.
+//
+//  Two styles: `.thumbnails` (small 9:16 image chips — Downloader) and
+//  `.titles` (bigger text chips showing each card's title — Reader).
 //
 
 import UIKit
 
 public final class CarouselScrubberView: UIView {
 
-    public static let preferredHeight: CGFloat = 68
+    /// What each strip item shows.
+    public enum Style {
+        /// Small 9:16 image chips (media thumbnails).
+        case thumbnails
+        /// Bigger chips showing the card's title text.
+        case titles
+    }
 
     /// Continuous callback while a positional drag moves over the strip.
     public var onPreview: ((Int) -> Void)?
@@ -22,18 +31,32 @@ public final class CarouselScrubberView: UIView {
     /// A quick flick: page by ±1.
     public var onPageStep: ((Int) -> Void)?
 
-    private let thumbnailHeight: CGFloat = 46
-    private var thumbnailWidth: CGFloat { thumbnailHeight * CardCarouselMetrics.cardAspectRatio }
+    public let style: Style
+
+    private var itemSize: CGSize {
+        switch style {
+        case .thumbnails:
+            return CGSize(width: 46 * CardCarouselMetrics.cardAspectRatio, height: 46)
+        case .titles:
+            return CGSize(width: 92, height: 58)
+        }
+    }
+
+    public var preferredHeight: CGFloat {
+        itemSize.height + 22
+    }
+
     private let spacing: CGFloat = 5
 
     private let scrollView = UIScrollView()
     private let stack = UIStackView()
-    private var thumbnailViews: [UIImageView] = []
+    private var itemViews: [ScrubberItemView] = []
     private var selectedIndex = 0
     private var dragStartTime: CFTimeInterval = 0
 
-    public override init(frame: CGRect) {
-        super.init(frame: frame)
+    public init(style: Style = .thumbnails) {
+        self.style = style
+        super.init(frame: .zero)
         backgroundColor = .clear
 
         scrollView.showsHorizontalScrollIndicator = false
@@ -71,7 +94,7 @@ public final class CarouselScrubberView: UIView {
     public required init?(coder: NSCoder) { nil }
 
     public override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: Self.preferredHeight)
+        CGSize(width: UIView.noIntrinsicMetric, height: preferredHeight)
     }
 
     public override func layoutSubviews() {
@@ -79,7 +102,7 @@ public final class CarouselScrubberView: UIView {
         centerStripIfNarrow()
     }
 
-    /// When every thumbnail fits, center the strip instead of leading-aligning it.
+    /// When every item fits, center the strip instead of leading-aligning it.
     private func centerStripIfNarrow() {
         let contentWidth = stack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
         let slack = bounds.width - contentWidth
@@ -89,26 +112,15 @@ public final class CarouselScrubberView: UIView {
     // MARK: - Content
 
     public func setThumbnailCount(_ count: Int) {
-        while thumbnailViews.count > count {
-            let view = thumbnailViews.removeLast()
+        while itemViews.count > count {
+            let view = itemViews.removeLast()
             stack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
-        while thumbnailViews.count < count {
-            let view = UIImageView()
-            view.contentMode = .scaleAspectFill
-            view.clipsToBounds = true
-            view.layer.cornerRadius = 5
-            view.layer.cornerCurve = .continuous
-            view.backgroundColor = .secondarySystemBackground
-            view.layer.borderColor = UIColor.label.cgColor
-            view.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                view.widthAnchor.constraint(equalToConstant: thumbnailWidth),
-                view.heightAnchor.constraint(equalToConstant: thumbnailHeight),
-            ])
+        while itemViews.count < count {
+            let view = ScrubberItemView(style: style, size: itemSize)
             stack.addArrangedSubview(view)
-            thumbnailViews.append(view)
+            itemViews.append(view)
         }
         selectedIndex = min(selectedIndex, max(0, count - 1))
         applySelectionAppearance()
@@ -116,21 +128,26 @@ public final class CarouselScrubberView: UIView {
     }
 
     public func setThumbnail(_ image: UIImage?, at index: Int) {
-        guard thumbnailViews.indices.contains(index) else { return }
-        thumbnailViews[index].image = image
+        guard itemViews.indices.contains(index) else { return }
+        itemViews[index].imageView.image = image
+    }
+
+    public func setTitle(_ title: String?, at index: Int) {
+        guard itemViews.indices.contains(index) else { return }
+        itemViews[index].titleLabel.text = title
     }
 
     public func setSelectedIndex(_ index: Int, animated: Bool) {
-        guard thumbnailViews.indices.contains(index) else { return }
+        guard itemViews.indices.contains(index) else { return }
         selectedIndex = index
         applySelectionAppearance()
-        let target = thumbnailViews[index]
+        let target = itemViews[index]
         let frame = target.convert(target.bounds, to: scrollView).insetBy(dx: -30, dy: 0)
         scrollView.scrollRectToVisible(frame, animated: animated)
     }
 
     private func applySelectionAppearance() {
-        for (index, view) in thumbnailViews.enumerated() {
+        for (index, view) in itemViews.enumerated() {
             let selected = index == selectedIndex
             view.layer.borderWidth = selected ? 2 : 0
             view.transform = selected ? CGAffineTransform(scaleX: 1.12, y: 1.12) : .identity
@@ -144,18 +161,18 @@ public final class CarouselScrubberView: UIView {
         let inStrip = convert(location, to: stack)
         return CarouselScrubberMath.index(
             forLocationX: inStrip.x,
-            thumbnailWidth: thumbnailWidth,
+            thumbnailWidth: itemSize.width,
             spacing: spacing,
-            count: thumbnailViews.count)
+            count: itemViews.count)
     }
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-        guard !thumbnailViews.isEmpty else { return }
+        guard !itemViews.isEmpty else { return }
         onCommit?(index(at: gesture.location(in: self)))
     }
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-        guard !thumbnailViews.isEmpty else { return }
+        guard !itemViews.isEmpty else { return }
         switch gesture.state {
         case .began:
             dragStartTime = CACurrentMediaTime()
@@ -186,4 +203,48 @@ public final class CarouselScrubberView: UIView {
         setSelectedIndex(index, animated: true)
         onPreview?(index)
     }
+}
+
+/// One strip chip: an image (thumbnail style) or a small multi-line title
+/// (titles style) on the card surface color.
+private final class ScrubberItemView: UIView {
+    let imageView = UIImageView()
+    let titleLabel = UILabel()
+
+    init(style: CarouselScrubberView.Style, size: CGSize) {
+        super.init(frame: .zero)
+        clipsToBounds = true
+        layer.cornerRadius = style == .titles ? 8 : 5
+        layer.cornerCurve = .continuous
+        backgroundColor = .secondarySystemBackground
+        layer.borderColor = UIColor.label.cgColor
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: size.width),
+            heightAnchor.constraint(equalToConstant: size.height),
+        ])
+        switch style {
+        case .thumbnails:
+            imageView.contentMode = .scaleAspectFill
+            imageView.clipsToBounds = true
+            imageView.frame = CGRect(origin: .zero, size: size)
+            imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            addSubview(imageView)
+        case .titles:
+            titleLabel.font = .systemFont(ofSize: 10, weight: .medium)
+            titleLabel.textColor = .label
+            titleLabel.numberOfLines = 3
+            titleLabel.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(titleLabel)
+            NSLayoutConstraint.activate([
+                titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+                titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+                titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+                titleLabel.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 4),
+            ])
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
 }

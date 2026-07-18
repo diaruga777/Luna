@@ -30,26 +30,37 @@ public struct CardCarouselMetrics: Equatable {
         self.sideScale = sideScale
     }
 
-    /// Fits the largest 9:16 portrait card into `containerSize`, leaving at least
-    /// `peek + edgeGap` horizontal room on each side and `verticalPadding`
-    /// above/below. `edgeGap` insets only the centered card (the peeking
-    /// neighbors stay `peek` points inside the screen edge regardless), giving
-    /// the insets beside the card enough width for paging swipes. Small
-    /// containers degrade gracefully (never a negative/zero size).
+    /// Fits a card into `containerSize`, leaving at least `peek + edgeGap`
+    /// horizontal room on each side and `verticalPadding` above/below.
+    /// `edgeGap` insets only the centered card (the peeking neighbors stay
+    /// `peek` points inside the screen edge regardless), giving the insets
+    /// beside the card enough width for paging swipes.
+    ///
+    /// By default the card keeps the 9:16 portrait aspect. With
+    /// `fillsVertically` the aspect is ignored: the card takes all available
+    /// height AND width (Reader cards, where the embedded article wants every
+    /// vertical point). Small containers degrade gracefully (never a
+    /// negative/zero size).
     public static func resolve(
         containerSize: CGSize,
         peek: CGFloat = 14,
         edgeGap: CGFloat = 30,
         sideScale: CGFloat = 0.92,
-        verticalPadding: CGFloat = 12
+        verticalPadding: CGFloat = 12,
+        fillsVertically: Bool = false
     ) -> CardCarouselMetrics {
         let availableHeight = max(40, containerSize.height - verticalPadding * 2)
         let availableWidth = max(40, containerSize.width - (peek + edgeGap) * 2)
         var height = availableHeight
-        var width = height * cardAspectRatio
-        if width > availableWidth {
+        var width: CGFloat
+        if fillsVertically {
             width = availableWidth
-            height = width / cardAspectRatio
+        } else {
+            width = height * cardAspectRatio
+            if width > availableWidth {
+                width = availableWidth
+                height = width / cardAspectRatio
+            }
         }
         return CardCarouselMetrics(
             containerSize: containerSize,

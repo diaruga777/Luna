@@ -264,6 +264,7 @@ public final class CardCarouselViewController: UIViewController {
             return
         }
         removeScrubPreview()
+        setExpansionFraction(0)
         count = dataSource?.numberOfCards(in: self) ?? 0
         let target = min(max(index ?? currentIndex, 0), max(0, count - 1))
         for slot in slots.values { unmount(slot) }
@@ -290,11 +291,69 @@ public final class CardCarouselViewController: UIViewController {
         slots[index]?.content
     }
 
+    // MARK: - Expansion (scroll-driven fullscreen)
+
+    /// How expanded the centered card is: 0 = resting card, 1 = filling
+    /// `expansionTargetFrameProvider`'s frame (typically the whole root view,
+    /// over the host's header and the scrub strip). Driven continuously by the
+    /// host (e.g. from an embedded reader's scroll offset), so the expansion
+    /// tracks the finger and plays forward and back.
+    public private(set) var expansionFraction: CGFloat = 0
+
+    /// Returns the fully-expanded frame in the CAROUSEL VIEW's coordinate
+    /// space. Defaults to the carousel's own bounds; hosts extend it (e.g. up
+    /// over their header).
+    public var expansionTargetFrameProvider: (() -> CGRect)?
+
+    /// Reported after every fraction change — hosts fade their own chrome.
+    public var onExpansionFractionChanged: ((CGFloat) -> Void)?
+
+    public func setExpansionFraction(_ fraction: CGFloat, animated: Bool = false) {
+        let clamped = min(max(fraction, 0), 1)
+        guard clamped != expansionFraction else { return }
+        expansionFraction = clamped
+        let apply = { self.applyExpansionLayout() }
+        if animated {
+            UIView.animate(
+                withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
+                animations: apply)
+        } else {
+            apply()
+        }
+        onExpansionFractionChanged?(clamped)
+    }
+
+    private func applyExpansionLayout() {
+        guard let metrics, let slot = slots[currentIndex] else { return }
+        let f = expansionFraction
+        let resting = metrics.centeredCardFrame()
+        let targetInView = expansionTargetFrameProvider?() ?? view.bounds
+        let target = view.convert(targetInView, to: cardArea)
+        func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * f }
+        slot.card.transform = .identity
+        slot.card.bounds = CGRect(
+            x: 0, y: 0,
+            width: lerp(resting.width, target.width),
+            height: lerp(resting.height, target.height))
+        slot.card.center = CGPoint(
+            x: lerp(resting.midX, target.midX),
+            y: lerp(resting.midY, target.midY))
+        slot.card.layer.cornerRadius = lerp(CarouselCardView.cornerRadius, 0)
+        // The card must ride above its peeking neighbors while expanded.
+        if f > 0 { cardArea.bringSubviewToFront(slot.card) }
+        scrubber.alpha = 1 - f
+        for other in slots.values where other.index != currentIndex {
+            other.card.alpha = 1 - f
+        }
+    }
+
     /// Pages by `step` cards. Single steps run the eclipse transition (unless
     /// Reduce Motion or off-window); anything else is a crossfade jump.
     public func page(by step: Int) {
         let target = min(max(currentIndex + step, 0), max(0, count - 1))
-        guard count > 0, target != currentIndex, !isTransitioning else { return }
+        guard count > 0, target != currentIndex, !isTransitioning,
+              expansionFraction == 0
+        else { return }
         if abs(target - currentIndex) == 1,
            !UIAccessibility.isReduceMotionEnabled,
            view.window != nil,
@@ -351,7 +410,13 @@ public final class CardCarouselViewController: UIViewController {
 
     private func applyRestingLayout(to slot: Slot) {
         guard let metrics else { return }
+        if slot.index == currentIndex, expansionFraction > 0 {
+            applyExpansionLayout()
+            return
+        }
         let offset = slot.index - currentIndex
+        slot.card.layer.cornerRadius = CarouselCardView.cornerRadius
+        slot.card.alpha = 1
         slot.card.transform = .identity
         slot.card.bounds = CGRect(origin: .zero, size: metrics.cardSize)
         slot.card.center = CGPoint(
@@ -764,7 +829,7 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
             return abs(velocity.x) > abs(velocity.y)
         }
         if gestureRecognizer === pagePan {
-            guard !isTransitioning else { return false }
+            guard !isTransitioning, expansionFraction == 0 else { return false }
             let velocity = pagePan.velocity(in: cardArea)
             if insideCenter {
                 // Inside the card, paging is opt-in (embedded readers) and only

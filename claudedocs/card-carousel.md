@@ -125,13 +125,22 @@ Differences from the Downloader, via `CardCarouselStyle`:
 - The CENTERED card embeds a live `RabbitHoleReaderViewController`
   (`ReaderHostFactory.make`); side cards show a cover+title preview
   (`thumbnailFileName` art under a scrim), keeping one live reader mounted.
-- **Expansion**: tapping the centered card — including on a link, since the
-  carousel tap never cancels touches — or the first user-driven vertical
-  scroll (KVO on the reader's scroll views, `isDragging`-filtered) detaches
-  the live reader from the card and pushes the SAME instance fullscreen via
-  `CardExpandTransitionCenter` (LunaTransitions): a subtle grow-from-card
-  push / shrink-back pop, consulted first in `DotMatrixNavigationDelegate`.
-  Starting RSVP playback expands because the play tap is a card tap.
+- **Expansion is scroll-driven and interactive** — no navigation push. The
+  carousel exposes `expansionFraction` (0 = resting card, 1 = filling the
+  whole root view, header and scrub strip fading out) and the card content
+  drives it from the embedded reader's scroll position (KVO on its scroll
+  views, staggered sweeps as the reader builds them, sampled synchronously so
+  flicks aren't misread as settled). The fraction is
+  `min(|position − start| , position) / 140pt` — it grows as the reader moves
+  away from where it started (either direction, when it didn't start at the
+  top) and always falls to 0 as the content approaches its top, so
+  **top-of-article ⇒ card, always**; a drag settling mid-way snaps to the
+  nearer state (per-scroll-view bookkeeping — idle siblings' programmatic
+  nudges must not trip the settle logic). Tapping the card — links included,
+  since the carousel tap never cancels touches — pins it fullscreen (starting
+  RSVP playback is such a tap); the reader's root back button
+  (`RabbitHoleReaderViewController.onRootBack`) or pulling to/past the top
+  brings it home.
 - **Long-press** on the centered card: RSVP popover (`RSVPViewController` in a
   real `.popover`, adaptation forced to `.none`) without going fullscreen.
   Expansion is suppressed for 0.4s around its dismissal so the outside tap

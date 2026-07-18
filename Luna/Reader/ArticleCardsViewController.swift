@@ -11,11 +11,13 @@
 //    scrollable, links tappable. Side cards show a lightweight cover+title
 //    preview (they rest under the carousel's 70% dim anyway), keeping at most
 //    one live reader mounted.
-//  - Tapping the centered card — including on a link — subtly expands it into
-//    the fullscreen reader (CardExpandTransitionCenter push of the SAME live
-//    reader instance, so scroll/mode state carries over). The first vertical
-//    scroll inside the card does the same; so does starting RSVP playback
-//    (the play tap IS a card tap).
+//  - Expansion is scroll-driven and interactive: as the embedded reader
+//    scrolls away from its starting position (either direction, when it
+//    didn't start at the top), the card stretches over the whole screen —
+//    and it settles back into place as the content returns to its top, so
+//    top-of-article always shows the card. Tapping the card — links
+//    included — pins it fullscreen (starting RSVP playback is such a tap);
+//    the reader's root back button or pulling past the top brings it home.
 //  - Long-pressing the centered card shows an RSVP popover without going
 //    fullscreen.
 //  - Horizontal swipes INSIDE the card page to the neighbor (readers have no
@@ -59,6 +61,7 @@ final class ArticleCardsViewController: UIViewController {
         carousel.managesAudioSession = false   // Reader has its own audio stack.
         carousel.dataSource = self
         carousel.delegate = self
+        configureExpansion()
         addChild(carousel)
         view.addSubview(carousel.view)
         carousel.view.translatesAutoresizingMaskIntoConstraints = false
@@ -222,11 +225,37 @@ final class ArticleCardsViewController: UIViewController {
     /// Expansion is briefly suppressed after the RSVP popover dismisses — its
     /// dismissal tap otherwise passes through as a card tap and expands.
     private var suppressExpansionUntil = Date.distantPast
+    /// A tap pinned the card fullscreen even though the content hasn't been
+    /// scrolled away from the top yet; cleared once scrolling takes over (or
+    /// the user pulls back to the top / taps the reader's back button).
+    private var isForcedExpanded = false
 
+    /// Wires the scroll-driven expansion: the centered card stretches over the
+    /// whole screen (header included) as its embedded reader scrolls away from
+    /// the top, and settles back into place as the reader returns to it.
+    private func configureExpansion() {
+        carousel.expansionTargetFrameProvider = { [weak self] in
+            guard let self else { return .zero }
+            return self.view.convert(self.view.bounds, to: self.carousel.view)
+        }
+        carousel.onExpansionFractionChanged = { [weak self] fraction in
+            self?.header.alpha = 1 - fraction
+        }
+    }
+
+    /// Continuous fraction from the embedded reader's scroll position.
+    private func handleScrollFraction(_ fraction: CGFloat) {
+        if isForcedExpanded {
+            // The scroll caught up with the pinned state — hand control back.
+            if fraction >= 1 { isForcedExpanded = false }
+            return
+        }
+        carousel.setExpansionFraction(fraction)
+    }
+
+    /// Tap (anywhere on the centered card, links included): pin fullscreen.
     private func expandCurrentCard() {
-        guard let nav = navigationController, presentedViewController == nil,
-              Date() >= suppressExpansionUntil
-        else { return }
+        guard presentedViewController == nil, Date() >= suppressExpansionUntil else { return }
         let index = carousel.currentIndex
         guard items.indices.contains(index) else { return }
         let item = items[index]
@@ -235,16 +264,15 @@ final class ArticleCardsViewController: UIViewController {
             store.markReadState(.opened, for: item.id)
             return
         }
-        guard item.state == .ready else { return }
-        let content = carousel.contentController(at: index) as? ReaderCardContentViewController
-        guard let reader = content?.detachLiveReader() ?? makeReader(for: item) else { return }
-        CardExpandTransitionCenter.prepare(reader: reader) { [weak self] in
-            guard let self,
-                  let card = self.carousel.cardView(at: self.carousel.currentIndex)
-            else { return nil }
-            return card.convert(card.bounds, to: nil)
-        }
-        nav.pushViewController(reader, animated: true)
+        guard item.state == .ready, carousel.expansionFraction < 1 else { return }
+        isForcedExpanded = true
+        carousel.setExpansionFraction(1, animated: true)
+    }
+
+    /// Reader root back button / pull-past-top: settle back into the card.
+    private func contractCurrentCard() {
+        isForcedExpanded = false
+        carousel.setExpansionFraction(0, animated: true)
     }
 
     private func makeReader(for item: ReadingListItem) -> UIViewController? {
@@ -333,7 +361,14 @@ extension ArticleCardsViewController: CardCarouselDataSource {
     ) -> CardContentViewController {
         guard items.indices.contains(index) else { return CardContentViewController() }
         let content = ReaderCardContentViewController(item: items[index])
-        content.onExpansionRequested = { [weak self] in self?.expandCurrentCard() }
+        content.onScrollFraction = { [weak self] fraction in
+            self?.handleScrollFraction(fraction)
+        }
+        content.onContractRequested = { [weak self] in self?.contractCurrentCard() }
+        content.onScrollSettled = { [weak self] expands in
+            guard let self, !self.isForcedExpanded else { return }
+            self.carousel.setExpansionFraction(expands ? 1 : 0, animated: true)
+        }
         return content
     }
 
@@ -402,7 +437,19 @@ extension ArticleCardsViewController: CatchUpRouting {
 /// (paging away / detaching for expansion) reveals it without a flash.
 private final class ReaderCardContentViewController: CardContentViewController {
 
-    var onExpansionRequested: (() -> Void)?
+    /// Continuous expansion fraction derived from the reader's scroll position:
+    /// grows as the reader moves away from where it started (either direction,
+    /// when it didn't start at the top), and always falls back to 0 as the
+    /// content approaches its top — top-of-article ⇒ card, always.
+    var onScrollFraction: ((CGFloat) -> Void)?
+    /// The user pulled past the top (rubber band) or tapped the reader's root
+    /// back button while pinned fullscreen.
+    var onContractRequested: (() -> Void)?
+    /// The scroll settled mid-expansion: snap fully open (true) or home (false).
+    var onScrollSettled: ((Bool) -> Void)?
+    /// Per scroll view — an idle sibling's programmatic offset nudges must not
+    /// trip the settle logic for a drag happening in another scroll view.
+    private var lastReportedFractions: [ObjectIdentifier: CGFloat] = [:]
 
     private let item: ReadingListItem
     private let coverView = UIImageView()
@@ -410,8 +457,13 @@ private final class ReaderCardContentViewController: CardContentViewController {
     private let titleLabel = UILabel()
     private let statusLabel = UILabel()
     private var reader: UIViewController?
-    private var scrollObservations: [NSKeyValueObservation] = []
-    private var didRequestExpansion = false
+    private var scrollObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
+    /// Where each observed scroll view rested when observation began (distance
+    /// from its top), so expansion measures movement away from the STARTING
+    /// point — in either direction — not from the absolute top.
+    private var scrollBaselines: [ObjectIdentifier: CGFloat] = [:]
+    /// Points of scroll travel that complete the card→fullscreen expansion.
+    private static let expansionDistance: CGFloat = 140
 
     init(item: ReadingListItem) {
         self.item = item
@@ -506,17 +558,22 @@ private final class ReaderCardContentViewController: CardContentViewController {
         view.addSubview(reader.view)
         reader.didMove(toParent: self)
         self.reader = reader
-        didRequestExpansion = false
+        (reader as? RabbitHoleReaderViewController)?.onRootBack = { [weak self] in
+            self?.onContractRequested?()
+        }
 
-        // The reader's scroll views exist only after its content lays out;
-        // attach the expansion trigger a beat later.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
-            self?.observeReaderScrollViews()
+        // The reader builds (and later swaps) its scroll views as content
+        // loads, so sweep for new ones a few times after embedding.
+        for delay in [0.7, 2.0, 4.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.observeReaderScrollViews()
+            }
         }
     }
 
     private func tearDownReader() {
-        scrollObservations = []
+        scrollObservations = [:]
+        scrollBaselines = [:]
         guard let reader else { return }
         reader.willMove(toParent: nil)
         reader.view.removeFromSuperview()
@@ -524,36 +581,64 @@ private final class ReaderCardContentViewController: CardContentViewController {
         self.reader = nil
     }
 
-    /// Detaches and returns the live reader for a fullscreen push (nil when the
-    /// card is still a preview). The card falls back to its preview.
-    func detachLiveReader() -> UIViewController? {
-        scrollObservations = []
-        guard let reader else { return nil }
-        reader.willMove(toParent: nil)
-        reader.view.removeFromSuperview()
-        reader.removeFromParent()
-        self.reader = nil
-        return reader
-    }
-
-    /// First user-driven vertical scroll anywhere in the embedded reader →
-    /// expand. KVO on contentOffset, filtered to tracked (finger-down) changes
-    /// so restore-position and layout scrolls don't trigger it.
+    /// Drives the expansion fraction from the reader's scroll position (KVO on
+    /// every scroll view in the reader — the text reader's UITextView or the
+    /// original-mode web view). `isDragging`/`isDecelerating` filters out
+    /// restore-position and text-selection jitter.
     private func observeReaderScrollViews() {
         guard let reader else { return }
-        scrollObservations = Self.scrollViews(in: reader.view).map { scrollView in
-            scrollView.observe(\.contentOffset, options: [.old, .new]) {
-                [weak self] scrollView, change in
-                // isDragging (not isTracking): a held finger — text selection,
-                // the RSVP long-press — jitters the offset without dragging.
-                guard let self, !self.didRequestExpansion,
-                      scrollView.isDragging || scrollView.isDecelerating,
-                      let old = change.oldValue, let new = change.newValue,
-                      abs(new.y - old.y) > 4, abs(new.y - old.y) > abs(new.x - old.x)
-                else { return }
-                self.didRequestExpansion = true
-                DispatchQueue.main.async { self.onExpansionRequested?() }
+        for scrollView in Self.scrollViews(in: reader.view) {
+            let key = ObjectIdentifier(scrollView)
+            guard scrollObservations[key] == nil else { continue }
+            scrollBaselines[key] =
+                scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+            // Synchronous on purpose: isDragging/isDecelerating must be sampled
+            // at change time — deferred to the next runloop, a quick flick's
+            // whole gesture reads as already-settled.
+            scrollObservations[key] = scrollView.observe(\.contentOffset, options: [.new]) {
+                [weak self] scrollView, _ in
+                self?.handleOffsetChange(of: scrollView)
             }
+        }
+    }
+
+    private func handleOffsetChange(of scrollView: UIScrollView) {
+        // Distance from the content's top (0 = at the top; negative = rubber band).
+        let position = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+        let key = ObjectIdentifier(scrollView)
+        let userDriven = scrollView.isDragging || scrollView.isDecelerating
+        guard userDriven else {
+            if let fraction = lastReportedFractions[key], fraction > 0, fraction < 1 {
+                // A drag ended mid-expansion: snap to the nearer state. When
+                // snapping home, re-anchor so the next scroll expands from here.
+                let expands = fraction >= 0.5
+                if !expands { scrollBaselines[key] = position }
+                onScrollSettled?(expands)
+            } else if lastReportedFractions[key] == nil {
+                // Programmatic settles (restores, layout) re-anchor the baseline.
+                scrollBaselines[key] = position
+            }
+            lastReportedFractions[key] = nil
+            return
+        }
+        // Pulling to (or past) the top always brings the card back.
+        if scrollView.isDragging, position <= 0 {
+            scrollBaselines[key] = 0
+            onContractRequested?()
+            return
+        }
+        let base = scrollBaselines[key] ?? 0
+        // Expansion grows with movement away from the starting point (either
+        // direction — a mid-article start expands on scroll up too), but is
+        // always capped by the distance to the top: reaching the top ⇒ card.
+        let fraction = min(
+            1,
+            abs(position - base) / Self.expansionDistance,
+            max(0, position) / Self.expansionDistance)
+        onScrollFraction?(fraction)
+        lastReportedFractions[key] = fraction
+        if fraction == 0, !scrollView.isDragging {
+            scrollBaselines[key] = position
         }
     }
 

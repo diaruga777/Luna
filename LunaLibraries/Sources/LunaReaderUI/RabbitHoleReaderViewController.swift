@@ -449,10 +449,19 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         })
     }
 
+    /// When set, the root layer's back button calls this instead of popping the
+    /// navigation stack — for hosts embedding the reader outside a push (the
+    /// Reader card carousel contracts the expanded card back into place).
+    public var onRootBack: (() -> Void)?
+
     /// Header back: pop one layer, or exit the reader entirely at the root.
     private func handleBack() {
         if topIndex == 0 {
-            navigationController?.popViewController(animated: true)
+            if let onRootBack {
+                onRootBack()
+            } else {
+                navigationController?.popViewController(animated: true)
+            }
         } else {
             popToLayer(topIndex - 1)
         }

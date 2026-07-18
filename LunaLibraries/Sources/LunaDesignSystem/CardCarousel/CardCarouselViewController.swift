@@ -36,11 +36,20 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void)
-    /// Strip title for `.titles`-style scrubbers.
+    /// Card title, shown by the big scrub-preview overlay for `.miniCards`
+    /// scrubbers while the finger sweeps the strip.
     func carousel(
         _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
     ) -> String?
+    /// Source-identity badge for a `.miniCards` scrubber chip (favicon,
+    /// sender initials, symbol). May call the completion more than once — a
+    /// fast fallback first, then a refined badge (e.g. a favicon that had to
+    /// be fetched) — and on any queue.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadSourceBadgeForCardAt index: Int,
+        completion: @escaping (CarouselSourceBadge?) -> Void)
     /// Optional small accessory pinned to the card's top-leading corner.
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -53,6 +62,12 @@ public extension CardCarouselDataSource {
         _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
     ) -> String? { nil }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadSourceBadgeForCardAt index: Int,
+        completion: @escaping (CarouselSourceBadge?) -> Void
+    ) { completion(nil) }
 
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -155,12 +170,15 @@ public final class CardCarouselViewController: UIViewController {
     private var previewImageView: UIImageView?
     private var previewTitleLabel: UILabel?
     /// Live content mounted inside the scrub preview once the finger settles on
-    /// an index (`.titles` style only — readers render cheaply; media content
+    /// an index (`.miniCards` style only — readers render cheaply; media content
     /// would churn players). The big title label shows instantly; the real card
     /// content replaces it after the debounce.
     private var previewContent: CardContentViewController?
     private var previewContentIndex: Int?
     private var previewContentWork: DispatchWorkItem?
+    /// Bumped on every reload so async thumbnail/badge completions from a
+    /// superseded item set can't land on the wrong chip.
+    private var stripLoadGeneration = 0
 
     private var playbackPan: UIPanGestureRecognizer!
     private var pagePan: UIPanGestureRecognizer!
@@ -634,7 +652,7 @@ public final class CardCarouselViewController: UIViewController {
                 imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 overlay.addSubview(imageView)
                 previewImageView = imageView
-            case .titles:
+            case .miniCards:
                 let label = UILabel()
                 label.font = .preferredFont(forTextStyle: .title2)
                 label.textColor = .label
@@ -658,7 +676,7 @@ public final class CardCarouselViewController: UIViewController {
             dataSource?.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
                 DispatchQueue.main.async { self?.previewImageView?.image = image }
             }
-        case .titles:
+        case .miniCards:
             previewTitleLabel?.text = dataSource?.carousel(self, titleForCardAt: index)
             schedulePreviewContent(for: index)
         }
@@ -735,14 +753,24 @@ public final class CardCarouselViewController: UIViewController {
 
     private func loadAllThumbnails() {
         guard let dataSource else { return }
+        stripLoadGeneration += 1
+        let generation = stripLoadGeneration
         for index in 0..<count {
             switch style.scrubberStyle {
             case .thumbnails:
                 dataSource.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
-                    DispatchQueue.main.async { self?.scrubber.setThumbnail(image, at: index) }
+                    DispatchQueue.main.async {
+                        guard let self, self.stripLoadGeneration == generation else { return }
+                        self.scrubber.setThumbnail(image, at: index)
+                    }
                 }
-            case .titles:
-                scrubber.setTitle(dataSource.carousel(self, titleForCardAt: index), at: index)
+            case .miniCards:
+                dataSource.carousel(self, loadSourceBadgeForCardAt: index) { [weak self] badge in
+                    DispatchQueue.main.async {
+                        guard let self, self.stripLoadGeneration == generation else { return }
+                        self.scrubber.setBadge(badge, at: index)
+                    }
+                }
             }
         }
     }

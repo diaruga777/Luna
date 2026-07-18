@@ -9,7 +9,9 @@
 //  there are more previews than fit.
 //
 //  Two styles: `.thumbnails` (small 9:16 image chips — Downloader) and
-//  `.titles` (bigger text chips showing each card's title — Reader).
+//  `.miniCards` (miniature article cards — Reader): each chip is a tiny card
+//  surface with the save's source badge (favicon / sender initials / symbol)
+//  as a mini masthead over skeleton text lines.
 //
 
 import UIKit
@@ -20,8 +22,8 @@ public final class CarouselScrubberView: UIView {
     public enum Style {
         /// Small 9:16 image chips (media thumbnails).
         case thumbnails
-        /// Bigger chips showing the card's title text.
-        case titles
+        /// Miniature article cards: a source badge over skeleton text lines.
+        case miniCards
     }
 
     /// Continuous callback while a positional drag moves over the strip.
@@ -37,8 +39,8 @@ public final class CarouselScrubberView: UIView {
         switch style {
         case .thumbnails:
             return CGSize(width: 46 * CardCarouselMetrics.cardAspectRatio, height: 46)
-        case .titles:
-            return CGSize(width: 92, height: 58)
+        case .miniCards:
+            return CGSize(width: 44, height: 64)
         }
     }
 
@@ -151,9 +153,10 @@ public final class CarouselScrubberView: UIView {
         itemViews[index].imageView.image = image
     }
 
-    public func setTitle(_ title: String?, at index: Int) {
+    /// Source badge for a `.miniCards` chip. nil shows the neutral placeholder.
+    public func setBadge(_ badge: CarouselSourceBadge?, at index: Int) {
         guard itemViews.indices.contains(index) else { return }
-        itemViews[index].titleLabel.text = title
+        itemViews[index].setBadge(badge)
     }
 
     public func setSelectedIndex(_ index: Int, animated: Bool) {
@@ -223,19 +226,21 @@ public final class CarouselScrubberView: UIView {
     }
 }
 
-/// One strip chip: an image (thumbnail style) or a small multi-line title
-/// (titles style). Selection reads as elevation — the selected chip lifts onto
-/// its own surface with a soft shadow; its siblings recede — instead of a
+/// One strip chip: an image (thumbnail style) or a miniature article card
+/// (mini-cards style) — a tiny card surface with a source badge as its
+/// masthead, two headline bars, and fainter body bars, so the chip reads as a
+/// shrunken version of the card above it. Selection reads as elevation — the
+/// selected chip lifts with a soft shadow; its siblings recede — instead of a
 /// drawn border.
 private final class ScrubberItemView: UIView {
     let imageView = UIImageView()
-    let titleLabel = UILabel()
+    private let badgeView = CarouselSourceBadgeView()
     private let style: CarouselScrubberView.Style
 
     init(style: CarouselScrubberView.Style, size: CGSize) {
         self.style = style
         super.init(frame: .zero)
-        layer.cornerRadius = style == .titles ? 10 : 6
+        layer.cornerRadius = style == .miniCards ? 9 : 6
         layer.cornerCurve = .continuous
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOffset = CGSize(width: 0, height: 2)
@@ -256,20 +261,42 @@ private final class ScrubberItemView: UIView {
             imageView.frame = CGRect(origin: .zero, size: size)
             imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             addSubview(imageView)
-        case .titles:
-            titleLabel.font = .systemFont(ofSize: 10, weight: .medium)
-            titleLabel.textColor = .secondaryLabel
-            titleLabel.numberOfLines = 3
-            titleLabel.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(titleLabel)
-            NSLayoutConstraint.activate([
-                titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 7),
-                titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -7),
-                titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-                titleLabel.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 4),
-            ])
+        case .miniCards:
+            buildMiniCard(size: size)
         }
         setSelected(false)
+    }
+
+    /// The mini-card layout mirrors a reader card in miniature: source badge
+    /// top-leading (the masthead), two "headline" bars, then three fainter
+    /// "body text" bars. Fixed geometry — the chip size never changes.
+    private func buildMiniCard(size: CGSize) {
+        // The chip carries its own card surface even when the shadow is off,
+        // so unselected chips still read as tiny cards resting on the tray.
+        backgroundColor = .systemBackground
+        let inset: CGFloat = 6
+        let contentWidth = size.width - inset * 2
+
+        badgeView.frame = CGRect(x: inset, y: inset, width: 16, height: 16)
+        addSubview(badgeView)
+
+        addBar(x: inset, y: 28, width: contentWidth, height: 4, color: .systemFill)
+        addBar(x: inset, y: 35, width: contentWidth * 0.72, height: 4, color: .systemFill)
+        addBar(x: inset, y: 45, width: contentWidth, height: 3, color: .tertiarySystemFill)
+        addBar(x: inset, y: 51, width: contentWidth, height: 3, color: .tertiarySystemFill)
+        addBar(x: inset, y: 57, width: contentWidth * 0.6, height: 3, color: .tertiarySystemFill)
+    }
+
+    private func addBar(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, color: UIColor) {
+        let bar = UIView(frame: CGRect(x: x, y: y, width: width, height: height))
+        bar.backgroundColor = color
+        bar.layer.cornerRadius = height / 2
+        bar.isUserInteractionEnabled = false
+        addSubview(bar)
+    }
+
+    func setBadge(_ badge: CarouselSourceBadge?) {
+        badgeView.setBadge(badge)
     }
 
     func setSelected(_ selected: Bool) {
@@ -278,9 +305,10 @@ private final class ScrubberItemView: UIView {
         switch style {
         case .thumbnails:
             imageView.alpha = selected ? 1 : 0.55
-        case .titles:
-            backgroundColor = selected ? .systemBackground : .clear
-            titleLabel.textColor = selected ? .label : .secondaryLabel
+        case .miniCards:
+            // The whole mini card recedes when unselected (its shadow is
+            // already off, so dimming the view itself is safe).
+            alpha = selected ? 1 : 0.62
         }
     }
 

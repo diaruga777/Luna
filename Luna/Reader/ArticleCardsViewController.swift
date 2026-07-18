@@ -7,16 +7,16 @@
 //  carousel machinery lives in LunaDesignSystem/CardCarousel (shared with the
 //  Downloader); this controller adapts reading-list articles into cards:
 //
-//  - EVERY card embeds the full live reader, laid out at fullscreen size and
-//    clipped by the card, so paging never shows a placeholder and expansion
-//    never moves the content — only the card's edges travel.
-//  - Expansion is scroll-driven and interactive: as the embedded reader
-//    scrolls away from its starting position (either direction, when it
-//    didn't start at the top), the card stretches over the whole screen —
-//    and it settles back into place as the content returns to its top, so
-//    top-of-article always shows the card. Tapping the card — links
-//    included — pins it fullscreen (starting RSVP playback is such a tap);
-//    the reader's root back button or pulling past the top brings it home.
+//  - EVERY card embeds the full live reader, laid out to the card's bounds
+//    (side cards too, so paging never shows a placeholder). The card view IS
+//    the fullscreen reader view — one header, one layout — so "fullscreen"
+//    is not a separate presentation.
+//  - Going fullscreen is a chrome fade, nothing more: the peeking side cards
+//    and the bottom scrub strip fade away and the card's bottom edge extends
+//    into the freed room. Scrolling down in the scroll reader fades them
+//    out; scrolling up — from anywhere in the article — fades them back in.
+//    In RSVP, playing fades them out and pausing fades them back. Neither
+//    the root header nor the reader's own header moves or changes.
 //  - Long-pressing the centered card runs the link-preview RSVP experience
 //    (glass card, drag gestures, haptics) for the card's article, without
 //    going fullscreen.
@@ -67,7 +67,16 @@ final class ArticleCardsViewController: UIViewController {
         carousel.managesAudioSession = false   // Reader has its own audio stack.
         carousel.dataSource = self
         carousel.delegate = self
-        configureExpansion()
+        carousel.onImmersionChanged = { [weak self] immersed in
+            guard let self else { return }
+            // The flanking Settings/Add circles are bottom chrome — they fade
+            // in step with the scrub strip they flank (this runs inside the
+            // carousel's fade animation). The root header never changes.
+            self.settingsButton.alpha = immersed ? 0 : 1
+            self.addButton.alpha = immersed ? 0 : 1
+            self.settingsButton.isUserInteractionEnabled = !immersed
+            self.addButton.isUserInteractionEnabled = !immersed
+        }
         addChild(carousel)
         view.addSubview(carousel.view)
         carousel.view.translatesAutoresizingMaskIntoConstraints = false
@@ -245,69 +254,19 @@ final class ArticleCardsViewController: UIViewController {
             || needsEmailSetup)
     }
 
-    // MARK: - Opening / expansion
+    // MARK: - Opening / immersion
 
-    /// Expands the centered card into the fullscreen reader: the live embedded
-    /// reader is detached from the card and pushed with the card-expand
-    /// transition, so scroll position, rabbit-hole layers, and mode carry over.
-    /// A tap pinned the card fullscreen even though the content hasn't been
-    /// scrolled away from the top yet; cleared once scrolling takes over (or
-    /// the user pulls back to the top / taps the reader's back button).
-    private var isForcedExpanded = false
-
-    /// Wires the scroll-driven expansion: the centered card stretches over the
-    /// whole screen (header included) as its embedded reader scrolls away from
-    /// the top, and settles back into place as the reader returns to it.
-    private func configureExpansion() {
-        carousel.expansionTargetFrameProvider = { [weak self] in
-            guard let self else { return .zero }
-            return self.view.convert(self.view.bounds, to: self.carousel.view)
-        }
-        carousel.onExpansionFractionChanged = { [weak self] fraction in
-            guard let self else { return }
-            // The header is PUSHED up (not faded) as the card's top edge rises.
-            let travel = self.view.safeAreaInsets.top + NavHeaderBar.barHeight
-            self.header.transform = CGAffineTransform(translationX: 0, y: -fraction * travel)
-            self.header.alpha = 1 - fraction * 0.6
-            (self.carousel.contentController(at: self.carousel.currentIndex)
-                as? ReaderCardContentViewController)?.setExpansionFraction(fraction)
-        }
-    }
-
-    /// Tap (anywhere on the centered card, links included): pin fullscreen.
-    private func expandCurrentCard() {
+    /// Tap on the centered card: the embedded reader handles its own touches
+    /// (links, RSVP play/pause), so the card itself only acts on a locked
+    /// save, opening the archive unlock flow.
+    private func unlockCurrentCardIfNeeded() {
         guard presentedViewController == nil else { return }
         let index = carousel.currentIndex
         guard items.indices.contains(index) else { return }
         let item = items[index]
-        if item.state == .needsCaptcha, let url = item.url {
-            presentArchiveReader(for: item, articleURL: url)
-            store.markReadState(.opened, for: item.id)
-            return
-        }
-        guard item.state == .ready, carousel.expansionFraction < 1 else { return }
-        isForcedExpanded = true
-        carousel.setExpansionFraction(1, animated: true)
-    }
-
-    /// Reader root back button / pull-past-top: settle back into the card.
-    private func contractCurrentCard() {
-        isForcedExpanded = false
-        carousel.setExpansionFraction(0, animated: true)
-    }
-
-    /// RSVP boundary (non-interactive by design): scrubbing/rewinding to the
-    /// very start shrinks the fullscreen reader back into the card; leaving
-    /// the start expands it again.
-    private func handleRSVPIndexChange(_ index: Int) {
-        if index == 0 {
-            guard carousel.expansionFraction > 0 else { return }
-            contractCurrentCard()
-        } else {
-            guard carousel.expansionFraction < 1 else { return }
-            isForcedExpanded = true
-            carousel.setExpansionFraction(1, animated: true)
-        }
+        guard item.state == .needsCaptcha, let url = item.url else { return }
+        presentArchiveReader(for: item, articleURL: url)
+        store.markReadState(.opened, for: item.id)
     }
 
     private func makeReader(for item: ReadingListItem) -> UIViewController? {
@@ -369,23 +328,8 @@ final class ArticleCardsViewController: UIViewController {
     ) -> CardContentViewController {
         guard items.indices.contains(index) else { return CardContentViewController() }
         let content = ReaderCardContentViewController(item: items[index])
-        content.onContractRequested = { [weak self] in self?.contractCurrentCard() }
-        content.onScrollBoundary = { [weak self] expands in
-            guard let self else { return }
-            if expands {
-                guard self.carousel.expansionFraction < 1 else { return }
-                self.isForcedExpanded = true
-                self.carousel.setExpansionFraction(1, animated: true)
-            } else {
-                guard self.carousel.expansionFraction > 0 else { return }
-                self.contractCurrentCard()
-            }
-        }
-        content.onRSVPIndexChanged = { [weak self] index in
-            self?.handleRSVPIndexChange(index)
-        }
-        content.expansionDistanceProvider = { [weak self] in
-            self?.carousel.restingCardTopGap ?? 120
+        content.onImmersionChange = { [weak self] immersed in
+            self?.carousel.setImmersed(immersed, animated: true)
         }
         return content
     }
@@ -420,7 +364,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
     }
 
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {
-        expandCurrentCard()
+        unlockCurrentCardIfNeeded()
     }
 
     /// Long-press = the link-preview RSVP experience for the card's article:
@@ -471,39 +415,29 @@ extension ArticleCardsViewController: CatchUpRouting {
 // MARK: - Card content
 
 /// One article card: the FULL live reader, always embedded (side cards too, so
-/// paging never shows a placeholder). The reader is laid out at fullscreen size
-/// and the card just clips it — expanding/contracting moves the card's edges,
-/// never the text, so nothing inside shifts relative to the screen and the
-/// reader's own chrome only comes into view as the card reaches the top. A
-/// pinned title bar identifies the card while its content is scrolled.
+/// paging never shows a placeholder), laid out to the card's bounds — the card
+/// view IS the fullscreen reader view, one header and one layout for both
+/// states. The card reports reading activity so the host can fade the carousel
+/// chrome around it: scroll direction in the scroll reader, play state in RSVP.
 private final class ReaderCardContentViewController: CardContentViewController {
 
-    /// The user pulled past the top (rubber band) or tapped the reader's root
-    /// back button while pinned fullscreen.
-    var onContractRequested: (() -> Void)?
-    /// The reader scrolled across the expansion boundary: fullscreen (true)
-    /// when the content moves away from its top, back to the card (false) as
-    /// it returns — top-of-article ⇒ card, always.
-    var onScrollBoundary: ((Bool) -> Void)?
-    /// The embedded reader's RSVP position changed (0 = scrubbed to the start).
-    var onRSVPIndexChanged: ((Int) -> Void)?
-    /// Host-provided: distance (pt) from the resting card top to the screen
-    /// top — the vertical compensation that keeps the reader screen-anchored
-    /// through the expansion.
-    var expansionDistanceProvider: (() -> CGFloat)?
+    /// The reader wants the carousel chrome faded away (true — reading is
+    /// under way) or back in (false — the user is surfacing).
+    var onImmersionChange: ((Bool) -> Void)?
 
     private let item: ReadingListItem
-    private let titleBar = UIView()
-    private let titleLabel = UILabel()
     private let statusLabel = UILabel()
     private var reader: UIViewController?
     private var scrollObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
-    private var expansionFraction: CGFloat = 0
+    /// Per scroll view: the last seen offset and the directional run since the
+    /// last direction flip (positive = scrolling down the article).
+    private var scrollRuns: [ObjectIdentifier: (last: CGFloat, run: CGFloat)] = [:]
     private var isCentered = false
 
-    private var expansionDistance: CGFloat {
-        max(expansionDistanceProvider?() ?? 120, 1)
-    }
+    /// Downward travel (pt) before the chrome fades away…
+    private static let fadeOutTravel: CGFloat = 24
+    /// …and upward travel before it comes back — smaller, so surfacing is easy.
+    private static let fadeInTravel: CGFloat = 12
 
     init(item: ReadingListItem) {
         self.item = item
@@ -514,17 +448,6 @@ private final class ReaderCardContentViewController: CardContentViewController {
         super.viewDidLoad()
         view.backgroundColor = .clear
         embedReaderIfPossible()
-
-        // Pinned title: always identifies the card in card mode (the article's
-        // own title scrolls away with the content); fades out as the card
-        // expands and the reader chrome takes over.
-        titleBar.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.94)
-        view.addSubview(titleBar)
-        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
-        titleLabel.textColor = .label
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.text = item.title ?? item.url?.host ?? item.urlString
-        titleBar.addSubview(titleLabel)
 
         if reader == nil {
             statusLabel.font = .preferredFont(forTextStyle: .subheadline)
@@ -549,45 +472,9 @@ private final class ReaderCardContentViewController: CardContentViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        layoutReader()
-        let barHeight: CGFloat = 36
-        titleBar.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: barHeight)
-        titleLabel.frame = titleBar.bounds.insetBy(dx: 16, dy: 0)
-    }
-
-    /// The reader occupies a SCREEN-sized rect: horizontally centered on the
-    /// card (the card clips a symmetric sliver each side — inside the text
-    /// margins, so the text's screen insets never change), vertically anchored
-    /// so its top sits `(1 - fraction) * distance` above the card — exactly the
-    /// screen top at rest and at full expansion alike. The card's edges do all
-    /// the moving; the content never shifts.
-    private func layoutReader() {
-        guard let reader, let window = view.window else { return }
-        // Fully CARD-local — nothing here depends on the card's position,
-        // transform, or focus state, so a card's layout at mount time IS its
-        // layout when it becomes centered: zero relayout or shift on focus, and
-        // a card the eclipse translates (no layout pass) carries its content
-        // with it. Screen-sized, horizontally centered on the card; vertically
-        // the reader's top sits `(1 - fraction) * distance` above the card, so
-        // it lands exactly at the screen top at rest and at full expansion
-        // alike — an animated expansion moves card top and reader offset
-        // reciprocally inside the same transaction, net zero window motion.
-        let size = window.bounds.size
-        reader.view.frame = CGRect(
-            x: (view.bounds.width - size.width) / 2,
-            y: -(1 - expansionFraction) * expansionDistance,
-            width: size.width,
-            height: size.height)
-    }
-
-    /// Host-fed on every carousel fraction change.
-    func setExpansionFraction(_ fraction: CGFloat) {
-        expansionFraction = min(max(fraction, 0), 1)
-        titleBar.alpha = 1 - expansionFraction
-        // The reader's vertical offset is a function of the fraction; the
-        // accompanying card bounds change schedules the same pass, this is the
-        // belt to that suspenders.
-        viewIfLoaded?.setNeedsLayout()
+        // The reader fills the card — the fade-out's bottom extension just
+        // grows this frame, revealing more content; nothing inside shifts.
+        reader?.view.frame = view.bounds
     }
 
     // MARK: - Live reader lifecycle
@@ -603,6 +490,7 @@ private final class ReaderCardContentViewController: CardContentViewController {
     override func cardDidLeaveCenter() {
         super.cardDidLeaveCenter()
         isCentered = false
+        scrollRuns = [:]
     }
 
     private func embedReaderIfPossible() {
@@ -620,15 +508,27 @@ private final class ReaderCardContentViewController: CardContentViewController {
         reader.view.autoresizingMask = []
         view.insertSubview(reader.view, at: 0)
         reader.didMove(toParent: self)
-        (reader as? RabbitHoleReaderViewController)?.onRootBack = { [weak self] in
-            guard let self, self.isCentered else { return }
-            self.onContractRequested?()
+        if let rabbitHole = reader as? RabbitHoleReaderViewController {
+            // Root back button: the reader has nowhere to pop to — surface,
+            // bringing the carousel chrome back instead.
+            rabbitHole.onRootBack = { [weak self] in
+                guard let self, self.isCentered else { return }
+                self.onImmersionChange?(false)
+            }
+            // A dive, pop, mode switch, or late article embed swaps the live
+            // scroll views / RSVP controllers — re-sweep for new ones to
+            // observe (idempotent; next runloop so the new child is mounted).
+            rabbitHole.onContentHierarchyChanged = { [weak self] in
+                DispatchQueue.main.async { self?.observeReaderScrollViews() }
+            }
         }
         self.reader = reader
-        layoutReader()
+        reader.view.frame = view.bounds
+        observeReaderScrollViews()
 
-        // The reader swaps its scroll views on mode switches, so sweep for new
-        // ones a few times after embedding (KVO only — never triggers layout).
+        // Backstop sweeps for content that mounts without a hierarchy
+        // callback (a dived-into non-article page installs its web view only
+        // after an async probe). KVO only — never triggers layout.
         for delay in [0.7, 2.0, 4.5] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.observeReaderScrollViews()
@@ -636,16 +536,16 @@ private final class ReaderCardContentViewController: CardContentViewController {
         }
     }
 
-    /// Drives the expansion fraction from the reader's scroll position (KVO on
-    /// every scroll view in the reader). `isDragging`/`isDecelerating` filters
-    /// out restore-position and text-selection jitter; only the CENTERED card
-    /// reports (side cards' readers are live but inert).
+    /// Hooks the immersion triggers onto the reader's live content (KVO on
+    /// every scroll view, play-state callbacks on every RSVP controller).
+    /// Idempotent — re-run whenever the reader's hierarchy changes. Only the
+    /// CENTERED card reports (side cards' readers are live but inert).
     private func observeReaderScrollViews() {
         guard let reader else { return }
         for rsvp in Self.rsvpControllers(of: reader) {
-            rsvp.onFrameIndexChanged = { [weak self] index in
+            rsvp.onPlaybackStateChanged = { [weak self] playing in
                 guard let self, self.isCentered else { return }
-                self.onRSVPIndexChanged?(index)
+                self.onImmersionChange?(playing)
             }
         }
         for scrollView in Self.scrollViews(in: reader.view) {
@@ -661,17 +561,31 @@ private final class ReaderCardContentViewController: CardContentViewController {
         }
     }
 
-    /// Threshold-driven (not per-frame): continuously repositioning the
-    /// reader against its own live pan feeds back into the scroll and freezes
-    /// it, so the card snaps between states with a short animation instead.
+    /// Direction-driven, not position-driven: scrolling down (reading on)
+    /// fades the carousel chrome away; scrolling up — from anywhere in the
+    /// article — fades it back in. Travel accumulates per direction and
+    /// resets on a flip, so line-height jitter can't toggle the state, and
+    /// `isDragging`/`isDecelerating` keeps restore-position and
+    /// text-selection offsets from counting as reading.
     private func handleOffsetChange(of scrollView: UIScrollView) {
-        guard isCentered, scrollView.isDragging || scrollView.isDecelerating else { return }
+        let key = ObjectIdentifier(scrollView)
+        guard isCentered, scrollView.isDragging || scrollView.isDecelerating else {
+            scrollRuns[key] = nil
+            return
+        }
         // Distance from the content's top (0 = at the top).
         let position = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-        if position <= 30 {
-            onScrollBoundary?(false)
-        } else if position > 90 {
-            onScrollBoundary?(true)
+        guard let previous = scrollRuns[key] else {
+            scrollRuns[key] = (position, 0)
+            return
+        }
+        let delta = position - previous.last
+        let run = (delta >= 0) == (previous.run >= 0) ? previous.run + delta : delta
+        scrollRuns[key] = (position, run)
+        if run <= -Self.fadeInTravel || position <= 0 {
+            onImmersionChange?(false)
+        } else if run >= Self.fadeOutTravel, position > 0 {
+            onImmersionChange?(true)
         }
     }
 

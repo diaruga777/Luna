@@ -286,7 +286,7 @@ public final class CardCarouselViewController: UIViewController {
             return
         }
         removeScrubPreview()
-        setExpansionFraction(0)
+        setImmersed(false)
         count = dataSource?.numberOfCards(in: self) ?? 0
         let target = min(max(index ?? currentIndex, 0), max(0, count - 1))
         for slot in slots.values { unmount(slot) }
@@ -313,44 +313,37 @@ public final class CardCarouselViewController: UIViewController {
         slots[index]?.content
     }
 
-    // MARK: - Expansion (scroll-driven fullscreen)
+    // MARK: - Immersion (reading-focused chrome fade)
 
-    /// How expanded the centered card is: 0 = resting card, 1 = filling
-    /// `expansionTargetFrameProvider`'s frame (typically the whole root view,
-    /// over the host's header and the scrub strip). Driven continuously by the
-    /// host (e.g. from an embedded reader's scroll offset), so the expansion
-    /// tracks the finger and plays forward and back.
-    public private(set) var expansionFraction: CGFloat = 0
+    /// Whether the carousel chrome is faded away for focused reading: the
+    /// peeking side cards and the scrub strip fade out, and the centered card's
+    /// bottom edge extends into the room the strip frees up. The card's top,
+    /// sides, and corner radius never move — the host's header and the card's
+    /// own header stay exactly as they are.
+    public private(set) var isImmersed = false
 
-    /// Returns the fully-expanded frame in the CAROUSEL VIEW's coordinate
-    /// space. Defaults to the carousel's own bounds; hosts extend it (e.g. up
-    /// over their header).
-    public var expansionTargetFrameProvider: (() -> CGRect)?
-
-    /// Reported after every fraction change — hosts fade their own chrome.
-    public var onExpansionFractionChanged: ((CGFloat) -> Void)?
+    /// Reported on every immersion change (including the internal reset on a
+    /// reload), inside the fade animation when there is one — hosts fade any
+    /// bottom chrome of their own (e.g. controls flanking the scrub strip)
+    /// in step with the carousel's.
+    public var onImmersionChanged: ((Bool) -> Void)?
 
     /// Cards rest this far below the carousel view's top — hosts whose header
-    /// overlays the carousel (so an expanded card can cover the whole screen
-    /// and stay touchable) reserve their header height here.
+    /// overlays the carousel reserve their header height here.
     public func setTopInset(_ inset: CGFloat) {
         loadViewIfNeeded()
         guard abs(cardAreaTopConstraint.constant - inset) > 0.5 else { return }
         cardAreaTopConstraint.constant = inset
     }
 
-    /// Vertical gap between the carousel view's top and the resting centered
-    /// card — the distance the card's top edge travels to fullscreen, i.e. the
-    /// natural scroll distance for a scroll-driven expansion.
-    public var restingCardTopGap: CGFloat {
-        cardAreaTopConstraint.constant + (metrics?.centeredCardFrame().minY ?? 0)
-    }
-
-    public func setExpansionFraction(_ fraction: CGFloat, animated: Bool = false) {
-        let clamped = min(max(fraction, 0), 1)
-        guard clamped != expansionFraction else { return }
-        expansionFraction = clamped
-        let apply = { self.applyExpansionLayout() }
+    public func setImmersed(_ immersed: Bool, animated: Bool = false) {
+        guard immersed != isImmersed else { return }
+        isImmersed = immersed
+        scrubber.isUserInteractionEnabled = !immersed
+        let apply = {
+            self.applyImmersionLayout()
+            self.onImmersionChanged?(immersed)
+        }
         if animated {
             UIView.animate(
                 withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
@@ -358,39 +351,34 @@ public final class CardCarouselViewController: UIViewController {
         } else {
             apply()
         }
-        onExpansionFractionChanged?(clamped)
     }
 
-    private func applyExpansionLayout() {
-        guard let metrics, let slot = slots[currentIndex] else { return }
-        let f = expansionFraction
-        let resting = metrics.centeredCardFrame()
-        let targetInView = expansionTargetFrameProvider?() ?? view.bounds
-        let target = view.convert(targetInView, to: cardArea)
-        func lerp(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * f }
-        slot.card.transform = .identity
-        slot.card.bounds = CGRect(
-            x: 0, y: 0,
-            width: lerp(resting.width, target.width),
-            height: lerp(resting.height, target.height))
-        slot.card.center = CGPoint(
-            x: lerp(resting.midX, target.midX),
-            y: lerp(resting.midY, target.midY))
-        slot.card.layer.cornerRadius = lerp(CarouselCardView.cornerRadius, 0)
-        // The card must ride above its peeking neighbors while expanded.
-        if f > 0 { cardArea.bringSubviewToFront(slot.card) }
-        scrubber.alpha = 1 - f
+    private func applyImmersionLayout() {
+        scrubber.alpha = isImmersed ? 0 : 1
         for other in slots.values where other.index != currentIndex {
-            other.card.alpha = 1 - f
+            other.card.alpha = isImmersed ? 0 : 1
         }
+        guard let metrics, let slot = slots[currentIndex] else { return }
+        let resting = metrics.centeredCardFrame()
+        var frame = resting
+        if isImmersed {
+            // Extend only the bottom edge to the carousel view's bottom (the
+            // room the faded scrub strip frees up).
+            let target = view.convert(view.bounds, to: cardArea)
+            frame.size.height = max(target.maxY - resting.minY, resting.height)
+        }
+        slot.card.transform = .identity
+        slot.card.bounds = CGRect(origin: .zero, size: frame.size)
+        slot.card.center = CGPoint(x: frame.midX, y: frame.midY)
+        // The card must ride above its (fading) peeking neighbors.
+        if isImmersed { cardArea.bringSubviewToFront(slot.card) }
     }
 
     /// Pages by `step` cards. Single steps run the eclipse transition (unless
     /// Reduce Motion or off-window); anything else is a crossfade jump.
     public func page(by step: Int) {
         let target = min(max(currentIndex + step, 0), max(0, count - 1))
-        guard count > 0, target != currentIndex, !isTransitioning,
-              expansionFraction == 0
+        guard count > 0, target != currentIndex, !isTransitioning, !isImmersed
         else { return }
         if abs(target - currentIndex) == 1,
            !UIAccessibility.isReduceMotionEnabled,
@@ -458,13 +446,13 @@ public final class CardCarouselViewController: UIViewController {
 
     private func applyRestingLayout(to slot: Slot) {
         guard let metrics else { return }
-        if slot.index == currentIndex, expansionFraction > 0 {
-            applyExpansionLayout()
+        if slot.index == currentIndex, isImmersed {
+            applyImmersionLayout()
             return
         }
         let offset = slot.index - currentIndex
         slot.card.layer.cornerRadius = CarouselCardView.cornerRadius
-        slot.card.alpha = 1
+        slot.card.alpha = isImmersed ? 0 : 1
         slot.card.transform = .identity
         slot.card.bounds = CGRect(origin: .zero, size: metrics.cardSize)
         slot.card.center = CGPoint(
@@ -767,7 +755,12 @@ public final class CardCarouselViewController: UIViewController {
                .contains(where: { $0 is UIControl }) {
             return
         }
-        let center = centeredCardFrame()
+        // While immersed the centered card is bottom-extended past its resting
+        // frame — use its live frame so taps land on the card, and never page
+        // to the invisible (faded-away) neighbors.
+        let center = isImmersed
+            ? (slots[currentIndex]?.card.frame ?? centeredCardFrame())
+            : centeredCardFrame()
         if center.contains(location) {
             guard let content = slots[currentIndex]?.content else { return }
             if content.isPlayable {
@@ -775,9 +768,9 @@ public final class CardCarouselViewController: UIViewController {
             } else {
                 delegate?.carousel(self, didTapCenteredCardAt: currentIndex)
             }
-        } else if location.x > center.maxX {
+        } else if !isImmersed, location.x > center.maxX {
             page(by: 1)
-        } else if location.x < center.minX {
+        } else if !isImmersed, location.x < center.minX {
             page(by: -1)
         }
     }
@@ -932,7 +925,7 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
             return abs(velocity.x) > abs(velocity.y)
         }
         if gestureRecognizer === pagePan {
-            guard !isTransitioning, expansionFraction == 0 else { return false }
+            guard !isTransitioning, !isImmersed else { return false }
             let velocity = pagePan.velocity(in: cardArea)
             if insideCenter {
                 // Inside the card, paging is opt-in (embedded readers) and only

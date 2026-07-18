@@ -37,11 +37,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// link onto its own navigation stack rather than nesting another overlay.
     public var onLinkActivated: ((URL) -> Void)?
 
-    /// Fired on every reading-position change (playback ticks, scrubbing,
-    /// skips) with the current frame index — 0 means the very start. The
-    /// Reader card carousel uses the zero boundary to swap between the
-    /// fullscreen reader and its card.
-    public var onFrameIndexChanged: ((Int) -> Void)?
+    /// Fired whenever playback starts (true) or stops (false) — every path:
+    /// tap, controls, scrubbing, read-aloud via the playback center. The
+    /// Reader card carousel fades its chrome away while RSVP is playing and
+    /// back in when it pauses.
+    public var onPlaybackStateChanged: ((Bool) -> Void)?
 
     private var item: ReadingListItem
     private var engine: RSVPEngine
@@ -53,14 +53,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// Words vs Phrases. Persisted in `ReaderSettings.rsvpMode`.
     private var displayMode: RSVPDisplayMode
 
-    private var currentIndex = 0 {
-        didSet {
-            if currentIndex != oldValue { onFrameIndexChanged?(currentIndex) }
-        }
-    }
+    private var currentIndex = 0
     /// Index into `chunks` of the phrase currently shown (Phrases mode only).
     private var currentChunkIndex = 0
-    private var isPlaying = false
+    private var isPlaying = false {
+        didSet {
+            if isPlaying != oldValue { onPlaybackStateChanged?(isPlaying) }
+        }
+    }
     private var timer: Timer?
     private var wpm: Double = ReaderSettings.baseWPM
 

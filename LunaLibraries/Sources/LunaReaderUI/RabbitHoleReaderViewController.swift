@@ -215,13 +215,23 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             else { return }
             self.popToLayer(index)
         }
-        layer.onModeChanged = { [weak self] _ in self?.persist() }
+        layer.onModeChanged = { [weak self] _ in
+            self?.persist()
+            self?.onContentHierarchyChanged?()
+        }
+        layer.onBecameArticle = { [weak self] in self?.onContentHierarchyChanged?() }
         layer.onBack = { [weak self] in self?.handleBack() }
         addChild(layer)
         view.addSubview(layer.view)
         layer.didMove(toParent: self)
         return layer
     }
+
+    /// Fired whenever the live reader hierarchy changes shape — a layer's
+    /// article embeds, the mode switches, a dive pushes a layer, or a pop
+    /// removes one. Embedding hosts (the Reader card carousel) re-sweep the
+    /// hierarchy for scroll views / RSVP controllers to observe.
+    public var onContentHierarchyChanged: (() -> Void)?
 
     // MARK: - Static placement (the only writer of layer frames)
 
@@ -247,6 +257,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         focus = topIndex
         applyFocus()
         persist()
+        onContentHierarchyChanged?()
     }
 
     /// When set, the root layer's back button calls this instead of popping the
@@ -279,6 +290,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         focus = index
         applyFocus()
         persist()
+        onContentHierarchyChanged?()
     }
 
     private func trimLayers(above index: Int) {

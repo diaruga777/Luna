@@ -132,29 +132,31 @@ Differences from the Downloader, via `CardCarouselStyle`:
   build a reader per chip) — scrubbed-to cards render their full contents, not
   a bare title card.
 - EVERY mounted card (centered + both side peeks) embeds a full live
-  `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out at
-  fullscreen size and clipped by the card — paging never shows a placeholder,
-  and expansion moves only the card's edges, never the content.
-- **Expansion is scroll-driven and interactive** — no navigation push. The
-  carousel exposes `expansionFraction` (0 = resting card, 1 = filling the
-  whole root view, header and scrub strip fading out) and the card content
-  drives it from the embedded reader's scroll position (KVO on its scroll
-  views, staggered sweeps as the reader builds them, sampled synchronously so
-  flicks aren't misread as settled). The fraction is
-  `min(|position − start| , position) / 140pt` — it grows as the reader moves
-  away from where it started (either direction, when it didn't start at the
-  top) and always falls to 0 as the content approaches its top, so
-  **top-of-article ⇒ card, always**; a drag settling mid-way snaps to the
-  nearer state (per-scroll-view bookkeeping — idle siblings' programmatic
-  nudges must not trip the settle logic). Tapping the card — links included,
-  since the carousel tap never cancels touches — pins it fullscreen (starting
-  RSVP playback is such a tap); the reader's root back button
-  (`RabbitHoleReaderViewController.onRootBack`) or pulling to/past the top
-  brings it home.
+  `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out to the
+  card's bounds — the card view IS the fullscreen reader view (one header, one
+  layout for both states), and paging never shows a placeholder.
+- **"Fullscreen" is a chrome fade, nothing more** — no navigation push, no
+  card-geometry choreography. `CardCarouselViewController.setImmersed(_:animated:)`
+  fades the peeking side cards and the scrub strip out and extends only the
+  centered card's bottom edge into the room the strip frees up (top, sides,
+  corner radius, the root `NavHeaderBar`, and the reader's own header never
+  move or change; paging, peek taps, and the strip are inert while immersed).
+  The host fades its flanking Settings/Add circles in step via the carousel's
+  `onImmersionChanged` callback, which also covers the internal reset on a
+  reload.
+  The card content drives it directionally from the embedded reader (KVO on
+  its scroll views, re-swept via
+  `RabbitHoleReaderViewController.onContentHierarchyChanged` when a dive/pop/
+  mode switch swaps them, sampled synchronously so flicks aren't misread as
+  settled): **scrolling down** past a small directional run (24pt, resetting
+  on direction flips so jitter can't toggle it) fades the chrome away;
+  **scrolling up — from anywhere in the article —** (12pt, or reaching the
+  top) fades it back in. In **RSVP**, playing fades it away and pausing
+  brings it back (`RSVPViewController.onPlaybackStateChanged`). The reader's
+  root back button (`RabbitHoleReaderViewController.onRootBack`) also
+  surfaces back to the card.
 - **Long-press** on the centered card: RSVP popover (`RSVPViewController` in a
   real `.popover`, adaptation forced to `.none`) without going fullscreen.
-  Expansion is suppressed for 0.4s around its dismissal so the outside tap
-  doesn't expand.
 - Catch-up moved from the old list's scrolling header row into the pinned
   NavHeaderBar (same rectangle.stack icon + red dot); `CatchUpViewController`'s
   router is now the `CatchUpRouting` protocol so both roots can present it.

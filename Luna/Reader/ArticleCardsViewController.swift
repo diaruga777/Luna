@@ -543,12 +543,20 @@ private final class ReaderCardContentViewController: CardContentViewController {
     /// the moving; the content never shifts.
     private func layoutReader() {
         guard let reader, let window = view.window else { return }
-        // Window-anchored: computed during layout passes, so an animated card
-        // move relayouts the reader reciprocally INSIDE the same transaction —
-        // net zero window motion at every frame. (Applying this outside the
-        // animation, or per scroll tick, shifts the scroll view mid-pan and
-        // feeds back into the drag, freezing scrolling entirely.)
-        reader.view.frame = view.convert(window.bounds, from: window)
+        // Vertically window-anchored: computed during layout passes, so an
+        // animated card move relayouts the reader reciprocally INSIDE the same
+        // transaction — net zero window motion at every frame. (Applying this
+        // outside the animation, or per scroll tick, shifts the scroll view
+        // mid-pan and feeds back into the drag, freezing scrolling entirely.)
+        // Horizontally CARD-anchored (centered): for the centered/expanded card
+        // this is pixel-identical to window anchoring, but a side card — and
+        // crucially a card the eclipse translates via center/transform, which
+        // triggers NO layout pass — carries its content with it instead of
+        // exposing the blank margin beyond a stale window-anchored frame
+        // (the "gray card with only a title" during every page transition).
+        var frame = view.convert(window.bounds, from: window)
+        frame.origin.x = (view.bounds.width - frame.width) / 2
+        reader.view.frame = frame
     }
 
     /// Host-fed on every carousel fraction change.

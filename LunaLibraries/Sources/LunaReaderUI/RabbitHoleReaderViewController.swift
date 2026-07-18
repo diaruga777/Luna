@@ -454,6 +454,15 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// Reader card carousel contracts the expanded card back into place).
     public var onRootBack: (() -> Void)?
 
+    /// Embedding hosts have no push transition, so the appearance-driven
+    /// trigger for the root layer's Phase-2 full-content load can be missed —
+    /// without it the reader stays on its short prefix render (which barely
+    /// scrolls). Idempotent; call once the reader is installed as a child.
+    public func beginEmbeddedPresentation() {
+        loadViewIfNeeded()
+        layers[safe: focus]?.entryAnimationDidFinish()
+    }
+
     /// Header back: pop one layer, or exit the reader entirely at the root.
     private func handleBack() {
         if topIndex == 0 {

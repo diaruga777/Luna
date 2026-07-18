@@ -134,6 +134,107 @@ private enum LinkPreviewLoader {
     }
 }
 
+/// The link-preview RSVP experience for an ALREADY-LOADED article, driven by an
+/// external long-press (the Reader card carousel long-presses a card): same
+/// glass card, appearance animation, drag left/right/up gestures, lock-arming,
+/// and haptics as holding a link — but with no URL resolution or fetch.
+public final class ArticleRSVPPreviewSession {
+    private weak var host: UIViewController?
+    private weak var preview: LinkRSVPPreviewViewController?
+    private let url: URL
+    private let initialHaptic = UIImpactFeedbackGenerator(style: .medium)
+    private let rampHaptic = UIImpactFeedbackGenerator(style: .soft)
+    private var hapticDirection = 0
+    private var hapticRampStep = 0
+
+    public init?(
+        host: UIViewController,
+        item: ReadingListItem,
+        content: ArticleContent,
+        anchorPoint: CGPoint
+    ) {
+        guard let url = item.url ?? URL(string: item.urlString) else { return nil }
+        self.host = host
+        self.url = url
+        initialHaptic.impactOccurred(intensity: 0.7)
+        rampHaptic.prepare()
+        let article = LinkPreviewArticle(
+            item: item, content: content,
+            resumeIndex: item.lastWordIndex ?? 0, isSaved: true)
+        let preview = LinkRSVPPreviewViewController(
+            article: article, url: url, anchorPoint: anchorPoint)
+        preview.onDismiss = { [weak self] in self?.teardown() }
+        preview.onAction = { [weak self] action in self?.perform(action) }
+        self.preview = preview
+        host.addChild(preview)
+        preview.view.frame = host.view.bounds
+        preview.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.view.addSubview(preview.view)
+        preview.didMove(toParent: host)
+        preview.beginPlayback()
+    }
+
+    /// Forward every .changed of the driving long-press (translation from the
+    /// press's start, finger point in the HOST view's coordinates).
+    public func update(translation: CGPoint, fingerPoint: CGPoint) {
+        updateDirectionalHaptics(translationY: translation.y)
+        preview?.update(translation: translation, fingerPoint: fingerPoint)
+    }
+
+    /// The finger lifted: lock into playback or dismiss, per the drag state.
+    public func finish() {
+        resetDirectionalHaptics()
+        guard let preview else { return }
+        preview.releaseFinger()
+    }
+
+    public func cancel() {
+        resetDirectionalHaptics()
+        preview?.dismissPreview()
+    }
+
+    private func teardown() {
+        guard let preview else { return }
+        preview.willMove(toParent: nil)
+        preview.view.removeFromSuperview()
+        preview.removeFromParent()
+    }
+
+    private func perform(_ action: LinkPreviewAction) {
+        guard let host else { return }
+        switch action {
+        case .share:
+            let activity = UIActivityViewController(
+                activityItems: [url], applicationActivities: nil)
+            activity.popoverPresentationController?.sourceView = host.view
+            activity.popoverPresentationController?.sourceRect = CGRect(
+                x: host.view.bounds.midX, y: host.view.bounds.midY, width: 1, height: 1)
+            host.present(activity, animated: true)
+        case .copy:
+            UIPasteboard.general.url = url
+        case .open:
+            UIApplication.shared.open(url)
+        }
+    }
+
+    private func updateDirectionalHaptics(translationY: CGFloat) {
+        let direction = translationY < 0 ? -1 : (translationY > 0 ? 1 : 0)
+        if direction != hapticDirection {
+            hapticDirection = direction
+            hapticRampStep = 0
+        }
+        let step = LinkRSVPPreviewGesturePolicy.verticalHapticStep(translationY: translationY)
+        guard step > hapticRampStep else { return }
+        hapticRampStep = step
+        rampHaptic.impactOccurred(intensity: 0.4 + 0.15 * CGFloat(step))
+    }
+
+    private func resetDirectionalHaptics() {
+        hapticDirection = 0
+        hapticRampStep = 0
+    }
+}
+
 /// Owns one recognizer and one preview. The recognizer remains attached to the source
 /// view, so it continues receiving changes even while the noninteractive overlay is up.
 final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {

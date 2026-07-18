@@ -91,8 +91,13 @@ public protocol CardCarouselDelegate: AnyObject {
     /// content consumes the tap as pause/play). The tap does NOT cancel
     /// touches, so content-level taps (links) still land.
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int)
-    /// The centered card was long-pressed (fires alongside any context menu).
-    func carousel(_ carousel: CardCarouselViewController, didLongPressCenteredCardAt index: Int)
+    /// A long-press on the centered card, streamed for its whole lifetime
+    /// (.began/.changed/.ended/.cancelled) so hosts can drive press-and-drag
+    /// interactions. Fires alongside any context menu.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        longPress gesture: UILongPressGestureRecognizer,
+        onCenteredCardAt index: Int)
 }
 
 public extension CardCarouselDelegate {
@@ -102,7 +107,10 @@ public extension CardCarouselDelegate {
         contextMenuForCardAt index: Int
     ) -> UIContextMenuConfiguration? { nil }
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {}
-    func carousel(_ carousel: CardCarouselViewController, didLongPressCenteredCardAt index: Int) {}
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        longPress gesture: UILongPressGestureRecognizer,
+        onCenteredCardAt index: Int) {}
 }
 
 public final class CardCarouselViewController: UIViewController {
@@ -138,6 +146,7 @@ public final class CardCarouselViewController: UIViewController {
     private var pendingReload: (deferred: Bool, index: Int?) = (false, nil)
 
     private let cardArea = UIView()
+    private var cardAreaTopConstraint: NSLayoutConstraint!
     private lazy var scrubber = CarouselScrubberView(style: style.scrubberStyle)
     private var previewOverlay: UIView?
     private var previewImageView: UIImageView?
@@ -181,11 +190,12 @@ public final class CardCarouselViewController: UIViewController {
         cardArea.clipsToBounds = false
         cardArea.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(cardArea)
+        cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)
         NSLayoutConstraint.activate([
             scrubber.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             scrubber.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             scrubber.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            cardArea.topAnchor.constraint(equalTo: view.topAnchor),
+            cardAreaTopConstraint,
             cardArea.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             cardArea.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             cardArea.bottomAnchor.constraint(equalTo: scrubber.topAnchor),
@@ -307,6 +317,22 @@ public final class CardCarouselViewController: UIViewController {
 
     /// Reported after every fraction change — hosts fade their own chrome.
     public var onExpansionFractionChanged: ((CGFloat) -> Void)?
+
+    /// Cards rest this far below the carousel view's top — hosts whose header
+    /// overlays the carousel (so an expanded card can cover the whole screen
+    /// and stay touchable) reserve their header height here.
+    public func setTopInset(_ inset: CGFloat) {
+        loadViewIfNeeded()
+        guard abs(cardAreaTopConstraint.constant - inset) > 0.5 else { return }
+        cardAreaTopConstraint.constant = inset
+    }
+
+    /// Vertical gap between the carousel view's top and the resting centered
+    /// card — the distance the card's top edge travels to fullscreen, i.e. the
+    /// natural scroll distance for a scroll-driven expansion.
+    public var restingCardTopGap: CGFloat {
+        cardAreaTopConstraint.constant + (metrics?.centeredCardFrame().minY ?? 0)
+    }
 
     public func setExpansionFraction(_ fraction: CGFloat, animated: Bool = false) {
         let clamped = min(max(fraction, 0), 1)
@@ -689,11 +715,21 @@ public final class CardCarouselViewController: UIViewController {
         }
     }
 
+    /// Whether a long-press that began on the centered card is being streamed.
+    private var isStreamingLongPress = false
+
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
-        guard gesture.state == .began, count > 0, !isTransitioning,
-              centeredCardFrame().contains(gesture.location(in: cardArea))
-        else { return }
-        delegate?.carousel(self, didLongPressCenteredCardAt: currentIndex)
+        if gesture.state == .began {
+            guard count > 0, !isTransitioning,
+                  centeredCardFrame().contains(gesture.location(in: cardArea))
+            else { return }
+            isStreamingLongPress = true
+        }
+        guard isStreamingLongPress else { return }
+        delegate?.carousel(self, longPress: gesture, onCenteredCardAt: currentIndex)
+        if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {
+            isStreamingLongPress = false
+        }
     }
 
     /// Interactive paging: a horizontal drag starting on the insets beside the

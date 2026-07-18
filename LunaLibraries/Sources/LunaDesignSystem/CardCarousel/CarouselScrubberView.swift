@@ -48,6 +48,7 @@ public final class CarouselScrubberView: UIView {
 
     private let spacing: CGFloat = 5
 
+    private let tray = UIView()
     private let scrollView = UIScrollView()
     private let stack = UIStackView()
     private var itemViews: [ScrubberItemView] = []
@@ -58,6 +59,13 @@ public final class CarouselScrubberView: UIView {
         self.style = style
         super.init(frame: .zero)
         backgroundColor = .clear
+
+        // A soft capsule tray hugs the strip, so the chips read as one control
+        // instead of loose rectangles floating on the background.
+        tray.backgroundColor = .secondarySystemBackground
+        tray.layer.cornerCurve = .continuous
+        tray.isUserInteractionEnabled = false
+        addSubview(tray)
 
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -100,6 +108,17 @@ public final class CarouselScrubberView: UIView {
     public override func layoutSubviews() {
         super.layoutSubviews()
         centerStripIfNarrow()
+        // The tray hugs the visible strip (content width when it fits, the
+        // full viewport when it scrolls), with breathing room around the chips.
+        let contentWidth = stack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
+        let trayWidth = min(bounds.width, contentWidth + 24)
+        let trayHeight = itemSize.height + 16
+        tray.frame = CGRect(
+            x: (bounds.width - trayWidth) / 2,
+            y: (bounds.height - trayHeight) / 2,
+            width: trayWidth,
+            height: trayHeight)
+        tray.layer.cornerRadius = trayHeight / 2
     }
 
     /// When every item fits, center the strip instead of leading-aligning it.
@@ -147,11 +166,10 @@ public final class CarouselScrubberView: UIView {
     }
 
     private func applySelectionAppearance() {
-        for (index, view) in itemViews.enumerated() {
-            let selected = index == selectedIndex
-            view.layer.borderWidth = selected ? 2 : 0
-            view.transform = selected ? CGAffineTransform(scaleX: 1.12, y: 1.12) : .identity
-            view.alpha = selected ? 1 : 0.72
+        UIView.animate(withDuration: 0.18, delay: 0, options: [.allowUserInteraction, .curveEaseOut]) {
+            for (index, view) in self.itemViews.enumerated() {
+                view.setSelected(index == self.selectedIndex)
+            }
         }
     }
 
@@ -206,18 +224,23 @@ public final class CarouselScrubberView: UIView {
 }
 
 /// One strip chip: an image (thumbnail style) or a small multi-line title
-/// (titles style) on the card surface color.
+/// (titles style). Selection reads as elevation — the selected chip lifts onto
+/// its own surface with a soft shadow; its siblings recede — instead of a
+/// drawn border.
 private final class ScrubberItemView: UIView {
     let imageView = UIImageView()
     let titleLabel = UILabel()
+    private let style: CarouselScrubberView.Style
 
     init(style: CarouselScrubberView.Style, size: CGSize) {
+        self.style = style
         super.init(frame: .zero)
-        clipsToBounds = true
-        layer.cornerRadius = style == .titles ? 8 : 5
+        layer.cornerRadius = style == .titles ? 10 : 6
         layer.cornerCurve = .continuous
-        backgroundColor = .secondarySystemBackground
-        layer.borderColor = UIColor.label.cgColor
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOffset = CGSize(width: 0, height: 2)
+        layer.shadowRadius = 5
+        layer.shadowOpacity = 0
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: size.width),
@@ -227,21 +250,37 @@ private final class ScrubberItemView: UIView {
         case .thumbnails:
             imageView.contentMode = .scaleAspectFill
             imageView.clipsToBounds = true
+            imageView.layer.cornerRadius = 6
+            imageView.layer.cornerCurve = .continuous
+            imageView.backgroundColor = .tertiarySystemFill
             imageView.frame = CGRect(origin: .zero, size: size)
             imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             addSubview(imageView)
         case .titles:
             titleLabel.font = .systemFont(ofSize: 10, weight: .medium)
-            titleLabel.textColor = .label
+            titleLabel.textColor = .secondaryLabel
             titleLabel.numberOfLines = 3
             titleLabel.translatesAutoresizingMaskIntoConstraints = false
             addSubview(titleLabel)
             NSLayoutConstraint.activate([
-                titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-                titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+                titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 7),
+                titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -7),
                 titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
                 titleLabel.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 4),
             ])
+        }
+        setSelected(false)
+    }
+
+    func setSelected(_ selected: Bool) {
+        transform = selected ? CGAffineTransform(scaleX: 1.1, y: 1.1) : .identity
+        layer.shadowOpacity = selected ? 0.22 : 0
+        switch style {
+        case .thumbnails:
+            imageView.alpha = selected ? 1 : 0.55
+        case .titles:
+            backgroundColor = selected ? .systemBackground : .clear
+            titleLabel.textColor = selected ? .label : .secondaryLabel
         }
     }
 

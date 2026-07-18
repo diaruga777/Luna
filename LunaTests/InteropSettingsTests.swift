@@ -5,6 +5,7 @@
 
 import LunaInterop
 import LunaInteropUI
+import LunaSocialUI
 import XCTest
 @testable import Luna
 
@@ -35,5 +36,24 @@ final class InteropSettingsTests: XCTestCase {
 
         settings.tableView(settings.tableView, didSelectRowAt: path)
         XCTAssertTrue(nav.topViewController is InteropPaywallViewController)
+    }
+
+    func testFriendsIsASettingsSubpage() {
+        let settings = SettingsViewController()
+        let nav = UINavigationController(rootViewController: settings)
+        settings.loadViewIfNeeded()
+
+        let rows = 0..<settings.tableView(settings.tableView, numberOfRowsInSection: 0)
+        guard let row = rows.first(where: {
+            let path = IndexPath(row: $0, section: 0)
+            let cell = settings.tableView(settings.tableView, cellForRowAt: path)
+            return (cell.contentConfiguration as? UIListContentConfiguration)?.text == "Friends"
+        }) else {
+            return XCTFail("Settings must expose Friends")
+        }
+
+        settings.tableView(
+            settings.tableView, didSelectRowAt: IndexPath(row: row, section: 0))
+        XCTAssertTrue(nav.topViewController is FriendsViewController)
     }
 }

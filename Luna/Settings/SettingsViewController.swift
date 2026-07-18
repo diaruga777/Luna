@@ -62,6 +62,7 @@ final class SettingsViewController: NavHeaderTableController {
         }
 
         categories.append(contentsOf: [
+            Category(title: "Friends", symbol: "person.2") { FriendsViewController() },
             Category(
                 title: "Luna Interoperability", symbol: "arrow.left.arrow.right",
                 detail: { InteropEntitlement.shared.isUnlocked ? "Unlocked" : nil }

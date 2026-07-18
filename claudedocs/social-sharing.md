@@ -51,7 +51,8 @@ recipient's Luna app recognizes and offers to import.
 
 ## UI (`LunaSocialUI/`, shared by all three apps)
 
-- **`FriendsViewController`** — friends list (swipe to delete), a badged entry
+- **`FriendsViewController`** — reached from the top-level Settings page; friends list
+  (swipe to delete), a badged entry
   to Pending Requests when any are queued, "Add by Email" / "Add from
   Contacts" (`CNContactPickerViewController` — no Contacts permission needed).
   Tapping a friend pushes `FriendDetailViewController` (notify-on-every-share

@@ -22,7 +22,7 @@ own adapters later). The Downloader-specific adapters live in
   (unit-tested in `CardCarouselMetricsTests`).
 - Above Downloader cards: the host's `NavHeaderBar`. Below: the scrub strip
   (`CarouselScrubberView`), one small 9:16 thumbnail per card. The Reader gives the
-  strip a wider horizontal inset and flanks it with 44pt Liquid Glass Settings and Add
+  strip a wider horizontal inset and flanks it with 44pt Liquid Glass Settings and Share
   circles. The download-progress footer floats above the safe-area bottom as before.
 
 ## Interaction model
@@ -151,12 +151,15 @@ Differences from the Downloader, via `CardCarouselStyle`:
   `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out to the
   card's bounds — the card view IS the fullscreen reader view (one header, one
   layout for both states), and paging never shows a placeholder. The layer
-  header is not a bar: each control (back / audio / mode switcher /
-  save-or-share) is its own Liquid Glass pill floating on the card in a 52pt
-  top region at a 6pt inset (the card is already inset from the screen). The
-  ROOT layer of a carousel-embedded reader shows no back pill (`onRootBack`
-  set ⇒ `setBackButtonHidden` via `applyFocus`) — it had nothing to pop to;
-  deeper layers and pushed fullscreen readers keep theirs.
+  header is not a bar: back (inline-reader layers only) or Pasteboard (root
+  layer when a URL is available) occupies top-left, the mode switcher remains
+  centered, and read-aloud sits top-right. Share is the bottom-right floating
+  circle. The ROOT layer shows no back pill; deeper inline layers do.
+- Reader cards use a real Liquid Glass edge surface: a `UIGlassEffect` view is
+  masked to a narrow rounded ring over the card content, with a trait-aware
+  hairline highlight. The rim refracts the page beneath it instead of drawing
+  only a flat border. It fades to zero with the side cards, mini carousel, and
+  floating controls whenever scrolling or RSVP playback enters immersion.
 - On the Reader root, that control row is hosted at screen level over a
   backdrop-only ultra-thin material spanning the complete top safe area and
   header. The carousel and reader content extend behind it; the scroll reader
@@ -171,7 +174,7 @@ Differences from the Downloader, via `CardCarouselStyle`:
   centered card's bottom edge into the room the strip frees up (top, sides,
   corner radius, and the reader's own header pills never move or change;
   paging, peek taps, and the strip are inert while immersed).
-  The host fades its flanking Settings/Add circles in step via the carousel's
+  The host fades its flanking Settings/Share circles in step via the carousel's
   `onImmersionChanged` callback, which also covers the internal reset on a
   reload.
   The card content drives it directionally from the embedded reader (KVO on
@@ -188,7 +191,16 @@ Differences from the Downloader, via `CardCarouselStyle`:
 - The cards root has NO header bar (and no catch-up entry — catch-up remains
   on the list root, `ReadingListViewController`, used by the other surfaces;
   `CatchUpViewController`'s router is the `CatchUpRouting` protocol).
-- Settings and Add flank the mini-card scrubber in Liquid Glass circles instead of
+- A new pasteboard URL is represented as a synthetic leading card (so it is
+  visible as the left peek) and as a `doc.on.clipboard` mini-card in the scrubber.
+  Tapping the card/chip or swiping onto it saves through the normal ingest
+  pipeline. The same action is available from the outer reader's top-left while
+  the root article layer is showing; inline reader depth replaces it with Back.
+  Availability uses `UIPasteboard.detectPatterns(.probableWebURL)`, so opening
+  Luna does not raise a paste-permission prompt; the URL value is read only after
+  the user taps/swipes to add it. The consumed pasteboard change-count is
+  suppressed until the clipboard changes.
+- Settings and Share flank the mini-card scrubber in Liquid Glass circles instead of
   consuming header space. Friends is reached from Settings. The card begins
   directly below the safe area, so the reader's own header pills own the top row.
 - SceneDelegate's two `as? ReadingListViewController` casts now handle both

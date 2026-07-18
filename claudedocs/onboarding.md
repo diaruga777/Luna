@@ -341,9 +341,10 @@ it behaves like a fresh install and remains fully traversable/testable from Sett
 The bundled `Luna/Resources/Send To Luna.shortcut` is a **signed** file this
 codebase cannot regenerate. It must be re-authored and re-exported by hand in
 the Shortcuts app whenever the intents change — **owed right now for the
-two-intent flow** (see `claudedocs/app-intents.md`): Get Current App → Provide
-Context(app) → If Context Result's Outcome is Requires Screenshot → Take
-Screenshot → Save(app, screenshot). No other branches — the old
+two-intent flow** (see `claudedocs/app-intents.md`): Get Current App + on-screen
+URL extraction → Provide Context(app, OnScreenURLs) → If Context Result's
+Outcome is Requires Screenshot → Take Screenshot → Save(app, screenshot). No
+other branches — the old
 "open-luna"/"4:<url>" token branches are gone
 (foregrounding and auto-download happen in-intent). Export it, rename to
 `Send To Luna.shortcut`, and drop it into `Luna/Resources/` (same

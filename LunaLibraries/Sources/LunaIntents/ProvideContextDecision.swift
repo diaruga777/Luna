@@ -4,7 +4,69 @@
 //
 
 import LunaModels
+import LunaURLClassification
 import Foundation
+
+/// Collapses the optional URLs extracted from the current screen into one
+/// trustworthy save candidate. Every nonempty input must be a substring of the
+/// longest input, which covers duplicate, prefix, and partial OCR results without
+/// guessing between divergent URLs.
+public enum ProvideContextOnScreenURL {
+    public static func collapse(_ values: [String]?, isSafari: Bool) -> String? {
+        guard !isSafari, let values, !values.isEmpty else { return nil }
+        let candidates = values.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard candidates.allSatisfy({ !$0.isEmpty }),
+              let longest = candidates.max(by: { $0.count < $1.count }),
+              candidates.allSatisfy(longest.contains)
+        else { return nil }
+
+        let decoded = longest.removingPercentEncoding ?? longest
+        guard !hasTruncationSuffix(decoded),
+              decoded.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+              let url = URLUnwrapper.ingestURL(from: longest),
+              url.host?.isEmpty == false
+        else { return nil }
+        return url.absoluteString
+    }
+
+    private static func hasTruncationSuffix(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasSuffix("...")
+            || trimmed.hasSuffix("…")
+            || trimmed.hasSuffix("⋯")
+    }
+}
+
+/// Pure interpretation of the normal save pipeline's outcome for the optional
+/// on-screen URL fast path. Nil means the caller must swallow the opportunistic
+/// failure and resume the preexisting Provide Context decision.
+public enum ProvideContextOnScreenSave {
+    public struct Success: Equatable {
+        public let urlString: String
+        public let requiresForeground: Bool
+
+        public init(urlString: String, requiresForeground: Bool) {
+            self.urlString = urlString
+            self.requiresForeground = requiresForeground
+        }
+    }
+
+    public static func success(
+        from outcome: IntentIngestHelper.ActionButtonSaveOutcome
+    ) -> Success? {
+        switch outcome {
+        case let .completed(savedURL, _):
+            guard let savedURL else { return nil }
+            return Success(urlString: savedURL, requiresForeground: false)
+        case .friendPromptRequested(let savedURL):
+            return Success(urlString: savedURL, requiresForeground: true)
+        case .blockedByInterop:
+            return nil
+        }
+    }
+}
 
 /// The pure decision core of the "Provide Context" App Intent — everything
 /// that ISN'T the onboarding-hijack step (which happens first, in the intent

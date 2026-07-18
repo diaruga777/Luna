@@ -19,19 +19,27 @@ import UniformTypeIdentifiers
 /// Get Current App); the intent decides what the Shortcut should do next and
 /// returns a transient entity whose outcome is `.unhandled`, `.done`, or
 /// `.requiresScreenshot`. A completed synchronous media download is attached
-/// to the entity for the Shortcut to display or pass onward.
+/// to the entity for the Shortcut to display or pass onward. Outside Safari,
+/// compatible complete URLs supplied by the Shortcut are saved directly before
+/// screenshot analysis is considered.
 struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     init() {}
     static let title: LocalizedStringResource = "Provide Context"
     static let description = IntentDescription("""
         First step of the Action Button shortcut. Pass the current app (from Get \
-        Current App). Returns a structured outcome telling the shortcut whether \
-        the page is done, unhandled, or requires a screenshot.
+        Current App) and optionally URLs detected on screen. Returns a structured \
+        outcome telling the shortcut whether the page is done, unhandled, or \
+        requires a screenshot.
         """)
     static let openAppWhenRun: Bool = false
 
     @Parameter(title: "App", description: "The current app, from Get Current App.")
     var app: String?
+
+    @Parameter(
+        title: "OnScreenURLs",
+        description: "URLs detected on screen. Compatible complete values may be saved directly.")
+    var onScreenURLs: [String]?
 
     enum ProvideContextError: Error, CustomLocalizedStringResourceConvertible {
         case noTrackedPage
@@ -74,9 +82,17 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             }
         }
 
+        let isSafari = app.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
+        if let urlString = ProvideContextOnScreenURL.collapse(
+            onScreenURLs,
+            isSafari: isSafari
+        ), let result = await saveOnScreenURLIfPossible(urlString) {
+            return .result(value: result)
+        }
+
         let decision = ProvideContextDecision.decide(
             appName: app,
-            isSafari: app.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false,
+            isSafari: isSafari,
             isShortcuts: app.map { AppNamePlatform.isShortcuts(forAppName: $0) } ?? false,
             platform: app.flatMap { AppNamePlatform.platform(forAppName: $0) },
             safariURLFresh: SafariURLStore.isFresh()
@@ -130,6 +146,30 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             }
             return .result(value: ProvideContextResultEntity(outcome: .done, media: media))
         }
+    }
+
+    /// Opportunistically saves a complete URL supplied by Shortcuts. A normal
+    /// network enrichment failure still counts as saved because the ingest path
+    /// has already persisted the row. Interop rejection and an undetermined
+    /// timeout return nil so the caller follows the preexisting screenshot path.
+    private func saveOnScreenURLIfPossible(
+        _ urlString: String
+    ) async -> ProvideContextResultEntity? {
+        let outcome = await IntentIngestHelper.handleSavePress(
+            urlString: urlString,
+            doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
+        guard let success = ProvideContextOnScreenSave.success(from: outcome) else {
+            return nil
+        }
+        if success.requiresForeground {
+            try? await requestToContinueInForeground()
+        }
+        let media = await ActionButtonIntentSupport.downloadMediaIfNeeded(
+            for: success.urlString
+        ) {
+            try? await requestToContinueInForeground()
+        }
+        return ProvideContextResultEntity(outcome: .done, media: media)
     }
 }
 

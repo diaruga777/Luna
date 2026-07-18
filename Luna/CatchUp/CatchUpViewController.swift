@@ -14,6 +14,16 @@ import LunaTransitions
 import LunaModels
 import UIKit
 
+/// Routes catch-up taps on non-article items (platform posts/videos) to their
+/// native open flow. Both Reader roots conform — the legacy sectioned list and
+/// the card carousel — so catch-up doesn't care which is installed.
+@MainActor protocol CatchUpRouting: AnyObject {
+    @discardableResult
+    func openItem(_ item: ReadingListItem, presentingFrom presenter: UIViewController) -> Bool
+}
+
+extension ReadingListViewController: CatchUpRouting {}
+
 /// A Slack-style "catch up" experience over the reading list's UNREAD items. Each
 /// unread item is a swipeable card: drag left to **Bump** (re-sort to the top with a
 /// new bump date) or right to **Mark Read** (same actions on the bottom buttons).
@@ -25,7 +35,7 @@ final class CatchUpViewController: UIViewController {
     private enum Phase { case cards, voicePrompt, deletePrompt, done }
 
     private let store = ReadingListStore.shared
-    private weak var router: ReadingListViewController?
+    private weak var router: CatchUpRouting?
 
     /// Whole-list snapshot taken at entry; "Undo" merge-restores the session's
     /// read/bump mutations from it (concurrent saves by other processes survive).
@@ -83,7 +93,7 @@ final class CatchUpViewController: UIViewController {
     }
 
     /// - Parameter unread: the unread items to catch up, in display order.
-    init(unread: [ReadingListItem], router: ReadingListViewController) {
+    init(unread: [ReadingListItem], router: CatchUpRouting) {
         self.snapshot = ReadingListStore.shared.items()
         self.queue = unread
         self.router = router

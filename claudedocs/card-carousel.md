@@ -1,4 +1,4 @@
-# Card Carousel (Downloader root; Reader adoption planned)
+# Card Carousel (Downloader + Reader roots)
 
 The Downloader's root screen is a carousel of vertical cards — one saved item per
 card — instead of a grid + pushed viewer. The machinery is **generic and
@@ -109,3 +109,37 @@ keeping the currently centered item centered by id.
 
 The old `SavedMediaGridViewController` + `SavedMediaViewerViewController` were
 deleted with this change (the carousel replaces both).
+
+## Reader adoption (ArticleCardsViewController)
+
+The Reader app's root (`Luna/Reader/ArticleCardsViewController.swift`) replaces
+`ReadingListViewController` for `.reader` only (Price Tracker keeps the list).
+Differences from the Downloader, via `CardCarouselStyle`:
+
+- `fillsVertically` (aspect ignored — cards take all height), `edgeGap` 10
+  (card closer to the screen edges), `pagesOnInCardSwipes` (horizontal swipes
+  inside the card page — readers have no timeline to scrub; the page pan
+  recognizes simultaneously with the reader's own gestures, gated to
+  strongly-horizontal drags), `.titles` scrubber (bigger chips showing article
+  titles instead of thumbnails).
+- The CENTERED card embeds a live `RabbitHoleReaderViewController`
+  (`ReaderHostFactory.make`); side cards show a cover+title preview
+  (`thumbnailFileName` art under a scrim), keeping one live reader mounted.
+- **Expansion**: tapping the centered card — including on a link, since the
+  carousel tap never cancels touches — or the first user-driven vertical
+  scroll (KVO on the reader's scroll views, `isDragging`-filtered) detaches
+  the live reader from the card and pushes the SAME instance fullscreen via
+  `CardExpandTransitionCenter` (LunaTransitions): a subtle grow-from-card
+  push / shrink-back pop, consulted first in `DotMatrixNavigationDelegate`.
+  Starting RSVP playback expands because the play tap is a card tap.
+- **Long-press** on the centered card: RSVP popover (`RSVPViewController` in a
+  real `.popover`, adaptation forced to `.none`) without going fullscreen.
+  Expansion is suppressed for 0.4s around its dismissal so the outside tap
+  doesn't expand.
+- Catch-up moved from the old list's scrolling header row into the pinned
+  NavHeaderBar (same rectangle.stack icon + red dot); `CatchUpViewController`'s
+  router is now the `CatchUpRouting` protocol so both roots can present it.
+- SceneDelegate's two `as? ReadingListViewController` casts now handle both
+  roots (deep-link `openReader` → `openExternally(_:)`; friend prompt presents
+  from whatever the root is). needsCaptcha cards route through the same
+  archive.today modal flow as the old list.

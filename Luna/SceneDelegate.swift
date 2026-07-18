@@ -72,9 +72,12 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// already resolves either shape.)
     private func makeMainRootViewController() -> UIViewController {
         let surface = AppSurfaceConfig.current
-        let root: UIViewController = surface == .downloader
-            ? SavedMediaCardsViewController()
-            : ReadingListViewController(surface: surface)
+        let root: UIViewController
+        switch surface {
+        case .downloader: root = SavedMediaCardsViewController()
+        case .reader: root = ArticleCardsViewController()
+        case .priceTracker: root = ReadingListViewController(surface: surface)
+        }
         let nav = UINavigationController(rootViewController: root)
         guard surface == .reader else { return nav }
         return MiniPlayerHostViewController(content: nav)
@@ -226,10 +229,13 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 return
             }
             nav.popToRootViewController(animated: false)
-            guard let itemID, let item = ReadingListStore.shared.item(withID: itemID),
-                  let list = nav.viewControllers.first as? ReadingListViewController
+            guard let itemID, let item = ReadingListStore.shared.item(withID: itemID)
             else { return }
-            list.open(item, presenter: list)
+            if let list = nav.viewControllers.first as? ReadingListViewController {
+                list.open(item, presenter: list)
+            } else if let cards = nav.viewControllers.first as? ArticleCardsViewController {
+                cards.openExternally(item)
+            }
         }
     }
 
@@ -270,7 +276,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// actually up so an onboarding-first launch doesn't swallow it.
     private func applyPendingFriendPrompt() {
         guard let nav = mainNavigationController,
-              let list = nav.viewControllers.first as? ReadingListViewController
+              let root = nav.viewControllers.first
         else { return }
         let surface = AppSurfaceConfig.current.storageIdentifier
         guard let urlString = DoubleSaveActionStore.shared
@@ -279,7 +285,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         nav.dismiss(animated: false)
         nav.popToRootViewController(animated: false)
         SendToFriendSheet.present(
-            from: list, item: item, urlString: urlString, title: item?.title)
+            from: root, item: item, urlString: urlString, title: item?.title)
     }
 
     private func uiTestRootViewController() -> UIViewController? {

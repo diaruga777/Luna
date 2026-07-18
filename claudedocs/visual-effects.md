@@ -45,6 +45,16 @@ zenith under a corona, swaps the screen beneath the opaque frame, and uncovers t
 The reverse crosses the screen back to the originating row. Simulator builds use a longer
 duration for visual tuning; device builds use production timing.
 
+## Dynamic Island eclipse corona
+
+While Luna Reader is foregrounded on a Dynamic-Island iPhone,
+`DynamicIslandCoronaView` adds a non-interactive procedural corona behind the
+system-owned black capsule. Layered cool/warm rim glows and irregular polar streamers
+create the lunar-eclipse edge; a slow opacity shimmer stops when the scene resigns active
+and is disabled for Reduce Motion. The effect is Reader-only and uses the portrait top
+safe-area geometry as UIKit's public cutout signal, so it stays absent on notch,
+home-button, iPad, and landscape layouts.
+
 ## Testing notes
 
 - Top navigation-bar items can be flaky to tap through simulator automation; content-area

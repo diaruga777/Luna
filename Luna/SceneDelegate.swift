@@ -144,6 +144,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         self.window = window
         window.makeKeyAndVisible()
+        DynamicIslandCoronaView.installIfSupported(in: window)
         mainNavigationController?.installLunarEclipseTransition()
 
         if let url = connectionOptions.urlContexts.first?.url {
@@ -240,6 +241,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
+        DynamicIslandCoronaView.setActive(true, in: window)
         // Action Button onboarding: the one-shot "installed the shortcut but never
         // ran it" skip. Unconditional — the state machine self-gates (a no-op
         // unless this surface was left `awaitingShortcutRun`).
@@ -268,6 +270,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // A double save with "ask every time" bounced the user into Luna: present
         // the friend selector for the double-saved item.
         applyPendingFriendPrompt()
+    }
+
+    func sceneWillResignActive(_ scene: UIScene) {
+        DynamicIslandCoronaView.setActive(false, in: window)
     }
 
     /// Presents the friend-selector share sheet for a pending double-save

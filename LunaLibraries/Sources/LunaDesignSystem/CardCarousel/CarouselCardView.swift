@@ -22,6 +22,7 @@ public final class CarouselCardView: UIView {
     public var onMuteToggle: (() -> Void)?
 
     private let muteButton = UIButton(type: .system)
+    private let dimOverlay = UIView()
     private var topLeadingAccessory: UIView?
 
     public override init(frame: CGRect) {
@@ -35,6 +36,15 @@ public final class CarouselCardView: UIView {
         contentContainer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         contentContainer.clipsToBounds = true
         addSubview(contentContainer)
+
+        // Non-centered cards rest heavily darkened (see the carousel's resting
+        // layout and the eclipse's dim choreography).
+        dimOverlay.frame = bounds
+        dimOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        dimOverlay.backgroundColor = .black
+        dimOverlay.alpha = 0
+        dimOverlay.isUserInteractionEnabled = false
+        addSubview(dimOverlay)
 
         var configuration = UIButton.Configuration.plain()
         configuration.baseForegroundColor = .white
@@ -67,6 +77,15 @@ public final class CarouselCardView: UIView {
 
     public func setMuteButtonVisible(_ visible: Bool) {
         muteButton.isHidden = !visible
+    }
+
+    /// The resting darkness for a non-centered card.
+    public static let restingDimAlpha: CGFloat = 0.7
+
+    /// How dark the card's built-in black overlay is (0 = full color). Animatable.
+    public var dimAlpha: CGFloat {
+        get { dimOverlay.alpha }
+        set { dimOverlay.alpha = newValue }
     }
 
     public func updateMuteIcon(muted: Bool) {

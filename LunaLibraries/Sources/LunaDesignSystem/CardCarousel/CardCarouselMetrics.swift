@@ -31,13 +31,15 @@ public struct CardCarouselMetrics: Equatable {
     }
 
     /// Fits the largest 9:16 portrait card into `containerSize`, leaving at least
-    /// `peek + edgeGap` horizontal room on each side (so the next card's edge is
-    /// visible) and `verticalPadding` above/below. Small containers degrade
-    /// gracefully (never a negative/zero size).
+    /// `peek + edgeGap` horizontal room on each side and `verticalPadding`
+    /// above/below. `edgeGap` insets only the centered card (the peeking
+    /// neighbors stay `peek` points inside the screen edge regardless), giving
+    /// the insets beside the card enough width for paging swipes. Small
+    /// containers degrade gracefully (never a negative/zero size).
     public static func resolve(
         containerSize: CGSize,
         peek: CGFloat = 14,
-        edgeGap: CGFloat = 10,
+        edgeGap: CGFloat = 30,
         sideScale: CGFloat = 0.92,
         verticalPadding: CGFloat = 12
     ) -> CardCarouselMetrics {

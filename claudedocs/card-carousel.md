@@ -13,9 +13,13 @@ own adapters later). The Downloader-specific adapters live in
   (`CarouselCardView.cornerRadius`, continuous), filled `.secondarySystemBackground`
   so a letterboxed (aspect-fit) frame still reads as a card against
   `.systemBackground`.
-- The centered card rests at scale 1; each neighbor rests at `sideScale` (0.92) with
-  exactly `peek` (14pt) of its edge visible inside the screen edge. All geometry is
-  pure math in `CardCarouselMetrics` (unit-tested in `CardCarouselMetricsTests`).
+- The centered card rests at scale 1, inset `peek + edgeGap` (14 + 30pt) from each
+  screen edge — the `edgeGap` insets only the centered card, giving the areas
+  beside it enough width for paging swipes. Each neighbor rests at `sideScale`
+  (0.92) with exactly `peek` (14pt) of its edge visible inside the screen edge,
+  under a `CarouselCardView.restingDimAlpha` (70%) black dim so the centered card
+  carries the screen. All geometry is pure math in `CardCarouselMetrics`
+  (unit-tested in `CardCarouselMetricsTests`).
 - Above the cards: the host's `NavHeaderBar` (same settings/friends/add controls as
   before). Below: the scrub strip (`CarouselScrubberView`), one small 9:16 thumbnail
   per card. The download-progress footer floats above the safe-area bottom as before.
@@ -27,10 +31,13 @@ own adapters later). The Downloader-specific adapters live in
   leaves center, keeping position.
 - **Tap** the centered card: pause/play. **Horizontal drag inside** it: scrubs the
   playback timestamp (one card-width ≈ full duration). The card itself never pans.
-- **Paging** happens outside the card: a quick swipe (or tap) on the insets left/right
-  of the card pages one card; a flick on the scrub strip pages one card; dragging
-  through the scrub strip previews cards continuously (thumbnail overlay over the
-  center card) and commits the index under the finger on release.
+- **Paging** happens outside the card: a horizontal drag on the insets left/right of
+  the card drives the eclipse transition *interactively* — it tracks the finger,
+  plays forward and back, and on release finishes (past 50%, or a committed flick)
+  or reverses back to rest. A tap on a peeked edge pages one card. A flick on the
+  scrub strip pages one card; dragging through the strip previews cards
+  continuously (thumbnail overlay over the center card) and commits the index
+  under the finger on release.
 - **Audio** is off by default (`CardCarouselViewController.isSoundMuted`, carousel-
   wide). The mute/unmute button sits at the card's top-right and only shows when the
   content reports `supportsAudio` (videos discover their audio track async). Pressing
@@ -58,26 +65,36 @@ source URL).
 
 ## The eclipse page transition
 
-`CardEclipseAnimator` animates every single-step page as a solar eclipse
-(Reduce Motion and multi-card jumps get a crossfade instead):
+`CardEclipseTransition` stages every single-step page as a solar eclipse
+(Reduce Motion and multi-card jumps get a crossfade instead). Its ingress runs
+inside a `UIViewPropertyAnimator`, so the inset pan scrubs it with the finger
+(forward and back); releasing continues to the zenith or reverses to rest. Taps
+and scrub-strip flicks run the same transition non-interactively.
 
 1. **Ingress (~66%)** — the incoming side card (the moon) slides over the stationary
    outgoing card, growing from `sideScale` to a 1.03 overshoot (guaranteeing total
-   coverage). The outgoing card lightens via a white overlay — subtle (0.18) for the
-   first 55%, then very fast toward 0.92 — while a corona (white rounded-rect shadow
-   behind the card) blooms and spikes to full at the moment of overlap, and a black
-   dimmer darkens the rest of the screen (cards region + scrub strip; the header
-   stays lit). In the last quarter, a point-like radial "diamond-ring" star flares at
-   the edge covered last (left edge paging forward, right edge paging backward),
-   centered vertically — the last sliver of sun. Meanwhile the peek card on the
-   *opposite* side fades to black, merging with the darkened background.
+   coverage), its resting 70% dim easing to 60% across the crossing and snapping to
+   0% in the last 15% — full color right at the zenith. The outgoing card lightens
+   via a white overlay — subtle (0.18) for the first 55%, then very fast toward
+   0.92 — while a corona (white rounded-rect shadow behind the card) blooms and
+   spikes to full at the moment of overlap, and a black dimmer darkens the rest of
+   the screen (cards region + scrub strip; the header stays lit). In the last
+   quarter, a point-like radial "diamond-ring" star flares at the edge covered last
+   (left edge paging forward, right edge paging backward), centered vertically —
+   the last sliver of sun. Meanwhile the peek card on the *opposite* side fades to
+   black, merging with the darkened background.
 2. **Zenith** — behind the veils, the carousel re-stacks slots
    (`performZenithSwap`): the far peek is unmounted, the outgoing card moves to the
    opposite peek slot (still veiled black), the next card mounts on the vacated side
    at alpha 0, and the newly centered content starts playing.
 3. **Egress (~34%)** — dimmer/corona/flare fade, the incoming card settles from 1.03
-   to 1.0, the opposite-side veil fades revealing the outgoing card's content now
-   living there, and the new far peek fades in.
+   to 1.0, the opposite-side veil fades revealing the outgoing card now living
+   there (at the resting side-card dim), and the new far peek fades in.
+
+A reload arriving mid-transition is deferred until the transition settles
+(`pendingReload` in the carousel) — tearing slots down under a running transition
+would strand its captured card views as duplicates — and `removeOrphanCardViews`
+structurally guarantees no card view outlives its slot.
 
 ## Store plumbing (Downloader host)
 

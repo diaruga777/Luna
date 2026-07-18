@@ -87,7 +87,10 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         if let urlString = ProvideContextOnScreenURL.collapseText(
             onScreenURLs,
             isSafari: isSafari
-        ), let result = await saveOnScreenURLIfPossible(urlString) {
+        ), let result = try await saveURL(
+            urlString,
+            interopBlockHandling: .fallBack
+        ) {
             return .result(value: result)
         }
 
@@ -114,59 +117,52 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
                 // nothing silently.
                 throw ProvideContextError.noTrackedPage
             }
-            let outcome = await IntentIngestHelper.handleSavePress(
-                urlString: urlString,
-                doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface
-            )
-            switch outcome {
-            case .friendPromptRequested:
-                // Double save with "ask every time": the pending friend prompt
-                // is recorded; foreground Luna so the selector can appear.
-                try? await requestToContinueInForeground()
-            case .completed:
-                // `needsInstallOwner` (paid, owning app missing) is not
-                // surfaced on this fast path; the saved item still appears
-                // once the app exists.
-                break
-            case let .blockedByInterop(owner, _):
-                // Unpaid cross-surface save: the item was discarded — surface
-                // the unlock dialog instead of a silent nothing.
-                throw ProvideContextError.interopBlocked(
-                    message: IntentIngestHelper.blockedDialogText(
-                        owner: owner,
-                        currentAppName: InteropSurface.current.displayName))
+            guard let result = try await saveURL(
+                urlString,
+                interopBlockHandling: .throwError
+            ) else {
+                preconditionFailure("Throwing interop handling cannot fall back")
             }
-            // The complete Safari fast path never invokes
-            // SaveIntent, so it must hand downloadable tracked URLs to the
-            // Downloader itself. This runs only AFTER the interop switch: a
-            // blocked save must not start downloader work.
-            let media = await ActionButtonIntentSupport.downloadMediaIfNeeded(
-                for: urlString
-            ) {
-                try? await requestToContinueInForeground()
-            }
-            return .result(value: ProvideContextResultEntity(outcome: .done, media: media))
+            return .result(value: result)
         }
     }
 
-    /// Opportunistically saves a complete URL supplied by Shortcuts. A normal
-    /// network enrichment failure still counts as saved because the ingest path
-    /// has already persisted the row. Interop rejection and an undetermined
-    /// timeout return nil so the caller follows the preexisting screenshot path.
-    private func saveOnScreenURLIfPossible(
-        _ urlString: String
-    ) async -> ProvideContextResultEntity? {
+    private enum InteropBlockHandling: Equatable {
+        case throwError
+        case fallBack
+    }
+
+    /// The one immediate-URL path for both Safari-extension URLs and URLs
+    /// extracted from Shortcuts input. A timeout still counts as handled: the
+    /// normal ingest task continues and persists its pending work in the
+    /// background. Only an explicit interop rejection can fall back.
+    private func saveURL(
+        _ urlString: String,
+        interopBlockHandling: InteropBlockHandling
+    ) async throws -> ProvideContextResultEntity? {
         let outcome = await IntentIngestHelper.handleSavePress(
             urlString: urlString,
             doubleSaveActionSurface: ActionButtonIntentSupport.doubleSaveSurface)
-        guard let success = ProvideContextOnScreenSave.success(from: outcome) else {
-            return nil
-        }
-        if success.requiresForeground {
+
+        let savedURLString: String
+        switch outcome {
+        case let .friendPromptRequested(savedURL):
             try? await requestToContinueInForeground()
+            savedURLString = savedURL
+        case let .completed(savedURL, _):
+            // Nil means only that the 12-second race expired. The ingest task
+            // continues, exactly as it does for a Safari-extension URL.
+            savedURLString = savedURL ?? urlString
+        case let .blockedByInterop(owner, _):
+            guard interopBlockHandling == .throwError else { return nil }
+            throw ProvideContextError.interopBlocked(
+                message: IntentIngestHelper.blockedDialogText(
+                    owner: owner,
+                    currentAppName: InteropSurface.current.displayName))
         }
+
         let media = await ActionButtonIntentSupport.downloadMediaIfNeeded(
-            for: success.urlString
+            for: savedURLString
         ) {
             try? await requestToContinueInForeground()
         }

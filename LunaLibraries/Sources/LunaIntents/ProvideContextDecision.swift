@@ -12,12 +12,20 @@ import Foundation
 /// longest input, which covers duplicate, prefix, and partial OCR results without
 /// guessing between divergent URLs.
 public enum ProvideContextOnScreenURL {
-    /// Shortcuts converts a URL-list magic variable to newline-delimited text
-    /// when it resolves the intent's scalar String parameter. Decode that
-    /// transport representation before applying the ordinary collapse rules.
+    private static let embeddedWebURL = try? NSRegularExpression(
+        pattern: #"(?i)https?://[^\s<>\"'\[\]{}]*?(?=(?:,\s*https?://)|[\s<>\"'\[\]{}]|$)"#)
+
+    /// Extract every embedded HTTP(S) URL from Shortcuts' scalar text
+    /// representation before applying the ordinary collapse rules. The system
+    /// may supply bare newline-delimited values, a comma-delimited list, or
+    /// values wrapped in descriptive/JSON-like text.
     public static func collapseText(_ value: String?, isSafari: Bool) -> String? {
-        guard let value else { return nil }
-        let values = value.split(whereSeparator: \.isNewline).map(String.init)
+        guard !isSafari, let value, !value.isEmpty, let embeddedWebURL else { return nil }
+        let fullRange = NSRange(value.startIndex..<value.endIndex, in: value)
+        let values: [String] = embeddedWebURL.matches(in: value, range: fullRange).compactMap { match -> String? in
+            guard let range = Range(match.range, in: value) else { return nil }
+            return trimTransportPunctuation(String(value[range]))
+        }
         return collapse(values, isSafari: isSafari)
     }
 
@@ -46,34 +54,20 @@ public enum ProvideContextOnScreenURL {
             || trimmed.hasSuffix("…")
             || trimmed.hasSuffix("⋯")
     }
-}
 
-/// Pure interpretation of the normal save pipeline's outcome for the optional
-/// on-screen URL fast path. Nil means the caller must swallow the opportunistic
-/// failure and resume the preexisting Provide Context decision.
-public enum ProvideContextOnScreenSave {
-    public struct Success: Equatable {
-        public let urlString: String
-        public let requiresForeground: Bool
-
-        public init(urlString: String, requiresForeground: Bool) {
-            self.urlString = urlString
-            self.requiresForeground = requiresForeground
+    private static func trimTransportPunctuation(_ candidate: String) -> String {
+        var value = candidate
+        while let last = value.last, ",;:!".contains(last) {
+            value.removeLast()
         }
-    }
-
-    public static func success(
-        from outcome: IntentIngestHelper.ActionButtonSaveOutcome
-    ) -> Success? {
-        switch outcome {
-        case let .completed(savedURL, _):
-            guard let savedURL else { return nil }
-            return Success(urlString: savedURL, requiresForeground: false)
-        case .friendPromptRequested(let savedURL):
-            return Success(urlString: savedURL, requiresForeground: true)
-        case .blockedByInterop:
-            return nil
+        if value.hasSuffix(".") && !value.hasSuffix("...") {
+            value.removeLast()
         }
+        while value.hasSuffix(")"),
+              value.filter({ $0 == ")" }).count > value.filter({ $0 == "(" }).count {
+            value.removeLast()
+        }
+        return value
     }
 }
 

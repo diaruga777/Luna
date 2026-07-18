@@ -41,17 +41,18 @@ Outside Safari, the optional **OnScreenURLs** input is checked before the normal
 decision table. It is deliberately a scalar String configured with
 `.connectToPreviousIntentResult`, so Shortcuts can put the Get On-Screen URLs
 magic variable in one text field instead of rendering a hand-authored collection
-editor. Shortcuts' newline-delimited text representation is decoded back into
-individual URL candidates inside Luna. Empty input, divergent values, non-HTTP(S) or
+editor. Luna extracts every embedded HTTP(S) URL from bare, newline-delimited,
+comma-delimited, or descriptive/JSON-like text before collapsing the candidates.
+Empty input, divergent values, non-HTTP(S) or
 hostless URLs, whitespace-containing URLs, and values ending in `...`, `…`, or
 `⋯` (including percent-encoded ellipsis) are ignored. Otherwise every element
 must be a substring of the longest element; that longest complete URL is
-sent through `IntentIngestHelper.handleSavePress`. A persisted save returns
-`.done` (with synchronous media when applicable). Interop rejection or an
-undetermined timeout is swallowed and falls through to the same screenshot or
-unhandled outcome that would have occurred without OnScreenURLs. Network
-enrichment failure does not trigger fallback because the normal ingest path has
-already persisted the URL for retry.
+sent through the same immediate-URL save function used by the Safari-extension
+fast path. A persisted save returns `.done` (with synchronous media when
+applicable). Explicit interop rejection is swallowed and falls through to the
+same screenshot or unhandled outcome that would have occurred without
+OnScreenURLs. A save timeout or network enrichment failure remains handled
+because the normal ingest task continues and persists pending work for retry.
 
 Then the pure decision table (`LunaIntents.ProvideContextDecision.decide`,
 evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):

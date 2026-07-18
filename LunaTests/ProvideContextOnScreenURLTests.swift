@@ -4,7 +4,6 @@
 //
 
 import LunaIntents
-import LunaInterop
 import XCTest
 
 final class ProvideContextOnScreenURLTests: XCTestCase {
@@ -43,6 +42,36 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
             ProvideContextOnScreenURL.collapseText(
                 "https://example.com/one\r\nhttps://example.com/two",
                 isSafari: false))
+    }
+
+    func testShortcutTextInputExtractsURLsFromWrappedList() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.collapseText(
+                #"URLs: ["https://example.com/post", "https://example.com/post/123"]"#,
+                isSafari: false),
+            "https://example.com/post/123")
+    }
+
+    func testShortcutTextInputExtractsCommaDelimitedURLs() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.collapseText(
+                "https://example.com/post,https://example.com/post/123",
+                isSafari: false),
+            "https://example.com/post/123")
+    }
+
+    func testShortcutTextInputTrimsPresentationPunctuation() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.collapseText(
+                "Detected (https://example.com/post).",
+                isSafari: false),
+            "https://example.com/post")
+    }
+
+    func testShortcutTextInputRequiresAnExtractedURL() {
+        XCTAssertNil(
+            ProvideContextOnScreenURL.collapseText(
+                "Get On-Screen URLs returned one item", isSafari: false))
     }
 
     func testContainedSubsetCollapsesIntoCompleteURL() {
@@ -90,26 +119,4 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
                 "https://example.com/post", isSafari: true))
     }
 
-    func testSuccessfulSaveOutcomeCompletesWithoutForegrounding() {
-        XCTAssertEqual(
-            ProvideContextOnScreenSave.success(
-                from: .completed(savedURLString: "https://example.com/post")),
-            .init(urlString: "https://example.com/post", requiresForeground: false))
-    }
-
-    func testFriendPromptSaveCompletesAndRequestsForeground() {
-        XCTAssertEqual(
-            ProvideContextOnScreenSave.success(
-                from: .friendPromptRequested(savedURLString: "https://example.com/post")),
-            .init(urlString: "https://example.com/post", requiresForeground: true))
-    }
-
-    func testUndeterminedAndBlockedSavesFallBack() {
-        XCTAssertNil(
-            ProvideContextOnScreenSave.success(
-                from: .completed(savedURLString: nil)))
-        XCTAssertNil(
-            ProvideContextOnScreenSave.success(
-                from: .blockedByInterop(owner: .reader, ownerInstalled: true)))
-    }
 }

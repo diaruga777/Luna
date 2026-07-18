@@ -41,6 +41,9 @@ final class SavedMediaCardsViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
+        var style = CardCarouselStyle()
+        style.pageSwipeMovementMultiplier = 1.5
+        carousel.style = style
         carousel.dataSource = self
         carousel.delegate = self
         addChild(carousel)

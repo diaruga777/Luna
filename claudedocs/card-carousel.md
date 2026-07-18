@@ -34,6 +34,7 @@ own adapters later). The Downloader-specific adapters live in
   playback timestamp (one card-width ≈ full duration). The card itself never pans.
 - **Paging** happens outside the card: a horizontal drag on the insets left/right of
   the card drives the eclipse transition *interactively* — it tracks the finger,
+  with 1.5× horizontal movement on both the Reader and Downloader root screens,
   plays forward and back, and on release finishes (past 50%, or a committed flick)
   or reverses back to rest. A tap on a peeked edge pages one card. A flick on the
   scrub strip pages one card; dragging through the strip previews cards

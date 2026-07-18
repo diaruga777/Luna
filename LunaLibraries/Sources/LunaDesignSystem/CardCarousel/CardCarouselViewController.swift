@@ -89,6 +89,9 @@ public struct CardCarouselStyle {
     /// doesn't scrub, e.g. embedded readers). Recognized simultaneously with
     /// the content's own gestures, gated to strongly-horizontal drags.
     public var pagesOnInCardSwipes = false
+    /// Multiplies finger translation while interactively paging. Values above
+    /// one make the eclipse transition travel farther than the physical drag.
+    public var pageSwipeMovementMultiplier: CGFloat = 1
     public var scrubberStyle: CarouselScrubberView.Style = .thumbnails
     /// Horizontal room around the scrub strip. Hosts can increase this to
     /// flank the strip with floating controls without covering its content.
@@ -837,7 +840,7 @@ public final class CardCarouselViewController: UIViewController {
     /// card drives the eclipse with the finger — play it forward, pull it back,
     /// release to finish or cancel.
     @objc private func handlePagePan(_ gesture: UIPanGestureRecognizer) {
-        let translation = gesture.translation(in: cardArea).x
+        let translation = gesture.translation(in: cardArea).x * style.pageSwipeMovementMultiplier
         switch gesture.state {
         case .began:
             pagePanConsumed = false
@@ -851,7 +854,7 @@ public final class CardCarouselViewController: UIViewController {
             guard isActiveTransitionInteractive, let interactiveTransition = activeTransition
             else { return }
             let fraction = min(max(abs(translation) / interactiveTravel, 0), 1)
-            let velocity = gesture.velocity(in: cardArea).x
+            let velocity = gesture.velocity(in: cardArea).x * style.pageSwipeMovementMultiplier
             // The drag direction and the paging direction are opposite signs
             // (dragging left brings the next card in from the right).
             let towardTarget = translation < 0 ? -velocity : velocity

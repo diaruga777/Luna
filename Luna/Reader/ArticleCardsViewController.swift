@@ -78,6 +78,7 @@ final class ArticleCardsViewController: UIViewController {
         style.edgeGap = 10
         style.fillsVertically = true
         style.pagesOnInCardSwipes = true
+        style.pageSwipeMovementMultiplier = 1.5
         style.scrubberStyle = .miniCards
         style.scrubberHorizontalInset = 70
         // Glass rim so the cards (and the dimmed side peeks, especially in dark

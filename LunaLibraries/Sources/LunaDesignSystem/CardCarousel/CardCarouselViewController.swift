@@ -428,7 +428,17 @@ public final class CardCarouselViewController: UIViewController {
             self.setSoundMuted(!self.isSoundMuted)
         }
         card.setTopLeadingAccessory(dataSource.carousel(self, topLeadingAccessoryForCardAt: index))
-        card.addInteraction(UIContextMenuInteraction(delegate: self))
+        // Install a context-menu interaction only on cards that actually have a
+        // menu (probed once at mount; the interaction still asks the delegate for
+        // a fresh configuration at press time). An interaction whose delegate
+        // answers nil never fails its long-press "click driver" while the finger
+        // is stationary, and that driver's relationship recognizers gate action
+        // delivery for EVERY other long press sharing the touch — a held link
+        // inside an embedded reader card sat recognized-but-undelivered until the
+        // finger moved or lifted.
+        if delegate?.carousel(self, contextMenuForCardAt: index) != nil {
+            card.addInteraction(UIContextMenuInteraction(delegate: self))
+        }
         cardArea.addSubview(card)
         return Slot(index: index, card: card, content: content)
     }

@@ -29,9 +29,13 @@ final class SourceBadgeTests: XCTestCase {
     }
 
     func testSenderColorIsDeterministic() {
-        XCTAssertEqual(
-            CarouselSourceBadge.color(forName: "The Atlantic"),
-            CarouselSourceBadge.color(forName: "The Atlantic"))
+        // Dynamic providers never compare equal as objects — resolve per style.
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let traits = UITraitCollection(userInterfaceStyle: style)
+            XCTAssertEqual(
+                CarouselSourceBadge.color(forName: "The Atlantic").resolvedColor(with: traits),
+                CarouselSourceBadge.color(forName: "The Atlantic").resolvedColor(with: traits))
+        }
     }
 
     // MARK: - Fallback badges

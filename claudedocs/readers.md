@@ -113,7 +113,10 @@ article from the saved item, preload cache, or a fresh extraction. Playback begi
 (`Resuming: <title>` when its word index is nonzero) held for at least 1.4 seconds, then
 continues at the saved position. The focus region is permanently two lines high; only the
 title uses both lines, shrinking and finally ellipsizing if necessary, so switching to the
-single-line ORP word display never changes popover geometry.
+single-line ORP word display never changes popover geometry. Its entrance mirrors a
+system long-press context-menu preview: the backdrop eases in while the card and its
+action hint fade, scale, and lift toward rest with a tightly damped spring directed away
+from the held point.
 
 The hold gesture is a single state machine (`LinkRSVPPreviewGesturePolicy`, unit-tested in
 `LinkRSVPPreviewGesturePolicyTests`): horizontal movement beyond a 24pt dead zone scales

@@ -628,9 +628,47 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         focusLabel.text = LinkRSVPPreviewGesturePolicy.titleText(
             title: article.content.title, resumeIndex: article.resumeIndex)
         speedLabel.text = "\(Int(currentWPM.rounded())) wpm"
-        view.alpha = 0
-        UIView.animate(withDuration: 0.16) { self.view.alpha = 1 }
+        animateAppearance()
         scheduleTitleTransition()
+    }
+
+    /// Mirrors the system context-menu entrance: the backdrop fades in while
+    /// the preview lifts from the held point with a small, tightly damped
+    /// spring. Keeping the scale modest avoids the artificial "modal pop" of
+    /// a large zoom while retaining the physical lift of a long-press preview.
+    private func animateAppearance() {
+        view.alpha = 1
+        dimView.alpha = 0
+        card.alpha = 0
+        moreActionsHint.alpha = 0
+
+        let direction: CGFloat = card.frame.midY < anchorPoint.y ? 1 : -1
+        let initialTransform = UIAccessibility.isReduceMotionEnabled
+            ? CGAffineTransform.identity
+            : CGAffineTransform(translationX: 0, y: 8 * direction)
+                .scaledBy(x: 0.94, y: 0.94)
+        card.transform = initialTransform
+        moreActionsHint.transform = initialTransform
+
+        UIView.animate(
+            withDuration: 0.20,
+            delay: 0,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.dimView.alpha = 1
+        }
+
+        let timing = UISpringTimingParameters(
+            dampingRatio: 0.86,
+            initialVelocity: CGVector(dx: 0, dy: 0.15))
+        let animator = UIViewPropertyAnimator(duration: 0.38, timingParameters: timing)
+        animator.addAnimations {
+            self.card.alpha = 1
+            self.card.transform = .identity
+            self.moreActionsHint.alpha = 1
+            self.moreActionsHint.transform = .identity
+        }
+        animator.startAnimation()
     }
 
     private func scheduleTitleTransition() {

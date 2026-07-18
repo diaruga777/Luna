@@ -5,8 +5,9 @@
 //  The scrub area under the cards: one small preview per card. Dragging through
 //  it previews cards continuously (much faster than paging one by one);
 //  releasing commits the index under the finger. A quick flick instead pages a
-//  single card. The strip scrolls itself to keep the selection visible when
-//  there are more previews than fit.
+//  single card. The strip keeps the selected chip centered (clamped at the
+//  ends) when there are more previews than fit; only while a positional drag
+//  is live does it fall back to keep-visible scrolling.
 //
 //  Two styles: `.thumbnails` (small 9:16 image chips — Downloader) and
 //  `.miniCards` (miniature article cards — Reader): each chip is a tiny card
@@ -56,6 +57,12 @@ public final class CarouselScrubberView: UIView {
     private var itemViews: [ScrubberItemView] = []
     private var selectedIndex = 0
     private var dragStartTime: CFTimeInterval = 0
+    /// True while a positional drag is live. Selection changes during the drag
+    /// must not re-center the strip under the stationary finger — the shifting
+    /// content would remap the finger to a new index, which would shift the
+    /// content again (a runaway feedback loop). Drags keep the old
+    /// keep-visible behavior; the commit re-centers.
+    private var isDragActive = false
 
     public init(style: Style = .thumbnails) {
         self.style = style
@@ -110,6 +117,7 @@ public final class CarouselScrubberView: UIView {
     public override func layoutSubviews() {
         super.layoutSubviews()
         centerStripIfNarrow()
+        if !isDragActive { scrollSelectedToCenter(animated: false) }
         // The tray hugs the visible strip (content width when it fits, the
         // full viewport when it scrolls), with breathing room around the chips.
         let contentWidth = stack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
@@ -163,9 +171,31 @@ public final class CarouselScrubberView: UIView {
         guard itemViews.indices.contains(index) else { return }
         selectedIndex = index
         applySelectionAppearance()
-        let target = itemViews[index]
-        let frame = target.convert(target.bounds, to: scrollView).insetBy(dx: -30, dy: 0)
-        scrollView.scrollRectToVisible(frame, animated: animated)
+        if isDragActive {
+            let target = itemViews[index]
+            let frame = target.convert(target.bounds, to: scrollView).insetBy(dx: -30, dy: 0)
+            scrollView.scrollRectToVisible(frame, animated: animated)
+        } else {
+            scrollSelectedToCenter(animated: animated)
+        }
+    }
+
+    /// Scrolls so the selected chip sits at the viewport's center, clamped to
+    /// the strip's ends (the strip never overscrolls past its edges).
+    private func scrollSelectedToCenter(animated: Bool) {
+        guard itemViews.indices.contains(selectedIndex),
+              scrollView.bounds.width > 0 else { return }
+        let target = itemViews[selectedIndex]
+        let chipCenterX = target.convert(
+            CGPoint(x: target.bounds.midX, y: 0), to: scrollView).x
+        let viewport = scrollView.bounds.width
+        let minOffset = -scrollView.contentInset.left
+        let maxOffset = max(
+            minOffset,
+            scrollView.contentSize.width + scrollView.contentInset.right - viewport)
+        let x = min(max(chipCenterX - viewport / 2, minOffset), maxOffset)
+        guard abs(scrollView.contentOffset.x - x) > 0.5 else { return }
+        scrollView.setContentOffset(CGPoint(x: x, y: 0), animated: animated)
     }
 
     private func applySelectionAppearance() {
@@ -196,11 +226,13 @@ public final class CarouselScrubberView: UIView {
         guard !itemViews.isEmpty else { return }
         switch gesture.state {
         case .began:
+            isDragActive = true
             dragStartTime = CACurrentMediaTime()
             preview(at: gesture.location(in: self))
         case .changed:
             preview(at: gesture.location(in: self))
         case .ended:
+            isDragActive = false
             let duration = CACurrentMediaTime() - dragStartTime
             if let step = CarouselScrubberMath.flickPageStep(
                 translationX: gesture.translation(in: self).x,
@@ -212,6 +244,7 @@ public final class CarouselScrubberView: UIView {
                 onCommit?(index(at: gesture.location(in: self)))
             }
         case .cancelled, .failed:
+            isDragActive = false
             onCommit?(selectedIndex)
         default:
             break

@@ -267,8 +267,14 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
         self.resolveURL = resolveURL
         self.sourcePlaybackChanged = sourcePlaybackChanged
         super.init()
-        gesture.minimumPressDuration = 0.28
-        gesture.allowableMovement = 1_000
+        // The preview begins only after a short STATIONARY hold on the link:
+        // `allowableMovement` is deliberately tight, so a touch that starts
+        // moving within the hold window (a scroll that happens to land on a
+        // link) fails this press instead of mounting the preview mid-drag.
+        // Once the press HAS begun, movement is unrestricted — the drag
+        // left/right/up interactions ride the same touch.
+        gesture.minimumPressDuration = 0.35
+        gesture.allowableMovement = 10
         gesture.cancelsTouchesInView = true
         gesture.delegate = self
         gesture.addTarget(self, action: #selector(handleGesture(_:)))
@@ -278,8 +284,12 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
         // hold, emits its haptic, and leaves our custom interaction in `.failed`.
         // Make every recognizer that was already installed wait for the link-only
         // recognizer. On non-links our delegate rejects immediately, so scrolling,
-        // selection, and normal taps retain their existing behavior.
-        for competing in sourceView.gestureRecognizers ?? [] where competing !== gesture {
+        // selection, and normal taps retain their existing behavior. Pans are
+        // exempt (matching `shouldBeRequiredToFailBy` below): the text view's own
+        // scroll pan must never wait on the hold, or a scroll that starts on a
+        // link tap target is eaten by the press.
+        for competing in sourceView.gestureRecognizers ?? []
+        where competing !== gesture && !(competing is UIPanGestureRecognizer) {
             competing.require(toFail: gesture)
         }
     }

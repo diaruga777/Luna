@@ -59,7 +59,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private enum ProbeDecision { case reader(ArticleContent); case web }
     private var pendingDecision: ProbeDecision?
     private var didDecide = false
-    private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
+    public private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
     private var audioOn = false
     /// The `ReadingListItem.id` handed to the CURRENTLY embedded reader child —
     /// the identity the app-wide audio center plays under when this layer's
@@ -123,6 +123,38 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     public var isArticle: Bool { articleContent != nil }
 
+    // MARK: - External-chrome accessors (host-rendered header pills)
+
+    /// The reading modes this layer offers (mirrors the in-card mode switcher).
+    public var availableModes: [ReadingListItem.ReaderMode] { orderedModes }
+    /// Whether this layer's embedded reader currently renders with read-aloud on.
+    public var isAudioOn: Bool { audioOn }
+    /// Whether this layer's page is already a saved reading-list item (drives
+    /// Save-vs-Share in the trailing chrome slot).
+    public var isSavedInLibrary: Bool { isAlreadySaved }
+    /// Whether a share provider exists (without one the save/share slot is empty).
+    public var offersSaveShare: Bool { shareProvider != nil }
+
+    /// Toggle read-aloud, exactly as the in-card audio pill does.
+    public func toggleAudio() { audioToggled() }
+
+    /// Save this layer's page to the library, exactly as the in-card Save pill does.
+    public func performSave() {
+        guard let target = descriptor.url else { return }
+        shareProvider?.saveLink(urlString: target.absoluteString)
+        // Now saved → the slot becomes Share.
+        updateSaveSlot()
+    }
+
+    /// Present the share sheet for this layer's page, anchored to `sourceView`
+    /// (an external chrome pill, or the in-card share pill).
+    public func performShare(from sourceView: UIView) {
+        guard let target = descriptor.url else { return }
+        shareProvider?.presentShareSheet(
+            urlString: target.absoluteString, title: descriptor.title,
+            from: self, sourceView: sourceView)
+    }
+
     private static let emptyContent = ArticleContent(title: "", blocks: [])
     private static var emptyItem: ReadingListItem {
         var item = ReadingListItem(urlString: "about:blank")
@@ -150,6 +182,23 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// (carousel cards), where the swap would visibly relayout the card. Must be
     /// set before content is configured.
     public var rendersFullContentUpFront = false
+
+    /// Whether this layer draws its own in-card header pills. Hosts that render
+    /// the reader chrome OUTSIDE the card (the Reader carousel's screen-level
+    /// pill row) set this false before the view loads; content then starts at
+    /// the card's top instead of below the header region.
+    public var showsHeaderChrome = true
+
+    /// Top content reservation supplied by a host whose header floats outside
+    /// this layer. It is applied as scroll content inset rather than a child
+    /// frame offset so scrolled text can continue behind the host's blur.
+    public var externalChromeContentInset: CGFloat = 0 {
+        didSet { applyExternalChromeInset() }
+    }
+
+    /// The top inset that keeps content clear of the in-card header (0 when the
+    /// chrome is rendered externally).
+    private var contentTopInset: CGFloat { showsHeaderChrome ? Self.headerHeight : 0 }
 
     /// Creates a blank layer shell. Loading starts after `configure` assigns its page.
     public init(shareProvider: ReaderShareProviding?,
@@ -202,6 +251,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         view.addSubview(spinner)   // centred manually in viewDidLayoutSubviews
 
         configureChrome()
+        applyExternalChromeInset()
         if isConfigured { beginLoading() }
     }
 
@@ -236,11 +286,18 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
                 width: fit.width, height: fit.height)
         }
         // Content host fills the card, inset below the floating header so text clears it.
-        let top = Self.headerHeight
+        let top = contentTopInset
         readerChild?.view.frame = CGRect(x: 0, y: top,
                                          width: view.bounds.width,
                                          height: max(view.bounds.height - top, 0))
         webView?.frame = view.bounds
+    }
+
+    private func applyExternalChromeInset() {
+        let inset = showsHeaderChrome ? 0 : externalChromeContentInset
+        scrollReader.topChromeInset = inset
+        webView?.scrollView.contentInset.top = inset
+        webView?.scrollView.verticalScrollIndicatorInsets.top = inset
     }
 
     /// Set the card's background tint for its stack depth.
@@ -311,6 +368,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         // its own depth tint, the strip the user sees to the leading side of the focused
         // layer shows the outer layer's colour — the indent the spec calls for.
         updateLipTitles()
+        header.isHidden = !showsHeaderChrome
         setChrome(role: .focused, alpha: 0)
     }
 
@@ -462,19 +520,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         embedReader(mode: readerMode, forceReembed: true)
     }
 
-    @objc private func saveTapped() {
-        guard let target = descriptor.url else { return }
-        shareProvider?.saveLink(urlString: target.absoluteString)
-        // Now saved → the slot becomes Share.
-        updateSaveSlot()
-    }
+    @objc private func saveTapped() { performSave() }
 
-    @objc private func shareTapped() {
-        guard let target = descriptor.url else { return }
-        shareProvider?.presentShareSheet(
-            urlString: target.absoluteString, title: descriptor.title,
-            from: self, sourceView: shareButton)
-    }
+    @objc private func shareTapped() { performShare(from: shareButton) }
 
     // MARK: - Mode switching
 
@@ -604,8 +652,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         web.backgroundColor = themed
         web.scrollView.backgroundColor = themed
         web.underPageBackgroundColor = themed
-        web.scrollView.contentInset.top = Self.headerHeight
-        web.scrollView.verticalScrollIndicatorInsets.top = Self.headerHeight
+        let topInset = showsHeaderChrome ? contentTopInset : externalChromeContentInset
+        web.scrollView.contentInset.top = topInset
+        web.scrollView.verticalScrollIndicatorInsets.top = topInset
         view.insertSubview(web, belowSubview: header)
         WebJunkBlocker.applyRuleList(to: web.configuration.userContentController)
         web.navigationDelegate = self
@@ -708,8 +757,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             removeReaderChild()
             addChild(child)
         }
-        child.view.frame = CGRect(x: 0, y: Self.headerHeight, width: view.bounds.width,
-                                  height: max(view.bounds.height - Self.headerHeight, 0))
+        child.view.frame = CGRect(x: 0, y: contentTopInset, width: view.bounds.width,
+                                  height: max(view.bounds.height - contentTopInset, 0))
         view.insertSubview(child.view, belowSubview: header)
         if child.parent === self, child !== readerChild {
             child.didMove(toParent: self)

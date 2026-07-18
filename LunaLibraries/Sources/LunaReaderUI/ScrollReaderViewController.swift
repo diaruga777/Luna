@@ -146,6 +146,16 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     // words being read).
     private let highlightColor = GlassStyle.readingAccent.withAlphaComponent(0.28)
 
+    /// Reserved by a screen-level reader header. Keeping this on the scroll
+    /// view (instead of moving its frame) lets text travel beneath a backdrop
+    /// blur while preserving a clear resting position below the controls.
+    public var topChromeInset: CGFloat = 0 {
+        didSet {
+            guard abs(topChromeInset - oldValue) > 0.5 else { return }
+            applyTopChromeInset(preservingVisiblePosition: isViewLoaded)
+        }
+    }
+
     public init(item: ReadingListItem, content: ArticleContent,
          audioEnabled: Bool = false,
          shareProvider: ReaderShareProviding? = nil,
@@ -423,6 +433,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             textView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
+        applyTopChromeInset(preservingVisiblePosition: false)
 
         let imageTap = UITapGestureRecognizer(target: self, action: #selector(imageTapped(_:)))
         imageTap.delegate = self
@@ -477,6 +488,16 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         // article never flashes at the top and then jumps. Fresh articles (no
         // saved position) start at the top and stay visible.
         if hasInitialScrollPosition { textView.alpha = 0 }
+    }
+
+    private func applyTopChromeInset(preservingVisiblePosition: Bool) {
+        guard isViewLoaded else { return }
+        let delta = topChromeInset - textView.contentInset.top
+        textView.contentInset.top = topChromeInset
+        textView.verticalScrollIndicatorInsets.top = topChromeInset
+        if preservingVisiblePosition, abs(delta) > 0.5 {
+            textView.contentOffset.y -= delta
+        }
     }
 
     /// Whether there's a saved/carried position to restore before revealing.

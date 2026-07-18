@@ -23,6 +23,7 @@ public final class CarouselCardView: UIView {
 
     private let muteButton = UIButton(type: .system)
     private let dimOverlay = UIView()
+    private let borderView = UIView()
     private var topLeadingAccessory: UIView?
 
     public override init(frame: CGRect) {
@@ -45,6 +46,24 @@ public final class CarouselCardView: UIView {
         dimOverlay.alpha = 0
         dimOverlay.isUserInteractionEnabled = false
         addSubview(dimOverlay)
+
+        // A subtle glass rim delineating the card from a same-tone screen
+        // background (style-gated by the host; fades with the carousel chrome
+        // during immersion). Sits above the dim overlay so side cards keep
+        // their outline while dimmed.
+        borderView.frame = bounds
+        borderView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        borderView.isUserInteractionEnabled = false
+        borderView.layer.cornerRadius = Self.cornerRadius
+        borderView.layer.cornerCurve = .continuous
+        borderView.layer.borderWidth = 1
+        borderView.isHidden = true
+        addSubview(borderView)
+        applyBorderColor()
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+            (card: CarouselCardView, _: UITraitCollection) in
+            card.applyBorderColor()
+        }
 
         var configuration = UIButton.Configuration.plain()
         configuration.baseForegroundColor = .white
@@ -77,6 +96,23 @@ public final class CarouselCardView: UIView {
 
     public func setMuteButtonVisible(_ visible: Bool) {
         muteButton.isHidden = !visible
+    }
+
+    /// Enables the glass rim stroke (off by default; the host style gates it).
+    public func setBorderEnabled(_ enabled: Bool) {
+        borderView.isHidden = !enabled
+    }
+
+    /// Animatable border opacity — the carousel fades it with the rest of its
+    /// chrome when the centered card goes immersive.
+    public var borderAlpha: CGFloat {
+        get { borderView.alpha }
+        set { borderView.alpha = newValue }
+    }
+
+    private func applyBorderColor() {
+        borderView.layer.borderColor =
+            GlassStyle.glassBorderColor.resolvedColor(with: traitCollection).cgColor
     }
 
     /// The resting darkness for a non-centered card.

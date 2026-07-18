@@ -157,6 +157,14 @@ Differences from the Downloader, via `CardCarouselStyle`:
   ROOT layer of a carousel-embedded reader shows no back pill (`onRootBack`
   set ⇒ `setBackButtonHidden` via `applyFocus`) — it had nothing to pop to;
   deeper layers and pushed fullscreen readers keep theirs.
+- On the Reader root, that control row is hosted at screen level over a
+  backdrop-only ultra-thin material spanning the complete top safe area and
+  header. The carousel and reader content extend behind it; the scroll reader
+  reserves the row with `contentInset.top`, so its resting first line stays
+  clear while scrolled/overscrolled content is blurred underneath. The overlay
+  has no fill, separator, border, or shadow. Its opacity is zero at the resting
+  scroll position and ramps in only as content crosses beneath it, so UIKit's
+  material tint cannot reveal a band against a uniform light or dark page.
 - **"Fullscreen" is a chrome fade, nothing more** — no navigation push, no
   card-geometry choreography. `CardCarouselViewController.setImmersed(_:animated:)`
   fades the peeking side cards and the scrub strip out and extends only the

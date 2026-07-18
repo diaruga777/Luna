@@ -43,6 +43,19 @@ final class ArticleCardsViewController: UIViewController {
     private let emptyView = EmptyArticlesView()
     private let settingsButton = UIButton(type: .system)
     private let addButton = UIButton(type: .system)
+    // Screen-level reader chrome (see mountTopChrome).
+    private let readerChromeRow = UIView()
+    private let readerBackButton = UIButton(type: .system)
+    private let readerAudioButton = UIButton(type: .system)
+    private let readerModeControl = LunaSegmentedControl()
+    private let readerSaveButton = UIButton(type: .system)
+    private let readerShareButton = UIButton(type: .system)
+    /// A backdrop-only material: clear at rest, visible only through the
+    /// distortion of reader content passing behind the status/header region.
+    private let readerTopBlur = UIVisualEffectView(
+        effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    private weak var readerForChrome: RabbitHoleReaderViewController?
+    private var chromeModes: [ReadingListItem.ReaderMode] = []
     private var items: [ReadingListItem] = []
     private var appliedFingerprint: [String] = []
     /// The press-driven RSVP preview for the centered card, while a long-press
@@ -60,6 +73,10 @@ final class ArticleCardsViewController: UIViewController {
         style.pagesOnInCardSwipes = true
         style.scrubberStyle = .miniCards
         style.scrubberHorizontalInset = 70
+        // Glass rim so the cards (and the dimmed side peeks, especially in dark
+        // mode) read against a same-tone background; fades with the chrome on
+        // immersion.
+        style.showsCardBorder = true
         carousel.style = style
         carousel.managesAudioSession = false   // Reader has its own audio stack.
         carousel.dataSource = self
@@ -73,6 +90,8 @@ final class ArticleCardsViewController: UIViewController {
             self.addButton.alpha = immersed ? 0 : 1
             self.settingsButton.isUserInteractionEnabled = !immersed
             self.addButton.isUserInteractionEnabled = !immersed
+            self.readerChromeRow.alpha = immersed ? 0 : 1
+            self.readerChromeRow.isUserInteractionEnabled = !immersed
         }
         addChild(carousel)
         view.addSubview(carousel.view)
@@ -83,6 +102,7 @@ final class ArticleCardsViewController: UIViewController {
         view.addSubview(emptyView)
 
         mountBottomControls()
+        mountTopChrome()
 
         NSLayoutConstraint.activate([
             carousel.view.topAnchor.constraint(equalTo: view.topAnchor),
@@ -106,12 +126,141 @@ final class ArticleCardsViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
-        carousel.setTopInset(view.safeAreaInsets.top + 8)
+        carousel.setTopInset(0)
+        updateExternalReaderInsets()
     }
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
-        carousel.setTopInset(view.safeAreaInsets.top + 8)
+        carousel.setTopInset(0)
+        updateExternalReaderInsets()
+    }
+
+    /// Room reserved above the cards for the screen-level chrome row: the row
+    /// spans safeTop+4 … safeTop+48; the carousel's own 12pt vertical padding
+    /// then puts the card top 8pt below the row.
+    private static let topChromeClearance: CGFloat = 44
+
+    /// Floats the controls over the reader. The blur extends through the entire
+    /// top safe area and the row; it has no fill, separator, border, or shadow,
+    /// so a uniform page remains visually uniform beneath it.
+    private func mountTopChrome() {
+        readerTopBlur.isUserInteractionEnabled = false
+        readerTopBlur.alpha = 0
+        readerTopBlur.backgroundColor = .clear
+        readerTopBlur.contentView.backgroundColor = .clear
+        readerTopBlur.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(readerTopBlur)
+
+        readerChromeRow.backgroundColor = .clear
+        readerChromeRow.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(readerChromeRow)
+
+        configureChromeButton(
+            readerBackButton, symbol: "chevron.backward", action: #selector(readerBackTapped),
+            label: "Back")
+        configureChromeButton(
+            readerAudioButton, symbol: "speaker.slash", action: #selector(readerAudioTapped),
+            label: "Read Aloud")
+        configureChromeButton(
+            readerSaveButton, symbol: "square.and.arrow.down", action: #selector(readerSaveTapped),
+            label: "Save")
+        configureChromeButton(
+            readerShareButton, symbol: "square.and.arrow.up", action: #selector(readerShareTapped),
+            label: "Share")
+        readerModeControl.addTarget(self, action: #selector(readerModeChanged), for: .valueChanged)
+        readerModeControl.translatesAutoresizingMaskIntoConstraints = false
+
+        for control in [readerBackButton, readerAudioButton, readerModeControl,
+                        readerSaveButton, readerShareButton] {
+            readerChromeRow.addSubview(control)
+        }
+
+        NSLayoutConstraint.activate([
+            readerTopBlur.topAnchor.constraint(equalTo: view.topAnchor),
+            readerTopBlur.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            readerTopBlur.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            readerTopBlur.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: Self.topChromeClearance + 8),
+
+            readerChromeRow.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            readerChromeRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            readerChromeRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            readerChromeRow.heightAnchor.constraint(equalToConstant: Self.topChromeClearance),
+
+            readerBackButton.leadingAnchor.constraint(equalTo: readerChromeRow.leadingAnchor),
+            readerBackButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
+            readerAudioButton.leadingAnchor.constraint(
+                equalTo: readerBackButton.trailingAnchor, constant: 8),
+            readerAudioButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
+            readerModeControl.centerXAnchor.constraint(equalTo: readerChromeRow.centerXAnchor),
+            readerModeControl.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
+            readerModeControl.heightAnchor.constraint(equalToConstant: 32),
+            readerShareButton.trailingAnchor.constraint(equalTo: readerChromeRow.trailingAnchor),
+            readerShareButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
+            readerSaveButton.trailingAnchor.constraint(equalTo: readerChromeRow.trailingAnchor),
+            readerSaveButton.centerYAnchor.constraint(equalTo: readerChromeRow.centerYAnchor),
+        ])
+        updateReaderChrome()
+    }
+
+    private func configureChromeButton(
+        _ button: UIButton, symbol: String, action: Selector, label: String
+    ) {
+        button.configuration = GlassStyle.circularButtonConfiguration(symbol: symbol, padding: 8)
+        button.tintColor = GlassStyle.readingAccent
+        button.accessibilityLabel = label
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 38),
+            button.heightAnchor.constraint(equalToConstant: 38),
+        ])
+    }
+
+    private func updateExternalReaderInsets() {
+        let headerBottom = view.safeAreaInsets.top + Self.topChromeClearance + 8
+        for index in [carousel.currentIndex - 1, carousel.currentIndex, carousel.currentIndex + 1] {
+            (carousel.contentController(at: index) as? ReaderCardContentViewController)?
+                .setExternalChromeBottom(headerBottom)
+        }
+    }
+
+    private func updateReaderChrome() {
+        guard let state = readerForChrome?.chromeState else {
+            readerChromeRow.isHidden = true
+            return
+        }
+        readerChromeRow.isHidden = false
+        readerBackButton.isHidden = !state.showsBack
+        readerAudioButton.setImage(
+            UIImage(systemName: state.isAudioOn ? "speaker.wave.2" : "speaker.slash"), for: .normal)
+        readerAudioButton.accessibilityValue = state.isAudioOn ? "On" : "Off"
+
+        if chromeModes != state.modes {
+            chromeModes = state.modes
+            readerModeControl.removeAllSegments()
+            for (index, mode) in state.modes.enumerated() {
+                readerModeControl.insertSegment(
+                    with: ReaderModeIcons.image(for: mode), at: index, animated: false)
+            }
+        }
+        readerModeControl.selectedSegmentIndex = state.modes.firstIndex(of: state.selectedMode) ?? 0
+        readerModeControl.isHidden = !state.isArticle
+        readerAudioButton.isHidden = !state.isArticle
+        readerSaveButton.isHidden = !state.offersSaveShare || state.isSaved
+        readerShareButton.isHidden = !state.offersSaveShare || !state.isSaved
+    }
+
+    @objc private func readerBackTapped() { readerForChrome?.chromeBack(); updateReaderChrome() }
+    @objc private func readerAudioTapped() { readerForChrome?.chromeToggleAudio(); updateReaderChrome() }
+    @objc private func readerSaveTapped() { readerForChrome?.chromeSave(); updateReaderChrome() }
+    @objc private func readerShareTapped() { readerForChrome?.chromeShare(from: readerShareButton) }
+    @objc private func readerModeChanged() {
+        guard chromeModes.indices.contains(readerModeControl.selectedSegmentIndex) else { return }
+        readerForChrome?.chromeSetMode(chromeModes[readerModeControl.selectedSegmentIndex])
+        updateReaderChrome()
     }
 
     /// Flanks the title scrubber with the two root actions. The shared
@@ -272,6 +421,16 @@ final class ArticleCardsViewController: UIViewController {
         content.onImmersionChange = { [weak self] immersed in
             self?.carousel.setImmersed(immersed, animated: true)
         }
+        content.onTopBackdropProgress = { [weak self, weak content] progress in
+            guard content?.isCentered == true else { return }
+            self?.readerTopBlur.alpha = progress
+        }
+        content.onReaderReady = { [weak self, weak content] reader in
+            guard let self, content?.isCentered == true else { return }
+            self.readerForChrome = reader
+            self.updateExternalReaderInsets()
+            self.updateReaderChrome()
+        }
         return content
     }
 
@@ -322,6 +481,11 @@ extension ArticleCardsViewController: CardCarouselDelegate {
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
         guard items.indices.contains(index) else { return }
         store.markReadState(.opened, for: items[index].id)
+        readerForChrome = (carousel.contentController(at: index) as? ReaderCardContentViewController)?
+            .rabbitHoleReader
+        readerTopBlur.alpha = 0
+        updateExternalReaderInsets()
+        updateReaderChrome()
     }
 
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {
@@ -376,6 +540,8 @@ private final class ReaderCardContentViewController: CardContentViewController {
     /// The reader wants the carousel chrome faded away (true — reading is
     /// under way) or back in (false — the user is surfacing).
     var onImmersionChange: ((Bool) -> Void)?
+    var onReaderReady: ((RabbitHoleReaderViewController) -> Void)?
+    var onTopBackdropProgress: ((CGFloat) -> Void)?
 
     private let item: ReadingListItem
     private let statusLabel = UILabel()
@@ -384,7 +550,8 @@ private final class ReaderCardContentViewController: CardContentViewController {
     /// Per scroll view: the last seen offset and the directional run since the
     /// last direction flip (positive = scrolling down the article).
     private var scrollRuns: [ObjectIdentifier: (last: CGFloat, run: CGFloat)] = [:]
-    private var isCentered = false
+    private(set) var isCentered = false
+    var rabbitHoleReader: RabbitHoleReaderViewController? { reader as? RabbitHoleReaderViewController }
 
     /// Downward travel (pt) before the chrome fades away…
     private static let fadeOutTravel: CGFloat = 24
@@ -437,12 +604,14 @@ private final class ReaderCardContentViewController: CardContentViewController {
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         isCentered = true
+        if let rabbitHoleReader { onReaderReady?(rabbitHoleReader) }
     }
 
     override func cardDidLeaveCenter() {
         super.cardDidLeaveCenter()
         isCentered = false
         scrollRuns = [:]
+        onTopBackdropProgress?(0)
     }
 
     private func embedReaderIfPossible() {
@@ -456,6 +625,9 @@ private final class ReaderCardContentViewController: CardContentViewController {
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
             fullContentUpFront: true)
+        if let rabbitHole = reader as? RabbitHoleReaderViewController {
+            rabbitHole.providesOwnChrome = false
+        }
         addChild(reader)
         reader.view.autoresizingMask = []
         view.insertSubview(reader.view, at: 0)
@@ -472,11 +644,18 @@ private final class ReaderCardContentViewController: CardContentViewController {
             // observe (idempotent; next runloop so the new child is mounted).
             rabbitHole.onContentHierarchyChanged = { [weak self] in
                 DispatchQueue.main.async { self?.observeReaderScrollViews() }
+                DispatchQueue.main.async {
+                    guard let self, self.isCentered else { return }
+                    self.onReaderReady?(rabbitHole)
+                }
             }
         }
         self.reader = reader
         reader.view.frame = view.bounds
         observeReaderScrollViews()
+        if let rabbitHole = reader as? RabbitHoleReaderViewController {
+            onReaderReady?(rabbitHole)
+        }
 
         // Backstop sweeps for content that mounts without a hierarchy
         // callback (a dived-into non-article page installs its web view only
@@ -486,6 +665,12 @@ private final class ReaderCardContentViewController: CardContentViewController {
                 self?.observeReaderScrollViews()
             }
         }
+    }
+
+    func setExternalChromeBottom(_ screenY: CGFloat) {
+        guard let rabbitHoleReader else { return }
+        let localY = view.convert(CGPoint(x: 0, y: screenY), from: nil).y
+        rabbitHoleReader.externalChromeContentInset = max(localY, 0)
     }
 
     /// Hooks the immersion triggers onto the reader's live content (KVO on
@@ -527,6 +712,10 @@ private final class ReaderCardContentViewController: CardContentViewController {
         }
         // Distance from the content's top (0 = at the top).
         let position = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+        // A backdrop material always carries a slight trait-aware tint. Keep it
+        // literally absent at rest, then reveal it only as content crosses into
+        // the occluded header region.
+        onTopBackdropProgress?(max(0, min(1, position / 12)))
         guard let previous = scrollRuns[key] else {
             scrollRuns[key] = (position, 0)
             return

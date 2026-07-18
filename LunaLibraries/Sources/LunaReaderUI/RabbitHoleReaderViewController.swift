@@ -18,6 +18,20 @@ import LunaModels
 import LunaStorage
 import UIKit
 
+/// Snapshot of the focused layer's chrome (modes, audio, save/share, back) for
+/// hosts that render the reader's controls OUTSIDE the reader — the Reader card
+/// carousel's screen-level pill row (`providesOwnChrome = false`).
+public struct ReaderChromeState: Equatable {
+    public var isArticle: Bool
+    public var modes: [ReadingListItem.ReaderMode]
+    public var selectedMode: ReadingListItem.ReaderMode
+    public var isAudioOn: Bool
+    /// True when a layer is stacked above the root (back pops one layer).
+    public var showsBack: Bool
+    public var offersSaveShare: Bool
+    public var isSaved: Bool
+}
+
 public final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognizerDelegate {
 
     private let rootItem: ReadingListItem
@@ -206,6 +220,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         let layer = RabbitHoleLayerViewController(
             shareProvider: shareProvider, layout: layout)
         layer.rendersFullContentUpFront = rendersFullContentUpFront
+        layer.showsHeaderChrome = providesOwnChrome
+        layer.externalChromeContentInset = externalChromeContentInset
         layer.onLinkActivated = { [weak self, weak layer] url, lineText in
             guard let self, let layer, layer === self.layers.last else { return }
             self.pushLayer(url: url, lineText: lineText, from: layer)
@@ -276,6 +292,60 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// the card's initial state IS its final state — no post-embed content swap,
     /// no relayout when the card is focused. Set before the view loads.
     public var rendersFullContentUpFront = false
+
+    /// Whether layers draw their own in-card header pills. Hosts that render the
+    /// chrome externally (the Reader carousel's screen-level pill row) set this
+    /// false BEFORE the view loads and drive the reader through `chromeState` +
+    /// the `chrome*` methods below; `onContentHierarchyChanged` fires whenever
+    /// the state may have changed (dive, pop, mode switch, article embed).
+    public var providesOwnChrome = true
+
+    /// Screen-hosted chrome occlusion measured in this reader's coordinates.
+    /// The scroll reader reserves it at rest, but its content continues behind
+    /// the host's backdrop blur as the user scrolls.
+    public var externalChromeContentInset: CGFloat = 0 {
+        didSet {
+            guard abs(externalChromeContentInset - oldValue) > 0.5 else { return }
+            for layer in layers { layer.externalChromeContentInset = externalChromeContentInset }
+        }
+    }
+
+    // MARK: - External chrome (host-rendered header pills)
+
+    /// The focused layer's chrome state, or nil before any layer exists.
+    public var chromeState: ReaderChromeState? {
+        guard let layer = layers[safe: focus] else { return nil }
+        return ReaderChromeState(
+            isArticle: layer.isArticle,
+            modes: layer.availableModes,
+            selectedMode: layer.readerMode,
+            isAudioOn: layer.isAudioOn,
+            showsBack: topIndex > 0,
+            offersSaveShare: layer.offersSaveShare,
+            isSaved: layer.isSavedInLibrary)
+    }
+
+    public func chromeSetMode(_ mode: ReadingListItem.ReaderMode) {
+        layers[safe: focus]?.setMode(mode)
+    }
+
+    public func chromeToggleAudio() {
+        layers[safe: focus]?.toggleAudio()
+    }
+
+    public func chromeSave() {
+        layers[safe: focus]?.performSave()
+    }
+
+    public func chromeShare(from sourceView: UIView) {
+        layers[safe: focus]?.performShare(from: sourceView)
+    }
+
+    /// Pop one layer (the external back pill; shown only above the root).
+    public func chromeBack() {
+        guard topIndex > 0 else { return }
+        popToLayer(topIndex - 1)
+    }
 
     /// Header back: pop one layer, or exit the reader entirely at the root.
     private func handleBack() {

@@ -76,6 +76,16 @@ public enum GlassStyle {
         return config
     }
 
+    /// A subtle trait-aware stroke approximating a liquid-glass rim light, for
+    /// hairline borders on card edges sitting over the screen background.
+    public static var glassBorderColor: UIColor {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 1.0, alpha: 0.22)
+                : UIColor(white: 0.0, alpha: 0.10)
+        }
+    }
+
     /// The effect for floating bars (footer controls).
     public static func barEffect() -> UIVisualEffect {
         if #available(iOS 26.0, *) {

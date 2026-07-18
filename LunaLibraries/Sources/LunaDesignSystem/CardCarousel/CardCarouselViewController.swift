@@ -93,6 +93,10 @@ public struct CardCarouselStyle {
     /// Horizontal room around the scrub strip. Hosts can increase this to
     /// flank the strip with floating controls without covering its content.
     public var scrubberHorizontalInset: CGFloat = 16
+    /// A subtle glass rim on every card, delineating it from a same-tone
+    /// screen background. The centered card's rim fades with the rest of the
+    /// carousel chrome during immersion.
+    public var showsCardBorder = false
 
     public init() {}
 }
@@ -380,6 +384,9 @@ public final class CardCarouselViewController: UIViewController {
         for other in slots.values where other.index != currentIndex {
             other.card.alpha = isImmersed ? 0 : 1
         }
+        // The centered card stays fully visible while immersed — only its glass
+        // rim fades, in step with the strip and side cards.
+        slots[currentIndex]?.card.borderAlpha = isImmersed ? 0 : 1
         guard let metrics, let slot = slots[currentIndex] else { return }
         let resting = metrics.centeredCardFrame()
         var frame = resting
@@ -433,6 +440,7 @@ public final class CardCarouselViewController: UIViewController {
         guard let dataSource else { return nil }
         let content = dataSource.carousel(self, contentControllerForCardAt: index)
         let card = CarouselCardView()
+        card.setBorderEnabled(style.showsCardBorder)
         addChild(content)
         card.installContentView(content.view)
         content.didMove(toParent: self)
@@ -475,6 +483,7 @@ public final class CardCarouselViewController: UIViewController {
         let offset = slot.index - currentIndex
         slot.card.layer.cornerRadius = CarouselCardView.cornerRadius
         slot.card.alpha = isImmersed ? 0 : 1
+        slot.card.borderAlpha = 1
         slot.card.transform = .identity
         slot.card.bounds = CGRect(origin: .zero, size: metrics.cardSize)
         slot.card.center = CGPoint(

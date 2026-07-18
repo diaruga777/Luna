@@ -8,6 +8,33 @@ import LunaFetch
     #expect(PaywallBypassRules.trailingDotURL(for: URL(string: "https://example.com/a")!)?.host == "example.com.")
 }
 
+@Test func knownPaywallPublisherCommerceMarkupRetainsDirectUnlockPlan() {
+    let url = URL(string:
+        "https://www.newyorker.com/culture/the-weekend-essay/the-voice-of-google"
+    )!
+    let html = """
+    <html><head>
+      <title>The Voice of Google | The New Yorker</title>
+      <meta property="og:type" content="article">
+      <meta property="product:price:amount" content="120.00">
+      <meta property="product:price:currency" content="USD">
+    </head><body>
+      <article><h1>The Voice of Google</h1><p>Subscriber preview.</p></article>
+      <button>Add to cart</button><div>Star Rating: 5 out of 5</div>
+    </body></html>
+    """
+
+    #expect(BypassGate.decision(for: url, html: html, extracted: nil)
+        == .attempt(.hardPaywallHostUnreadable))
+    let plan = BypassPlan.make(for: url, directHTML: html)
+    #expect(plan.webPreStages == [.directUnlock])
+    #expect(plan.allowsArchiveToday)
+
+    let unknownURL = URL(string: "https://publisher.example/story")!
+    #expect(BypassGate.decision(for: unknownURL, html: html, extracted: nil)
+        == .block(.productPage), "Only deterministic news classification overrides heuristics")
+}
+
 @Test func resolverAcceptsLongSubscriberMarkedDirectHTML() async {
     let articleURL = URL(string: "https://www.newstatesman.com/world/asia/2026/07/in-hong-kong-i-saw-the-coming-chinese-century")!
     let paragraph = "<p>" + String(repeating: "An ordinary readable sentence about newstatesman. ", count: 30) + "</p>"

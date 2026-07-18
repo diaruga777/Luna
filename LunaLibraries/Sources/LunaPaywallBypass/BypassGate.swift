@@ -75,7 +75,9 @@ public enum BypassGate {
     /// Decision order — the BLOCKS come first so a genuine non-paywall can never be
     /// bypassed, then the paywall SIGNALS:
     /// 1. Platform/social link → block (these never paywall-bypass).
-    /// 2. Product page → block (routed to price tracking).
+    /// 2. Product page → block (routed to price tracking), except that a
+    ///    deterministic news-host classification is authoritative over commerce
+    ///    furniture embedded in the publisher page.
     /// 3. A readable, non-paywalled article body → block (already have the article).
     /// 4. A machine-readable lock declaration → attempt.
     /// 5. A gate marker in the page text → attempt.
@@ -91,7 +93,22 @@ public enum BypassGate {
         }
 
         // (2) Product pages route to price tracking, never the bypass/archive flow.
-        if let html, ProductPageDetector().detect(urlString: url.absoluteString, html: html) != nil {
+        // Keep this in lockstep with IngestPipeline: deterministic news hosts remain
+        // articles even when their page shell embeds store cards, subscription prices,
+        // or generic retail component state. Otherwise this second gate can undo the
+        // correct ingest classification and suppress the publisher's unlock plan.
+        let deterministicKind = Classifier.classify(url: url)
+        let heuristicsMayDecideProduct: Bool
+        switch deterministicKind {
+        case .product:
+            return .block(.productPage)
+        case .article, .paywalledArticle:
+            heuristicsMayDecideProduct = false
+        case .undetermined, .social, .video, .document:
+            heuristicsMayDecideProduct = true
+        }
+        if heuristicsMayDecideProduct, let html,
+           ProductPageDetector().detect(urlString: url.absoluteString, html: html) != nil {
             return .block(.productPage)
         }
 

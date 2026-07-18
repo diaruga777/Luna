@@ -10,6 +10,47 @@ import XCTest
 
 final class IngestPipelineBrowserFallbackTests: XCTestCase {
 
+    /// Publisher pages can bundle priced store cards, subscription offers, and the
+    /// same generic commerce components used elsewhere on the site. Those secondary
+    /// components must not override an authoritative hard-paywall news-host match.
+    /// This reproduces the New Yorker failure with deliberately strong product
+    /// signals that would classify an otherwise-unknown page as a product.
+    func testKnownPaywallPublisherCommerceMarkupStillRoutesToUnlock() async {
+        let url = URL(string:
+            "https://www.newyorker.com/culture/the-weekend-essay/the-voice-of-google"
+        )!
+        let html = """
+        <html><head>
+          <title>The Voice of Google | The New Yorker</title>
+          <meta property="og:type" content="article">
+          <meta property="product:price:amount" content="120.00">
+          <meta property="product:price:currency" content="USD">
+        </head><body>
+          <article><h1>The Voice of Google</h1><p>Subscriber preview.</p></article>
+          <button>Add to cart</button><div>Star Rating: 5 out of 5</div>
+        </body></html>
+        """
+
+        XCTAssertNotNil(
+            ProductPageDetector().detect(urlString: url.absoluteString, html: html),
+            "The fixture must retain the commerce false-positive that exercises precedence"
+        )
+        XCTAssertEqual(Classifier.classify(url: url), .paywalledArticle(hardHost: true))
+
+        let outcome = await IngestPipeline.process(
+            IngestInput(url: url, source: .paste, prefetchedHTML: html),
+            timeout: 1,
+            fetcher: MockArticleFetcher()
+        )
+
+        XCTAssertEqual(outcome, .needsArchive(title: "The Voice of Google | The New Yorker"))
+        XCTAssertEqual(
+            BypassPlan.make(for: url, directHTML: html).webPreStages,
+            [.directUnlock],
+            "Correct categorization must retain New Yorker's configured unlock route"
+        )
+    }
+
     /// Reuters currently puts URLSession behind a DataDome 401 while the same page
     /// remains readable in a browser with Luna's site rule active. A title-less
     /// background failure must therefore park for the direct-unlock WKWebView leg,

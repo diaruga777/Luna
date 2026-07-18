@@ -244,9 +244,13 @@ public enum IngestPipeline {
     }
 
     /// The web-processing branch for an article/product/paywalled/undetermined URL.
-    /// Product handling runs first (a product is never paywall-bypassed); otherwise
-    /// the article is resolved through the gated silent bypass strategies and mapped
-    /// to `.article` / `.needsArchive` / `.failed`.
+    /// Product handling runs first only for a known shop or an otherwise-undetermined
+    /// page (a product is never paywall-bypassed). A deterministic article/news
+    /// classification is authoritative: publisher pages often embed store cards,
+    /// subscription offers, and retail component state that look product-like but do
+    /// not change the primary page into a product. Everything else is resolved through
+    /// the gated article bypass strategies and mapped to `.article` / `.needsArchive`
+    /// / `.failed`.
     private static func processWeb(
         url: URL,
         classifiedKind: ContentKind,
@@ -276,13 +280,22 @@ public enum IngestPipeline {
         // to extraction (no redundant `ProductPageDetector.detect` gate, which would
         // otherwise miss host-specific price shapes the per-host `ProductPriceRule`
         // extractor knows, e.g. Target `current_retail` / Walmart `currentPrice`).
-        // Only an undetermined/article-classified page needs the heuristic detector to
-        // confirm it's really a product before extracting.
-        let classifiedAsProduct: Bool = { if case .product = classifiedKind { return true }; return false }()
-        if !input.forceArticle, let html = directHTML,
-           let metadata = await metadataExtractor.extract(url: url, html: html, render: render),
-           classifiedAsProduct || !metadata.sellers.isEmpty
-                || productDetector.detect(urlString: url.absoluteString, html: html) != nil {
+        // Heuristic product detection is limited to `.undetermined` pages. Known news
+        // classifications remain articles even when a publisher embeds priced store
+        // cards or subscription/product components (New Yorker and similar sites).
+        let shouldExtractProduct: Bool
+        switch classifiedKind {
+        case .product:
+            shouldExtractProduct = true
+        case .undetermined:
+            shouldExtractProduct = directHTML.map {
+                productDetector.detect(urlString: url.absoluteString, html: $0) != nil
+            } ?? false
+        case .article, .paywalledArticle, .social, .video, .document:
+            shouldExtractProduct = false
+        }
+        if !input.forceArticle, shouldExtractProduct, let html = directHTML,
+           let metadata = await metadataExtractor.extract(url: url, html: html, render: render) {
             let product = ProductInfo(
                 name: metadata.name, priceAmount: metadata.price.amount,
                 priceCurrency: metadata.price.currency, imageURL: metadata.imageURL,

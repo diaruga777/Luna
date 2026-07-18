@@ -543,52 +543,60 @@ private final class ReaderCardContentViewController: CardContentViewController {
     /// the moving; the content never shifts.
     private func layoutReader() {
         guard let reader, let window = view.window else { return }
-        // Vertically window-anchored: computed during layout passes, so an
-        // animated card move relayouts the reader reciprocally INSIDE the same
-        // transaction — net zero window motion at every frame. (Applying this
-        // outside the animation, or per scroll tick, shifts the scroll view
-        // mid-pan and feeds back into the drag, freezing scrolling entirely.)
-        // Horizontally CARD-anchored (centered): for the centered/expanded card
-        // this is pixel-identical to window anchoring, but a side card — and
-        // crucially a card the eclipse translates via center/transform, which
-        // triggers NO layout pass — carries its content with it instead of
-        // exposing the blank margin beyond a stale window-anchored frame
-        // (the "gray card with only a title" during every page transition).
-        var frame = view.convert(window.bounds, from: window)
-        frame.origin.x = (view.bounds.width - frame.width) / 2
-        reader.view.frame = frame
+        // Fully CARD-local — nothing here depends on the card's position,
+        // transform, or focus state, so a card's layout at mount time IS its
+        // layout when it becomes centered: zero relayout or shift on focus, and
+        // a card the eclipse translates (no layout pass) carries its content
+        // with it. Screen-sized, horizontally centered on the card; vertically
+        // the reader's top sits `(1 - fraction) * distance` above the card, so
+        // it lands exactly at the screen top at rest and at full expansion
+        // alike — an animated expansion moves card top and reader offset
+        // reciprocally inside the same transaction, net zero window motion.
+        let size = window.bounds.size
+        reader.view.frame = CGRect(
+            x: (view.bounds.width - size.width) / 2,
+            y: -(1 - expansionFraction) * expansionDistance,
+            width: size.width,
+            height: size.height)
     }
 
     /// Host-fed on every carousel fraction change.
     func setExpansionFraction(_ fraction: CGFloat) {
         expansionFraction = min(max(fraction, 0), 1)
         titleBar.alpha = 1 - expansionFraction
+        // The reader's vertical offset is a function of the fraction; the
+        // accompanying card bounds change schedules the same pass, this is the
+        // belt to that suspenders.
+        viewIfLoaded?.setNeedsLayout()
     }
 
     // MARK: - Live reader lifecycle
 
+    // No relayout on focus change: the reader's layout is card-local and
+    // focus-independent, so the state a card mounted in is its final state.
+
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         isCentered = true
-        // Slots moved (paging translates cards without a bounds change, which
-        // wouldn't trigger layout) — re-anchor the reader to the window.
-        viewIfLoaded?.setNeedsLayout()
     }
 
     override func cardDidLeaveCenter() {
         super.cardDidLeaveCenter()
         isCentered = false
-        viewIfLoaded?.setNeedsLayout()
     }
 
     private func embedReaderIfPossible() {
         guard reader == nil, item.state == .ready,
               let content = ReadingListStore.shared.content(for: item)
         else { return }
+        // The whole article renders at embed time (`fullContentUpFront`) — the
+        // card's initial state IS its final state. No Phase-2 swap arrives
+        // later, so nothing relayouts or shifts when the card becomes centered.
         let reader = ReaderHostFactory.make(
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
-            transition: DotMatrixRabbitHoleTransition())
+            transition: DotMatrixRabbitHoleTransition(),
+            fullContentUpFront: true)
         addChild(reader)
         reader.view.autoresizingMask = []
         view.insertSubview(reader.view, at: 0)
@@ -600,17 +608,8 @@ private final class ReaderCardContentViewController: CardContentViewController {
         self.reader = reader
         layoutReader()
 
-        // No push transition happens for an embedded reader — kick its Phase-2
-        // full-content load explicitly (twice; it's idempotent and the second
-        // covers a not-yet-laid-out first call).
-        for delay in [0.05, 1.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                ((self?.reader) as? RabbitHoleReaderViewController)?.beginEmbeddedPresentation()
-            }
-        }
-
-        // The reader builds (and later swaps) its scroll views as content
-        // loads, so sweep for new ones a few times after embedding.
+        // The reader swaps its scroll views on mode switches, so sweep for new
+        // ones a few times after embedding (KVO only — never triggers layout).
         for delay in [0.7, 2.0, 4.5] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.observeReaderScrollViews()

@@ -192,12 +192,17 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Reuses an already-built scroll reader shell with new article content. RabbitHole
     /// calls this on a pre-added child so link activation does not pay the child-VC,
     /// TextKit view, gesture, footer, and constraint setup cost.
+    /// - Parameter fullRenderUpFront: render the WHOLE article immediately instead
+    ///   of the Phase-1 prefix + deferred Phase-2 swap. For hosts that keep the
+    ///   reader permanently embedded (e.g. carousel cards), where a post-embed
+    ///   content swap would visibly relayout the card.
     public func configureForReuse(
         item: ReadingListItem,
         content: ArticleContent,
         audioEnabled: Bool = false,
         shareProvider: ReaderShareProviding? = nil,
-        resumeWordIndex: Int? = nil
+        resumeWordIndex: Int? = nil,
+        fullRenderUpFront: Bool = false
     ) {
         imageDownloadTask?.cancel()
         speech?.stop()
@@ -232,9 +237,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         highlightedRange = nil
         followPlayback = true
 
-        let needsFullUpFront = audioEnabled || Self.openPositionLikelyBeyondPrefix(
-            item: item, resumeWordIndex: resumeWordIndex, audioEnabled: audioEnabled,
-            content: resolved, budget: Self.prefixCharacterBudget)
+        let needsFullUpFront = fullRenderUpFront || audioEnabled
+            || Self.openPositionLikelyBeyondPrefix(
+                item: item, resumeWordIndex: resumeWordIndex, audioEnabled: audioEnabled,
+                content: resolved, budget: Self.prefixCharacterBudget)
         let rendered = needsFullUpFront
             ? ArticleTextRenderer.render(resolved)
             : ArticleTextRenderer.render(resolved, characterBudget: Self.prefixCharacterBudget)

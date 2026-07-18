@@ -155,6 +155,12 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// pre-create the next layer offscreen and a dive only sets content + frame.
     private var isConfigured = false
 
+    /// Render embedded scroll readers' WHOLE article up front instead of the
+    /// Phase-1 prefix + deferred Phase-2 swap. Set by permanently-embedding hosts
+    /// (carousel cards), where the swap would visibly relayout the card. Must be
+    /// set before content is configured.
+    public var rendersFullContentUpFront = false
+
     /// Creates a BLANK layer shell: its view loads and all chrome (the header,
     /// buttons, lips, indent) is built immediately, but nothing is fetched or rendered
     /// until `configure(descriptor:preloadedContent:)`. The host pre-creates one of
@@ -681,7 +687,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         switch mode {
         case .scroll, .highlight, .original:
             scrollReader.configureForReuse(
-                item: readerItem, content: content, audioEnabled: audioOn)
+                item: readerItem, content: content, audioEnabled: audioOn,
+                fullRenderUpFront: rendersFullContentUpFront)
             scrollReader.onLinkActivatedWithRange = { [weak self] url, range in
                 guard let self else { return }
                 self.onLinkActivated?(url, self.lineText(for: range))

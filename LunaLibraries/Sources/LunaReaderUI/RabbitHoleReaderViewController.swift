@@ -300,6 +300,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private func makeLayerShell() -> RabbitHoleLayerViewController {
         let layer = RabbitHoleLayerViewController(
             shareProvider: shareProvider, layout: layout)
+        layer.rendersFullContentUpFront = rendersFullContentUpFront
         layer.onLinkActivated = { [weak self, weak layer] url, lineText in
             guard let self, let layer, layer === self.layers.last else { return }
             self.pushLayer(url: url, lineText: lineText, from: layer)
@@ -453,6 +454,12 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// navigation stack — for hosts embedding the reader outside a push (the
     /// Reader card carousel contracts the expanded card back into place).
     public var onRootBack: (() -> Void)?
+
+    /// Render every layer's WHOLE article up front instead of the Phase-1 prefix
+    /// + deferred Phase-2 swap. For permanently-embedding hosts (carousel cards):
+    /// the card's initial state IS its final state — no post-embed content swap,
+    /// no relayout when the card is focused. Set before the view loads.
+    public var rendersFullContentUpFront = false
 
     /// Embedding hosts have no push transition, so the appearance-driven
     /// trigger for the root layer's Phase-2 full-content load can be missed —

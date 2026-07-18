@@ -275,6 +275,20 @@ final class ArticleCardsViewController: UIViewController {
         carousel.setExpansionFraction(0, animated: true)
     }
 
+    /// RSVP boundary (non-interactive by design): scrubbing/rewinding to the
+    /// very start shrinks the fullscreen reader back into the card; leaving
+    /// the start expands it again.
+    private func handleRSVPIndexChange(_ index: Int) {
+        if index == 0 {
+            guard carousel.expansionFraction > 0 else { return }
+            contractCurrentCard()
+        } else {
+            guard carousel.expansionFraction < 1 else { return }
+            isForcedExpanded = true
+            carousel.setExpansionFraction(1, animated: true)
+        }
+    }
+
     private func makeReader(for item: ReadingListItem) -> UIViewController? {
         guard let content = store.content(for: item) else { return nil }
         return ReaderHostFactory.make(
@@ -369,6 +383,9 @@ extension ArticleCardsViewController: CardCarouselDataSource {
             guard let self, !self.isForcedExpanded else { return }
             self.carousel.setExpansionFraction(expands ? 1 : 0, animated: true)
         }
+        content.onRSVPIndexChanged = { [weak self] index in
+            self?.handleRSVPIndexChange(index)
+        }
         return content
     }
 
@@ -447,6 +464,8 @@ private final class ReaderCardContentViewController: CardContentViewController {
     var onContractRequested: (() -> Void)?
     /// The scroll settled mid-expansion: snap fully open (true) or home (false).
     var onScrollSettled: ((Bool) -> Void)?
+    /// The embedded reader's RSVP position changed (0 = scrubbed to the start).
+    var onRSVPIndexChanged: ((Int) -> Void)?
     /// Per scroll view — an idle sibling's programmatic offset nudges must not
     /// trip the settle logic for a drag happening in another scroll view.
     private var lastReportedFractions: [ObjectIdentifier: CGFloat] = [:]
@@ -587,6 +606,14 @@ private final class ReaderCardContentViewController: CardContentViewController {
     /// restore-position and text-selection jitter.
     private func observeReaderScrollViews() {
         guard let reader else { return }
+        // RSVP has no scroll view; its reading index drives the same boundary
+        // (0 = start of the article ⇒ card). Reassigning on every sweep is fine
+        // — the closure is idempotent.
+        for rsvp in Self.rsvpControllers(of: reader) {
+            rsvp.onFrameIndexChanged = { [weak self] index in
+                self?.onRSVPIndexChanged?(index)
+            }
+        }
         for scrollView in Self.scrollViews(in: reader.view) {
             let key = ObjectIdentifier(scrollView)
             guard scrollObservations[key] == nil else { continue }
@@ -640,6 +667,15 @@ private final class ReaderCardContentViewController: CardContentViewController {
         if fraction == 0, !scrollView.isDragging {
             scrollBaselines[key] = position
         }
+    }
+
+    private static func rsvpControllers(of root: UIViewController) -> [RSVPViewController] {
+        var found: [RSVPViewController] = []
+        for child in root.children {
+            if let rsvp = child as? RSVPViewController { found.append(rsvp) }
+            found.append(contentsOf: rsvpControllers(of: child))
+        }
+        return found
     }
 
     private static func scrollViews(in root: UIView, depth: Int = 0) -> [UIScrollView] {

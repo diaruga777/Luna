@@ -388,4 +388,70 @@ final class SafariArticleHeuristicTests: XCTestCase {
             "window.__lunaLooksLikeProductPage()",
             html: html, urlString: "https://www.anker.com/products/a2664"))
     }
+
+    /// New Yorker and similar publisher pages carry secondary commerce markup
+    /// (subscription prices, store cards, ratings) strong enough to satisfy the
+    /// generic product detector. The shared news-host classification must win in
+    /// Safari just as it does in Swift, so the extension offers Reader—not Tracker.
+    func testKnownNewsArticleCommerceMarkupIsNotAProductPage() {
+        let html = """
+        <html><head>
+          <meta property="og:type" content="article">
+          <meta property="product:price:amount" content="120.00">
+          <meta property="product:price:currency" content="USD">
+        </head><body><article>
+          <h1>The Voice of Google</h1><p>Subscriber preview.</p>
+          <button>Add to cart</button><div>Star Rating: 5 out of 5</div>
+        </article></body></html>
+        """
+        let newYorkerURL =
+            "https://www.newyorker.com/culture/the-weekend-essay/the-voice-of-google"
+
+        XCTAssertFalse(evaluate(
+            "window.__lunaLooksLikeProductPage()", html: html, urlString: newYorkerURL))
+        XCTAssertTrue(evaluate(
+            "window.__lunaIsArticlePage()", html: html, urlString: newYorkerURL))
+        XCTAssertTrue(evaluate(
+            "window.__lunaIsKnownHardPaywallHost()", html: html, urlString: newYorkerURL))
+
+        XCTAssertTrue(evaluate(
+            "window.__lunaLooksLikeProductPage()",
+            html: html,
+            urlString: "https://publisher.example/store/offer"),
+            "Unknown hosts must retain generic product detection"
+        )
+    }
+
+    /// New Yorker serves its full body in paragraph/blockquote nodes carrying the
+    /// `paywall` class. Removing only the modal leaves those nodes hidden. The generic
+    /// in-place cleanup must remove that class while deleting the content-less overlay.
+    func testRevealArticleUnhidesPaywallClassedArticleBody() {
+        let html = """
+        <html><head><style>.paywall { display: none; }</style></head><body>
+          <article><h1>The Voice of Google</h1>
+            <p>Visible lead paragraph.</p>
+            <p id="locked-paragraph" class="paywall">Full subscriber paragraph.</p>
+            <blockquote id="locked-quote" class="paywall">Full subscriber quotation.</blockquote>
+          </article>
+          <div id="paywall-overlay" class="paywall">Subscribe to continue reading.</div>
+        </body></html>
+        """
+        let expression = """
+        (function () {
+          window.__lunaRevealArticle();
+          var paragraph = document.getElementById('locked-paragraph');
+          var quote = document.getElementById('locked-quote');
+          return !!paragraph && !!quote
+            && !paragraph.classList.contains('paywall')
+            && !quote.classList.contains('paywall')
+            && getComputedStyle(paragraph).display !== 'none'
+            && document.getElementById('paywall-overlay') === null;
+        })()
+        """
+        XCTAssertTrue(evaluate(
+            expression,
+            html: html,
+            urlString: "https://www.newyorker.com/culture/the-weekend-essay/the-voice-of-google"
+        ))
+    }
 }

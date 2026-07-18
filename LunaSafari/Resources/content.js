@@ -51,8 +51,11 @@
             // pill) while keeping the SPA watcher live so a soft-nav INTO a post
             // still gains the pill.
             if (isRedditHost()) { handleReddit(resp); return; }
-            // Product pages win over the article heuristics (a retail page's long
-            // description can read as an article body).
+            // Product pages win over the fallback article heuristics (a retail page's
+            // long description can read as an article body). Deterministic known-news
+            // hosts remain articles, matching Swift's Classifier/IngestPipeline:
+            // publisher store cards and subscription components must not turn the
+            // primary article into a Price Tracker hand-off.
             if (looksLikeProductPage()) {
                 var trackTarget = trackTargetFor(resp);
                 if (trackTarget) { injectLunaButton(trackTarget); }
@@ -118,6 +121,10 @@
         var UNHIDE = ["blurred", "blur", "gradient", "fade", "faded-content", "clipped",
             "cropped", "truncated", "locked", "is-locked", "noscroll", "no-scroll",
             "scroll-lock", "overflow-hidden", "modal-open"];
+        // `paywall` is also used as the visibility class on full article paragraphs
+        // (New Yorker/Condé Nast). Only strip it when this is actually an article;
+        // bypass being enabled must not reveal similarly-named account/checkout UI.
+        if (isArticlePage()) { UNHIDE.unshift("paywall"); }
         // Substantial article prose inside an element (>= 2 paragraphs over 60
         // chars); 0 when it holds none. Distinguishes a content wrapper from an
         // overlay/promo that happens to share a paywall class.
@@ -200,6 +207,10 @@
             }, 400);
         }, 3000);
     }
+
+    // Test hook for the bare-WKWebView harness. The production path invokes the same
+    // function only after the native handler confirms on-device bypass is enabled.
+    window.__lunaRevealArticle = revealArticle;
 
     // A page worth a "Read in Luna" button: article/blog/essay/book prose, not a
     // landing page, comment thread, docs/reference page, listing, or login gate.
@@ -544,6 +555,11 @@
     // The Swift detector's embedded-app-state-JSON price signal is skipped here; this
     // only decides button visibility, and the app re-classifies properly on save.
     function looksLikeProductPage() {
+        // Keep Safari in lockstep with Swift: a deterministic news-host match owns
+        // classification before fuzzy/structured product signals. Publisher pages
+        // commonly embed priced subscription offers, store cards, ratings, and
+        // commerce component state that are secondary to the article itself.
+        if (isKnownArticleHost()) { return false; }
         if (urlIsMultiProductListing()) { return false; }
         if (hasJSONLDProductOffer()) { return true; }
         if (parsePriceNumber(metaContent(["product:price:amount", "og:price:amount", "product:price"])) !== null) {

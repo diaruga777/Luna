@@ -95,7 +95,8 @@ public final class CardEclipseTransition {
         let outgoingFrame = outgoing.frame
 
         // Dressing, bottom to top: the black-veiled opposite peek stays below the
-        // dimmer; the corona, sun (outgoing), moon (incoming), and flare above it.
+        // dimmer; the corona, sun (outgoing), flare, and moon (incoming) above it —
+        // the moon on top, so it masks the flare as it covers the sun's last edge.
         dimmer = UIView(frame: dimmingBounds)
         dimmer.backgroundColor = .black
         dimmer.alpha = 0
@@ -141,7 +142,10 @@ public final class CardEclipseTransition {
             height: flareDiameter)
         flare.alpha = 0
         flare.transform = CGAffineTransform(scaleX: 0.45, y: 0.45)
-        container.addSubview(flare)
+        // Below the moon: the incoming card masks the bright point, so only the
+        // part of the star still outside the moon's edge shows (diamond ring),
+        // and it is swallowed as the edge sweeps past.
+        container.insertSubview(flare, belowSubview: incoming)
 
         let ingressDuration = Self.duration * 0.66
         let dimmer = self.dimmer

@@ -8,16 +8,16 @@ TikTok, and Facebook posts. Resolution is keyless/client-side and therefore best
 Every Downloader save has one durable `SavedMediaItem` row and exactly one visible
 `StorageState`:
 
-1. **`undownloaded`** — the URL is saved, but no media backing exists yet. The grid
-   shows a dotted-outline download glyph on a grey square. Selecting it starts the
-   download instead of opening the viewer.
+1. **`undownloaded`** — the URL is saved, but no media backing exists yet. The
+   carousel card shows a dotted-outline download glyph (with a live progress ring
+   while a job runs). Tapping the glyph starts the download.
 2. **`localFile(fileName:)`** — the media file lives under the shared App Group at
    `SavedMedia/Files`; an optional generated thumbnail lives in `SavedMedia/Thumbnails`.
 3. **`photosReference(localIdentifier:…)`** — the manifest keeps PhotoKit's durable
-   `PHAsset.localIdentifier`, not a duplicate media file. Grid thumbnails, image data,
-   videos, sharing, and clipboard exports resolve the asset through PhotoKit each time.
-   A small multicolor Photos rosette appears in the grid's top-right corner and in the
-   fullscreen viewer so this backing is visible at a glance.
+   `PHAsset.localIdentifier`, not a duplicate media file. Card content, scrub-strip
+   thumbnails, sharing, and clipboard exports resolve the asset through PhotoKit each
+   time. A small multicolor Photos rosette appears in the card's top-leading corner
+   so this backing is visible at a glance.
 
 `SavedMediaStore.ensureUndownloaded` creates the manifest row before transfer and uses
 the reading-list UUID as its stable identity. Existing manifests with the old required
@@ -70,7 +70,8 @@ the manifest commit and file cleanup.
 
 ### Photos deletion and authorization
 
-The grid reconciles Photos references when `.readWrite` authorization is available.
+The root carousel reconciles Photos references when `.readWrite` authorization is
+available.
 If `PHAsset.fetchAssets(withLocalIdentifiers:)` no longer finds an asset, Luna deletes the
 Downloader item and clears its download-dedup marker, so saving the URL again can download
 it again. Reconciliation is skipped for denied/restricted access and for `.limited`
@@ -78,7 +79,7 @@ access, where a nil fetch can mean "not selected" rather than deleted. Limited a
 still display selected assets, but Luna only interprets absence as deletion with full
 `.authorized` read/write access.
 
-Deleting a Photos-backed item from either the Downloader grid or fullscreen viewer first
+Deleting a Photos-backed item from the card's long-press menu first
 deletes the referenced `PHAsset` through `PHPhotoLibrary`, then removes the Downloader and
 reading-list records. If Photos access is denied, or limited access cannot resolve the
 asset, the Luna records are retained until the user grants sufficient access. A Photos
@@ -90,14 +91,13 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
 
 ## Entry points and UI
 
-- **Main Downloader grid** — `SavedMediaGridViewController` displays all three states in
-  chronological order. Downloaded local and Photos items open
-  `SavedMediaViewerViewController`; undownloaded items start a transfer. Local rows offer
-  **Save to Photos**; Photos-backed rows do not offer a redundant save action.
-- **Viewer** — local images/videos open from their App Group file. Photos-backed images
-  load with PhotoKit image-data APIs and Photos-backed videos load through
-  `PHImageManager.requestAVAsset`. Paging, deletion, autoplay/pause, and the zoom
-  transition remain common to both backings.
+- **Main Downloader carousel** — `SavedMediaCardsViewController` (the root screen)
+  displays all three states in chronological order as full-content cards; there is no
+  separate pushed viewer (see `claudedocs/card-carousel.md` for the carousel's
+  interaction model). Local media plays from its App Group file; Photos-backed images
+  load with PhotoKit image APIs and Photos-backed videos load through
+  `PHImageManager.requestAVAsset`. Long-press menus offer **Save to Photos** on local
+  rows (Photos-backed rows do not offer a redundant save action), Share, and Delete.
 - **Share and action extensions** — `SavedNonTextualViewController` retains its inline
   preview state machine (`pending`, `downloading`, `ready`, `alreadyDownloaded`, `failed`).
   Before deciding to auto-download or wait for a tap, it checks
@@ -133,7 +133,7 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   `autoDownloadedURLs` marker never suppresses a missing or `.undownloaded` row, so an
   interrupted/crashed save is restartable by pasting the URL again. Store-change notifications
   and live job-progress notifications from async ingestion / URLSession delegates are marshalled
-  onto the main queue before UIKit grid/footer observers run. A launch pass compares every
+  onto the main queue before UIKit carousel/footer observers run. A launch pass compares every
   persisted resolving/downloading job with the background session's real tasks and recreates a
   missing transfer; pasting the same interrupted URL performs the same repair immediately. New
   jobs register their background task before notifying UI, so a termination cannot leave a
@@ -145,9 +145,9 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   sheet. It does not become part of the durable three-state store or request Photos
   directly.
 
-The grid and viewer observe both `.savedMediaChanged` and `.readingListChanged`.
+The carousel observes both `.savedMediaChanged` and `.readingListChanged`.
 `SavedMediaStore` also posts an App-Group-specific Darwin notification for mutations made
-in another process; the grid bridges it back to `.savedMediaChanged` and reloads on app
+in another process; the carousel bridges it back to `.savedMediaChanged` and reloads on app
 activation because Darwin notifications may be dropped while suspended.
 
 ## Clipboard completion action

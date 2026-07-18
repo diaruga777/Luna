@@ -73,7 +73,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func makeMainRootViewController() -> UIViewController {
         let surface = AppSurfaceConfig.current
         let root: UIViewController = surface == .downloader
-            ? SavedMediaGridViewController()
+            ? SavedMediaCardsViewController()
             : ReadingListViewController(surface: surface)
         let nav = UINavigationController(rootViewController: root)
         guard surface == .reader else { return nav }

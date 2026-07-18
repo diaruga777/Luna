@@ -21,7 +21,8 @@
 //    (glass card, drag gestures, haptics) for the card's article, without
 //    going fullscreen.
 //  - Horizontal swipes INSIDE the card page to the neighbor (readers have no
-//    timeline to scrub); the scrub strip shows bigger title chips.
+//    timeline to scrub); the scrub strip shows mini-card chips, each badged
+//    with the article's source (favicon / sender initials / symbol fallback).
 //
 
 import LunaArchiveReader
@@ -61,7 +62,7 @@ final class ArticleCardsViewController: UIViewController {
         style.edgeGap = 10
         style.fillsVertically = true
         style.pagesOnInCardSwipes = true
-        style.scrubberStyle = .titles
+        style.scrubberStyle = .miniCards
         style.scrubberHorizontalInset = 70
         carousel.style = style
         carousel.managesAudioSession = false   // Reader has its own audio stack.
@@ -339,7 +340,27 @@ final class ArticleCardsViewController: UIViewController {
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void
     ) {
-        completion(nil)   // titles-style strip; no image chips
+        completion(nil)   // mini-card strip; no image chips
+    }
+
+    /// Chip badge: an instant fallback (initials / mail / document / globe)
+    /// first, then the site's real favicon replaces it once fetched. Cached
+    /// icons resolve synchronously, so a warm strip shows favicons at once.
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadSourceBadgeForCardAt index: Int,
+        completion: @escaping (CarouselSourceBadge?) -> Void
+    ) {
+        guard items.indices.contains(index) else {
+            completion(nil)
+            return
+        }
+        let item = items[index]
+        completion(ArticleSourceBadge.fallback(for: item))
+        guard ArticleSourceBadge.wantsFavicon(item), let url = item.url else { return }
+        SourceIconCache.shared.icon(forPageURL: url) { image in
+            if let image { completion(.icon(image)) }
+        }
     }
 
     func carousel(

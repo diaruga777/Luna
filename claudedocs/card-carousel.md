@@ -125,8 +125,21 @@ Differences from the Downloader, via `CardCarouselStyle`:
   (card closer to the screen edges), `pagesOnInCardSwipes` (horizontal swipes
   inside the card page — readers have no timeline to scrub; the page pan
   recognizes simultaneously with the reader's own gestures, gated to
-  strongly-horizontal drags), `.titles` scrubber (bigger chips showing article
-  titles instead of thumbnails). Dragging the strip shows the title instantly,
+  strongly-horizontal drags), `.miniCards` scrubber: each chip is a miniature
+  article card — a tiny `.systemBackground` surface with skeleton headline/body
+  bars and a source badge as its masthead. The badge (`CarouselSourceBadge` in
+  LunaDesignSystem, rendered by `CarouselSourceBadgeView`) is the site's
+  favicon for web saves — fetched by `FaviconFetcher` (LunaFetch: well-known
+  apple-touch-icon path → homepage `<link rel*=icon>` candidates ranked
+  touch-icon-first/largest-first → `/favicon.ico`, every response validated as
+  a decodable raster image) and cached by `SourceIconCache` (app shell:
+  memory + `Caches/SourceIcons/<host>.png` + 7-day negative cache + in-flight
+  de-dup). Email imports show the sender's initials on a name-derived pastel
+  (or an envelope glyph when the sender is unknown), documents a doc glyph,
+  and web saves a globe until the favicon lands (the data-source callback may
+  fire twice: instant fallback, then the fetched icon —
+  `ArticleSourceBadge.fallback(for:)`, unit-tested in `SourceBadgeTests`).
+  Dragging the strip shows the title instantly,
   then mounts the previewed card's REAL live content into the overlay once the
   finger rests on a chip for ~120ms (debounced so sweeping across chips doesn't
   build a reader per chip) — scrubbed-to cards render their full contents, not
@@ -160,7 +173,7 @@ Differences from the Downloader, via `CardCarouselStyle`:
 - Catch-up moved from the old list's scrolling header row into the pinned
   NavHeaderBar (same rectangle.stack icon + red dot); `CatchUpViewController`'s
   router is now the `CatchUpRouting` protocol so both roots can present it.
-- Settings and Add flank the title scrubber in Liquid Glass circles instead of
+- Settings and Add flank the mini-card scrubber in Liquid Glass circles instead of
   consuming header space. Friends is reached from Settings. With only Catch Up left
   in the root header, the card begins directly below the safe area so its own reader
   header can use the vacated top row.

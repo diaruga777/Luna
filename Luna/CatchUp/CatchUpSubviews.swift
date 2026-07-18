@@ -79,7 +79,7 @@ final class CatchUpMessageView: UIView {
     /// ring springs/pops in while the tick strokes on, landing on a settled checkmark.
     /// `completion` fires once the tick has finished drawing (or immediately-ish under
     /// Reduce Motion, where we just show the finished mark). Independent of the
-    /// pixel-wipe gate — this is pure Core Animation.
+    /// This is pure Core Animation.
     ///
     /// - Parameter tint: the accent color for the ring + tick.
     /// - Parameter text: the headline ("All done!").

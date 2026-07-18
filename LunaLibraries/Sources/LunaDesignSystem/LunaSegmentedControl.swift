@@ -7,8 +7,7 @@ import UIKit
 
 /// A small, snapshot-stable segmented control that matches the standard iOS
 /// segmented-control shape closely, but owns its selected indicator as a normal
-/// layer. This avoids UIKit's private, lazy selected-thumb view disappearing from
-/// same-runloop Dot Matrix transition snapshots.
+/// layer for predictable layout and rendering.
 public final class LunaSegmentedControl: UIControl {
     fileprivate struct Segment {
         var title: String?

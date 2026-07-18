@@ -28,7 +28,7 @@ final class RabbitHoleStackStoreTests: XCTestCase {
         ])
         layer.configure(
             descriptor: RabbitHoleLayerDescriptor(urlString: "https://example.com/article"),
-            preloadedContent: content)
+            knownContent: content)
         // After configure with a real web URL: scroll + RSVP + original.
         XCTAssertEqual(layer.modeSegmentCountForTesting, 3)
     }
@@ -44,7 +44,7 @@ final class RabbitHoleStackStoreTests: XCTestCase {
         ])
         layer.configure(
             descriptor: RabbitHoleLayerDescriptor(urlString: "lunamail://message/123"),
-            preloadedContent: content)
+            knownContent: content)
         XCTAssertEqual(layer.modeSegmentCountForTesting, 2)
     }
 

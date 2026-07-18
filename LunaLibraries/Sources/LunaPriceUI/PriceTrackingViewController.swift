@@ -10,7 +10,6 @@ import LunaInteropUI
 import LunaURLClassification
 import LunaModels
 import LunaDesignSystem
-import LunaTransitions
 import UIKit
 
 public extension Notification.Name {
@@ -98,8 +97,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let thresholdSlider = AlertThresholdSlider()
-    /// In-content header in place of the nav bar (title + back/done + "Read instead"),
-    /// so it animates as part of the Dot Matrix push/pop wipe.
+    /// In-content header in place of the nav bar (title + back/done + "Read instead").
     private let navHeader = NavHeaderBar()
     private let productHeader = UIView()
     private let productTitleLabel = UILabel()
@@ -287,8 +285,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     }
 
     /// Installs the top-left (back/done) and top-right ("Read instead") controls from
-    /// the pure `PriceTrackingExitContext` decision, into the in-content header bar
-    /// (so they animate as part of the Dot Matrix wipe rather than via the nav bar).
+    /// the pure `PriceTrackingExitContext` decision into the in-content header bar.
     private func configureNavigationChrome() {
         let leftControl: UIView
         switch exitContext.leftButton {
@@ -408,7 +405,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             self?.presentSearchOverlay()
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
     /// Adds `urlString` as a seller: fetches its price (mandatory, via the same
@@ -512,7 +509,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
                 urlString: urlString, prefetchedHTML: html.isEmpty ? nil : html,
                 report: completion)
         }
-        DotMatrixModal.present(overlay, from: self)
+        present(overlay, animated: true)
     }
 
     // MARK: - Exit
@@ -611,7 +608,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         if let onDone {
             prompt.onDone = { [weak prompt] in
                 guard let prompt else { return }
-                DotMatrixModal.dismiss(prompt, completion: onDone)
+                prompt.dismiss(animated: true, completion: onDone)
             }
         }
         let nav = UINavigationController(rootViewController: prompt)
@@ -619,7 +616,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         // overlay) — present from the top of the chain so it actually appears.
         var presenter: UIViewController = self
         while let presented = presenter.presentedViewController { presenter = presented }
-        DotMatrixModal.present(nav, from: presenter)
+        presenter.present(nav, animated: true)
     }
 
     /// Leaves the screen whichever way it was shown: pop when pushed onto a nav stack
@@ -631,7 +628,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         } else if let onDone {
             onDone()
         } else {
-            DotMatrixModal.dismiss(self)
+            dismiss(animated: true)
         }
     }
 }

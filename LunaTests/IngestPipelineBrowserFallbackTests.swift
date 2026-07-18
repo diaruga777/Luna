@@ -4,6 +4,7 @@
 //
 
 import LunaIngest
+import LunaHTMLClassification
 import LunaPaywallBypass
 import XCTest
 @testable import Luna

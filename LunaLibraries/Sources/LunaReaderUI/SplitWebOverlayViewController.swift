@@ -6,7 +6,6 @@
 import LunaDesignSystem
 import LunaModels
 import LunaStorage
-import LunaTransitions
 import UIKit
 
 /// The inline reader shown when a link is tapped in the scroll reader.
@@ -53,7 +52,6 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
     private let card = UIView()
     private let cardShadow = UIView()
     // De-glassed (Task 3): a solid header fill over the card's solid background, so the
-    // Dot Matrix pixel-wipe captures it faithfully (a live blur could not be).
     private let header = UIView()
     private let closeButton = UIButton(type: .system)
     private let saveButton = UIButton(type: .system)
@@ -167,54 +165,20 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
         guard !didAnimateIn else { return }
         didAnimateIn = true
         SharedDiagnosticLog.record(
-            "transition begin (reveals content already laid out): \(url.absoluteString)",
+            "opening inline reader: \(url.absoluteString)",
             category: "preload-tap")
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         onOpen?()
 
-        // Dot Matrix open: only the screen area that BECOMES the card's content
-        // (below its header) pixel-wipes from the reader text to the inline page;
-        // all chrome — the card header, peeks, dim, chevron — just fades in via the
-        // crossfade's chrome layer. Snapshots are taken from the WINDOW: the overlay
-        // hasn't been committed yet, so the window's on-screen state IS the pre-open
-        // reader (the true "before" for both the peeks and the RSVP-pill case).
-        if DotMatrixTransitionCenter.shared.isEnabled, let window = view.window {
-            let region = view.convert(contentWipeRegion, to: window).integral
-            DotMatrixCrossfade.run(in: window, direction: .random, region: region,
-                                   chromeFade: true, changes: {
-                self.apply(progress: 0)
-                window.layoutIfNeeded()
-            }, completion: { [weak self] in
-                self?.topPage?.entryAnimationDidFinish()
-            })
-            return
-        }
-
-        // Wipe disabled: the original spring — a higher initial velocity + lighter
-        // damping so the card starts moving on the first frame instead of easing in
-        // slowly (which read as a pre-open delay).
         UIView.animate(withDuration: 0.34, delay: 0, usingSpringWithDamping: 0.82,
                        initialSpringVelocity: 1.0, options: [.beginFromCurrentState]) {
             self.apply(progress: 0)
-        } completion: { [weak self] _ in
-            // Open animation done: let the root page's embedded reader render the full
-            // article now (its Phase-2 swap), off the open's critical path.
-            self?.topPage?.entryAnimationDidFinish()
         }
     }
 
     // MARK: - Geometry
 
     private var hasPeeks: Bool { topHalf != nil || bottomHalf != nil }
-
-    /// The screen area that becomes (or is) the card's CONTENT — the open card frame
-    /// below its floating header. This is the only region the open/close pixel-wipe
-    /// touches; the header band and everything outside the card only ever fades.
-    private var contentWipeRegion: CGRect {
-        let open = openCardFrame
-        return CGRect(x: open.minX, y: open.minY + Self.headerHeight,
-                      width: open.width, height: max(open.height - Self.headerHeight, 0))
-    }
 
     private var openCardFrame: CGRect {
         let width = view.bounds.width
@@ -268,33 +232,11 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
 
     // MARK: - Dismiss
 
-    /// `wipe: false` keeps the spring — used when a peek DRAG commits the close, so
-    /// the release continues the finger's live motion instead of switching styles
-    /// mid-gesture. Button/chevron closes take the Dot Matrix path.
-    private func animateDismiss(wipe: Bool = true) {
+    private func animateDismiss() {
         guard !didDismiss else { return }
         didDismiss = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         onClose?()
-
-        // Dot Matrix close — the mirror of the open: the card's content region wipes
-        // back to the reader text beneath; the chrome (header, dim, chevron, peeks)
-        // fades out. Collapsing to progress 1 restores the seamless split (peeks) or
-        // clears the backdrop (RSVP pill), so the "after" is the real reader and the
-        // unanimated dismissal underneath is invisible.
-        if wipe, DotMatrixTransitionCenter.shared.isEnabled, let window = view.window {
-            let region = view.convert(contentWipeRegion, to: window).integral
-            DotMatrixCrossfade.run(in: window, direction: .random, region: region,
-                                   chromeFade: true, changes: {
-                self.apply(progress: 1)
-                self.dimView.alpha = 0
-                window.layoutIfNeeded()
-            }, completion: {
-                self.onDismiss?()
-                self.dismiss(animated: false)
-            })
-            return
-        }
 
         // A high-damping spring (matching the open) reads smoother than the old
         // ease-in, which accelerated abruptly into the close.
@@ -320,11 +262,11 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
             apply(progress: progress)
             if progress >= 1 {   // fully compressed → dismiss; never re-grow
                 isClosing = true
-                animateDismiss(wipe: false)
+                animateDismiss()
             }
         case .ended, .cancelled:
             if progress >= 0.5 || abs(gesture.velocity(in: view).y) > 800 {
-                animateDismiss(wipe: false)
+                animateDismiss()
             } else {
                 UIView.animate(withDuration: 0.25) { self.apply(progress: 0) }
             }
@@ -369,23 +311,6 @@ public final class SplitWebOverlayViewController: UIViewController, UIGestureRec
         didShow viewController: UIViewController, animated: Bool
     ) {
         syncHeaderToTopPage()
-    }
-
-    /// Inline page push/pop wipes like a nav transition. The wipe's overlay lives in
-    /// the nav's transition container — INSIDE the card, under the floating header —
-    /// so only the page content pixelates; the card chrome stays live and static.
-    public func navigationController(
-        _ navigationController: UINavigationController,
-        animationControllerFor operation: UINavigationController.Operation,
-        from fromVC: UIViewController,
-        to toVC: UIViewController
-    ) -> UIViewControllerAnimatedTransitioning? {
-        guard DotMatrixTransitionCenter.shared.isEnabled else { return nil }
-        switch operation {
-        case .push: return DotMatrixAnimator(direction: .rightToLeft)
-        case .pop: return DotMatrixAnimator(direction: .leftToRight)
-        default: return nil
-        }
     }
 
     /// Reflects the top page in the header: ✕ at the root vs. a back chevron deeper

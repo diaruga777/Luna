@@ -11,7 +11,6 @@ import LunaMailAccount
 import LunaMailTransport
 import LunaDesignSystem
 import LunaSocial
-import LunaTransitions
 import UIKit
 
 final class CredentialViewController: UIViewController {
@@ -209,7 +208,7 @@ final class CredentialViewController: UIViewController {
                 accountStore.save(account, credential: .appPassword(password))
                 cover.resolveToCheckmark { [self] in
                     if dismissOnCompletion {
-                        DotMatrixModal.dismiss(self) { self.completion?(true) }
+                        self.dismiss(animated: true) { self.completion?(true) }
                     } else {
                         cover.hide()
                         completion?(true)
@@ -222,7 +221,7 @@ final class CredentialViewController: UIViewController {
                 let alert = UIAlertController(
                     title: "Couldn't sign in", message: Self.errorMessage(for: error), preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "OK", style: .default))
-                DotMatrixModal.present(alert, from: self)
+                present(alert, animated: true)
             }
         }
     }

@@ -6,9 +6,7 @@
 import LunaDesignSystem
 import UIKit
 
-/// App-wide appearance: the interface-style (System / Light / Dark) override and
-/// whether the animated Dot Matrix transitions play, plus the Reader-only Lunar
-/// Eclipse experiment.
+/// App-wide interface style and the Reader-only Lunar Eclipse experiment.
 final class AppearanceSettingsScreen: NavHeaderTableController {
 
     private enum Section: Int, CaseIterable { case theme, motion }
@@ -21,10 +19,12 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
         super.viewDidLoad()
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { Section.allCases.count }
+    override func numberOfSections(in tableView: UITableView) -> Int {
+        AppSurfaceConfig.current == .reader ? Section.allCases.count : 1
+    }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        Section(rawValue: section) == .motion && AppSurfaceConfig.current == .reader ? 2 : 1
+        1
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
@@ -38,10 +38,8 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
         switch Section(rawValue: section)! {
         case .theme: return nil
         case .motion:
-            return "When off, Luna uses the standard system transitions instead of the "
-                + "animated ones. They are also disabled automatically when Reduce Motion "
-                + "is on in your system accessibility settings. Lunar Eclipse is an opt-in "
-                + "alternative used only when Luna Reader opens or closes an article."
+            return "Lunar Eclipse is an opt-in transition used only when Luna Reader "
+                + "opens or closes an article. Reduce Motion disables it automatically."
         }
     }
 
@@ -55,16 +53,11 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
             let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
             cell.selectionStyle = .none
             var content = cell.defaultContentConfiguration()
-            let isLunarEclipse = indexPath.row == 1
-            content.text = isLunarEclipse ? "Lunar Eclipse Transition" : "Animated Transitions"
+            content.text = "Lunar Eclipse Transition"
             cell.contentConfiguration = content
             cell.accessoryView = makeToggle(
-                isOn: isLunarEclipse
-                    ? AppearanceSettings.lunarEclipseReaderTransitionEnabled
-                    : AppearanceSettings.animatedTransitionsEnabled,
-                action: isLunarEclipse
-                    ? #selector(lunarEclipseTransitionToggled(_:))
-                    : #selector(animatedTransitionsToggled(_:)))
+                isOn: AppearanceSettings.lunarEclipseReaderTransitionEnabled,
+                action: #selector(lunarEclipseTransitionToggled(_:)))
             return cell
         }
     }
@@ -95,17 +88,12 @@ final class AppearanceSettingsScreen: NavHeaderTableController {
     @objc private func interfaceStyleChanged(_ control: UISegmentedControl) {
         let styles = AppearanceSettings.InterfaceStyle.allCases
         AppearanceSettings.interfaceStyle = styles[max(0, min(control.selectedSegmentIndex, styles.count - 1))]
-        // Re-apply live to every connected scene's windows (including any transition
-        // cover windows currently on screen).
+        // Re-apply live to every connected scene's windows.
         for window in UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .flatMap(\.windows) {
             AppearanceSettings.apply(to: window)
         }
-    }
-
-    @objc private func animatedTransitionsToggled(_ toggle: UISwitch) {
-        AppearanceSettings.animatedTransitionsEnabled = toggle.isOn
     }
 
     @objc private func lunarEclipseTransitionToggled(_ toggle: UISwitch) {

@@ -11,7 +11,6 @@ import LunaSend
 import LunaSocial
 import LunaStorage
 import LunaDesignSystem
-import LunaTransitions
 import UIKit
 
 /// Email & Sending settings. Includes the Reader-only Double Save action
@@ -343,7 +342,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             IncomingMailSettings.addSender(text)
             self?.tableView.reloadData()
         })
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
     private func promptForSubjectFilter() {
@@ -362,7 +361,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             IncomingMailSettings.addSubjectFilter(text)
             self?.tableView.reloadData()
         })
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
     private func presentFilterGuide() {
@@ -382,7 +381,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
             })
         }
         alert.addAction(UIAlertAction(title: "Done", style: .cancel))
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
     // MARK: - Test sends

@@ -24,22 +24,15 @@ final class ReaderScreenTests: XCTestCase {
                         state: .ready, wordCount: 480)
     }
 
-    private var priorAnimatedTransitions = true
-
     override func setUp() {
         super.setUp()
         UIView.setAnimationsEnabled(false)
         // The RSVP sub-mode is persisted; pin it so snapshots are deterministic
         // regardless of any value left behind by other runs.
         ReaderSettings.rsvpMode = .words
-        // Animated transitions are App-Group-persisted and default to on; pin them off
-        // so these snapshots aren't perturbed by an in-flight pixel wipe.
-        priorAnimatedTransitions = AppearanceSettings.animatedTransitionsEnabled
-        AppearanceSettings.animatedTransitionsEnabled = false
     }
 
     override func tearDown() {
-        AppearanceSettings.animatedTransitionsEnabled = priorAnimatedTransitions
         super.tearDown()
     }
 

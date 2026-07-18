@@ -15,7 +15,6 @@ import LunaStorage
 import LunaFetch
 import LunaHTMLClassification
 import LunaModels
-import LunaTransitions
 import UIKit
 import WebKit
 
@@ -72,10 +71,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// the transient completion (mirrors `ReaderViewController`'s mark/unmark dance).
     private var autoMarkedRead: (id: UUID, priorProgress: Double?)?
     private weak var readerChild: UIViewController?
-    /// This layer's current chrome role, tracked so a mode switch (which re-embeds the
-    /// reader child) can restore the new child's interaction to match the focus state —
-    /// the preloaded children start with interaction OFF (see `installPreloadedModeChildren`)
-    /// and only the focused layer's active child should take touches.
     private var currentRole: RabbitHoleLayout.Role = .focused
     private var webView: WKWebView?
     private let scrollReader: ScrollReaderViewController
@@ -83,8 +78,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private let originalReader: OriginalPageViewController
 
     // Chrome (focused header + ancestor lips).
-    // De-glassed (Task 3): a solid header fill over the layer card's solid background,
-    // so the Dot Matrix pixel-wipe captures it faithfully (a live blur could not be).
     private let header = UIView()
     private let backButton = UIButton(type: .system)
     private let modeControl = LunaSegmentedControl()
@@ -147,12 +140,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     }
     #endif
 
-    /// De-duplicated http(s) links this layer's article points at, in document order.
-    /// The host preloads these so a dive into one is instant.
-    public var outboundLinkURLs: [URL] { articleContent?.outboundURLs ?? [] }
     /// True once `configure(...)` has assigned this shell a real page to load. A freshly
-    /// created shell stays blank (chrome built, nothing loading) so the host can
-    /// pre-create the next layer offscreen and a dive only sets content + frame.
+    /// created shell stays blank until it receives its descriptor.
     private var isConfigured = false
 
     /// Render embedded scroll readers' WHOLE article up front instead of the
@@ -161,10 +150,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// set before content is configured.
     public var rendersFullContentUpFront = false
 
-    /// Creates a BLANK layer shell: its view loads and all chrome (the header,
-    /// buttons, lips, indent) is built immediately, but nothing is fetched or rendered
-    /// until `configure(descriptor:preloadedContent:)`. The host pre-creates one of
-    /// these offscreen so tapping a link never has to build a view controller.
+    /// Creates a blank layer shell. Loading starts after `configure` assigns its page.
     public init(shareProvider: ReaderShareProviding?,
          layout: RabbitHoleLayout) {
         self.descriptor = RabbitHoleLayerDescriptor(urlString: "")
@@ -181,16 +167,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     public required init?(coder: NSCoder) { fatalError("not used") }
     deinit { articleProbe?.cancel(); loadWatchdog?.cancel() }
 
-    /// Assign this shell its page and start loading. Called once on a blank shell — on
-    /// the root/restored layers at build time, and on the pre-created spare when the user
-    /// dives into a link. The root already has its content (render directly); deeper
-    /// layers carry only a URL, so they probe off-main.
-    public func configure(descriptor: RabbitHoleLayerDescriptor, preloadedContent: ArticleContent?) {
+    /// Assign this shell its page and start loading. The root already has content;
+    /// deeper layers carry only a URL and probe off-main.
+    public func configure(descriptor: RabbitHoleLayerDescriptor, knownContent: ArticleContent?) {
         self.descriptor = descriptor
         self.readerMode = descriptor.readerMode == .highlight ? .rsvp : descriptor.readerMode
         self.isConfigured = true
-        if let preloadedContent {
-            pendingDecision = .reader(preloadedContent)
+        if let knownContent {
+            pendingDecision = .reader(knownContent)
         } else {
             probeForArticle()
         }
@@ -217,7 +201,6 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         view.addSubview(spinner)   // centred manually in viewDidLayoutSubviews
 
         configureChrome()
-        installPreloadedModeChildren()
         if isConfigured { beginLoading() }
     }
 
@@ -256,25 +239,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         readerChild?.view.frame = CGRect(x: 0, y: top,
                                          width: view.bounds.width,
                                          height: max(view.bounds.height - top, 0))
-        for child in [scrollReader, rsvpReader, originalReader] {
-            child.view.frame = CGRect(x: 0, y: top,
-                                      width: view.bounds.width,
-                                      height: max(view.bounds.height - top, 0))
-        }
         webView?.frame = view.bounds
-    }
-
-    /// Install all article mode children while the layer shell is still blank. This
-    /// pays the child containment, view creation, TextKit/WebKit setup, constraints,
-    /// controls, and first layout before any link tap needs the layer.
-    private func installPreloadedModeChildren() {
-        for child in [scrollReader, rsvpReader, originalReader] {
-            addChild(child)
-            child.view.isHidden = true
-            child.view.isUserInteractionEnabled = false
-            view.insertSubview(child.view, belowSubview: header)
-            child.didMove(toParent: self)
-        }
     }
 
     /// Set the card's background tint for its stack depth.
@@ -479,7 +444,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         // written on dive/pop/background — capture the live position first or the
         // article jumps back to the last-persisted one.
         syncReadingPosition()
-        embedReader(mode: readerMode, forceReembed: true, triggersFullContentLoad: true)
+        embedReader(mode: readerMode, forceReembed: true)
     }
 
     @objc private func saveTapped() {
@@ -504,34 +469,12 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         // crossfade embeds synchronously, before any persist runs) so the incoming
         // mode resumes from it.
         syncReadingPosition()
-        // Keep the control's live selection on the new mode (it's already there when this
-        // came from `modeChanged`; a no-op then, but needed for programmatic mode changes).
-        // The control's OWN selection move uses UIKit's stock selection animation — no
-        // dotmatrix pixel-wipe on the control widget itself; only the content below it wipes.
         if let index = orderedModes.firstIndex(of: mode) {
             modeControl.selectedSegmentIndex = index
         }
-        // Dissolve ONLY the content region (below the floating header) dot-by-dot from
-        // the old mode to the new one. The wipe is confined to the reader-child content rect
-        // via `region:`, so the header sitting at y:0..headerHeight never pixelates.
-        // (Falls back to a plain crossfade when the pixel-wipe is off / unavailable.)
-        let contentRegion = Self.contentWipeRegion(in: view.bounds)
-        DotMatrixCrossfade.run(in: view, direction: .random, region: contentRegion) { [weak self] in
-            self?.embedReader(mode: mode, triggersFullContentLoad: true)
-        }
+        embedReader(mode: mode)
         descriptor.readerMode = mode
         onModeChanged?(mode)
-    }
-
-    /// The sub-rect of the card the mode-switch wipe is confined to: everything BELOW the
-    /// floating header (which sits at `y: 0 ..< headerHeight`). Pure + testable so the
-    /// "header never pixelates" contract is pinned — the returned rect must never overlap the
-    /// header band. Mirrors the reader-child content frame in `viewDidLayoutSubviews`.
-    public static func contentWipeRegion(in bounds: CGRect) -> CGRect {
-        let top = headerHeight
-        return CGRect(x: 0, y: top,
-                      width: bounds.width,
-                      height: max(bounds.height - top, 0))
     }
 
     // MARK: - Article probe / embedding (forked from InlineReaderPageViewController)
@@ -638,10 +581,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private func installWebView() {
         guard webView == nil else { return }
         guard let url = descriptor.url else { showLoadError(); return }
-        for child in [scrollReader, rsvpReader, originalReader] {
-            child.view.isHidden = true
-        }
-        readerChild = nil
+        removeReaderChild()
         let web = WKWebView(frame: view.bounds, configuration: WebJunkBlocker.makeConfiguration())
         webView = web
         let themed = view.backgroundColor ?? ReaderDepth.backgroundColor(for: 0)
@@ -658,14 +598,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         view.setNeedsLayout()
     }
 
-    /// - Parameter triggersFullContentLoad: whether the embedded scroll reader should
-    ///   run its progressive-load Phase 2 (full render) itself. False only for the
-    ///   INITIAL layer reveal, where the host's stacked wipe drives it via
-    ///   `entryAnimationDidFinish`; true for every mode-switch / audio re-embed, where
-    ///   no reveal animation fires — without it the scroll reader would stay stuck on
-    ///   its ~700-char Phase-1 prefix ("only the first couple sentences").
-    private func embedReader(mode: ReadingListItem.ReaderMode, forceReembed: Bool = false,
-                             triggersFullContentLoad: Bool = false) {
+    private func embedReader(mode: ReadingListItem.ReaderMode, forceReembed: Bool = false) {
         guard let content = articleContent, let url = descriptor.url else { return }
         if mode == .original {
             guard readerMode != .original || forceReembed else { return }
@@ -676,7 +609,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             transient.title = descriptor.title
             // Restore the archive's OWN disjoint offset — never the shared reading position.
             originalReader.configure(item: transient, savedScrollOffset: descriptor.originalScrollOffset)
-            showPreloadedChild(originalReader, triggersFullContentLoad: triggersFullContentLoad)
+            showChild(originalReader)
             readerMode = .original
             return
         }
@@ -695,13 +628,13 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             }
             scrollReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
             scrollReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
-            showPreloadedChild(scrollReader, triggersFullContentLoad: triggersFullContentLoad)
+            showChild(scrollReader)
         case .rsvp:
             rsvpReader.configureForReuse(item: readerItem, content: content, audioEnabled: audioOn)
             rsvpReader.onLinkActivated = { [weak self] url in self?.onLinkActivated?(url, nil) }
             rsvpReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
             rsvpReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
-            showPreloadedChild(rsvpReader)
+            showChild(rsvpReader)
         }
         readerMode = mode
         view.setNeedsLayout()
@@ -755,38 +688,35 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             readState: .opened, readingProgress: auto.priorProgress, for: auto.id)
     }
 
-    private func showPreloadedChild(_ child: UIViewController, triggersFullContentLoad: Bool = false) {
-        for candidate in [scrollReader, rsvpReader, originalReader] {
-            candidate.view.isHidden = candidate !== child
+    private func showChild(_ child: UIViewController) {
+        if readerChild !== child {
+            removeReaderChild()
+            addChild(child)
         }
         child.view.frame = CGRect(x: 0, y: Self.headerHeight, width: view.bounds.width,
                                   height: max(view.bounds.height - Self.headerHeight, 0))
         view.insertSubview(child.view, belowSubview: header)
+        if child.parent === self, child !== readerChild {
+            child.didMove(toParent: self)
+        }
         readerChild = child
-        // The preloaded children start non-interactive; a mode switch re-embeds a fresh
-        // child here WITHOUT going through `setChrome`, so restore its interaction to the
-        // layer's current focus state (else the whole switched-to reader is untappable —
-        // e.g. RSVP after a mode switch). Only the focused layer's active child takes touches.
         child.view.isUserInteractionEnabled = (currentRole == .focused)
-        // On the initial reveal the host drives Phase 2 via `entryAnimationDidFinish`
-        // (aligned with the stacked wipe); on a mode-switch / audio re-embed no reveal
-        // fires, so let the reader run Phase 2 itself or it stays on the prefix.
         (child as? ScrollReaderViewController)?
-            .activateVisibleReader(deferFullContentUntilHostCompletion: !triggersFullContentLoad)
+            .activateVisibleReader(deferFullContentUntilHostCompletion: false)
+    }
+
+    private func removeReaderChild() {
+        guard let child = readerChild else { return }
+        child.willMove(toParent: nil)
+        child.view.removeFromSuperview()
+        child.removeFromParent()
+        readerChild = nil
     }
 
     private func removeLiveWebView() {
         webView?.stopLoading()
         webView?.removeFromSuperview()
         webView = nil
-    }
-
-    /// The stacked-layer wipe that revealed this layer has finished — tell the embedded
-    /// scroll reader to run its progressive-load Phase 2 (full render + swap) now, so
-    /// the heavy glyph pass lands after the wipe instead of stalling it. No-op unless
-    /// the focused content is the scroll reader (idempotent there).
-    public func entryAnimationDidFinish() {
-        (readerChild as? ScrollReaderViewController)?.prepareFullContent()
     }
 
     // MARK: - Scroll access (no changes to ScrollReaderViewController)

@@ -9,7 +9,6 @@ import LunaPaywallBypass
 import LunaFetch
 import LunaHTMLClassification
 import LunaModels
-import LunaTransitions
 import UIKit
 import WebKit
 
@@ -263,7 +262,7 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             systemItem: .done, primaryAction: UIAction { [weak self] _ in
                 guard let self else { return }
-                if let onClose = self.onClose { onClose() } else { DotMatrixModal.dismiss(self) }
+                if let onClose = self.onClose { onClose() } else { self.dismiss(animated: true) }
             })
         if onOpenInBrowser != nil {
             navigationItem.rightBarButtonItem = UIBarButtonItem(
@@ -1050,17 +1049,12 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
     private func showStuckNotice() {
         guard !didShowStuckNotice, !didShowTerminalMessage else { return }
         didShowStuckNotice = true
-        // Dot-matrix-dissolve the overlay from the bare "Unlocking…" spinner into the
-        // advisory copy + Safari escape; the overlay is already covering the page here
-        // (the stall guard only fires while it's visible), so the wipe reads in place.
         view.bringSubviewToFront(loadingOverlay)
         loadingOverlay.isHidden = false
-        DotMatrixCrossfade.run(in: loadingOverlay) { [self] in
-            overlayLabel.text = Self.mayBeStuckMessage
-            overlayLabel.textColor = .secondaryLabel
-            overlaySafariButton.isHidden = (onOpenInBrowser == nil)
-            overlaySpinner.startAnimating()
-        }
+        overlayLabel.text = Self.mayBeStuckMessage
+        overlayLabel.textColor = .secondaryLabel
+        overlaySafariButton.isHidden = (onOpenInBrowser == nil)
+        overlaySpinner.startAnimating()
     }
 
     private static func isArchiveHomepageURL(_ url: URL?) -> Bool {
@@ -1078,18 +1072,12 @@ public final class ArchiveWebReaderViewController: UIViewController, WKNavigatio
         pollTimer?.invalidate()
         pollTimer = nil
         progress.stopAnimating()
-        // Dot-matrix-dissolve into the terminal message: bring the overlay forward and
-        // make it visible first so the wipe's "before" is the live page-cover, then
-        // pixelate the swap to the opaque message + Safari escape.
         view.bringSubviewToFront(loadingOverlay)
         loadingOverlay.isHidden = false
-        DotMatrixCrossfade.run(in: loadingOverlay) { [self] in
-            overlaySpinner.stopAnimating()
-            overlayLabel.text = message
-            overlayLabel.textColor = .label
-            overlaySafariButton.isHidden = (onOpenInBrowser == nil)
-            // Keep the normal cover opacity even for a terminal message.
-            loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(0.99)
-        }
+        overlaySpinner.stopAnimating()
+        overlayLabel.text = message
+        overlayLabel.textColor = .label
+        overlaySafariButton.isHidden = (onOpenInBrowser == nil)
+        loadingOverlay.backgroundColor = .systemBackground.withAlphaComponent(0.99)
     }
 }

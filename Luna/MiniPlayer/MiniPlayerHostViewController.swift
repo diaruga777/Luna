@@ -26,9 +26,7 @@ import UIKit
 
 final class MiniPlayerHostViewController: UIViewController {
 
-    /// The wrapped main navigation controller — what `SceneDelegate` used to
-    /// install directly as the window root (deep links, notification routes,
-    /// and the Dot Matrix transitions all re-point here).
+    /// The wrapped main navigation controller used by deep links and notification routes.
     let contentNavigationController: UINavigationController
 
     private let miniPlayer = AudioMiniPlayerView()
@@ -320,7 +318,7 @@ final class MiniPlayerHostViewController: UIViewController {
         let reader = ReaderHostFactory.make(
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
-            transition: DotMatrixRabbitHoleTransition())
+            fullContentUpFront: false)
         nav.pushViewController(reader, animated: true)
     }
 }

@@ -11,10 +11,10 @@ import LunaPriceUI
 import LunaReaderUI
 import LunaArchiveReader
 import LunaSocial
-import LunaTransitions
 import LunaMediaDownload
 import LunaPlatforms
 import LunaDesignSystem
+import LunaTransitions
 import LunaSend
 import LunaStorage
 import LunaURLClassification
@@ -135,10 +135,9 @@ final class ReadingListViewController: UITableViewController {
     private var lastHeaderLayoutWidth: CGFloat = 0
 
     /// The recreated navigation header bar — a normal content subview (NOT the
-    /// UINavigationController nav bar) pinned to the visible top of the table, so it's
-    /// captured by the Dot Matrix push/pop wipe like the rest of the content. Holds the
-    /// settings/friends (leading) + add (trailing) controls; in edit mode it
-    /// swaps to Done / Select All / Delete.
+    /// UINavigationController nav bar) pinned to the visible top of the table. Holds
+    /// settings/friends (leading) + add (trailing) controls; in edit mode it swaps to
+    /// Done / Select All / Delete.
     private let header = NavHeaderBar()
 
     /// The scrolling large-title row ("Reading List" + catch-up button), sitting at the
@@ -195,8 +194,7 @@ final class ReadingListViewController: UITableViewController {
 
     /// A row-menu action deferred until the context menu has finished dismissing.
     /// Presenting a modal from a `UIAction` handler fires WHILE the menu is still
-    /// collapsing, so the modal's pixel-wipe snapshots (and animates over) a
-    /// half-dismissed menu — the two animations overlap and stutter. Actions that
+    /// collapsing, so presenting immediately would overlap the two animations. Actions that
     /// present UI stash their work here instead; `willEndContextMenuInteraction`
     /// runs it from the dismissal animator's completion, over a settled list.
     private var pendingContextMenuAction: (() -> Void)?
@@ -267,10 +265,8 @@ final class ReadingListViewController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // The list now draws its OWN in-content header (pinned bar + scrolling large
-        // title), captured by the Dot Matrix wipe — so keep the shared nav bar hidden.
-        // Readers/pushed screens also hide it; this re-asserts it on every appearance
-        // (the custom Dot Matrix pop runs viewWillAppear, so this is reliable).
+        // The list draws its own in-content header (pinned bar + scrolling large title),
+        // so keep the shared nav bar hidden on every appearance.
         navigationController?.setNavigationBarHidden(true, animated: false)
         // The catch-up button's top inset must clear the pinned bar.
         updateHeaderInsets()
@@ -454,8 +450,7 @@ final class ReadingListViewController: UITableViewController {
         } else if let content = candidate.content {
             let reader = ReaderHostFactory.make(
                 item: transient, content: content,
-                shareProvider: AppReaderShareProvider.shared,
-                transition: DotMatrixRabbitHoleTransition())
+                shareProvider: AppReaderShareProvider.shared)
             navigationController?.pushViewController(reader, animated: true)
         }
     }
@@ -692,20 +687,10 @@ final class ReadingListViewController: UITableViewController {
         let index = control.selectedSegmentIndex
         filter = (index >= 0 && index < filters.count) ? filters[index] : .all
 
-        // The segmented control's OWN selection move uses UIKit's stock selection
-        // animation — no dotmatrix pixel-wipe on the control widget itself. Only the list
-        // content it filters animates (the diff-driven wipe below).
-
-        // The list body: diff the OLD vs NEW grouped models by item id and animate ONLY
-        // the rows that appear/disappear/move, pixel-wiping just the union rect of those
-        // rows. Rows whose item stays in place don't move and aren't in the wipe region.
         applyFilteredGroups()
     }
 
-    /// Swaps `groups` to the freshly-built (filtered) model with a cell-level diff: only
-    /// the rows that appear/disappear/move are inserted/deleted and pixel-wiped (confined
-    /// to their bounding rect); rows that persist in place are reconfigured silently. The
-    /// nav bar (title + buttons) is a sibling of the table and is never snapshotted.
+    /// Swaps `groups` to the freshly-built model with a cell-level diff.
     private func applyFilteredGroups() {
         let oldGroups = groups
         let newGroups = buildGroups()
@@ -715,31 +700,13 @@ final class ReadingListViewController: UITableViewController {
             old: oldGroups.map { ReadingListGroup(section: $0.section, itemIDs: $0.items.map(\.id)) },
             new: newGroups.map { ReadingListGroup(section: $0.section, itemIDs: $0.items.map(\.id)) })
 
-        // Nothing changed (e.g. the same filter re-selected) ⇒ no wipe, no table churn.
+        // Nothing changed (e.g. the same filter re-selected) ⇒ no table churn.
         if diff.isEmpty {
             groups = newGroups
             return
         }
 
-        // Build the changed REGION directly from the diff's index paths against the
-        // CURRENT (old) layout — no reloads. `DotMatrixBatch.update` lays out the NEW model
-        // itself and snapshots the correct "after", so the region only needs to *bound* the
-        // changed area in the table's coordinate space; it never has to be exact.
-        //
-        // Deleted rows/sections sit at known slots in the old layout, so their `rectForRow`
-        // is read straight from the live table. Insertions don't exist yet, so we span them
-        // by their neighbours: per affected section we union the bounding rect from the
-        // first to the last changed row in the old layout (clamped to visible), which
-        // over-covers slightly but never under-covers changed content — and costs zero
-        // extra reloads/layouts versus the old round-trip.
-        let visible = tableView.bounds
-        let region = changedRegion(for: diff, oldGroups: oldGroups, newGroups: newGroups,
-                                   clampedTo: visible)
-
-        // Apply the diff with real insert/delete ops (the correct UIKit batch shape, so
-        // the disabled-wipe fallback animates rows cleanly). `groups` must already be the
-        // NEW model when the batch body runs, since the table re-queries it for counts.
-        DotMatrixBatch.update(tableView, direction: .random, region: region) { [weak self] in
+        tableView.performBatchUpdates { [weak self] in
             guard let self else { return }
             self.groups = newGroups
             self.tableView.deleteSections(diff.deletedSections, with: .fade)
@@ -748,14 +715,14 @@ final class ReadingListViewController: UITableViewController {
             self.tableView.insertRows(at: diff.insertedRows, with: .fade)
         } completion: { [weak self] _ in
             // Reconfigure rows whose item persists in place but whose content changed
-            // (state/read-state), without animation — they weren't in the wipe region.
+            // (state/read-state), without animating rows that did not move.
             self?.reconfigurePersistingCells(in: diff.persistingItemIDs)
         }
     }
 
     /// Silently re-renders any visible cell whose item id is in `ids` — a row that stayed
     /// put across the filter swap but whose content may have changed. No animation: these
-    /// rows are deliberately excluded from the wipe region.
+    /// rows remain in place during the batch update.
     private func reconfigurePersistingCells(in ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
         for indexPath in tableView.indexPathsForVisibleRows ?? [] {
@@ -765,90 +732,6 @@ final class ReadingListViewController: UITableViewController {
                   section(at: indexPath.section) != .pasteboard else { continue }
             UIView.performWithoutAnimation { configureItemCell(cell, for: item) }
         }
-    }
-
-    /// The changed-region bounding rect (in the table's own coordinate space, clamped to
-    /// `bounds`) for a filter `diff`, measured ENTIRELY against the live OLD layout — no
-    /// reloadData round-trip. The table is still on `oldGroups` here, so every old-layout
-    /// index path (`diff.deletedRows`, rows of `diff.deletedSections`) has a valid
-    /// `rectForRow`. Insertions don't exist in the old layout, so we span them by their
-    /// neighbours in the old layout: per affected section, the union from the first to the
-    /// last changed row index brackets where new rows will land. This over-covers slightly
-    /// but never under-covers changed content. Returns `nil` when nothing on screen
-    /// changed (the wipe is then skipped / falls back to the whole visible table).
-    private func changedRegion(
-        for diff: ReadingListDiff,
-        oldGroups: [(section: Section, items: [ReadingListItem])],
-        newGroups: [(section: Section, items: [ReadingListItem])],
-        clampedTo bounds: CGRect
-    ) -> CGRect? {
-        var union: CGRect = .null
-
-        func add(_ rect: CGRect) {
-            let clamped = rect.intersection(bounds)
-            guard !clamped.isNull, !clamped.isEmpty else { return }
-            union = union.union(clamped)
-        }
-
-        // Map a section kind to its index in each side, so changes in either side resolve
-        // to a frame in the OLD layout (the only layout the live table currently holds).
-        let oldSectionIndex = Dictionary(
-            uniqueKeysWithValues: oldGroups.enumerated().map { ($0.element.section, $0.offset) })
-
-        // Whole deleted sections: union every row they currently occupy in the old layout.
-        for section in diff.deletedSections {
-            let count = tableView.numberOfRows(inSection: section)
-            for row in 0..<max(count, 0) {
-                add(tableView.rectForRow(at: IndexPath(row: row, section: section)))
-            }
-        }
-
-        // Deleted rows sit at known old-layout slots → their rects are read directly.
-        for indexPath in diff.deletedRows {
-            add(tableView.rectForRow(at: indexPath))
-        }
-
-        // Inserted rows/sections don't exist in the old layout. Bracket them against the
-        // old layout per (new) section: span from the first to the last changed row index,
-        // anchored on whatever currently occupies those slots. Clamp the index to the
-        // section's existing row count so a trailing append spans the section's last row.
-        var insertSpanByNewSection: [Int: (min: Int, max: Int)] = [:]
-        for indexPath in diff.insertedRows {
-            let existing = insertSpanByNewSection[indexPath.section]
-            let lo = min(existing?.min ?? indexPath.row, indexPath.row)
-            let hi = max(existing?.max ?? indexPath.row, indexPath.row)
-            insertSpanByNewSection[indexPath.section] = (lo, hi)
-        }
-        for (newSection, span) in insertSpanByNewSection {
-            // Resolve the same section in the OLD layout (a persisting section); inserts
-            // into a brand-new section are already covered by `insertedSections`.
-            guard newSection < newGroups.count,
-                  let oldSection = oldSectionIndex[newGroups[newSection].section] else { continue }
-            let oldCount = tableView.numberOfRows(inSection: oldSection)
-            guard oldCount > 0 else { continue }
-            for row in span.min...span.max {
-                add(tableView.rectForRow(at: IndexPath(row: min(row, oldCount - 1), section: oldSection)))
-            }
-        }
-
-        // Whole inserted sections: a new section lands adjacent to a persisting neighbour.
-        // Anchor on the nearest persisting section's edge in the old layout so the wipe
-        // reaches the strip where the section will appear.
-        for newSection in diff.insertedSections {
-            // The persisting section immediately before this new one (if any) gives a
-            // lower anchor; otherwise the section after it. Both resolve via the old layout.
-            if newSection > 0, newSection - 1 < newGroups.count,
-               let oldPrev = oldSectionIndex[newGroups[newSection - 1].section] {
-                let count = tableView.numberOfRows(inSection: oldPrev)
-                if count > 0 { add(tableView.rectForRow(at: IndexPath(row: count - 1, section: oldPrev))) }
-            } else if newSection + 1 < newGroups.count,
-                      let oldNext = oldSectionIndex[newGroups[newSection + 1].section] {
-                let count = tableView.numberOfRows(inSection: oldNext)
-                if count > 0 { add(tableView.rectForRow(at: IndexPath(row: 0, section: oldNext))) }
-            }
-        }
-
-        return union.isNull ? nil : union
     }
 
     /// Shows the filter control only when the list has at least two of the three
@@ -987,7 +870,7 @@ final class ReadingListViewController: UITableViewController {
 
     @objc func catchUpTapped() {
         let catchUp = CatchUpViewController(unread: catchUpQueue(), router: self)
-        DotMatrixModal.present(catchUp, from: self)
+        present(catchUp, animated: true)
     }
 
     // MARK: - Header controls
@@ -1176,7 +1059,7 @@ final class ReadingListViewController: UITableViewController {
             guard let normalized = Self.normalizedTypedURL(entered) else { return }
             Task { await ReadingListIngestor.shared.handleSavePress(urlString: normalized) }
         })
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
     /// Validates a typed/pasted URL string before saving, replacing the old blind
@@ -1206,7 +1089,7 @@ final class ReadingListViewController: UITableViewController {
         // unanchored action sheet raises NSGenericException.
         alert.popoverPresentationController?.sourceView = sender
         alert.popoverPresentationController?.sourceRect = sender.bounds
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
     // MARK: - Delete
@@ -1262,12 +1145,7 @@ final class ReadingListViewController: UITableViewController {
         var collapsed = collapsedSections
         if collapsed.contains(section) { collapsed.remove(section) } else { collapsed.insert(section) }
         collapsedSections = collapsed
-        // Collapsing/expanding swaps a whole section of rows at once — pixel-wipe the
-        // table between the two layouts (falls back to the stock .automatic row
-        // animation when the toggle is off).
-        DotMatrixBatch.update(tableView, direction: .random) { [weak self] in
-            self?.tableView.reloadSections(IndexSet(integer: index), with: .automatic)
-        }
+        tableView.reloadSections(IndexSet(integer: index), with: .automatic)
     }
 
     // MARK: - Table
@@ -1542,8 +1420,7 @@ final class ReadingListViewController: UITableViewController {
         guard item.state == .ready, let content = store.content(for: item) else { return }
         let reader = ReaderHostFactory.make(
             item: item, content: content,
-            shareProvider: AppReaderShareProvider.shared,
-            transition: DotMatrixRabbitHoleTransition())
+            shareProvider: AppReaderShareProvider.shared)
         // This alternate transition is intentionally available only from a real Reader
         // list-row tap. Other readers (search, deep links, the two sibling apps) retain
         // their existing navigation treatment.
@@ -1562,23 +1439,22 @@ final class ReadingListViewController: UITableViewController {
     ) {
         let reader = ArchiveWebReaderViewController(articleURL: articleURL, itemID: item.id, store: store)
         let nav = UINavigationController(rootViewController: reader)
-        nav.installDotMatrixTransitions()
         reader.onClose = { [weak nav] in
             guard let nav else { return }
-            DotMatrixModal.dismiss(nav)
+            nav.dismiss(animated: true)
         }
         reader.onOpenInBrowser = { [weak nav] archiveURL in
             // This is an escape from archive.is's WKWebView-specific bot gate, so
             // it must leave Luna for the system browser — an SFSafari sheet remains
             // inside our presentation and doesn't provide the requested escape.
             guard let nav else { return }
-            DotMatrixModal.dismiss(nav) {
+            nav.dismiss(animated: true) {
                 UIApplication.shared.open(archiveURL)
             }
         }
         reader.onExtracted = { [weak self, weak nav, weak presenter] in
             guard let nav else { return }
-            DotMatrixModal.dismiss(nav) {
+            nav.dismiss(animated: true) {
                 guard let self, let presenter,
                       let fresh = self.store.item(withID: item.id) else { return }
                 // Archive/direct-unlock extraction happens in LunaArchiveReader, below
@@ -1589,7 +1465,7 @@ final class ReadingListViewController: UITableViewController {
                 self.open(fresh, presenter: presenter)   // now .ready → native reader
             }
         }
-        DotMatrixModal.present(nav, from: presenter)
+        presenter.present(nav, animated: true)
     }
 
     /// Opens a non-article item (video / platform post) the way
@@ -1620,7 +1496,7 @@ final class ReadingListViewController: UITableViewController {
             return
         }
         if let embed = module.embed(for: item) {
-            DotMatrixModal.present(PlatformEmbedViewController(embed: embed, itemID: item.id), from: presenter)
+            presenter.present(PlatformEmbedViewController(embed: embed, itemID: item.id), animated: true)
             return
         }
         InAppBrowser.present(urlString: item.urlString, from: presenter)
@@ -1764,8 +1640,8 @@ final class ReadingListViewController: UITableViewController {
             image: UIImage(systemName: "doc.on.doc")
         ) { [weak self] _ in
             guard let self else { return }
-            // Copy immediately (works on every menu path); defer only the confirmation
-            // modal so its wipe doesn't overlap the context menu's dismissal.
+            // Copy immediately (works on every menu path); defer the confirmation modal
+            // until the context menu has dismissed.
             SendToFriendSheet.copyToPasteboard(urlString: item.urlString)
             self.afterRowMenuDismissal { [weak self] in
                 guard let self else { return }

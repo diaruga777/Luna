@@ -2,9 +2,8 @@
 //  OnboardingDotMatrixProgressView.swift
 //  LunaSocialUI
 //
-//  A step-progress indicator for the onboarding flow, drawn in the app's
-//  dot-matrix vocabulary (rounded-square dots, `DotMatrixTransitionStyle`
-//  corner ratio): one dot per step — completed and current steps filled in the
+//  A step-progress indicator for the onboarding flow, drawn as rounded-square
+//  dots: one per step — completed and current steps filled in the
 //  reading accent, upcoming steps dimmed. The current step's dot pulses gently
 //  (Core Animation, presentation-layer only) unless Reduce Motion is on.
 //
@@ -19,12 +18,9 @@ public final class OnboardingDotMatrixProgressView: UIView {
     private let currentIndex: Int
     private let totalSteps: Int
 
-    // Rounded-square dots at the transition style's corner-to-side ratio.
     private let dotSide: CGFloat = 8
     private let dotSpacing: CGFloat = 10
-    private var dotCornerRadius: CGFloat {
-        dotSide * (DotMatrixTransitionStyle.cornerRadius / DotMatrixTransitionStyle.pixelSize)
-    }
+    private var dotCornerRadius: CGFloat { dotSide / 3 }
 
     private var dotLayers: [CALayer] = []
     private var motionObserver: NSObjectProtocol?

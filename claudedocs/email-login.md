@@ -6,8 +6,7 @@ files are added here). Entry point: `EmailLoginFlow.present(from:accountStore:
 completion:)`, called from `AppDelegate` (first-launch prompt), the "Replay
 Onboarding" flow (`OnboardingFlow`, with an ephemeral `accountStore` — see
 `claudedocs/onboarding.md`), `EmailAndKindleSettingsScreen`, and `CatchUpViewController`
-(inline nudge). It builds a `UINavigationController` with
-`installDotMatrixTransitions()` and presents it via `DotMatrixModal.present`.
+(inline nudge). It builds and presents a `UINavigationController`.
 During first-launch onboarding, `OnboardingFlow` instead embeds the same
 `EmailEntryViewController` directly as its root. That mode replaces modal Cancel
 with a top-right **Skip for now** action and advances to the Safari onboarding
@@ -153,9 +152,8 @@ row-major y-axis) animate to full opacity/1.05x scale with a small stagger
 ordered by position along the stroke (`checkmarkStrokePosition`); every other
 dot fades to ~0.08 opacity/0.6x scale. After the last dot settles, it holds for
 `holdDuration` (default 0.35s; total beat ≈0.5s) and calls `completion`. Both
-verification paths call this on success, then `DotMatrixModal.dismiss` from the
-completion — so the user sees the spinner resolve into a checkmark before the
-sheet closes, instead of an abrupt cut. The classification
+verification paths call this on success, then dismiss from the completion — so the
+user sees the spinner resolve into a checkmark before the sheet closes. The classification
 (`isCheckmarkDot(dimension:index:)`) and stroke-position
 (`checkmarkStrokePosition(dimension:index:)`) functions are pure/static/public
 so the shape can be sanity-checked without a live view (`LunaTests/

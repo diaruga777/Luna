@@ -3,14 +3,13 @@
 //  LunaDesignSystem
 //
 //  Helpers to mount a `NavHeaderBar` into a screen in place of the UINavigationController
-//  nav bar, so the header travels with the content during the Dot Matrix transition.
+//  nav bar.
 //
 //  Two host shapes:
 //  - A `UITableViewController` whose `view` IS the table: the header is added as a
 //    subview pinned to the scroll view's FRAME layout guide (the visible frame, not the
 //    scrolling content), and the table's content/indicator insets are grown so rows
-//    start below it. Because it's a subview of the snapshotted `toView`, it's captured
-//    in the wipe; because it's pinned to the frame guide, it doesn't scroll.
+//    start below it. Because it's pinned to the frame guide, it doesn't scroll.
 //  - A plain `UIViewController`: the header is pinned to the view's safe-area top, and
 //    the caller lays its content out below `header.bottomAnchor`.
 //

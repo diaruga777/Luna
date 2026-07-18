@@ -9,7 +9,6 @@ import LunaStorage
 import LunaIngest
 import LunaInterop
 import LunaInteropUI
-import LunaTransitions
 import LunaURLClassification
 import LunaModels
 import Intents
@@ -655,15 +654,10 @@ extension ShareViewController: ExtensionHost {
             statusLabel.isHidden = true
             closeButton.isHidden = true
             if let navigationController = actionNavigationController {
-                // Swapping archive → reader inside the one embedded nav: pixel-wipe the
-                // swap (a no-op instant swap when the toggle is off or Metal is absent).
-                DotMatrixCrossfade.run(in: navigationController.view) {
-                    navigationController.setViewControllers([viewController], animated: false)
-                }
+                navigationController.setViewControllers([viewController], animated: false)
                 return
             }
             let navigationController = UINavigationController(rootViewController: viewController)
-            navigationController.installDotMatrixTransitions()
             navigationController.view.translatesAutoresizingMaskIntoConstraints = false
             addChild(navigationController)
             view.addSubview(navigationController.view)
@@ -678,8 +672,7 @@ extension ShareViewController: ExtensionHost {
             return
         }
         let nav = UINavigationController(rootViewController: viewController)
-        nav.installDotMatrixTransitions()
         nav.modalPresentationStyle = .fullScreen
-        DotMatrixModal.present(nav, from: self)
+        present(nav, animated: true)
     }
 }

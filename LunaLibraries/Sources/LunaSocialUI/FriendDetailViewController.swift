@@ -5,7 +5,6 @@
 
 import LunaSocial
 import LunaDesignSystem
-import LunaTransitions
 import UIKit
 
 /// Per-friend settings: rename, "notify on every share" toggle (default off —
@@ -98,6 +97,6 @@ public final class FriendDetailViewController: NavHeaderTableController {
             self.headerTitle = self.friend.displayName
             self.tableView.reloadData()
         })
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 }

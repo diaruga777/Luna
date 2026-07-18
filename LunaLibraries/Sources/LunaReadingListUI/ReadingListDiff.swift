@@ -11,8 +11,7 @@
 //  Why id-keyed rather than positional: a filter swaps which items are present, so the
 //  same logical item can move sections/rows. The diff treats an item as unchanged when
 //  its id stays in the SAME (section, row) slot; anything else is a delete of the old
-//  slot + an insert of the new one. That keeps the dot-matrix wipe confined to the rows
-//  that actually appear/disappear/move — untouched rows stay out of the changed region.
+//  slot + an insert of the new one.
 //
 
 import LunaModels

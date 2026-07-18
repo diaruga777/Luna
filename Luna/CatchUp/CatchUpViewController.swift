@@ -10,7 +10,6 @@ import LunaArchiveReader
 import LunaDesignSystem
 import LunaMailAccount
 import LunaStorage
-import LunaTransitions
 import LunaModels
 import UIKit
 
@@ -66,8 +65,7 @@ final class CatchUpViewController: UIViewController {
 
     /// A snapshot of the bottom button row's configuration for one card, used to decide
     /// whether the row actually CHANGED between consecutive cards — if it's identical
-    /// (same titles / fills / enabled state) the row is left untouched (no dotmatrix);
-    /// only a genuine change gets the pixel wipe.
+    /// (same titles / fills / enabled state) the row is left untouched.
     private struct ButtonRowDescriptor: Equatable {
         var primaryTitle: String
         var primaryFilled: Bool
@@ -77,7 +75,7 @@ final class CatchUpViewController: UIViewController {
         var singleFullWidth: Bool
     }
     /// The descriptor last APPLIED to the button row (nil before the first card). Drives
-    /// the "did the buttons change?" diff for the cards-phase row wipe.
+    /// the "did the buttons change?" diff for the cards-phase row update.
     private var appliedButtonRow: ButtonRowDescriptor?
 
     /// Set when the full price-tracking editor is presented over this screen; on the
@@ -392,13 +390,12 @@ final class CatchUpViewController: UIViewController {
     private func openPriceTracker(_ item: ReadingListItem) {
         let editor = PriceTrackingViewController(itemID: item.id)
         let nav = UINavigationController(rootViewController: editor)
-        nav.installDotMatrixTransitions()
         // The editor's built-in back/Done button dismisses correctly when it's a
         // modal nav root (`dismissOrPop`). It dismisses programmatically (not via the
         // adaptive-presentation delegate), so we rebuild THIS card on our next
         // `viewDidAppear` to reflect any threshold change.
         needsCardReloadOnReappear = true
-        DotMatrixModal.present(nav, from: self)
+        present(nav, animated: true)
     }
 
     /// The locked-card placeholder: a lock glyph + title + hint (no content exists
@@ -446,24 +443,23 @@ final class CatchUpViewController: UIViewController {
         guard item.state == .needsCaptcha, let url = item.url else { return }
         let reader = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
         let nav = UINavigationController(rootViewController: reader)
-        nav.installDotMatrixTransitions()
         nav.modalPresentationStyle = .fullScreen
         reader.onClose = { [weak nav] in
             guard let nav else { return }
-            DotMatrixModal.dismiss(nav)
+            nav.dismiss(animated: true)
         }
         // Escape hatch when the embedded web view can't clear archive.today's gate.
         reader.onOpenInBrowser = { [weak nav] archiveURL in
             guard let nav else { return }
-            DotMatrixModal.dismiss(nav) {
+            nav.dismiss(animated: true) {
                 UIApplication.shared.open(archiveURL)
             }
         }
         reader.onExtracted = { [weak self, weak nav] in
             guard let nav else { return }
-            DotMatrixModal.dismiss(nav) { self?.reloadCurrentCard() }
+            nav.dismiss(animated: true) { self?.reloadCurrentCard() }
         }
-        DotMatrixModal.present(nav, from: self)
+        present(nav, animated: true)
     }
 
     /// Rebuilds the current card from the freshly-stored item (after an unlock).
@@ -613,11 +609,7 @@ final class CatchUpViewController: UIViewController {
         applyButtonRow(row)
     }
 
-    /// Applies a button-row descriptor, restyling the bottom buttons. When the row is
-    /// genuinely DIFFERENT from the one already on screen (and a row was previously
-    /// shown), the restyle plays a dotmatrix wipe confined to just the buttons' region;
-    /// when it's unchanged the buttons are left exactly as they are (no animation, no
-    /// flicker). The very first row is applied directly (nothing to wipe from).
+    /// Applies a button-row descriptor when it differs from the displayed row.
     private func applyButtonRow(_ row: ButtonRowDescriptor) {
         let previous = appliedButtonRow
         appliedButtonRow = row
@@ -633,25 +625,7 @@ final class CatchUpViewController: UIViewController {
             setBottomButtons(hidden: false, singleFullWidth: row.singleFullWidth)
         }
 
-        // First row, no window yet, or a layout/visibility change (single↔split width)
-        // ⇒ apply directly. A like-for-like content change inside the cards flow gets the
-        // scoped pixel wipe over just the button region.
-        let canWipe = previous != nil
-            && view.window != nil
-            && previous?.singleFullWidth == row.singleFullWidth
-        guard canWipe else { restyle(); return }
-
-        DotMatrixCrossfade.run(in: view, region: buttonRowRegion(), changes: restyle)
-    }
-
-    /// The bounding rect (in `view`'s coordinate space) enclosing both bottom buttons —
-    /// the sub-region the button-row dotmatrix wipe is confined to, so nothing else on
-    /// screen pixelates. Padded slightly so the buttons' shadows/corners are covered.
-    private func buttonRowRegion() -> CGRect {
-        view.layoutIfNeeded()
-        var rect = secondaryButton.frame
-        if !primaryButton.isHidden { rect = rect.union(primaryButton.frame) }
-        return rect.insetBy(dx: -6, dy: -6)
+        restyle()
     }
 
     private func styleButton(_ button: UIButton, title: String, filled: Bool, destructive: Bool = false) {
@@ -711,16 +685,7 @@ final class CatchUpViewController: UIViewController {
         enterDonePhase()
     }
 
-    /// Moves into the terminal "All done!" page. The whole triage surface (the current
-    /// card or the delete prompt) dotmatrix-dissolves into the done message + its chrome,
-    /// so finishing a catch-up reads as one pixel wipe rather than an abrupt swap.
-    ///
-    /// Task 9: the All Done page. The triage surface dotmatrix-dissolves into the done
-    /// chrome (`changes`), then — once the wipe lands — the checkmark plays its draw-on
-    /// celebration. When the tick finishes we hold briefly so the user registers "all
-    /// done", then auto-dismiss back to the reading list. The whole checkmark path is
-    /// pure Core Animation, so it plays (and still auto-dismisses) even when the
-    /// pixel-wipe gate is OFF — `DotMatrixCrossfade.run` invokes `completion` either way.
+    /// Moves into the terminal "All done!" page and plays its checkmark celebration.
     private func enterDonePhase() {
         let applyDoneState = { [self] in
             phase = .done
@@ -730,9 +695,8 @@ final class CatchUpViewController: UIViewController {
             messageView.isHidden = false
             updateChrome()
         }
-        DotMatrixCrossfade.run(in: view, changes: applyDoneState) { [weak self] in
-            self?.playDoneCheckmarkAndAutoDismiss()
-        }
+        applyDoneState()
+        playDoneCheckmarkAndAutoDismiss()
     }
 
     /// Plays the checkmark celebration on the done message, then schedules the
@@ -740,7 +704,7 @@ final class CatchUpViewController: UIViewController {
     /// and dismisses early; the `isDismissing` guard in `commitAndClose()` keeps it to a
     /// single dismissal regardless of which fires first.
     private func playDoneCheckmarkAndAutoDismiss() {
-        // If the user already left (early Done tap during the wipe), do nothing.
+        // If the user already left after an early Done tap, do nothing.
         guard !isDismissing else { return }
 
         // A readable beat after the tick lands before the screen dismisses itself.
@@ -774,7 +738,7 @@ final class CatchUpViewController: UIViewController {
             pendingAutoDismiss?.cancel()
             pendingAutoDismiss = nil
             store.restoreCatchUpState(from: snapshot)
-            DotMatrixModal.dismiss(self)
+            dismiss(animated: true)
         case .voicePrompt, .deletePrompt:
             break   // the right button is hidden in these phases
         }
@@ -794,6 +758,6 @@ final class CatchUpViewController: UIViewController {
         if !pendingDeleteIDs.isEmpty {
             store.deleteItems(ids: Set(pendingDeleteIDs))
         }
-        DotMatrixModal.dismiss(self)
+        dismiss(animated: true)
     }
 }

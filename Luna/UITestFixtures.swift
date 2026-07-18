@@ -92,8 +92,11 @@ enum UITestFixtures {
             author: author,
             blocks: [
                 .init(kind: .heading, text: "Introduction", links: []),
+                // The inline link targets the mixed fixture's saved "An Article
+                // You Started" item, so the held-link RSVP preview resolves
+                // offline from the store instead of dead-ending in a fetch.
                 .init(kind: .paragraph, text: body, links: [
-                    .init(start: 0, length: 4, urlString: "https://example.com/link")
+                    .init(start: 0, length: 4, urlString: "https://example.com/opened")
                 ]),
                 .init(kind: .quote, text: "A representative pull quote that stands apart from the body.", links: []),
                 .init(kind: .heading, text: "Details", links: []),

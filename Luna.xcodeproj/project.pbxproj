@@ -16,7 +16,6 @@
 		031FF107DF1A6AF0F5958C46 /* LunaPlatforms in Frameworks */ = {isa = PBXBuildFile; productRef = 72398B0845A005923290AE55 /* LunaPlatforms */; };
 		0393CD1C3594607CDD98DE13 /* LunaPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunaPriceUI */; };
 		040A03EEE1831C1357CF106C /* LunaReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LunaReaderUI */; };
-		041A74CEFA9B22277C35C056 /* LunaContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LunaContentRendering */; };
 		04325C8AF877D151D2D31605 /* LunaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = E656FCBCB33D2B83A5BC2B9D /* LunaIngest */; };
 		049E5C818766CE6BF95D8B7E /* LunaPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunaPriceUI */; };
 		056B75A640F952053F3EDC66 /* LunaReadingListUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3933ED17E10DC2C0C55B129C /* LunaReadingListUI */; };
@@ -31,7 +30,6 @@
 		12E8A107B1FCA1F360C74E20 /* LunaMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */; };
 		130D863DAC44E26AE76EC384 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA0300000000000000000002 /* SwiftSoup */; };
 		14D2AFFC19A169338A1147DD /* LunaReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LunaReaderUI */; };
-		163F79C6D83DEC977C7F2E29 /* LunaContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LunaContentRendering */; };
 		164DC728A7C83E13375A08BA /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
 		166333B003B1CA56E9ECFAE4 /* LunaURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LunaURLClassification */; };
 		17E518D87CDB4BF1B0B02FD4 /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
@@ -83,7 +81,6 @@
 		4A1B3F8FAA22CE45ADB6CAB6 /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LunaModels */; };
 		4D71261636172E65F9B61A1B /* LunaReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LunaReaderUI */; };
 		4F79C2BC707D182410347251 /* LunaPriceTrackerShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E34729A9C0FBABDE05C923C3 /* LunaPriceTrackerShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		4FA4D6ECCD2EB5EDB599A9C8 /* LunaContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LunaContentRendering */; };
 		50E8B760CEB7EA7C19318D68 /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
 		511AFE358958CF34F726A711 /* LunaURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LunaURLClassification */; };
 		51414525A3F33F736F5E5386 /* LunaStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LunaStorage */; };
@@ -123,7 +120,6 @@
 		75CED0C0BDA899FF368A0CB5 /* LunaStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A982CE2BE48B7474FDAD7A00 /* LunaStorage */; };
 		7610F7E503BD45B88B042F9E /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
 		76B7947490B07082BD9DF92B /* LunaPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunaPriceMetadata */; };
-		780D2CF3158D3FED4C7444BA /* LunaContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LunaContentRendering */; };
 		78F8CA2D8D526E87CFADAF26 /* LunaDownloaderAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D3B0961D49B070035B3E0FD1 /* LunaDownloaderAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		79001DA32FF23BFD001CD5B9 /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
 		79105F98461EAB4D02BB8DD1 /* LunaReaderUI in Frameworks */ = {isa = PBXBuildFile; productRef = 436F1044DB2553FED3D9DB4C /* LunaReaderUI */; };
@@ -183,13 +179,11 @@
 		BB96330AEB2778127D830A98 /* LunaMailAccount in Frameworks */ = {isa = PBXBuildFile; productRef = 3C1C5EEBEEE23956FF251A3B /* LunaMailAccount */; };
 		BD5B48658A5362866AA5CF57 /* LunaPriceUI in Frameworks */ = {isa = PBXBuildFile; productRef = 59E17EB39B108E9054CCFBA3 /* LunaPriceUI */; };
 		BDBA0CFFF11430D086BE5A66 /* LunaDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 333A451D2F6E424BF2A01F84 /* LunaDesignSystem */; };
-		BE529FEC68767C9B157BA455 /* LunaContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LunaContentRendering */; };
 		BF10D89E8F106E5148E47260 /* LunaMail in Frameworks */ = {isa = PBXBuildFile; productRef = 6733C497754C454FAA262597 /* LunaMail */; };
 		C100000000000000000000021 /* LunaURLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000011 /* LunaURLClassification */; };
 		C100000000000000000000022 /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
 		C100000000000000000000023 /* LunaPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunaPaywallBypass */; };
 		C100000000000000000000024 /* LunaPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunaPriceMetadata */; };
-		C100000000000000000000025 /* LunaContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LunaContentRendering */; };
 		C100000000000000000000026 /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LunaModels */; };
 		C100000000000000000000027 /* LunaFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LunaFetch */; };
 		C100000000000000000000028 /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
@@ -197,7 +191,6 @@
 		C100000000000000000000032 /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
 		C100000000000000000000033 /* LunaPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunaPaywallBypass */; };
 		C100000000000000000000034 /* LunaPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunaPriceMetadata */; };
-		C100000000000000000000035 /* LunaContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LunaContentRendering */; };
 		C100000000000000000000036 /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LunaModels */; };
 		C100000000000000000000037 /* LunaFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LunaFetch */; };
 		C100000000000000000000038 /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
@@ -205,7 +198,6 @@
 		C100000000000000000000042 /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
 		C100000000000000000000043 /* LunaPaywallBypass in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000013 /* LunaPaywallBypass */; };
 		C100000000000000000000044 /* LunaPriceMetadata in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000014 /* LunaPriceMetadata */; };
-		C100000000000000000000045 /* LunaContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LunaContentRendering */; };
 		C100000000000000000000046 /* LunaModels in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000016 /* LunaModels */; };
 		C100000000000000000000047 /* LunaFetch in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000017 /* LunaFetch */; };
 		C100000000000000000000048 /* LunaTransitions in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000018 /* LunaTransitions */; };
@@ -247,7 +239,6 @@
 		DD8D0966751EECEEA1CC3FC4 /* LunaDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* LunaDocuments */; };
 		DE437B044AAB729C6E379D3F /* LunaHTMLClassification in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000012 /* LunaHTMLClassification */; };
 		DE66DCA327DA9E81723DC210 /* LunaDocuments in Frameworks */ = {isa = PBXBuildFile; productRef = EC12441B238CDC7A3EEDD1A0 /* LunaDocuments */; };
-		E1414C57BB183D4575B3E04F /* LunaContentRendering in Frameworks */ = {isa = PBXBuildFile; productRef = C100000000000000000000015 /* LunaContentRendering */; };
 		E2EA24D7991D81278A552F99 /* LunaArchiveReader in Frameworks */ = {isa = PBXBuildFile; productRef = 74662FE2996754685063847E /* LunaArchiveReader */; };
 		E31B09DF7960DE871F25EC71 /* LunaIntents in Frameworks */ = {isa = PBXBuildFile; productRef = F1D3242938BA3B48ED8EA6DD /* LunaIntents */; };
 		E4985943E018E5FE92C11606 /* LunaMediaDownload in Frameworks */ = {isa = PBXBuildFile; productRef = 4DFF8DE25D4460FB9484A013 /* LunaMediaDownload */; };
@@ -621,7 +612,6 @@
 				DE437B044AAB729C6E379D3F /* LunaHTMLClassification in Frameworks */,
 				B7F55D93B9FEB969A95C8183 /* LunaPaywallBypass in Frameworks */,
 				76B7947490B07082BD9DF92B /* LunaPriceMetadata in Frameworks */,
-				163F79C6D83DEC977C7F2E29 /* LunaContentRendering in Frameworks */,
 				50E8B760CEB7EA7C19318D68 /* LunaTransitions in Frameworks */,
 				849EA42595D2866D9C9ED25D /* LunaModels in Frameworks */,
 				702E5F3168388EFBA0E30508 /* LunaFetch in Frameworks */,
@@ -659,7 +649,6 @@
 				017142487CB9382F3711F47D /* LunaHTMLClassification in Frameworks */,
 				5815024122D68F45BB81517C /* LunaPaywallBypass in Frameworks */,
 				37BCDAFE96268444DFD3A513 /* LunaPriceMetadata in Frameworks */,
-				E1414C57BB183D4575B3E04F /* LunaContentRendering in Frameworks */,
 				D791BC1D5E2C8220E6CC3716 /* LunaTransitions in Frameworks */,
 				7148134A504E2679D2161243 /* LunaModels in Frameworks */,
 				AFE494BDD40C5AA532E29ED9 /* LunaFetch in Frameworks */,
@@ -693,7 +682,6 @@
 				C100000000000000000000032 /* LunaHTMLClassification in Frameworks */,
 				C100000000000000000000033 /* LunaPaywallBypass in Frameworks */,
 				C100000000000000000000034 /* LunaPriceMetadata in Frameworks */,
-				C100000000000000000000035 /* LunaContentRendering in Frameworks */,
 				C100000000000000000000038 /* LunaTransitions in Frameworks */,
 				C100000000000000000000036 /* LunaModels in Frameworks */,
 				C100000000000000000000037 /* LunaFetch in Frameworks */,
@@ -739,7 +727,6 @@
 				17E518D87CDB4BF1B0B02FD4 /* LunaHTMLClassification in Frameworks */,
 				F73819AA386C2618CCBCCF32 /* LunaPaywallBypass in Frameworks */,
 				350EAC340A2B445558410825 /* LunaPriceMetadata in Frameworks */,
-				041A74CEFA9B22277C35C056 /* LunaContentRendering in Frameworks */,
 				828C373FE02ADBEC3BC5D19C /* LunaTransitions in Frameworks */,
 				7E2C368831952671CD7BF66A /* LunaModels in Frameworks */,
 				DB3B179AA253D0576510D32F /* LunaFetch in Frameworks */,
@@ -777,7 +764,6 @@
 				C100000000000000000000022 /* LunaHTMLClassification in Frameworks */,
 				C100000000000000000000023 /* LunaPaywallBypass in Frameworks */,
 				C100000000000000000000024 /* LunaPriceMetadata in Frameworks */,
-				C100000000000000000000025 /* LunaContentRendering in Frameworks */,
 				C100000000000000000000028 /* LunaTransitions in Frameworks */,
 				C100000000000000000000026 /* LunaModels in Frameworks */,
 				C100000000000000000000027 /* LunaFetch in Frameworks */,
@@ -857,7 +843,6 @@
 				C100000000000000000000042 /* LunaHTMLClassification in Frameworks */,
 				C100000000000000000000043 /* LunaPaywallBypass in Frameworks */,
 				C100000000000000000000044 /* LunaPriceMetadata in Frameworks */,
-				C100000000000000000000045 /* LunaContentRendering in Frameworks */,
 				C100000000000000000000048 /* LunaTransitions in Frameworks */,
 				C100000000000000000000046 /* LunaModels in Frameworks */,
 				C100000000000000000000047 /* LunaFetch in Frameworks */,
@@ -883,7 +868,6 @@
 				BB496482363743D2266EE1EE /* LunaHTMLClassification in Frameworks */,
 				6FC987A819941677EC289003 /* LunaPaywallBypass in Frameworks */,
 				F599702F89767DDCF2FB385C /* LunaPriceMetadata in Frameworks */,
-				BE529FEC68767C9B157BA455 /* LunaContentRendering in Frameworks */,
 				41CED045DAB9F43705D5B165 /* LunaTransitions in Frameworks */,
 				8A90AEADC8E26CAB6BAAAA9E /* LunaModels in Frameworks */,
 				D3EA1630994091EEDD2F190E /* LunaFetch in Frameworks */,
@@ -921,7 +905,6 @@
 				B0A258B018CE3BC9C0CD17C8 /* LunaHTMLClassification in Frameworks */,
 				671D19B093B080BB0C00EC9F /* LunaPaywallBypass in Frameworks */,
 				5EA1C0323A202BAC11549C51 /* LunaPriceMetadata in Frameworks */,
-				780D2CF3158D3FED4C7444BA /* LunaContentRendering in Frameworks */,
 				B0B25841CA9850CBB48F1A28 /* LunaTransitions in Frameworks */,
 				BA4D33437C8419EB9CA78225 /* LunaModels in Frameworks */,
 				8B9033F91E7B9093D251BB7C /* LunaFetch in Frameworks */,
@@ -954,7 +937,6 @@
 				47D4FE0F200DA343FE5968BE /* LunaHTMLClassification in Frameworks */,
 				EAF435B92CB3F940D4C5E9AB /* LunaPaywallBypass in Frameworks */,
 				7A2A261BD9A78CDAD99A8432 /* LunaPriceMetadata in Frameworks */,
-				4FA4D6ECCD2EB5EDB599A9C8 /* LunaContentRendering in Frameworks */,
 				47AFF9C55EA1844DB55C585E /* LunaTransitions in Frameworks */,
 				4A1B3F8FAA22CE45ADB6CAB6 /* LunaModels in Frameworks */,
 				D5AFE94D87296B201C34D805 /* LunaFetch in Frameworks */,
@@ -1107,7 +1089,6 @@
 				C100000000000000000000012 /* LunaHTMLClassification */,
 				C100000000000000000000013 /* LunaPaywallBypass */,
 				C100000000000000000000014 /* LunaPriceMetadata */,
-				C100000000000000000000015 /* LunaContentRendering */,
 				C100000000000000000000018 /* LunaTransitions */,
 				C100000000000000000000016 /* LunaModels */,
 				C100000000000000000000017 /* LunaFetch */,
@@ -1179,7 +1160,6 @@
 				C100000000000000000000012 /* LunaHTMLClassification */,
 				C100000000000000000000013 /* LunaPaywallBypass */,
 				C100000000000000000000014 /* LunaPriceMetadata */,
-				C100000000000000000000015 /* LunaContentRendering */,
 				C100000000000000000000018 /* LunaTransitions */,
 				C100000000000000000000016 /* LunaModels */,
 				C100000000000000000000017 /* LunaFetch */,
@@ -1232,7 +1212,6 @@
 				C100000000000000000000012 /* LunaHTMLClassification */,
 				C100000000000000000000013 /* LunaPaywallBypass */,
 				C100000000000000000000014 /* LunaPriceMetadata */,
-				C100000000000000000000015 /* LunaContentRendering */,
 				C100000000000000000000018 /* LunaTransitions */,
 				C100000000000000000000016 /* LunaModels */,
 				C100000000000000000000017 /* LunaFetch */,
@@ -1336,7 +1315,6 @@
 				C100000000000000000000012 /* LunaHTMLClassification */,
 				C100000000000000000000013 /* LunaPaywallBypass */,
 				C100000000000000000000014 /* LunaPriceMetadata */,
-				C100000000000000000000015 /* LunaContentRendering */,
 				C100000000000000000000018 /* LunaTransitions */,
 				C100000000000000000000016 /* LunaModels */,
 				C100000000000000000000017 /* LunaFetch */,
@@ -1377,7 +1355,6 @@
 				C100000000000000000000012 /* LunaHTMLClassification */,
 				C100000000000000000000013 /* LunaPaywallBypass */,
 				C100000000000000000000014 /* LunaPriceMetadata */,
-				C100000000000000000000015 /* LunaContentRendering */,
 				C100000000000000000000018 /* LunaTransitions */,
 				C100000000000000000000016 /* LunaModels */,
 				C100000000000000000000017 /* LunaFetch */,
@@ -1427,7 +1404,6 @@
 				C100000000000000000000012 /* LunaHTMLClassification */,
 				C100000000000000000000013 /* LunaPaywallBypass */,
 				C100000000000000000000014 /* LunaPriceMetadata */,
-				C100000000000000000000015 /* LunaContentRendering */,
 				C100000000000000000000018 /* LunaTransitions */,
 				C100000000000000000000016 /* LunaModels */,
 				C100000000000000000000017 /* LunaFetch */,
@@ -1551,7 +1527,6 @@
 				C100000000000000000000012 /* LunaHTMLClassification */,
 				C100000000000000000000013 /* LunaPaywallBypass */,
 				C100000000000000000000014 /* LunaPriceMetadata */,
-				C100000000000000000000015 /* LunaContentRendering */,
 				C100000000000000000000018 /* LunaTransitions */,
 				C100000000000000000000016 /* LunaModels */,
 				C100000000000000000000017 /* LunaFetch */,
@@ -1601,7 +1576,6 @@
 				C100000000000000000000012 /* LunaHTMLClassification */,
 				C100000000000000000000013 /* LunaPaywallBypass */,
 				C100000000000000000000014 /* LunaPriceMetadata */,
-				C100000000000000000000015 /* LunaContentRendering */,
 				C100000000000000000000018 /* LunaTransitions */,
 				C100000000000000000000016 /* LunaModels */,
 				C100000000000000000000017 /* LunaFetch */,
@@ -1654,7 +1628,6 @@
 				C100000000000000000000012 /* LunaHTMLClassification */,
 				C100000000000000000000013 /* LunaPaywallBypass */,
 				C100000000000000000000014 /* LunaPriceMetadata */,
-				C100000000000000000000015 /* LunaContentRendering */,
 				C100000000000000000000018 /* LunaTransitions */,
 				C100000000000000000000016 /* LunaModels */,
 				C100000000000000000000017 /* LunaFetch */,
@@ -4028,11 +4001,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
 			productName = LunaPriceMetadata;
-		};
-		C100000000000000000000015 /* LunaContentRendering */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C100000000000000000000001 /* XCLocalSwiftPackageReference "LunaLibraries" */;
-			productName = LunaContentRendering;
 		};
 		C100000000000000000000016 /* LunaModels */ = {
 			isa = XCSwiftPackageProductDependency;

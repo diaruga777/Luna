@@ -3,7 +3,6 @@
 //  LunaPriceUI
 //
 
-import LunaTransitions
 import UIKit
 
 extension UIViewController {
@@ -11,6 +10,6 @@ extension UIViewController {
     func presentPriceMessage(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 }

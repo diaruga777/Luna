@@ -7,7 +7,6 @@ import LunaReaderUI
 import LunaDesignSystem
 import LunaHTMLClassification
 import LunaURLClassification
-import LunaTransitions
 import UIKit
 import WebKit
 
@@ -295,7 +294,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
     // MARK: - Actions
 
     @objc private func closeTapped() {
-        DotMatrixModal.dismiss(self)
+        dismiss(animated: true)
     }
 
     @objc private func goBackTapped() { webView?.goBack() }
@@ -338,7 +337,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         alert.addAction(UIAlertAction(title: "No thanks", style: .cancel) { [weak self] _ in
             self?.isOfferingUseThisPage = false
         })
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
     /// Reads the rendered HTML and hands it to the host, then routes the host's
@@ -364,7 +363,7 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
     private func handleAddOutcome(_ outcome: ProductSearchAddOutcome) {
         switch outcome {
         case .added:
-            DotMatrixModal.dismiss(self)
+            dismiss(animated: true)
         case .noPrice:
             presentPriceMessage(
                 title: "Couldn't find a price",

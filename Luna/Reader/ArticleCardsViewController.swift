@@ -33,7 +33,6 @@ import LunaReadingList
 import LunaReadingListUI
 import LunaSocialUI
 import LunaStorage
-import LunaTransitions
 import LunaURLClassification
 import UIKit
 
@@ -185,14 +184,14 @@ final class ArticleCardsViewController: UIViewController {
                     urlString: normalized.absoluteString)
             }
         })
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
     @objc private func catchUpTapped() {
         let queue = ReadingListSectioning.catchUpQueue(items: store.items())
             .filter { ReadingListSectioning.rendersAsReader($0) }
         let catchUp = CatchUpViewController(unread: queue, router: self)
-        DotMatrixModal.present(catchUp, from: self)
+        present(catchUp, animated: true)
     }
 
     // MARK: - Data
@@ -292,8 +291,7 @@ final class ArticleCardsViewController: UIViewController {
         guard let content = store.content(for: item) else { return nil }
         return ReaderHostFactory.make(
             item: item, content: content,
-            shareProvider: AppReaderShareProvider.shared,
-            transition: DotMatrixRabbitHoleTransition())
+            shareProvider: AppReaderShareProvider.shared)
     }
 
     /// Deep-link / external open (SceneDelegate): plain fullscreen push, no
@@ -315,26 +313,25 @@ final class ArticleCardsViewController: UIViewController {
         let reader = ArchiveWebReaderViewController(
             articleURL: articleURL, itemID: item.id, store: store)
         let nav = UINavigationController(rootViewController: reader)
-        nav.installDotMatrixTransitions()
         reader.onClose = { [weak nav] in
             guard let nav else { return }
-            DotMatrixModal.dismiss(nav)
+            nav.dismiss(animated: true)
         }
         reader.onOpenInBrowser = { [weak nav] archiveURL in
             guard let nav else { return }
-            DotMatrixModal.dismiss(nav) {
+            nav.dismiss(animated: true) {
                 UIApplication.shared.open(archiveURL)
             }
         }
         reader.onExtracted = { [weak self, weak nav] in
             guard let nav else { return }
-            DotMatrixModal.dismiss(nav) {
+            nav.dismiss(animated: true) {
                 guard let self, let fresh = self.store.item(withID: item.id) else { return }
                 ReadingListIngestor.shared.backfillMissingThumbnails()
                 self.openExternally(fresh)
             }
         }
-        DotMatrixModal.present(nav, from: self)
+        present(nav, animated: true)
     }
 
     // MARK: - Carousel data source (see CardCarouselDataSource conformance below)
@@ -595,7 +592,6 @@ private final class ReaderCardContentViewController: CardContentViewController {
         let reader = ReaderHostFactory.make(
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
-            transition: DotMatrixRabbitHoleTransition(),
             fullContentUpFront: true)
         addChild(reader)
         reader.view.autoresizingMask = []

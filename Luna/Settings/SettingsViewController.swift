@@ -11,7 +11,6 @@ import LunaInterop
 import LunaInteropUI
 import LunaStorage
 import LunaModels
-import LunaTransitions
 import UIKit
 
 /// Shared helpers for the settings subpages.
@@ -26,7 +25,7 @@ extension UITableViewController {
     func presentInfoAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 }
 
@@ -133,10 +132,10 @@ final class SettingsViewController: NavHeaderTableController {
             let onboarding = OnboardingFlow.make(stores: stores) { [weak self] in
                 stores.tearDown()
                 guard let self else { return }
-                DotMatrixModal.dismiss(self)
+                self.dismiss(animated: true)
             }
             onboarding.modalPresentationStyle = .fullScreen
-            DotMatrixModal.present(onboarding, from: self)
+            present(onboarding, animated: true)
         }
     }
 }

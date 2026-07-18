@@ -7,7 +7,6 @@ import LunaArchiveReader
 import LunaDesignSystem
 import LunaStorage
 import LunaModels
-import LunaTransitions
 import UIKit
 
 /// Hosts the reader modes — scrolling text, the RSVP speed reader (with its own
@@ -60,7 +59,7 @@ public final class ReaderViewController: UIViewController {
     /// When true, the mode switcher + audio toggle render in an inline (de-glassed,
     /// Task 3) header embedded DIRECTLY in the view (no UINavigationController). The
     /// host (a catch-up card) sits on a solid background, so the bar uses a solid fill
-    /// rather than a live blur — which the Dot Matrix pixel-wipe could not capture.
+    /// rather than a live blur.
     private let inlineControlsHeader: Bool
     /// Optional line shown ABOVE the controls inside the single inline header
     /// (the catch-up card's date/sender) so the card needs no separate header strip.
@@ -107,11 +106,7 @@ public final class ReaderViewController: UIViewController {
 
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Assert the shared nav bar's state on every appear so the custom Dot Matrix
-        // wipe snapshots a STABLE header (identity transform, full alpha, visible) — both
-        // when first pushed and when an inline overlay dismisses back to us. Otherwise the
-        // snapshot can capture a mid-tuck / transformed bar and the committed frame differs,
-        // making the header blink and jump after the transition lands.
+        // Restore any header tuck before this reader becomes visible again.
         if let bar = navigationController?.navigationBar {
             bar.transform = .identity
             bar.alpha = 1
@@ -139,7 +134,6 @@ public final class ReaderViewController: UIViewController {
         let contentTop: NSLayoutYAxisAnchor
         if inlineControlsHeader {
             // Inline (de-glassed) header on a solid card background — a solid fill,
-            // not a live blur, so the Dot Matrix pixel-wipe captures it faithfully.
             inlineHeader.translatesAutoresizingMaskIntoConstraints = false
             inlineHeader.backgroundColor = GlassStyle.solidBarColor
             view.addSubview(inlineHeader)
@@ -190,7 +184,6 @@ public final class ReaderViewController: UIViewController {
             navigationItem.titleView = modeControl
             // De-glassed (Task 3): an opaque solid background instead of the blurred
             // material, so the bar reads consistently on the solid reader background and
-            // the Dot Matrix pixel-wipe captures it faithfully.
             let appearance = UINavigationBarAppearance()
             appearance.configureWithOpaqueBackground()
             appearance.backgroundColor = .systemBackground
@@ -288,15 +281,7 @@ public final class ReaderViewController: UIViewController {
             ReaderSettings.lastReaderMode = newMode
         }
         onModeChange?(newMode)
-        // The mode switcher's OWN selection move uses UIKit's stock selection animation —
-        // no dotmatrix pixel-wipe on the control widget itself. Only the reader content it
-        // drives dissolves (the content crossfade below).
-        // Dissolve the content area dot-by-dot from the old mode to the new one. Scoped to
-        // `contentContainer`, which sits BELOW the header — the header never pixelates.
-        // (Falls back to a plain crossfade when the pixel-wipe is off / unavailable.)
-        DotMatrixCrossfade.run(in: contentContainer, direction: .random) { [weak self] in
-            self?.showCurrentMode()
-        }
+        showCurrentMode()
     }
 
     @objc private func audioToggled() {

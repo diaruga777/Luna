@@ -18,7 +18,6 @@ import LunaReadingList
 import LunaReadingListUI
 import LunaSocialUI
 import LunaStorage
-import LunaTransitions
 import LunaURLClassification
 import Photos
 import UIKit
@@ -211,7 +210,7 @@ final class SavedMediaCardsViewController: UIViewController {
                     urlString: urlString, ownership: .downloader)
             }
         })
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
     // MARK: - Item actions (context menu)
@@ -257,7 +256,7 @@ final class SavedMediaCardsViewController: UIViewController {
     private func presentAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
     private func deleteSavedItem(for item: SavedMediaItem) {

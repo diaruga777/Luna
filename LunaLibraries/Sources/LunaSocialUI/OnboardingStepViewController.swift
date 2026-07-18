@@ -93,10 +93,7 @@ public final class OnboardingStepViewController: UIViewController {
             topVisual = Self.iconTile(symbol: symbolName, accent: accent)
         }
 
-        // The visual sits on a plain background — a clean, Apple-style onboarding
-        // canvas. (An earlier ambient dot-matrix panel here was both visually noisy
-        // and, snapshotted by the pixel-wipe transition, the source of a multi-second
-        // step-to-step hang; see OnboardingFlow.make.)
+        // The visual sits on a plain background.
         let visualPanel = UIView()
         topVisual.translatesAutoresizingMaskIntoConstraints = false
         visualPanel.addSubview(topVisual)

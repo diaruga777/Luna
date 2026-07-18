@@ -8,7 +8,6 @@ import LunaMailTransport
 import LunaDesignSystem
 import LunaSocial
 import AuthenticationServices
-import LunaTransitions
 import UIKit
 
 /// The email-account sign-in flow: enter an address → infer the provider →
@@ -28,8 +27,7 @@ public enum EmailLoginFlow {
         let entry = EmailEntryViewController(accountStore: accountStore, completion: completion)
         let nav = UINavigationController(rootViewController: entry)
         nav.modalPresentationStyle = .formSheet
-        nav.installDotMatrixTransitions()
-        DotMatrixModal.present(nav, from: presenter)
+        presenter.present(nav, animated: true)
     }
 }
 
@@ -219,7 +217,7 @@ final class EmailEntryViewController: UIViewController {
         guard !hasCompleted else { return }
         hasCompleted = true
         if dismissOnCompletion {
-            DotMatrixModal.dismiss(self) { self.completion?(false) }
+            dismiss(animated: true) { self.completion?(false) }
         } else {
             completion?(false)
         }
@@ -388,7 +386,7 @@ final class EmailEntryViewController: UIViewController {
         guard !hasCompleted else { return }
         hasCompleted = true
         if dismissOnCompletion {
-            DotMatrixModal.dismiss(self) { self.completion?(true) }
+            dismiss(animated: true) { self.completion?(true) }
         } else {
             loadingCover?.hide()
             loadingCover = nil
@@ -403,6 +401,6 @@ final class EmailEntryViewController: UIViewController {
     private func presentError(_ message: String) {
         let alert = UIAlertController(title: "Sign-in failed", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 }

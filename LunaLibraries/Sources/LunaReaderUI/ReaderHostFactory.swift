@@ -8,7 +8,7 @@ import UIKit
 
 /// Single construction point for the full-screen reader a save opens into: the stacked-
 /// layer `RabbitHoleReaderViewController`. Centralised so every call site shares one
-/// entry point and injects the same transition.
+/// entry point.
 public enum ReaderHostFactory {
     /// - Parameter fullContentUpFront: render every layer's whole article
     ///   immediately (no progressive prefix → swap) — for hosts that keep the
@@ -16,12 +16,10 @@ public enum ReaderHostFactory {
     public static func make(item: ReadingListItem,
                      content: ArticleContent,
                      shareProvider: ReaderShareProviding? = nil,
-                     transition: RabbitHoleTransitioning? = nil,
                      fullContentUpFront: Bool = false) -> UIViewController {
         let reader = RabbitHoleReaderViewController(
             item: item, content: content,
-            shareProvider: shareProvider,
-            transition: transition)
+            shareProvider: shareProvider)
         reader.rendersFullContentUpFront = fullContentUpFront
         return reader
     }

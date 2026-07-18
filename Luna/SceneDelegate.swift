@@ -14,11 +14,11 @@ import LunaReadingList
 import LunaArchiveReader
 import LunaDesignSystem
 import LunaStorage
-import LunaTransitions
 import LunaURLClassification
 import LunaSend
 import LunaMediaDownload
 import LunaInteropUI
+import LunaTransitions
 import UIKit
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -144,7 +144,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         self.window = window
         window.makeKeyAndVisible()
-        installDotMatrixTransitions()
+        mainNavigationController?.installLunarEclipseTransition()
 
         if let url = connectionOptions.urlContexts.first?.url {
             route(url)
@@ -305,23 +305,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func showMainUI() {
         guard let window else { return }
-        // Onboarding → main UI is a whole-screen swap: dissolve it through the pixel
-        // wipe (falls back to a plain animated fade when the wipe is off).
-        DotMatrixCrossfade.run(in: window, direction: .random) {
-            window.rootViewController = self.makeMainRootViewController()
-            window.layoutIfNeeded()
-        }
-        installDotMatrixTransitions()
-    }
-
-    /// Prewarm the GPU overlay and route the main navigation controller's push/pop
-    /// through the Dot Matrix pixel-wipe (a no-op when off / Metal unavailable).
-    /// The nav controller now usually sits INSIDE the mini-player host container
-    /// (`mainNavigationController` resolves both shapes), so the transitions are
-    /// installed on the inner nav, not on the window root itself.
-    private func installDotMatrixTransitions() {
-        guard let window else { return }
-        DotMatrixTransitionCenter.shared.prewarm(in: window)
-        mainNavigationController?.installDotMatrixTransitions()
+        window.rootViewController = makeMainRootViewController()
+        mainNavigationController?.installLunarEclipseTransition()
+        window.layoutIfNeeded()
     }
 }

@@ -207,10 +207,6 @@ Task<Void, Never>?` pattern).
 
 ## Explicitly reviewed, NO action needed (don't "fix" these)
 
-- Dot Matrix transition stack (center/session/animator/nav delegate/modal):
-  prewarmed Metal overlay, ≤2× snapshots, careful bar compositing — sound.
-- RabbitHole reader: spare-layer prewarm, preload promotion, region-confined
-  wipes, session-owned speculative preloads with deinit backstop — sound.
 - ScrollReader progressive two-phase render + the just-committed
   finish-detection changes — sound.
 - Script message handlers all go through `WeakScriptMessageHandler` (prior

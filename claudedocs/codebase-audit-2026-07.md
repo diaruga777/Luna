@@ -210,20 +210,7 @@ not change.
 
 ## WS-E — Animation robustness
 
-**E1. `RabbitHoleTransitionView`'s CADisplayLink retains the view until the
-animation completes.**
-`LunaLibraries/Sources/LunaContentRendering/RabbitHoleTransitionView.swift:211-232`
-— `CADisplayLink(target: self, …)` with invalidation only inside `tick()` at
-t ≥ 1. If the view is torn down mid-animation (interrupted transition), the
-link keeps it alive and ticking. Add `didMoveToWindow`/`willMove(toWindow:)`
-handling: when leaving the window, invalidate the link, nil the completion
-(do not fire it), and clear textures. Audit the sibling display-link users for
-the same pattern (`LunaLibraries/Sources/LunaTransitions/
-DotMatrixInteractivePopController.swift` and any other
-`CADisplayLink(target:` in LunaTransitions/LunaContentRendering) and apply the
-same guard where teardown mid-flight is possible.
-
-**E2. Onboarding looping animations die on backgrounding.**
+**E1. Onboarding looping animations die on backgrounding.**
 `LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift` uses
 repeating `UIView.animateKeyframes(…, options: [.repeat])` (lines 395, 748,
 1104, 1377, 1717, 2297). UIKit removes CAAnimations when the app backgrounds,
@@ -233,9 +220,7 @@ so returning to onboarding shows a frozen mockup. The view already has
 that calls `start()` again when the view is in a window; make sure re-entry
 still can't stack loops (start() already resets first).
 
-Files: `LunaLibraries/Sources/LunaContentRendering/RabbitHoleTransitionView.swift`,
-`LunaLibraries/Sources/LunaTransitions/DotMatrixInteractivePopController.swift`
-(audit), `LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift`.
+Files: `LunaLibraries/Sources/LunaSocialUI/OnboardingAnimationView.swift`.
 Tests: none practical beyond compile + existing suite; keep changes minimal.
 
 ---

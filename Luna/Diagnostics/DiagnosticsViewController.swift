@@ -5,7 +5,6 @@
 
 import LunaStorage
 import LunaDesignSystem
-import LunaTransitions
 import UIKit
 
 /// Shows the persistent diagnostic log and lets the user share it (as a `.txt`)
@@ -18,7 +17,7 @@ final class DiagnosticsViewController: UIViewController {
     /// the log content itself (live timestamps) isn't pixel-stable, so this screen is
     /// covered by a layout assertion rather than a snapshot.
     let textView = UITextView()
-    /// In-content header in place of the nav bar, so it's part of the Dot Matrix wipe.
+    /// In-content header in place of the nav bar.
     private let header = NavHeaderBar()
 
     init(log: DiagnosticLogging = DiagnosticLog.shared) {
@@ -70,7 +69,7 @@ final class DiagnosticsViewController: UIViewController {
         if let navigationController, navigationController.viewControllers.count > 1 {
             navigationController.popViewController(animated: true)
         } else {
-            DotMatrixModal.dismiss(self)
+            dismiss(animated: true)
         }
     }
 
@@ -80,8 +79,7 @@ final class DiagnosticsViewController: UIViewController {
             navigationController.pushViewController(replays, animated: true)
         } else {
             let nav = UINavigationController(rootViewController: replays)
-            nav.installDotMatrixTransitions()
-            DotMatrixModal.present(nav, from: self)
+            present(nav, animated: true)
         }
     }
 
@@ -120,12 +118,12 @@ final class DiagnosticsViewController: UIViewController {
             self?.log.clear()
             self?.reload()
         })
-        DotMatrixModal.present(confirm, from: self)
+        present(confirm, animated: true)
     }
 
     private func presentAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 }

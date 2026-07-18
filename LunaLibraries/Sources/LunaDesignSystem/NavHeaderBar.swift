@@ -4,10 +4,7 @@
 //
 //  A plain-UIView recreation of a standard small-title UINavigationBar header, used
 //  in place of the UINavigationController's own navigation bar. Because it's an
-//  ordinary content subview of a screen (pinned to the safe-area top), it is captured
-//  and animated as part of the Dot Matrix push/pop pixel-wipe transition — unlike the
-//  real nav bar, which UIKit renders/animates separately and "pops" in at the end of
-//  the transition.
+//  ordinary content subview of a screen pinned to the safe-area top.
 //
 //  Layout matches a system small-title bar: a 44pt bar below the safe-area top, with a
 //  leading control stack, a centered (large: leading) title, and a trailing control
@@ -32,7 +29,6 @@ public final class NavHeaderBar: UIView {
 
     // De-glassed (Task 3): a solid, trait-aware fill that fades in on scroll instead of
     // a live blur. The header sits on a solid screen background, so the blur added little
-    // and could not be captured faithfully by the Dot Matrix pixel-wipe transition.
     private let backgroundFill: UIView = {
         let view = UIView()
         view.backgroundColor = .systemBackground

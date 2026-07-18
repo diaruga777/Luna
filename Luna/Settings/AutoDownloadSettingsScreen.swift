@@ -6,7 +6,6 @@
 import LunaReadingListUI
 import LunaMediaDownload
 import LunaDesignSystem
-import LunaTransitions
 import UIKit
 
 /// Media download and retention controls. Downloader saves supported media into
@@ -270,7 +269,7 @@ final class AutoDownloadSettingsScreen: NavHeaderTableController {
             }
         })
         alert.addAction(UIAlertAction(title: "OK", style: .cancel))
-        DotMatrixModal.present(alert, from: self)
+        present(alert, animated: true)
     }
 
 }

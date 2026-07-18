@@ -16,7 +16,6 @@ import LunaSend
 import LunaMediaDownload
 import LunaDesignSystem
 import LunaStorage
-import LunaTransitions
 import BackgroundTasks
 import UIKit
 import UserNotifications
@@ -81,7 +80,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             let prompt = InteropPromptViewController(
                 kind: kind, context: .inApp, onUnlocked: retry)
             let nav = UINavigationController(rootViewController: prompt)
-            DotMatrixModal.present(nav, from: presenter)
+            presenter.present(nav, animated: true)
         }
 
         // Diagnostics export header shows the connected email account (which lives
@@ -101,23 +100,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // injected here (extensions leave it nil → Kindle sends are no-ops there).
         ArticleEmailTransportProvider.make = { MailTransportFactory.make() }
 
-        // Modally-presented header screens (LunaDesignSystem sits below
-        // LunaTransitions, so the wipe is injected) dismiss through the pixel wipe.
-        NavHeaderTableController.modalDismisser = { DotMatrixModal.dismiss($0) }
-
-        // The keyboard's appearance dissolves in as dots too (its window can't be
-        // snapshotted, so the reveal dissolves the pre-keyboard pixels OUT instead).
-        DotMatrixKeyboardReveal.install {
-            UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap(\.windows)
-                .first { $0.isKeyWindow }
-        }
-        // Pay the keyboard's one-time bring-up cost after launch settles, not on the
-        // first tap that needs a text field.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            DotMatrixKeyboardReveal.prewarmKeyboard()
-        }
 
         // New audio-playback stack (claudedocs/audio-playback-plan.md, Phase 2):
         // install the autoplay queue provider and register the Now Playing /
@@ -151,8 +133,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                 nav.pushViewController(voice, animated: true)
             } else {
                 let nav = UINavigationController(rootViewController: voice)
-                nav.installDotMatrixTransitions()
-                DotMatrixModal.present(nav, from: presenter)
+                presenter.present(nav, animated: true)
             }
         }
 

@@ -5,7 +5,6 @@
 
 import LunaDesignSystem
 import LunaStorage
-import LunaTransitions
 import UIKit
 import WebKit
 
@@ -59,7 +58,7 @@ public final class PlatformEmbedViewController: UIViewController, WKScriptMessag
         closeButton.tintColor = .white
         closeButton.addAction(UIAction { [weak self] _ in
             guard let self else { return }
-            DotMatrixModal.dismiss(self)
+            dismiss(animated: true)
         }, for: .touchUpInside)
 
         webView.translatesAutoresizingMaskIntoConstraints = false
@@ -87,7 +86,7 @@ public final class PlatformEmbedViewController: UIViewController, WKScriptMessag
     ) {
         guard message.name == "player", message.body as? String == "ended" else { return }
         ReadingListStore.shared.markReadState(.read, for: itemID)
-        DotMatrixModal.dismiss(self)
+        dismiss(animated: true)
     }
 
     /// Watches the embed page's `<video>` element and posts "ended" natively.

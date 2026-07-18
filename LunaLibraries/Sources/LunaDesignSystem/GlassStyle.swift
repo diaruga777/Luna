@@ -88,8 +88,7 @@ public enum GlassStyle {
     //
     // These approximate the glass bar/button materials with solid, trait-aware colors,
     // for chrome that sits on SOLID color backgrounds where the live blur adds little
-    // and interacts poorly with the Dot Matrix pixel-wipe transition (which can't
-    // capture a UIVisualEffectView's content faithfully). They read like the material
+    // where a live blur adds little. They read like the material
     // they replace in both light and dark mode.
 
     /// A solid fill approximating the `barEffect()` material for header/bar backgrounds

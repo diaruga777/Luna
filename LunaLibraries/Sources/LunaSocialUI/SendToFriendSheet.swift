@@ -7,7 +7,6 @@ import LunaSocial
 import LunaReadingList
 import LunaModels
 import LunaDesignSystem
-import LunaTransitions
 import UIKit
 
 /// The shared "share this" entry point used by the reading list and the reader:
@@ -58,7 +57,7 @@ public enum SendToFriendSheet {
     /// dismissing — presenting during the dismissal makes the wipe animations overlap.
     public static func presentCopiedConfirmation(from presenter: UIViewController) {
         let alert = UIAlertController(title: "Copied Link", message: nil, preferredStyle: .alert)
-        DotMatrixModal.present(alert, from: presenter)
+        presenter.present(alert, animated: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak alert] in
             guard let alert, alert.presentingViewController != nil else { return }
             alert.dismiss(animated: true)
@@ -76,8 +75,7 @@ public enum SendToFriendSheet {
             deliver(item: item, urlString: urlString, title: title, to: emails, from: presenter)
         }
         let nav = UINavigationController(rootViewController: picker)
-        nav.installDotMatrixTransitions()
-        DotMatrixModal.present(nav, from: presenter)
+        presenter.present(nav, animated: true)
     }
 
     private static func presentRecentRecipients(
@@ -98,7 +96,7 @@ public enum SendToFriendSheet {
         })
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         sheet.popoverPresentationController?.sourceView = presenter.view
-        DotMatrixModal.present(sheet, from: presenter)
+        presenter.present(sheet, animated: true)
     }
 
     /// Shares a URL via the system share sheet. `sharedURLString` lets callers hand
@@ -147,7 +145,7 @@ public enum SendToFriendSheet {
                 launcher(presenter)
             })
         }
-        DotMatrixModal.present(alert, from: presenter)
+        presenter.present(alert, animated: true)
     }
 
     private static func presentError(_ error: Error, from presenter: UIViewController) {
@@ -156,6 +154,6 @@ public enum SendToFriendSheet {
             message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription,
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
-        DotMatrixModal.present(alert, from: presenter)
+        presenter.present(alert, animated: true)
     }
 }

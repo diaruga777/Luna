@@ -3,8 +3,7 @@
 //  LunaDesignSystem
 //
 //  A `UITableViewController` base that replaces the UINavigationController nav bar with
-//  an in-content `NavHeaderBar`, so the header is captured by the Dot Matrix push/pop
-//  pixel-wipe (rather than animating separately and snapping in at the transition's end).
+//  an in-content `NavHeaderBar`.
 //
 //  Subclasses set `headerTitle` and optionally override `makeLeadingControls()` /
 //  `makeTrailingControls()`. The default leading control is a back chevron that pops the
@@ -83,16 +82,9 @@ open class NavHeaderTableController: UITableViewController {
     /// The trailing controls. Default: none. Override to supply right-side controls.
     open func makeTrailingControls() -> [UIView] { [] }
 
-    /// Installed at app launch so a modally-presented header screen dismisses
-    /// through the Dot Matrix wipe. LunaDesignSystem sits BELOW LunaTransitions in
-    /// the layering, so the wipe is injected rather than imported; nil ⇒ stock.
-    public static var modalDismisser: ((UIViewController) -> Void)?
-
     @objc open func navHeaderBack() {
         if let navigationController, navigationController.viewControllers.count > 1 {
             navigationController.popViewController(animated: true)
-        } else if let dismisser = Self.modalDismisser {
-            dismisser(self)
         } else {
             dismiss(animated: true)
         }

@@ -6,7 +6,6 @@
 import LunaSocial
 import LunaDesignSystem
 import ContactsUI
-import LunaTransitions
 import UIKit
 
 /// Picks one or more email recipients: the saved friends list (multi-select),
@@ -139,8 +138,8 @@ public final class RecipientPickerViewController: UITableViewController,
     }
 
     @objc private func send() {
-        DotMatrixModal.dismiss(self) { [onComplete, selected] in onComplete(Array(selected)) }
+        dismiss(animated: true) { [onComplete, selected] in onComplete(Array(selected)) }
     }
 
-    @objc private func cancel() { DotMatrixModal.dismiss(self) }
+    @objc private func cancel() { dismiss(animated: true) }
 }

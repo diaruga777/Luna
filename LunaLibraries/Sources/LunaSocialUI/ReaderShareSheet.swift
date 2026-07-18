@@ -5,7 +5,6 @@
 
 import LunaSocial
 import LunaDesignSystem
-import LunaTransitions
 import UIKit
 
 /// The reader's share affordance: a custom medium-detent bottom sheet offering
@@ -83,7 +82,7 @@ public final class ReaderShareSheet: UIViewController {
 
     /// Convenience: build the sheet and present it from `presenter`.
     public static func present(from presenter: UIViewController, rows: [Row]) {
-        DotMatrixModal.present(ReaderShareSheet(rows: rows), from: presenter)
+        presenter.present(ReaderShareSheet(rows: rows), animated: true)
     }
 
     public override func viewDidLoad() {
@@ -142,6 +141,6 @@ public final class ReaderShareSheet: UIViewController {
         let action = rows[sender.tag].action
         // Dismiss first so the action can present its own sheet on the original
         // presenter without a "already presenting" conflict.
-        DotMatrixModal.dismiss(self) { action() }
+        dismiss(animated: true) { action() }
     }
 }

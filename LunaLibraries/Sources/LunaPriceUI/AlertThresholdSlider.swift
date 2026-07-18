@@ -26,7 +26,7 @@ public final class AlertThresholdSlider: UIView {
     private let readoutLabel = UILabel()
     /// De-glassed (Task 3): a solid rounded pill. This sits on the editor / catch-up
     /// card's solid background, so the live blur added little and could not be captured
-    /// faithfully by the Dot Matrix pixel-wipe transition.
+    /// consistently across presentation contexts.
     private let pill = UIView()
 
     /// The price baseline + currency the readout's absolute-drop text is computed

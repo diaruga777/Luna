@@ -38,7 +38,10 @@ own adapters later). The Downloader-specific adapters live in
   or reverses back to rest. A tap on a peeked edge pages one card. A flick on the
   scrub strip pages one card; dragging through the strip previews cards
   continuously (thumbnail overlay over the center card) and commits the index
-  under the finger on release.
+  under the finger on release. The strip keeps the selected chip centered in
+  its viewport (clamped at the ends); only while a positional drag is live
+  does it fall back to keep-visible scrolling, so the content never shifts
+  under the stationary finger.
 - **Audio** is off by default (`CardCarouselViewController.isSoundMuted`, carousel-
   wide). The mute/unmute button sits at the card's top-right and only shows when the
   content reports `supportsAudio` (videos discover their audio track async). Pressing
@@ -147,13 +150,19 @@ Differences from the Downloader, via `CardCarouselStyle`:
 - EVERY mounted card (centered + both side peeks) embeds a full live
   `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out to the
   card's bounds — the card view IS the fullscreen reader view (one header, one
-  layout for both states), and paging never shows a placeholder.
+  layout for both states), and paging never shows a placeholder. The layer
+  header is not a bar: each control (back / audio / mode switcher /
+  save-or-share) is its own Liquid Glass pill floating on the card in a 52pt
+  top region at a 6pt inset (the card is already inset from the screen). The
+  ROOT layer of a carousel-embedded reader shows no back pill (`onRootBack`
+  set ⇒ `setBackButtonHidden` via `applyFocus`) — it had nothing to pop to;
+  deeper layers and pushed fullscreen readers keep theirs.
 - **"Fullscreen" is a chrome fade, nothing more** — no navigation push, no
   card-geometry choreography. `CardCarouselViewController.setImmersed(_:animated:)`
   fades the peeking side cards and the scrub strip out and extends only the
   centered card's bottom edge into the room the strip frees up (top, sides,
-  corner radius, the root `NavHeaderBar`, and the reader's own header never
-  move or change; paging, peek taps, and the strip are inert while immersed).
+  corner radius, and the reader's own header pills never move or change;
+  paging, peek taps, and the strip are inert while immersed).
   The host fades its flanking Settings/Add circles in step via the carousel's
   `onImmersionChanged` callback, which also covers the internal reset on a
   reload.
@@ -165,18 +174,15 @@ Differences from the Downloader, via `CardCarouselStyle`:
   on direction flips so jitter can't toggle it) fades the chrome away;
   **scrolling up — from anywhere in the article —** (12pt, or reaching the
   top) fades it back in. In **RSVP**, playing fades it away and pausing
-  brings it back (`RSVPViewController.onPlaybackStateChanged`). The reader's
-  root back button (`RabbitHoleReaderViewController.onRootBack`) also
-  surfaces back to the card.
+  brings it back (`RSVPViewController.onPlaybackStateChanged`).
 - **Long-press** on the centered card: RSVP popover (`RSVPViewController` in a
   real `.popover`, adaptation forced to `.none`) without going fullscreen.
-- Catch-up moved from the old list's scrolling header row into the pinned
-  NavHeaderBar (same rectangle.stack icon + red dot); `CatchUpViewController`'s
-  router is now the `CatchUpRouting` protocol so both roots can present it.
+- The cards root has NO header bar (and no catch-up entry — catch-up remains
+  on the list root, `ReadingListViewController`, used by the other surfaces;
+  `CatchUpViewController`'s router is the `CatchUpRouting` protocol).
 - Settings and Add flank the mini-card scrubber in Liquid Glass circles instead of
-  consuming header space. Friends is reached from Settings. With only Catch Up left
-  in the root header, the card begins directly below the safe area so its own reader
-  header can use the vacated top row.
+  consuming header space. Friends is reached from Settings. The card begins
+  directly below the safe area, so the reader's own header pills own the top row.
 - SceneDelegate's two `as? ReadingListViewController` casts now handle both
   roots (deep-link `openReader` → `openExternally(_:)`; friend prompt presents
   from whatever the root is). needsCaptcha cards route through the same

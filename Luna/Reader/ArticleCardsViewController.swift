@@ -15,8 +15,8 @@
 //    and the bottom scrub strip fade away and the card's bottom edge extends
 //    into the freed room. Scrolling down in the scroll reader fades them
 //    out; scrolling up — from anywhere in the article — fades them back in.
-//    In RSVP, playing fades them out and pausing fades them back. Neither
-//    the root header nor the reader's own header moves or changes.
+//    In RSVP, playing fades them out and pausing fades them back. The
+//    reader's own header never moves or changes.
 //  - Long-pressing the centered card runs the link-preview RSVP experience
 //    (glass card, drag gestures, haptics) for the card's article, without
 //    going fullscreen.
@@ -27,7 +27,6 @@
 
 import LunaArchiveReader
 import LunaDesignSystem
-import LunaMailAccount
 import LunaModels
 import LunaReaderUI
 import LunaReadingList
@@ -39,12 +38,9 @@ import UIKit
 
 final class ArticleCardsViewController: UIViewController {
 
-    private let header = NavHeaderBar()
     private let store = ReadingListStore.shared
     private let carousel = CardCarouselViewController()
     private let emptyView = EmptyArticlesView()
-    private let catchUpButton = UIButton(type: .system)
-    private let catchUpBadge = UIView()
     private let settingsButton = UIButton(type: .system)
     private let addButton = UIButton(type: .system)
     private var items: [ReadingListItem] = []
@@ -72,7 +68,7 @@ final class ArticleCardsViewController: UIViewController {
             guard let self else { return }
             // The flanking Settings/Add circles are bottom chrome — they fade
             // in step with the scrub strip they flank (this runs inside the
-            // carousel's fade animation). The root header never changes.
+            // carousel's fade animation).
             self.settingsButton.alpha = immersed ? 0 : 1
             self.addButton.alpha = immersed ? 0 : 1
             self.settingsButton.isUserInteractionEnabled = !immersed
@@ -86,8 +82,6 @@ final class ArticleCardsViewController: UIViewController {
         emptyView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyView)
 
-        let headerBottom = header.mount(in: self)
-        setHeaderControls()
         mountBottomControls()
 
         NSLayoutConstraint.activate([
@@ -95,7 +89,7 @@ final class ArticleCardsViewController: UIViewController {
             carousel.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             carousel.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             carousel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            emptyView.topAnchor.constraint(equalTo: headerBottom),
+            emptyView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             emptyView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             emptyView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             emptyView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -112,22 +106,12 @@ final class ArticleCardsViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
-        header.setManagedHeight(topSafeAreaInset: view.safeAreaInsets.top)
         carousel.setTopInset(view.safeAreaInsets.top + 8)
     }
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
-        header.setManagedHeight(topSafeAreaInset: view.safeAreaInsets.top)
         carousel.setTopInset(view.safeAreaInsets.top + 8)
-    }
-
-    // MARK: - Header
-
-    private func setHeaderControls() {
-        configureCatchUpButton()
-        header.setLeadingControls([])
-        header.setTrailingControls([catchUpButton])
     }
 
     /// Flanks the title scrubber with the two root actions. The shared
@@ -165,36 +149,6 @@ final class ArticleCardsViewController: UIViewController {
         button.translatesAutoresizingMaskIntoConstraints = false
     }
 
-    /// The catch-up entry moved from the old list's scrolling header row into
-    /// the pinned bar (the carousel has no scrolling header). Same icon + red
-    /// "action needed" dot as before.
-    private func configureCatchUpButton() {
-        catchUpButton.setImage(
-            UIImage(systemName: "rectangle.stack",
-                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)),
-            for: .normal)
-        catchUpButton.tintColor = .label
-        catchUpButton.accessibilityLabel = "Catch up"
-        catchUpButton.addTarget(self, action: #selector(catchUpTapped), for: .touchUpInside)
-        catchUpButton.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            catchUpButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 34),
-            catchUpButton.heightAnchor.constraint(equalToConstant: NavHeaderBar.barHeight),
-        ])
-        catchUpBadge.backgroundColor = .systemRed
-        catchUpBadge.layer.cornerRadius = 4.5
-        catchUpBadge.isUserInteractionEnabled = false
-        catchUpBadge.isHidden = true
-        catchUpBadge.translatesAutoresizingMaskIntoConstraints = false
-        catchUpButton.addSubview(catchUpBadge)
-        NSLayoutConstraint.activate([
-            catchUpBadge.widthAnchor.constraint(equalToConstant: 9),
-            catchUpBadge.heightAnchor.constraint(equalToConstant: 9),
-            catchUpBadge.trailingAnchor.constraint(equalTo: catchUpButton.trailingAnchor, constant: -2),
-            catchUpBadge.topAnchor.constraint(equalTo: catchUpButton.topAnchor, constant: 8),
-        ])
-    }
-
     @objc private func settingsTapped() {
         navigationController?.pushViewController(SettingsViewController(), animated: true)
     }
@@ -220,13 +174,6 @@ final class ArticleCardsViewController: UIViewController {
         present(alert, animated: true)
     }
 
-    @objc private func catchUpTapped() {
-        let queue = ReadingListSectioning.catchUpQueue(items: store.items())
-            .filter { ReadingListSectioning.rendersAsReader($0) }
-        let catchUp = CatchUpViewController(unread: queue, router: self)
-        present(catchUp, animated: true)
-    }
-
     // MARK: - Data
 
     @objc private func reload() {
@@ -236,7 +183,6 @@ final class ArticleCardsViewController: UIViewController {
         let fingerprint = updated.map {
             "\($0.id)|\($0.title ?? "")|\($0.state)|\($0.thumbnailFileName ?? "")"
         }
-        updateCatchUpBadge()
         guard fingerprint != appliedFingerprint else { return }
         appliedFingerprint = fingerprint
 
@@ -247,12 +193,6 @@ final class ArticleCardsViewController: UIViewController {
         carousel.reloadData(centeringAt: centeredIndex)
         emptyView.isHidden = !items.isEmpty
         carousel.view.isHidden = items.isEmpty
-    }
-
-    private func updateCatchUpBadge() {
-        let needsEmailSetup = !EmailAccountStore.shared.isConfigured
-        catchUpBadge.isHidden = !(ReadingListSectioning.shouldShowCatchUpDot(items: store.items())
-            || needsEmailSetup)
     }
 
     // MARK: - Opening / immersion
@@ -421,15 +361,6 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         default:
             break
         }
-    }
-}
-
-extension ArticleCardsViewController: CatchUpRouting {
-    // The catch-up queue is pre-filtered to reader articles (rendered inline by
-    // CatchUpViewController itself), so there is never a platform item to route.
-    @discardableResult
-    func openItem(_ item: ReadingListItem, presentingFrom presenter: UIViewController) -> Bool {
-        false
     }
 }
 

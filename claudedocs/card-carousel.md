@@ -20,9 +20,10 @@ own adapters later). The Downloader-specific adapters live in
   under a `CarouselCardView.restingDimAlpha` (70%) black dim so the centered card
   carries the screen. All geometry is pure math in `CardCarouselMetrics`
   (unit-tested in `CardCarouselMetricsTests`).
-- Above the cards: the host's `NavHeaderBar` (same settings/friends/add controls as
-  before). Below: the scrub strip (`CarouselScrubberView`), one small 9:16 thumbnail
-  per card. The download-progress footer floats above the safe-area bottom as before.
+- Above Downloader cards: the host's `NavHeaderBar`. Below: the scrub strip
+  (`CarouselScrubberView`), one small 9:16 thumbnail per card. The Reader gives the
+  strip a wider horizontal inset and flanks it with 44pt Liquid Glass Settings and Add
+  circles. The download-progress footer floats above the safe-area bottom as before.
 
 ## Interaction model
 
@@ -157,6 +158,10 @@ Differences from the Downloader, via `CardCarouselStyle`:
 - Catch-up moved from the old list's scrolling header row into the pinned
   NavHeaderBar (same rectangle.stack icon + red dot); `CatchUpViewController`'s
   router is now the `CatchUpRouting` protocol so both roots can present it.
+- Settings and Add flank the title scrubber in Liquid Glass circles instead of
+  consuming header space. Friends is reached from Settings. With only Catch Up left
+  in the root header, the card begins directly below the safe area so its own reader
+  header can use the vacated top row.
 - SceneDelegate's two `as? ReadingListViewController` casts now handle both
   roots (deep-link `openReader` → `openExternally(_:)`; friend prompt presents
   from whatever the root is). needsCaptcha cards route through the same

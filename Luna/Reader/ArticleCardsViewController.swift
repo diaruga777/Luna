@@ -44,6 +44,8 @@ final class ArticleCardsViewController: UIViewController {
     private let emptyView = EmptyArticlesView()
     private let catchUpButton = UIButton(type: .system)
     private let catchUpBadge = UIView()
+    private let settingsButton = UIButton(type: .system)
+    private let addButton = UIButton(type: .system)
     private var items: [ReadingListItem] = []
     private var appliedFingerprint: [String] = []
     /// The press-driven RSVP preview for the centered card, while a long-press
@@ -60,6 +62,7 @@ final class ArticleCardsViewController: UIViewController {
         style.fillsVertically = true
         style.pagesOnInCardSwipes = true
         style.scrubberStyle = .titles
+        style.scrubberHorizontalInset = 70
         carousel.style = style
         carousel.managesAudioSession = false   // Reader has its own audio stack.
         carousel.dataSource = self
@@ -75,6 +78,7 @@ final class ArticleCardsViewController: UIViewController {
 
         let headerBottom = header.mount(in: self)
         setHeaderControls()
+        mountBottomControls()
 
         NSLayoutConstraint.activate([
             carousel.view.topAnchor.constraint(equalTo: view.topAnchor),
@@ -99,33 +103,56 @@ final class ArticleCardsViewController: UIViewController {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
         header.setManagedHeight(topSafeAreaInset: view.safeAreaInsets.top)
-        carousel.setTopInset(view.safeAreaInsets.top + NavHeaderBar.barHeight + 8)
+        carousel.setTopInset(view.safeAreaInsets.top + 8)
     }
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
         header.setManagedHeight(topSafeAreaInset: view.safeAreaInsets.top)
-        carousel.setTopInset(view.safeAreaInsets.top + NavHeaderBar.barHeight + 8)
+        carousel.setTopInset(view.safeAreaInsets.top + 8)
     }
 
     // MARK: - Header
 
     private func setHeaderControls() {
         configureCatchUpButton()
-        header.setLeadingControls([
-            NavHeaderBar.imageButton(
-                systemName: "gearshape", target: self,
-                action: #selector(settingsTapped), accessibilityLabel: "Settings"),
-            NavHeaderBar.imageButton(
-                systemName: "person.2", target: self,
-                action: #selector(friendsTapped), accessibilityLabel: "Friends"),
+        header.setLeadingControls([])
+        header.setTrailingControls([catchUpButton])
+    }
+
+    /// Flanks the title scrubber with the two root actions. The shared
+    /// carousel reserves matching horizontal space only for the Reader style.
+    private func mountBottomControls() {
+        configureBottomButton(
+            settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
+            accessibilityLabel: "Settings")
+        configureBottomButton(
+            addButton, symbol: "plus", action: #selector(addTapped),
+            accessibilityLabel: "Add")
+
+        view.addSubview(settingsButton)
+        view.addSubview(addButton)
+        NSLayoutConstraint.activate([
+            settingsButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            settingsButton.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -26),
+            settingsButton.widthAnchor.constraint(equalToConstant: 44),
+            settingsButton.heightAnchor.constraint(equalToConstant: 44),
+            addButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            addButton.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -26),
+            addButton.widthAnchor.constraint(equalToConstant: 44),
+            addButton.heightAnchor.constraint(equalToConstant: 44),
         ])
-        header.setTrailingControls([
-            catchUpButton,
-            NavHeaderBar.imageButton(
-                systemName: "plus", target: self,
-                action: #selector(addTapped), accessibilityLabel: "Add"),
-        ])
+    }
+
+    private func configureBottomButton(
+        _ button: UIButton, symbol: String, action: Selector, accessibilityLabel: String
+    ) {
+        button.configuration = GlassStyle.circularButtonConfiguration(symbol: symbol, padding: 10)
+        button.accessibilityLabel = accessibilityLabel
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
     }
 
     /// The catch-up entry moved from the old list's scrolling header row into
@@ -160,10 +187,6 @@ final class ArticleCardsViewController: UIViewController {
 
     @objc private func settingsTapped() {
         navigationController?.pushViewController(SettingsViewController(), animated: true)
-    }
-
-    @objc private func friendsTapped() {
-        navigationController?.pushViewController(FriendsViewController(), animated: true)
     }
 
     @objc private func addTapped() {

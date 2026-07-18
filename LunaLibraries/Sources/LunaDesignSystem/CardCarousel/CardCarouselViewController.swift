@@ -75,6 +75,9 @@ public struct CardCarouselStyle {
     /// the content's own gestures, gated to strongly-horizontal drags.
     public var pagesOnInCardSwipes = false
     public var scrubberStyle: CarouselScrubberView.Style = .thumbnails
+    /// Horizontal room around the scrub strip. Hosts can increase this to
+    /// flank the strip with floating controls without covering its content.
+    public var scrubberHorizontalInset: CGFloat = 16
 
     public init() {}
 }
@@ -199,8 +202,10 @@ public final class CardCarouselViewController: UIViewController {
         view.addSubview(cardArea)
         cardAreaTopConstraint = cardArea.topAnchor.constraint(equalTo: view.topAnchor)
         NSLayoutConstraint.activate([
-            scrubber.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            scrubber.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            scrubber.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor, constant: style.scrubberHorizontalInset),
+            scrubber.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor, constant: -style.scrubberHorizontalInset),
             scrubber.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
             cardAreaTopConstraint,
             cardArea.leadingAnchor.constraint(equalTo: view.leadingAnchor),

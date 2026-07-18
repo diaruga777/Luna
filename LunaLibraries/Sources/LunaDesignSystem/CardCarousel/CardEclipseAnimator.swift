@@ -6,13 +6,15 @@
 //  card (the moon) slides over the centered outgoing card (the sun), growing
 //  slightly past full size, its resting darkness easing from 70% to 60% and then
 //  snapping to full color right at the zenith. The outgoing card stays put and
-//  lightens — subtly at first, then very fast as it is almost covered — while a
-//  corona blooms around its silhouette and the rest of the screen darkens. Just
-//  at the zenith a point-like star flares on the edge covered last (the final
-//  sliver of sun), centered vertically. Meanwhile the peek card on the opposite
-//  side fades to black, merging with the darkened background; behind that veil
-//  the slots are re-stacked, and on the way back it is unveiled as the outgoing
-//  card now living on that side (at the resting side-card darkness).
+//  holds almost unchanged for most of the crossing — only in the final stretch
+//  does it flash bright and the corona (a hot rim inside a wide halo) bloom
+//  around its silhouette, while the rest of the screen darkens. Just at the
+//  zenith a star-shaped point light — white-hot core, quick falloff, diffraction
+//  spikes — flares on the edge covered last (the final sliver of sun), centered
+//  vertically. Meanwhile the peek card on the opposite side fades to black,
+//  merging with the darkened background; behind that veil the slots are
+//  re-stacked, and on the way back it is unveiled as the outgoing card now
+//  living on that side (at the resting side-card darkness).
 //
 //  The ingress runs inside a UIViewPropertyAnimator so an interactive pan can
 //  scrub it forward and back with the finger; releasing either finishes through
@@ -125,9 +127,10 @@ public final class CardEclipseTransition {
 
         // The last sliver of sun: the edge the moon covers last. The incoming card
         // sweeps from one side, so coverage completes at the outgoing card's
-        // opposite edge, centered vertically.
+        // opposite edge, centered vertically. The frame is much larger than the
+        // visible core — the diffraction spikes need the room.
         flare = EclipseFlareView()
-        let flareDiameter: CGFloat = 42
+        let flareDiameter: CGFloat = 130
         let flareCenter = CGPoint(
             x: forward ? outgoingFrame.minX : outgoingFrame.maxX,
             y: outgoingFrame.midY)
@@ -166,26 +169,27 @@ public final class CardEclipseTransition {
                 UIView.addKeyframe(withRelativeStartTime: 0.85, relativeDuration: 0.15) {
                     incoming.dimAlpha = 0
                 }
-                // The sun lightens subtly at first…
-                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.55) {
-                    whitening.alpha = 0.18
+                // The sun stays essentially unchanged for most of the crossing…
+                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.8) {
+                    whitening.alpha = 0.06
                 }
-                // …then very fast as it is almost covered entirely.
-                UIView.addKeyframe(withRelativeStartTime: 0.55, relativeDuration: 0.45) {
+                // …then flashes bright in the last moments before totality.
+                UIView.addKeyframe(withRelativeStartTime: 0.8, relativeDuration: 0.2) {
                     whitening.alpha = 0.92
                 }
-                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.7) {
-                    corona.alpha = 0.5
+                // The corona is barely there until the sun is nearly covered…
+                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.8) {
+                    corona.alpha = 0.08
                 }
-                // The corona shines brightest just at the moment of overlap, as
+                // …and blooms to full only right at the moment of overlap, as
                 // the rest of the screen falls dark.
-                UIView.addKeyframe(withRelativeStartTime: 0.7, relativeDuration: 0.3) {
+                UIView.addKeyframe(withRelativeStartTime: 0.8, relativeDuration: 0.2) {
                     corona.alpha = 1
                 }
                 UIView.addKeyframe(withRelativeStartTime: 0.3, relativeDuration: 0.7) {
                     dimmer.alpha = 0.72
                 }
-                UIView.addKeyframe(withRelativeStartTime: 0.74, relativeDuration: 0.26) {
+                UIView.addKeyframe(withRelativeStartTime: 0.82, relativeDuration: 0.18) {
                     flare.alpha = 1
                     flare.transform = .identity
                 }
@@ -303,25 +307,34 @@ public final class CardEclipseTransition {
         oppositeVeil?.removeFromSuperview()
     }
 
-    /// A white rounded rect matching the sun's silhouette whose shadow is the
-    /// corona: the card body above it is opaque, so only the glow escaping past
-    /// the edges is visible.
+    /// The corona: two stacked glows — a tight, hot rim and a wide, soft halo —
+    /// each a white rounded rect matching the sun's silhouette whose shadow is
+    /// the light. The card body above them is opaque, so only the glow escaping
+    /// past the edges is visible.
     private static func makeCorona(frame: CGRect) -> UIView {
         let corona = UIView(frame: frame)
-        corona.backgroundColor = .white
-        corona.layer.cornerRadius = CarouselCardView.cornerRadius
-        corona.layer.cornerCurve = .continuous
-        corona.layer.shadowColor = UIColor.white.cgColor
-        corona.layer.shadowOpacity = 1
-        corona.layer.shadowOffset = .zero
-        corona.layer.shadowRadius = 26
         corona.isUserInteractionEnabled = false
+        for (radius, opacity) in [(CGFloat(48), Float(0.95)), (CGFloat(14), Float(1))] {
+            let glow = UIView(frame: corona.bounds)
+            glow.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            glow.backgroundColor = .white
+            glow.layer.cornerRadius = CarouselCardView.cornerRadius
+            glow.layer.cornerCurve = .continuous
+            glow.layer.shadowColor = UIColor.white.cgColor
+            glow.layer.shadowOpacity = opacity
+            glow.layer.shadowOffset = .zero
+            glow.layer.shadowRadius = radius
+            corona.addSubview(glow)
+        }
         return corona
     }
 }
 
-/// The diamond-ring point: a small radial gradient falling off from a white-hot
-/// core, drawn (not shadowed) so its profile stays point-like.
+/// The diamond-ring point, drawn like a bright point light caught by a camera:
+/// a white-hot core with a very quick radial falloff into a faint diffuse halo,
+/// plus thin diffraction spikes — four long axis-aligned rays and four shorter
+/// diagonals — so it reads as a star, not a dot. Drawn (not shadowed) so the
+/// profile stays point-like.
 private final class EclipseFlareView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -336,26 +349,78 @@ private final class EclipseFlareView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let maxRadius = min(bounds.width, bounds.height) / 2
+
+        // Core: white-hot, dropping off quickly, with only a faint diffuse tail.
         let colors: [CGColor] = [
             UIColor.white.cgColor,
-            UIColor.white.withAlphaComponent(0.85).cgColor,
-            UIColor.white.withAlphaComponent(0.32).cgColor,
-            UIColor.white.withAlphaComponent(0.08).cgColor,
+            UIColor.white.cgColor,
+            UIColor.white.withAlphaComponent(0.55).cgColor,
+            UIColor.white.withAlphaComponent(0.16).cgColor,
+            UIColor.white.withAlphaComponent(0.04).cgColor,
             UIColor.clear.cgColor,
         ]
-        let locations: [CGFloat] = [0, 0.05, 0.18, 0.45, 1]
-        guard let gradient = CGGradient(
+        let locations: [CGFloat] = [0, 0.04, 0.09, 0.2, 0.42, 1]
+        if let gradient = CGGradient(
             colorsSpace: CGColorSpaceCreateDeviceRGB(),
             colors: colors as CFArray,
-            locations: locations)
+            locations: locations) {
+            context.drawRadialGradient(
+                gradient,
+                startCenter: center,
+                startRadius: 0,
+                endCenter: center,
+                endRadius: maxRadius,
+                options: .drawsAfterEndLocation)
+        }
+
+        // Diffraction spikes: long rays on the axes, shorter dimmer diagonals.
+        for index in 0..<8 {
+            let diagonal = index % 2 == 1
+            let angle = CGFloat(index) * .pi / 4
+            drawSpike(
+                context: context,
+                center: center,
+                angle: angle,
+                length: maxRadius * (diagonal ? 0.5 : 1),
+                halfWidth: maxRadius * (diagonal ? 0.02 : 0.028),
+                peakAlpha: diagonal ? 0.5 : 0.9)
+        }
+    }
+
+    /// One tapered ray from the center: a thin concave-sided kite filled with a
+    /// white-to-clear gradient along its length, so it thins and fades to the tip.
+    private func drawSpike(context: CGContext, center: CGPoint, angle: CGFloat,
+                           length: CGFloat, halfWidth: CGFloat, peakAlpha: CGFloat) {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: -halfWidth))
+        path.addQuadCurve(to: CGPoint(x: length, y: 0),
+                          control: CGPoint(x: length * 0.16, y: -halfWidth * 0.18))
+        path.addQuadCurve(to: CGPoint(x: 0, y: halfWidth),
+                          control: CGPoint(x: length * 0.16, y: halfWidth * 0.18))
+        path.closeSubpath()
+
+        guard let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [
+                UIColor.white.withAlphaComponent(peakAlpha).cgColor,
+                UIColor.white.withAlphaComponent(peakAlpha * 0.35).cgColor,
+                UIColor.clear.cgColor,
+            ] as CFArray,
+            locations: [0, 0.35, 1])
         else { return }
-        let center = CGPoint(x: bounds.midX, y: bounds.midY)
-        context.drawRadialGradient(
+
+        context.saveGState()
+        context.translateBy(x: center.x, y: center.y)
+        context.rotate(by: angle)
+        context.addPath(path)
+        context.clip()
+        context.drawLinearGradient(
             gradient,
-            startCenter: center,
-            startRadius: 0,
-            endCenter: center,
-            endRadius: min(bounds.width, bounds.height) / 2,
-            options: .drawsAfterEndLocation)
+            start: .zero,
+            end: CGPoint(x: length, y: 0),
+            options: [])
+        context.restoreGState()
     }
 }

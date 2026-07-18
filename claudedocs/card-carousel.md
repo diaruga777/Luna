@@ -74,15 +74,19 @@ and scrub-strip flicks run the same transition non-interactively.
 1. **Ingress (~66%)** — the incoming side card (the moon) slides over the stationary
    outgoing card, growing from `sideScale` to a 1.03 overshoot (guaranteeing total
    coverage), its resting 70% dim easing to 60% across the crossing and snapping to
-   0% in the last 15% — full color right at the zenith. The outgoing card lightens
-   via a white overlay — subtle (0.18) for the first 55%, then very fast toward
-   0.92 — while a corona (white rounded-rect shadow behind the card) blooms and
-   spikes to full at the moment of overlap, and a black dimmer darkens the rest of
-   the screen (cards region + scrub strip; the header stays lit). In the last
-   quarter, a point-like radial "diamond-ring" star flares at the edge covered last
-   (left edge paging forward, right edge paging backward), centered vertically —
-   the last sliver of sun. Meanwhile the peek card on the *opposite* side fades to
-   black, merging with the darkened background.
+   0% in the last 15% — full color right at the zenith. The outgoing card holds
+   almost unchanged for the first 80% of the crossing (white overlay pinned at
+   0.06, corona at 0.08), then both spike steeply in the final 20% — the overlay
+   flashes to 0.92 and the corona (two stacked white rounded-rect shadows behind
+   the card: a tight hot rim + a wide soft halo) blooms to full right at the
+   moment of overlap — while a black dimmer gradually darkens the rest of the
+   screen (cards region + scrub strip; the header stays lit). In the last ~18%, a
+   star-shaped "diamond-ring" point light — white-hot core with a very quick
+   radial falloff, four long axis spikes + four shorter diagonals
+   (`EclipseFlareView`) — flares at the edge covered last (left edge paging
+   forward, right edge paging backward), centered vertically — the last sliver of
+   sun. Meanwhile the peek card on the *opposite* side fades to black, merging
+   with the darkened background.
 2. **Zenith** — behind the veils, the carousel re-stacks slots
    (`performZenithSwap`): the far peek is unmounted, the outgoing card moves to the
    opposite peek slot (still veiled black), the next card mounts on the vacated side

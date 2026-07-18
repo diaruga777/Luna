@@ -125,10 +125,15 @@ Differences from the Downloader, via `CardCarouselStyle`:
   inside the card page — readers have no timeline to scrub; the page pan
   recognizes simultaneously with the reader's own gestures, gated to
   strongly-horizontal drags), `.titles` scrubber (bigger chips showing article
-  titles instead of thumbnails).
-- The CENTERED card embeds a live `RabbitHoleReaderViewController`
-  (`ReaderHostFactory.make`); side cards show a cover+title preview
-  (`thumbnailFileName` art under a scrim), keeping one live reader mounted.
+  titles instead of thumbnails). Dragging the strip shows the title instantly,
+  then mounts the previewed card's REAL live content into the overlay once the
+  finger rests on a chip for ~120ms (debounced so sweeping across chips doesn't
+  build a reader per chip) — scrubbed-to cards render their full contents, not
+  a bare title card.
+- EVERY mounted card (centered + both side peeks) embeds a full live
+  `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out at
+  fullscreen size and clipped by the card — paging never shows a placeholder,
+  and expansion moves only the card's edges, never the content.
 - **Expansion is scroll-driven and interactive** — no navigation push. The
   carousel exposes `expansionFraction` (0 = resting card, 1 = filling the
   whole root view, header and scrub strip fading out) and the card content

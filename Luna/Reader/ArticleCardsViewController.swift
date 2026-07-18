@@ -582,9 +582,16 @@ private final class ReaderCardContentViewController: CardContentViewController {
         let delta = position - previous.last
         let run = (delta >= 0) == (previous.run >= 0) ? previous.run + delta : delta
         scrollRuns[key] = (position, run)
+        // Re-seed the runs BEFORE firing: the fade's card-bottom extension
+        // resizes the scroll view synchronously, and at the article's end
+        // that clamps the offset — a synthetic ~90pt "scroll up" delivered
+        // re-entrantly that would immediately fade the chrome back in. With
+        // the runs cleared first, that event just seeds a fresh baseline.
         if run <= -Self.fadeInTravel || position <= 0 {
+            scrollRuns = [:]
             onImmersionChange?(false)
         } else if run >= Self.fadeOutTravel, position > 0 {
+            scrollRuns = [:]
             onImmersionChange?(true)
         }
     }

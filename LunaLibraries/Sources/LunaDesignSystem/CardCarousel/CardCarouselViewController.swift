@@ -337,7 +337,11 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     public func setImmersed(_ immersed: Bool, animated: Bool = false) {
-        guard immersed != isImmersed else { return }
+        // A transition can only start un-immersed (paging is inert while
+        // immersed), so this only drops a spurious fade-out — e.g. a reader
+        // still decelerating while the user pages away — that would fight the
+        // eclipse's manipulation of the same card.
+        guard immersed != isImmersed, !isTransitioning else { return }
         isImmersed = immersed
         scrubber.isUserInteractionEnabled = !immersed
         let apply = {

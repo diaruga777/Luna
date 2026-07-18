@@ -130,8 +130,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     public override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // This reader draws its own per-layer (de-glassed) header, so the shared nav bar must
-        // be hidden. Assert it on every appearance.
+        // This reader draws its own per-layer floating header pills, so the shared nav bar
+        // must be hidden. Assert it on every appearance.
         navigationController?.setNavigationBarHidden(true, animated: false)
     }
 
@@ -246,6 +246,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             layer.view.alpha = p.cardAlpha
             layer.applyDepth(p.depth)
             layer.setChrome(role: p.role, alpha: p.chromeAlpha)
+            // The root layer of an embedded reader (carousel card, onRootBack
+            // set) has nothing to pop to — no back pill. Deeper layers and
+            // pushed fullscreen readers keep theirs.
+            layer.setBackButtonHidden(i == 0 && onRootBack != nil)
         }
     }
 
@@ -260,10 +264,12 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         onContentHierarchyChanged?()
     }
 
-    /// When set, the root layer's back button calls this instead of popping the
-    /// navigation stack — for hosts embedding the reader outside a push (the
-    /// Reader card carousel contracts the expanded card back into place).
-    public var onRootBack: (() -> Void)?
+    /// When set, the reader is embedded outside a push (the Reader card
+    /// carousel) and the root layer has nothing to pop to: its back pill is
+    /// hidden (re-applied via applyFocus, which reads this).
+    public var onRootBack: (() -> Void)? {
+        didSet { if isViewLoaded { applyFocus() } }
+    }
 
     /// Render every layer's WHOLE article up front instead of the Phase-1 prefix
     /// + deferred Phase-2 swap. For permanently-embedding hosts (carousel cards):

@@ -46,8 +46,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     private let shareProvider: ReaderShareProviding?
     private let layout: RabbitHoleLayout
-    /// Height of the floating header (focused layer only).
-    public static let headerHeight: CGFloat = 64
+    /// Height of the floating header region (focused layer only): the content
+    /// inset that keeps text clear of the free-floating header pills.
+    public static let headerHeight: CGFloat = 52
 
     private let spinner = DotMatrixSpinnerView()
     /// Backstop so a page that never resolves (slow/hung fetch, web view that never
@@ -250,15 +251,13 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     // MARK: - Chrome (header + lips)
 
     private func configureChrome() {
-        // Floating (de-glassed) header (focused only): mode switcher + audio + save.
-        header.backgroundColor = GlassStyle.solidBarColor
-        header.clipsToBounds = true
-        header.layer.cornerRadius = layout.cornerRadius
-        header.layer.cornerCurve = .continuous
-        header.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        // Floating header (focused only): each control is its own liquid-glass
+        // pill (back / audio / mode switcher / save-or-share) resting directly
+        // on the card — no full-width bar behind them.
+        header.backgroundColor = .clear
         view.addSubview(header)
 
-        backButton.configuration = GlassStyle.solidCircularButtonConfiguration(symbol: "chevron.backward", padding: 8)
+        backButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "chevron.backward", padding: 8)
         backButton.tintColor = GlassStyle.readingAccent
         backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
         header.addSubview(backButton)
@@ -268,7 +267,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
         header.addSubview(modeControl)
 
-        audioButton.configuration = GlassStyle.solidCircularButtonConfiguration(symbol: "speaker.slash", padding: 8)
+        audioButton.configuration = GlassStyle.circularButtonConfiguration(symbol: "speaker.slash", padding: 8)
         audioButton.tintColor = GlassStyle.readingAccent
         audioButton.addTarget(self, action: #selector(audioToggled), for: .touchUpInside)
         header.addSubview(audioButton)
@@ -279,7 +278,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
             header.addSubview(saveButton)
 
-            shareButton.configuration = GlassStyle.solidCircularButtonConfiguration(
+            shareButton.configuration = GlassStyle.circularButtonConfiguration(
                 symbol: "square.and.arrow.up", padding: 8)
             shareButton.tintColor = GlassStyle.readingAccent
             shareButton.addTarget(self, action: #selector(shareTapped), for: .touchUpInside)
@@ -324,14 +323,21 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         header.frame = CGRect(x: 0, y: 0, width: w, height: Self.headerHeight)
         let s: CGFloat = 38
         let y = (Self.headerHeight - s) / 2
-        backButton.frame = CGRect(x: 12, y: y, width: s, height: s)
-        audioButton.frame = CGRect(x: backButton.frame.maxX + 8, y: y, width: s, height: s)
-        var trailing = w - 12
+        // The card is already inset from the screen edges, so the pills keep
+        // only a small inset of their own.
+        let edgeInset: CGFloat = 6
+        var leadingX = edgeInset
+        if !backButton.isHidden {
+            backButton.frame = CGRect(x: leadingX, y: y, width: s, height: s)
+            leadingX = backButton.frame.maxX + 8
+        }
+        audioButton.frame = CGRect(x: leadingX, y: y, width: s, height: s)
+        var trailing = w - edgeInset
         // The trailing slot holds whichever of Save / Share is currently visible.
         if let slot = [saveButton, shareButton].first(where: { $0.superview != nil && !$0.isHidden }) {
             let fit = slot.sizeThatFits(CGSize(width: w, height: s))
             let sw = max(fit.width, s)
-            slot.frame = CGRect(x: w - sw - 12, y: y, width: sw, height: s)
+            slot.frame = CGRect(x: w - sw - edgeInset, y: y, width: sw, height: s)
             trailing = slot.frame.minX - 8
         }
         let modeFit = modeControl.sizeThatFits(CGSize(width: w, height: 34))
@@ -390,6 +396,15 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     public func setBottomLipText(_ text: String?) {
         descriptor.bottomLipText = text
         bottomLipLabel.text = text
+    }
+
+    /// Hides the header's back pill. The host hides it on the root layer of a
+    /// permanently-embedded reader (a carousel card), where there is nothing to
+    /// pop to; deeper layers and pushed fullscreen readers keep it.
+    public func setBackButtonHidden(_ hidden: Bool) {
+        guard backButton.isHidden != hidden else { return }
+        backButton.isHidden = hidden
+        view.setNeedsLayout()
     }
 
     /// Whether this layer's URL is already in the reading list (always true for the

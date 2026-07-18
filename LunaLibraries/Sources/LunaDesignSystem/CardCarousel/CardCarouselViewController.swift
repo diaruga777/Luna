@@ -103,9 +103,13 @@ public final class CardCarouselViewController: UIViewController {
 
     private var playbackPan: UIPanGestureRecognizer!
     private var pagePan: UIPanGestureRecognizer!
-    /// The in-flight interactive eclipse and the finger-travel distance mapping
-    /// translation to its fraction.
-    private var interactiveTransition: CardEclipseTransition?
+    /// The in-flight eclipse. The carousel must retain it for its whole run —
+    /// its animator completion holds it only weakly, so an unretained
+    /// transition deallocates mid-flight and freezes at the zenith.
+    private var activeTransition: CardEclipseTransition?
+    /// Whether `activeTransition` is being driven by the inset pan.
+    private var isActiveTransitionInteractive = false
+    /// Finger-travel distance mapping the pan translation to the fraction.
     private var interactiveTravel: CGFloat = 1
     /// Set when a page pan already paged non-interactively (Reduce Motion), so
     /// further .changed events in the same gesture don't page again.
@@ -327,7 +331,8 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     /// Builds one eclipse page transition to `target` (must be ±1 and mounted),
-    /// marking the carousel as transitioning until it settles.
+    /// marking the carousel as transitioning — and retaining the transition —
+    /// until it settles.
     private func makeEclipseTransition(to target: Int) -> CardEclipseTransition? {
         guard let metrics,
               !isTransitioning,
@@ -342,7 +347,7 @@ public final class CardCarouselViewController: UIViewController {
         // The veil should darken the scrub strip too, not just the card region.
         let dimmingBounds = view.convert(view.bounds, to: cardArea)
 
-        return CardEclipseTransition(
+        let transition = CardEclipseTransition(
             in: cardArea,
             outgoing: outgoing.card,
             incoming: incoming.card,
@@ -361,13 +366,17 @@ public final class CardCarouselViewController: UIViewController {
             completion: { [weak self] _ in
                 self?.settleAfterTransition()
             })
+        activeTransition = transition
+        isActiveTransitionInteractive = false
+        return transition
     }
 
     /// Runs after a transition finishes OR cancels: restores interactivity,
     /// applies resting layout, and picks up a reload that arrived mid-flight.
     private func settleAfterTransition() {
         isTransitioning = false
-        interactiveTransition = nil
+        activeTransition = nil
+        isActiveTransitionInteractive = false
         view.isUserInteractionEnabled = true
         for slot in slots.values { applyRestingLayout(to: slot) }
         removeOrphanCardViews()
@@ -517,13 +526,14 @@ public final class CardCarouselViewController: UIViewController {
         case .began:
             pagePanConsumed = false
         case .changed:
-            if interactiveTransition == nil, !pagePanConsumed {
+            if activeTransition == nil, !pagePanConsumed {
                 beginInteractivePage(translation: translation)
             }
-            guard let interactiveTransition else { return }
-            interactiveTransition.update(fraction: abs(translation) / interactiveTravel)
+            guard isActiveTransitionInteractive, let activeTransition else { return }
+            activeTransition.update(fraction: abs(translation) / interactiveTravel)
         case .ended, .cancelled, .failed:
-            guard let interactiveTransition else { return }
+            guard isActiveTransitionInteractive, let interactiveTransition = activeTransition
+            else { return }
             let fraction = min(max(abs(translation) / interactiveTravel, 0), 1)
             let velocity = gesture.velocity(in: cardArea).x
             // The drag direction and the paging direction are opposite signs
@@ -553,13 +563,13 @@ public final class CardCarouselViewController: UIViewController {
             page(by: step)
             return
         }
-        guard let transition = makeEclipseTransition(to: target) else { return }
+        guard makeEclipseTransition(to: target) != nil else { return }
         // Finger travel maps to the incoming card's journey from its peek slot
         // to center.
         interactiveTravel = max(
             abs(metrics.centerX(forSlotOffset: step) - metrics.centerX(forSlotOffset: 0)),
             1)
-        interactiveTransition = transition
+        isActiveTransitionInteractive = true
     }
 
     @objc private func handleScrubPan(_ gesture: UIPanGestureRecognizer) {

@@ -289,6 +289,22 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
         return resolveURL(touch.location(in: sourceView)) != nil
     }
 
+    /// Every non-pan recognizer sharing this touch — including ones installed
+    /// AFTER us or on ancestor views (the text view's context-menu interaction,
+    /// a host carousel's long-press), which the init-time `require(toFail:)`
+    /// loop can't reach — must wait for the link-only press to fail. On a link
+    /// our press begins, so they all fail and none of them can cancel the
+    /// preview mid-hold: it appears and starts playback immediately, finger
+    /// stationary. On non-links `shouldReceive` refuses the touch, so
+    /// everything else behaves exactly as before. Pans stay independent — a
+    /// drag that starts on a link must still scroll.
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        !(otherGestureRecognizer is UIPanGestureRecognizer)
+    }
+
     @objc private func handleGesture(_ gesture: UILongPressGestureRecognizer) {
         guard let sourceView, let host else { return }
         let point = gesture.location(in: sourceView)
@@ -485,6 +501,10 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     private let audioButton = UIButton(type: .system)
     private let menu = UIVisualEffectView(effect: GlassStyle.barEffect())
     private var actionRows: [(LinkPreviewAction, UIView)] = []
+    /// Drag-up affordance floating above the card: an up arrow + "More actions".
+    /// Visible while the driving press is live; hidden once the menu is up
+    /// (drag-up arrived) or the card is locked (the press ended).
+    private let moreActionsHint = UIVisualEffectView(effect: GlassStyle.barEffect())
 
     init(article: LinkPreviewArticle, url: URL, anchorPoint: CGPoint) {
         self.article = article
@@ -544,6 +564,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
 
         configureChin()
 
+        configureMoreActionsHint()
         configureMenu()
         let outsideTap = UITapGestureRecognizer(target: self, action: #selector(outsideTapped(_:)))
         view.addGestureRecognizer(outsideTap)
@@ -574,13 +595,26 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         speedLabel.frame = CGRect(x: 16, y: baseHeight - 27, width: width - 32, height: 18)
         chin.frame = CGRect(x: 0, y: baseHeight, width: width, height: chinHeight)
         chinStack.frame = CGRect(x: 12, y: 10, width: width - 24, height: max(0, chinHeight - 18))
-        menu.frame = CGRect(x: card.frame.minX, y: max(view.safeAreaInsets.top + 8, card.frame.minY - 150),
-                            width: width, height: 136)
+        // Only the menu's SIZE is layout-derived. Its origin belongs exclusively
+        // to `positionMenu` (anchored to the press's start point): re-deriving a
+        // default origin here teleported the menu — visibly, whenever a layout
+        // pass landed while it was up or still fading out — to a spot above the
+        // card before the next drag event snapped it back.
+        menu.frame.size = CGSize(width: width, height: 136)
+        let hintSize = CGSize(width: 118, height: 44)
+        moreActionsHint.frame = CGRect(
+            x: card.frame.midX - hintSize.width / 2,
+            y: max(view.safeAreaInsets.top + 2, card.frame.minY - hintSize.height - 8),
+            width: hintSize.width, height: hintSize.height)
         layoutMenuRows()
     }
 
     func beginPlayback() {
         loadViewIfNeeded()
+        // The driving gesture forwards a `.changed` immediately after mounting;
+        // the menu/card geometry that `update` positions against must be real
+        // before that first call, not zero-sized pre-layout frames.
+        view.layoutIfNeeded()
         focusLabel.text = LinkRSVPPreviewGesturePolicy.titleText(
             title: article.content.title, resumeIndex: article.resumeIndex)
         speedLabel.text = "\(Int(currentWPM.rounded())) wpm"
@@ -641,6 +675,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
             view.isUserInteractionEnabled = true
             UIView.animate(withDuration: 0.22, animations: {
                 self.lockImage.alpha = 0
+                self.moreActionsHint.alpha = 0
                 self.view.setNeedsLayout()
                 self.view.layoutIfNeeded()
                 self.chin.alpha = 1
@@ -766,12 +801,14 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         isPausedByMenu = true
         timer?.invalidate()
         titleTimer?.invalidate()
+        setMoreActionsHintVisible(false)
         UIView.animate(withDuration: 0.15) { self.menu.alpha = 1 }
     }
 
     private func hideMenuAndResume() {
         guard isPausedByMenu else { return }
         isPausedByMenu = false
+        if !isLocked { setMoreActionsHintVisible(true) }
         UIView.animate(withDuration: 0.15) { self.menu.alpha = 0 }
         resumePlaybackIfNeeded()
     }
@@ -950,6 +987,43 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
               let frame = engine.frameIndex(forTokenIndex: token) else { return }
         index = frame
         showCurrentWord()
+    }
+
+    private func configureMoreActionsHint() {
+        moreActionsHint.layer.cornerRadius = 14
+        moreActionsHint.layer.cornerCurve = .continuous
+        moreActionsHint.clipsToBounds = true
+        moreActionsHint.isUserInteractionEnabled = false
+
+        let arrow = UIImageView(image: UIImage(systemName: "chevron.up"))
+        arrow.tintColor = .secondaryLabel
+        arrow.contentMode = .scaleAspectFit
+        arrow.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: 12, weight: .semibold)
+        let label = UILabel()
+        label.text = "More actions"
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+
+        let stack = UIStackView(arrangedSubviews: [arrow, label])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 1
+        stack.isUserInteractionEnabled = false
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        moreActionsHint.contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: moreActionsHint.contentView.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: moreActionsHint.contentView.centerYAnchor),
+        ])
+        view.addSubview(moreActionsHint)
+    }
+
+    private func setMoreActionsHintVisible(_ visible: Bool) {
+        UIView.animate(withDuration: 0.15) {
+            self.moreActionsHint.alpha = visible ? 1 : 0
+        }
     }
 
     private func configureMenu() {

@@ -31,7 +31,6 @@ public final class CarouselScrubberView: UIView {
     private var thumbnailViews: [UIImageView] = []
     private var selectedIndex = 0
     private var dragStartTime: CFTimeInterval = 0
-    private var isDragging = false
 
     public override init(frame: CGRect) {
         super.init(frame: frame)
@@ -160,12 +159,10 @@ public final class CarouselScrubberView: UIView {
         switch gesture.state {
         case .began:
             dragStartTime = CACurrentMediaTime()
-            isDragging = true
             preview(at: gesture.location(in: self))
         case .changed:
             preview(at: gesture.location(in: self))
         case .ended:
-            isDragging = false
             let duration = CACurrentMediaTime() - dragStartTime
             if let step = CarouselScrubberMath.flickPageStep(
                 translationX: gesture.translation(in: self).x,
@@ -177,7 +174,6 @@ public final class CarouselScrubberView: UIView {
                 onCommit?(index(at: gesture.location(in: self)))
             }
         case .cancelled, .failed:
-            isDragging = false
             onCommit?(selectedIndex)
         default:
             break

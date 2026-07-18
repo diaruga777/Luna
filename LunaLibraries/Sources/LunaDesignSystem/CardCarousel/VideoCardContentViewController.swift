@@ -22,7 +22,6 @@ public final class VideoCardContentViewController: CardContentViewController {
     private var playerView: PlayerLayerView { view as! PlayerLayerView }
     private var hasAudioTrack = false
     private var wantsPlaying = false
-    private var muted = true
     private var endObserver: NSObjectProtocol?
     private var readyForDisplayObservation: NSKeyValueObservation?
 
@@ -77,6 +76,16 @@ public final class VideoCardContentViewController: CardContentViewController {
         itemProvider { [weak self] item in
             DispatchQueue.main.async { self?.install(item) }
         }
+
+        // Backgrounding pauses the AVPlayer at the system level without
+        // clearing our intent; resume a still-centered card on return.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(applicationDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
+
+    @objc private func applicationDidBecomeActive() {
+        if wantsPlaying { player.play() }
     }
 
     private func install(_ item: AVPlayerItem?) {
@@ -130,7 +139,6 @@ public final class VideoCardContentViewController: CardContentViewController {
     }
 
     public override func setMuted(_ newMuted: Bool) {
-        muted = newMuted
         player.isMuted = newMuted
     }
 }

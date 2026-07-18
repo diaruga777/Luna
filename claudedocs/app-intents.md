@@ -43,7 +43,9 @@ Empty input, divergent values, non-HTTP(S) or
 hostless URLs, whitespace-containing URLs, and values ending in `...`, `…`, or
 `⋯` (including percent-encoded ellipsis) are ignored. Otherwise every element
 must be a substring of the longest element; that longest complete URL is
-sent through the same immediate-URL save function used by the Safari-extension
+chosen after ignoring an `http` versus `https` scheme difference (on-screen
+detection commonly returns both forms for the same page), then sent through the
+same immediate-URL save function used by the Safari-extension
 fast path. A persisted save returns `.done` (with synchronous media when
 applicable). Explicit interop rejection is swallowed and falls through to the
 same screenshot or unhandled outcome that would have occurred without

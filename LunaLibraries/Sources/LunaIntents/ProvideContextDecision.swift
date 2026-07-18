@@ -10,7 +10,9 @@ import Foundation
 /// Collapses the optional URLs extracted from the current screen into one
 /// trustworthy save candidate. Every nonempty input must be a substring of the
 /// longest input, which covers duplicate, prefix, and partial OCR results without
-/// guessing between divergent URLs.
+/// guessing between divergent URLs. HTTP and HTTPS schemes are ignored for this
+/// compatibility comparison because on-screen detection commonly returns both
+/// forms for the same page.
 public enum ProvideContextOnScreenURL {
     private static let embeddedWebURL = try? NSRegularExpression(
         pattern: #"(?i)https?://[^\s<>\"'\[\]{}]*?(?=(?:,\s*https?://)|[\s<>\"'\[\]{}]|$)"#)
@@ -34,15 +36,26 @@ public enum ProvideContextOnScreenURL {
         let candidates = values.map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        let comparableCandidates = candidates.map {
+            (original: $0, comparison: comparisonForm($0))
+        }
         guard candidates.allSatisfy({ !$0.isEmpty }),
-              let longest = candidates.max(by: { $0.count < $1.count }),
-              candidates.allSatisfy(longest.contains)
+              let longest = comparableCandidates.max(by: {
+                  if $0.comparison.count != $1.comparison.count {
+                      return $0.comparison.count < $1.comparison.count
+                  }
+                  // Prefer the explicit HTTPS form when the scheme is the only
+                  // difference; it is one character longer than HTTP.
+                  return $0.original.count < $1.original.count
+              }),
+              comparableCandidates.allSatisfy(
+                  { longest.comparison.contains($0.comparison) })
         else { return nil }
 
-        let decoded = longest.removingPercentEncoding ?? longest
+        let decoded = longest.original.removingPercentEncoding ?? longest.original
         guard !hasTruncationSuffix(decoded),
               decoded.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
-              let url = URLUnwrapper.ingestURL(from: longest),
+              let url = URLUnwrapper.ingestURL(from: longest.original),
               url.host?.isEmpty == false
         else { return nil }
         return url.absoluteString
@@ -53,6 +66,17 @@ public enum ProvideContextOnScreenURL {
         return trimmed.hasSuffix("...")
             || trimmed.hasSuffix("…")
             || trimmed.hasSuffix("⋯")
+    }
+
+    private static func comparisonForm(_ candidate: String) -> String {
+        let lowercased = candidate.lowercased()
+        if lowercased.hasPrefix("https://") {
+            return String(candidate.dropFirst("https://".count))
+        }
+        if lowercased.hasPrefix("http://") {
+            return String(candidate.dropFirst("http://".count))
+        }
+        return candidate
     }
 
     private static func trimTransportPunctuation(_ candidate: String) -> String {
@@ -72,8 +96,8 @@ public enum ProvideContextOnScreenURL {
 }
 
 /// The pure decision core of the "Provide Context" App Intent — everything
-/// that ISN'T the onboarding-hijack step (which happens first, in the intent
-/// itself, via `ActionButtonOnboardingStore`'s existing state machine) and
+/// that ISN'T the onboarding-hijack step (which runs after supplied-URL handling
+/// in the intent itself, via `ActionButtonOnboardingStore`'s state machine) and
 /// isn't a side effect (saving the fresh Safari URL, foregrounding). Given
 /// only the facts below, decides what the Shortcut should do next.
 ///

@@ -63,6 +63,15 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
             "https://example.com/post/123")
     }
 
+    func testSignalInputCollapsesHTTPHostIntoHTTPSPageURL() {
+        let signalIsSafari = AppNamePlatform.isSafari(forAppName: "Signal")
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.collapseText(
+                "https://www.tiktok.com/t/ZP8Gqx5p5/ http://www.tiktok.com",
+                isSafari: signalIsSafari),
+            "https://www.tiktok.com/t/ZP8Gqx5p5/")
+    }
+
     func testShortcutTextInputExtractsCommaDelimitedURLs() {
         XCTAssertEqual(
             ProvideContextOnScreenURL.collapseText(

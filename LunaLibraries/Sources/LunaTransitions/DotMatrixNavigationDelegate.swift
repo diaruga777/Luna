@@ -44,6 +44,11 @@ public final class DotMatrixNavigationDelegate: NSObject, UINavigationController
         animationControllerFor operation: UINavigationController.Operation,
         from fromVC: UIViewController,
         to toVC: UIViewController) -> UIViewControllerAnimatedTransitioning? {
+        if let animator = CardExpandTransitionCenter.animator(
+            for: operation, from: fromVC, to: toVC
+        ) {
+            return animator
+        }
         if let animator = LunarEclipseTransitionCenter.animator(
             for: operation, from: fromVC, to: toVC
         ) {

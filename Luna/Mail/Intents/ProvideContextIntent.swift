@@ -59,7 +59,23 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<ProvideContextResultEntity> {
-        // Before any decision work: let the Action Button onboarding state
+        let isSafari = app.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
+
+        // A complete URL supplied by Shortcuts takes precedence over every
+        // app-based decision, including onboarding interception and an
+        // otherwise unsupported current app. Safari deliberately ignores this
+        // input and continues to use its extension-backed URL store below.
+        if let urlString = ProvideContextOnScreenURL.collapseText(
+            onScreenURLs,
+            isSafari: isSafari
+        ), let result = try await saveURL(
+            urlString,
+            interopBlockHandling: .fallBack
+        ) {
+            return .result(value: result)
+        }
+
+        // With no usable supplied URL, let the Action Button onboarding state
         // machine hijack this invocation if it's mid-flight for this surface.
         // Its first interception fires from the Shortcuts app (the freshly
         // imported shortcut's own first run); its second fires from wherever
@@ -81,17 +97,6 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
             case .none:
                 break
             }
-        }
-
-        let isSafari = app.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
-        if let urlString = ProvideContextOnScreenURL.collapseText(
-            onScreenURLs,
-            isSafari: isSafari
-        ), let result = try await saveURL(
-            urlString,
-            interopBlockHandling: .fallBack
-        ) {
-            return .result(value: result)
         }
 
         let decision = ProvideContextDecision.decide(

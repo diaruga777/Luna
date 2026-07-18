@@ -31,14 +31,10 @@ ProvideContextOutcome` (`AppEnum`) and optional `media: IntentFile`. The outcome
 is `.done`, `.unhandled`, or `.requiresScreenshot`; transient entities are result
 values only and are not queryable.
 
-First, the **onboarding hijack**: `ActionButtonOnboardingStore.shared
-.handleProvideContextInvoked(appName:isCurrentAppLuna:forSurface:)` gets the
-invocation before any decision work (see "Action Button onboarding" below).
-`.foregroundThenUnsupported` → foreground Luna, return `.unhandled`;
-`.unsupported` → return `.unhandled`; `.none` → proceed.
-
-Outside Safari, the optional **OnScreenURLs** input is checked before the normal
-decision table. It is deliberately a scalar String configured with
+Outside Safari, the optional **OnScreenURLs** input is checked first, before the
+normal decision table **and before the onboarding interception**, so a valid supplied
+URL is saved even when the current app would otherwise be unsupported. It is
+deliberately a scalar String configured with
 `.connectToPreviousIntentResult`, so Shortcuts can put the Get On-Screen URLs
 magic variable in one text field instead of rendering a hand-authored collection
 editor. Luna extracts every embedded HTTP(S) URL from bare, newline-delimited,
@@ -53,6 +49,13 @@ applicable). Explicit interop rejection is swallowed and falls through to the
 same screenshot or unhandled outcome that would have occurred without
 OnScreenURLs. A save timeout or network enrichment failure remains handled
 because the normal ingest task continues and persists pending work for retry.
+
+When no usable on-screen URL was supplied, the **onboarding hijack** runs:
+`ActionButtonOnboardingStore.shared
+.handleProvideContextInvoked(appName:isCurrentAppLuna:forSurface:)` gets the
+invocation before app classification (see "Action Button onboarding" below).
+`.foregroundThenUnsupported` → foreground Luna, return `.unhandled`;
+`.unsupported` → return `.unhandled`; `.none` → proceed.
 
 Then the pure decision table (`LunaIntents.ProvideContextDecision.decide`,
 evaluated top to bottom; table-driven tests in `ProvideContextDecisionTests`):

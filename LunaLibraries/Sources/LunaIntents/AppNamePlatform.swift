@@ -14,9 +14,9 @@ public enum AppNamePlatform {
     /// Whether the current app is one Luna knows how to save from — a recognized
     /// content platform, Safari (whose plain page URL is saved directly), or the
     /// Shortcuts app (the Action Button onboarding shortcut's own first run — no
-    /// content to save, the Provide Context intent intercepts it before any save
-    /// logic runs). Unknown apps are unsupported (Provide Context returns 0 for
-    /// them).
+    /// content to save). When no valid on-screen URL was supplied, Provide
+    /// Context intercepts that onboarding run before current-app classification.
+    /// Unknown apps are otherwise unsupported.
     public static func isSupported(forAppName app: String) -> Bool {
         platform(forAppName: app) != nil || isSafari(forAppName: app) || isShortcuts(forAppName: app)
     }

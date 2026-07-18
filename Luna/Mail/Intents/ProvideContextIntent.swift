@@ -38,8 +38,9 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
 
     @Parameter(
         title: "OnScreenURLs",
-        description: "URLs detected on screen. Compatible complete values may be saved directly.")
-    var onScreenURLs: [String]?
+        description: "The output from Get On-Screen URLs. Compatible complete values may be saved directly.",
+        inputConnectionBehavior: .connectToPreviousIntentResult)
+    var onScreenURLs: String?
 
     enum ProvideContextError: Error, CustomLocalizedStringResourceConvertible {
         case noTrackedPage
@@ -83,7 +84,7 @@ struct ProvideContextIntent: AppIntent, ForegroundContinuableIntent {
         }
 
         let isSafari = app.map { AppNamePlatform.isSafari(forAppName: $0) } ?? false
-        if let urlString = ProvideContextOnScreenURL.collapse(
+        if let urlString = ProvideContextOnScreenURL.collapseText(
             onScreenURLs,
             isSafari: isSafari
         ), let result = await saveOnScreenURLIfPossible(urlString) {

@@ -24,7 +24,7 @@ No other branches. The old flow's magic return tokens
 (`"open-luna"`, `"4:<url>"`) are gone — foregrounding happens in-intent (below)
 and media download is coordinated by the intent that completes the save.
 
-## `ProvideContextIntent` (`app: String?`, `onScreenURLs: [String]?`) → `ProvideContextResultEntity`
+## `ProvideContextIntent` (`app: String?`, `onScreenURLs: String?`) → `ProvideContextResultEntity`
 
 The return value is a `TransientAppEntity` with an `outcome:
 ProvideContextOutcome` (`AppEnum`) and optional `media: IntentFile`. The outcome
@@ -38,7 +38,11 @@ invocation before any decision work (see "Action Button onboarding" below).
 `.unsupported` → return `.unhandled`; `.none` → proceed.
 
 Outside Safari, the optional **OnScreenURLs** input is checked before the normal
-decision table. Empty arrays, empty elements, divergent values, non-HTTP(S) or
+decision table. It is deliberately a scalar String configured with
+`.connectToPreviousIntentResult`, so Shortcuts can put the Get On-Screen URLs
+magic variable in one text field instead of rendering a hand-authored collection
+editor. Shortcuts' newline-delimited text representation is decoded back into
+individual URL candidates inside Luna. Empty input, divergent values, non-HTTP(S) or
 hostless URLs, whitespace-containing URLs, and values ending in `...`, `…`, or
 `⋯` (including percent-encoded ellipsis) are ignored. Otherwise every element
 must be a substring of the longest element; that longest complete URL is

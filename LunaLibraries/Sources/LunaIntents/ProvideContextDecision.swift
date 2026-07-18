@@ -12,6 +12,15 @@ import Foundation
 /// longest input, which covers duplicate, prefix, and partial OCR results without
 /// guessing between divergent URLs.
 public enum ProvideContextOnScreenURL {
+    /// Shortcuts converts a URL-list magic variable to newline-delimited text
+    /// when it resolves the intent's scalar String parameter. Decode that
+    /// transport representation before applying the ordinary collapse rules.
+    public static func collapseText(_ value: String?, isSafari: Bool) -> String? {
+        guard let value else { return nil }
+        let values = value.split(whereSeparator: \.isNewline).map(String.init)
+        return collapse(values, isSafari: isSafari)
+    }
+
     public static func collapse(_ values: [String]?, isSafari: Bool) -> String? {
         guard !isSafari, let values, !values.isEmpty else { return nil }
         let candidates = values.map {

@@ -26,6 +26,25 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
             "https://example.com/post/123")
     }
 
+    func testShortcutTextInputDecodesNewlineSeparatedURLs() {
+        XCTAssertEqual(
+            ProvideContextOnScreenURL.collapseText(
+                """
+                https://example.com/post
+                https://example.com/post/123
+
+                """,
+                isSafari: false),
+            "https://example.com/post/123")
+    }
+
+    func testShortcutTextInputStillRejectsDivergentURLs() {
+        XCTAssertNil(
+            ProvideContextOnScreenURL.collapseText(
+                "https://example.com/one\r\nhttps://example.com/two",
+                isSafari: false))
+    }
+
     func testContainedSubsetCollapsesIntoCompleteURL() {
         XCTAssertEqual(
             ProvideContextOnScreenURL.collapse(
@@ -67,8 +86,8 @@ final class ProvideContextOnScreenURLTests: XCTestCase {
 
     func testSafariNeverUsesOnScreenURLs() {
         XCTAssertNil(
-            ProvideContextOnScreenURL.collapse(
-                ["https://example.com/post"], isSafari: true))
+            ProvideContextOnScreenURL.collapseText(
+                "https://example.com/post", isSafari: true))
     }
 
     func testSuccessfulSaveOutcomeCompletesWithoutForegrounding() {

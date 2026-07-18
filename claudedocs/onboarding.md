@@ -344,6 +344,9 @@ the Shortcuts app whenever the intents change — **owed right now for the
 two-intent flow** (see `claudedocs/app-intents.md`): Get Current App + on-screen
 URL extraction → Provide Context(app, OnScreenURLs) → If Context Result's
 Outcome is Requires Screenshot → Take Screenshot → Save(app, screenshot). No
+manual list is needed for OnScreenURLs: place Get On-Screen URLs immediately
+before Provide Context and connect its output to the single OnScreenURLs text
+field; Shortcuts converts the URL list to newline-delimited text for Luna. No
 other branches — the old
 "open-luna"/"4:<url>" token branches are gone
 (foregrounding and auto-download happen in-intent). Export it, rename to

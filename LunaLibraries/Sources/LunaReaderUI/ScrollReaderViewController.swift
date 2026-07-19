@@ -1347,17 +1347,27 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let sourcePoint = linkActivationPoint(forCharacterRange: tappedRange)
         let sourceInWindow = view.convert(sourcePoint, to: nil)
         let readerOffset = textView.contentOffset.y
+        let coordinator = enclosingReaderViewController
 
         let overlay = SplitWebOverlayViewController(
             url: url, shareProvider: shareProvider, lineHeight: 0,
             cutY: sourceInWindow.y, topHalf: nil, bottomHalf: nil,
             sourcePoint: sourceInWindow, outerURL: item.url ?? url,
-            outerTitle: content.title)
-        // Slide the outer header off-screen while the inline reader is open.
-        let outerReader = enclosingReaderViewController
-        overlay.onOpen = { outerReader?.setHeaderTucked(true) }
-        overlay.onClose = { outerReader?.setHeaderTucked(false) }
-        overlay.onDismiss = { [weak self] in self?.restoreScroll(to: readerOffset) }
+            outerTitle: content.title,
+            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0)
+        overlay.onOpen = { [weak coordinator, weak overlay] in
+            guard let overlay else { return }
+            coordinator?.inlineReaderWillPresent(overlay)
+        }
+        overlay.onChromeStateChanged = { [weak coordinator, weak overlay] in
+            guard let overlay else { return }
+            coordinator?.inlineReaderWillPresent(overlay)
+        }
+        overlay.onDismiss = { [weak self, weak coordinator, weak overlay] in
+            self?.restoreScroll(to: readerOffset)
+            guard let overlay else { return }
+            coordinator?.inlineReaderDidDismiss(overlay)
+        }
         present(overlay, animated: true)
     }
 

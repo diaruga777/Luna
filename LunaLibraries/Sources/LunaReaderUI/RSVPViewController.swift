@@ -623,14 +623,38 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             onLinkActivated(url)
             return
         }
-        // No outer text to split here, so the card grows out from the screen's
-        // center (nil peeks) and the ✕ / chevron compress it shut.
+        let sourceInWindow = view.convert(linkPill.center, to: nil)
+        let coordinator = inlineReaderPresentationCoordinator
         let inline = SplitWebOverlayViewController(
             url: url, shareProvider: shareProvider, lineHeight: 0,
-            cutY: view.bounds.midY, topHalf: nil, bottomHalf: nil,
-            sourcePoint: linkPill.center, outerURL: item.url ?? url,
-            outerTitle: articleContent.title)
+            cutY: sourceInWindow.y, topHalf: nil, bottomHalf: nil,
+            sourcePoint: sourceInWindow, outerURL: item.url ?? url,
+            outerTitle: articleContent.title,
+            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0)
+        inline.onOpen = { [weak coordinator, weak inline] in
+            guard let inline else { return }
+            coordinator?.inlineReaderWillPresent(inline)
+        }
+        inline.onChromeStateChanged = { [weak coordinator, weak inline] in
+            guard let inline else { return }
+            coordinator?.inlineReaderWillPresent(inline)
+        }
+        inline.onDismiss = { [weak coordinator, weak inline] in
+            guard let inline else { return }
+            coordinator?.inlineReaderDidDismiss(inline)
+        }
         present(inline, animated: true)
+    }
+
+    private var inlineReaderPresentationCoordinator: InlineReaderPresentationCoordinating? {
+        var ancestor = parent
+        while let controller = ancestor {
+            if let coordinator = controller as? InlineReaderPresentationCoordinating {
+                return coordinator
+            }
+            ancestor = controller.parent
+        }
+        return nil
     }
 
     private func configureLinkPreview() {

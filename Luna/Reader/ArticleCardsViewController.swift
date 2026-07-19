@@ -51,7 +51,7 @@ final class ArticleCardsViewController: UIViewController {
     private let readerAudioButton = UIButton(type: .system)
     private let readerModeControl = LunaSegmentedControl()
     private let readerShareButton = UIButton(type: .system)
-    private weak var readerForChrome: RabbitHoleReaderViewController?
+    private weak var readerForChrome: ReaderChromeControlling?
     private var chromeModes: [ReadingListItem.ReaderMode] = []
     private var items: [ReadingListItem] = []
     private var appliedFingerprint: [String] = []
@@ -465,6 +465,11 @@ final class ArticleCardsViewController: UIViewController {
             self.updateExternalReaderInsets()
             self.updateReaderChrome()
         }
+        content.onInlineReaderChange = { [weak self, weak content] reader in
+            guard let self, content?.isCentered == true else { return }
+            self.readerForChrome = reader ?? content?.rabbitHoleReader
+            self.updateReaderChrome()
+        }
         return content
     }
 
@@ -665,6 +670,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
     /// fades.
     var onImmersionChange: ((_ immersed: Bool, _ extendsCard: Bool) -> Void)?
     var onReaderReady: ((RabbitHoleReaderViewController) -> Void)?
+    var onInlineReaderChange: ((ReaderChromeControlling?) -> Void)?
 
     private let item: ReadingListItem
     private let statusLabel = UILabel()
@@ -790,9 +796,20 @@ private final class ReaderCardContentViewController: CardContentViewController,
         }
     }
 
-    func inlineReaderWillPresent() {
+    func inlineReaderWillPresent(_ reader: ReaderChromeControlling) {
         guard isCentered else { return }
         onImmersionChange?(true, true)
+        onInlineReaderChange?(reader)
+    }
+
+    func inlineReaderDidDismiss(_ reader: ReaderChromeControlling) {
+        guard isCentered else { return }
+        onInlineReaderChange?(rabbitHoleReader)
+    }
+
+    var inlineReaderTopEdgeInWindow: CGFloat {
+        guard isViewLoaded else { return 0 }
+        return view.convert(view.bounds, to: nil).minY
     }
 
     /// The resting clearance below the card's top edge — enough that an

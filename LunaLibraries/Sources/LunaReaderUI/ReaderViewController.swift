@@ -16,7 +16,7 @@ import UIKit
 /// "highlight" (chunk) mode now opens as RSVP → Phrases. Remembers the last used
 /// mode per article and globally (the default for new articles), and tracks
 /// opened/read state.
-public final class ReaderViewController: UIViewController {
+public final class ReaderViewController: UIViewController, InlineReaderPresentationCoordinating {
 
     private let item: ReadingListItem
     private let content: ArticleContent
@@ -56,6 +56,7 @@ public final class ReaderViewController: UIViewController {
 
     private let modeControl = LunaSegmentedControl()
     private let audioButton = UIButton(type: .system)
+    private weak var inlineReaderForChrome: ReaderChromeControlling?
     /// When true, the mode switcher + audio toggle render in an inline (de-glassed,
     /// Task 3) header embedded DIRECTLY in the view (no UINavigationController). The
     /// host (a catch-up card) sits on a solid background, so the bar uses a solid fill
@@ -247,20 +248,6 @@ public final class ReaderViewController: UIViewController {
         }
     }
 
-    /// Tucks the nav bar (with the mode switcher) up off-screen while an inline
-    /// reader is open, and slides it back on dismissal. Called by the inline overlay
-    /// so the outer header isn't visible behind/around it.
-    public func setHeaderTucked(_ tucked: Bool) {
-        guard let bar = navigationController?.navigationBar else { return }
-        UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.9,
-                       initialSpringVelocity: 0.2) {
-            bar.transform = tucked
-                ? CGAffineTransform(translationX: 0, y: -(bar.frame.maxY + 8))
-                : .identity
-            bar.alpha = tucked ? 0 : 1
-        }
-    }
-
     /// Fades the floating share button out when the end-of-article share footer
     /// scrolls into view (it already offers sharing), and back in otherwise.
     private func setFloatingShareHidden(_ hidden: Bool) {
@@ -272,6 +259,12 @@ public final class ReaderViewController: UIViewController {
     // MARK: - Mode & audio switching
 
     @objc private func modeChanged() {
+        if let inlineReaderForChrome, let state = inlineReaderForChrome.chromeState {
+            let index = max(0, min(modeControl.selectedSegmentIndex, state.modes.count - 1))
+            inlineReaderForChrome.chromeSetMode(state.modes[index])
+            syncControlsToCurrentReader()
+            return
+        }
         let newMode = availableModes[
             max(0, min(modeControl.selectedSegmentIndex, availableModes.count - 1))]
         guard newMode != mode else { return }
@@ -285,6 +278,11 @@ public final class ReaderViewController: UIViewController {
     }
 
     @objc private func audioToggled() {
+        if let inlineReaderForChrome {
+            inlineReaderForChrome.chromeToggleAudio()
+            syncControlsToCurrentReader()
+            return
+        }
         audioOn.toggle()
         updateAudioButton()
         // Toggling OFF while the app-wide center is voicing THIS article pauses
@@ -300,7 +298,8 @@ public final class ReaderViewController: UIViewController {
     }
 
     private func updateAudioButton() {
-        let symbol = UIImage(systemName: audioOn ? "speaker.wave.2.fill" : "speaker.slash")
+        let activeAudio = inlineReaderForChrome?.chromeState?.isAudioOn ?? audioOn
+        let symbol = UIImage(systemName: activeAudio ? "speaker.wave.2.fill" : "speaker.slash")
         // The inline header uses a filled `Configuration` button; the nav-bar header a
         // plain system button. Update whichever this instance has.
         if audioButton.configuration != nil {
@@ -308,7 +307,35 @@ public final class ReaderViewController: UIViewController {
         } else {
             audioButton.setImage(symbol, for: .normal)
         }
-        audioButton.accessibilityLabel = audioOn ? "Turn off read aloud" : "Read aloud"
+        audioButton.accessibilityLabel = activeAudio ? "Turn off read aloud" : "Read aloud"
+    }
+
+    private func syncControlsToCurrentReader() {
+        let modes = inlineReaderForChrome?.chromeState?.modes ?? availableModes
+        modeControl.removeAllSegments()
+        for (index, candidate) in modes.enumerated() {
+            modeControl.insertSegment(
+                with: ReaderModeIcons.image(for: candidate), at: index, animated: false)
+        }
+        let selected = inlineReaderForChrome?.chromeState?.selectedMode ?? mode
+        modeControl.selectedSegmentIndex = modes.firstIndex(of: selected) ?? 0
+        updateAudioButton()
+    }
+
+    public func inlineReaderWillPresent(_ reader: ReaderChromeControlling) {
+        inlineReaderForChrome = reader
+        syncControlsToCurrentReader()
+    }
+
+    public func inlineReaderDidDismiss(_ reader: ReaderChromeControlling) {
+        guard inlineReaderForChrome === reader else { return }
+        inlineReaderForChrome = nil
+        syncControlsToCurrentReader()
+    }
+
+    public var inlineReaderTopEdgeInWindow: CGFloat {
+        guard isViewLoaded else { return 0 }
+        return contentContainer.convert(contentContainer.bounds, to: nil).minY
     }
 
     private func showCurrentMode() {

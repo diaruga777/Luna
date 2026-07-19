@@ -296,6 +296,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private func applyExternalChromeInset() {
         let inset = showsHeaderChrome ? 0 : externalChromeContentInset
         scrollReader.topChromeInset = inset
+        rsvpReader.topContentInset = inset
         webView?.scrollView.contentInset.top = inset
         webView?.scrollView.verticalScrollIndicatorInsets.top = inset
     }

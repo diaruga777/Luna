@@ -172,7 +172,10 @@ Differences from the Downloader, via `CardCarouselStyle`:
   bottom edges via a gradient mask on the card's content container. The scroll
   reader reserves the top fade run with `contentInset.top`
   (`externalChromeContentInset`), so the resting first line starts fully
-  legible; scrolled content fades away as it approaches an edge.
+  legible; scrolled content fades away as it approaches an edge. RSVP
+  reserves the same run for its Words/Phrases switcher
+  (`RSVPViewController.topContentInset`), so the switcher sits below the
+  fade instead of dissolving into it.
 - **"Fullscreen" is a chrome fade, nothing more** — no navigation push, no
   card-geometry choreography. `CardCarouselViewController.setImmersed(_:extendsCard:animated:)`
   fades the peeking side cards and the scrub strip out and — for the scroll

@@ -111,6 +111,18 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     /// Switches between the Words and Phrases sub-modes.
     private let subModeControl = UISegmentedControl(items: ["Words", "Phrases"])
+    private var subModeTopConstraint: NSLayoutConstraint?
+
+    /// Extra clearance below the view's top for the sub-mode switcher, supplied
+    /// by hosts whose chrome floats outside this reader (the Reader card
+    /// carousel reserves its card-top edge fade here, so the switcher isn't
+    /// dissolved by the fade run).
+    public var topContentInset: CGFloat = 0 {
+        didSet {
+            guard abs(topContentInset - oldValue) > 0.5 else { return }
+            subModeTopConstraint?.constant = topContentInset + 8
+        }
+    }
 
     private let wordLabel = UILabel()
     /// Multi-line phrase text shown in the reticule in Phrases mode.
@@ -404,8 +416,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         subModeControl.addTarget(self, action: #selector(subModeChanged), for: .valueChanged)
         subModeControl.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(subModeControl)
+        let top = subModeControl.topAnchor.constraint(
+            equalTo: view.safeAreaLayoutGuide.topAnchor, constant: topContentInset + 8)
+        subModeTopConstraint = top
         NSLayoutConstraint.activate([
-            subModeControl.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            top,
             subModeControl.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             subModeControl.widthAnchor.constraint(equalToConstant: 220),
         ])

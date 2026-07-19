@@ -37,11 +37,12 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   a real custom UIKit presentation driven by `InlineReaderEclipseScene`: a black circle
   expands from that point while a second
   reader-sized black surface fades in below and translates upward. Its corona and
-  diamond-ring flare meet at the center of the incoming reader's top edge. The flare
-  uses the exact public `EclipseFlareView`, dimensions, scale, and keyframe timing from
-  the root carousel eclipse. At totality the already-laid-out
-  new page fades in quickly, while the covered reader's tab springs upward from
-  behind it. Dismissal and nested pops run that choreography in reverse: content and
+  diamond-ring flare meet at the center of the incoming reader's content edge, below
+  the tabs. The flare and rounded-card corona reuse the exact public root-carousel
+  visuals and keyframe timing. Only after totality does the already-laid-out
+  new page fade in and the covered reader's tab spring upward from behind the front
+  card; existing tabs animate to their new positions and widths at the same time.
+  Dismissal and nested pops run that choreography in reverse: content and
   the newest tab sink into totality before the eclipse drops and contracts back to the
   source link. Reduce Motion uses a short ordered crossfade.
 - The hidden-bar child `UINavigationController` still owns the linked-page stack.
@@ -51,9 +52,10 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   probe, themed-web fallback, and reader-mode switching, and now reports extracted or
   WebKit titles for tab updates.
 - The inline surface has no Close, Save, or duplicate mode control. Its only local
-  chrome is the ancestor-tab strip at the reader card's top edge. Its fill is clear;
-  each tab draws only a Liquid Glass top/side rim with deeply rounded top corners and
-  square, hidden-under-content bottom corners. Deeper tabs overlap and cover ancestors.
+  chrome is the ancestor-tab strip outside and above the reader card, inset on both
+  sides by the card's 22pt corner radius. Each system-background tab (white in light,
+  black in dark) has a Liquid Glass top/side rim with deeply rounded top corners and
+  square bottom corners hidden behind the front card. Deeper tabs overlap ancestors.
   Tabs hug their favicon/title content while room remains, share width when constrained,
   then become horizontally scrollable at the favicon minimum and initially align to the
   rightmost content. Tabs
@@ -67,11 +69,12 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   innermost inline page. The exact same segmented control and audio button stay in place;
   they switch the inline page's Scroll/RSVP/Original mode and read-aloud state, then return
   to the outer reader on dismissal. The same share button targets the innermost URL/title.
-  The modal is framed to the exact resting root-card rectangle and reuses
-  `CarouselCardView` (surface, 22pt corners, Liquid Glass rim, and edge fades), so the
+  The modal's card keeps the exact resting root-card rectangle and reuses
+  `CarouselCardView` (surface, height, 22pt corners, Liquid Glass rim, and edge fades), so the
   persistent controls remain hit-testable above it while the immersed outer card remains
-  visible below it. `InlineReaderEclipseScene.sceneFrame` clips both directions to that
-  card. Inline scrolling has normal rubber-banding and never dismisses a reader.
+  visible below it through a very light blur when that outer reader is scrollable.
+  `InlineReaderEclipseScene.sceneFrame` clips both directions to the card content edge,
+  never the tabs. Inline scrolling has normal rubber-banding and never dismisses a reader.
 - The old split snapshots/peek views are no longer created. The outgoing live reader
   remains underneath a custom presentation controller that deliberately retains it,
   and its scroll position is restored on dismissal.

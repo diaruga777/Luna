@@ -32,55 +32,33 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
 
 - `Luna/Reader/ScrollReaderViewController.swift` — full-screen `UITextView`, serif type, attributed text from `ArticleTextRenderer`. Link taps intercepted via `textView(_:primaryActionFor:defaultAction:)` → opens the split instead of Safari. Bolt button → RSVP.
 - `Luna/Reader/ArticleTextRenderer.swift` — blocks → `NSAttributedString` (title, headings, quotes, bullets, `.link` attributes from stored UTF-16 ranges).
-- `ReaderKit/SplitWebOverlayViewController.swift` — the split inline reader. All
-  motion is one `apply(progress:)` (0 = open, 1 = closed onto the cut line): the
-  card interpolates between its open frame and a zero-height sliver at `cutY`, and
-  the two snapshot peeks are pinned FLUSH to the card's top/bottom edges (derived
-  from the card frame) so there's never a gap for the live reader to ghost
-  through. Open animates 1→0 starting from the link's actual on-screen position;
-  dismiss animates 0→1 (so the rejoined screen matches the reader underneath); an
-  interactive peek drag maps to progress and, once it hits 1, dismisses and never
-  re-grows. A taller (68pt) liquid-glass header (softer `.systemThinMaterial`)
-  holds the ✕ + save inset 16pt from the horizontal edges (the save glyph optically
-  centered in its circle) with the content scrolling under it (top content inset).
-  The card hosts a **navigation stack** of `InlineReaderPageViewController`s (a child
-  `UINavigationController`, bar hidden — our glass header drives it). Each page loads
-  its URL in a THEMED `WKWebView` (`ReaderDepth` background + `underPageBackgroundColor`,
-  so no white flash and dark-capable sites render dark when the device is dark) and
-  probes it (`ArticleFetcher`+`ArticleExtractor`, ≥600 chars / ≥3 blocks); when
-  article-like it hides the web view and embeds the app reader (`embedReader`), and the
-  header reveals the scroll/highlight/RSVP **mode selector** (`modeControl`,
-  `ReaderModeIcons`) that swaps the child in place. A link tapped inside an embedded
-  reader is routed up via `onLinkActivated` and **PUSHED as the next page** (not a
-  nested overlay); the ✕ becomes a back chevron that pops, while the bottom chevron /
-  peek-drag dismiss the WHOLE stack. Links in a raw web view navigate it in place. The
-  chevron is blue and straddles the card's bottom edge. There's a configurable
-  `bottomReaderInset` gap below the card so more of the outer reader stays visible at
-  the bottom. The OUTER reader's header is tucked out of sight while open: the overlay
-  calls `onOpen`/`onClose` so `ReaderViewController.setHeaderTucked` slides the nav bar
-  up, AND `topCover` (an opaque themed strip) is sized each frame to cover EVERYTHING
-  above the top peek — so when the link is high up (tiny top peek that can't cover the
-  header band itself) the live header is still hidden the whole animation. Both peek
-  snapshots are captured from below `headerBottomY` (= max of the text view's window
-  frame-top and the nav bar's actual `maxY`) and `openSplit` clamps `cutY` to the same
-  floor, so neither peek ever slices a frozen copy of the mode header. The cut Y is
-  `textView.convert(CGPoint(0, lineRect.minY), to: nil)` — passed in CONTENT space
-  (convert already folds in the scroll offset; pre-subtracting `contentOffset` was a
-  double-count that walked the cut up the screen as the article scrolled). The seamless
-  progress=1 layout AND the open animation both run in `viewIsAppearing` (no runloop hop
-  to `viewDidAppear` that briefly stalled on the collapsed sliver), with a snappy spring
-  (initialVelocity 1.0) so motion starts on the first frame. Each page
-  (`InlineReaderPageViewController`) kicks its article probe off in `init` (so the fetch
-  overlaps the open animation) and shows a themed background + spinner until the probe
-  decides reader-vs-web (decision stashed in `pendingDecision`, applied once the view is
-  loaded), then applies exactly one — never a white web-view flash; the web view is
-  themed and follows the device appearance. Also backs the RSVP link pill (nil peeks →
-  grows from the screen center over an OPAQUE themed backdrop so the outer header is
-  fully hidden). Simulator-only "Split High"/"Split Low" buttons
-  (`ScrollReaderViewController.addSimulatorSplitHooksIfNeeded`) trigger `openSplit` at a
-  high/low screen fraction since the harness can't tap an exact inline link.
-  <!-- older single-outer-scroll description follows; superseded -->
-- `ReaderKit/SplitWebOverlayViewController.swift` (legacy notes) — On a link tap the reader is snapshotted at the TOP of the link's line: the part above parks as a one-line peek at the top, the link's line as a one-line peek at the bottom (both are `resizableSnapshotView` halves), and an inset rounded liquid-glass card (`ReaderDepth.backgroundColor(0)`, 14pt inset, 26pt corners, hairline border + sibling drop-shadow) grows out from the cut to fill the space between them (`animateOpen`, spring). The card's `WKWebView` (WebJunkBlocker applied) scrolls AND navigates INDEPENDENTLY — its gestures never reach the reader. Three dismissals, all animating the card's height to zero from its center while the peeks rejoin (`applyCompression(progress)` → `animateDismiss`): (1) the ✕ at the card's top-left, (2) the `chevron.compact.down` on the card's bottom edge, (3) an interactive `UIPanGestureRecognizer` on either peek — the card loses height equal to TWICE the drag distance (`progress = 2·|dy| / openHeight`), dismissing at progress ≥ 0.5 or a fast flick. A `square.and.arrow.down` save button (→ checkmark) sits top-right when a `shareProvider` is present. Presented `.overFullScreen` (no transition; the grow animation is the entrance). The same VC also backs the RSVP link pill, presented with nil peeks + `lineTopScreen = midY` so the card grows from the screen center. `onDismiss` re-asserts the reader's offset (it never moved).
+- `LunaReaderUI/SplitWebOverlayViewController.swift` is the full-size nested reader.
+  Link activation resolves the link glyph/pill center and runs
+  `InlineReaderEclipseScene`: a black circle expands from that point while a second
+  reader-sized black surface fades in below and translates upward. Its corona and
+  diamond-ring flare meet at the center of the incoming reader's top edge (the
+  top-zenith variant of the root carousel eclipse). At totality the already-laid-out
+  new page fades in quickly, while the covered reader's tab springs upward from
+  behind it. Reduce Motion uses a short ordered crossfade.
+- The hidden-bar child `UINavigationController` still owns the linked-page stack.
+  Every embedded Scroll/RSVP link reports its source point through
+  `onLinkActivatedAtPoint`, so every depth uses the same eclipse rather than a stock
+  navigation push. `InlineReaderPageViewController` keeps the existing cached article
+  probe, themed-web fallback, and reader-mode switching, and now reports extracted or
+  WebKit titles for tab updates.
+- Ancestor tabs occupy the strip between the close/back and Save controls. They split
+  that space equally until the favicon-plus-padding minimum would be violated, then
+  become horizontally scrollable and initially align to the rightmost content. Tabs
+  contain an asynchronously fetched favicon plus a truncating title; when squeezed to
+  the minimum, the title hides and the favicon remains. Selecting a tab unwinds to that
+  reader (the outermost tab dismisses the overlay). `InlineReaderTabMetrics` is the
+  pure, unit-tested fit/scroll sizing policy.
+- The old split snapshots/peek views are no longer created. The outgoing live reader
+  remains underneath the over-full-screen presentation, its header tucks during the
+  eclipse, and its scroll position is restored on dismissal. Animation work is limited
+  to pre-laid-out views, transforms, opacity, and a tiny drawn flare; favicon and
+  extraction network work stays asynchronous. Simulator-only "Split High"/"Split Low"
+  buttons still exercise high/low source origins.
 
 ## RSVP reader (ReadMaxx-style) — Words + Phrases sub-modes
 

@@ -40,6 +40,7 @@ enum UITestScreen: String, CaseIterable {
     case readerHighlight
     case readerRSVP
     case readerInlineHeader
+    case readerNested
 
     // Reader-adjacent extension/host screens.
     case shareReaderArticle
@@ -113,6 +114,22 @@ enum UITestScreenBuilder {
                 persistsModePreference: false, marksOpenedOnLoad: false,
                 inlineControlsHeader: true, inlineHeaderSubtitle: "Today · from alex")
             return UINavigationController(rootViewController: reader)
+        case .readerNested:
+            let reader = self.reader(forceMode: .scroll)
+            let host = UINavigationController(rootViewController: reader)
+            return PresentingHostViewController(host: host) {
+                guard let linkedURL = URL(string: "https://example.com/linked-article") else {
+                    return nil
+                }
+                let nested = SplitWebOverlayViewController(
+                    url: linkedURL, shareProvider: nil, lineHeight: 0,
+                    cutY: 430, topHalf: nil, bottomHalf: nil,
+                    sourcePoint: CGPoint(x: 226, y: 430),
+                    outerURL: fixtureItem.url,
+                    outerTitle: fixtureContent.title)
+                nested.modalPresentationStyle = .overFullScreen
+                return nested
+            }
 
         case .shareReaderArticle, .actionReaderArticle:
             // The share/action extension article reader, hosted in-app (the real
@@ -178,7 +195,9 @@ final class PresentingHostViewController: UIViewController {
         super.viewDidAppear(animated)
         guard !hasPresented, let modal = makeModal() else { return }
         hasPresented = true
-        modal.modalPresentationStyle = .fullScreen
+        if modal.modalPresentationStyle == .automatic {
+            modal.modalPresentationStyle = .fullScreen
+        }
         present(modal, animated: false)
     }
 }

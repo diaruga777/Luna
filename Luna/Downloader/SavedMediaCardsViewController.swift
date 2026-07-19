@@ -16,7 +16,6 @@ import LunaDesignSystem
 import LunaMediaDownload
 import LunaReadingList
 import LunaReadingListUI
-import LunaSocialUI
 import LunaStorage
 import LunaURLClassification
 import Photos
@@ -24,14 +23,19 @@ import UIKit
 
 final class SavedMediaCardsViewController: UIViewController {
 
-    private let header = NavHeaderBar()
     private let store = SavedMediaStore.shared
     private let photoSaver = PhotoLibrarySaver()
     private let downloadFooter = DownloaderProgressFooterView()
     private let carousel = CardCarouselViewController()
     private let emptyView = EmptyMediaView()
+    private let settingsButton = UIButton(type: .system)
+    private let shareButton = UIButton(type: .system)
     private var items: [SavedMediaItem] = []
     private var isReconcilingPhotos = false
+    private var pasteboardURL: URL?
+    private var renderedPasteboardURL: URL?
+    private var consumedPasteboardChangeCount: Int?
+    private var pendingPasteboardDownloadURLString: String?
     /// Fingerprint of the last-applied item list, so store notifications that
     /// changed nothing visible (frequent on foreground/activation catch-ups)
     /// don't tear down and rebuild live card content mid-playback.
@@ -44,6 +48,9 @@ final class SavedMediaCardsViewController: UIViewController {
         var style = CardCarouselStyle()
         style.pageSwipeMovementMultiplier = 1.5
         style.autoplaysScrubPreviewContent = true
+        style.scrubberHorizontalInset = 0
+        style.scrubberEdgeFadeWidth = 72
+        style.showsCardBorder = true
         carousel.style = style
         carousel.dataSource = self
         carousel.delegate = self
@@ -55,20 +62,18 @@ final class SavedMediaCardsViewController: UIViewController {
         emptyView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyView)
 
-        let headerBottom = header.mount(in: self)
-        setHeaderControls()
-
         NSLayoutConstraint.activate([
-            carousel.view.topAnchor.constraint(equalTo: headerBottom),
+            carousel.view.topAnchor.constraint(equalTo: view.topAnchor),
             carousel.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             carousel.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             carousel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            emptyView.topAnchor.constraint(equalTo: headerBottom),
+            emptyView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             emptyView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             emptyView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             emptyView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
+        mountBottomControls()
         mountDownloadFooter()
 
         // Bridges saves/deletes made by the action/share extension (a DIFFERENT
@@ -87,42 +92,62 @@ final class SavedMediaCardsViewController: UIViewController {
         // activation (covers iPad multitasking, where the app can stay
         // foregrounded the whole time an extension runs alongside it).
         NotificationCenter.default.addObserver(
-            self, selector: #selector(reload), name: UIApplication.didBecomeActiveNotification,
+            self, selector: #selector(applicationForegrounded), name: UIApplication.didBecomeActiveNotification,
             object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(refreshPasteboardURL),
+            name: UIPasteboard.changedNotification, object: nil)
         reload()
+        refreshPasteboardURL()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
-        header.setManagedHeight(topSafeAreaInset: view.safeAreaInsets.top)
+        applyCarouselTopInset()
     }
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
-        header.setManagedHeight(topSafeAreaInset: view.safeAreaInsets.top)
+        applyCarouselTopInset()
     }
 
-    private func setHeaderControls() {
-        header.setLeadingControls([
-            NavHeaderBar.imageButton(
-                systemName: "gearshape",
-                target: self,
-                action: #selector(settingsTapped),
-                accessibilityLabel: "Settings"),
-            NavHeaderBar.imageButton(
-                systemName: "person.2",
-                target: self,
-                action: #selector(friendsTapped),
-                accessibilityLabel: "Friends"),
+    private func applyCarouselTopInset() {
+        carousel.setTopInset(view.safeAreaInsets.top + 4)
+    }
+
+    /// Matches Reader's outer chrome: the scrubber runs edge-to-edge beneath
+    /// two persistent Liquid Glass circles.
+    private func mountBottomControls() {
+        configureBottomButton(
+            settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
+            accessibilityLabel: "Settings")
+        configureBottomButton(
+            shareButton, symbol: "square.and.arrow.up", action: #selector(shareCurrentTapped),
+            accessibilityLabel: "Share Current Media")
+        view.addSubview(settingsButton)
+        view.addSubview(shareButton)
+        NSLayoutConstraint.activate([
+            settingsButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            settingsButton.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -26),
+            settingsButton.widthAnchor.constraint(equalToConstant: 44),
+            settingsButton.heightAnchor.constraint(equalToConstant: 44),
+            shareButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            shareButton.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -26),
+            shareButton.widthAnchor.constraint(equalToConstant: 44),
+            shareButton.heightAnchor.constraint(equalToConstant: 44),
         ])
-        header.setTrailingControls([
-            NavHeaderBar.imageButton(
-                systemName: "plus",
-                target: self,
-                action: #selector(addTapped),
-                accessibilityLabel: "Add"),
-        ])
+    }
+
+    private func configureBottomButton(
+        _ button: UIButton, symbol: String, action: Selector, accessibilityLabel: String
+    ) {
+        button.configuration = GlassStyle.circularButtonConfiguration(symbol: symbol, padding: 10)
+        button.accessibilityLabel = accessibilityLabel
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
     }
 
     /// Floats the download-progress footer above the scrub strip, mirroring the
@@ -136,7 +161,7 @@ final class SavedMediaCardsViewController: UIViewController {
             downloadFooter.trailingAnchor.constraint(
                 equalTo: view.trailingAnchor, constant: -16),
             downloadFooter.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -92),
         ])
     }
 
@@ -145,25 +170,36 @@ final class SavedMediaCardsViewController: UIViewController {
     @objc private func applicationForegrounded() {
         store.purgeExpired()
         reload()
+        refreshPasteboardURL()
     }
 
     @objc private func reload() {
         store.purgeExpired()
         let updated = store.items()
-        let fingerprint = updated.map { item in
+        var fingerprint = updated.map { item in
             "\(item.id)|\(item.thumbnailFileName ?? "")|\(storageStateKey(item))"
         }
+        fingerprint.insert("paste|\(pasteboardURL?.absoluteString ?? "")", at: 0)
         defer { reconcilePhotosReferencesIfAuthorized() }
         guard fingerprint != appliedFingerprint else { return }
         appliedFingerprint = fingerprint
 
-        let centeredID = items.indices.contains(carousel.currentIndex)
-            ? items[carousel.currentIndex].id : nil
+        let oldItemIndex = carousel.currentIndex - cardOffset
+        let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil
         items = updated
-        let centeredIndex = centeredID.flatMap { id in items.firstIndex { $0.id == id } }
+        renderedPasteboardURL = pasteboardURL
+        let pendingIndex = pendingPasteboardDownloadURLString.flatMap { pending in
+            items.firstIndex { $0.sourceURLString == pending }
+        }
+        let centeredIndex = centeredID.flatMap { id in
+            items.firstIndex { $0.id == id }.map { $0 + cardOffset }
+        } ?? pendingIndex.map { $0 + cardOffset }
+            ?? (items.isEmpty ? 0 : cardOffset)
+        if pendingIndex != nil { pendingPasteboardDownloadURLString = nil }
         carousel.reloadData(centeringAt: centeredIndex)
-        emptyView.isHidden = !items.isEmpty
-        carousel.view.isHidden = items.isEmpty
+        emptyView.isHidden = !items.isEmpty || renderedPasteboardURL != nil
+        carousel.view.isHidden = items.isEmpty && renderedPasteboardURL == nil
+        updateShareButton()
     }
 
     private func storageStateKey(_ item: SavedMediaItem) -> String {
@@ -180,41 +216,90 @@ final class SavedMediaCardsViewController: UIViewController {
         }
     }
 
-    // MARK: - Header actions
+    private var cardOffset: Int { renderedPasteboardURL == nil ? 0 : 1 }
+
+    private func mediaIndex(forCarouselIndex index: Int) -> Int? {
+        let mediaIndex = index - cardOffset
+        return items.indices.contains(mediaIndex) ? mediaIndex : nil
+    }
+
+    private func currentMediaItem() -> (item: SavedMediaItem, carouselIndex: Int)? {
+        let index = carousel.currentIndex
+        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return nil }
+        return (items[mediaIndex], index)
+    }
+
+    private func updateShareButton() {
+        guard let current = currentMediaItem() else {
+            shareButton.isHidden = true
+            return
+        }
+        switch current.item.storageState {
+        case .localFile, .photosReference:
+            shareButton.isHidden = false
+        case .undownloaded:
+            shareButton.isHidden = true
+        }
+    }
+
+    // MARK: - Outer controls + pasteboard
 
     @objc private func settingsTapped() {
         navigationController?.pushViewController(SettingsViewController(), animated: true)
     }
 
-    @objc private func friendsTapped() {
-        navigationController?.pushViewController(FriendsViewController(), animated: true)
+    @objc private func shareCurrentTapped() {
+        guard let current = currentMediaItem() else { return }
+        share(current.item, sourceIndex: current.carouselIndex)
     }
 
-    @objc private func addTapped() {
-        let alert = UIAlertController(title: "Save Media", message: nil, preferredStyle: .alert)
-        alert.addTextField { field in
-            field.placeholder = "https://..."
-            field.keyboardType = .URL
-            field.autocapitalizationType = .none
+    @objc private func refreshPasteboardURL() {
+        let pasteboard = UIPasteboard.general
+        if consumedPasteboardChangeCount == pasteboard.changeCount {
+            guard pasteboardURL != nil else { return }
+            pasteboardURL = nil
+            reload()
+            return
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak alert] _ in
-            guard let entered = alert?.textFields?.first?.text?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-                  let normalized = URLUnwrapper.ingestURL(from: entered, allowBareHost: true)
-            else { return }
-            Task {
-                let urlString = normalized.absoluteString
-                _ = await ReadingListIngestor.shared.handleSavePress(urlString: urlString)
-                guard MediaDownloadablePlatform.supports(urlString) else { return }
-                // A duplicate reading-list save still needs to resume an
-                // undownloaded/interrupted Downloader media row.
-                _ = await DownloaderIntentPhotoPermission.requestIfNeeded()
-                _ = await LiveMediaDownloadManager.shared.start(
-                    urlString: urlString, ownership: .downloader)
+        let changeCount = pasteboard.changeCount
+        // Ask UIKit for the structured URL value in one operation rather than
+        // reading loosely typed pasteboard contents and reparsing them.
+        pasteboard.detectValues(for: [\.probableWebURL]) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self, UIPasteboard.general.changeCount == changeCount else { return }
+                let value = try? result.get().probableWebURL
+                let candidate = value.flatMap {
+                    URLUnwrapper.ingestURL(from: $0, allowBareHost: true)
+                }.flatMap { url -> URL? in
+                    guard MediaDownloadablePlatform.supports(url.absoluteString),
+                          self.store.matchingItem(forURLString: url.absoluteString) == nil
+                    else { return nil }
+                    return url
+                }
+                guard candidate != self.pasteboardURL else {
+                    self.reload()
+                    return
+                }
+                self.pasteboardURL = candidate
+                self.reload()
             }
-        })
-        present(alert, animated: true)
+        }
+    }
+
+    private func downloadPasteboardURL() {
+        guard let url = renderedPasteboardURL ?? pasteboardURL else { return }
+        consumedPasteboardChangeCount = UIPasteboard.general.changeCount
+        pasteboardURL = nil
+        pendingPasteboardDownloadURLString = url.absoluteString
+        Task {
+            _ = await DownloaderIntentPhotoPermission.requestIfNeeded()
+            _ = await LiveMediaDownloadManager.shared.start(
+                urlString: url.absoluteString,
+                ownership: .downloader,
+                manual: true)
+            _ = await ReadingListIngestor.shared.handleSavePress(
+                urlString: url.absoluteString, source: .paste)
+        }
     }
 
     // MARK: - Item actions (context menu)
@@ -334,15 +419,22 @@ final class SavedMediaCardsViewController: UIViewController {
 extension SavedMediaCardsViewController: CardCarouselDataSource {
 
     func numberOfCards(in carousel: CardCarouselViewController) -> Int {
-        items.count
+        items.count + cardOffset
     }
 
     func carousel(
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController {
-        guard items.indices.contains(index) else { return CardContentViewController() }
-        let item = items[index]
+        if let url = renderedPasteboardURL, index == 0 {
+            return PasteboardMediaCardContentViewController(url: url) { [weak self] in
+                self?.downloadPasteboardURL()
+            }
+        }
+        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
+            return CardContentViewController()
+        }
+        let item = items[mediaIndex]
         switch item.storageState {
         case .undownloaded:
             return UndownloadedMediaCardContentViewController(item: item) { [weak self] in
@@ -397,19 +489,23 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         loadThumbnailForCardAt index: Int,
         completion: @escaping (UIImage?) -> Void
     ) {
-        guard items.indices.contains(index) else {
+        if renderedPasteboardURL != nil, index == 0 {
+            completion(UIImage(systemName: "doc.on.clipboard"))
+            return
+        }
+        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else {
             completion(nil)
             return
         }
-        loadThumbnail(for: items[index], completion: completion)
+        loadThumbnail(for: items[mediaIndex], completion: completion)
     }
 
     func carousel(
         _ carousel: CardCarouselViewController,
         topLeadingAccessoryForCardAt index: Int
     ) -> UIView? {
-        guard items.indices.contains(index),
-              items[index].photosLocalIdentifier != nil
+        guard let mediaIndex = mediaIndex(forCarouselIndex: index),
+              items[mediaIndex].photosLocalIdentifier != nil
         else { return nil }
         return PhotosReferenceBadgeView()
     }
@@ -493,16 +589,22 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
 extension SavedMediaCardsViewController: CardCarouselDelegate {
 
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
-        guard items.indices.contains(index) else { return }
-        markOpened(items[index])
+        updateShareButton()
+        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return }
+        markOpened(items[mediaIndex])
+    }
+
+    func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {
+        guard renderedPasteboardURL != nil, index == 0 else { return }
+        downloadPasteboardURL()
     }
 
     func carousel(
         _ carousel: CardCarouselViewController,
         contextMenuForCardAt index: Int
     ) -> UIContextMenuConfiguration? {
-        guard items.indices.contains(index) else { return nil }
-        let item = items[index]
+        guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return nil }
+        let item = items[mediaIndex]
         return UIContextMenuConfiguration(actionProvider: { _ in
             var actions: [UIMenuElement] = []
             switch item.storageState {
@@ -527,6 +629,122 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
             ) { [weak self] _ in self?.deleteSavedItem(for: item) })
             return UIMenu(children: actions)
         })
+    }
+}
+
+// MARK: - Pasteboard card
+
+/// A transient leading card for a supported media URL detected on the
+/// pasteboard. Nothing is persisted or downloaded until the user taps it.
+private final class PasteboardMediaCardContentViewController: CardContentViewController {
+    private let url: URL
+    private let download: () -> Void
+    private let downloadButton = UIButton(type: .system)
+    private let statusLabel = UILabel()
+    private let progress = MoonHorizonProgressBar()
+    private var hasStarted = false
+
+    init(url: URL, download: @escaping () -> Void) {
+        self.url = url
+        self.download = download
+        super.init()
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        let icon = UIImageView(image: UIImage(systemName: "doc.on.clipboard"))
+        icon.tintColor = GlassStyle.readingAccent
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: 42, weight: .medium)
+
+        let title = UILabel()
+        title.text = "Download Pasted Link"
+        title.font = .preferredFont(forTextStyle: .title2)
+        title.textColor = .label
+        title.textAlignment = .center
+
+        let urlLabel = UILabel()
+        urlLabel.text = url.absoluteString
+        urlLabel.font = .preferredFont(forTextStyle: .subheadline)
+        urlLabel.textColor = .secondaryLabel
+        urlLabel.textAlignment = .center
+        urlLabel.numberOfLines = 4
+        urlLabel.lineBreakMode = .byTruncatingMiddle
+
+        var configuration = UIButton.Configuration.filled()
+        configuration.title = "Download"
+        configuration.image = UIImage(systemName: "arrow.down.circle")
+        configuration.imagePadding = 8
+        configuration.cornerStyle = .capsule
+        configuration.baseBackgroundColor = GlassStyle.readingAccent
+        downloadButton.configuration = configuration
+        downloadButton.accessibilityHint = url.absoluteString
+        downloadButton.addAction(UIAction { [weak self] _ in
+            self?.beginDownload()
+        }, for: .touchUpInside)
+
+        statusLabel.text = "Starting download…"
+        statusLabel.font = .preferredFont(forTextStyle: .subheadline)
+        statusLabel.textColor = .secondaryLabel
+        statusLabel.textAlignment = .center
+        statusLabel.isHidden = true
+
+        progress.isHidden = true
+        progress.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = UIStackView(arrangedSubviews: [
+            icon, title, urlLabel, downloadButton, statusLabel, progress,
+        ])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -28),
+            progress.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            progress.heightAnchor.constraint(equalToConstant: 20),
+        ])
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleJobProgressChanged(_:)),
+            name: .downloaderJobProgressChanged, object: nil)
+        if let current = LiveMediaDownloadManager.shared.currentDownloadProgress(
+            forSourceURLString: url.absoluteString) {
+            showProgress(current)
+        }
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    private func beginDownload() {
+        guard !hasStarted else { return }
+        hasStarted = true
+        showProgress(0)
+        download()
+    }
+
+    @objc private func handleJobProgressChanged(_ notification: Notification) {
+        guard let source = notification.userInfo?["sourceURLString"] as? String,
+              source == url.absoluteString
+        else { return }
+        if let snapshot = notification.userInfo?["snapshot"] as? DownloaderJobSnapshot {
+            statusLabel.text = snapshot.message
+        }
+        showProgress(notification.userInfo?["progress"] as? Double ?? 0)
+    }
+
+    private func showProgress(_ value: Double) {
+        downloadButton.isHidden = true
+        statusLabel.isHidden = false
+        progress.isHidden = false
+        progress.setProgress(Float(value), animated: true)
     }
 }
 

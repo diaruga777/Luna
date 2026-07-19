@@ -98,6 +98,11 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   load with PhotoKit image APIs and Photos-backed videos load through
   `PHImageManager.requestAVAsset`. Long-press menus offer **Save to Photos** on local
   rows (Photos-backed rows do not offer a redundant save action), Share, and Delete.
+  Settings and direct system file sharing flank the edge-to-edge scrub strip in glass
+  circles; there is no root Friends or Add button. A supported non-duplicate URL on the
+  pasteboard appears as a transient leading card with the URL and a Download button.
+  Tapping it creates the durable undownloaded row, starts the Downloader-owned transfer,
+  and switches to the normal moon-horizon/progress UI.
 - **Share and action extensions** — `SavedNonTextualViewController` retains its inline
   preview state machine (`pending`, `downloading`, `ready`, `alreadyDownloaded`, `failed`).
   Before deciding to auto-download or wait for a tap, it checks

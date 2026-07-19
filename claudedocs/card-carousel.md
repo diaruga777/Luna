@@ -20,11 +20,15 @@ own adapters later). The Downloader-specific adapters live in
   under a `CarouselCardView.restingDimAlpha` (70%) black dim so the centered card
   carries the screen. All geometry is pure math in `CardCarouselMetrics`
   (unit-tested in `CardCarouselMetricsTests`).
-- Above Downloader cards: the host's `NavHeaderBar`. Below: the scrub strip
-  (`CarouselScrubberView`), one small 9:16 thumbnail per card. The Reader runs the
-  strip edge to edge and flanks it with 44pt Liquid Glass Settings and Share circles —
-  chips fade-blur out before reaching them (`scrubberEdgeFadeWidth` 72). The
-  download-progress footer floats above the safe-area bottom as before.
+- Both roots have no header bar. Their scrub strips run edge to edge and are
+  flanked by 44pt Liquid Glass Settings and Share circles; chips fade-blur out
+  before reaching them (`scrubberEdgeFadeWidth` 72). Downloader's Share circle
+  exports the centered media file directly through the system share sheet and is
+  hidden for pasteboard/undownloaded cards. Downloader has no Friends or Add
+  button on the root; Friends remains reachable through Settings. Its 9:16
+  thumbnail chips have a visible pitch gap and enough strip height for selection
+  scaling/shadows, so neither selected nor neighboring previews overlap or clip.
+  The download-progress footer floats above this bottom chrome.
 
 ## Interaction model
 
@@ -52,8 +56,10 @@ own adapters later). The Downloader-specific adapters live in
   The Downloader opts into `autoplaysScrubPreviewContent`: as each thumbnail
   reaches the strip's center, the large overlay mounts that card's real content
   immediately and autoplays it muted (including looping videos and GIFs). Moving
-  to another thumbnail or committing the selection stops and unmounts that
-  temporary preview player.
+  to another thumbnail stops and replaces that temporary preview player. On
+  release, the selected preview controller is promoted into the centered card
+  without replacing its player or timestamp, so playback continues smoothly;
+  only the centered card's mute and optional Photos controls fade in.
 - **Audio** is off by default (`CardCarouselViewController.isSoundMuted`, carousel-
   wide). The mute/unmute button sits at the card's top-right and only shows when the
   content reports `supportsAudio` (videos discover their audio track async). Pressing
@@ -77,7 +83,11 @@ seek/mute/centered hooks). Generic implementations:
 
 Downloader adds `UndownloadedMediaCardContentViewController` (download glyph +
 progress ring; observes `.downloaderJobProgressChanged` itself, keyed by its own
-source URL).
+source URL) and a transient pasteboard card. A supported, non-duplicate media URL
+detected on the clipboard is inserted at index zero, shows the URL and a Download
+button, and begins the normal Downloader-owned job only when tapped. The card and
+the floating footer use the moon-horizon progress presentation while that job runs;
+the clipboard change count is suppressed after consumption until it changes again.
 
 ## The eclipse page transition
 

@@ -37,6 +37,9 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     public var onBecameArticle: (() -> Void)?
     /// Fired when extraction or WebKit supplies a better tab title.
     public var onMetadataChanged: (() -> Void)?
+    /// Fired whenever mode/probe work replaces the scroll surface so the
+    /// overlay can retarget its card-edge hosted horizon indicator.
+    public var onContentScrollViewChanged: (() -> Void)?
 
     private let spinner = DotMatrixSpinnerView()
     private var articleProbe: Task<Void, Never>?
@@ -60,6 +63,14 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
 
     /// Whether this page is rendering as an article (so the mode switcher applies).
     public var isArticle: Bool { articleContent != nil }
+
+    /// The live vertically scrolling surface. RSVP intentionally returns nil.
+    public var contentScrollView: UIScrollView? {
+        if readerMode == .rsvp || readerMode == .highlight { return nil }
+        if let webView { return webView.scrollView }
+        guard let readerChild else { return nil }
+        return Self.firstScrollView(in: readerChild.view)
+    }
 
     public var displayTitle: String {
         let candidates = [articleContent?.title, webView?.title]
@@ -179,6 +190,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         HorizonScrollIndicator.install(on: webView.scrollView, in: view)
+        onContentScrollViewChanged?()
         WebJunkBlocker.applyRuleList(to: webView.configuration.userContentController)
         webView.navigationDelegate = self
         webView.load(URLRequest(url: url))
@@ -267,6 +279,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             old.removeFromParent()
             readerChild = nil
             readerTopConstraint = nil
+            onContentScrollViewChanged?()
         }
     }
 
@@ -276,6 +289,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         webView?.stopLoading()
         webView?.removeFromSuperview()
         webView = nil
+        onContentScrollViewChanged?()
     }
 
     private func embedReader(mode: ReadingListItem.ReaderMode) {
@@ -342,6 +356,15 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         (child as? ScrollReaderViewController)?
             .activateVisibleReader(deferFullContentUntilHostCompletion: false)
         readerMode = mode
+        onContentScrollViewChanged?()
+    }
+
+    private static func firstScrollView(in view: UIView) -> UIScrollView? {
+        if let scrollView = view as? UIScrollView { return scrollView }
+        for subview in view.subviews {
+            if let found = firstScrollView(in: subview) { return found }
+        }
+        return nil
     }
 
     // MARK: - WKNavigationDelegate

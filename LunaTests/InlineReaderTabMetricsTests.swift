@@ -78,14 +78,15 @@ final class InlineReaderTabMetricsTests: XCTestCase {
         XCTAssertTrue(metrics.scrolls)
     }
 
-    func testTabsSitAboveCardWithoutChangingCardHeight() {
+    func testTabsConsumeTopOfNormalCardFootprint() {
         let card = CGRect(x: 10, y: 120, width: 380, height: 650)
         let metrics = InlineReaderPresentationMetrics(
             cardFrameInWindow: card, tabHeight: 42)
 
-        XCTAssertEqual(metrics.presentationFrameInWindow, CGRect(
-            x: 10, y: 78, width: 380, height: 692))
+        XCTAssertEqual(metrics.presentationFrameInWindow, card)
+        XCTAssertEqual(metrics.cardFrameInWindow, CGRect(
+            x: 10, y: 162, width: 380, height: 608))
         XCTAssertEqual(metrics.localCardFrame, CGRect(
-            x: 0, y: 42, width: 380, height: 650))
+            x: 0, y: 42, width: 380, height: 608))
     }
 }

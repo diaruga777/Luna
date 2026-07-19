@@ -69,10 +69,12 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   innermost inline page. The exact same segmented control and audio button stay in place;
   they switch the inline page's Scroll/RSVP/Original mode and read-aloud state, then return
   to the outer reader on dismissal. The same share button targets the innermost URL/title.
-  The modal's card keeps the exact resting root-card rectangle and reuses
-  `CarouselCardView` (surface, height, 22pt corners, Liquid Glass rim, and edge fades), so the
-  persistent controls remain hit-testable above it while the immersed outer card remains
-  visible below it through a very light blur when that outer reader is scrollable.
+  The modal stays inside the root card's resting footprint: its tabs consume the top
+  42 points, and its `CarouselCardView` begins below them with its height shortened by
+  the same amount. This leaves the persistent controls unobstructed while the immersed
+  outer card remains visible below through a very light blur when it is scrollable.
+  Scroll and Original/Web pages use a host-managed horizon-point indicator at the
+  inline card's trailing edge; the root card host retakes its indicator on dismissal.
   `InlineReaderEclipseScene.sceneFrame` clips both directions to the card content edge,
   never the tabs. Inline scrolling has normal rubber-banding and never dismisses a reader.
 - The old split snapshots/peek views are no longer created. The outgoing live reader

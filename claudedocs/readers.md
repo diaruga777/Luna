@@ -32,13 +32,14 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
 
 - `Luna/Reader/ScrollReaderViewController.swift` — full-screen `UITextView`, serif type, attributed text from `ArticleTextRenderer`. Link taps intercepted via `textView(_:primaryActionFor:defaultAction:)` → opens the split instead of Safari. Bolt button → RSVP.
 - `Luna/Reader/ArticleTextRenderer.swift` — blocks → `NSAttributedString` (title, headings, quotes, bullets, `.link` attributes from stored UTF-16 ranges).
-- `LunaReaderUI/SplitWebOverlayViewController.swift` is the full-size nested reader.
+- `LunaReaderUI/SplitWebOverlayViewController.swift` is the nested reader card.
   Link activation resolves the link glyph/pill center and runs
   a real custom UIKit presentation driven by `InlineReaderEclipseScene`: a black circle
   expands from that point while a second
   reader-sized black surface fades in below and translates upward. Its corona and
-  diamond-ring flare meet at the center of the incoming reader's top edge (the
-  top-zenith variant of the root carousel eclipse). At totality the already-laid-out
+  diamond-ring flare meet at the center of the incoming reader's top edge. The flare
+  uses the exact public `EclipseFlareView`, dimensions, scale, and keyframe timing from
+  the root carousel eclipse. At totality the already-laid-out
   new page fades in quickly, while the covered reader's tab springs upward from
   behind it. Dismissal and nested pops run that choreography in reverse: content and
   the newest tab sink into totality before the eclipse drops and contracts back to the
@@ -50,9 +51,12 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   probe, themed-web fallback, and reader-mode switching, and now reports extracted or
   WebKit titles for tab updates.
 - The inline surface has no Close, Save, or duplicate mode control. Its only local
-  chrome is the ancestor-tab strip at the reader card's top edge. Tabs split the
-  available width equally until the favicon-plus-padding minimum would be violated, then
-  become horizontally scrollable and initially align to the rightmost content. Tabs
+  chrome is the ancestor-tab strip at the reader card's top edge. Its fill is clear;
+  each tab draws only a Liquid Glass top/side rim with deeply rounded top corners and
+  square, hidden-under-content bottom corners. Deeper tabs overlap and cover ancestors.
+  Tabs hug their favicon/title content while room remains, share width when constrained,
+  then become horizontally scrollable at the favicon minimum and initially align to the
+  rightmost content. Tabs
   preserve their button instances while metadata changes so in-flight favicon fetches
   are not cancelled. Each contains an asynchronously fetched favicon (with a visible
   globe badge while it loads) plus a truncating title; when squeezed to
@@ -62,12 +66,12 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
 - `ReaderChromeControlling` lets the fixed outer reader chrome retarget itself to the
   innermost inline page. The exact same segmented control and audio button stay in place;
   they switch the inline page's Scroll/RSVP/Original mode and read-aloud state, then return
-  to the outer reader on dismissal. The inline reader begins at the existing outer card's
-  top edge, immediately below those controls, and `InlineReaderEclipseScene.sceneFrame`
-  clips both eclipse directions to that same edge.
-- Pulling past either the top or bottom rubber-band moves the inline surface with the
-  finger. Crossing the distance/velocity threshold pops one inline depth (or dismisses
-  the root inline reader) with the reverse eclipse; cancelling springs it back.
+  to the outer reader on dismissal. The same share button targets the innermost URL/title.
+  The modal is framed to the exact resting root-card rectangle and reuses
+  `CarouselCardView` (surface, 22pt corners, Liquid Glass rim, and edge fades), so the
+  persistent controls remain hit-testable above it while the immersed outer card remains
+  visible below it. `InlineReaderEclipseScene.sceneFrame` clips both directions to that
+  card. Inline scrolling has normal rubber-banding and never dismisses a reader.
 - The old split snapshots/peek views are no longer created. The outgoing live reader
   remains underneath a custom presentation controller that deliberately retains it,
   and its scroll position is restored on dismissal.
@@ -77,6 +81,8 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   to pre-laid-out views, transforms, opacity, and a tiny drawn flare; favicon and
   extraction network work stays asynchronous. Simulator-only "Split High"/"Split Low"
   buttons still exercise high/low source origins.
+  After the reverse eclipse, a root scroll reader already at its top, or a paused root
+  RSVP reader, also surfaces the carousel back into card view.
 
 ## RSVP reader (ReadMaxx-style) — Words + Phrases sub-modes
 

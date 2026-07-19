@@ -43,22 +43,25 @@ final class InlineReaderTabMetricsTests: XCTestCase {
         XCTAssertTrue(overlay.transitioningDelegate === overlay)
     }
 
-    func testOverscrollFollowsRubberBandAndCommitsAtThreshold() {
-        let partial = InlineReaderOverscrollMetrics(distance: 44, outwardVelocity: 0)
-        XCTAssertEqual(partial.progress, 0.4, accuracy: 0.001)
-        XCTAssertFalse(partial.commitsDismissal)
+    func testTabsHugTheirContentWhenThereIsRoom() {
+        let metrics = InlineReaderTabMetrics(
+            availableWidth: 300, idealWidths: [74, 112],
+            minimumTabWidth: 38, spacing: -9)
 
-        let committed = InlineReaderOverscrollMetrics(distance: 69, outwardVelocity: 0)
-        XCTAssertTrue(committed.commitsDismissal)
+        XCTAssertEqual(metrics.tabWidths, [74, 112])
+        XCTAssertEqual(metrics.contentWidth, 177)
+        XCTAssertFalse(metrics.scrolls)
     }
 
-    func testFastOutwardOverscrollCommitsBeforeDistanceThreshold() {
-        let metrics = InlineReaderOverscrollMetrics(distance: 12, outwardVelocity: 901)
-        XCTAssertTrue(metrics.commitsDismissal)
-    }
+    func testOverlappingCrowdedTabsScrollFromRightEdge() {
+        let metrics = InlineReaderTabMetrics(
+            availableWidth: 80, idealWidths: [90, 110, 80],
+            minimumTabWidth: 38, spacing: -9)
 
-    func testInwardVelocityNeverCommitsAShortOverscroll() {
-        let metrics = InlineReaderOverscrollMetrics(distance: 12, outwardVelocity: -1_400)
-        XCTAssertFalse(metrics.commitsDismissal)
+        XCTAssertEqual(metrics.tabWidths.count, 3)
+        metrics.tabWidths.forEach { XCTAssertEqual($0, 38, accuracy: 0.001) }
+        XCTAssertEqual(metrics.contentWidth, 96, accuracy: 0.001)
+        XCTAssertEqual(metrics.initialContentOffsetX, 16, accuracy: 0.001)
+        XCTAssertTrue(metrics.scrolls)
     }
 }

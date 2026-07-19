@@ -2,14 +2,16 @@
 //  CarouselScrubberView.swift
 //  LunaDesignSystem
 //
-//  The scrub area under the cards: one small preview per card. The selected
-//  chip is ALWAYS centered in the viewport — symmetric content insets let even
-//  the first and last chips reach center. Dragging selects the chip under the
-//  finger while the strip glides to re-center it; because re-centering slides
-//  new chips under a stationary finger, holding the finger off-center keeps
-//  scrolling toward that side until release (a display link drives the glide,
-//  its speed proportional to the finger's distance from center). Releasing
-//  commits the selection; a quick flick instead pages a single card.
+//  The scrub area under the cards: one small preview per card. At rest the
+//  selected chip is ALWAYS centered in the viewport — symmetric content insets
+//  let even the first and last chips reach center. Dragging is positional
+//  scrubbing: the strip holds still and the chip under the finger becomes the
+//  selection, so sweeping the finger pages precisely through the cards it
+//  crosses. Only while the finger holds inside an edge zone does the strip
+//  itself flow toward that side (a display link, speed scaling with depth into
+//  the zone), streaming farther chips under the stationary finger until
+//  release. Releasing commits and re-centers the chip under the finger; a
+//  quick flick instead pages a single card.
 //
 //  The strip has no container chrome — chips float directly on the background
 //  and fade-blur out as they approach either end (an alpha gradient mask plus
@@ -85,10 +87,17 @@ public final class CarouselScrubberView: UIView {
     private var isDragActive = false
     /// The finger's live x (in the strip's own coordinates) while a drag runs.
     private var dragLocationX: CGFloat = 0
-    /// Drives the glide while a drag is live: each frame the strip eases
-    /// toward centering the chip under the finger, which slides new chips
-    /// under a stationary off-center finger — continuous scrolling.
+    /// Runs while a drag is live: keeps the selection on the chip under the
+    /// finger, and — only when the finger holds inside an edge zone — flows
+    /// the strip toward that side, streaming farther chips under it.
     private var dragDisplayLink: CADisplayLink?
+
+    /// While a drag is live, a finger held inside this span at either end
+    /// flows the strip toward that side. At least the fade zone (where chips
+    /// are dissolving anyway), and never less than a fingertip.
+    private var edgeScrollZoneWidth: CGFloat {
+        max(edgeFadeWidth, 44)
+    }
 
     public init(style: Style = .thumbnails) {
         self.style = style
@@ -212,8 +221,8 @@ public final class CarouselScrubberView: UIView {
         guard itemViews.indices.contains(index) else { return }
         selectedIndex = index
         applySelectionAppearance()
-        // While a drag is live the display link owns the offset and is already
-        // gliding the selection to center.
+        // While a drag is live the strip must not shift under the finger —
+        // scrubbing is positional; the commit re-centers on release.
         if !isDragActive { scrollSelectedToCenter(animated: animated) }
     }
 
@@ -303,33 +312,46 @@ public final class CarouselScrubberView: UIView {
         dragDisplayLink = nil
     }
 
-    /// One frame of the live drag: select the chip under the finger, then ease
-    /// the strip toward centering it. Because the ease slides fresh chips
-    /// under a stationary finger, holding off-center keeps the strip flowing
-    /// toward that side — faster the farther from center — until it clamps at
-    /// an end or the finger returns to the middle.
+    /// One frame of the live drag. The strip holds still under a mid-strip
+    /// finger — scrubbing is positional, the chip under the finger is the
+    /// selection — but a finger held inside an edge zone flows the strip
+    /// toward that side (faster the deeper into the zone), streaming farther
+    /// chips under it until it clamps at an end or the finger pulls back.
     @objc private func dragTick(_ link: CADisplayLink) {
-        guard isDragActive, window != nil else {
+        guard isDragActive, window != nil, !itemViews.isEmpty else {
             stopDrag()
             return
         }
+        flowEdgeZone(link: link)
         let index = index(atX: dragLocationX)
         if index != selectedIndex {
             selectedIndex = index
             applySelectionAppearance()
             onPreview?(index)
         }
-        guard let target = centeringOffsetX(forIndex: selectedIndex) else { return }
-        let current = scrollView.contentOffset.x
-        let delta = target - current
-        guard abs(delta) > 0.1 else { return }
+    }
+
+    private func flowEdgeZone(link: CADisplayLink) {
+        let zone = min(edgeScrollZoneWidth, bounds.width / 3)
+        guard zone > 0 else { return }
+        // Signed depth into the zones: -1 at the strip's left edge … +1 at its
+        // right edge; 0 across the whole middle.
+        var depth: CGFloat = 0
+        if dragLocationX < zone {
+            depth = (dragLocationX - zone) / zone
+        } else if dragLocationX > bounds.width - zone {
+            depth = (dragLocationX - (bounds.width - zone)) / zone
+        }
+        depth = min(max(depth, -1), 1)
+        guard depth != 0,
+              let minOffset = centeringOffsetX(forIndex: 0),
+              let maxOffset = centeringOffsetX(forIndex: itemViews.count - 1)
+        else { return }
         let dt = CGFloat(max(link.targetTimestamp - link.timestamp, 1.0 / 120.0))
-        // Proportional glide, capped so long jumps stay readable.
         let pitch = itemSize.width + spacing
-        let maxStep = pitch * 8 * dt
-        let step = min(max(delta * 6 * dt, -maxStep), maxStep)
-        let clamped = abs(step) < abs(delta) ? step : delta
-        scrollView.contentOffset.x = current + clamped
+        let speed = pitch * 6 * depth
+        scrollView.contentOffset.x = min(
+            max(scrollView.contentOffset.x + speed * dt, minOffset), maxOffset)
     }
 }
 

@@ -52,6 +52,12 @@ final class ArticleCardsViewController: UIViewController {
     private let readerModeControl = LunaSegmentedControl()
     private let readerShareButton = UIButton(type: .system)
     private weak var readerForChrome: RabbitHoleReaderViewController?
+    /// The reader's scroll indicator, hosted here (not inside the card) so it can
+    /// slide from the card's trailing edge out to the screen edge as the card
+    /// immerses — the card's own clip would otherwise trap it at the card edge.
+    /// (Self-installed indicators inside the card remove themselves; see
+    /// `HorizonScrollIndicator`.)
+    private let cardScrollIndicator = HorizonScrollIndicator.makeHosted()
     private var chromeModes: [ReadingListItem.ReaderMode] = []
     private var items: [ReadingListItem] = []
     private var appliedFingerprint: [String] = []
@@ -101,6 +107,12 @@ final class ArticleCardsViewController: UIViewController {
 
         emptyView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyView)
+
+        // Above the carousel (so it clears the card's clip) but below the
+        // screen chrome added by the mount* calls (so the header/footer pills
+        // stay on top). Host-positioned every layout — no Auto Layout.
+        cardScrollIndicator.isHidden = true
+        view.addSubview(cardScrollIndicator)
 
         mountBottomControls()
         mountTopChrome()
@@ -222,6 +234,60 @@ final class ArticleCardsViewController: UIViewController {
             (carousel.contentController(at: index) as? ReaderCardContentViewController)?
                 .setTopContentInset(Self.contentEdgeFade)
         }
+    }
+
+    /// True only while the immersion slide is mid-flight, so routine layout
+    /// passes (which the card's bottom-extension provokes) don't snap the
+    /// indicator to its target and cut the animation short.
+    private var isIndicatorSliding = false
+
+    /// Places the reader's scroll indicator at the centered card's trailing edge,
+    /// sliding it out to the screen edge while the card is immersed. Only the
+    /// indicator moves — the reader keeps its inset, so nothing relayouts.
+    /// Hidden when the centered card has no scrollable reader (no article yet,
+    /// or RSVP, whose word display has nothing to scroll).
+    private func layoutCardScrollIndicator(animated: Bool) {
+        guard let reader = readerForChrome,
+              let scrollView = reader.focusedContentScrollView,
+              let resting = carousel.restingCenteredCardFrame(in: view)
+        else {
+            cardScrollIndicator.isHidden = true
+            cardScrollIndicator.track(nil)
+            return
+        }
+        cardScrollIndicator.isHidden = false
+        cardScrollIndicator.track(scrollView)
+
+        let width = HorizonScrollIndicator.bloomDiameter
+        let immersed = carousel.isImmersed
+        // Trailing edge: the card's at rest, the screen's while immersed. Only
+        // the card's BOTTOM extends on immersion — its top and sides hold.
+        let rightEdge = immersed ? view.bounds.maxX : resting.maxX
+        let top = resting.minY
+        let bottom = immersed ? view.bounds.maxY : resting.maxY
+        let frame = CGRect(
+            x: rightEdge - width, y: top, width: width, height: max(bottom - top, 0))
+        // Keep the dot inside the card's top/bottom edge dissolves.
+        cardScrollIndicator.trackInsets = UIEdgeInsets(
+            top: Self.contentEdgeFade, left: 0, bottom: Self.contentEdgeFade, right: 0)
+
+        let apply = {
+            self.cardScrollIndicator.frame = frame
+            self.cardScrollIndicator.layoutIfNeeded()
+        }
+        if animated {
+            isIndicatorSliding = true
+            UIView.animate(
+                withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
+                animations: apply, completion: { [weak self] _ in self?.isIndicatorSliding = false })
+        } else {
+            apply()
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if !isIndicatorSliding { layoutCardScrollIndicator(animated: false) }
     }
 
     private func updateReaderChrome() {
@@ -457,13 +523,18 @@ final class ArticleCardsViewController: UIViewController {
         }
         let content = ReaderCardContentViewController(item: items[itemIndex])
         content.onImmersionChange = { [weak self] immersed, extendsCard in
-            self?.carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
+            guard let self else { return }
+            self.carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
+            // Slide the scroll indicator between the card edge and the screen
+            // edge in step with the immersion (setImmersed's 0.32s ease-in-out).
+            self.layoutCardScrollIndicator(animated: true)
         }
         content.onReaderReady = { [weak self, weak content] reader in
             guard let self, content?.isCentered == true else { return }
             self.readerForChrome = reader
             self.updateExternalReaderInsets()
             self.updateReaderChrome()
+            self.layoutCardScrollIndicator(animated: false)
         }
         return content
     }
@@ -521,6 +592,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         if renderedPasteboardURL != nil, index == 0 {
             readerForChrome = nil
             updateReaderChrome()
+            layoutCardScrollIndicator(animated: false)
             // With no saved articles this card is centered by initial layout,
             // not by user intent; wait for its tap. Otherwise reaching index 0
             // is a swipe or mini-carousel selection and should add immediately.
@@ -533,6 +605,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
             .rabbitHoleReader
         updateExternalReaderInsets()
         updateReaderChrome()
+        layoutCardScrollIndicator(animated: false)
     }
 
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {

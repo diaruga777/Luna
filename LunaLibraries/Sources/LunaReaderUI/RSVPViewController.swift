@@ -631,7 +631,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             sourcePoint: sourceInWindow, outerURL: item.url ?? url,
             outerTitle: articleContent.title,
             contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0,
-            cardFrame: coordinator?.inlineReaderCardFrameInWindow)
+            cardFrame: coordinator?.inlineReaderCardFrameInWindow,
+            showsOuterContentBelow: coordinator?.inlineReaderShowsOuterContentBelow ?? false)
         inline.onOpen = { [weak coordinator, weak inline] in
             guard let inline else { return }
             coordinator?.inlineReaderWillPresent(inline)

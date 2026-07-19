@@ -324,7 +324,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             outerURL: focused.descriptor.url ?? url,
             outerTitle: focused.descriptor.title,
             contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0,
-            cardFrame: coordinator?.inlineReaderCardFrameInWindow)
+            cardFrame: coordinator?.inlineReaderCardFrameInWindow,
+            showsOuterContentBelow: coordinator?.inlineReaderShowsOuterContentBelow ?? false)
         overlay.onOpen = { [weak coordinator, weak overlay] in
             guard let overlay else { return }
             coordinator?.inlineReaderWillPresent(overlay)

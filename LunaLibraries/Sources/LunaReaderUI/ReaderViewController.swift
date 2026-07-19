@@ -343,6 +343,19 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         return contentContainer.convert(contentContainer.bounds, to: nil)
     }
 
+    public var inlineReaderShowsOuterContentBelow: Bool {
+        guard let currentChild else { return false }
+        return Self.firstScrollView(in: currentChild.view) != nil
+    }
+
+    private static func firstScrollView(in view: UIView) -> UIScrollView? {
+        if let scrollView = view as? UIScrollView { return scrollView }
+        for subview in view.subviews {
+            if let match = firstScrollView(in: subview) { return match }
+        }
+        return nil
+    }
+
     private func showCurrentMode() {
         if let old = currentChild {
             // Carry the reading position forward before tearing the child down.

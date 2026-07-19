@@ -888,7 +888,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
 
     func inlineReaderWillPresent(_ reader: ReaderChromeControlling) {
         guard isCentered else { return }
-        onImmersionChange?(true, true)
+        onImmersionChange?(true, rabbitHoleReader?.focusedContentScrollView != nil)
         onInlineReaderChange?(reader)
     }
 
@@ -908,6 +908,10 @@ private final class ReaderCardContentViewController: CardContentViewController,
     var inlineReaderCardFrameInWindow: CGRect {
         guard isViewLoaded else { return .zero }
         return view.convert(view.bounds, to: nil)
+    }
+
+    var inlineReaderShowsOuterContentBelow: Bool {
+        rabbitHoleReader?.focusedContentScrollView != nil
     }
 
     /// The resting clearance below the card's top edge — enough that an

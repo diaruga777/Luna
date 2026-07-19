@@ -127,7 +127,9 @@ enum UITestScreenBuilder {
                     sourcePoint: CGPoint(x: 226, y: 430),
                     outerURL: fixtureItem.url,
                     outerTitle: fixtureContent.title,
-                    contentTop: reader.inlineReaderTopEdgeInWindow)
+                    contentTop: reader.inlineReaderTopEdgeInWindow,
+                    cardFrame: reader.inlineReaderCardFrameInWindow,
+                    showsOuterContentBelow: reader.inlineReaderShowsOuterContentBelow)
                 nested.onOpen = { [weak reader, weak nested] in
                     guard let nested else { return }
                     reader?.inlineReaderWillPresent(nested)

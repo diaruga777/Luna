@@ -34,12 +34,15 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
 - `Luna/Reader/ArticleTextRenderer.swift` — blocks → `NSAttributedString` (title, headings, quotes, bullets, `.link` attributes from stored UTF-16 ranges).
 - `LunaReaderUI/SplitWebOverlayViewController.swift` is the full-size nested reader.
   Link activation resolves the link glyph/pill center and runs
-  `InlineReaderEclipseScene`: a black circle expands from that point while a second
+  a real custom UIKit presentation driven by `InlineReaderEclipseScene`: a black circle
+  expands from that point while a second
   reader-sized black surface fades in below and translates upward. Its corona and
   diamond-ring flare meet at the center of the incoming reader's top edge (the
   top-zenith variant of the root carousel eclipse). At totality the already-laid-out
   new page fades in quickly, while the covered reader's tab springs upward from
-  behind it. Reduce Motion uses a short ordered crossfade.
+  behind it. Dismissal and nested pops run that choreography in reverse: content and
+  the newest tab sink into totality before the eclipse drops and contracts back to the
+  source link. Reduce Motion uses a short ordered crossfade.
 - The hidden-bar child `UINavigationController` still owns the linked-page stack.
   Every embedded Scroll/RSVP link reports its source point through
   `onLinkActivatedAtPoint`, so every depth uses the same eclipse rather than a stock
@@ -49,13 +52,18 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
 - Ancestor tabs occupy the strip between the close/back and Save controls. They split
   that space equally until the favicon-plus-padding minimum would be violated, then
   become horizontally scrollable and initially align to the rightmost content. Tabs
-  contain an asynchronously fetched favicon plus a truncating title; when squeezed to
+  preserve their button instances while metadata changes so in-flight favicon fetches
+  are not cancelled. Each contains an asynchronously fetched favicon (with a visible
+  globe badge while it loads) plus a truncating title; when squeezed to
   the minimum, the title hides and the favicon remains. Selecting a tab unwinds to that
   reader (the outermost tab dismisses the overlay). `InlineReaderTabMetrics` is the
   pure, unit-tested fit/scroll sizing policy.
 - The old split snapshots/peek views are no longer created. The outgoing live reader
-  remains underneath the over-full-screen presentation, its header tucks during the
-  eclipse, and its scroll position is restored on dismissal. Animation work is limited
+  remains underneath a custom presentation controller that deliberately retains it,
+  its header tucks during the eclipse, and its scroll position is restored on dismissal.
+  When the reader is still embedded in the root card carousel, link activation also
+  calls the same carousel immersion path as scrolling down, fading the side cards,
+  rims, and scrub strip in step with the opening eclipse. Animation work is limited
   to pre-laid-out views, transforms, opacity, and a tiny drawn flare; favicon and
   extraction network work stays asynchronous. Simulator-only "Split High"/"Split Low"
   buttons still exercise high/low source origins.

@@ -2,16 +2,14 @@
 //  CarouselScrubberView.swift
 //  LunaDesignSystem
 //
-//  The scrub area under the cards: one small preview per card. At rest the
-//  selected chip is ALWAYS centered in the viewport — symmetric content insets
-//  let even the first and last chips reach center. Dragging is positional
-//  scrubbing: the strip holds still and the chip under the finger becomes the
-//  selection, so sweeping the finger pages precisely through the cards it
-//  crosses. Only while the finger holds inside an edge zone does the strip
-//  itself flow toward that side (a display link, speed scaling with depth into
-//  the zone), streaming farther chips under the stationary finger until
-//  release. Releasing commits and re-centers the chip under the finger; a
-//  quick flick instead pages a single card.
+//  The scrub area under the cards: one small preview per card, scrolled like a
+//  miniature carousel. The chip at the viewport's CENTER is the selection —
+//  panning the strip scrolls it natively (finger moving left brings chips, and
+//  thus cards, in from the right), and every chip that passes center previews
+//  its card live. Symmetric content insets let even the first and last chips
+//  reach center; releasing decelerates to the nearest chip dead-center
+//  (snapped via targetContentOffset) and commits it. Taps commit the tapped
+//  chip directly.
 //
 //  The strip has no container chrome — chips float directly on the background
 //  and fade-blur out as they approach either end (an alpha gradient mask plus
@@ -36,12 +34,10 @@ public final class CarouselScrubberView: UIView {
         case miniCards
     }
 
-    /// Continuous callback while a positional drag moves over the strip.
+    /// A new chip reached the strip's center while the user scrolls it.
     public var onPreview: ((Int) -> Void)?
-    /// The finger lifted after a positional drag (or a tap): commit this index.
+    /// The strip settled (or a chip was tapped): commit this index.
     public var onCommit: ((Int) -> Void)?
-    /// A quick flick: page by ±1.
-    public var onPageStep: ((Int) -> Void)?
 
     public let style: Style
 
@@ -80,23 +76,12 @@ public final class CarouselScrubberView: UIView {
     private let trailingBlur = UIVisualEffectView(effect: UIBlurEffect(style: .regular))
     private var itemViews: [ScrubberItemView] = []
     private var selectedIndex = 0
-    private var dragStartTime: CFTimeInterval = 0
-    /// True while a positional drag is live. The display link owns the content
-    /// offset for the drag's duration, so programmatic centering (layout
-    /// passes, external selection) must stand aside until release.
-    private var isDragActive = false
-    /// The finger's live x (in the strip's own coordinates) while a drag runs.
-    private var dragLocationX: CGFloat = 0
-    /// Runs while a drag is live: keeps the selection on the chip under the
-    /// finger, and — only when the finger holds inside an edge zone — flows
-    /// the strip toward that side, streaming farther chips under it.
-    private var dragDisplayLink: CADisplayLink?
 
-    /// While a drag is live, a finger held inside this span at either end
-    /// flows the strip toward that side. At least the fade zone (where chips
-    /// are dissolving anyway), and never less than a fingertip.
-    private var edgeScrollZoneWidth: CGFloat {
-        max(edgeFadeWidth, 44)
+    /// True while the strip's motion belongs to the user's finger (dragging or
+    /// the deceleration it launched). Programmatic centering must stand aside,
+    /// and only user-driven motion previews cards.
+    private var isUserScrolling: Bool {
+        scrollView.isDragging || scrollView.isDecelerating
     }
 
     public init(style: Style = .thumbnails) {
@@ -110,9 +95,10 @@ public final class CarouselScrubberView: UIView {
 
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        // The strip's own gestures do all the work; the scroll view is only a
-        // programmatically-scrolled viewport.
-        scrollView.panGestureRecognizer.isEnabled = false
+        // Native scrolling IS the scrub interaction; the fast deceleration
+        // rate plus the targetContentOffset snap settles a chip dead-center.
+        scrollView.decelerationRate = .fast
+        scrollView.delegate = self
         stripContainer.addSubview(scrollView)
 
         stack.axis = .horizontal
@@ -142,18 +128,12 @@ public final class CarouselScrubberView: UIView {
             stack.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
         ])
 
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        addGestureRecognizer(pan)
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         addGestureRecognizer(tap)
     }
 
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
-
-    deinit {
-        dragDisplayLink?.invalidate()
-    }
 
     public override var intrinsicContentSize: CGSize {
         CGSize(width: UIView.noIntrinsicMetric, height: preferredHeight)
@@ -162,7 +142,7 @@ public final class CarouselScrubberView: UIView {
     public override func layoutSubviews() {
         super.layoutSubviews()
         updateContentInsets()
-        if !isDragActive { scrollSelectedToCenter(animated: false) }
+        if !isUserScrolling { scrollSelectedToCenter(animated: false) }
         layoutEdgeVeils()
     }
 
@@ -221,9 +201,9 @@ public final class CarouselScrubberView: UIView {
         guard itemViews.indices.contains(index) else { return }
         selectedIndex = index
         applySelectionAppearance()
-        // While a drag is live the strip must not shift under the finger —
-        // scrubbing is positional; the commit re-centers on release.
-        if !isDragActive { scrollSelectedToCenter(animated: animated) }
+        // While the user is scrolling the strip, their finger (or its
+        // momentum) owns the offset; the settle commit re-centers.
+        if !isUserScrolling { scrollSelectedToCenter(animated: animated) }
     }
 
     /// Scrolls so the selected chip sits at the viewport's center. The
@@ -269,89 +249,60 @@ public final class CarouselScrubberView: UIView {
         onCommit?(index(atX: gesture.location(in: self).x))
     }
 
-    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-        guard !itemViews.isEmpty else { return }
-        switch gesture.state {
-        case .began:
-            isDragActive = true
-            dragStartTime = CACurrentMediaTime()
-            dragLocationX = gesture.location(in: self).x
-            startDragDisplayLink()
-        case .changed:
-            dragLocationX = gesture.location(in: self).x
-        case .ended:
-            stopDrag()
-            let duration = CACurrentMediaTime() - dragStartTime
-            if let step = CarouselScrubberMath.flickPageStep(
-                translationX: gesture.translation(in: self).x,
-                velocityX: gesture.velocity(in: self).x,
-                duration: duration
-            ) {
-                onPageStep?(step)
-            } else {
-                onCommit?(selectedIndex)
-            }
-        case .cancelled, .failed:
-            stopDrag()
-            onCommit?(selectedIndex)
-        default:
-            break
-        }
-    }
-
-    private func startDragDisplayLink() {
-        dragDisplayLink?.invalidate()
-        let link = CADisplayLink(target: self, selector: #selector(dragTick(_:)))
-        link.add(to: .main, forMode: .common)
-        dragDisplayLink = link
-    }
-
-    private func stopDrag() {
-        isDragActive = false
-        dragDisplayLink?.invalidate()
-        dragDisplayLink = nil
-    }
-
-    /// One frame of the live drag. The strip holds still under a mid-strip
-    /// finger — scrubbing is positional, the chip under the finger is the
-    /// selection — but a finger held inside an edge zone flows the strip
-    /// toward that side (faster the deeper into the zone), streaming farther
-    /// chips under it until it clamps at an end or the finger pulls back.
-    @objc private func dragTick(_ link: CADisplayLink) {
-        guard isDragActive, window != nil, !itemViews.isEmpty else {
-            stopDrag()
-            return
-        }
-        flowEdgeZone(link: link)
-        let index = index(atX: dragLocationX)
-        if index != selectedIndex {
-            selectedIndex = index
-            applySelectionAppearance()
-            onPreview?(index)
-        }
-    }
-
-    private func flowEdgeZone(link: CADisplayLink) {
-        let zone = min(edgeScrollZoneWidth, bounds.width / 3)
-        guard zone > 0 else { return }
-        // Signed depth into the zones: -1 at the strip's left edge … +1 at its
-        // right edge; 0 across the whole middle.
-        var depth: CGFloat = 0
-        if dragLocationX < zone {
-            depth = (dragLocationX - zone) / zone
-        } else if dragLocationX > bounds.width - zone {
-            depth = (dragLocationX - (bounds.width - zone)) / zone
-        }
-        depth = min(max(depth, -1), 1)
-        guard depth != 0,
-              let minOffset = centeringOffsetX(forIndex: 0),
-              let maxOffset = centeringOffsetX(forIndex: itemViews.count - 1)
-        else { return }
-        let dt = CGFloat(max(link.targetTimestamp - link.timestamp, 1.0 / 120.0))
+    /// The chip whose centered position is closest to content offset `x` —
+    /// i.e. the chip at (or nearest) the viewport's center at that offset.
+    private func nearestIndex(toOffsetX x: CGFloat) -> Int {
+        guard !itemViews.isEmpty else { return 0 }
         let pitch = itemSize.width + spacing
-        let speed = pitch * 6 * depth
-        scrollView.contentOffset.x = min(
-            max(scrollView.contentOffset.x + speed * dt, minOffset), maxOffset)
+        // Chip i sits centered at offset i·pitch − leftInset (see
+        // updateContentInsets), so invert and round to the nearest chip.
+        let index = Int(((x + scrollView.contentInset.left) / pitch).rounded())
+        return min(max(index, 0), itemViews.count - 1)
+    }
+}
+
+// MARK: - Scroll-driven scrubbing
+
+extension CarouselScrubberView: UIScrollViewDelegate {
+
+    /// Live preview: while the user scrolls the strip, every chip that passes
+    /// the viewport's center becomes the selection (and previews its card).
+    public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard isUserScrolling else { return }
+        let index = nearestIndex(toOffsetX: scrollView.contentOffset.x)
+        guard index != selectedIndex else { return }
+        selectedIndex = index
+        applySelectionAppearance()
+        onPreview?(index)
+    }
+
+    /// Snap: retarget the natural deceleration so it lands with the nearest
+    /// chip (momentum included) dead-center — including the first and last
+    /// chips, whose centered offsets are the scrollable range's ends.
+    public func scrollViewWillEndDragging(
+        _ scrollView: UIScrollView,
+        withVelocity velocity: CGPoint,
+        targetContentOffset: UnsafeMutablePointer<CGPoint>
+    ) {
+        let index = nearestIndex(toOffsetX: targetContentOffset.pointee.x)
+        guard let x = centeringOffsetX(forIndex: index) else { return }
+        targetContentOffset.pointee.x = x
+    }
+
+    public func scrollViewDidEndDragging(
+        _ scrollView: UIScrollView, willDecelerate decelerate: Bool
+    ) {
+        if !decelerate { commitCenteredChip() }
+    }
+
+    public func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        commitCenteredChip()
+    }
+
+    /// The strip settled: commit whichever chip ended up at center.
+    private func commitCenteredChip() {
+        guard !itemViews.isEmpty else { return }
+        onCommit?(nearestIndex(toOffsetX: scrollView.contentOffset.x))
     }
 }
 

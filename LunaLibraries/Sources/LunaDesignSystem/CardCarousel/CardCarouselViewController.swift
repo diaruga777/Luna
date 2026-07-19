@@ -13,8 +13,9 @@
 //    interactively (tracking the finger, playable forward and back); releasing
 //    finishes or cancels it. A tap on a peeked edge pages one card. Reduce
 //    Motion gets a crossfade. Non-centered cards rest heavily darkened.
-//  - The scrub strip pages one card on a flick, or jumps continuously while
-//    dragging (thumbnail preview over the centered card, committed on release).
+//  - The scrub strip scrolls like a miniature carousel: the chip at its center
+//    is the current card (previewed over the centered card while scrolling),
+//    and releasing settles the nearest chip dead-center and commits it.
 //  - Sound is off by default, toggled by the card's top-right mute button; a
 //    hardware volume press also unmutes.
 //
@@ -250,10 +251,6 @@ public final class CardCarouselViewController: UIViewController {
 
         scrubber.onPreview = { [weak self] index in self?.showScrubPreview(index) }
         scrubber.onCommit = { [weak self] index in self?.commitScrub(to: index) }
-        scrubber.onPageStep = { [weak self] step in
-            self?.removeScrubPreview()
-            self?.page(by: step)
-        }
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         // Let content-level taps (links inside an embedded reader, buttons)

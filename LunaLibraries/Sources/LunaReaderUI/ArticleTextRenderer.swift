@@ -68,7 +68,7 @@ public enum ArticleTextRenderer {
         var imageRanges: [(NSRange, URL)] = []
         let imagesDirectory = ReadingListStore.shared.articlesDirectory
         // Cap to the readable text column so images don't overflow on iPad.
-        let maxImageWidth = min(UIScreen.main.bounds.width - 40, 660)
+        let maxImageWidth = min(UIScreen.main.bounds.width - 100, 660)
 
         let titleParagraph = NSMutableParagraphStyle()
         titleParagraph.paragraphSpacing = content.author == nil ? 24 : 8

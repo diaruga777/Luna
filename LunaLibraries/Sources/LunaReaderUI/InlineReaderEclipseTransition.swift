@@ -141,6 +141,68 @@ final class InlineReaderEclipseScene {
         }
     }
 
+    /// Runs the opening choreography backwards: the outgoing reader first
+    /// dissolves into totality, then the eclipse drops away while the touch
+    /// circle contracts back into the link that opened it.
+    func animateReverse(
+        hiding outgoingView: UIView,
+        atZenith: @escaping () -> Void,
+        completion: @escaping () -> Void
+    ) {
+        let point = circle.center
+        let farthestX = max(point.x, container.bounds.width - point.x)
+        let farthestY = max(point.y, container.bounds.height - point.y)
+        let coverDiameter = hypot(farthestX, farthestY) * 2 + 8
+
+        circle.transform = CGAffineTransform(scaleX: coverDiameter / 2, y: coverDiameter / 2)
+        eclipse.transform = .identity
+        eclipse.alpha = 1
+        eclipse.layer.cornerRadius = 0
+        container.bringSubviewToFront(outgoingView)
+
+        atZenith()
+        UIView.animate(
+            withDuration: UIAccessibility.isReduceMotionEnabled ? 0.1 : Self.duration * 0.22,
+            delay: 0,
+            options: [.curveEaseIn, .beginFromCurrentState]
+        ) {
+            outgoingView.alpha = 0
+        } completion: { _ in
+            self.container.bringSubviewToFront(self.circle)
+            self.container.bringSubviewToFront(self.eclipse)
+            guard !UIAccessibility.isReduceMotionEnabled else {
+                self.eclipse.alpha = 0
+                self.circle.alpha = 0
+                self.finish(completion)
+                return
+            }
+
+            self.corona.alpha = 1
+            self.flare.alpha = 1
+            self.flare.transform = .identity
+            UIView.animateKeyframes(
+                withDuration: Self.duration * 0.78,
+                delay: 0,
+                options: [.calculationModeCubic, .beginFromCurrentState]
+            ) {
+                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.34) {
+                    self.corona.alpha = 0
+                    self.flare.alpha = 0
+                    self.flare.transform = CGAffineTransform(scaleX: 0.42, y: 0.42)
+                }
+                UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 1) {
+                    self.eclipse.transform = CGAffineTransform(
+                        translationX: 0, y: self.container.bounds.height * 0.34)
+                    self.eclipse.alpha = 0
+                    self.eclipse.layer.cornerRadius = 30
+                    self.circle.transform = .identity
+                }
+            } completion: { _ in
+                self.finish(completion)
+            }
+        }
+    }
+
     private func finish(_ completion: () -> Void) {
         guard !completed else { return }
         completed = true
@@ -196,17 +258,26 @@ private final class InlineReaderZenithFlareView: UIView {
 }
 
 final class InlineReaderEclipseAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+    enum Direction { case forward, reverse }
+
     let sourcePoint: CGPoint
+    let direction: Direction
     weak var sceneContainer: UIView?
+    var onTransitionStart: (() -> Void)?
     var atZenith: (() -> Void)?
+    var onCompletion: (() -> Void)?
 
     init(
         sourcePoint: CGPoint,
+        direction: Direction = .forward,
         sceneContainer: UIView? = nil,
+        onTransitionStart: (() -> Void)? = nil,
         atZenith: (() -> Void)? = nil
     ) {
         self.sourcePoint = sourcePoint
+        self.direction = direction
         self.sceneContainer = sceneContainer
+        self.onTransitionStart = onTransitionStart
         self.atZenith = atZenith
     }
 
@@ -215,31 +286,68 @@ final class InlineReaderEclipseAnimator: NSObject, UIViewControllerAnimatedTrans
     }
 
     func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
-        guard let fromView = transitionContext.view(forKey: .from),
-              let toView = transitionContext.view(forKey: .to) else {
+        guard let fromController = transitionContext.viewController(forKey: .from),
+              let toController = transitionContext.viewController(forKey: .to) else {
             transitionContext.completeTransition(false)
             return
         }
+        // Over-full-screen presentations are allowed to return nil for one of
+        // these view lookups even though both controller views are available.
+        let fromView = transitionContext.view(forKey: .from) ?? fromController.view!
+        let toView = transitionContext.view(forKey: .to) ?? toController.view!
 
         let container = transitionContext.containerView
-        toView.frame = transitionContext.finalFrame(
-            for: transitionContext.viewController(forKey: .to)!)
-        toView.alpha = 0
-        container.addSubview(toView)
-        container.bringSubviewToFront(fromView)
+        let finalFrame = transitionContext.finalFrame(for: toController)
+        // UIKit reports `.zero` for the retained presenting view during some
+        // over-full-screen dismissals. Never collapse that reader behind the
+        // receding eclipse.
+        toView.frame = finalFrame.isEmpty ? container.bounds : finalFrame
+        onTransitionStart?()
 
-        let scene = InlineReaderEclipseScene(
-            container: sceneContainer ?? container, sourcePoint: sourcePoint)
-        scene.animate(atZenith: { [weak self] in
-            container.bringSubviewToFront(toView)
+        switch direction {
+        case .forward:
             toView.alpha = 0
-            self?.atZenith?()
-            UIView.animate(withDuration: 0.14, delay: 0, options: [.curveEaseOut]) {
-                toView.alpha = 1
+            container.addSubview(toView)
+            container.bringSubviewToFront(fromView)
+            let scene = InlineReaderEclipseScene(
+                container: sceneContainer ?? container, sourcePoint: sourcePoint)
+            scene.animate(atZenith: { [weak self] in
+                container.bringSubviewToFront(toView)
+                toView.alpha = 0
+                self?.atZenith?()
+                UIView.animate(withDuration: 0.14, delay: 0, options: [.curveEaseOut]) {
+                    toView.alpha = 1
+                }
+            }, completion: { [weak self] in
+                let completed = !transitionContext.transitionWasCancelled
+                transitionContext.completeTransition(completed)
+                if completed { self?.onCompletion?() }
+            })
+
+        case .reverse:
+            toView.alpha = 1
+            // A custom presentation keeps the presenting controller mounted
+            // behind the transition container. Moving that live view into the
+            // temporary container makes UIKit discard it when dismissal ends.
+            // Only install it for navigation transitions where it is genuinely
+            // absent from the hierarchy.
+            if toView.window == nil, toView.superview == nil {
+                container.insertSubview(toView, belowSubview: fromView)
             }
-        }, completion: {
-            fromView.removeFromSuperview()
-            transitionContext.completeTransition(!transitionContext.transitionWasCancelled)
-        })
+            let scene = InlineReaderEclipseScene(
+                container: sceneContainer ?? container, sourcePoint: sourcePoint)
+            scene.animateReverse(hiding: fromView, atZenith: { [weak self] in
+                self?.atZenith?()
+            }, completion: { [weak self] in
+                let completed = !transitionContext.transitionWasCancelled
+                // UIKit can retain the dismissed over-full-screen view until
+                // the next transaction. Restore its model alpha before handing
+                // the hierarchy back so it cannot leave the shared transition
+                // container (or a cancelled dismissal) black.
+                fromView.alpha = 1
+                transitionContext.completeTransition(completed)
+                if completed { self?.onCompletion?() }
+            })
+        }
     }
 }

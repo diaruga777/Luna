@@ -127,7 +127,6 @@ enum UITestScreenBuilder {
                     sourcePoint: CGPoint(x: 226, y: 430),
                     outerURL: fixtureItem.url,
                     outerTitle: fixtureContent.title)
-                nested.modalPresentationStyle = .overFullScreen
                 return nested
             }
 
@@ -198,7 +197,7 @@ final class PresentingHostViewController: UIViewController {
         if modal.modalPresentationStyle == .automatic {
             modal.modalPresentationStyle = .fullScreen
         }
-        present(modal, animated: false)
+        present(modal, animated: modal is SplitWebOverlayViewController)
     }
 }
 

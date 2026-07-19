@@ -32,6 +32,12 @@ public protocol CardCarouselDataSource: AnyObject {
         _ carousel: CardCarouselViewController,
         contentControllerForCardAt index: Int
     ) -> CardContentViewController
+    /// Lightweight content for the large scrub overlay. Hosts can return the
+    /// real card (Downloader media) or a cheap representation (Reader excerpt).
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        previewContentControllerForCardAt index: Int
+    ) -> CardContentViewController?
     /// Small preview for the scrub strip; call the completion on any queue.
     func carousel(
         _ carousel: CardCarouselViewController,
@@ -59,6 +65,11 @@ public protocol CardCarouselDataSource: AnyObject {
 }
 
 public extension CardCarouselDataSource {
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        previewContentControllerForCardAt index: Int
+    ) -> CardContentViewController? { nil }
+
     func carousel(
         _ carousel: CardCarouselViewController,
         titleForCardAt index: Int
@@ -94,6 +105,10 @@ public struct CardCarouselStyle {
     /// one make the eclipse transition travel farther than the physical drag.
     public var pageSwipeMovementMultiplier: CGFloat = 1
     public var scrubberStyle: CarouselScrubberView.Style = .thumbnails
+    /// Mount and autoplay the previewed card's real content while the user
+    /// scrolls the scrub strip. Kept opt-in because media previews may create
+    /// players rapidly; the Downloader enables it for its thumbnail strip.
+    public var autoplaysScrubPreviewContent = false
     /// Horizontal room around the scrub strip. Hosts can increase this to
     /// flank the strip with floating controls without covering its content.
     public var scrubberHorizontalInset: CGFloat = 16
@@ -186,13 +201,10 @@ public final class CardCarouselViewController: UIViewController {
     private var previewOverlay: UIView?
     private var previewImageView: UIImageView?
     private var previewTitleLabel: UILabel?
-    /// Live content mounted inside the scrub preview once the finger settles on
-    /// an index (`.miniCards` style only — readers render cheaply; media content
-    /// would churn players). The big title label shows instantly; the real card
-    /// content replaces it after the debounce.
+    /// Host-supplied content mounted inside the scrub preview. Downloader media
+    /// is live/playable; Reader supplies an inexpensive text excerpt.
     private var previewContent: CardContentViewController?
     private var previewContentIndex: Int?
-    private var previewContentWork: DispatchWorkItem?
     /// Bumped on every reload so async thumbnail/badge completions from a
     /// superseded item set can't land on the wrong chip.
     private var stripLoadGeneration = 0
@@ -734,31 +746,25 @@ public final class CardCarouselViewController: UIViewController {
             dataSource?.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
                 DispatchQueue.main.async { self?.previewImageView?.image = image }
             }
+            if style.autoplaysScrubPreviewContent {
+                mountPreviewContent(at: index, autoplay: true)
+            }
         case .miniCards:
             previewTitleLabel?.text = dataSource?.carousel(self, titleForCardAt: index)
-            schedulePreviewContent(for: index)
+            mountPreviewContent(at: index)
         }
     }
 
-    /// Mounts the previewed card's REAL content into the overlay once the finger
-    /// rests on an index — so scrubbing shows full card contents, not a bare
-    /// title card. Debounced: sweeping across many chips must not build a full
-    /// content controller per chip.
-    private func schedulePreviewContent(for index: Int) {
+    private func mountPreviewContent(at index: Int, autoplay: Bool = false) {
         guard index != previewContentIndex else { return }
         unmountPreviewContent()
         previewTitleLabel?.isHidden = false
-        previewContentWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.mountPreviewContent(at: index) }
-        previewContentWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
-    }
-
-    private func mountPreviewContent(at index: Int) {
         guard let overlay = previewOverlay, let dataSource,
               index >= 0, index < count
         else { return }
-        let content = dataSource.carousel(self, contentControllerForCardAt: index)
+        guard let content = dataSource.carousel(
+            self, previewContentControllerForCardAt: index)
+        else { return }
         addChild(content)
         content.view.frame = overlay.bounds
         content.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -767,13 +773,14 @@ public final class CardCarouselViewController: UIViewController {
         content.setMuted(true)
         previewContent = content
         previewContentIndex = index
-        // The live content identifies itself (readers pin their own title bar).
+        if autoplay {
+            content.cardDidBecomeCentered()
+        }
+        // The mounted preview owns its complete visible presentation.
         previewTitleLabel?.isHidden = true
     }
 
     private func unmountPreviewContent() {
-        previewContentWork?.cancel()
-        previewContentWork = nil
         guard let content = previewContent else { return }
         content.setPlaying(false)
         content.willMove(toParent: nil)

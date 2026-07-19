@@ -49,6 +49,11 @@ own adapters later). The Downloader-specific adapters live in
   a chip commits it directly. Chips fade-blur out near the strip's ends
   (`CardCarouselStyle.scrubberEdgeFadeWidth` → `CarouselScrubberView
   .edgeFadeWidth`: an alpha gradient mask plus gradient-masked blur veils).
+  The Downloader opts into `autoplaysScrubPreviewContent`: as each thumbnail
+  reaches the strip's center, the large overlay mounts that card's real content
+  immediately and autoplays it muted (including looping videos and GIFs). Moving
+  to another thumbnail or committing the selection stops and unmounts that
+  temporary preview player.
 - **Audio** is off by default (`CardCarouselViewController.isSoundMuted`, carousel-
   wide). The mute/unmute button sits at the card's top-right and only shows when the
   content reports `supportsAudio` (videos discover their audio track async). Pressing
@@ -149,11 +154,11 @@ Differences from the Downloader, via `CardCarouselStyle`:
   and web saves a globe until the favicon lands (the data-source callback may
   fire twice: instant fallback, then the fetched icon —
   `ArticleSourceBadge.fallback(for:)`, unit-tested in `SourceBadgeTests`).
-  Scrolling the strip shows the title instantly,
-  then mounts the previewed card's REAL live content into the overlay once a
-  chip rests at the strip's center for ~120ms (debounced so scrolling through
-  chips doesn't build a reader per chip) — scrubbed-to cards render their full
-  contents, not a bare title card.
+  Scrolling the strip immediately shows a lightweight article card containing
+  the title, author, and a bounded text excerpt beginning at the saved reading
+  position (`lastWordIndex`, with `readingProgress` as fallback). It never builds
+  a `RabbitHoleReaderViewController`, lays out the full article, or loads a web
+  view merely to preview a chip; only the committed/neighbor cards stay live.
 - EVERY mounted card (centered + both side peeks) embeds a full live
   `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out to the
   card's bounds — the card view IS the fullscreen reader view (one header, one

@@ -43,6 +43,7 @@ final class SavedMediaCardsViewController: UIViewController {
 
         var style = CardCarouselStyle()
         style.pageSwipeMovementMultiplier = 1.5
+        style.autoplaysScrubPreviewContent = true
         carousel.style = style
         carousel.dataSource = self
         carousel.delegate = self
@@ -382,6 +383,13 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
                 Self.loadPhotosImage(identifier: identifier, targetSize: PHImageManagerMaximumSize, completion: completion)
             })
         }
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        previewContentControllerForCardAt index: Int
+    ) -> CardContentViewController? {
+        self.carousel(carousel, contentControllerForCardAt: index)
     }
 
     func carousel(

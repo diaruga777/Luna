@@ -575,6 +575,30 @@ final class ArticleCardsViewController: UIViewController {
         completion(nil)   // mini-card strip; no image chips
     }
 
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        previewContentControllerForCardAt index: Int
+    ) -> CardContentViewController? {
+        if renderedPasteboardURL != nil, index == 0 {
+            return PasteboardCardContentViewController(url: renderedPasteboardURL)
+        }
+        guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
+        let listedItem = items[itemIndex]
+        let item = store.item(withID: listedItem.id) ?? listedItem
+        guard let content = store.content(for: item) else {
+            return ArticleScrubPreviewViewController(
+                title: item.title ?? item.url?.host ?? item.urlString,
+                author: nil,
+                excerpt: ArticleScrubPreviewText.unavailableText(for: item.state))
+        }
+        return ArticleScrubPreviewViewController(
+            title: content.title,
+            author: content.author,
+            excerpt: ArticleScrubPreviewText.excerpt(
+                from: content, aroundWordIndex: item.lastWordIndex,
+                readingProgress: item.readingProgress))
+    }
+
     /// Chip badge: an instant fallback (initials / mail / document / globe)
     /// first, then the site's real favicon replaces it once fetched. Cached
     /// icons resolve synchronously, so a warm strip shows favicons at once.

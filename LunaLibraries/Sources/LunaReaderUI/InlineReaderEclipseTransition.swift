@@ -280,7 +280,6 @@ final class InlineReaderEclipseAnimator: NSObject, UIViewControllerAnimatedTrans
     let sceneFrame: CGRect?
     var onTransitionStart: (() -> Void)?
     var atZenith: (() -> Void)?
-    var onCompletion: (() -> Void)?
 
     init(
         sourcePoint: CGPoint,
@@ -336,10 +335,9 @@ final class InlineReaderEclipseAnimator: NSObject, UIViewControllerAnimatedTrans
                 UIView.animate(withDuration: 0.14, delay: 0, options: [.curveEaseOut]) {
                     toView.alpha = 1
                 }
-            }, completion: { [weak self] in
+            }, completion: {
                 let completed = !transitionContext.transitionWasCancelled
                 transitionContext.completeTransition(completed)
-                if completed { self?.onCompletion?() }
             })
 
         case .reverse:
@@ -357,7 +355,7 @@ final class InlineReaderEclipseAnimator: NSObject, UIViewControllerAnimatedTrans
                 frame: sceneFrame)
             scene.animateReverse(hiding: fromView, atZenith: { [weak self] in
                 self?.atZenith?()
-            }, completion: { [weak self] in
+            }, completion: {
                 let completed = !transitionContext.transitionWasCancelled
                 // UIKit can retain the dismissed over-full-screen view until
                 // the next transaction. Restore its model alpha before handing
@@ -365,7 +363,6 @@ final class InlineReaderEclipseAnimator: NSObject, UIViewControllerAnimatedTrans
                 // container (or a cancelled dismissal) black.
                 fromView.alpha = 1
                 transitionContext.completeTransition(completed)
-                if completed { self?.onCompletion?() }
             })
         }
     }

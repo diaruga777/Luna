@@ -63,6 +63,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp, .original]
 
     private var didDismiss = false
+    private var didNotifyDismissal = false
     private var pendingSourcePoint: CGPoint?
     private var pendingTabInsertion = false
     private var pageSourcePoints: [ObjectIdentifier: CGPoint] = [:]
@@ -110,9 +111,13 @@ public final class SplitWebOverlayViewController: UIViewController,
         cardView.setBorderEnabled(true)
         cardView.setContentEdgeFadeHeight(28)
         view.addSubview(cardView)
-        setUpInnerNav()
         scrollIndicator.isHidden = true
         view.addSubview(scrollIndicator)
+        setUpInnerNav()
+        // `setUpInnerNav` may synchronously load a cached page and publish its
+        // scroll view. Install the hosted indicator first, then make one final
+        // idempotent sweep so that target cannot be hidden after publication.
+        updateScrollIndicatorTarget()
     }
 
     public override func viewDidLayoutSubviews() {
@@ -135,6 +140,15 @@ public final class SplitWebOverlayViewController: UIViewController,
         didDismiss = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         dismiss(animated: true)
+    }
+
+    fileprivate func presentationDidDismiss() {
+        guard !didNotifyDismissal else { return }
+        didNotifyDismissal = true
+        onDismiss?()
+        // Async WebKit/title work may finish after UIKit has removed the
+        // presentation. It must never reclaim the shared outer chrome target.
+        onChromeStateChanged = nil
     }
 
     // MARK: - Modal eclipse presentation
@@ -170,14 +184,12 @@ public final class SplitWebOverlayViewController: UIViewController,
 
     public func animationController(forDismissed dismissed: UIViewController)
         -> UIViewControllerAnimatedTransitioning? {
-        let animator = InlineReaderEclipseAnimator(
+        return InlineReaderEclipseAnimator(
             sourcePoint: initialSourcePoint,
             direction: .reverse,
             sceneFrame: inlineCardFrameInWindow,
             onTransitionStart: { [weak self] in self?.onClose?() },
             atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
-        animator.onCompletion = { [weak self] in self?.onDismiss?() }
-        return animator
     }
 
     // MARK: - Reader stack
@@ -594,6 +606,17 @@ private final class InlineReaderPresentationController: UIPresentationController
     }
 
     override var shouldRemovePresentersView: Bool { false }
+
+    override func dismissalTransitionDidEnd(_ completed: Bool) {
+        super.dismissalTransitionDidEnd(completed)
+        guard completed,
+              let overlay = presentedViewController as? SplitWebOverlayViewController
+        else { return }
+        // Presentation controllers remain retained through this callback. An
+        // animator may be released synchronously by `completeTransition`, so it
+        // must not own restoration of the outer chrome/scroll-indicator target.
+        overlay.presentationDidDismiss()
+    }
 
     override func presentationTransitionDidEnd(_ completed: Bool) {
         super.presentationTransitionDidEnd(completed)

@@ -557,6 +557,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// Centers the link pill below the focal word / phrase band. In Phrases mode it
     /// tucks into the gap JUST below the reticule panel (above the lower context,
     /// which is laid out below it) rather than floating down over the context text.
+    /// In Words mode it sits centered in the band between the bottom reticule mark
+    /// (ends at centerY + 60, see layoutFocusPill) and the lower context text
+    /// (starts at centerY + 116, see layoutContext), clear of both.
     private func layoutLinkPill() {
         let centerY = focalCenterY
         let maxWidth = view.bounds.width - 64
@@ -567,7 +570,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         let width = min(max(fitted.width, 80), maxWidth)
         let y = displayMode == .phrases
             ? centerY + phrasePanel.bounds.height / 2 + Self.phrasePillGap
-            : centerY + 84
+            : centerY + 88 - Self.phrasePillHeight / 2
         linkPill.frame = CGRect(
             x: (view.bounds.width - width) / 2, y: y, width: width, height: Self.phrasePillHeight)
     }

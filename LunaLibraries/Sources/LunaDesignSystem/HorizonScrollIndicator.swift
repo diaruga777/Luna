@@ -78,6 +78,12 @@ public final class HorizonScrollIndicator: UIView {
         let indicator = HorizonScrollIndicator(hostManaged: false)
         indicator.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(indicator)
+        // `didMoveToWindow` deliberately removes self-installed indicators when
+        // the container lives inside a carousel card (the card host owns the
+        // escape-the-clip indicator). If that synchronous retreat happened during
+        // `addSubview`, activating constraints against the now-detached indicator
+        // would raise an Objective-C Auto Layout exception.
+        guard indicator.superview === container else { return indicator }
         NSLayoutConstraint.activate([
             indicator.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             indicator.topAnchor.constraint(equalTo: scrollView.topAnchor),

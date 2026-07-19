@@ -6,6 +6,25 @@
 import LunaDesignSystem
 import UIKit
 
+/// Geometry contract keeping tabs outside an otherwise unchanged root-card frame.
+public struct InlineReaderPresentationMetrics: Equatable {
+    public let presentationFrameInWindow: CGRect
+    public let localCardFrame: CGRect
+
+    public init(cardFrameInWindow: CGRect, tabHeight: CGFloat) {
+        let height = max(tabHeight, 0)
+        presentationFrameInWindow = CGRect(
+            x: cardFrameInWindow.minX,
+            y: cardFrameInWindow.minY - height,
+            width: cardFrameInWindow.width,
+            height: cardFrameInWindow.height + height)
+        localCardFrame = CGRect(
+            x: 0, y: height,
+            width: cardFrameInWindow.width,
+            height: cardFrameInWindow.height)
+    }
+}
+
 /// Pure sizing policy for the nested-reader tab strip.
 public struct InlineReaderTabMetrics: Equatable {
     public let tabWidths: [CGFloat]
@@ -64,18 +83,28 @@ final class InlineReaderEclipseScene {
 
     private let container: UIView
     private let surface = UIView()
+    private let clippedSurface = UIView()
     private let circle = UIView()
     private let eclipse = UIView()
-    private let corona = UIView()
+    private lazy var corona = CardEclipseTransition.makeCorona(frame: surface.bounds)
     private let flare = EclipseFlareView()
     private var completed = false
 
     init(container: UIView, sourcePoint: CGPoint, frame: CGRect? = nil) {
         self.container = container
         surface.frame = frame ?? container.bounds
-        surface.clipsToBounds = true
+        surface.clipsToBounds = false
         surface.isUserInteractionEnabled = false
         container.addSubview(surface)
+
+        corona.alpha = 0
+        surface.addSubview(corona)
+
+        clippedSurface.frame = surface.bounds
+        clippedSurface.clipsToBounds = true
+        clippedSurface.layer.cornerRadius = CarouselCardView.cornerRadius
+        clippedSurface.layer.cornerCurve = .continuous
+        surface.addSubview(clippedSurface)
 
         let localPoint = CGPoint(
             x: sourcePoint.x - surface.frame.minX,
@@ -88,7 +117,7 @@ final class InlineReaderEclipseScene {
         circle.backgroundColor = .black
         circle.layer.cornerRadius = 1
         circle.isUserInteractionEnabled = false
-        surface.addSubview(circle)
+        clippedSurface.addSubview(circle)
 
         eclipse.frame = surface.bounds
         eclipse.backgroundColor = .black
@@ -97,17 +126,7 @@ final class InlineReaderEclipseScene {
         eclipse.transform = CGAffineTransform(translationX: 0, y: surface.bounds.height * 0.34)
         eclipse.alpha = 0
         eclipse.isUserInteractionEnabled = false
-        surface.addSubview(eclipse)
-
-        corona.frame = CGRect(x: 20, y: -2, width: max(surface.bounds.width - 40, 0), height: 4)
-        corona.backgroundColor = .white
-        corona.layer.cornerRadius = 2
-        corona.layer.shadowColor = UIColor.white.cgColor
-        corona.layer.shadowOpacity = 0.95
-        corona.layer.shadowRadius = 26
-        corona.layer.shadowOffset = .zero
-        corona.alpha = 0
-        eclipse.addSubview(corona)
+        clippedSurface.addSubview(eclipse)
 
         flare.bounds = CGRect(x: 0, y: 0, width: 130, height: 130)
         flare.center = CGPoint(x: eclipse.bounds.midX, y: 0)
@@ -148,8 +167,13 @@ final class InlineReaderEclipseScene {
                 self.eclipse.alpha = 1
                 self.eclipse.layer.cornerRadius = 0
             }
-            UIView.addKeyframe(withRelativeStartTime: 0.82, relativeDuration: 0.18) {
+            UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.8) {
+                self.corona.alpha = 0.08
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.8, relativeDuration: 0.2) {
                 self.corona.alpha = 1
+            }
+            UIView.addKeyframe(withRelativeStartTime: 0.82, relativeDuration: 0.18) {
                 self.flare.alpha = 1
                 self.flare.transform = .identity
             }

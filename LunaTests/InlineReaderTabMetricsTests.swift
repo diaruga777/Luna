@@ -64,4 +64,28 @@ final class InlineReaderTabMetricsTests: XCTestCase {
         XCTAssertEqual(metrics.initialContentOffsetX, 16, accuracy: 0.001)
         XCTAssertTrue(metrics.scrolls)
     }
+
+    func testManyTabsAlwaysHaveOneFiniteWidthEach() {
+        let metrics = InlineReaderTabMetrics(
+            availableWidth: 260,
+            idealWidths: Array(repeating: 120, count: 12),
+            minimumTabWidth: 38,
+            spacing: -9)
+
+        XCTAssertEqual(metrics.tabWidths.count, 12)
+        XCTAssertTrue(metrics.tabWidths.allSatisfy { $0.isFinite && $0 >= 38 })
+        XCTAssertTrue(metrics.contentWidth.isFinite)
+        XCTAssertTrue(metrics.scrolls)
+    }
+
+    func testTabsSitAboveCardWithoutChangingCardHeight() {
+        let card = CGRect(x: 10, y: 120, width: 380, height: 650)
+        let metrics = InlineReaderPresentationMetrics(
+            cardFrameInWindow: card, tabHeight: 42)
+
+        XCTAssertEqual(metrics.presentationFrameInWindow, CGRect(
+            x: 10, y: 78, width: 380, height: 692))
+        XCTAssertEqual(metrics.localCardFrame, CGRect(
+            x: 0, y: 42, width: 380, height: 650))
+    }
 }

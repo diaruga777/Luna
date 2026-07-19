@@ -324,7 +324,7 @@ public final class CardEclipseTransition {
     /// each a white rounded rect matching the sun's silhouette whose shadow is
     /// the light. The card body above them is opaque, so only the glow escaping
     /// past the edges is visible.
-    private static func makeCorona(frame: CGRect) -> UIView {
+    public static func makeCorona(frame: CGRect) -> UIView {
         let corona = UIView(frame: frame)
         corona.isUserInteractionEnabled = false
         for (radius, opacity) in [(CGFloat(48), Float(0.95)), (CGFloat(14), Float(1))] {

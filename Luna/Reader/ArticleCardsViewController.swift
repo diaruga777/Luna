@@ -108,6 +108,10 @@ final class ArticleCardsViewController: UIViewController {
         carousel.didMove(toParent: self)
 
         emptyView.translatesAutoresizingMaskIntoConstraints = false
+        // Stay hidden until the first `reload()` confirms the list is genuinely
+        // empty — otherwise the "No Saved Articles" state paints for the frames
+        // before the store has been read, flashing on every cold launch.
+        emptyView.isHidden = true
         view.addSubview(emptyView)
 
         // Above the carousel (so it clears the card's clip) but below the
@@ -139,6 +143,12 @@ final class ArticleCardsViewController: UIViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(refreshPasteboardURL),
             name: UIPasteboard.changedNotification, object: nil)
+        // Load and show the saved articles synchronously, before first paint —
+        // `store.items()` serves an in-memory cache, so this is cheap. The
+        // pasteboard probe below is async (a `detectPatterns` round-trip); it
+        // used to be the ONLY caller of `reload()` on launch, so the cards
+        // didn't appear until it returned and the empty state showed until then.
+        reload()
         refreshPasteboardURL()
     }
 

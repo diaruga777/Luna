@@ -159,25 +159,30 @@ Differences from the Downloader, via `CardCarouselStyle`:
 - Reader cards use a real Liquid Glass edge surface: a `UIGlassEffect` view is
   masked to a narrow rounded ring over the card content, with a trait-aware
   hairline highlight. The rim refracts the page beneath it instead of drawing
-  only a flat border. It fades to zero with the side cards, mini carousel, and
-  floating controls whenever scrolling or RSVP playback enters immersion.
-- On the Reader root, that control row is hosted at screen level over a
-  backdrop-only ultra-thin material spanning the complete top safe area and
-  header. The carousel and reader content extend behind it; the scroll reader
-  reserves the row with `contentInset.top`, so its resting first line stays
-  clear while scrolled/overscrolled content is blurred underneath. The overlay
-  has no fill, separator, border, or shadow. Its opacity is zero at the resting
-  scroll position and ramps in only as content crosses beneath it, so UIKit's
-  material tint cannot reveal a band against a uniform light or dark page.
+  only a flat border. It fades to zero with the side cards and mini carousel
+  whenever scrolling or RSVP playback enters immersion. The mask MUST be the
+  view-level `UIView.mask` — `UIVisualEffectView` silently ignores
+  `layer.mask`, which frosts the entire card.
+- On the Reader root, the control row is hosted at screen level over the bare
+  screen background — no bar, fill, or blur behind it — and the cards rest
+  fully BELOW the row (`setTopInset`): the card frames only reader content,
+  never the controls. There is no blur header/footer anywhere. Instead, card
+  content dissolves over `CardCarouselStyle.contentEdgeFadeHeight` (Reader:
+  28pt; 0 = hard clip, the default for other hosts) at the card's top and
+  bottom edges via a gradient mask on the card's content container. The scroll
+  reader reserves the top fade run with `contentInset.top`
+  (`externalChromeContentInset`), so the resting first line starts fully
+  legible; scrolled content fades away as it approaches an edge.
 - **"Fullscreen" is a chrome fade, nothing more** — no navigation push, no
   card-geometry choreography. `CardCarouselViewController.setImmersed(_:animated:)`
   fades the peeking side cards and the scrub strip out and extends only the
   centered card's bottom edge into the room the strip frees up (top, sides,
   corner radius, and the reader's own header pills never move or change;
-  paging, peek taps, and the strip are inert while immersed).
-  The host fades its flanking Settings/Share circles in step via the carousel's
-  `onImmersionChanged` callback, which also covers the internal reset on a
-  reload.
+  paging, peek taps, and the strip are inert while immersed). The immersed
+  card also clears its surface tone (`setSurfaceHidden`) so the edge fades
+  dissolve into the screen background instead of silhouetting the retired
+  card. The screen-level header row and the flanking Settings/Share circles
+  PERSIST through immersion — only carousel chrome fades.
   The card content drives it directionally from the embedded reader (KVO on
   its scroll views, re-swept via
   `RabbitHoleReaderViewController.onContentHierarchyChanged` when a dive/pop/

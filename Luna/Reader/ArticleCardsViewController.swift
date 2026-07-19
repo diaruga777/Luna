@@ -51,10 +51,6 @@ final class ArticleCardsViewController: UIViewController {
     private let readerAudioButton = UIButton(type: .system)
     private let readerModeControl = LunaSegmentedControl()
     private let readerShareButton = UIButton(type: .system)
-    /// A backdrop-only material: clear at rest, visible only through the
-    /// distortion of reader content passing behind the status/header region.
-    private let readerTopBlur = UIVisualEffectView(
-        effect: UIBlurEffect(style: .systemUltraThinMaterial))
     private weak var readerForChrome: RabbitHoleReaderViewController?
     private var chromeModes: [ReadingListItem.ReaderMode] = []
     private var items: [ReadingListItem] = []
@@ -80,27 +76,24 @@ final class ArticleCardsViewController: UIViewController {
         style.pagesOnInCardSwipes = true
         style.pageSwipeMovementMultiplier = 1.5
         style.scrubberStyle = .miniCards
-        style.scrubberHorizontalInset = 70
+        // The strip runs edge to edge; chips fade-blur out before they reach
+        // the flanking Settings/Share circles (12pt margin + 44pt button).
+        style.scrubberHorizontalInset = 0
+        style.scrubberEdgeFadeWidth = 72
         // Glass rim so the cards (and the dimmed side peeks, especially in dark
         // mode) read against a same-tone background; fades with the chrome on
         // immersion.
         style.showsCardBorder = true
+        // Scrolled reader content dissolves at the card's top and bottom edges
+        // instead of hitting a hard clip (or any blur bar).
+        style.contentEdgeFadeHeight = Self.contentEdgeFade
         carousel.style = style
         carousel.managesAudioSession = false   // Reader has its own audio stack.
         carousel.dataSource = self
         carousel.delegate = self
-        carousel.onImmersionChanged = { [weak self] immersed in
-            guard let self else { return }
-            // The flanking Settings/Share circles are bottom chrome — they fade
-            // in step with the scrub strip they flank (this runs inside the
-            // carousel's fade animation).
-            self.settingsButton.alpha = immersed ? 0 : 1
-            self.readerShareButton.alpha = immersed ? 0 : 1
-            self.settingsButton.isUserInteractionEnabled = !immersed
-            self.readerShareButton.isUserInteractionEnabled = !immersed
-            self.readerChromeRow.alpha = immersed ? 0 : 1
-            self.readerChromeRow.isUserInteractionEnabled = !immersed
-        }
+        // The header row and the flanking Settings/Share circles persist through
+        // immersion — only the carousel's own chrome (side cards, scrub strip,
+        // card rims) fades while reading.
         addChild(carousel)
         view.addSubview(carousel.view)
         carousel.view.translatesAutoresizingMaskIntoConstraints = false
@@ -138,32 +131,36 @@ final class ArticleCardsViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
-        carousel.setTopInset(0)
+        applyCarouselTopInset()
         updateExternalReaderInsets()
     }
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
-        carousel.setTopInset(0)
+        applyCarouselTopInset()
         updateExternalReaderInsets()
     }
 
-    /// Room reserved above the cards for the screen-level chrome row: the row
-    /// spans safeTop+4 … safeTop+48; the carousel's own 12pt vertical padding
-    /// then puts the card top 8pt below the row.
+    /// Cards rest fully below the header row — the card frames only the reader
+    /// content; the buttons and controls float over the screen background.
+    private func applyCarouselTopInset() {
+        carousel.setTopInset(view.safeAreaInsets.top + 4 + Self.topChromeClearance)
+    }
+
+    /// The height of the screen-level chrome row: it spans safeTop+4 …
+    /// safeTop+48; the carousel's top inset plus its own 12pt vertical padding
+    /// then rest the card top 12pt below the row.
     private static let topChromeClearance: CGFloat = 44
 
-    /// Floats the controls over the reader. The blur extends through the entire
-    /// top safe area and the row; it has no fill, separator, border, or shadow,
-    /// so a uniform page remains visually uniform beneath it.
-    private func mountTopChrome() {
-        readerTopBlur.isUserInteractionEnabled = false
-        readerTopBlur.alpha = 0
-        readerTopBlur.backgroundColor = .clear
-        readerTopBlur.contentView.backgroundColor = .clear
-        readerTopBlur.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(readerTopBlur)
+    /// The depth of the dissolve at the card's top and bottom edges: scrolled
+    /// content fades out over this run instead of hitting a hard clip. The
+    /// resting scroll position sits just below the top fade so an unscrolled
+    /// page starts fully legible.
+    private static let contentEdgeFade: CGFloat = 28
 
+    /// Floats the control row above the cards, over the bare screen background
+    /// — no bar, fill, or blur behind it.
+    private func mountTopChrome() {
         readerChromeRow.backgroundColor = .clear
         readerChromeRow.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(readerChromeRow)
@@ -185,12 +182,6 @@ final class ArticleCardsViewController: UIViewController {
         }
 
         NSLayoutConstraint.activate([
-            readerTopBlur.topAnchor.constraint(equalTo: view.topAnchor),
-            readerTopBlur.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            readerTopBlur.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            readerTopBlur.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor, constant: Self.topChromeClearance + 8),
-
             readerChromeRow.topAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
             readerChromeRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
@@ -224,11 +215,12 @@ final class ArticleCardsViewController: UIViewController {
         ])
     }
 
+    /// The reader's resting scroll position clears the card's top edge fade;
+    /// content scrolled past it dissolves inside the fade run.
     private func updateExternalReaderInsets() {
-        let headerBottom = view.safeAreaInsets.top + Self.topChromeClearance + 8
         for index in [carousel.currentIndex - 1, carousel.currentIndex, carousel.currentIndex + 1] {
             (carousel.contentController(at: index) as? ReaderCardContentViewController)?
-                .setExternalChromeBottom(headerBottom)
+                .setTopContentInset(Self.contentEdgeFade)
         }
     }
 
@@ -271,8 +263,9 @@ final class ArticleCardsViewController: UIViewController {
         updateReaderChrome()
     }
 
-    /// Flanks the title scrubber with Settings and Share. The shared
-    /// carousel reserves matching horizontal space only for the Reader style.
+    /// Flanks the title scrubber with Settings and Share. The strip itself
+    /// runs edge to edge underneath; its chips fade-blur out before reaching
+    /// these buttons (`scrubberEdgeFadeWidth`).
     private func mountBottomControls() {
         configureBottomButton(
             settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
@@ -466,10 +459,6 @@ final class ArticleCardsViewController: UIViewController {
         content.onImmersionChange = { [weak self] immersed in
             self?.carousel.setImmersed(immersed, animated: true)
         }
-        content.onTopBackdropProgress = { [weak self, weak content] progress in
-            guard content?.isCentered == true else { return }
-            self?.readerTopBlur.alpha = progress
-        }
         content.onReaderReady = { [weak self, weak content] reader in
             guard let self, content?.isCentered == true else { return }
             self.readerForChrome = reader
@@ -531,7 +520,6 @@ extension ArticleCardsViewController: CardCarouselDelegate {
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
         if renderedPasteboardURL != nil, index == 0 {
             readerForChrome = nil
-            readerTopBlur.alpha = 0
             updateReaderChrome()
             // With no saved articles this card is centered by initial layout,
             // not by user intent; wait for its tap. Otherwise reaching index 0
@@ -543,7 +531,6 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         store.markReadState(.opened, for: items[itemIndex].id)
         readerForChrome = (carousel.contentController(at: index) as? ReaderCardContentViewController)?
             .rabbitHoleReader
-        readerTopBlur.alpha = 0
         updateExternalReaderInsets()
         updateReaderChrome()
     }
@@ -673,7 +660,6 @@ private final class ReaderCardContentViewController: CardContentViewController {
     /// under way) or back in (false — the user is surfacing).
     var onImmersionChange: ((Bool) -> Void)?
     var onReaderReady: ((RabbitHoleReaderViewController) -> Void)?
-    var onTopBackdropProgress: ((CGFloat) -> Void)?
 
     private let item: ReadingListItem
     private let statusLabel = UILabel()
@@ -743,7 +729,6 @@ private final class ReaderCardContentViewController: CardContentViewController {
         super.cardDidLeaveCenter()
         isCentered = false
         scrollRuns = [:]
-        onTopBackdropProgress?(0)
     }
 
     private func embedReaderIfPossible() {
@@ -799,10 +784,10 @@ private final class ReaderCardContentViewController: CardContentViewController {
         }
     }
 
-    func setExternalChromeBottom(_ screenY: CGFloat) {
-        guard let rabbitHoleReader else { return }
-        let localY = view.convert(CGPoint(x: 0, y: screenY), from: nil).y
-        rabbitHoleReader.externalChromeContentInset = max(localY, 0)
+    /// The resting clearance below the card's top edge — enough that an
+    /// unscrolled page starts below the card's top-edge dissolve.
+    func setTopContentInset(_ inset: CGFloat) {
+        rabbitHoleReader?.externalChromeContentInset = max(inset, 0)
     }
 
     /// Hooks the immersion triggers onto the reader's live content (KVO on
@@ -844,10 +829,6 @@ private final class ReaderCardContentViewController: CardContentViewController {
         }
         // Distance from the content's top (0 = at the top).
         let position = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-        // A backdrop material always carries a slight trait-aware tint. Keep it
-        // literally absent at rest, then reveal it only as content crosses into
-        // the occluded header region.
-        onTopBackdropProgress?(max(0, min(1, position / 12)))
         guard let previous = scrollRuns[key] else {
             scrollRuns[key] = (position, 0)
             return

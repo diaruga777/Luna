@@ -126,7 +126,20 @@ enum UITestScreenBuilder {
                     cutY: 430, topHalf: nil, bottomHalf: nil,
                     sourcePoint: CGPoint(x: 226, y: 430),
                     outerURL: fixtureItem.url,
-                    outerTitle: fixtureContent.title)
+                    outerTitle: fixtureContent.title,
+                    contentTop: reader.inlineReaderTopEdgeInWindow)
+                nested.onOpen = { [weak reader, weak nested] in
+                    guard let nested else { return }
+                    reader?.inlineReaderWillPresent(nested)
+                }
+                nested.onChromeStateChanged = { [weak reader, weak nested] in
+                    guard let nested else { return }
+                    reader?.inlineReaderWillPresent(nested)
+                }
+                nested.onDismiss = { [weak reader, weak nested] in
+                    guard let nested else { return }
+                    reader?.inlineReaderDidDismiss(nested)
+                }
                 return nested
             }
 

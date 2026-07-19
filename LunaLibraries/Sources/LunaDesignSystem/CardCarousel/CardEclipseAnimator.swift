@@ -11,10 +11,12 @@
 //  around its silhouette, while the rest of the screen darkens. Just at the
 //  zenith a star-shaped point light — white-hot core, quick falloff, diffraction
 //  spikes — flares on the edge covered last (the final sliver of sun), centered
-//  vertically. Meanwhile the peek card on the opposite side fades to black,
-//  merging with the darkened background; behind that veil the slots are
-//  re-stacked, and on the way back it is unveiled as the outgoing card now
-//  living on that side (at the resting side-card darkness).
+//  vertically. Meanwhile the far peek card fades to black, merging with the
+//  darkened background, and is retired at totality. As the scene lifts back out
+//  of totality the two reappearing side cards — the outgoing card, now living on
+//  the opposite side, and a freshly mounted peek on the vacated side — slide in
+//  from their screen edges to their peek positions (at the resting side-card
+//  darkness) on a smooth curve, rather than popping in place.
 //
 //  The ingress runs inside a UIViewPropertyAnimator so an interactive pan can
 //  scrub it forward and back with the finger; releasing either finishes through
@@ -29,10 +31,11 @@ import UIKit
 
 /// What the carousel changed at the zenith, for the transition to reveal on egress.
 public struct CardEclipseZenithResult {
-    /// The outgoing card, now positioned at the opposite peek slot (it will be
-    /// unveiled from black).
+    /// The outgoing card, now positioned at the opposite peek slot (it slides in
+    /// from that screen edge).
     public let repositionedOutgoing: UIView?
-    /// A freshly mounted peek on the side the incoming card vacated (fades in).
+    /// A freshly mounted peek on the side the incoming card vacated (slides in
+    /// from that screen edge).
     public let enteringPeek: UIView?
 
     public init(repositionedOutgoing: UIView?, enteringPeek: UIView?) {
@@ -260,20 +263,17 @@ public final class CardEclipseTransition {
         oppositeVeil?.removeFromSuperview()
         let result = atZenith()
 
-        var outgoingVeil: UIView?
-        if let moved = result.repositionedOutgoing {
-            container.insertSubview(moved, belowSubview: dimmer)
-            let veil = UIView(frame: moved.bounds)
-            veil.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            veil.backgroundColor = .black
-            veil.alpha = 1
-            veil.isUserInteractionEnabled = false
-            moved.addSubview(veil)
-            outgoingVeil = veil
-        }
-        if let entering = result.enteringPeek {
-            container.insertSubview(entering, belowSubview: dimmer)
-            entering.alpha = 0
+        // Both reappearing side cards are placed at their resting peek slots by the
+        // zenith swap; park each just past its screen edge (its outer edge flush
+        // with the container edge) so the egress slides it in to its peek position
+        // rather than popping it in place. The travel is exactly the peek amount.
+        let containerWidth = container.bounds.width
+        var slideIns: [(card: UIView, restingCenter: CGPoint)] = []
+        for card in [result.repositionedOutgoing, result.enteringPeek].compactMap({ $0 }) {
+            container.insertSubview(card, belowSubview: dimmer)
+            let restingCenter = card.center
+            card.center = Self.offscreenPeekCenter(for: card, containerWidth: containerWidth)
+            slideIns.append((card, restingCenter))
         }
 
         let incoming = self.incoming
@@ -289,18 +289,27 @@ public final class CardEclipseTransition {
                 dimmer.alpha = 0
                 corona.alpha = 0
                 incoming.transform = .identity
-                outgoingVeil?.alpha = 0
-                result.enteringPeek?.alpha = 1
+                for slideIn in slideIns { slideIn.card.center = slideIn.restingCenter }
             }
             UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 0.25) {
                 flare.alpha = 0
                 flare.transform = CGAffineTransform(scaleX: 1.35, y: 1.35)
             }
         } completion: { [weak self] _ in
-            outgoingVeil?.removeFromSuperview()
             self?.removeDressing()
             self?.completion(true)
         }
+    }
+
+    /// The off-screen center a resting peek card slides in from: its outer edge
+    /// flush with the nearer container edge (fully off screen), on whichever side
+    /// its resting slot lies. `card.frame` already reflects the card's scale, so
+    /// the resulting travel to the resting center is exactly the peek amount.
+    private static func offscreenPeekCenter(for card: UIView, containerWidth: CGFloat) -> CGPoint {
+        let halfWidth = card.frame.width / 2
+        let onLeft = card.center.x < containerWidth / 2
+        let x = onLeft ? -halfWidth : containerWidth + halfWidth
+        return CGPoint(x: x, y: card.center.y)
     }
 
     private func removeDressing() {

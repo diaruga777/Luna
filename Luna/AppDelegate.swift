@@ -37,6 +37,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     private static let priceRefreshInterval: TimeInterval = 12 * 60 * 60
     private var readingListObserver: NSObjectProtocol?
     private var wifiAvailableObserver: NSObjectProtocol?
+    /// Price trackers surface only in the Price Tracker app, so only that app
+    /// registers and schedules the price-refresh job (mail fetch stays universal).
+    /// Otherwise all three apps redundantly refresh the shared store's trackers.
+    private var schedulesPriceRefresh: Bool { AppSurfaceConfig.current == .priceTracker }
 
     func application(
         _ application: UIApplication,
@@ -168,19 +172,20 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
             NotificationManager.requestAuthorization()
         }
 
-        let mailRegistered = BGTaskScheduler.shared.register(
+        // Mail fetch is universal — every surface receives shares + newsletters.
+        BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.mailFetchTaskID, using: nil
         ) { [weak self] task in
             self?.handleMailFetch(task as? BGProcessingTask)
         }
-        let priceRegistered = BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: Self.priceRefreshTaskID, using: nil
-        ) { [weak self] task in
-            self?.handlePriceRefresh(task as? BGProcessingTask)
+        // Price refresh only on the Price Tracker surface (see schedulesPriceRefresh).
+        if schedulesPriceRefresh {
+            BGTaskScheduler.shared.register(
+                forTaskWithIdentifier: Self.priceRefreshTaskID, using: nil
+            ) { [weak self] task in
+                self?.handlePriceRefresh(task as? BGProcessingTask)
+            }
         }
-        DiagnosticLog.shared.record(
-            "BG task registration: mail=\(mailRegistered), price=\(priceRegistered)",
-            category: "price")
         readingListObserver = NotificationCenter.default.addObserver(
             forName: .readingListChanged, object: nil, queue: .main
         ) { [weak self] _ in
@@ -222,9 +227,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         // launch frame. BGTaskScheduler and DiagnosticLog are thread-safe, and
         // each call still runs exactly once per launch — just not synchronously
         // before didFinishLaunching returns.
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.schedulePriceRefresh(reason: "launch")
-            self?.refreshOverduePriceTrackersOnLaunch()
+        if schedulesPriceRefresh {
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                self?.schedulePriceRefresh(reason: "launch")
+                self?.refreshOverduePriceTrackersOnLaunch()
+            }
         }
         return true
     }
@@ -286,12 +293,13 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     private func schedulePriceRefresh(reason: String) {
+        // Reached from the reading-list observer and background handlers too, so
+        // guard here rather than at every call site (see schedulesPriceRefresh).
+        guard schedulesPriceRefresh else { return }
         let trackers = ReadingListStore.shared.priceTrackersStalestFirst()
         let activeTrackers = trackers.count
         guard activeTrackers > 0 else {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.priceRefreshTaskID)
-            DiagnosticLog.shared.record(
-                "price refresh: no active trackers; cancelled schedule (\(reason))", category: "price")
             return
         }
         // IDEMPOTENT scheduling. We are called on many events (launch, foreground,
@@ -305,10 +313,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
         BGTaskScheduler.shared.getPendingTaskRequests { [weak self] pending in
             guard let self else { return }
             if pending.contains(where: { $0.identifier == Self.priceRefreshTaskID }) {
-                DiagnosticLog.shared.record(
-                    "price refresh: request already pending; left undisturbed (\(reason))",
-                    category: "price")
-                return
+                return  // already pending — leave it to mature (see idempotency note)
             }
             let request = BGProcessingTaskRequest(identifier: Self.priceRefreshTaskID)
             let oldestRefresh = trackers

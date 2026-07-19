@@ -39,7 +39,7 @@ final class DiagnosticsViewController: UIViewController {
 
         header.title = "Diagnostics"
         // The way out: a back chevron when pushed; Done when the root (modal). Mirrors the
-        // old conditional left bar button. The trailing actions (share / clear / replays)
+        // old conditional left bar button. The trailing actions (share / clear)
         // sit on the right, as before.
         let isRoot = navigationController?.viewControllers.first === self || navigationController == nil
         if isRoot {
@@ -53,7 +53,6 @@ final class DiagnosticsViewController: UIViewController {
                 systemName: "square.and.arrow.up", target: self, action: #selector(share),
                 accessibilityLabel: "Share"),
             NavHeaderBar.textButton(title: "Clear", target: self, action: #selector(clear)),
-            NavHeaderBar.textButton(title: "Replays", target: self, action: #selector(openReplays)),
         ])
         let headerBottom = header.mount(in: self)
 
@@ -72,17 +71,6 @@ final class DiagnosticsViewController: UIViewController {
             dismiss(animated: true)
         }
     }
-
-    @objc private func openReplays() {
-        let replays = ReplaysViewController()
-        if let navigationController {
-            navigationController.pushViewController(replays, animated: true)
-        } else {
-            let nav = UINavigationController(rootViewController: replays)
-            present(nav, animated: true)
-        }
-    }
-
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)

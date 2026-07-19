@@ -109,8 +109,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   environment, and have been fixed: snapshot reference PNGs are device-specific and
   were re-recorded on this sim with `RECORD_SNAPSHOTS=1` (re-record after intentional
   UI changes via `TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test …` — the build-setting
-  form does NOT reach the runner's environment); `ReplayPlayerTests` run offline (their
-  fixtures + `readableArticleHTML` were lengthened to clear the 1200 `readableBodyThreshold`);
+  form does NOT reach the runner's environment);
   `ReadingListSectioningTests.testDot*` dismiss the voice-catch-up flag in setUp so the
   orthogonal "enhanced voices not installed" dot trigger doesn't fire; and the two
   extraction tests were aligned to the 1200 threshold. If snapshots fail again on a

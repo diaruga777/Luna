@@ -5,9 +5,9 @@
 
 import Foundation
 
-/// Which wrapper handler fired when unwrapping a URL, for telemetry / replay /
-/// tests. `nil` on an `UnwrapResult` means no handler matched (the URL was
-/// already a real article URL).
+/// Which wrapper handler fired when unwrapping a URL, for telemetry / tests.
+/// `nil` on an `UnwrapResult` means no handler matched (the URL was already a
+/// real article URL).
 public enum WrapperKind: String, Equatable {
     case facebook
     case appleNews

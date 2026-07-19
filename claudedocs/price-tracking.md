@@ -374,14 +374,6 @@ stored friend whose signing key matches) recreates the tracker via
 `share.makeTracker()`, dedupes on the first store URL, sets `sharedByUsername`, and
 notifies. See `social-sharing.md`.
 
-## Replay compatibility (`replays.md`)
-
-A tracker save is Replay-compatible: `ingest` records a `note("product detected:
-…")`, a per-URL price fetch as `networkRequest`/`networkResponse` (via the wrapping
-`RecordingHTMLFetcher`), the product image as a `mediaReference` (URL only),
-`note("created price tracker"` | `"merged into existing tracker <id>")`, and
-terminates `.success`. `ReplayPlayer` rejects these as `unsupportedSource` (product
-
 ## Tests
 
 - `ProductPageDetectorTests` (18) — fixtures `LunaTests/Fixtures/Products/`

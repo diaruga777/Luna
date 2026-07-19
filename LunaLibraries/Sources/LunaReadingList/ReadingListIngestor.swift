@@ -27,9 +27,6 @@ public final class ReadingListIngestor {
     private let store: ReadingListStore
     private let fetcher = ArticleFetcher()
     private let extractor = ArticleExtractor()
-    /// Records a `Replay` for each save (diagnostics). `NoopReplayRecorder` keeps
-    /// recording off the hot path optional — a save runs identically without it.
-    private let recorder: ReplayRecording
     /// The cross-app-interop gate over a classified outcome
     /// (`claudedocs/interop-purchase.md`). Injectable so tests can pin
     /// surface/unlock/install without touching the App Group; the production
@@ -47,13 +44,11 @@ public final class ReadingListIngestor {
         @MainActor (InteropPromptKind, _ retry: (() -> Void)?) -> Void)?
 
     public init(
-        recorder: ReplayRecording = ReplayRecorder.shared,
         store: ReadingListStore = .shared,
         interopDecision: @escaping (Outcome) -> InteropGate.Decision = {
             InteropGate.evaluateForCurrentProcess(owner: $0.interopOwner)
         }
     ) {
-        self.recorder = recorder
         self.store = store
         self.interopDecision = interopDecision
     }
@@ -101,21 +96,8 @@ public final class ReadingListIngestor {
             lock.unlock()
         }
 
-        // Start a diagnostic replay for this save (no-op if recording is disabled).
-        // Every save entry point that reaches `ingest` (intents, paste, manual,
-        // in-app add) is covered by this single seam.
-        let replayID = await recorder.begin(
-            urlString: initialURL.absoluteString,
-            source: .capture(item.effectiveCaptureSource))
-        if let replayID { await recorder.attachItemID(item.id, to: replayID) }
-
         var item = item
         let url = initialURL
-
-        // The fetcher is wrapped so every request/response is captured into the replay.
-        let resolveFetcher: HTMLFetching = replayID
-            .map { RecordingHTMLFetcher(wrapping: fetcher, recorder: recorder, replayID: $0) }
-            ?? fetcher
 
         // The ONE shared pipeline resolves wrappers, classifies, and processes every
         // URL. Its result carries the exact final URL, so this store is repointed
@@ -125,8 +107,7 @@ public final class ReadingListIngestor {
                         documentType: item.sanitizedDocumentType,
                         prefetchedHTML: prefetchedHTML, forceArticle: forceArticle,
                         trustsPrefetchedHTML: trustsPrefetchedHTML),
-            fetcher: resolveFetcher, extractor: extractor,
-            replayLog: replayID.map { id in { [recorder] event in await recorder.record(event, for: id) } })
+            fetcher: fetcher, extractor: extractor)
 
         let resolvedURL = result.url
         if resolvedURL != url {
@@ -135,14 +116,9 @@ public final class ReadingListIngestor {
                 category: "ingest")
             guard let updated = store.updateURL(resolvedURL.absoluteString, for: item.id) else {
                 // The unwrapped article already exists in the list; wrapper dropped.
-                if let replayID {
-                    await recorder.record(.note("unwrapped URL already saved; dropped"), for: replayID)
-                    await recorder.terminate(replayID, state: .failed, finalContent: nil)
-                }
                 return .allowed
             }
             item = updated
-            if let replayID { await recorder.updateItemURL(resolvedURL.absoluteString, for: replayID) }
         }
 
         // Cross-app-interop gate — BEFORE the tracker-merge dedup below and before
@@ -157,10 +133,6 @@ public final class ReadingListIngestor {
             SharedDiagnosticLog.record(
                 "interop: blocked cross-app save (\(owner.storageIdentifier)) — discarded",
                 category: "ingest")
-            if let replayID {
-                await recorder.record(.note("interop blocked; item discarded"), for: replayID)
-                await recorder.terminate(replayID, state: .failed, finalContent: nil)
-            }
             if allowsInteractivePrompt, source == .paste || source == .manual {
                 let urlString = resolvedURL.absoluteString
                 await MainActor.run {
@@ -182,18 +154,12 @@ public final class ReadingListIngestor {
                containingStoreURL: resolvedURL.absoluteString),
            existingTrackerItemID != item.id {
             store.delete(item)
-            if let replayID {
-                await recorder.record(
-                    .note("url already tracked by \(existingTrackerItemID); dropped duplicate"),
-                    for: replayID)
-                await recorder.terminate(replayID, state: .success, finalContent: nil)
-            }
             postPriceTrackerSaved(itemID: existingTrackerItemID, source: item.effectiveCaptureSource,
                                   isMerge: true, highlightedURL: resolvedURL.absoluteString)
             return interop
         }
 
-        let presenter = IngestorOutcomePresenter(ingestor: self, url: resolvedURL, replayID: replayID)
+        let presenter = IngestorOutcomePresenter(ingestor: self, url: resolvedURL)
         await presenter.present(result.outcome, for: item)
 
         // Paid cross-surface save with the owning app missing: the save went
@@ -211,16 +177,10 @@ public final class ReadingListIngestor {
     // MARK: - Outcome handling (the main-app presenter, store-writing)
 
     /// Persists a readable article: downloads its images + cover art, saves the
-    /// content, flips ready, and terminates the replay `.success`.
+    /// content, and flips ready.
     fileprivate func persistArticle(
-        _ content: ArticleContent, html: String, for item: ReadingListItem, url: URL, replayID: UUID?
+        _ content: ArticleContent, html: String, for item: ReadingListItem, url: URL
     ) async {
-        if let replayID {
-            await recorder.record(.resolveDecision(.readable), for: replayID)
-            await recorder.record(.extraction(
-                blockCount: content.blocks.count, bodyTextLength: content.bodyTextLength,
-                title: content.title, hasReadableBody: content.hasReadableBody), for: replayID)
-        }
         let contentWithCachedImages = ArticleImageDownloader.resolveLocalImages(content, store: store)
         let initialContent = await ArticleImageDownloader.downloadInitialLayoutImages(
             contentWithCachedImages, itemID: item.id, store: store, refererURL: url)
@@ -235,9 +195,6 @@ public final class ReadingListIngestor {
             // Background-preload this article's links so the inline link viewer opens
             // instantly. Non-blocking; no-op when the depth setting is 0.
             PreloadCoordinator.shared.preload(rootID: updated.id)
-        }
-        if let replayID {
-            await recorder.terminate(replayID, state: .success, finalContent: initialContent)
         }
         Task { [self] in
             await finishArticleArtifacts(
@@ -271,82 +228,44 @@ public final class ReadingListIngestor {
         await captureWebArchiveIfPossible(for: item, url: url, html: html)
     }
 
-    /// Parks a paywalled article for the interactive archive reader. NOT terminal for
-    /// the replay — the web reader owns its own.
-    fileprivate func parkNeedsArchive(title: String, for item: ReadingListItem, replayID: UUID?) async {
+    /// Parks a paywalled article for the interactive archive reader.
+    fileprivate func parkNeedsArchive(title: String, for item: ReadingListItem) async {
         store.markNeedsCaptcha(item.id, title: title)
-        if let replayID {
-            await recorder.record(.resolveDecision(.paywalled), for: replayID)
-            await recorder.terminate(replayID, state: .failed, finalContent: nil)
-        }
     }
 
-    /// Marks a genuine failure and terminates the replay `.failed`.
-    fileprivate func markFailed(for item: ReadingListItem, replayID: UUID?) async {
+    /// Marks a genuine failure.
+    fileprivate func markFailed(for item: ReadingListItem) async {
         store.markFailed(item.id)
-        if let replayID {
-            await recorder.record(.resolveDecision(.unreadable), for: replayID)
-            await recorder.terminate(replayID, state: .failed, finalContent: nil)
-        }
     }
 
-    /// Ingests a document outcome, recording + terminating the replay.
-    fileprivate func handleDocument(type: String, for item: ReadingListItem, replayID: UUID?) async {
+    /// Ingests a document outcome.
+    fileprivate func handleDocument(type: String, for item: ReadingListItem) async {
         await ingestDocument(item)
-        if let replayID {
-            await recorder.record(.note("document ingest (\(type))"), for: replayID)
-            await recorder.terminate(
-                replayID, state: store.item(withID: item.id)?.state == .ready ? .success : .failed,
-                finalContent: nil)
-        }
     }
 
     /// Ingests a recognized video outcome.
     fileprivate func handleVideo(
-        _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem, replayID: UUID?
+        _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem
     ) async {
         await ingestPlatformItem(
             item, match: PlatformMatch(platform: platform, itemID: itemID))
-        await terminateNonArticle(replayID, itemID: item.id, note: "video \(platform)")
     }
 
     /// Ingests a recognized social platform outcome (best-effort metadata).
     fileprivate func handlePlatform(
-        _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem, replayID: UUID?
+        _ platform: ContentPlatform, itemID: String?, for item: ReadingListItem
     ) async {
         await ingestPlatformItem(
             item, match: PlatformMatch(platform: platform, itemID: itemID))
-        await terminateNonArticle(replayID, itemID: item.id, note: "platform \(platform)")
-    }
-
-    /// Terminates the replay for a non-article item: these never
-    /// `.fail`, so success reflects whether the item ended `.ready`. Media art is
-    /// recorded by reference only (never bytes) before terminating.
-    private func terminateNonArticle(_ replayID: UUID?, itemID: UUID, note: String) async {
-        guard let replayID else { return }
-        await recorder.record(.note(note), for: replayID)
-        if let item = store.item(withID: itemID), let thumbnail = item.thumbnailFileName {
-            await recorder.record(.mediaReference(role: "thumbnail", urlString: thumbnail), for: replayID)
-        }
-        let ready = store.item(withID: itemID)?.state == .ready
-        await recorder.terminate(replayID, state: ready ? .success : .failed, finalContent: nil)
     }
 
     /// Turns a detected product page into a price tracker. Intelligent matching:
     /// if the product matches an existing tracker (by product id, else fuzzy
     /// name+brand), the new URL is MERGED into that tracker; otherwise a new
-    /// tracker is created on this item. Records the product-detection decision and
-    /// the per-URL price fetch into the replay, terminating `.success`.
+    /// tracker is created on this item.
     fileprivate func ingestProductTracker(
-        _ item: ReadingListItem, url: URL, product: ProductInfo, replayID: UUID?
+        _ item: ReadingListItem, url: URL, product: ProductInfo
     ) async {
-        if let replayID {
-            await recorder.record(
-                .note("product detected: \(product.name) \(product.priceCurrency) "
-                      + "\(NSDecimalNumber(decimal: product.priceAmount).stringValue)"),
-                for: replayID)
-        }
-
         // Try to merge into an existing tracker for the same product.
         let existing: [(id: UUID, tracker: PriceTracker)] = store.items().compactMap {
             guard let tracker = $0.priceTracker, $0.id != item.id else { return nil }
@@ -358,10 +277,6 @@ public final class ReadingListIngestor {
             let newStores = stores.filter { !matched.hasStore(urlString: $0.urlString) }
             guard !newStores.isEmpty else {
                 store.delete(item)
-                if let replayID {
-                    await recorder.record(.note("product sellers already tracked by \(matchID)"), for: replayID)
-                    await recorder.terminate(replayID, state: .success, finalContent: nil)
-                }
                 postPriceTrackerSaved(itemID: matchID, source: item.effectiveCaptureSource,
                                       isMerge: true, highlightedURL: stores.first?.urlString)
                 return
@@ -373,15 +288,6 @@ public final class ReadingListIngestor {
             // The just-saved item was a duplicate route into an existing tracker;
             // drop its placeholder item so only the merged tracker remains.
             store.delete(item)
-            if let replayID {
-                await recorder.record(.note("merged into existing tracker \(matchID)"), for: replayID)
-                if let imageURL = product.imageURL {
-                    await recorder.record(
-                        .mediaReference(role: "productImage", urlString: imageURL.absoluteString),
-                        for: replayID)
-                }
-                await recorder.terminate(replayID, state: .success, finalContent: nil)
-            }
             postPriceTrackerSaved(itemID: matchID, source: item.effectiveCaptureSource,
                                   isMerge: true, highlightedURL: newStores.first?.urlString)
             return
@@ -399,15 +305,6 @@ public final class ReadingListIngestor {
         }
         store.savePriceTracker(tracker, for: item.id)
 
-        if let replayID {
-            await recorder.record(.note("created price tracker"), for: replayID)
-            if let imageURL = product.imageURL {
-                await recorder.record(
-                    .mediaReference(role: "productImage", urlString: imageURL.absoluteString),
-                    for: replayID)
-            }
-            await recorder.terminate(replayID, state: .success, finalContent: nil)
-        }
         postPriceTrackerSaved(itemID: item.id, source: item.effectiveCaptureSource,
                               isMerge: false, highlightedURL: nil)
     }
@@ -434,8 +331,7 @@ public final class ReadingListIngestor {
         }
     }
 
-    /// Downloads a product image (by reference only in the replay; bytes never
-    /// recorded). Returns nil on any failure.
+    /// Downloads a product image. Returns nil on any failure.
     private func downloadProductImage(_ imageURL: URL) async -> Data? {
         var request = URLRequest(url: imageURL, timeoutInterval: 8)
         request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
@@ -841,24 +737,23 @@ public final class ReadingListIngestor {
 public struct IngestorOutcomePresenter: OutcomePresenter {
     public let ingestor: ReadingListIngestor
     public let url: URL
-    public let replayID: UUID?
 
     public func present(_ outcome: Outcome, for item: ReadingListItem) async {
         switch outcome {
         case let .article(content, html):
-            await ingestor.persistArticle(content, html: html, for: item, url: url, replayID: replayID)
+            await ingestor.persistArticle(content, html: html, for: item, url: url)
         case let .product(product, _):
-            await ingestor.ingestProductTracker(item, url: url, product: product, replayID: replayID)
+            await ingestor.ingestProductTracker(item, url: url, product: product)
         case let .video(platform, itemID):
-            await ingestor.handleVideo(platform, itemID: itemID, for: item, replayID: replayID)
+            await ingestor.handleVideo(platform, itemID: itemID, for: item)
         case let .social(platform, itemID):
-            await ingestor.handlePlatform(platform, itemID: itemID, for: item, replayID: replayID)
+            await ingestor.handlePlatform(platform, itemID: itemID, for: item)
         case let .document(type):
-            await ingestor.handleDocument(type: type, for: item, replayID: replayID)
+            await ingestor.handleDocument(type: type, for: item)
         case let .needsArchive(title):
-            await ingestor.parkNeedsArchive(title: title, for: item, replayID: replayID)
+            await ingestor.parkNeedsArchive(title: title, for: item)
         case .failed:
-            await ingestor.markFailed(for: item, replayID: replayID)
+            await ingestor.markFailed(for: item)
         }
     }
 }

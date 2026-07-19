@@ -1723,16 +1723,6 @@ final class ReadingListViewController: UITableViewController {
             children.append(unarchive)
         }
         children.append(delete)
-        // "Report a bug" marks the save's recorded replay user-reported and shares
-        // its export zip — for diagnosing a bad save from the list.
-        let reportBug = UIAction(
-            title: "Report a bug", image: UIImage(systemName: "ladybug")
-        ) { [weak self] _ in
-            guard let self else { return }
-            let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-            ReplayBugReporter.report(itemURLString: item.urlString, from: self, sourceView: sourceView)
-        }
-        children.append(reportBug)
         // "Edit List" enters multi-select / drag-reorder edit mode (bottom item).
         let editList = UIAction(
             title: "Edit List", image: UIImage(systemName: "arrow.up.arrow.down")

@@ -137,7 +137,7 @@ The ONE shared entry: `IngestPipeline.process(_ input: IngestInput, timeout:…,
   `NonTextualContent` (video/social/audio) and the document gate, so the pipeline
   classifies EVERYTHING and no surface re-derives it.
 - **Fixed order**: (1) `URLUnwrapper.unwrap` ONCE (offline-first, tracking-stripped —
-  every surface unwraps now) → replay `.unwrap`; (2) `Classifier.classify` (deterministic
+  every surface unwraps now); (2) `Classifier.classify` (deterministic
   is decided before any fetch and can NEVER reach article extraction on any surface);
   (3) per-kind processing — product detect (→ `.product`, never paywall-bypassed) → article
   resolve via the gated silent `BypassPlan` → `.article` / `.needsArchive` / `.failed`.
@@ -282,11 +282,10 @@ asserted identically across EVERY `CaptureSource` (the headline parity guarantee
   The ingestor's separate guard (`priceTracker(containingStoreURL:)`) is an ORTHOGONAL
   condition (same URL inside a DIFFERENT item's tracker), kept and documented.
 
-### Still green / extension-safe / replay
+### Still green / extension-safe
 
 - `ReaderKit` stays extension-safe: `URLCanonicalizer`, `Classifier.isHardPaywallHost`, and
   the pipeline change add no UIKit/CloudKit/main-app deps. Release (generic/iOS) compiles.
-- Replay round-trips unchanged (the pipeline's unwrap/decision events are untouched).
 
 ## Stage 5 — Surface unification (DONE)
 

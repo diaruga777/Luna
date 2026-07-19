@@ -50,8 +50,7 @@ final class ReadingListIngestorInteropTests: XCTestCase {
     private func makeIngestor(
         decision: @escaping (LunaIngest.Outcome) -> InteropGate.Decision
     ) -> ReadingListIngestor {
-        ReadingListIngestor(
-            recorder: NoopReplayRecorder(), store: store, interopDecision: decision)
+        ReadingListIngestor(store: store, interopDecision: decision)
     }
 
     private func blockedDecision(_ outcome: LunaIngest.Outcome) -> InteropGate.Decision {

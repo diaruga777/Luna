@@ -383,11 +383,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 shareProvider.presentShareSheet(
                     urlString: self.item.urlString, title: self.content.title,
                     from: self, sourceView: shareView)
-            },
-            onReportBug: { [weak self] in
-                guard let self, let shareView = self.shareView else { return }
-                ReplayBugReporter.report(
-                    itemURLString: self.item.urlString, from: self, sourceView: shareView)
             })
     }
 

@@ -51,7 +51,6 @@ public enum ArticleResolver {
         fetcher: HTMLFetching = ArticleFetcher(),
         extractor: ArticleExtractor = ArticleExtractor(),
         runner: BypassRunning? = nil,
-        replayLog: ((EventKind) async -> Void)? = nil,
         trustsPrefetchedHTML: Bool = false
     ) async -> ArticleResolution {
         let extraction = ArticleExtraction(extractor: extractor)
@@ -88,16 +87,12 @@ public enum ArticleResolver {
             if let html = try? await SiteUnlockSilent.fetch(url: url, rule: rule, fetcher: fetcher),
                let candidate = await extraction.fetchAndExtract(baseURL: url, fetch: { html }),
                ArticleExtraction.isReadableArticle(candidate) {
-                await replayLog?(.bypassStrategy(
-                    name: "siteUnlockSilent", runsSilently: true, succeeded: true))
                 return .readable(candidate.content, html: candidate.sourceHTML)
             }
             if let directHTML = direct?.sourceHTML,
                let content = extraction.extractFromJSONLD(html: directHTML, baseURL: url) {
                 let reconstructed = ExtractedArticle(content: content, sourceHTML: directHTML)
                 if ArticleExtraction.isReadableArticle(reconstructed) {
-                    await replayLog?(.bypassStrategy(
-                        name: "jsonLDBody", runsSilently: true, succeeded: true))
                     return .readable(content, html: directHTML)
                 }
             }
@@ -109,9 +104,6 @@ public enum ArticleResolver {
         for strategy in plan.silent {
             let candidate = await bypassRunner.run(strategy.asBypassStrategy, url: url,
                                                    directHTML: direct?.sourceHTML)
-            let succeeded = candidate.map(ArticleExtraction.isReadableArticle) ?? false
-            await replayLog?(.bypassStrategy(
-                name: strategy.asBypassStrategy.replayName, runsSilently: true, succeeded: succeeded))
             if let candidate, ArticleExtraction.isReadableArticle(candidate) {
                 return .readable(candidate.content, html: candidate.sourceHTML)
             }

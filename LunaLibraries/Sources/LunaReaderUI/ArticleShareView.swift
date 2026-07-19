@@ -12,13 +12,9 @@ import UIKit
 public final class ArticleShareView: UIView {
 
     private let onShare: () -> Void
-    /// Fired when the user picks "Report a bug" from the bug icon's menu (nil → no
-    /// bug icon shown). Marks the save's replay user-reported and shares its zip.
-    private let onReportBug: (() -> Void)?
 
-    public init(onShare: @escaping () -> Void, onReportBug: (() -> Void)? = nil) {
+    public init(onShare: @escaping () -> Void) {
         self.onShare = onShare
-        self.onReportBug = onReportBug
         super.init(frame: .zero)
         build()
     }
@@ -46,11 +42,7 @@ public final class ArticleShareView: UIView {
         let shareButton = UIButton(configuration: shareConfig)
         shareButton.addAction(UIAction { [weak self] _ in self?.onShare() }, for: .touchUpInside)
 
-        // The share row holds the Share button with a small bug icon to its LEFT (a
-        // context menu offering "Report a bug" / "Dismiss"; tapping outside dismisses).
-        let shareRow: UIView = onReportBug == nil ? shareButton : makeShareRow(shareButton: shareButton)
-
-        let buttons = UIStackView(arrangedSubviews: [shareRow])
+        let buttons = UIStackView(arrangedSubviews: [shareButton])
         buttons.axis = .vertical
         buttons.spacing = 10
         buttons.alignment = .fill
@@ -69,31 +61,5 @@ public final class ArticleShareView: UIView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
-    }
-
-    /// A horizontal row: a small bug-report icon on the LEFT, then the Share button
-    /// filling the rest. The bug button shows a menu ("Report a bug" / "Dismiss").
-    private func makeShareRow(shareButton: UIButton) -> UIView {
-        let bugButton = UIButton(type: .system)
-        bugButton.setImage(
-            UIImage(systemName: "ladybug",
-                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)),
-            for: .normal)
-        bugButton.tintColor = .secondaryLabel
-        bugButton.accessibilityLabel = "Report a bug"
-        bugButton.showsMenuAsPrimaryAction = true
-        bugButton.menu = UIMenu(children: [
-            UIAction(title: "Report a bug", image: UIImage(systemName: "ladybug")) { [weak self] _ in
-                self?.onReportBug?()
-            },
-            UIAction(title: "Dismiss") { _ in },
-        ])
-        bugButton.setContentHuggingPriority(.required, for: .horizontal)
-
-        let row = UIStackView(arrangedSubviews: [bugButton, shareButton])
-        row.axis = .horizontal
-        row.spacing = 12
-        row.alignment = .center
-        return row
     }
 }

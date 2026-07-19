@@ -152,14 +152,12 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector = ProductPageDetector(),
         metadataExtractor: ProductMetadataExtractor = ProductMetadataExtractor(),
         render: ((URL) async -> String?)? = nil,
-        runner: BypassRunning? = nil,
-        replayLog: ((EventKind) async -> Void)? = nil
+        runner: BypassRunning? = nil
     ) async -> Outcome {
         await processResolved(
             input, timeout: timeout, session: session, fetcher: fetcher,
             extractor: extractor, productDetector: productDetector,
-            metadataExtractor: metadataExtractor, render: render, runner: runner,
-            replayLog: replayLog).outcome
+            metadataExtractor: metadataExtractor, render: render, runner: runner).outcome
     }
 
     /// Runs the pipeline and returns both the outcome and the canonical URL it
@@ -174,15 +172,14 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector = ProductPageDetector(),
         metadataExtractor: ProductMetadataExtractor = ProductMetadataExtractor(),
         render: ((URL) async -> String?)? = nil,
-        runner: BypassRunning? = nil,
-        replayLog: ((EventKind) async -> Void)? = nil
+        runner: BypassRunning? = nil
     ) async -> IngestResult {
         await withTaskGroup(of: IngestResult?.self) { group in
             group.addTask {
                 await runUnbounded(
                     input, session: session, fetcher: fetcher, extractor: extractor,
                     productDetector: productDetector, metadataExtractor: metadataExtractor,
-                    render: render, runner: runner, replayLog: replayLog)
+                    render: render, runner: runner)
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
@@ -210,17 +207,12 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector,
         metadataExtractor: ProductMetadataExtractor,
         render: ((URL) async -> String?)?,
-        runner: BypassRunning?,
-        replayLog: ((EventKind) async -> Void)?
+        runner: BypassRunning?
     ) async -> IngestResult {
         // (1) Unwrap ONCE — every surface gets the same offline-first, tracking-
         // stripped unwrap (Facebook deep links, Apple/Google News, shorteners).
         let unwrapped = await URLUnwrapper.unwrap(input.url, session: session)
         let url = unwrapped.url
-        if unwrapped.didUnwrap {
-            await replayLog?(.unwrap(
-                fromURLString: input.url.absoluteString, toURLString: url.absoluteString))
-        }
 
         // (2) Classify deterministically (URL-only). Platform/video/document
         // are decided here, before any fetch, so they can never reach article extraction.
@@ -239,7 +231,7 @@ public enum IngestPipeline {
             return IngestResult(url: url, outcome: await processWeb(
                 url: url, classifiedKind: kind, input: input, fetcher: fetcher, extractor: extractor,
                 productDetector: productDetector, metadataExtractor: metadataExtractor,
-                render: render, runner: runner, replayLog: replayLog))
+                render: render, runner: runner))
         }
     }
 
@@ -260,8 +252,7 @@ public enum IngestPipeline {
         productDetector: ProductPageDetector,
         metadataExtractor: ProductMetadataExtractor,
         render: ((URL) async -> String?)?,
-        runner: BypassRunning?,
-        replayLog: ((EventKind) async -> Void)?
+        runner: BypassRunning?
     ) async -> Outcome {
         // Fetch the direct HTML once (reusing the surface's prefetch) — shared by
         // product detection and article resolution so we never double-fetch.
@@ -308,7 +299,7 @@ public enum IngestPipeline {
         // silent bypass strategies the gate allows.
         let resolution = await ArticleResolver.resolve(
             url: url, prefetchedHTML: directHTML, fetcher: fetcher,
-            extractor: extractor, runner: runner, replayLog: replayLog,
+            extractor: extractor, runner: runner,
             trustsPrefetchedHTML: input.trustsPrefetchedHTML)
 
         switch resolution {

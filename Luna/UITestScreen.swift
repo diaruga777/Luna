@@ -46,9 +46,6 @@ enum UITestScreen: String, CaseIterable {
     case shareMediaPlatform
     case actionReaderArticle
 
-    // Diagnostics.
-    case replays
-
     // Catch-up showing only a price-tracker card (for verifying that card's layout).
     case priceCatchUp
 }
@@ -85,9 +82,6 @@ enum UITestScreenBuilder {
             // testable surface). A dedicated detail fixture would need a keychain
             // identity, which the harness doesn't seed.
             return UINavigationController(rootViewController: FriendsViewController())
-
-        case .replays:
-            return UINavigationController(rootViewController: ReplaysViewController())
 
         case .priceTrackingEditor:
             let tracker = ReadingListStore.shared.items().first { $0.isPriceTracker }

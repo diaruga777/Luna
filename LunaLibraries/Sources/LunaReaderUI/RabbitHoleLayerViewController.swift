@@ -657,6 +657,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         web.scrollView.contentInset.top = topInset
         web.scrollView.verticalScrollIndicatorInsets.top = topInset
         view.insertSubview(web, belowSubview: header)
+        HorizonScrollIndicator.install(on: web.scrollView, in: view)
         WebJunkBlocker.applyRuleList(to: web.configuration.userContentController)
         web.navigationDelegate = self
         web.load(URLRequest(url: url))

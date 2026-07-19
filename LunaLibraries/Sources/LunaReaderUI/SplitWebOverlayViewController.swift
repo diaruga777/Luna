@@ -54,6 +54,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     private let tabBar = UIView()
     private let tabScrollView = UIScrollView()
     private let tabContainer = UIView()
+    private let scrollIndicator = HorizonScrollIndicator.makeHosted()
 
     private static let tabBarHeight: CGFloat = 42
     private static let tabBottomOverlap: CGFloat = 4
@@ -110,6 +111,8 @@ public final class SplitWebOverlayViewController: UIViewController,
         cardView.setContentEdgeFadeHeight(28)
         view.addSubview(cardView)
         setUpInnerNav()
+        scrollIndicator.isHidden = true
+        view.addSubview(scrollIndicator)
     }
 
     public override func viewDidLayoutSubviews() {
@@ -117,6 +120,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         cardView.frame = localCardFrame
         innerNav.view.frame = cardView.contentContainer.bounds
         layoutTabBar()
+        layoutScrollIndicator()
     }
 
     private func transitionWillOpen() {
@@ -142,7 +146,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     ) -> UIPresentationController? {
         InlineReaderPresentationController(
             presentedViewController: presented, presenting: presenting,
-            cardFrameInWindow: cardFrameInWindow,
+            cardFrameInWindow: inlineCardFrameInWindow,
             presentationFrameInWindow: presentationFrameInWindow,
             showsOuterContentBelow: showsOuterContentBelow)
     }
@@ -155,7 +159,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         InlineReaderEclipseAnimator(
             sourcePoint: initialSourcePoint,
             direction: .forward,
-            sceneFrame: cardFrameInWindow,
+            sceneFrame: inlineCardFrameInWindow,
             onTransitionStart: { [weak self] in self?.transitionWillOpen() },
             atZenith: { [weak self] in
                 guard let self else { return }
@@ -169,7 +173,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         let animator = InlineReaderEclipseAnimator(
             sourcePoint: initialSourcePoint,
             direction: .reverse,
-            sceneFrame: cardFrameInWindow,
+            sceneFrame: inlineCardFrameInWindow,
             onTransitionStart: { [weak self] in self?.onClose?() },
             atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
         animator.onCompletion = { [weak self] in self?.onDismiss?() }
@@ -199,6 +203,10 @@ public final class SplitWebOverlayViewController: UIViewController,
         }
         page.onBecameArticle = { [weak self] in self?.syncHeaderToTopPage() }
         page.onMetadataChanged = { [weak self] in self?.syncHeaderToTopPage() }
+        page.onContentScrollViewChanged = { [weak self, weak page] in
+            guard self?.topPage === page else { return }
+            self?.updateScrollIndicatorTarget()
+        }
         return page
     }
 
@@ -272,7 +280,8 @@ public final class SplitWebOverlayViewController: UIViewController,
             animateReflow: animateTabReflow)
         pendingTabInsertion = false
         layoutTabBar()
-        onChromeStateChanged?()
+        notifyChromeStateChanged()
+        updateScrollIndicatorTarget()
     }
 
     // MARK: - Header and tabs
@@ -349,6 +358,8 @@ public final class SplitWebOverlayViewController: UIViewController,
             }
         }
         newest.alpha = 1
+        newest.setNeedsLayout()
+        newest.layoutIfNeeded()
         newest.transform = CGAffineTransform(
             translationX: 0, y: Self.tabBarHeight - Self.tabBottomOverlap)
         tabContainer.layoutIfNeeded()
@@ -358,7 +369,7 @@ public final class SplitWebOverlayViewController: UIViewController,
             usingSpringWithDamping: 0.82, initialSpringVelocity: 0.55
         ) {
             for (index, button) in self.tabButtons.enumerated()
-                where targetFrames.indices.contains(index) {
+                where button !== newest && targetFrames.indices.contains(index) {
                 button.frame = targetFrames[index]
             }
             self.tabScrollView.contentOffset = CGPoint(
@@ -473,6 +484,10 @@ public final class SplitWebOverlayViewController: UIViewController,
         presentationMetrics.localCardFrame
     }
 
+    private var inlineCardFrameInWindow: CGRect {
+        presentationMetrics.cardFrameInWindow
+    }
+
     private var presentationMetrics: InlineReaderPresentationMetrics {
         InlineReaderPresentationMetrics(
             cardFrameInWindow: cardFrameInWindow, tabHeight: Self.tabBarHeight)
@@ -494,12 +509,14 @@ public final class SplitWebOverlayViewController: UIViewController,
 
     public func chromeSetMode(_ mode: ReadingListItem.ReaderMode) {
         topPage?.setMode(mode)
-        onChromeStateChanged?()
+        notifyChromeStateChanged()
+        updateScrollIndicatorTarget()
     }
 
     public func chromeToggleAudio() {
         topPage?.toggleAudio()
-        onChromeStateChanged?()
+        notifyChromeStateChanged()
+        updateScrollIndicatorTarget()
     }
 
     public func chromeSave() {}
@@ -510,6 +527,29 @@ public final class SplitWebOverlayViewController: UIViewController,
             from: self, sourceView: sourceView)
     }
     public func chromeBack() { closeInnermostReader() }
+
+    private func notifyChromeStateChanged() {
+        guard !didDismiss else { return }
+        onChromeStateChanged?()
+    }
+
+    private func updateScrollIndicatorTarget() {
+        let scrollView = topPage?.contentScrollView
+        scrollIndicator.track(scrollView)
+        scrollIndicator.isHidden = scrollView == nil
+        layoutScrollIndicator()
+    }
+
+    private func layoutScrollIndicator() {
+        let width = HorizonScrollIndicator.bloomDiameter
+        scrollIndicator.frame = CGRect(
+            x: localCardFrame.maxX - width,
+            y: localCardFrame.minY,
+            width: width,
+            height: localCardFrame.height)
+        scrollIndicator.trackInsets = UIEdgeInsets(
+            top: 28, left: 0, bottom: 28, right: 0)
+    }
 
     fileprivate func forwardPersistentChromeTap(at windowPoint: CGPoint) {
         let width = UIScreen.main.bounds.width

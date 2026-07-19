@@ -6,22 +6,25 @@
 import LunaDesignSystem
 import UIKit
 
-/// Geometry contract keeping tabs outside an otherwise unchanged root-card frame.
+/// Geometry contract fitting tabs plus a shortened inline card inside the
+/// normal root-card footprint, keeping the persistent controls above clear.
 public struct InlineReaderPresentationMetrics: Equatable {
     public let presentationFrameInWindow: CGRect
+    public let cardFrameInWindow: CGRect
     public let localCardFrame: CGRect
 
     public init(cardFrameInWindow: CGRect, tabHeight: CGFloat) {
-        let height = max(tabHeight, 0)
-        presentationFrameInWindow = CGRect(
+        let height = min(max(tabHeight, 0), max(cardFrameInWindow.height, 0))
+        presentationFrameInWindow = cardFrameInWindow
+        self.cardFrameInWindow = CGRect(
             x: cardFrameInWindow.minX,
-            y: cardFrameInWindow.minY - height,
+            y: cardFrameInWindow.minY + height,
             width: cardFrameInWindow.width,
-            height: cardFrameInWindow.height + height)
+            height: max(cardFrameInWindow.height - height, 0))
         localCardFrame = CGRect(
             x: 0, y: height,
             width: cardFrameInWindow.width,
-            height: cardFrameInWindow.height)
+            height: max(cardFrameInWindow.height - height, 0))
     }
 }
 

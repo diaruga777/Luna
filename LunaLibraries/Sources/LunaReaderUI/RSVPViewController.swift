@@ -277,7 +277,30 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         refreshDisplay()
         updateStatus()
         finishIfAtEnd()
+        // The app-wide center keeps voicing in the background across mode
+        // switches, so a reuse that lands back on RSVP while read-aloud is
+        // still playing THIS article must adopt that live state — otherwise
+        // isPlaying stays false, the display never flashes (the center's word
+        // events are gated on isPlaying), and the first tap pauses the audio
+        // instead of resuming. See syncPlaybackStateToCenter.
+        syncPlaybackStateToCenter()
         view.setNeedsLayout()
+    }
+
+    /// Re-adopt the app-wide center's playback state for THIS article. Called
+    /// on reuse: `configureForReuse` resets to a paused display, but the center
+    /// may already be voicing this article (returning to RSVP mid-playback), in
+    /// which case the play/pause glyph, `isPlaying`, and word-flashing must
+    /// reflect the ongoing playback rather than the reset defaults. A no-op in
+    /// silent mode and whenever the center isn't voicing this item.
+    private func syncPlaybackStateToCenter() {
+        guard let center = speechCenter, isViewLoaded else { return }
+        let playingMine = centerOwnsItem && center.currentSnapshot.isAudiblyPlaying
+        isPlaying = playingMine
+        playPauseButton.configuration?.image =
+            UIImage(systemName: playingMine ? "pause.fill" : "play.fill")
+        playPauseButton.accessibilityLabel = playingMine ? "Pause" : "Play"
+        updateContextVisibility(animated: false)
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }

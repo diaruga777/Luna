@@ -96,10 +96,19 @@ public struct CardCarouselStyle {
     /// Horizontal room around the scrub strip. Hosts can increase this to
     /// flank the strip with floating controls without covering its content.
     public var scrubberHorizontalInset: CGFloat = 16
+    /// Width of the fade-blur zone at each end of the scrub strip. Chips
+    /// dissolve across this zone as they approach the strip's bounds — hosts
+    /// that flank the strip with floating controls size it so chips melt away
+    /// before reaching them. 0 disables the effect.
+    public var scrubberEdgeFadeWidth: CGFloat = 0
     /// A subtle glass rim on every card, delineating it from a same-tone
     /// screen background. The centered card's rim fades with the rest of the
     /// carousel chrome during immersion.
     public var showsCardBorder = false
+    /// Card content dissolves over this many points at the card's top and
+    /// bottom edges instead of hitting a hard clip — scrolled reader text fades
+    /// away as it approaches an edge. 0 (the default) keeps the hard clip.
+    public var contentEdgeFadeHeight: CGFloat = 0
 
     public init() {}
 }
@@ -220,6 +229,7 @@ public final class CardCarouselViewController: UIViewController {
 
         // The scrubber is added first so the card area (and the eclipse's
         // darkening veil inside it) can render above the strip.
+        scrubber.edgeFadeWidth = style.scrubberEdgeFadeWidth
         scrubber.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrubber)
         cardArea.clipsToBounds = false
@@ -387,9 +397,12 @@ public final class CardCarouselViewController: UIViewController {
         for other in slots.values where other.index != currentIndex {
             other.card.alpha = isImmersed ? 0 : 1
         }
-        // The centered card stays fully visible while immersed — only its glass
-        // rim fades, in step with the strip and side cards.
+        // The centered card's content stays fully visible while immersed — its
+        // glass rim fades in step with the strip and side cards, and its
+        // surface tone clears so the content edge fades dissolve into the
+        // screen background rather than a card-toned band.
         slots[currentIndex]?.card.borderAlpha = isImmersed ? 0 : 1
+        slots[currentIndex]?.card.setSurfaceHidden(isImmersed)
         guard let metrics, let slot = slots[currentIndex] else { return }
         let resting = metrics.centeredCardFrame()
         var frame = resting
@@ -444,6 +457,7 @@ public final class CardCarouselViewController: UIViewController {
         let content = dataSource.carousel(self, contentControllerForCardAt: index)
         let card = CarouselCardView()
         card.setBorderEnabled(style.showsCardBorder)
+        card.setContentEdgeFadeHeight(style.contentEdgeFadeHeight)
         addChild(content)
         card.installContentView(content.view)
         content.didMove(toParent: self)
@@ -487,6 +501,7 @@ public final class CardCarouselViewController: UIViewController {
         slot.card.layer.cornerRadius = CarouselCardView.cornerRadius
         slot.card.alpha = isImmersed ? 0 : 1
         slot.card.borderAlpha = 1
+        slot.card.setSurfaceHidden(false)
         slot.card.transform = .identity
         slot.card.bounds = CGRect(origin: .zero, size: metrics.cardSize)
         slot.card.center = CGPoint(

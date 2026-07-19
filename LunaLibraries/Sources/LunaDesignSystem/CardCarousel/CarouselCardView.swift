@@ -27,8 +27,17 @@ public final class CarouselCardView: UIView {
     /// flat stroke, this refracts whatever card content is directly beneath
     /// the edge and therefore stays visible on both light and dark pages.
     private let borderView = UIVisualEffectView(effect: GlassStyle.barEffect())
+    /// UIVisualEffectView ignores `layer.mask` (the backdrop renders unclipped,
+    /// frosting the whole card) — the ring must be applied through the
+    /// view-level `mask` property instead.
+    private let borderMaskView = UIView()
     private let borderMask = CAShapeLayer()
     private let borderHighlight = CAShapeLayer()
+    /// Dissolves content at the card's top and bottom edges (host style-gated;
+    /// 0 = hard clip). The mask rides `contentContainer`, so the dim overlay,
+    /// rim, and corner buttons are unaffected.
+    private var contentEdgeFadeHeight: CGFloat = 0
+    private let contentFadeMask = VerticalEdgeFadeMaskView()
     private var topLeadingAccessory: UIView?
 
     public override init(frame: CGRect) {
@@ -60,10 +69,12 @@ public final class CarouselCardView: UIView {
         borderView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         borderView.isUserInteractionEnabled = false
         borderMask.fillRule = .evenOdd
-        borderView.layer.mask = borderMask
+        borderMask.fillColor = UIColor.white.cgColor
+        borderMaskView.layer.addSublayer(borderMask)
+        borderView.mask = borderMaskView
         borderHighlight.fillColor = UIColor.clear.cgColor
         borderHighlight.lineWidth = 0.75
-        borderView.layer.addSublayer(borderHighlight)
+        borderView.contentView.layer.addSublayer(borderHighlight)
         borderView.isHidden = true
         addSubview(borderView)
         applyBorderColor()
@@ -96,6 +107,10 @@ public final class CarouselCardView: UIView {
 
     public override func layoutSubviews() {
         super.layoutSubviews()
+        if contentEdgeFadeHeight > 0 {
+            contentFadeMask.frame = contentContainer.bounds
+            contentFadeMask.setFadeHeight(contentEdgeFadeHeight)
+        }
         let outer = UIBezierPath(
             roundedRect: bounds, cornerRadius: Self.cornerRadius)
         let rimWidth: CGFloat = 3
@@ -103,6 +118,7 @@ public final class CarouselCardView: UIView {
         outer.append(UIBezierPath(
             roundedRect: innerRect,
             cornerRadius: max(0, Self.cornerRadius - rimWidth)))
+        borderMaskView.frame = bounds
         borderMask.frame = bounds
         borderMask.path = outer.cgPath
 
@@ -126,6 +142,21 @@ public final class CarouselCardView: UIView {
     /// Enables the glass rim stroke (off by default; the host style gates it).
     public func setBorderEnabled(_ enabled: Bool) {
         borderView.isHidden = !enabled
+    }
+
+    /// Dissolve depth for content at the card's top and bottom edges
+    /// (0, the default, keeps the hard clip).
+    public func setContentEdgeFadeHeight(_ height: CGFloat) {
+        contentEdgeFadeHeight = max(0, height)
+        contentContainer.mask = contentEdgeFadeHeight > 0 ? contentFadeMask : nil
+        setNeedsLayout()
+    }
+
+    /// Hides the card's own surface tone (animatable). While immersed the
+    /// content edge fades dissolve into the SCREEN background — a visible
+    /// card-toned band behind them would silhouette the retired container.
+    public func setSurfaceHidden(_ hidden: Bool) {
+        backgroundColor = hidden ? .clear : .secondarySystemBackground
     }
 
     /// Animatable border opacity — the carousel fades it with the rest of its
@@ -176,5 +207,38 @@ public final class CarouselCardView: UIView {
 
     @objc private func muteTapped() {
         onMuteToggle?()
+    }
+}
+
+/// A mask that is opaque through the middle and dissolves to clear over a fixed
+/// point-run at the top and bottom edges. Backed by a gradient layer directly,
+/// so UIView animations that resize the card (immersion's bottom extension)
+/// carry the mask along.
+private final class VerticalEdgeFadeMaskView: UIView {
+
+    override class var layerClass: AnyClass { CAGradientLayer.self }
+    private var gradient: CAGradientLayer { layer as! CAGradientLayer }
+    private var fadeHeight: CGFloat = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        gradient.colors = [
+            UIColor.white.withAlphaComponent(0).cgColor,
+            UIColor.white.cgColor,
+            UIColor.white.cgColor,
+            UIColor.white.withAlphaComponent(0).cgColor,
+        ]
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    /// Recomputes the fade run as a fraction of the current height — call on
+    /// every size change.
+    func setFadeHeight(_ height: CGFloat) {
+        fadeHeight = height
+        guard bounds.height > 0 else { return }
+        let fraction = min(max(height / bounds.height, 0), 0.5)
+        gradient.locations = [0, NSNumber(value: fraction), NSNumber(value: 1 - fraction), 1]
     }
 }

@@ -2,12 +2,19 @@
 //  CarouselScrubberView.swift
 //  LunaDesignSystem
 //
-//  The scrub area under the cards: one small preview per card. Dragging through
-//  it previews cards continuously (much faster than paging one by one);
-//  releasing commits the index under the finger. A quick flick instead pages a
-//  single card. The strip keeps the selected chip centered (clamped at the
-//  ends) when there are more previews than fit; only while a positional drag
-//  is live does it fall back to keep-visible scrolling.
+//  The scrub area under the cards: one small preview per card. The selected
+//  chip is ALWAYS centered in the viewport — symmetric content insets let even
+//  the first and last chips reach center. Dragging selects the chip under the
+//  finger while the strip glides to re-center it; because re-centering slides
+//  new chips under a stationary finger, holding the finger off-center keeps
+//  scrolling toward that side until release (a display link drives the glide,
+//  its speed proportional to the finger's distance from center). Releasing
+//  commits the selection; a quick flick instead pages a single card.
+//
+//  The strip has no container chrome — chips float directly on the background
+//  and fade-blur out as they approach either end (an alpha gradient mask plus
+//  gradient-masked blur veils), so hosts can flank the strip with controls and
+//  let chips melt away before reaching them.
 //
 //  Two styles: `.thumbnails` (small 9:16 image chips — Downloader) and
 //  `.miniCards` (miniature article cards — Reader): each chip is a tiny card
@@ -36,6 +43,13 @@ public final class CarouselScrubberView: UIView {
 
     public let style: Style
 
+    /// Width of the fade-blur zone at each end of the strip. Chips dissolve
+    /// across this zone as they approach the bounds, so flanking controls
+    /// never sit over fully-drawn chips. 0 disables the effect.
+    public var edgeFadeWidth: CGFloat = 0 {
+        didSet { setNeedsLayout() }
+    }
+
     private var itemSize: CGSize {
         switch style {
         case .thumbnails:
@@ -51,37 +65,46 @@ public final class CarouselScrubberView: UIView {
 
     private let spacing: CGFloat = 5
 
-    private let tray = UIView()
+    /// Hosts the scroll view and carries the edge fade mask. The mask must
+    /// live on a non-scrolling ancestor (a mask on the scroll view's own layer
+    /// would ride along with its scrolled bounds) — and must NOT contain the
+    /// blur veils: UIVisualEffectView only supports masks set directly on the
+    /// effect view itself, not on an ancestor.
+    private let stripContainer = UIView()
     private let scrollView = UIScrollView()
     private let stack = UIStackView()
+    private let fadeMask = GradientMaskView()
+    private let leadingBlur = UIVisualEffectView(effect: UIBlurEffect(style: .regular))
+    private let trailingBlur = UIVisualEffectView(effect: UIBlurEffect(style: .regular))
     private var itemViews: [ScrubberItemView] = []
     private var selectedIndex = 0
     private var dragStartTime: CFTimeInterval = 0
-    /// True while a positional drag is live. Selection changes during the drag
-    /// must not re-center the strip under the stationary finger — the shifting
-    /// content would remap the finger to a new index, which would shift the
-    /// content again (a runaway feedback loop). Drags keep the old
-    /// keep-visible behavior; the commit re-centers.
+    /// True while a positional drag is live. The display link owns the content
+    /// offset for the drag's duration, so programmatic centering (layout
+    /// passes, external selection) must stand aside until release.
     private var isDragActive = false
+    /// The finger's live x (in the strip's own coordinates) while a drag runs.
+    private var dragLocationX: CGFloat = 0
+    /// Drives the glide while a drag is live: each frame the strip eases
+    /// toward centering the chip under the finger, which slides new chips
+    /// under a stationary off-center finger — continuous scrolling.
+    private var dragDisplayLink: CADisplayLink?
 
     public init(style: Style = .thumbnails) {
         self.style = style
         super.init(frame: .zero)
         backgroundColor = .clear
 
-        // A soft capsule tray hugs the strip, so the chips read as one control
-        // instead of loose rectangles floating on the background.
-        tray.backgroundColor = .secondarySystemBackground
-        tray.layer.cornerCurve = .continuous
-        tray.isUserInteractionEnabled = false
-        addSubview(tray)
+        stripContainer.frame = bounds
+        stripContainer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(stripContainer)
 
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         // The strip's own gestures do all the work; the scroll view is only a
         // programmatically-scrolled viewport.
         scrollView.panGestureRecognizer.isEnabled = false
-        addSubview(scrollView)
+        stripContainer.addSubview(scrollView)
 
         stack.axis = .horizontal
         stack.alignment = .center
@@ -89,11 +112,20 @@ public final class CarouselScrubberView: UIView {
         stack.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(stack)
 
+        // Edge veils: gradient-masked blurs sit above the chips so they smear
+        // into the background while the outer alpha mask fades them away.
+        for blur in [leadingBlur, trailingBlur] {
+            blur.isUserInteractionEnabled = false
+            addSubview(blur)
+        }
+        leadingBlur.mask = GradientMaskView(fadingFrom: .leading)
+        trailingBlur.mask = GradientMaskView(fadingFrom: .trailing)
+
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: stripContainer.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: stripContainer.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: stripContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: stripContainer.trailingAnchor),
             stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
             stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
@@ -110,32 +142,41 @@ public final class CarouselScrubberView: UIView {
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
 
+    deinit {
+        dragDisplayLink?.invalidate()
+    }
+
     public override var intrinsicContentSize: CGSize {
         CGSize(width: UIView.noIntrinsicMetric, height: preferredHeight)
     }
 
     public override func layoutSubviews() {
         super.layoutSubviews()
-        centerStripIfNarrow()
+        updateContentInsets()
         if !isDragActive { scrollSelectedToCenter(animated: false) }
-        // The tray hugs the visible strip (content width when it fits, the
-        // full viewport when it scrolls), with breathing room around the chips.
-        let contentWidth = stack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
-        let trayWidth = min(bounds.width, contentWidth + 24)
-        let trayHeight = itemSize.height + 16
-        tray.frame = CGRect(
-            x: (bounds.width - trayWidth) / 2,
-            y: (bounds.height - trayHeight) / 2,
-            width: trayWidth,
-            height: trayHeight)
-        tray.layer.cornerRadius = trayHeight / 2
+        layoutEdgeVeils()
     }
 
-    /// When every item fits, center the strip instead of leading-aligning it.
-    private func centerStripIfNarrow() {
-        let contentWidth = stack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
-        let slack = bounds.width - contentWidth
-        scrollView.contentInset.left = max(0, slack / 2)
+    /// Symmetric insets of (viewport − chip) / 2 let EVERY chip — including
+    /// the first and last — sit exactly at the viewport's center.
+    private func updateContentInsets() {
+        let inset = max(0, (bounds.width - itemSize.width) / 2)
+        scrollView.contentInset.left = inset
+        scrollView.contentInset.right = inset
+    }
+
+    private func layoutEdgeVeils() {
+        stripContainer.layer.mask = edgeFadeWidth > 0 ? fadeMask.layer : nil
+        fadeMask.frame = stripContainer.bounds
+        fadeMask.setFadeWidth(edgeFadeWidth, in: bounds.width)
+        let veilWidth = min(edgeFadeWidth, bounds.width / 2)
+        leadingBlur.frame = CGRect(x: 0, y: 0, width: veilWidth, height: bounds.height)
+        trailingBlur.frame = CGRect(
+            x: bounds.width - veilWidth, y: 0, width: veilWidth, height: bounds.height)
+        leadingBlur.mask?.frame = leadingBlur.bounds
+        trailingBlur.mask?.frame = trailingBlur.bounds
+        leadingBlur.isHidden = edgeFadeWidth <= 0
+        trailingBlur.isHidden = edgeFadeWidth <= 0
     }
 
     // MARK: - Content
@@ -171,31 +212,28 @@ public final class CarouselScrubberView: UIView {
         guard itemViews.indices.contains(index) else { return }
         selectedIndex = index
         applySelectionAppearance()
-        if isDragActive {
-            let target = itemViews[index]
-            let frame = target.convert(target.bounds, to: scrollView).insetBy(dx: -30, dy: 0)
-            scrollView.scrollRectToVisible(frame, animated: animated)
-        } else {
-            scrollSelectedToCenter(animated: animated)
-        }
+        // While a drag is live the display link owns the offset and is already
+        // gliding the selection to center.
+        if !isDragActive { scrollSelectedToCenter(animated: animated) }
     }
 
-    /// Scrolls so the selected chip sits at the viewport's center, clamped to
-    /// the strip's ends (the strip never overscrolls past its edges).
+    /// Scrolls so the selected chip sits at the viewport's center. The
+    /// symmetric content insets guarantee every chip can reach it exactly.
     private func scrollSelectedToCenter(animated: Bool) {
-        guard itemViews.indices.contains(selectedIndex),
-              scrollView.bounds.width > 0 else { return }
-        let target = itemViews[selectedIndex]
+        guard let x = centeringOffsetX(forIndex: selectedIndex),
+              abs(scrollView.contentOffset.x - x) > 0.5 else { return }
+        scrollView.setContentOffset(CGPoint(x: x, y: 0), animated: animated)
+    }
+
+    /// The content offset that puts chip `index`'s center at the viewport's
+    /// center, or nil before layout can answer.
+    private func centeringOffsetX(forIndex index: Int) -> CGFloat? {
+        guard itemViews.indices.contains(index), scrollView.bounds.width > 0
+        else { return nil }
+        let target = itemViews[index]
         let chipCenterX = target.convert(
             CGPoint(x: target.bounds.midX, y: 0), to: scrollView).x
-        let viewport = scrollView.bounds.width
-        let minOffset = -scrollView.contentInset.left
-        let maxOffset = max(
-            minOffset,
-            scrollView.contentSize.width + scrollView.contentInset.right - viewport)
-        let x = min(max(chipCenterX - viewport / 2, minOffset), maxOffset)
-        guard abs(scrollView.contentOffset.x - x) > 0.5 else { return }
-        scrollView.setContentOffset(CGPoint(x: x, y: 0), animated: animated)
+        return chipCenterX - scrollView.bounds.width / 2
     }
 
     private func applySelectionAppearance() {
@@ -208,8 +246,8 @@ public final class CarouselScrubberView: UIView {
 
     // MARK: - Gestures
 
-    private func index(at location: CGPoint) -> Int {
-        let inStrip = convert(location, to: stack)
+    private func index(atX x: CGFloat) -> Int {
+        let inStrip = convert(CGPoint(x: x, y: 0), to: stack)
         return CarouselScrubberMath.index(
             forLocationX: inStrip.x,
             thumbnailWidth: itemSize.width,
@@ -219,7 +257,7 @@ public final class CarouselScrubberView: UIView {
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         guard !itemViews.isEmpty else { return }
-        onCommit?(index(at: gesture.location(in: self)))
+        onCommit?(index(atX: gesture.location(in: self).x))
     }
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -228,11 +266,12 @@ public final class CarouselScrubberView: UIView {
         case .began:
             isDragActive = true
             dragStartTime = CACurrentMediaTime()
-            preview(at: gesture.location(in: self))
+            dragLocationX = gesture.location(in: self).x
+            startDragDisplayLink()
         case .changed:
-            preview(at: gesture.location(in: self))
+            dragLocationX = gesture.location(in: self).x
         case .ended:
-            isDragActive = false
+            stopDrag()
             let duration = CACurrentMediaTime() - dragStartTime
             if let step = CarouselScrubberMath.flickPageStep(
                 translationX: gesture.translation(in: self).x,
@@ -241,22 +280,107 @@ public final class CarouselScrubberView: UIView {
             ) {
                 onPageStep?(step)
             } else {
-                onCommit?(index(at: gesture.location(in: self)))
+                onCommit?(selectedIndex)
             }
         case .cancelled, .failed:
-            isDragActive = false
+            stopDrag()
             onCommit?(selectedIndex)
         default:
             break
         }
     }
 
-    private func preview(at location: CGPoint) {
-        let index = index(at: location)
-        guard index != selectedIndex else { return }
-        setSelectedIndex(index, animated: true)
-        onPreview?(index)
+    private func startDragDisplayLink() {
+        dragDisplayLink?.invalidate()
+        let link = CADisplayLink(target: self, selector: #selector(dragTick(_:)))
+        link.add(to: .main, forMode: .common)
+        dragDisplayLink = link
     }
+
+    private func stopDrag() {
+        isDragActive = false
+        dragDisplayLink?.invalidate()
+        dragDisplayLink = nil
+    }
+
+    /// One frame of the live drag: select the chip under the finger, then ease
+    /// the strip toward centering it. Because the ease slides fresh chips
+    /// under a stationary finger, holding off-center keeps the strip flowing
+    /// toward that side — faster the farther from center — until it clamps at
+    /// an end or the finger returns to the middle.
+    @objc private func dragTick(_ link: CADisplayLink) {
+        guard isDragActive, window != nil else {
+            stopDrag()
+            return
+        }
+        let index = index(atX: dragLocationX)
+        if index != selectedIndex {
+            selectedIndex = index
+            applySelectionAppearance()
+            onPreview?(index)
+        }
+        guard let target = centeringOffsetX(forIndex: selectedIndex) else { return }
+        let current = scrollView.contentOffset.x
+        let delta = target - current
+        guard abs(delta) > 0.1 else { return }
+        let dt = CGFloat(max(link.targetTimestamp - link.timestamp, 1.0 / 120.0))
+        // Proportional glide, capped so long jumps stay readable.
+        let pitch = itemSize.width + spacing
+        let maxStep = pitch * 8 * dt
+        let step = min(max(delta * 6 * dt, -maxStep), maxStep)
+        let clamped = abs(step) < abs(delta) ? step : delta
+        scrollView.contentOffset.x = current + clamped
+    }
+}
+
+/// A view whose layer is a horizontal alpha gradient — used both as the
+/// strip's outer fade mask and as the masks that taper the edge blur veils.
+private final class GradientMaskView: UIView {
+    enum Edge { case leading, trailing }
+
+    override class var layerClass: AnyClass { CAGradientLayer.self }
+
+    private var gradientLayer: CAGradientLayer { layer as! CAGradientLayer }
+
+    /// Full-strip mask: opaque through the middle, fading to clear across
+    /// `fadeWidth` at both ends. Configure via `setFadeWidth`.
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        gradientLayer.startPoint = CGPoint(x: 0, y: 0.5)
+        gradientLayer.endPoint = CGPoint(x: 1, y: 0.5)
+        gradientLayer.colors = [
+            UIColor.clear.cgColor, UIColor.black.cgColor,
+            UIColor.black.cgColor, UIColor.clear.cgColor,
+        ]
+        gradientLayer.locations = [0, 0, 1, 1]
+    }
+
+    /// Veil mask: fully opaque at the given outer edge, clear at the inner one
+    /// — the blur is strongest where chips are about to vanish.
+    convenience init(fadingFrom edge: Edge) {
+        self.init(frame: .zero)
+        gradientLayer.colors = [UIColor.black.cgColor, UIColor.clear.cgColor]
+        gradientLayer.locations = [0, 1]
+        if edge == .trailing {
+            gradientLayer.startPoint = CGPoint(x: 1, y: 0.5)
+            gradientLayer.endPoint = CGPoint(x: 0, y: 0.5)
+        }
+    }
+
+    func setFadeWidth(_ fadeWidth: CGFloat, in totalWidth: CGFloat) {
+        guard totalWidth > 0 else { return }
+        let fraction = min(max(fadeWidth / totalWidth, 0), 0.5)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.locations = [
+            0, NSNumber(value: Double(fraction)),
+            NSNumber(value: Double(1 - fraction)), 1,
+        ]
+        CATransaction.commit()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
 }
 
 /// One strip chip: an image (thumbnail style) or a miniature article card
@@ -305,7 +429,8 @@ private final class ScrubberItemView: UIView {
     /// "body text" bars. Fixed geometry — the chip size never changes.
     private func buildMiniCard(size: CGSize) {
         // The chip carries its own card surface even when the shadow is off,
-        // so unselected chips still read as tiny cards resting on the tray.
+        // so unselected chips still read as tiny cards floating on the
+        // background.
         backgroundColor = .systemBackground
         let inset: CGFloat = 6
         let contentWidth = size.width - inset * 2

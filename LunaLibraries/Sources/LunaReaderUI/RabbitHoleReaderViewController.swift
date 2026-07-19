@@ -384,6 +384,13 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         }
     }
 
+    /// The live scroll surface of the focused layer, or nil when it has none
+    /// (RSVP). A host that draws its own scroll indicator tracks this and
+    /// retargets it whenever `onContentHierarchyChanged` fires (dive, pop, mode
+    /// switch, article embed) — the focused layer, and thus its scroll view,
+    /// changes across those.
+    public var focusedContentScrollView: UIScrollView? { layers[safe: focus]?.contentScrollView }
+
     // MARK: - External chrome (host-rendered header pills)
 
     /// The focused layer's chrome state, or nil before any layer exists.

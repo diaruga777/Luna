@@ -3,7 +3,7 @@
 //  LunaTests
 //
 //  Pure-math coverage of the card-carousel layout (portrait 9:16 cards with
-//  neighbor peeks) and the scrub strip's index mapping / flick classification.
+//  neighbor peeks) and the scrub strip's index mapping.
 //
 
 import XCTest
@@ -109,24 +109,5 @@ final class CarouselScrubberMathTests: XCTestCase {
             forLocationX: 10_000, thumbnailWidth: 26, spacing: 5, count: 10), 9)
         XCTAssertEqual(CarouselScrubberMath.index(
             forLocationX: 40, thumbnailWidth: 26, spacing: 5, count: 0), 0)
-    }
-
-    func testQuickShortSwipeIsAFlick() {
-        XCTAssertEqual(CarouselScrubberMath.flickPageStep(
-            translationX: -40, velocityX: -900, duration: 0.12), 1)
-        XCTAssertEqual(CarouselScrubberMath.flickPageStep(
-            translationX: 35, velocityX: 800, duration: 0.15), -1)
-    }
-
-    func testSlowOrLongDragsAreScrubsNotFlicks() {
-        // Too slow.
-        XCTAssertNil(CarouselScrubberMath.flickPageStep(
-            translationX: -40, velocityX: -200, duration: 0.2))
-        // Too long a press.
-        XCTAssertNil(CarouselScrubberMath.flickPageStep(
-            translationX: -40, velocityX: -900, duration: 0.8))
-        // Traveled too far — the user was dragging through cards.
-        XCTAssertNil(CarouselScrubberMath.flickPageStep(
-            translationX: -200, velocityX: -900, duration: 0.25))
     }
 }

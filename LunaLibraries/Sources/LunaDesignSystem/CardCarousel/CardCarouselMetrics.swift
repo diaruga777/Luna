@@ -103,17 +103,9 @@ public struct CardCarouselMetrics: Equatable {
     }
 }
 
-/// Shared math for the thumbnail scrub strip under the cards: which card index a
-/// touch maps to, and whether a released drag was a quick flick (page one card)
-/// rather than a positional scrub (jump to the index under the finger).
+/// Shared math for the thumbnail scrub strip under the cards: which card index
+/// a touch maps to.
 public enum CarouselScrubberMath {
-    /// A drag released within this many seconds…
-    public static let flickMaximumDuration: TimeInterval = 0.3
-    /// …that traveled at least this fast…
-    public static let flickMinimumVelocity: CGFloat = 500
-    /// …but no farther than this, is a flick (page ±1), not a positional scrub.
-    public static let flickMaximumTranslation: CGFloat = 70
-
     /// Maps a touch x (in strip-content coordinates) to a card index.
     public static func index(
         forLocationX x: CGFloat,
@@ -124,21 +116,5 @@ public enum CarouselScrubberMath {
         guard count > 0, thumbnailWidth > 0 else { return 0 }
         let slot = Int(floor(x / (thumbnailWidth + spacing)))
         return min(max(slot, 0), count - 1)
-    }
-
-    /// Classifies a released drag. Returns the page step (+1 = next, -1 = previous)
-    /// for a quick flick, or nil when the gesture was a positional scrub.
-    public static func flickPageStep(
-        translationX: CGFloat,
-        velocityX: CGFloat,
-        duration: TimeInterval
-    ) -> Int? {
-        guard duration <= flickMaximumDuration,
-              abs(velocityX) >= flickMinimumVelocity,
-              abs(translationX) <= flickMaximumTranslation
-        else { return nil }
-        // Swiping left (negative velocity) advances to the NEXT card, matching
-        // scroll direction.
-        return velocityX < 0 ? 1 : -1
     }
 }

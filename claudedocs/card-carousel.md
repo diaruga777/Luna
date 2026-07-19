@@ -21,9 +21,10 @@ own adapters later). The Downloader-specific adapters live in
   carries the screen. All geometry is pure math in `CardCarouselMetrics`
   (unit-tested in `CardCarouselMetricsTests`).
 - Above Downloader cards: the host's `NavHeaderBar`. Below: the scrub strip
-  (`CarouselScrubberView`), one small 9:16 thumbnail per card. The Reader gives the
-  strip a wider horizontal inset and flanks it with 44pt Liquid Glass Settings and Share
-  circles. The download-progress footer floats above the safe-area bottom as before.
+  (`CarouselScrubberView`), one small 9:16 thumbnail per card. The Reader runs the
+  strip edge to edge and flanks it with 44pt Liquid Glass Settings and Share circles —
+  chips fade-blur out before reaching them (`scrubberEdgeFadeWidth` 72). The
+  download-progress footer floats above the safe-area bottom as before.
 
 ## Interaction model
 
@@ -35,14 +36,19 @@ own adapters later). The Downloader-specific adapters live in
 - **Paging** happens outside the card: a horizontal drag on the insets left/right of
   the card drives the eclipse transition *interactively* — it tracks the finger,
   with 1.5× horizontal movement on both the Reader and Downloader root screens,
-  plays forward and back, and on release finishes (past 50%, or a committed flick)
-  or reverses back to rest. A tap on a peeked edge pages one card. A flick on the
-  scrub strip pages one card; dragging through the strip previews cards
-  continuously (thumbnail overlay over the center card) and commits the index
-  under the finger on release. The strip keeps the selected chip centered in
-  its viewport (clamped at the ends); only while a positional drag is live
-  does it fall back to keep-visible scrolling, so the content never shifts
-  under the stationary finger.
+  plays forward and back, and on release finishes (past 50%, or with enough
+  release velocity toward the target) or reverses back to rest. A tap on a
+  peeked edge pages one card. The scrub strip scrolls natively like a
+  miniature carousel: the chip at its viewport center is the live selection —
+  panning left brings chips (and cards) in from the right, each chip passing
+  center previews its card over the centered card — and releasing decelerates
+  (`decelerationRate = .fast`) to the nearest chip dead-center via a
+  `targetContentOffset` snap, then commits it. Symmetric content insets let
+  even the first and last chips center exactly; at rest the selected chip is
+  always centered, whatever selected it (scrub, tap, or card swipe). A tap on
+  a chip commits it directly. Chips fade-blur out near the strip's ends
+  (`CardCarouselStyle.scrubberEdgeFadeWidth` → `CarouselScrubberView
+  .edgeFadeWidth`: an alpha gradient mask plus gradient-masked blur veils).
 - **Audio** is off by default (`CardCarouselViewController.isSoundMuted`, carousel-
   wide). The mute/unmute button sits at the card's top-right and only shows when the
   content reports `supportsAudio` (videos discover their audio track async). Pressing
@@ -74,7 +80,7 @@ source URL).
 (Reduce Motion and multi-card jumps get a crossfade instead). Its ingress runs
 inside a `UIViewPropertyAnimator`, so the inset pan scrubs it with the finger
 (forward and back); releasing continues to the zenith or reverses to rest. Taps
-and scrub-strip flicks run the same transition non-interactively.
+and single-step scrub commits run the same transition non-interactively.
 
 1. **Ingress (~66%)** — the incoming side card (the moon) slides over the stationary
    outgoing card, growing from `sideScale` to a 1.03 overshoot (guaranteeing total
@@ -143,11 +149,11 @@ Differences from the Downloader, via `CardCarouselStyle`:
   and web saves a globe until the favicon lands (the data-source callback may
   fire twice: instant fallback, then the fetched icon —
   `ArticleSourceBadge.fallback(for:)`, unit-tested in `SourceBadgeTests`).
-  Dragging the strip shows the title instantly,
-  then mounts the previewed card's REAL live content into the overlay once the
-  finger rests on a chip for ~120ms (debounced so sweeping across chips doesn't
-  build a reader per chip) — scrubbed-to cards render their full contents, not
-  a bare title card.
+  Scrolling the strip shows the title instantly,
+  then mounts the previewed card's REAL live content into the overlay once a
+  chip rests at the strip's center for ~120ms (debounced so scrolling through
+  chips doesn't build a reader per chip) — scrubbed-to cards render their full
+  contents, not a bare title card.
 - EVERY mounted card (centered + both side peeks) embeds a full live
   `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out to the
   card's bounds — the card view IS the fullscreen reader view (one header, one

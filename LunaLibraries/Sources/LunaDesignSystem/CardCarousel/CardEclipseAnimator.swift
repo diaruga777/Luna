@@ -20,8 +20,8 @@
 //
 //  The ingress runs inside a UIViewPropertyAnimator so an interactive pan can
 //  scrub it forward and back with the finger; releasing either finishes through
-//  the zenith or reverses back to rest. Taps/flicks run the same transition
-//  non-interactively. The transition owns only the dressing (dimmer, whitening,
+//  the zenith or reverses back to rest. Taps and scrub commits run the same
+//  transition non-interactively. The transition owns only the dressing (dimmer, whitening,
 //  corona, flare, black veils) and the incoming card's motion — the carousel's
 //  `atZenith` callback does the slot bookkeeping and reports the affected views
 //  back for the egress reveal.
@@ -45,7 +45,7 @@ public struct CardEclipseZenithResult {
 }
 
 /// One eclipse page transition — interactive or automatic. Create it, then either
-/// `animateToFinish()` (tap/flick) or drive it with `update(fraction:)` +
+/// `animateToFinish()` (taps, scrub commits) or drive it with `update(fraction:)` +
 /// `finishInteractive()` / `cancelInteractive()` from a pan.
 public final class CardEclipseTransition {
 
@@ -213,7 +213,7 @@ public final class CardEclipseTransition {
         }
     }
 
-    // MARK: - Automatic run (taps, flicks)
+    // MARK: - Automatic run (taps, scrub commits)
 
     public func animateToFinish() {
         didStart = true

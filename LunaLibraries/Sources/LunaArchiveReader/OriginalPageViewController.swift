@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaDesignSystem
 import LunaStorage
 import LunaModels
 import UIKit
@@ -77,6 +78,7 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        HorizonScrollIndicator.install(on: webView.scrollView, in: view)
 
         loadOriginal()
     }

@@ -178,6 +178,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        HorizonScrollIndicator.install(on: webView.scrollView, in: view)
         WebJunkBlocker.applyRuleList(to: webView.configuration.userContentController)
         webView.navigationDelegate = self
         webView.load(URLRequest(url: url))

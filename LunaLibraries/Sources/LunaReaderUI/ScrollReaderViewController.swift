@@ -442,6 +442,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             textView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
+        HorizonScrollIndicator.install(on: textView, in: view)
         applyTopChromeInset(preservingVisiblePosition: false)
 
         let imageTap = UITapGestureRecognizer(target: self, action: #selector(imageTapped(_:)))

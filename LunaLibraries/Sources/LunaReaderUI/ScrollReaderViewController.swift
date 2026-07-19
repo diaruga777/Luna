@@ -1363,6 +1363,14 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             guard let overlay else { return }
             coordinator?.inlineReaderWillPresent(overlay)
         }
+        overlay.onDismissalTransitionWillBegin = { [weak coordinator, weak overlay] in
+            guard let overlay else { return }
+            coordinator?.inlineReaderWillDismiss(overlay)
+        }
+        overlay.onDismissalTransitionDidCancel = { [weak coordinator, weak overlay] in
+            guard let overlay else { return }
+            coordinator?.inlineReaderDismissalDidCancel(overlay)
+        }
         overlay.onDismiss = { [weak self, weak coordinator, weak overlay] in
             self?.restoreScroll(to: readerOffset)
             guard let overlay else { return }

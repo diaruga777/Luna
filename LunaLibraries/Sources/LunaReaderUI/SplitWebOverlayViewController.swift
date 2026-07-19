@@ -17,12 +17,22 @@ public protocol InlineReaderPresentationCoordinating: AnyObject {
     func inlineReaderWillPresent(_ reader: ReaderChromeControlling)
     /// Restore the outer reader as the stable chrome's target.
     func inlineReaderDidDismiss(_ reader: ReaderChromeControlling)
+    /// Begin any visual restoration that should accompany the reverse eclipse.
+    /// Stable ownership still changes only in `inlineReaderDidDismiss`.
+    func inlineReaderWillDismiss(_ reader: ReaderChromeControlling)
+    /// Put dismissal visuals back if UIKit cancels the reverse transition.
+    func inlineReaderDismissalDidCancel(_ reader: ReaderChromeControlling)
     /// Top edge of the existing reader card in window coordinates.
     var inlineReaderTopEdgeInWindow: CGFloat { get }
     /// Resting reader-card frame in window coordinates.
     var inlineReaderCardFrameInWindow: CGRect { get }
     /// Whether the outer reader is scrollable content that remains visible below.
     var inlineReaderShowsOuterContentBelow: Bool { get }
+}
+
+public extension InlineReaderPresentationCoordinating {
+    func inlineReaderWillDismiss(_ reader: ReaderChromeControlling) {}
+    func inlineReaderDismissalDidCancel(_ reader: ReaderChromeControlling) {}
 }
 
 /// A reader nested inside the outer reader's fixed chrome.
@@ -37,6 +47,8 @@ public final class SplitWebOverlayViewController: UIViewController,
     ReaderChromeControlling {
 
     public var onDismiss: (() -> Void)?
+    public var onDismissalTransitionWillBegin: (() -> Void)?
+    public var onDismissalTransitionDidCancel: (() -> Void)?
     public var onOpen: (() -> Void)?
     public var onClose: (() -> Void)?
     public var onChromeStateChanged: (() -> Void)?
@@ -151,6 +163,11 @@ public final class SplitWebOverlayViewController: UIViewController,
         onChromeStateChanged = nil
     }
 
+    fileprivate func presentationDismissalDidCancel() {
+        didDismiss = false
+        onDismissalTransitionDidCancel?()
+    }
+
     // MARK: - Modal eclipse presentation
 
     public func presentationController(
@@ -188,7 +205,10 @@ public final class SplitWebOverlayViewController: UIViewController,
             sourcePoint: initialSourcePoint,
             direction: .reverse,
             sceneFrame: inlineCardFrameInWindow,
-            onTransitionStart: { [weak self] in self?.onClose?() },
+            onTransitionStart: { [weak self] in
+                self?.onClose?()
+                self?.onDismissalTransitionWillBegin?()
+            },
             atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
     }
 
@@ -609,9 +629,11 @@ private final class InlineReaderPresentationController: UIPresentationController
 
     override func dismissalTransitionDidEnd(_ completed: Bool) {
         super.dismissalTransitionDidEnd(completed)
-        guard completed,
-              let overlay = presentedViewController as? SplitWebOverlayViewController
-        else { return }
+        guard let overlay = presentedViewController as? SplitWebOverlayViewController else { return }
+        guard completed else {
+            overlay.presentationDismissalDidCancel()
+            return
+        }
         // Presentation controllers remain retained through this callback. An
         // animator may be released synchronously by `completeTransition`, so it
         // must not own restoration of the outer chrome/scroll-indicator target.

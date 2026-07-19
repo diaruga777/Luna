@@ -334,6 +334,14 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             guard let overlay else { return }
             coordinator?.inlineReaderWillPresent(overlay)
         }
+        overlay.onDismissalTransitionWillBegin = { [weak coordinator, weak overlay] in
+            guard let overlay else { return }
+            coordinator?.inlineReaderWillDismiss(overlay)
+        }
+        overlay.onDismissalTransitionDidCancel = { [weak coordinator, weak overlay] in
+            guard let overlay else { return }
+            coordinator?.inlineReaderDismissalDidCancel(overlay)
+        }
         overlay.onDismiss = { [weak coordinator, weak overlay] in
             guard let overlay else { return }
             coordinator?.inlineReaderDidDismiss(overlay)

@@ -88,7 +88,10 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   extraction network work stays asynchronous. Simulator-only "Split High"/"Split Low"
   buttons still exercise high/low source origins.
   After the reverse eclipse, a root scroll reader already at its top, or a paused root
-  RSVP reader, also surfaces the carousel back into card view.
+  RSVP reader, also surfaces the carousel back into card view. That carousel chrome
+  restoration now begins with the reverse eclipse (and reverses if UIKit cancels the
+  dismissal); the completed-dismissal callback remains responsible for committing the
+  stable chrome target and other state-machine cleanup.
 
 ## RSVP reader (ReadMaxx-style) — Words + Phrases sub-modes
 

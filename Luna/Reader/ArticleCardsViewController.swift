@@ -900,6 +900,22 @@ private final class ReaderCardContentViewController: CardContentViewController,
         }
     }
 
+    func inlineReaderWillDismiss(_ reader: ReaderChromeControlling) {
+        guard isCentered,
+              rabbitHoleReader?.shouldSurfaceAfterInlineReaderDismissal == true
+        else { return }
+        // This is visual choreography only. The chrome target remains the inline
+        // reader until `inlineReaderDidDismiss` commits the successful dismissal.
+        onImmersionChange?(false, true)
+    }
+
+    func inlineReaderDismissalDidCancel(_ reader: ReaderChromeControlling) {
+        guard isCentered,
+              rabbitHoleReader?.shouldSurfaceAfterInlineReaderDismissal == true
+        else { return }
+        onImmersionChange?(true, rabbitHoleReader?.focusedContentScrollView != nil)
+    }
+
     var inlineReaderTopEdgeInWindow: CGFloat {
         guard isViewLoaded else { return 0 }
         return view.convert(view.bounds, to: nil).minY

@@ -43,6 +43,25 @@ final class InlineReaderTabMetricsTests: XCTestCase {
         XCTAssertTrue(overlay.transitioningDelegate === overlay)
     }
 
+    func testCompletedDismissalRestoresOuterReaderExactlyOnce() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/linked"))
+        let overlay = SplitWebOverlayViewController(
+            url: url, shareProvider: nil, lineHeight: 0, cutY: 300,
+            topHalf: nil, bottomHalf: nil, sourcePoint: CGPoint(x: 80, y: 300))
+        var dismissalCount = 0
+        overlay.onDismiss = { dismissalCount += 1 }
+        let presenter = UIViewController()
+        let presentation = try XCTUnwrap(overlay.presentationController(
+            forPresented: overlay, presenting: presenter, source: presenter))
+
+        presentation.dismissalTransitionDidEnd(false)
+        XCTAssertEqual(dismissalCount, 0)
+
+        presentation.dismissalTransitionDidEnd(true)
+        presentation.dismissalTransitionDidEnd(true)
+        XCTAssertEqual(dismissalCount, 1)
+    }
+
     func testTabsHugTheirContentWhenThereIsRoom() {
         let metrics = InlineReaderTabMetrics(
             availableWidth: 300, idealWidths: [74, 112],

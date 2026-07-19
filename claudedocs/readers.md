@@ -74,7 +74,8 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   the same amount. This leaves the persistent controls unobstructed while the immersed
   outer card remains visible below through a very light blur when it is scrollable.
   Scroll and Original/Web pages use a host-managed horizon-point indicator at the
-  inline card's trailing edge; the root card host retakes its indicator on dismissal.
+  inline card's trailing edge; the root card host retakes its indicator from the
+  presentation controller's completed-dismissal callback (not the short-lived animator).
   `InlineReaderEclipseScene.sceneFrame` clips both directions to the card content edge,
   never the tabs. Inline scrolling has normal rubber-banding and never dismisses a reader.
 - The old split snapshots/peek views are no longer created. The outgoing live reader

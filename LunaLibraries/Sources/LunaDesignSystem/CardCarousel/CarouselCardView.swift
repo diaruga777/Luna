@@ -40,6 +40,17 @@ public final class CarouselCardView: UIView {
     private let contentFadeMask = VerticalEdgeFadeMaskView()
     private var topLeadingAccessory: UIView?
 
+    /// Opacity of transient controls that belong to the centered card rather
+    /// than its media: mute and the optional top-leading accessory. Scrubbed
+    /// media promotes its already-playing preview and fades only this chrome in.
+    public var chromeAlpha: CGFloat {
+        get { muteButton.alpha }
+        set {
+            muteButton.alpha = newValue
+            topLeadingAccessory?.alpha = newValue
+        }
+    }
+
     public override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .secondarySystemBackground
@@ -195,6 +206,7 @@ public final class CarouselCardView: UIView {
         topLeadingAccessory?.removeFromSuperview()
         topLeadingAccessory = view
         guard let view else { return }
+        view.alpha = chromeAlpha
         view.translatesAutoresizingMaskIntoConstraints = false
         addSubview(view)
         NSLayoutConstraint.activate([

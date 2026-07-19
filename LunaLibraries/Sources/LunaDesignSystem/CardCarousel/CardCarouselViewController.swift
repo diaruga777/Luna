@@ -498,19 +498,28 @@ public final class CardCarouselViewController: UIViewController {
     private func mount(index: Int) -> Slot? {
         guard let dataSource else { return nil }
         let content = dataSource.carousel(self, contentControllerForCardAt: index)
+        addChild(content)
+        let slot = mount(index: index, existingContent: content)
+        content.didMove(toParent: self)
+        return slot
+    }
+
+    /// Wraps an already-created child content controller in normal card chrome.
+    /// Scrub-preview promotion uses this to preserve the exact live player.
+    private func mount(index: Int, existingContent content: CardContentViewController) -> Slot {
+        let dataSource = dataSource
         let card = CarouselCardView()
         card.setBorderEnabled(style.showsCardBorder)
         card.setContentEdgeFadeHeight(style.contentEdgeFadeHeight)
-        addChild(content)
         card.installContentView(content.view)
-        content.didMove(toParent: self)
         content.setMuted(isSoundMuted)
         content.audioAvailabilityChanged = { [weak self] in self?.updateMuteUI() }
         card.onMuteToggle = { [weak self] in
             guard let self else { return }
             self.setSoundMuted(!self.isSoundMuted)
         }
-        card.setTopLeadingAccessory(dataSource.carousel(self, topLeadingAccessoryForCardAt: index))
+        card.setTopLeadingAccessory(dataSource?.carousel(
+            self, topLeadingAccessoryForCardAt: index))
         // Install a context-menu interaction only on cards that actually have a
         // menu (probed once at mount; the interaction still asks the delegate for
         // a fresh configuration at press time). An interaction whose delegate
@@ -796,6 +805,10 @@ public final class CardCarouselViewController: UIViewController {
 
     private func removeScrubPreview() {
         unmountPreviewContent()
+        removeScrubPreviewOverlay()
+    }
+
+    private func removeScrubPreviewOverlay() {
         previewOverlay?.removeFromSuperview()
         previewOverlay = nil
         previewImageView = nil
@@ -803,9 +816,15 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     private func commitScrub(to index: Int) {
-        removeScrubPreview()
         guard count > 0, !isTransitioning else { return }
         let target = min(max(index, 0), count - 1)
+        if style.autoplaysScrubPreviewContent,
+           previewContentIndex == target,
+           let content = takeScrubPreviewContent() {
+            promoteScrubPreview(content, to: target)
+            return
+        }
+        removeScrubPreview()
         if target == currentIndex {
             if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
             scrubber.setSelectedIndex(currentIndex, animated: true)
@@ -813,6 +832,55 @@ public final class CardCarouselViewController: UIViewController {
             page(by: target - currentIndex)
         } else {
             jump(to: target)
+        }
+    }
+
+    /// Detaches the live preview without pausing or removing it as a child.
+    /// The caller immediately installs it into a real carousel card.
+    private func takeScrubPreviewContent() -> CardContentViewController? {
+        guard let content = previewContent else { return nil }
+        previewContent = nil
+        previewContentIndex = nil
+        content.view.removeFromSuperview()
+        removeScrubPreviewOverlay()
+        return content
+    }
+
+    /// Commits a scrubbed media preview with no player swap: the preview's
+    /// content controller becomes the real centered slot and keeps playing at
+    /// its current timestamp. Only mute/Photos chrome fades into view.
+    private func promoteScrubPreview(
+        _ content: CardContentViewController,
+        to target: Int
+    ) {
+        slots[currentIndex]?.content.cardDidLeaveCenter()
+
+        if let replaced = slots[target] {
+            unmount(replaced)
+            slots[target] = nil
+        }
+        currentIndex = target
+
+        let promoted = mount(index: target, existingContent: content)
+        promoted.card.chromeAlpha = 0
+        slots[target] = promoted
+
+        let keep = Set((target - 1)...(target + 1))
+        for slot in Array(slots.values) where !keep.contains(slot.index) {
+            unmount(slot)
+            slots[slot.index] = nil
+        }
+        mountWindow()
+        applyMuteState()
+        for slot in slots.values { applyRestingLayout(to: slot) }
+        scrubber.setSelectedIndex(target, animated: true)
+        delegate?.carousel(self, didCenterCardAt: target)
+
+        UIView.animate(
+            withDuration: 0.22, delay: 0,
+            options: [.curveEaseOut, .allowUserInteraction]
+        ) {
+            promoted.card.chromeAlpha = 1
         }
     }
 

@@ -90,6 +90,22 @@ final class CardCarouselMetricsTests: XCTestCase {
 
 final class CarouselScrubberMathTests: XCTestCase {
 
+    func testThumbnailImageKeepsItsItemBoundsAfterInitialLayout() throws {
+        let scrubber = CarouselScrubberView(style: .thumbnails)
+        scrubber.frame = CGRect(x: 0, y: 0, width: 390, height: scrubber.preferredHeight)
+        scrubber.setThumbnailCount(3)
+        scrubber.layoutIfNeeded()
+
+        let imageView = try XCTUnwrap(firstImageView(in: scrubber))
+        let item = try XCTUnwrap(imageView.superview)
+        XCTAssertEqual(imageView.frame, item.bounds)
+    }
+
+    func testMiniCardsReserveSelectionAndShadowRunway() {
+        let scrubber = CarouselScrubberView(style: .miniCards)
+        XCTAssertEqual(scrubber.preferredHeight, 96)
+    }
+
     func testIndexMapsLocationAcrossThumbnails() {
         // 26pt thumbs, 5pt spacing: each slot spans 31pt.
         XCTAssertEqual(CarouselScrubberMath.index(
@@ -109,5 +125,86 @@ final class CarouselScrubberMathTests: XCTestCase {
             forLocationX: 10_000, thumbnailWidth: 26, spacing: 5, count: 10), 9)
         XCTAssertEqual(CarouselScrubberMath.index(
             forLocationX: 40, thumbnailWidth: 26, spacing: 5, count: 0), 0)
+    }
+
+    private func firstImageView(in view: UIView) -> UIImageView? {
+        if let imageView = view as? UIImageView { return imageView }
+        return view.subviews.lazy.compactMap { self.firstImageView(in: $0) }.first
+    }
+}
+
+@MainActor
+final class CardCarouselScrubPromotionTests: XCTestCase {
+
+    func testCommitPromotesPlayingPreviewWithoutPausingOrReplacingIt() throws {
+        let source = ScrubPromotionDataSource()
+        let carousel = CardCarouselViewController()
+        var style = CardCarouselStyle()
+        style.autoplaysScrubPreviewContent = true
+        carousel.style = style
+        carousel.dataSource = source
+        carousel.loadViewIfNeeded()
+        carousel.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        carousel.view.layoutIfNeeded()
+        carousel.reloadData(centeringAt: 0)
+
+        let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
+        scrubber.onPreview?(1)
+        XCTAssertTrue(source.preview.isPlaying)
+        XCTAssertEqual(source.preview.pauseCount, 0)
+
+        scrubber.onCommit?(1)
+
+        XCTAssertEqual(carousel.currentIndex, 1)
+        XCTAssertTrue(source.preview.parent === carousel)
+        XCTAssertTrue(source.preview.isPlaying)
+        XCTAssertEqual(source.preview.pauseCount, 0)
+        XCTAssertEqual(source.normalRequestCounts[1], 1)
+    }
+
+    private func firstScrubber(in view: UIView) -> CarouselScrubberView? {
+        if let scrubber = view as? CarouselScrubberView { return scrubber }
+        return view.subviews.lazy.compactMap { self.firstScrubber(in: $0) }.first
+    }
+}
+
+@MainActor
+private final class ScrubPromotionDataSource: @preconcurrency CardCarouselDataSource {
+    let preview = PlaybackSpyCardContentViewController()
+    var normalRequestCounts: [Int: Int] = [:]
+
+    func numberOfCards(in carousel: CardCarouselViewController) -> Int { 3 }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        contentControllerForCardAt index: Int
+    ) -> CardContentViewController {
+        normalRequestCounts[index, default: 0] += 1
+        return PlaybackSpyCardContentViewController()
+    }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        previewContentControllerForCardAt index: Int
+    ) -> CardContentViewController? { preview }
+
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        loadThumbnailForCardAt index: Int,
+        completion: @escaping (UIImage?) -> Void
+    ) { completion(nil) }
+}
+
+@MainActor
+private final class PlaybackSpyCardContentViewController: CardContentViewController {
+    private(set) var playing = false
+    private(set) var pauseCount = 0
+
+    override var isPlayable: Bool { true }
+    override var isPlaying: Bool { playing }
+
+    override func setPlaying(_ playing: Bool) {
+        self.playing = playing
+        if !playing { pauseCount += 1 }
     }
 }

@@ -65,7 +65,15 @@ public final class CarouselScrubberView: UIView {
     }
 
     public var preferredHeight: CGFloat {
-        itemSize.height + 22
+        switch style {
+        case .thumbnails:
+            itemSize.height + 22
+        case .miniCards:
+            // The selected mini-card scales to 1.1× and casts a 5pt shadow.
+            // Leave enough vertical runway for both instead of clipping the
+            // shadow against the scroll view's bottom edge.
+            itemSize.height + 32
+        }
     }
 
     private var spacing: CGFloat {
@@ -73,7 +81,9 @@ public final class CarouselScrubberView: UIView {
         case .thumbnails:
             40
         case .miniCards:
-            5
+            // At 1.1× the 44pt selected card is 48.4pt wide. A 12pt pitch gap
+            // keeps it visibly separate from both unselected neighbors.
+            12
         }
     }
 
@@ -402,7 +412,11 @@ private final class ScrubberItemView: UIView {
             imageView.layer.cornerRadius = 6
             imageView.layer.cornerCurve = .continuous
             imageView.backgroundColor = .tertiarySystemFill
-            imageView.frame = CGRect(origin: .zero, size: size)
+            // This view is created before Auto Layout gives its parent `size`.
+            // Starting at `size` and also using flexible width/height doubles
+            // the image when the parent grows from zero to its constrained
+            // bounds, making thumbnails overlap and clip below the strip.
+            imageView.frame = bounds
             imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             addSubview(imageView)
         case .miniCards:

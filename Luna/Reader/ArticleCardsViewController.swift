@@ -536,6 +536,12 @@ final class ArticleCardsViewController: UIViewController {
             return CardContentViewController()
         }
         let content = ReaderCardContentViewController(item: items[itemIndex])
+        content.inlineReaderCardFrameInWindowProvider = { [weak self] in
+            guard let self,
+                  let restingFrame = self.carousel.restingCenteredCardFrame(in: self.view)
+            else { return nil }
+            return self.view.convert(restingFrame, to: nil)
+        }
         content.onImmersionChange = { [weak self] immersed, extendsCard in
             guard let self else { return }
             self.carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
@@ -761,6 +767,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
     var onImmersionChange: ((_ immersed: Bool, _ extendsCard: Bool) -> Void)?
     var onReaderReady: ((RabbitHoleReaderViewController) -> Void)?
     var onInlineReaderChange: ((ReaderChromeControlling?) -> Void)?
+    var inlineReaderCardFrameInWindowProvider: (() -> CGRect?)?
 
     private let item: ReadingListItem
     private let statusLabel = UILabel()
@@ -923,6 +930,12 @@ private final class ReaderCardContentViewController: CardContentViewController,
 
     var inlineReaderCardFrameInWindow: CGRect {
         guard isViewLoaded else { return .zero }
+        // Immersion extends this content view to the bottom of the screen. The
+        // nested reader must instead occupy the carousel card's stable resting
+        // footprint; its own metrics reserve the tab strip within that height.
+        if let restingFrame = inlineReaderCardFrameInWindowProvider?() {
+            return restingFrame
+        }
         return view.convert(view.bounds, to: nil)
     }
 

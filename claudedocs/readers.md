@@ -71,7 +71,9 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   to the outer reader on dismissal. The same share button targets the innermost URL/title.
   The modal stays inside the root card's resting footprint: its tabs consume the top
   42 points, and its `CarouselCardView` begins below them with its height shortened by
-  the same amount. This leaves the persistent controls unobstructed while the immersed
+  the same amount. Its presentation frame always comes from the carousel's resting-card
+  geometry, never the live outer card bounds that extend to the screen bottom during
+  immersion. This leaves the persistent controls unobstructed while the immersed
   outer card remains visible below through a very light blur when it is scrollable.
   Scroll and Original/Web pages use a host-managed horizon-point indicator at the
   inline card's trailing edge; the root card host retakes its indicator from the

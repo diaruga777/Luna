@@ -133,13 +133,52 @@ public enum ArticleTextRenderer {
 
     // MARK: - Images
 
+    /// A text attachment that scales its image to the ACTUAL available line width at
+    /// layout time, never exceeding the image's natural (capped) width.
+    ///
+    /// The same article is rendered into text columns of different widths — the
+    /// full screen, and a narrower inset reader card — but the attributed string is
+    /// built once, before layout, when the final column width isn't known. A fixed
+    /// attachment sized to the full screen overflows the narrower card column; being
+    /// wider than the line, it can't be centered by the paragraph's `.center`
+    /// alignment and instead hangs off the trailing edge (the image reads as
+    /// right-shifted). Clamping to `proposedLineFragment.width` keeps every image
+    /// inside its column, so `.center` always centers it.
+    private final class ScalingImageAttachment: NSTextAttachment {
+        /// Upper bound on display width — the image's natural width capped to the
+        /// render's `maxWidth`. Small images are never upscaled past this.
+        private let maxDisplayWidth: CGFloat
+        /// height / width of the source image, preserved when scaling.
+        private let aspectRatio: CGFloat
+
+        init(image: UIImage, maxDisplayWidth: CGFloat, aspectRatio: CGFloat) {
+            self.maxDisplayWidth = maxDisplayWidth
+            self.aspectRatio = aspectRatio
+            super.init(data: nil, ofType: nil)
+            self.image = image
+            self.bounds = CGRect(
+                x: 0, y: 0, width: maxDisplayWidth, height: maxDisplayWidth * aspectRatio)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func attachmentBounds(
+            for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect,
+            glyphPosition position: CGPoint, characterIndex charIndex: Int
+        ) -> CGRect {
+            let available = lineFrag.width > 0 ? lineFrag.width : maxDisplayWidth
+            let width = min(maxDisplayWidth, available)
+            return CGRect(x: 0, y: 0, width: width, height: width * aspectRatio)
+        }
+    }
+
     private static func attributedImage(at fileURL: URL, maxWidth: CGFloat) -> NSAttributedString? {
-        guard let image = downsampledImage(at: fileURL, maxWidth: maxWidth) else { return nil }
-        let attachment = NSTextAttachment()
-        attachment.image = image
-        let displayWidth = min(maxWidth, image.size.width)
-        let displayHeight = displayWidth / image.size.width * image.size.height
-        attachment.bounds = CGRect(x: 0, y: 0, width: displayWidth, height: displayHeight)
+        guard let image = downsampledImage(at: fileURL, maxWidth: maxWidth),
+              image.size.width > 0, image.size.height > 0 else { return nil }
+        let attachment = ScalingImageAttachment(
+            image: image,
+            maxDisplayWidth: min(maxWidth, image.size.width),
+            aspectRatio: image.size.height / image.size.width)
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.paragraphSpacing = 14
@@ -166,9 +205,10 @@ public enum ArticleTextRenderer {
             UIColor.secondarySystemFill.setFill()
             context.fill(CGRect(origin: .zero, size: CGSize(width: displayWidth, height: displayHeight)))
         }
-        let attachment = NSTextAttachment()
-        attachment.image = image
-        attachment.bounds = CGRect(x: 0, y: 0, width: displayWidth, height: displayHeight)
+        let attachment = ScalingImageAttachment(
+            image: image,
+            maxDisplayWidth: displayWidth,
+            aspectRatio: displayHeight / displayWidth)
 
         let paragraph = NSMutableParagraphStyle()
         paragraph.paragraphSpacing = 14

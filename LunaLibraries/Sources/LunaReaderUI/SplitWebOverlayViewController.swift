@@ -19,6 +19,8 @@ public protocol InlineReaderPresentationCoordinating: AnyObject {
     func inlineReaderDidDismiss(_ reader: ReaderChromeControlling)
     /// Top edge of the existing reader card in window coordinates.
     var inlineReaderTopEdgeInWindow: CGFloat { get }
+    /// Resting reader-card frame in window coordinates.
+    var inlineReaderCardFrameInWindow: CGRect { get }
 }
 
 /// A reader nested inside the outer reader's fixed chrome.
@@ -41,16 +43,18 @@ public final class SplitWebOverlayViewController: UIViewController,
     private let initialSourcePoint: CGPoint
     private let outerURL: URL
     private let outerTitle: String
-    private let contentTop: CGFloat
+    private let cardFrameInWindow: CGRect
+    private let shareProvider: ReaderShareProviding?
 
     private let innerNav = UINavigationController()
+    private let cardView = CarouselCardView()
     private let tabBar = UIView()
     private let tabScrollView = UIScrollView()
     private let tabContainer = UIView()
 
     private static let tabBarHeight: CGFloat = 42
     private static let tabInset: CGFloat = 8
-    private static let tabSpacing: CGFloat = 5
+    private static let tabSpacing: CGFloat = -9
     private static let minimumTabWidth: CGFloat = 38
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp, .original]
 
@@ -72,13 +76,17 @@ public final class SplitWebOverlayViewController: UIViewController,
         sourcePoint: CGPoint? = nil,
         outerURL: URL? = nil,
         outerTitle: String? = nil,
-        contentTop: CGFloat = 0
+        contentTop: CGFloat = 0,
+        cardFrame: CGRect? = nil
     ) {
         self.url = url
         self.initialSourcePoint = sourcePoint ?? CGPoint(x: UIScreen.main.bounds.midX, y: cutY)
         self.outerURL = outerURL ?? url
         self.outerTitle = Self.titleFallback(outerTitle, url: outerURL ?? url)
-        self.contentTop = max(contentTop, 0)
+        self.shareProvider = shareProvider
+        self.cardFrameInWindow = cardFrame ?? CGRect(
+            x: 0, y: max(contentTop, 0), width: UIScreen.main.bounds.width,
+            height: max(UIScreen.main.bounds.height - max(contentTop, 0), 0))
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .custom
         transitioningDelegate = self
@@ -89,15 +97,19 @@ public final class SplitWebOverlayViewController: UIViewController,
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
+        cardView.frame = view.bounds
+        cardView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        cardView.setBorderEnabled(true)
+        cardView.setContentEdgeFadeHeight(28)
+        view.addSubview(cardView)
         setUpInnerNav()
         configureTabBar()
     }
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let top = min(contentTop, view.bounds.maxY)
-        innerNav.view.frame = CGRect(x: 0, y: top, width: view.bounds.width,
-                                     height: max(view.bounds.height - top, 0))
+        cardView.frame = view.bounds
+        innerNav.view.frame = cardView.contentContainer.bounds
         layoutTabBar()
     }
 
@@ -123,7 +135,8 @@ public final class SplitWebOverlayViewController: UIViewController,
         source: UIViewController
     ) -> UIPresentationController? {
         InlineReaderPresentationController(
-            presentedViewController: presented, presenting: presenting)
+            presentedViewController: presented, presenting: presenting,
+            frameInWindow: cardFrameInWindow)
     }
 
     public func animationController(
@@ -134,7 +147,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         InlineReaderEclipseAnimator(
             sourcePoint: initialSourcePoint,
             direction: .forward,
-            sceneFrame: eclipseFrame,
+            sceneFrame: cardFrameInWindow,
             onTransitionStart: { [weak self] in self?.transitionWillOpen() },
             atZenith: { [weak self] in
                 guard let self else { return }
@@ -148,7 +161,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         let animator = InlineReaderEclipseAnimator(
             sourcePoint: initialSourcePoint,
             direction: .reverse,
-            sceneFrame: eclipseFrame,
+            sceneFrame: cardFrameInWindow,
             onTransitionStart: { [weak self] in self?.onClose?() },
             atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
         animator.onCompletion = { [weak self] in self?.onDismiss?() }
@@ -164,7 +177,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         innerNav.delegate = self
         innerNav.interactivePopGestureRecognizer?.isEnabled = false
         addChild(innerNav)
-        view.addSubview(innerNav.view)
+        cardView.installContentView(innerNav.view)
         innerNav.didMove(toParent: self)
     }
 
@@ -178,10 +191,6 @@ public final class SplitWebOverlayViewController: UIViewController,
         }
         page.onBecameArticle = { [weak self] in self?.syncHeaderToTopPage() }
         page.onMetadataChanged = { [weak self] in self?.syncHeaderToTopPage() }
-        page.onOverscrollDismiss = { [weak self] in self?.closeInnermostReader() }
-        page.onOverscrollProgress = { [weak self] progress, direction in
-            self?.applyOverscroll(progress: progress, direction: direction)
-        }
         return page
     }
 
@@ -209,10 +218,10 @@ public final class SplitWebOverlayViewController: UIViewController,
             guard let sourcePoint = pendingSourcePoint else { return nil }
             let animator = InlineReaderEclipseAnimator(
                 sourcePoint: sourcePoint, direction: .forward, sceneContainer: view,
-                sceneFrame: eclipseFrame
+                sceneFrame: view.bounds
             ) { [weak self] in
                 guard let self else { return }
-                self.view.bringSubviewToFront(self.innerNav.view)
+                self.cardView.contentContainer.bringSubviewToFront(self.innerNav.view)
                 self.innerNav.view.bringSubviewToFront(self.tabBar)
                 self.syncHeaderToTopPage(animateNewTab: true)
             }
@@ -225,7 +234,7 @@ public final class SplitWebOverlayViewController: UIViewController,
                 sourcePoint: sourcePoint,
                 direction: .reverse,
                 sceneContainer: view,
-                sceneFrame: eclipseFrame,
+                sceneFrame: view.bounds,
                 atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
         default:
             return nil
@@ -252,11 +261,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     // MARK: - Header and tabs
 
     private func configureTabBar() {
-        tabBar.backgroundColor = GlassStyle.solidBarColor
-        tabBar.layer.shadowColor = UIColor.black.cgColor
-        tabBar.layer.shadowOpacity = 0.08
-        tabBar.layer.shadowRadius = 8
-        tabBar.layer.shadowOffset = CGSize(width: 0, height: 3)
+        tabBar.backgroundColor = .clear
         innerNav.view.addSubview(tabBar)
 
         tabScrollView.showsHorizontalScrollIndicator = false
@@ -283,6 +288,7 @@ public final class SplitWebOverlayViewController: UIViewController,
             button.removeTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
             button.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
             tabContainer.addSubview(button)
+            button.layer.zPosition = CGFloat(index)
             nextButtons.append(button)
         }
         reusable.forEach { $0.removeFromSuperview() }
@@ -332,19 +338,20 @@ public final class SplitWebOverlayViewController: UIViewController,
 
     private func layoutTabs(scrollToRight: Bool) {
         let count = tabButtons.count
-        let totalSpacing = Self.tabSpacing * CGFloat(max(count - 1, 0))
+        let idealWidths = tabButtons.map { $0.idealWidth }
         let metrics = InlineReaderTabMetrics(
-            availableWidth: max(tabScrollView.bounds.width - totalSpacing, 0),
-            tabCount: count,
-            minimumTabWidth: Self.minimumTabWidth)
+            availableWidth: tabScrollView.bounds.width,
+            idealWidths: idealWidths,
+            minimumTabWidth: Self.minimumTabWidth,
+            spacing: Self.tabSpacing)
         var x: CGFloat = 0
-        for button in tabButtons {
+        for (index, button) in tabButtons.enumerated() {
             button.frame = CGRect(
-                x: x, y: 0, width: metrics.tabWidth,
+                x: x, y: 0, width: metrics.tabWidths[index],
                 height: tabScrollView.bounds.height)
-            x += metrics.tabWidth + Self.tabSpacing
+            x += metrics.tabWidths[index] + Self.tabSpacing
         }
-        let contentWidth = metrics.contentWidth + totalSpacing
+        let contentWidth = metrics.contentWidth
         tabContainer.frame = CGRect(
             x: 0, y: 0, width: contentWidth, height: tabScrollView.bounds.height)
         tabScrollView.contentSize = tabContainer.bounds.size
@@ -382,24 +389,6 @@ public final class SplitWebOverlayViewController: UIViewController,
         innerNav.popToViewController(innerNav.viewControllers[pageIndex], animated: true)
     }
 
-    private var eclipseFrame: CGRect {
-        CGRect(x: 0, y: contentTop, width: view.bounds.width,
-               height: max(view.bounds.height - contentTop, 0))
-    }
-
-    private func applyOverscroll(progress: CGFloat, direction: CGFloat) {
-        let clamped = min(max(progress, 0), 1)
-        let travel = min(innerNav.view.bounds.height * 0.08, 48) * clamped * direction
-        innerNav.view.transform = CGAffineTransform(translationX: 0, y: travel)
-        innerNav.view.alpha = 1 - clamped * 0.16
-        if clamped == 0 {
-            UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut]) {
-                self.innerNav.view.transform = .identity
-                self.innerNav.view.alpha = 1
-            }
-        }
-    }
-
     // MARK: - Stable outer chrome target
 
     public var chromeState: ReaderChromeState? {
@@ -410,7 +399,7 @@ public final class SplitWebOverlayViewController: UIViewController,
             selectedMode: page.readerMode,
             isAudioOn: page.isAudioOn,
             showsBack: true,
-            offersSaveShare: false,
+            offersSaveShare: shareProvider != nil,
             isSaved: false)
     }
 
@@ -425,20 +414,102 @@ public final class SplitWebOverlayViewController: UIViewController,
     }
 
     public func chromeSave() {}
-    public func chromeShare(from sourceView: UIView) {}
+    public func chromeShare(from sourceView: UIView) {
+        guard let page = topPage else { return }
+        shareProvider?.presentShareSheet(
+            urlString: page.url.absoluteString, title: page.displayTitle,
+            from: self, sourceView: sourceView)
+    }
     public func chromeBack() { closeInnermostReader() }
+
+    fileprivate func forwardPersistentChromeTap(at windowPoint: CGPoint) {
+        let width = UIScreen.main.bounds.width
+        if windowPoint.x < 78 {
+            chromeBack()
+            return
+        }
+        if windowPoint.x > width - 78 {
+            chromeToggleAudio()
+            return
+        }
+        guard let state = chromeState, !state.modes.isEmpty else { return }
+        let controlWidth = min(CGFloat(state.modes.count) * 44, width - 176)
+        let minX = (width - controlWidth) / 2
+        guard windowPoint.x >= minX, windowPoint.x <= minX + controlWidth else { return }
+        let fraction = (windowPoint.x - minX) / max(controlWidth, 1)
+        let index = min(Int(fraction * CGFloat(state.modes.count)), state.modes.count - 1)
+        chromeSetMode(state.modes[index])
+    }
 }
 
 private final class InlineReaderPresentationController: UIPresentationController {
+    private let frameInWindow: CGRect
+    private weak var topChromeProxy: UIView?
+    private weak var shareProxy: UIButton?
+
+    init(presentedViewController: UIViewController, presenting: UIViewController?,
+         frameInWindow: CGRect) {
+        self.frameInWindow = frameInWindow
+        super.init(presentedViewController: presentedViewController, presenting: presenting)
+    }
+
     override var frameOfPresentedViewInContainerView: CGRect {
-        containerView?.bounds ?? .zero
+        guard let containerView else { return frameInWindow }
+        return containerView.convert(frameInWindow, from: nil)
     }
 
     override var shouldRemovePresentersView: Bool { false }
 
+    override func presentationTransitionDidEnd(_ completed: Bool) {
+        super.presentationTransitionDidEnd(completed)
+        guard completed, let containerView,
+              let overlay = presentedViewController as? SplitWebOverlayViewController
+        else { return }
+
+        let cardFrame = containerView.convert(frameInWindow, from: nil)
+        let topProxy = UIView(frame: CGRect(
+            x: 0, y: 0, width: containerView.bounds.width,
+            height: max(cardFrame.minY, 0)))
+        topProxy.backgroundColor = .clear
+        topProxy.addGestureRecognizer(UITapGestureRecognizer(
+            target: self, action: #selector(forwardTopChromeTap(_:))))
+        containerView.addSubview(topProxy)
+        topChromeProxy = topProxy
+
+        let shareProxy = UIButton(type: .custom)
+        shareProxy.backgroundColor = .clear
+        shareProxy.frame = CGRect(
+            x: max(containerView.bounds.maxX - 92, 0), y: cardFrame.maxY,
+            width: min(92, containerView.bounds.width),
+            height: max(containerView.bounds.maxY - cardFrame.maxY, 0))
+        shareProxy.addAction(UIAction { [weak overlay, weak shareProxy] _ in
+            guard let overlay, let shareProxy else { return }
+            overlay.chromeShare(from: shareProxy)
+        }, for: .touchUpInside)
+        containerView.addSubview(shareProxy)
+        self.shareProxy = shareProxy
+    }
+
     override func containerViewWillLayoutSubviews() {
         super.containerViewWillLayoutSubviews()
+        guard let containerView else { return }
+        let cardFrame = containerView.convert(frameInWindow, from: nil)
+        topChromeProxy?.frame = CGRect(
+            x: 0, y: 0, width: containerView.bounds.width,
+            height: max(cardFrame.minY, 0))
+        shareProxy?.frame = CGRect(
+            x: max(containerView.bounds.maxX - 92, 0), y: cardFrame.maxY,
+            width: min(92, containerView.bounds.width),
+            height: max(containerView.bounds.maxY - cardFrame.maxY, 0))
         presentedView?.frame = frameOfPresentedViewInContainerView
+    }
+
+    @objc private func forwardTopChromeTap(_ recognizer: UITapGestureRecognizer) {
+        guard let containerView,
+              let overlay = presentedViewController as? SplitWebOverlayViewController
+        else { return }
+        overlay.forwardPersistentChromeTap(
+            at: containerView.convert(recognizer.location(in: containerView), to: nil))
     }
 }
 
@@ -448,15 +519,31 @@ private final class InlineReaderTabButton: UIButton {
     private let titleLabelView = UILabel()
     private var faviconTask: Task<Void, Never>?
     private var hasFetchedFavicon = false
+    private let edgeView = UIVisualEffectView(effect: GlassStyle.barEffect())
+    private let edgeMaskView = UIView()
+    private let edgeMask = CAShapeLayer()
+    private let edgeHighlight = CAShapeLayer()
+
+    var idealWidth: CGFloat {
+        8 + 18 + 6 + ceil(titleLabelView.intrinsicContentSize.width) + 12
+    }
 
     init(url: URL, title: String) {
         self.url = url
         super.init(frame: .zero)
         accessibilityLabel = "Return to \(title)"
-        backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.82)
-        layer.cornerRadius = 11
-        layer.cornerCurve = .continuous
-        clipsToBounds = true
+        backgroundColor = .clear
+        clipsToBounds = false
+
+        edgeView.isUserInteractionEnabled = false
+        edgeMask.fillColor = UIColor.white.cgColor
+        edgeMaskView.layer.addSublayer(edgeMask)
+        edgeView.mask = edgeMaskView
+        edgeHighlight.fillColor = UIColor.clear.cgColor
+        edgeHighlight.strokeColor = GlassStyle.glassBorderColor.cgColor
+        edgeHighlight.lineWidth = 0.8
+        edgeView.contentView.layer.addSublayer(edgeHighlight)
+        addSubview(edgeView)
 
         faviconView.setBadge(.symbol("globe.fill"))
         addSubview(faviconView)
@@ -490,6 +577,31 @@ private final class InlineReaderTabButton: UIButton {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        edgeView.frame = bounds
+        edgeMaskView.frame = bounds
+        edgeMask.frame = bounds
+        edgeHighlight.frame = bounds
+        let radius: CGFloat = min(17, bounds.height * 0.48)
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: 0, y: bounds.maxY + 2))
+        path.addLine(to: CGPoint(x: 0, y: radius))
+        path.addCurve(
+            to: CGPoint(x: radius, y: 0),
+            controlPoint1: CGPoint(x: 0, y: radius * 0.35),
+            controlPoint2: CGPoint(x: radius * 0.35, y: 0))
+        path.addLine(to: CGPoint(x: bounds.maxX - radius, y: 0))
+        path.addCurve(
+            to: CGPoint(x: bounds.maxX, y: radius),
+            controlPoint1: CGPoint(x: bounds.maxX - radius * 0.35, y: 0),
+            controlPoint2: CGPoint(x: bounds.maxX, y: radius * 0.35))
+        path.addLine(to: CGPoint(x: bounds.maxX, y: bounds.maxY + 2))
+        edgeHighlight.path = path.cgPath
+        let rim = path.copy() as! UIBezierPath
+        rim.lineWidth = 3
+        edgeMask.path = rim.cgPath
+        edgeMask.fillColor = UIColor.clear.cgColor
+        edgeMask.strokeColor = UIColor.white.cgColor
+        edgeMask.lineWidth = 3
         let iconSide: CGFloat = 18
         let leading: CGFloat = 8
         faviconView.frame = CGRect(

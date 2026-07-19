@@ -885,11 +885,19 @@ private final class ReaderCardContentViewController: CardContentViewController,
     func inlineReaderDidDismiss(_ reader: ReaderChromeControlling) {
         guard isCentered else { return }
         onInlineReaderChange?(rabbitHoleReader)
+        if rabbitHoleReader?.shouldSurfaceAfterInlineReaderDismissal == true {
+            onImmersionChange?(false, true)
+        }
     }
 
     var inlineReaderTopEdgeInWindow: CGFloat {
         guard isViewLoaded else { return 0 }
         return view.convert(view.bounds, to: nil).minY
+    }
+
+    var inlineReaderCardFrameInWindow: CGRect {
+        guard isViewLoaded else { return .zero }
+        return view.convert(view.bounds, to: nil)
     }
 
     /// The resting clearance below the card's top edge — enough that an

@@ -58,7 +58,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private var currentIndex = 0
     /// Index into `chunks` of the phrase currently shown (Phrases mode only).
     private var currentChunkIndex = 0
-    private var isPlaying = false {
+    public private(set) var isPlaying = false {
         didSet {
             if isPlaying != oldValue { onPlaybackStateChanged?(isPlaying) }
         }
@@ -630,7 +630,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             cutY: sourceInWindow.y, topHalf: nil, bottomHalf: nil,
             sourcePoint: sourceInWindow, outerURL: item.url ?? url,
             outerTitle: articleContent.title,
-            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0)
+            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0,
+            cardFrame: coordinator?.inlineReaderCardFrameInWindow)
         inline.onOpen = { [weak coordinator, weak inline] in
             guard let inline else { return }
             coordinator?.inlineReaderWillPresent(inline)

@@ -323,7 +323,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             sourcePoint: pointInWindow,
             outerURL: focused.descriptor.url ?? url,
             outerTitle: focused.descriptor.title,
-            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0)
+            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0,
+            cardFrame: coordinator?.inlineReaderCardFrameInWindow)
         overlay.onOpen = { [weak coordinator, weak overlay] in
             guard let overlay else { return }
             coordinator?.inlineReaderWillPresent(overlay)
@@ -390,6 +391,15 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// switch, article embed) — the focused layer, and thus its scroll view,
     /// changes across those.
     public var focusedContentScrollView: UIScrollView? { layers[safe: focus]?.contentScrollView }
+
+    /// Whether returning from an inline reader should also surface the root
+    /// card carousel: a scroll reader already at its top, or a paused RSVP.
+    public var shouldSurfaceAfterInlineReaderDismissal: Bool {
+        guard let layer = layers[safe: focus] else { return false }
+        if let isPlaying = layer.isRSVPPlaying { return !isPlaying }
+        guard let scroll = layer.contentScrollView else { return false }
+        return scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 0.5
+    }
 
     // MARK: - External chrome (host-rendered header pills)
 

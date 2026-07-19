@@ -338,6 +338,11 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         return contentContainer.convert(contentContainer.bounds, to: nil).minY
     }
 
+    public var inlineReaderCardFrameInWindow: CGRect {
+        guard isViewLoaded else { return .zero }
+        return contentContainer.convert(contentContainer.bounds, to: nil)
+    }
+
     private func showCurrentMode() {
         if let old = currentChild {
             // Carry the reading position forward before tearing the child down.
@@ -403,6 +408,10 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     }
 
     @objc private func shareTapped() {
+        if let inlineReaderForChrome {
+            inlineReaderForChrome.chromeShare(from: floatingShareButton)
+            return
+        }
         shareProvider?.presentShareSheet(
             urlString: item.urlString, title: item.title ?? content.title,
             from: self, sourceView: view)

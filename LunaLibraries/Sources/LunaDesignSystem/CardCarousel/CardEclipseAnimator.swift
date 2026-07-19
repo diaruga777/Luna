@@ -348,8 +348,8 @@ public final class CardEclipseTransition {
 /// plus thin diffraction spikes — four long axis-aligned rays and four shorter
 /// diagonals — so it reads as a star, not a dot. Drawn (not shadowed) so the
 /// profile stays point-like.
-private final class EclipseFlareView: UIView {
-    override init(frame: CGRect) {
+public final class EclipseFlareView: UIView {
+    public override init(frame: CGRect) {
         super.init(frame: frame)
         isOpaque = false
         isUserInteractionEnabled = false
@@ -358,9 +358,9 @@ private final class EclipseFlareView: UIView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { nil }
+    public required init?(coder: NSCoder) { nil }
 
-    override func draw(_ rect: CGRect) {
+    public override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let maxRadius = min(bounds.width, bounds.height) / 2

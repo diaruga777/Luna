@@ -812,6 +812,10 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         return Self.firstScrollView(in: root)
     }
 
+    public var isRSVPPlaying: Bool? {
+        readerMode == .rsvp ? rsvpReader.isPlaying : nil
+    }
+
     private static func firstScrollView(in view: UIView) -> UIScrollView? {
         if let scroll = view as? UIScrollView { return scroll }
         for sub in view.subviews {

@@ -654,7 +654,8 @@ private final class PasteboardCardContentViewController: CardContentViewControll
 /// view IS the fullscreen reader view, one header and one layout for both
 /// states. The card reports reading activity so the host can fade the carousel
 /// chrome around it: scroll direction in the scroll reader, play state in RSVP.
-private final class ReaderCardContentViewController: CardContentViewController {
+private final class ReaderCardContentViewController: CardContentViewController,
+    InlineReaderPresentationCoordinating {
 
     /// The reader wants the carousel chrome faded away (true — reading is
     /// under way) or back in (false — the user is surfacing). `extendsCard`
@@ -748,6 +749,7 @@ private final class ReaderCardContentViewController: CardContentViewController {
             fullContentUpFront: true)
         if let rabbitHole = reader as? RabbitHoleReaderViewController {
             rabbitHole.providesOwnChrome = false
+            rabbitHole.presentsLinksAsInlineReaders = true
         }
         addChild(reader)
         reader.view.autoresizingMask = []
@@ -786,6 +788,11 @@ private final class ReaderCardContentViewController: CardContentViewController {
                 self?.observeReaderScrollViews()
             }
         }
+    }
+
+    func inlineReaderWillPresent() {
+        guard isCentered else { return }
+        onImmersionChange?(true, true)
     }
 
     /// The resting clearance below the card's top edge — enough that an

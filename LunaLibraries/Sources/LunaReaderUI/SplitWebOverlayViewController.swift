@@ -9,6 +9,13 @@ import LunaModels
 import LunaStorage
 import UIKit
 
+/// Optional bridge implemented by containers such as the root card carousel.
+/// It lets an embedded reader dismiss its surrounding card chrome in lockstep
+/// with the eclipse without coupling LunaReaderUI to the app target.
+public protocol InlineReaderPresentationCoordinating: AnyObject {
+    func inlineReaderWillPresent()
+}
+
 /// A full-size reader nested over the reader that opened it.
 ///
 /// Link activation grows a black circle from the link while a second, reader-sized
@@ -17,7 +24,7 @@ import UIKit
 /// ancestor tabs accumulate left-to-right and scroll when their favicon-sized minimum
 /// widths no longer fit between the leading and trailing controls.
 public final class SplitWebOverlayViewController: UIViewController,
-    UINavigationControllerDelegate {
+    UINavigationControllerDelegate, UIViewControllerTransitioningDelegate {
 
     public var onDismiss: (() -> Void)?
     public var onOpen: (() -> Void)?
@@ -44,10 +51,10 @@ public final class SplitWebOverlayViewController: UIViewController,
     private static let expandedChromeHeight: CGFloat = 144
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp, .original]
 
-    private var didAnimateIn = false
     private var didDismiss = false
     private var pendingSourcePoint: CGPoint?
     private var pendingTabInsertion = false
+    private var pageSourcePoints: [ObjectIdentifier: CGPoint] = [:]
     private var tabButtons: [InlineReaderTabButton] = []
 
     /// Legacy split arguments remain accepted so existing extension call sites stay
@@ -69,6 +76,8 @@ public final class SplitWebOverlayViewController: UIViewController,
         self.outerURL = outerURL ?? url
         self.outerTitle = Self.titleFallback(outerTitle, url: outerURL ?? url)
         super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .custom
+        transitioningDelegate = self
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
@@ -86,63 +95,56 @@ public final class SplitWebOverlayViewController: UIViewController,
         layoutHeader()
     }
 
-    public override func viewIsAppearing(_ animated: Bool) {
-        super.viewIsAppearing(animated)
-        guard !didAnimateIn else { return }
-        didAnimateIn = true
-        view.layoutIfNeeded()
-        animateOpen()
-    }
-
-    private func animateOpen() {
+    private func transitionWillOpen() {
         SharedDiagnosticLog.record(
             "opening inline reader: \(url.absoluteString)", category: "preload-tap")
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         onOpen?()
-
-        innerNav.view.alpha = 0
-        header.alpha = 0
-        header.transform = CGAffineTransform(translationX: 0, y: 20)
-        let scene = InlineReaderEclipseScene(
-            container: view,
-            sourcePoint: CGPoint(
-                x: min(max(initialSourcePoint.x, 0), view.bounds.width),
-                y: min(max(initialSourcePoint.y, 0), view.bounds.height)))
-        scene.animate(atZenith: { [weak self] in
-            guard let self else { return }
-            self.view.bringSubviewToFront(self.innerNav.view)
-            self.view.bringSubviewToFront(self.header)
-            self.innerNav.view.alpha = 0
-            self.syncHeaderToTopPage(animateNewTab: true)
-            UIView.animate(withDuration: 0.14, delay: 0, options: [.curveEaseOut]) {
-                self.innerNav.view.alpha = 1
-            }
-            UIView.animate(
-                withDuration: 0.28, delay: 0,
-                usingSpringWithDamping: 0.76, initialSpringVelocity: 0.9
-            ) {
-                self.header.alpha = 1
-                self.header.transform = .identity
-            }
-        }, completion: {})
     }
 
     private func animateDismiss() {
         guard !didDismiss else { return }
         didDismiss = true
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        onClose?()
-        UIView.animate(
-            withDuration: UIAccessibility.isReduceMotionEnabled ? 0.16 : 0.26,
-            delay: 0,
-            options: [.curveEaseIn, .beginFromCurrentState]
-        ) {
-            self.view.alpha = 0
-            self.view.transform = CGAffineTransform(translationX: 0, y: 22)
-        } completion: { _ in
-            self.onDismiss?()
-            self.dismiss(animated: false)
-        }
+        dismiss(animated: true)
+    }
+
+    // MARK: - Modal eclipse presentation
+
+    public func presentationController(
+        forPresented presented: UIViewController,
+        presenting: UIViewController?,
+        source: UIViewController
+    ) -> UIPresentationController? {
+        InlineReaderPresentationController(
+            presentedViewController: presented, presenting: presenting)
+    }
+
+    public func animationController(
+        forPresented presented: UIViewController,
+        presenting: UIViewController,
+        source: UIViewController
+    ) -> UIViewControllerAnimatedTransitioning? {
+        InlineReaderEclipseAnimator(
+            sourcePoint: initialSourcePoint,
+            direction: .forward,
+            onTransitionStart: { [weak self] in self?.transitionWillOpen() },
+            atZenith: { [weak self] in
+                guard let self else { return }
+                self.pendingTabInsertion = true
+                self.syncHeaderToTopPage(animateNewTab: true)
+            })
+    }
+
+    public func animationController(forDismissed dismissed: UIViewController)
+        -> UIViewControllerAnimatedTransitioning? {
+        let animator = InlineReaderEclipseAnimator(
+            sourcePoint: initialSourcePoint,
+            direction: .reverse,
+            onTransitionStart: { [weak self] in self?.onClose?() },
+            atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
+        animator.onCompletion = { [weak self] in self?.onDismiss?() }
+        return animator
     }
 
     // MARK: - Reader stack
@@ -175,7 +177,9 @@ public final class SplitWebOverlayViewController: UIViewController,
         guard !didDismiss, pendingSourcePoint == nil else { return }
         pendingSourcePoint = sourcePoint
         pendingTabInsertion = true
-        innerNav.pushViewController(makePage(url: url), animated: true)
+        let page = makePage(url: url)
+        pageSourcePoints[ObjectIdentifier(page)] = sourcePoint
+        innerNav.pushViewController(page, animated: true)
     }
 
     private var topPage: InlineReaderPageViewController? {
@@ -188,17 +192,29 @@ public final class SplitWebOverlayViewController: UIViewController,
         from fromVC: UIViewController,
         to toVC: UIViewController
     ) -> UIViewControllerAnimatedTransitioning? {
-        guard operation == .push, let sourcePoint = pendingSourcePoint else { return nil }
-        let animator = InlineReaderEclipseAnimator(
-            sourcePoint: sourcePoint, sceneContainer: view
-        ) { [weak self] in
-            guard let self else { return }
-            self.view.bringSubviewToFront(self.innerNav.view)
-            self.view.bringSubviewToFront(self.header)
-            self.syncHeaderToTopPage(animateNewTab: true)
+        switch operation {
+        case .push:
+            guard let sourcePoint = pendingSourcePoint else { return nil }
+            let animator = InlineReaderEclipseAnimator(
+                sourcePoint: sourcePoint, direction: .forward, sceneContainer: view
+            ) { [weak self] in
+                guard let self else { return }
+                self.view.bringSubviewToFront(self.innerNav.view)
+                self.view.bringSubviewToFront(self.header)
+                self.syncHeaderToTopPage(animateNewTab: true)
+            }
+            pendingSourcePoint = nil
+            return animator
+        case .pop:
+            let sourcePoint = pageSourcePoints[ObjectIdentifier(fromVC)]
+                ?? CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+            return InlineReaderEclipseAnimator(
+                sourcePoint: sourcePoint,
+                direction: .reverse,
+                atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
+        default:
+            return nil
         }
-        pendingSourcePoint = nil
-        return animator
     }
 
     public func navigationController(
@@ -269,15 +285,25 @@ public final class SplitWebOverlayViewController: UIViewController,
     }
 
     private func rebuildTabs(animateNewest: Bool) {
-        tabButtons.forEach { $0.removeFromSuperview() }
         let ancestors = ancestorDescriptors()
-        tabButtons = ancestors.enumerated().map { index, descriptor in
-            let button = InlineReaderTabButton(url: descriptor.url, title: descriptor.title)
+        var reusable = tabButtons
+        var nextButtons: [InlineReaderTabButton] = []
+        for (index, descriptor) in ancestors.enumerated() {
+            let button: InlineReaderTabButton
+            if let match = reusable.firstIndex(where: { $0.url == descriptor.url }) {
+                button = reusable.remove(at: match)
+                button.updateTitle(descriptor.title)
+            } else {
+                button = InlineReaderTabButton(url: descriptor.url, title: descriptor.title)
+            }
             button.tag = index
+            button.removeTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
             button.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
             tabContainer.addSubview(button)
-            return button
+            nextButtons.append(button)
         }
+        reusable.forEach { $0.removeFromSuperview() }
+        tabButtons = nextButtons
         layoutTabs(scrollToRight: true)
 
         guard animateNewest, let newest = tabButtons.last else { return }
@@ -289,6 +315,19 @@ public final class SplitWebOverlayViewController: UIViewController,
         ) {
             newest.alpha = 1
             newest.transform = .identity
+        }
+    }
+
+    private func animateNewestTabBehindReader() {
+        guard let newest = tabButtons.last else { return }
+        UIView.animate(
+            withDuration: 0.18,
+            delay: 0,
+            options: [.curveEaseIn, .beginFromCurrentState]
+        ) {
+            newest.alpha = 0
+            newest.transform = CGAffineTransform(translationX: 0, y: 18)
+                .scaledBy(x: 0.86, y: 0.86)
         }
     }
 
@@ -417,12 +456,28 @@ public final class SplitWebOverlayViewController: UIViewController,
     }
 }
 
+private final class InlineReaderPresentationController: UIPresentationController {
+    override var frameOfPresentedViewInContainerView: CGRect {
+        containerView?.bounds ?? .zero
+    }
+
+    override var shouldRemovePresentersView: Bool { false }
+
+    override func containerViewWillLayoutSubviews() {
+        super.containerViewWillLayoutSubviews()
+        presentedView?.frame = frameOfPresentedViewInContainerView
+    }
+}
+
 private final class InlineReaderTabButton: UIButton {
-    private let faviconView = UIImageView()
+    let url: URL
+    private let faviconView = CarouselSourceBadgeView()
     private let titleLabelView = UILabel()
     private var faviconTask: Task<Void, Never>?
+    private var hasFetchedFavicon = false
 
     init(url: URL, title: String) {
+        self.url = url
         super.init(frame: .zero)
         accessibilityLabel = "Return to \(title)"
         backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.82)
@@ -430,11 +485,7 @@ private final class InlineReaderTabButton: UIButton {
         layer.cornerCurve = .continuous
         clipsToBounds = true
 
-        faviconView.contentMode = .scaleAspectFill
-        faviconView.clipsToBounds = true
-        faviconView.layer.cornerRadius = 4
-        faviconView.image = UIImage(systemName: "globe")
-        faviconView.tintColor = .secondaryLabel
+        faviconView.setBadge(.symbol("globe.fill"))
         addSubview(faviconView)
 
         titleLabelView.text = title
@@ -447,7 +498,10 @@ private final class InlineReaderTabButton: UIButton {
             guard let data = await FaviconFetcher().fetchIconData(forPageURL: url),
                   !Task.isCancelled,
                   let image = UIImage(data: data) else { return }
-            await MainActor.run { self?.faviconView.image = image }
+            await MainActor.run {
+                self?.hasFetchedFavicon = true
+                self?.faviconView.setBadge(.icon(image))
+            }
         }
     }
 
@@ -456,6 +510,11 @@ private final class InlineReaderTabButton: UIButton {
 
     deinit { faviconTask?.cancel() }
 
+    func updateTitle(_ title: String) {
+        accessibilityLabel = "Return to \(title)"
+        titleLabelView.text = title
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         let iconSide: CGFloat = 18
@@ -463,6 +522,11 @@ private final class InlineReaderTabButton: UIButton {
         faviconView.frame = CGRect(
             x: leading, y: (bounds.height - iconSide) / 2,
             width: iconSide, height: iconSide)
+        if !hasFetchedFavicon {
+            // The badge was configured before it had bounds; refresh the symbol
+            // now so the fallback is favicon-sized rather than a tiny dot.
+            faviconView.setBadge(.symbol("globe.fill"))
+        }
         let titleX = faviconView.frame.maxX + 6
         titleLabelView.frame = CGRect(
             x: titleX, y: 0,

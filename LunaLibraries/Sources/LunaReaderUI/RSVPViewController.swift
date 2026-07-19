@@ -630,8 +630,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             cutY: view.bounds.midY, topHalf: nil, bottomHalf: nil,
             sourcePoint: linkPill.center, outerURL: item.url ?? url,
             outerTitle: articleContent.title)
-        inline.modalPresentationStyle = .overFullScreen
-        present(inline, animated: false)
+        present(inline, animated: true)
     }
 
     private func configureLinkPreview() {

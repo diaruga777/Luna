@@ -1353,13 +1353,21 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             cutY: sourceInWindow.y, topHalf: nil, bottomHalf: nil,
             sourcePoint: sourceInWindow, outerURL: item.url ?? url,
             outerTitle: content.title)
-        overlay.modalPresentationStyle = .overFullScreen
         // Slide the outer header off-screen while the inline reader is open.
-        let outerReader = parent as? ReaderViewController
+        let outerReader = enclosingReaderViewController
         overlay.onOpen = { outerReader?.setHeaderTucked(true) }
         overlay.onClose = { outerReader?.setHeaderTucked(false) }
         overlay.onDismiss = { [weak self] in self?.restoreScroll(to: readerOffset) }
-        present(overlay, animated: false)
+        present(overlay, animated: true)
+    }
+
+    private var enclosingReaderViewController: ReaderViewController? {
+        var ancestor = parent
+        while let controller = ancestor {
+            if let reader = controller as? ReaderViewController { return reader }
+            ancestor = controller.parent
+        }
+        return nil
     }
 
     // MARK: - Simulator-only split hooks

@@ -226,6 +226,15 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             guard let self, let layer, layer === self.layers.last else { return }
             self.pushLayer(url: url, lineText: lineText, from: layer)
         }
+        layer.onLinkActivatedAtPoint = { [weak self, weak layer] url, lineText, point in
+            guard let self, let layer, layer === self.layers.last else { return }
+            if self.presentsLinksAsInlineReaders {
+                self.presentInlineReader(
+                    url: url, lineText: lineText, sourcePoint: point, from: layer)
+            } else {
+                self.pushLayer(url: url, lineText: lineText, from: layer)
+            }
+        }
         layer.onPopToHere = { [weak self, weak layer] in
             guard let self, let layer, let index = self.layers.firstIndex(where: { $0 === layer })
             else { return }
@@ -280,6 +289,43 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         onContentHierarchyChanged?()
     }
 
+    private func presentInlineReader(
+        url: URL,
+        lineText: String?,
+        sourcePoint: CGPoint,
+        from focused: RabbitHoleLayerViewController
+    ) {
+        guard presentedViewController == nil else { return }
+        focused.setBottomLipText(lineText)
+        let pointInReader = focused.view.convert(sourcePoint, to: view)
+        let pointInWindow = view.convert(pointInReader, to: nil)
+        let overlay = SplitWebOverlayViewController(
+            url: url,
+            shareProvider: shareProvider,
+            lineHeight: 0,
+            cutY: pointInWindow.y,
+            topHalf: nil,
+            bottomHalf: nil,
+            sourcePoint: pointInWindow,
+            outerURL: focused.descriptor.url ?? url,
+            outerTitle: focused.descriptor.title)
+        overlay.onOpen = { [weak self] in
+            self?.inlineReaderPresentationCoordinator?.inlineReaderWillPresent()
+        }
+        present(overlay, animated: true)
+    }
+
+    private var inlineReaderPresentationCoordinator: InlineReaderPresentationCoordinating? {
+        var ancestor = parent
+        while let controller = ancestor {
+            if let coordinator = controller as? InlineReaderPresentationCoordinating {
+                return coordinator
+            }
+            ancestor = controller.parent
+        }
+        return nil
+    }
+
     /// When set, the reader is embedded outside a push (the Reader card
     /// carousel) and the root layer has nothing to pop to: its back pill is
     /// hidden (re-applied via applyFocus, which reads this).
@@ -292,6 +338,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// the card's initial state IS its final state — no post-embed content swap,
     /// no relayout when the card is focused. Set before the view loads.
     public var rendersFullContentUpFront = false
+
+    /// Embedded card readers open links in the dedicated eclipse overlay rather
+    /// than adding another in-card rabbit-hole layer.
+    public var presentsLinksAsInlineReaders = false
 
     /// Whether layers draw their own in-card header pills. Hosts that render the
     /// chrome externally (the Reader carousel's screen-level pill row) set this

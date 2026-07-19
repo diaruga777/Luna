@@ -34,6 +34,10 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// the URL plus the tapped line's text (for this layer's bottom lip) — nil text
     /// when descended from a non-scroll mode.
     public var onLinkActivated: ((_ url: URL, _ lineText: String?) -> Void)?
+    /// Link activation with its resolved point in this layer's coordinate space.
+    /// Card hosts use the point as the origin of the full-screen eclipse.
+    public var onLinkActivatedAtPoint:
+        ((_ url: URL, _ lineText: String?, _ point: CGPoint) -> Void)?
     /// The user tapped this layer's lip → host pops back so this layer is focused.
     public var onPopToHere: (() -> Void)?
     /// Fired once the page is confirmed article-like (host reveals the mode switcher).
@@ -690,14 +694,27 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
                 fullRenderUpFront: rendersFullContentUpFront)
             scrollReader.onLinkActivatedWithRange = { [weak self] url, range in
                 guard let self else { return }
-                self.onLinkActivated?(url, self.lineText(for: range))
+                let lineText = self.lineText(for: range)
+                if let callback = self.onLinkActivatedAtPoint {
+                    let point = self.scrollReader.linkActivationPoint(forCharacterRange: range)
+                    callback(url, lineText, self.view.convert(point, from: self.scrollReader.view))
+                } else {
+                    self.onLinkActivated?(url, lineText)
+                }
             }
             scrollReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
             scrollReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
             showChild(scrollReader)
         case .rsvp:
             rsvpReader.configureForReuse(item: readerItem, content: content, audioEnabled: audioOn)
-            rsvpReader.onLinkActivated = { [weak self] url in self?.onLinkActivated?(url, nil) }
+            rsvpReader.onLinkActivatedAtPoint = { [weak self] url, point in
+                guard let self else { return }
+                if let callback = self.onLinkActivatedAtPoint {
+                    callback(url, nil, self.view.convert(point, from: self.rsvpReader.view))
+                } else {
+                    self.onLinkActivated?(url, nil)
+                }
+            }
             rsvpReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
             rsvpReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
             showChild(rsvpReader)

@@ -351,10 +351,11 @@ public final class CardCarouselViewController: UIViewController {
     // MARK: - Immersion (reading-focused chrome fade)
 
     /// Whether the carousel chrome is faded away for focused reading: the
-    /// peeking side cards and the scrub strip fade out, and the centered card's
-    /// bottom edge extends into the room the strip frees up. The card's top,
-    /// sides, and corner radius never move — the host's header and the card's
-    /// own header stay exactly as they are.
+    /// peeking side cards and the scrub strip fade out, and (with
+    /// `extendsCard`) the centered card's bottom edge extends into the room
+    /// the strip frees up. The card's top, sides, and corner radius never
+    /// move — the host's header and the card's own header stay exactly as
+    /// they are.
     public private(set) var isImmersed = false
 
     /// Reported on every immersion change (including the internal reset on a
@@ -362,6 +363,12 @@ public final class CardCarouselViewController: UIViewController {
     /// bottom chrome of their own (e.g. controls flanking the scrub strip)
     /// in step with the carousel's.
     public var onImmersionChanged: ((Bool) -> Void)?
+
+    /// Whether the current immersion extends the centered card's bottom edge
+    /// into the room the faded strip frees up. Content that keeps a fixed
+    /// layout (the RSVP reader) immerses WITHOUT the extension, so nothing
+    /// inside the card moves — only the chrome fades.
+    private var immersionExtendsCard = true
 
     /// Cards rest this far below the carousel view's top — hosts whose header
     /// overlays the carousel reserve their header height here.
@@ -371,13 +378,30 @@ public final class CardCarouselViewController: UIViewController {
         cardAreaTopConstraint.constant = inset
     }
 
-    public func setImmersed(_ immersed: Bool, animated: Bool = false) {
+    public func setImmersed(_ immersed: Bool, extendsCard: Bool = true, animated: Bool = false) {
         // A transition can only start un-immersed (paging is inert while
         // immersed), so this only drops a spurious fade-out — e.g. a reader
         // still decelerating while the user pages away — that would fight the
         // eclipse's manipulation of the same card.
-        guard immersed != isImmersed, !isTransitioning else { return }
+        guard !isTransitioning else { return }
+        if immersed == isImmersed {
+            // Already immersed but the extension mode changed (e.g. a mode
+            // switch from scroll to RSVP mid-immersion) — re-apply the card
+            // frame without re-reporting the unchanged immersion state.
+            guard immersed, immersionExtendsCard != extendsCard else { return }
+            immersionExtendsCard = extendsCard
+            if animated {
+                UIView.animate(
+                    withDuration: 0.32, delay: 0,
+                    options: [.curveEaseInOut, .allowUserInteraction],
+                    animations: applyImmersionLayout)
+            } else {
+                applyImmersionLayout()
+            }
+            return
+        }
         isImmersed = immersed
+        immersionExtendsCard = extendsCard
         scrubber.isUserInteractionEnabled = !immersed
         let apply = {
             self.applyImmersionLayout()
@@ -406,7 +430,7 @@ public final class CardCarouselViewController: UIViewController {
         guard let metrics, let slot = slots[currentIndex] else { return }
         let resting = metrics.centeredCardFrame()
         var frame = resting
-        if isImmersed {
+        if isImmersed, immersionExtendsCard {
             // Extend only the bottom edge to the carousel view's bottom (the
             // room the faded scrub strip frees up).
             let target = view.convert(view.bounds, to: cardArea)

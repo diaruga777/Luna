@@ -456,8 +456,8 @@ final class ArticleCardsViewController: UIViewController {
             return CardContentViewController()
         }
         let content = ReaderCardContentViewController(item: items[itemIndex])
-        content.onImmersionChange = { [weak self] immersed in
-            self?.carousel.setImmersed(immersed, animated: true)
+        content.onImmersionChange = { [weak self] immersed, extendsCard in
+            self?.carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
         }
         content.onReaderReady = { [weak self, weak content] reader in
             guard let self, content?.isCentered == true else { return }
@@ -657,8 +657,12 @@ private final class PasteboardCardContentViewController: CardContentViewControll
 private final class ReaderCardContentViewController: CardContentViewController {
 
     /// The reader wants the carousel chrome faded away (true — reading is
-    /// under way) or back in (false — the user is surfacing).
-    var onImmersionChange: ((Bool) -> Void)?
+    /// under way) or back in (false — the user is surfacing). `extendsCard`
+    /// says whether the immersed card's bottom should extend into the strip's
+    /// room: true for the scroll reader (more content shows), false for RSVP,
+    /// whose fixed layout must not move when playback starts — only the chrome
+    /// fades.
+    var onImmersionChange: ((_ immersed: Bool, _ extendsCard: Bool) -> Void)?
     var onReaderReady: ((RabbitHoleReaderViewController) -> Void)?
 
     private let item: ReadingListItem
@@ -754,7 +758,7 @@ private final class ReaderCardContentViewController: CardContentViewController {
             // bringing the carousel chrome back instead.
             rabbitHole.onRootBack = { [weak self] in
                 guard let self, self.isCentered else { return }
-                self.onImmersionChange?(false)
+                self.onImmersionChange?(false, true)
             }
             // A dive, pop, mode switch, or late article embed swaps the live
             // scroll views / RSVP controllers — re-sweep for new ones to
@@ -799,7 +803,9 @@ private final class ReaderCardContentViewController: CardContentViewController {
         for rsvp in Self.rsvpControllers(of: reader) {
             rsvp.onPlaybackStateChanged = { [weak self] playing in
                 guard let self, self.isCentered else { return }
-                self.onImmersionChange?(playing)
+                // RSVP immerses without the card-bottom extension: its layout
+                // is fixed, so play/pause must not move anything on screen.
+                self.onImmersionChange?(playing, false)
             }
         }
         for scrollView in Self.scrollViews(in: reader.view) {
@@ -843,10 +849,10 @@ private final class ReaderCardContentViewController: CardContentViewController {
         // the runs cleared first, that event just seeds a fresh baseline.
         if run <= -Self.fadeInTravel || position <= 0 {
             scrollRuns = [:]
-            onImmersionChange?(false)
+            onImmersionChange?(false, true)
         } else if run >= Self.fadeOutTravel, position > 0 {
             scrollRuns = [:]
-            onImmersionChange?(true)
+            onImmersionChange?(true, true)
         }
     }
 

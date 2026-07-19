@@ -174,11 +174,16 @@ Differences from the Downloader, via `CardCarouselStyle`:
   (`externalChromeContentInset`), so the resting first line starts fully
   legible; scrolled content fades away as it approaches an edge.
 - **"Fullscreen" is a chrome fade, nothing more** — no navigation push, no
-  card-geometry choreography. `CardCarouselViewController.setImmersed(_:animated:)`
-  fades the peeking side cards and the scrub strip out and extends only the
-  centered card's bottom edge into the room the strip frees up (top, sides,
-  corner radius, and the reader's own header pills never move or change;
-  paging, peek taps, and the strip are inert while immersed). The immersed
+  card-geometry choreography. `CardCarouselViewController.setImmersed(_:extendsCard:animated:)`
+  fades the peeking side cards and the scrub strip out and — for the scroll
+  reader (`extendsCard: true`) — extends only the centered card's bottom edge
+  into the room the strip frees up (top, sides, corner radius, and the
+  reader's own header pills never move or change; paging, peek taps, and the
+  strip are inert while immersed). RSVP immerses with `extendsCard: false`:
+  its layout is fixed (focal word, controls), so playing must not move
+  anything on screen — the card frame holds and only the chrome fades. The
+  extension would also have pushed the RSVP playback controls below
+  `cardArea.bounds`, where hit-testing can't reach them. The immersed
   card also clears its surface tone (`setSurfaceHidden`) so the edge fades
   dissolve into the screen background instead of silhouetting the retired
   card. The screen-level header row and the flanking Settings/Share circles

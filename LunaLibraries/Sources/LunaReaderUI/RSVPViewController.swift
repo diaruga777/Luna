@@ -36,6 +36,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// presenting a new inline split overlay — used by the inline reader to push the
     /// link onto its own navigation stack rather than nesting another overlay.
     public var onLinkActivated: ((URL) -> Void)?
+    /// Same activation with the link-pill center in this reader's coordinates.
+    public var onLinkActivatedAtPoint: ((_ url: URL, _ point: CGPoint) -> Void)?
 
     /// Fired whenever playback starts (true) or stops (false) — every path:
     /// tap, controls, scrubbing, read-aloud via the playback center. The
@@ -595,6 +597,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     private func activateLink(_ url: URL) {
         pause()
+        if let onLinkActivatedAtPoint {
+            onLinkActivatedAtPoint(url, linkPill.center)
+            return
+        }
         if let onLinkActivated {
             onLinkActivated(url)
             return
@@ -603,7 +609,9 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         // center (nil peeks) and the ✕ / chevron compress it shut.
         let inline = SplitWebOverlayViewController(
             url: url, shareProvider: shareProvider, lineHeight: 0,
-            cutY: view.bounds.midY, topHalf: nil, bottomHalf: nil)
+            cutY: view.bounds.midY, topHalf: nil, bottomHalf: nil,
+            sourcePoint: linkPill.center, outerURL: item.url ?? url,
+            outerTitle: articleContent.title)
         inline.modalPresentationStyle = .overFullScreen
         present(inline, animated: false)
     }

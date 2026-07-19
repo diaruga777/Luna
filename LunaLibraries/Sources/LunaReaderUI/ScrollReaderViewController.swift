@@ -30,6 +30,20 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// resolved for the tapped link. RabbitHole uses it to avoid rescanning links on tap.
     public var onLinkActivatedWithRange: ((_ url: URL, _ range: NSRange) -> Void)?
 
+    /// Center of UIKit's resolved link range in this reader's coordinate space.
+    /// Wrapped links use the union of their glyph fragments, which is a close and
+    /// stable proxy for the touch point exposed by UITextView's primary action.
+    public func linkActivationPoint(forCharacterRange range: NSRange) -> CGPoint {
+        let glyphRange = textView.layoutManager.glyphRange(
+            forCharacterRange: range, actualCharacterRange: nil)
+        var rect = textView.layoutManager.boundingRect(
+            forGlyphRange: glyphRange, in: textView.textContainer)
+        rect.origin.x += textView.textContainerInset.left
+        rect.origin.y += textView.textContainerInset.top
+        return textView.convert(
+            CGPoint(x: rect.midX, y: rect.midY), to: view)
+    }
+
     /// Fired when the end-of-article share footer scrolls into / out of view, so the
     /// host can fade its floating share button (the footer already offers sharing).
     public var onShareFooterVisibilityChanged: ((Bool) -> Void)?
@@ -1326,66 +1340,18 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         return best
     }
 
-    /// Opens the tapped link inline: the article splits at the link's line — the
-    /// line above parks as a top peek, the link's line as a bottom peek — and an
-    /// inset glass card grows between them showing the linked page.
+    /// Opens the tapped link as a full-size nested reader. The source point is the
+    /// resolved glyph center, so the black-circle phase begins at the link itself.
     private func openSplit(for url: URL, tappedRange: NSRange) {
-        let layoutManager = textView.layoutManager
-        let glyphRange = layoutManager.glyphRange(
-            forCharacterRange: tappedRange, actualCharacterRange: nil)
-        var lineRect = layoutManager.lineFragmentRect(
-            forGlyphAt: glyphRange.location, effectiveRange: nil)
-        lineRect.origin.y += textView.textContainerInset.top
-
-        // The cut is at the TOP of the link's line, in WINDOW coordinates (the
-        // overlay is full-screen, so window y == overlay y). `lineRect.minY` is a
-        // CONTENT-space y; `convert` already accounts for the scroll offset (the
-        // text view's bounds origin IS its contentOffset), so pass it straight
-        // through — pre-subtracting contentOffset would double-count it and push the
-        // cut up the screen the more the article is scrolled.
-        let rawCutY = textView.convert(CGPoint(x: 0, y: lineRect.minY), to: nil).y
+        let sourcePoint = linkActivationPoint(forCharacterRange: tappedRange)
+        let sourceInWindow = view.convert(sourcePoint, to: nil)
         let readerOffset = textView.contentOffset.y
 
-        // Bottom of the outer header in window coords. The cut must stay at or below
-        // this so neither peek snapshot ever captures a slice of the nav bar (which
-        // would show as a frozen, clipped copy of the mode header). The text view's
-        // top edge in the window is its frame origin mapped through its (non-scrolling)
-        // superview — `textView.convert(.zero)` would instead fold in the scroll
-        // offset. Combine with the nav bar's own frame: the content can sit under a
-        // translucent bar, so the frame top alone can underestimate the header.
-        let contentTopY = textView.superview?.convert(textView.frame.origin, to: nil).y ?? 0
-        let navBar = (parent as? ReaderViewController)?.navigationController?.navigationBar
-        let navBarMaxY = navBar.map { bar in bar.convert(bar.bounds, to: nil).maxY }
-        let headerBottomY = max(contentTopY, navBarMaxY ?? contentTopY)
-
-        var topHalf: UIView?
-        var bottomHalf: UIView?
-        var cutY = rawCutY
-        if let window = view.window {
-            let bounds = window.bounds
-            let safe = window.safeAreaInsets
-            let lineHeight = lineRect.height
-            // Clamp the cut so a full one-line peek fits below the header and above
-            // the home indicator — and so the snapshots are captured AT the clamped
-            // cut (no later resize/glitch when the tapped link is very high or low).
-            let cutCeiling = max(headerBottomY + lineHeight, safe.top + lineHeight)
-            cutY = min(max(rawCutY, cutCeiling), bounds.height - safe.bottom - lineHeight)
-            // Both peeks capture ONLY the reader content (from below the header): the
-            // live header is tucked / covered separately, so excluding it here avoids
-            // a frozen second copy that would diverge from the animating live one.
-            topHalf = window.resizableSnapshotView(
-                from: CGRect(x: 0, y: headerBottomY, width: bounds.width,
-                             height: max(cutY - headerBottomY, 1)),
-                afterScreenUpdates: false, withCapInsets: .zero)
-            bottomHalf = window.resizableSnapshotView(
-                from: CGRect(x: 0, y: cutY, width: bounds.width,
-                             height: max(bounds.height - cutY, 1)),
-                afterScreenUpdates: false, withCapInsets: .zero)
-        }
-
         let overlay = SplitWebOverlayViewController(
-            url: url, shareProvider: shareProvider, lineHeight: lineRect.height,
-            cutY: cutY, topHalf: topHalf, bottomHalf: bottomHalf)
+            url: url, shareProvider: shareProvider, lineHeight: 0,
+            cutY: sourceInWindow.y, topHalf: nil, bottomHalf: nil,
+            sourcePoint: sourceInWindow, outerURL: item.url ?? url,
+            outerTitle: content.title)
         overlay.modalPresentationStyle = .overFullScreen
         // Slide the outer header off-screen while the inline reader is open.
         let outerReader = parent as? ReaderViewController

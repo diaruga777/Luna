@@ -25,14 +25,19 @@ import WebKit
 public final class InlineReaderPageViewController: UIViewController, WKNavigationDelegate {
 
     public let url: URL
-    private let headerHeight: CGFloat
+    private var headerHeight: CGFloat
 
     /// Hands a link tapped inside the embedded reader to the host, which pushes it
     /// as the next page in the stack.
     public var onLinkActivated: ((URL) -> Void)?
+    /// Link activation plus its center in this page's coordinate space, used by
+    /// the host to originate the next eclipse at the actual link.
+    public var onLinkActivatedAtPoint: ((_ url: URL, _ point: CGPoint) -> Void)?
     /// Fired once the page is confirmed article-like (so the host can reveal the
     /// mode switcher for this page).
     public var onBecameArticle: (() -> Void)?
+    /// Fired when extraction or WebKit supplies a better tab title.
+    public var onMetadataChanged: (() -> Void)?
 
     private let spinner = DotMatrixSpinnerView()
     private var articleProbe: Task<Void, Never>?
@@ -40,6 +45,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     private var articleContent: ArticleContent?
     private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
     private weak var readerChild: UIViewController?
+    private var readerTopConstraint: NSLayoutConstraint?
     /// Created lazily after the article probe rules out native reader content.
     private var webView: WKWebView?
     /// Set once the probe has committed to reader OR web view (so neither is
@@ -54,6 +60,23 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
 
     /// Whether this page is rendering as an article (so the mode switcher applies).
     public var isArticle: Bool { articleContent != nil }
+
+    public var displayTitle: String {
+        let candidates = [articleContent?.title, webView?.title]
+        if let title = candidates.compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .first(where: { !$0.isEmpty }) {
+            return title
+        }
+        return url.host?.replacingOccurrences(of: "www.", with: "") ?? "Reader"
+    }
+
+    /// Keeps page content flush with the host's one-row or two-row chrome.
+    public func setHeaderHeight(_ height: CGFloat) {
+        headerHeight = max(height, 0)
+        readerTopConstraint?.constant = headerHeight
+        webView?.scrollView.contentInset.top = headerHeight
+        webView?.scrollView.verticalScrollIndicatorInsets.top = headerHeight
+    }
 
     /// Cached article content available without a network request.
     private let cachedContent: ArticleContent?
@@ -116,6 +139,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             "content ready from cache: \(url.absoluteString)",
             category: "preload-tap")
         onBecameArticle?()
+        onMetadataChanged?()
         refreshPreloadedCache(url)
     }
 
@@ -141,6 +165,9 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         webView.backgroundColor = themed
         webView.scrollView.backgroundColor = themed
         webView.underPageBackgroundColor = themed
+        // The host already supplies an exact chrome inset; automatic safe-area
+        // adjustment would add the status-bar inset a second time.
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.contentInset.top = headerHeight
         webView.scrollView.verticalScrollIndicatorInsets.top = headerHeight
         webView.translatesAutoresizingMaskIntoConstraints = false
@@ -223,6 +250,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         spinner.stopAnimating()
         embedReader(mode: readerMode)
         onBecameArticle?()
+        onMetadataChanged?()
     }
 
     private func removeReaderChild() {
@@ -231,6 +259,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             old.view.removeFromSuperview()
             old.removeFromParent()
             readerChild = nil
+            readerTopConstraint = nil
         }
     }
 
@@ -262,27 +291,46 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         switch mode {
         case .scroll, .original:
             let scroll = ScrollReaderViewController(item: transient, content: content)
-            scroll.onLinkActivated = { [weak self] in self?.onLinkActivated?($0) }
+            scroll.onLinkActivatedWithRange = { [weak self, weak scroll] url, range in
+                guard let self, let scroll else { return }
+                let point = scroll.view.convert(
+                    scroll.linkActivationPoint(forCharacterRange: range), to: self.view)
+                if let onLinkActivatedAtPoint = self.onLinkActivatedAtPoint {
+                    onLinkActivatedAtPoint(url, point)
+                } else {
+                    self.onLinkActivated?(url)
+                }
+            }
             child = scroll
         case .rsvp, .highlight:
             // The retired .highlight (chunking) view now lives as RSVP → Phrases.
             let rsvp = RSVPViewController(
                 item: transient, content: content,
                 initialDisplayMode: mode == .highlight ? .phrases : nil)
-            rsvp.onLinkActivated = { [weak self] in self?.onLinkActivated?($0) }
+            rsvp.onLinkActivatedAtPoint = { [weak self] url, point in
+                guard let self else { return }
+                if let onLinkActivatedAtPoint = self.onLinkActivatedAtPoint {
+                    onLinkActivatedAtPoint(url, self.view.convert(point, from: rsvp.view))
+                } else {
+                    self.onLinkActivated?(url)
+                }
+            }
             child = rsvp
         }
         addChild(child)
         child.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(child.view)
+        let topConstraint = child.view.topAnchor.constraint(
+            equalTo: view.topAnchor, constant: headerHeight)
         NSLayoutConstraint.activate([
-            child.view.topAnchor.constraint(equalTo: view.topAnchor, constant: headerHeight),
+            topConstraint,
             child.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             child.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             child.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         child.didMove(toParent: self)
         readerChild = child
+        readerTopConstraint = topConstraint
         (child as? ScrollReaderViewController)?
             .activateVisibleReader(deferFullContentUntilHostCompletion: false)
         readerMode = mode
@@ -292,6 +340,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if articleContent == nil { spinner.stopAnimating() }
+        onMetadataChanged?()
     }
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         spinner.stopAnimating()

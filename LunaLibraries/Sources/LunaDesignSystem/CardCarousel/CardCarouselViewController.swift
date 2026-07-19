@@ -348,6 +348,16 @@ public final class CardCarouselViewController: UIViewController {
         slots[index]?.content
     }
 
+    /// The centered card's RESTING frame — ignoring any immersion bottom
+    /// extension — in `target`'s coordinate space. A host that draws chrome
+    /// alongside the card (e.g. a scroll indicator that slides out to the screen
+    /// edge on immersion) uses this as its resting anchor. Nil before layout
+    /// resolves the metrics.
+    public func restingCenteredCardFrame(in target: UIView) -> CGRect? {
+        guard let metrics else { return nil }
+        return cardArea.convert(metrics.centeredCardFrame(), to: target)
+    }
+
     // MARK: - Immersion (reading-focused chrome fade)
 
     /// Whether the carousel chrome is faded away for focused reading: the

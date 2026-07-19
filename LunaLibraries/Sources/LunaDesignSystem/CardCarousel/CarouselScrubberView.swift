@@ -32,6 +32,13 @@ public final class CarouselScrubberView: UIView {
         case thumbnails
         /// Miniature article cards: a source badge over skeleton text lines.
         case miniCards
+
+        var animateScrubTransitions: Bool {
+            switch self {
+            case .thumbnails: return false
+            case .miniCards: return true
+            }
+        }
     }
 
     /// A new chip reached the strip's center while the user scrolls it.
@@ -61,7 +68,14 @@ public final class CarouselScrubberView: UIView {
         itemSize.height + 22
     }
 
-    private let spacing: CGFloat = 5
+    private var spacing: CGFloat {
+        switch style {
+        case .thumbnails:
+            40
+        case .miniCards:
+            5
+        }
+    }
 
     /// Hosts the scroll view and carries the edge fade mask. The mask must
     /// live on a non-scrolling ancestor (a mask on the scroll view's own layer

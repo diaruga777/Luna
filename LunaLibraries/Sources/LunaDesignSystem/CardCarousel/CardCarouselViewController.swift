@@ -802,7 +802,7 @@ public final class CardCarouselViewController: UIViewController {
         if target == currentIndex {
             if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
             scrubber.setSelectedIndex(currentIndex, animated: true)
-        } else if abs(target - currentIndex) == 1 {
+        } else if style.scrubberStyle.animateScrubTransitions, abs(target - currentIndex) == 1 {
             page(by: target - currentIndex)
         } else {
             jump(to: target)

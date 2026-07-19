@@ -32,7 +32,20 @@ public struct ReaderChromeState: Equatable {
     public var isSaved: Bool
 }
 
-public final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognizerDelegate {
+/// A reader whose controls are rendered by a stable host view. Both the root
+/// rabbit-hole reader and an inline reader conform, so the host can retarget the
+/// same buttons without replacing or moving them when a link opens.
+public protocol ReaderChromeControlling: AnyObject {
+    var chromeState: ReaderChromeState? { get }
+    func chromeSetMode(_ mode: ReadingListItem.ReaderMode)
+    func chromeToggleAudio()
+    func chromeSave()
+    func chromeShare(from sourceView: UIView)
+    func chromeBack()
+}
+
+public final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognizerDelegate,
+    ReaderChromeControlling {
 
     private let rootItem: ReadingListItem
     private let rootContent: ArticleContent
@@ -299,6 +312,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         focused.setBottomLipText(lineText)
         let pointInReader = focused.view.convert(sourcePoint, to: view)
         let pointInWindow = view.convert(pointInReader, to: nil)
+        let coordinator = inlineReaderPresentationCoordinator
         let overlay = SplitWebOverlayViewController(
             url: url,
             shareProvider: shareProvider,
@@ -308,9 +322,19 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             bottomHalf: nil,
             sourcePoint: pointInWindow,
             outerURL: focused.descriptor.url ?? url,
-            outerTitle: focused.descriptor.title)
-        overlay.onOpen = { [weak self] in
-            self?.inlineReaderPresentationCoordinator?.inlineReaderWillPresent()
+            outerTitle: focused.descriptor.title,
+            contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0)
+        overlay.onOpen = { [weak coordinator, weak overlay] in
+            guard let overlay else { return }
+            coordinator?.inlineReaderWillPresent(overlay)
+        }
+        overlay.onChromeStateChanged = { [weak coordinator, weak overlay] in
+            guard let overlay else { return }
+            coordinator?.inlineReaderWillPresent(overlay)
+        }
+        overlay.onDismiss = { [weak coordinator, weak overlay] in
+            guard let overlay else { return }
+            coordinator?.inlineReaderDidDismiss(overlay)
         }
         present(overlay, animated: true)
     }

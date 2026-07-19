@@ -19,10 +19,10 @@ import WebKit
 /// NEW page rather than nesting another overlay; links in the raw web view navigate
 /// the web view in place.
 ///
-/// The content sits below the host's floating glass header (a top content inset on
-/// the web view; the reader child is pinned below the header), so the header always
-/// reads over the page.
-public final class InlineReaderPageViewController: UIViewController, WKNavigationDelegate {
+/// The content sits below the host's ancestor-tab strip. Mode and audio controls
+/// remain in the outer reader's stable chrome and are routed to this page.
+public final class InlineReaderPageViewController: UIViewController, WKNavigationDelegate,
+    UIGestureRecognizerDelegate {
 
     public let url: URL
     private var headerHeight: CGFloat
@@ -38,12 +38,16 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     public var onBecameArticle: (() -> Void)?
     /// Fired when extraction or WebKit supplies a better tab title.
     public var onMetadataChanged: (() -> Void)?
+    /// Rubber-band progress (0...1) and direction (+1 top, -1 bottom).
+    public var onOverscrollProgress: ((_ progress: CGFloat, _ direction: CGFloat) -> Void)?
+    public var onOverscrollDismiss: (() -> Void)?
 
     private let spinner = DotMatrixSpinnerView()
     private var articleProbe: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var articleContent: ArticleContent?
     private(set) var readerMode: ReadingListItem.ReaderMode = .scroll
+    public private(set) var isAudioOn = false
     private weak var readerChild: UIViewController?
     private var readerTopConstraint: NSLayoutConstraint?
     /// Created lazily after the article probe rules out native reader content.
@@ -106,6 +110,9 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = ReaderDepth.backgroundColor(for: 0)
+        let overscroll = UIPanGestureRecognizer(target: self, action: #selector(handleOverscroll(_:)))
+        overscroll.delegate = self
+        view.addGestureRecognizer(overscroll)
         NotificationCenter.default.addObserver(
             self, selector: #selector(cancelRefreshForBackground),
             name: UIApplication.didEnterBackgroundNotification, object: nil)
@@ -188,6 +195,12 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     public func setMode(_ mode: ReadingListItem.ReaderMode) {
         guard isArticle, mode != readerMode else { return }
         embedReader(mode: mode)
+    }
+
+    public func toggleAudio() {
+        guard isArticle else { return }
+        isAudioOn.toggle()
+        embedReader(mode: readerMode)
     }
 
     // MARK: - Article probe / reader embedding
@@ -291,7 +304,8 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         let child: UIViewController
         switch mode {
         case .scroll, .original:
-            let scroll = ScrollReaderViewController(item: transient, content: content)
+            let scroll = ScrollReaderViewController(
+                item: transient, content: content, audioEnabled: isAudioOn)
             scroll.onLinkActivatedWithRange = { [weak self, weak scroll] url, range in
                 guard let self, let scroll else { return }
                 let point = scroll.view.convert(
@@ -306,7 +320,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         case .rsvp, .highlight:
             // The retired .highlight (chunking) view now lives as RSVP → Phrases.
             let rsvp = RSVPViewController(
-                item: transient, content: content,
+                item: transient, content: content, audioEnabled: isAudioOn,
                 initialDisplayMode: mode == .highlight ? .phrases : nil)
             rsvp.onLinkActivatedAtPoint = { [weak self] url, point in
                 guard let self else { return }
@@ -336,6 +350,59 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             .activateVisibleReader(deferFullContentUntilHostCompletion: false)
         readerMode = mode
     }
+
+    // MARK: - Interactive overscroll dismissal
+
+    private var activeScrollView: UIScrollView? {
+        if let webView { return webView.scrollView }
+        guard let readerChild else { return nil }
+        return Self.firstScrollView(in: readerChild.view)
+    }
+
+    private static func firstScrollView(in root: UIView) -> UIScrollView? {
+        if let scroll = root as? UIScrollView { return scroll }
+        for child in root.subviews {
+            if let match = firstScrollView(in: child) { return match }
+        }
+        return nil
+    }
+
+    @objc private func handleOverscroll(_ pan: UIPanGestureRecognizer) {
+        guard let scroll = activeScrollView else {
+            if pan.state == .ended || pan.state == .cancelled { onOverscrollProgress?(0, 1) }
+            return
+        }
+        let topDistance = max(-(scroll.contentOffset.y + scroll.adjustedContentInset.top), 0)
+        let bottomLimit = max(
+            -scroll.adjustedContentInset.top,
+            scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        let bottomDistance = max(scroll.contentOffset.y - bottomLimit, 0)
+        let distance = max(topDistance, bottomDistance)
+        let direction: CGFloat = topDistance >= bottomDistance ? 1 : -1
+        let outwardVelocity = pan.velocity(in: view).y * direction
+        let metrics = InlineReaderOverscrollMetrics(
+            distance: distance, outwardVelocity: outwardVelocity)
+
+        switch pan.state {
+        case .began, .changed:
+            onOverscrollProgress?(metrics.progress, direction)
+        case .ended:
+            if metrics.commitsDismissal {
+                onOverscrollDismiss?()
+            } else {
+                onOverscrollProgress?(0, direction)
+            }
+        case .cancelled, .failed:
+            onOverscrollProgress?(0, direction)
+        default:
+            break
+        }
+    }
+
+    public func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool { true }
 
     // MARK: - WKNavigationDelegate
 

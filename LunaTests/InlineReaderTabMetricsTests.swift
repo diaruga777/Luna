@@ -42,4 +42,23 @@ final class InlineReaderTabMetricsTests: XCTestCase {
         XCTAssertEqual(overlay.modalPresentationStyle, .custom)
         XCTAssertTrue(overlay.transitioningDelegate === overlay)
     }
+
+    func testOverscrollFollowsRubberBandAndCommitsAtThreshold() {
+        let partial = InlineReaderOverscrollMetrics(distance: 44, outwardVelocity: 0)
+        XCTAssertEqual(partial.progress, 0.4, accuracy: 0.001)
+        XCTAssertFalse(partial.commitsDismissal)
+
+        let committed = InlineReaderOverscrollMetrics(distance: 69, outwardVelocity: 0)
+        XCTAssertTrue(committed.commitsDismissal)
+    }
+
+    func testFastOutwardOverscrollCommitsBeforeDistanceThreshold() {
+        let metrics = InlineReaderOverscrollMetrics(distance: 12, outwardVelocity: 901)
+        XCTAssertTrue(metrics.commitsDismissal)
+    }
+
+    func testInwardVelocityNeverCommitsAShortOverscroll() {
+        let metrics = InlineReaderOverscrollMetrics(distance: 12, outwardVelocity: -1_400)
+        XCTAssertFalse(metrics.commitsDismissal)
+    }
 }

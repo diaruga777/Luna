@@ -13,42 +13,45 @@ import UIKit
 /// It lets an embedded reader dismiss its surrounding card chrome in lockstep
 /// with the eclipse without coupling LunaReaderUI to the app target.
 public protocol InlineReaderPresentationCoordinating: AnyObject {
-    func inlineReaderWillPresent()
+    /// The stable host chrome should begin controlling `reader`.
+    func inlineReaderWillPresent(_ reader: ReaderChromeControlling)
+    /// Restore the outer reader as the stable chrome's target.
+    func inlineReaderDidDismiss(_ reader: ReaderChromeControlling)
+    /// Top edge of the existing reader card in window coordinates.
+    var inlineReaderTopEdgeInWindow: CGFloat { get }
 }
 
-/// A full-size reader nested over the reader that opened it.
+/// A reader nested inside the outer reader's fixed chrome.
 ///
 /// Link activation grows a black circle from the link while a second, reader-sized
 /// black eclipse rises from below. At top-edge totality the next reader fades in and
 /// the reader it covered becomes a tab. Further links repeat the same transition;
 /// ancestor tabs accumulate left-to-right and scroll when their favicon-sized minimum
-/// widths no longer fit between the leading and trailing controls.
+/// widths no longer fit.
 public final class SplitWebOverlayViewController: UIViewController,
-    UINavigationControllerDelegate, UIViewControllerTransitioningDelegate {
+    UINavigationControllerDelegate, UIViewControllerTransitioningDelegate,
+    ReaderChromeControlling {
 
     public var onDismiss: (() -> Void)?
     public var onOpen: (() -> Void)?
     public var onClose: (() -> Void)?
+    public var onChromeStateChanged: (() -> Void)?
 
     private let url: URL
-    private let shareProvider: ReaderShareProviding?
     private let initialSourcePoint: CGPoint
     private let outerURL: URL
     private let outerTitle: String
+    private let contentTop: CGFloat
 
     private let innerNav = UINavigationController()
-    private let header = UIView()
-    private let closeButton = UIButton(type: .system)
-    private let saveButton = UIButton(type: .system)
-    private let modeControl = LunaSegmentedControl()
+    private let tabBar = UIView()
     private let tabScrollView = UIScrollView()
     private let tabContainer = UIView()
 
-    private static let buttonSize: CGFloat = 40
-    private static let buttonInset: CGFloat = 16
+    private static let tabBarHeight: CGFloat = 42
+    private static let tabInset: CGFloat = 8
     private static let tabSpacing: CGFloat = 5
     private static let minimumTabWidth: CGFloat = 38
-    private static let expandedChromeHeight: CGFloat = 144
     private static let orderedModes: [ReadingListItem.ReaderMode] = [.scroll, .rsvp, .original]
 
     private var didDismiss = false
@@ -68,13 +71,14 @@ public final class SplitWebOverlayViewController: UIViewController,
         bottomHalf: UIView?,
         sourcePoint: CGPoint? = nil,
         outerURL: URL? = nil,
-        outerTitle: String? = nil
+        outerTitle: String? = nil,
+        contentTop: CGFloat = 0
     ) {
         self.url = url
-        self.shareProvider = shareProvider
         self.initialSourcePoint = sourcePoint ?? CGPoint(x: UIScreen.main.bounds.midX, y: cutY)
         self.outerURL = outerURL ?? url
         self.outerTitle = Self.titleFallback(outerTitle, url: outerURL ?? url)
+        self.contentTop = max(contentTop, 0)
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .custom
         transitioningDelegate = self
@@ -86,13 +90,15 @@ public final class SplitWebOverlayViewController: UIViewController,
         super.viewDidLoad()
         view.backgroundColor = .clear
         setUpInnerNav()
-        configureHeader()
+        configureTabBar()
     }
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        innerNav.view.frame = view.bounds
-        layoutHeader()
+        let top = min(contentTop, view.bounds.maxY)
+        innerNav.view.frame = CGRect(x: 0, y: top, width: view.bounds.width,
+                                     height: max(view.bounds.height - top, 0))
+        layoutTabBar()
     }
 
     private func transitionWillOpen() {
@@ -128,6 +134,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         InlineReaderEclipseAnimator(
             sourcePoint: initialSourcePoint,
             direction: .forward,
+            sceneFrame: eclipseFrame,
             onTransitionStart: { [weak self] in self?.transitionWillOpen() },
             atZenith: { [weak self] in
                 guard let self else { return }
@@ -141,6 +148,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         let animator = InlineReaderEclipseAnimator(
             sourcePoint: initialSourcePoint,
             direction: .reverse,
+            sceneFrame: eclipseFrame,
             onTransitionStart: { [weak self] in self?.onClose?() },
             atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
         animator.onCompletion = { [weak self] in self?.onDismiss?() }
@@ -162,7 +170,7 @@ public final class SplitWebOverlayViewController: UIViewController,
 
     private func makePage(url: URL) -> InlineReaderPageViewController {
         let page = InlineReaderPageViewController(
-            url: url, headerHeight: Self.expandedChromeHeight)
+            url: url, headerHeight: Self.tabBarHeight)
         page.onLinkActivatedAtPoint = { [weak self, weak page] linkURL, point in
             guard let self, let page else { return }
             let converted = page.view.convert(point, to: self.view)
@@ -170,6 +178,10 @@ public final class SplitWebOverlayViewController: UIViewController,
         }
         page.onBecameArticle = { [weak self] in self?.syncHeaderToTopPage() }
         page.onMetadataChanged = { [weak self] in self?.syncHeaderToTopPage() }
+        page.onOverscrollDismiss = { [weak self] in self?.closeInnermostReader() }
+        page.onOverscrollProgress = { [weak self] progress, direction in
+            self?.applyOverscroll(progress: progress, direction: direction)
+        }
         return page
     }
 
@@ -196,11 +208,12 @@ public final class SplitWebOverlayViewController: UIViewController,
         case .push:
             guard let sourcePoint = pendingSourcePoint else { return nil }
             let animator = InlineReaderEclipseAnimator(
-                sourcePoint: sourcePoint, direction: .forward, sceneContainer: view
+                sourcePoint: sourcePoint, direction: .forward, sceneContainer: view,
+                sceneFrame: eclipseFrame
             ) { [weak self] in
                 guard let self else { return }
                 self.view.bringSubviewToFront(self.innerNav.view)
-                self.view.bringSubviewToFront(self.header)
+                self.innerNav.view.bringSubviewToFront(self.tabBar)
                 self.syncHeaderToTopPage(animateNewTab: true)
             }
             pendingSourcePoint = nil
@@ -211,6 +224,8 @@ public final class SplitWebOverlayViewController: UIViewController,
             return InlineReaderEclipseAnimator(
                 sourcePoint: sourcePoint,
                 direction: .reverse,
+                sceneContainer: view,
+                sceneFrame: eclipseFrame,
                 atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
         default:
             return nil
@@ -227,60 +242,28 @@ public final class SplitWebOverlayViewController: UIViewController,
     }
 
     private func syncHeaderToTopPage(animateNewTab: Bool = false) {
-        closeButton.configuration = GlassStyle.solidCircularButtonConfiguration(
-            symbol: innerNav.viewControllers.count == 1 ? "xmark" : "chevron.backward")
-
-        let showsModes = topPage?.isArticle ?? false
-        modeControl.isHidden = !showsModes
-        if showsModes, let mode = topPage?.readerMode,
-           let index = Self.orderedModes.firstIndex(of: mode) {
-            modeControl.selectedSegmentIndex = index
-        }
-
-        saveButton.configuration = Self.saveButtonConfiguration(title: "Save")
-        saveButton.tintColor = GlassStyle.readingAccent
-        saveButton.isEnabled = true
-        topPage?.setHeaderHeight(activeChromeHeight)
+        topPage?.setHeaderHeight(Self.tabBarHeight)
         rebuildTabs(animateNewest: animateNewTab && pendingTabInsertion)
         pendingTabInsertion = false
-        layoutHeader()
+        layoutTabBar()
+        onChromeStateChanged?()
     }
 
     // MARK: - Header and tabs
 
-    private func configureHeader() {
-        header.backgroundColor = GlassStyle.solidBarColor
-        header.layer.shadowColor = UIColor.black.cgColor
-        header.layer.shadowOpacity = 0.1
-        header.layer.shadowRadius = 12
-        header.layer.shadowOffset = CGSize(width: 0, height: 4)
-        view.addSubview(header)
-
-        closeButton.configuration = GlassStyle.solidCircularButtonConfiguration(symbol: "xmark")
-        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        header.addSubview(closeButton)
+    private func configureTabBar() {
+        tabBar.backgroundColor = GlassStyle.solidBarColor
+        tabBar.layer.shadowColor = UIColor.black.cgColor
+        tabBar.layer.shadowOpacity = 0.08
+        tabBar.layer.shadowRadius = 8
+        tabBar.layer.shadowOffset = CGSize(width: 0, height: 3)
+        innerNav.view.addSubview(tabBar)
 
         tabScrollView.showsHorizontalScrollIndicator = false
         tabScrollView.alwaysBounceHorizontal = false
         tabScrollView.clipsToBounds = true
-        header.addSubview(tabScrollView)
+        tabBar.addSubview(tabScrollView)
         tabScrollView.addSubview(tabContainer)
-
-        for (index, mode) in Self.orderedModes.enumerated() {
-            modeControl.insertSegment(
-                with: ReaderModeIcons.image(for: mode), at: index, animated: false)
-        }
-        modeControl.selectedSegmentIndex = 0
-        modeControl.isHidden = true
-        modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
-        header.addSubview(modeControl)
-
-        if shareProvider != nil {
-            saveButton.configuration = Self.saveButtonConfiguration(title: "Save")
-            saveButton.tintColor = GlassStyle.readingAccent
-            saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
-            header.addSubview(saveButton)
-        }
         rebuildTabs(animateNewest: false)
     }
 
@@ -340,44 +323,11 @@ public final class SplitWebOverlayViewController: UIViewController,
         return result
     }
 
-    private func layoutHeader() {
-        let safeTop = view.safeAreaInsets.top
-        header.frame = CGRect(
-            x: 0, y: 0, width: view.bounds.width, height: activeChromeHeight)
-        let buttonY = safeTop + 4
-        closeButton.frame = CGRect(
-            x: Self.buttonInset, y: buttonY,
-            width: Self.buttonSize, height: Self.buttonSize)
-
-        var trailingWidth = Self.buttonSize
-        if saveButton.superview != nil {
-            let fit = saveButton.sizeThatFits(
-                CGSize(width: view.bounds.width, height: Self.buttonSize))
-            trailingWidth = max(fit.width, Self.buttonSize)
-            saveButton.frame = CGRect(
-                x: view.bounds.width - trailingWidth - Self.buttonInset,
-                y: buttonY, width: trailingWidth, height: Self.buttonSize)
-        }
-
-        let tabsLeft = closeButton.frame.maxX + 8
-        let tabsRight = view.bounds.width - Self.buttonInset - trailingWidth - 8
-        tabScrollView.frame = CGRect(
-            x: tabsLeft, y: buttonY + 2,
-            width: max(tabsRight - tabsLeft, 0), height: Self.buttonSize - 4)
+    private func layoutTabBar() {
+        tabBar.frame = CGRect(x: 0, y: 0, width: innerNav.view.bounds.width,
+                              height: Self.tabBarHeight)
+        tabScrollView.frame = tabBar.bounds.insetBy(dx: Self.tabInset, dy: 4)
         layoutTabs(scrollToRight: false)
-
-        let modeSize = modeControl.sizeThatFits(CGSize(width: view.bounds.width, height: 34))
-        let modeWidth = min(max(modeSize.width, 132), view.bounds.width - 32)
-        modeControl.frame = CGRect(
-            x: (view.bounds.width - modeWidth) / 2,
-            y: closeButton.frame.maxY + 8,
-            width: modeWidth, height: 34)
-    }
-
-    private var activeChromeHeight: CGFloat {
-        modeControl.isHidden
-            ? max(view.safeAreaInsets.top + Self.buttonSize + 12, 96)
-            : Self.expandedChromeHeight
     }
 
     private func layoutTabs(scrollToRight: Bool) {
@@ -412,18 +362,9 @@ public final class SplitWebOverlayViewController: UIViewController,
         return url.host?.replacingOccurrences(of: "www.", with: "") ?? "Reader"
     }
 
-    private static func saveButtonConfiguration(title: String) -> UIButton.Configuration {
-        var config = UIButton.Configuration.filled()
-        config.baseBackgroundColor = GlassStyle.readingAccent.withAlphaComponent(0.16)
-        config.title = title
-        config.cornerStyle = .capsule
-        config.baseForegroundColor = GlassStyle.readingAccent
-        config.contentInsets = NSDirectionalEdgeInsets(
-            top: 8, leading: 14, bottom: 8, trailing: 14)
-        return config
-    }
-
-    @objc private func closeTapped() {
+    private func closeInnermostReader() {
+        innerNav.view.transform = .identity
+        innerNav.view.alpha = 1
         if innerNav.viewControllers.count > 1 {
             innerNav.popViewController(animated: true)
         } else {
@@ -441,19 +382,51 @@ public final class SplitWebOverlayViewController: UIViewController,
         innerNav.popToViewController(innerNav.viewControllers[pageIndex], animated: true)
     }
 
-    @objc private func modeChanged() {
-        let index = max(0, min(modeControl.selectedSegmentIndex, Self.orderedModes.count - 1))
-        topPage?.setMode(Self.orderedModes[index])
+    private var eclipseFrame: CGRect {
+        CGRect(x: 0, y: contentTop, width: view.bounds.width,
+               height: max(view.bounds.height - contentTop, 0))
     }
 
-    @objc private func saveTapped() {
-        guard let target = topPage?.url else { return }
-        shareProvider?.saveLink(urlString: target.absoluteString)
-        saveButton.configuration = Self.saveButtonConfiguration(title: "Saved")
-        saveButton.tintColor = GlassStyle.readingAccent
-        saveButton.isEnabled = false
-        layoutHeader()
+    private func applyOverscroll(progress: CGFloat, direction: CGFloat) {
+        let clamped = min(max(progress, 0), 1)
+        let travel = min(innerNav.view.bounds.height * 0.08, 48) * clamped * direction
+        innerNav.view.transform = CGAffineTransform(translationX: 0, y: travel)
+        innerNav.view.alpha = 1 - clamped * 0.16
+        if clamped == 0 {
+            UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut]) {
+                self.innerNav.view.transform = .identity
+                self.innerNav.view.alpha = 1
+            }
+        }
     }
+
+    // MARK: - Stable outer chrome target
+
+    public var chromeState: ReaderChromeState? {
+        guard let page = topPage else { return nil }
+        return ReaderChromeState(
+            isArticle: page.isArticle,
+            modes: Self.orderedModes,
+            selectedMode: page.readerMode,
+            isAudioOn: page.isAudioOn,
+            showsBack: true,
+            offersSaveShare: false,
+            isSaved: false)
+    }
+
+    public func chromeSetMode(_ mode: ReadingListItem.ReaderMode) {
+        topPage?.setMode(mode)
+        onChromeStateChanged?()
+    }
+
+    public func chromeToggleAudio() {
+        topPage?.toggleAudio()
+        onChromeStateChanged?()
+    }
+
+    public func chromeSave() {}
+    public func chromeShare(from sourceView: UIView) {}
+    public func chromeBack() { closeInnermostReader() }
 }
 
 private final class InlineReaderPresentationController: UIPresentationController {

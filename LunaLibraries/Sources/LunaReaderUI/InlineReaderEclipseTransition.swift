@@ -31,6 +31,17 @@ public struct InlineReaderTabMetrics: Equatable {
     }
 }
 
+/// Pure rubber-band policy shared by top and bottom inline-reader dismissal.
+public struct InlineReaderOverscrollMetrics: Equatable {
+    public let progress: CGFloat
+    public let commitsDismissal: Bool
+
+    public init(distance: CGFloat, outwardVelocity: CGFloat) {
+        progress = min(max(distance, 0) / 110, 1)
+        commitsDismissal = progress >= 0.62 || outwardVelocity > 900
+    }
+}
+
 /// One automatic, top-zenith solar eclipse used for both the first inline reader
 /// and every deeper reader push. Only transforms and opacity animate: the costly
 /// reader hierarchy is already laid out before the transition starts.
@@ -38,34 +49,43 @@ final class InlineReaderEclipseScene {
     static let duration: TimeInterval = 0.68
 
     private let container: UIView
+    private let surface = UIView()
     private let circle = UIView()
     private let eclipse = UIView()
     private let corona = UIView()
     private let flare = InlineReaderZenithFlareView()
     private var completed = false
 
-    init(container: UIView, sourcePoint: CGPoint) {
+    init(container: UIView, sourcePoint: CGPoint, frame: CGRect? = nil) {
         self.container = container
+        surface.frame = frame ?? container.bounds
+        surface.clipsToBounds = true
+        surface.isUserInteractionEnabled = false
+        container.addSubview(surface)
+
+        let localPoint = CGPoint(
+            x: sourcePoint.x - surface.frame.minX,
+            y: sourcePoint.y - surface.frame.minY)
 
         circle.bounds = CGRect(x: 0, y: 0, width: 2, height: 2)
         circle.center = CGPoint(
-            x: min(max(sourcePoint.x, 0), container.bounds.width),
-            y: min(max(sourcePoint.y, 0), container.bounds.height))
+            x: min(max(localPoint.x, 0), surface.bounds.width),
+            y: min(max(localPoint.y, 0), surface.bounds.height))
         circle.backgroundColor = .black
         circle.layer.cornerRadius = 1
         circle.isUserInteractionEnabled = false
-        container.addSubview(circle)
+        surface.addSubview(circle)
 
-        eclipse.frame = container.bounds
+        eclipse.frame = surface.bounds
         eclipse.backgroundColor = .black
         eclipse.layer.cornerRadius = 30
         eclipse.layer.cornerCurve = .continuous
-        eclipse.transform = CGAffineTransform(translationX: 0, y: container.bounds.height * 0.34)
+        eclipse.transform = CGAffineTransform(translationX: 0, y: surface.bounds.height * 0.34)
         eclipse.alpha = 0
         eclipse.isUserInteractionEnabled = false
-        container.addSubview(eclipse)
+        surface.addSubview(eclipse)
 
-        corona.frame = CGRect(x: 20, y: -2, width: max(container.bounds.width - 40, 0), height: 4)
+        corona.frame = CGRect(x: 20, y: -2, width: max(surface.bounds.width - 40, 0), height: 4)
         corona.backgroundColor = .white
         corona.layer.cornerRadius = 2
         corona.layer.shadowColor = UIColor.white.cgColor
@@ -98,8 +118,8 @@ final class InlineReaderEclipseScene {
         }
 
         let point = circle.center
-        let farthestX = max(point.x, container.bounds.width - point.x)
-        let farthestY = max(point.y, container.bounds.height - point.y)
+        let farthestX = max(point.x, surface.bounds.width - point.x)
+        let farthestY = max(point.y, surface.bounds.height - point.y)
         let coverDiameter = hypot(farthestX, farthestY) * 2 + 8
 
         UIView.animateKeyframes(
@@ -150,8 +170,8 @@ final class InlineReaderEclipseScene {
         completion: @escaping () -> Void
     ) {
         let point = circle.center
-        let farthestX = max(point.x, container.bounds.width - point.x)
-        let farthestY = max(point.y, container.bounds.height - point.y)
+        let farthestX = max(point.x, surface.bounds.width - point.x)
+        let farthestY = max(point.y, surface.bounds.height - point.y)
         let coverDiameter = hypot(farthestX, farthestY) * 2 + 8
 
         circle.transform = CGAffineTransform(scaleX: coverDiameter / 2, y: coverDiameter / 2)
@@ -168,8 +188,7 @@ final class InlineReaderEclipseScene {
         ) {
             outgoingView.alpha = 0
         } completion: { _ in
-            self.container.bringSubviewToFront(self.circle)
-            self.container.bringSubviewToFront(self.eclipse)
+            self.container.bringSubviewToFront(self.surface)
             guard !UIAccessibility.isReduceMotionEnabled else {
                 self.eclipse.alpha = 0
                 self.circle.alpha = 0
@@ -192,7 +211,7 @@ final class InlineReaderEclipseScene {
                 }
                 UIView.addKeyframe(withRelativeStartTime: 0, relativeDuration: 1) {
                     self.eclipse.transform = CGAffineTransform(
-                        translationX: 0, y: self.container.bounds.height * 0.34)
+                        translationX: 0, y: self.surface.bounds.height * 0.34)
                     self.eclipse.alpha = 0
                     self.eclipse.layer.cornerRadius = 30
                     self.circle.transform = .identity
@@ -206,8 +225,7 @@ final class InlineReaderEclipseScene {
     private func finish(_ completion: () -> Void) {
         guard !completed else { return }
         completed = true
-        circle.removeFromSuperview()
-        eclipse.removeFromSuperview()
+        surface.removeFromSuperview()
         completion()
     }
 }
@@ -263,6 +281,7 @@ final class InlineReaderEclipseAnimator: NSObject, UIViewControllerAnimatedTrans
     let sourcePoint: CGPoint
     let direction: Direction
     weak var sceneContainer: UIView?
+    let sceneFrame: CGRect?
     var onTransitionStart: (() -> Void)?
     var atZenith: (() -> Void)?
     var onCompletion: (() -> Void)?
@@ -271,12 +290,14 @@ final class InlineReaderEclipseAnimator: NSObject, UIViewControllerAnimatedTrans
         sourcePoint: CGPoint,
         direction: Direction = .forward,
         sceneContainer: UIView? = nil,
+        sceneFrame: CGRect? = nil,
         onTransitionStart: (() -> Void)? = nil,
         atZenith: (() -> Void)? = nil
     ) {
         self.sourcePoint = sourcePoint
         self.direction = direction
         self.sceneContainer = sceneContainer
+        self.sceneFrame = sceneFrame
         self.onTransitionStart = onTransitionStart
         self.atZenith = atZenith
     }
@@ -310,7 +331,8 @@ final class InlineReaderEclipseAnimator: NSObject, UIViewControllerAnimatedTrans
             container.addSubview(toView)
             container.bringSubviewToFront(fromView)
             let scene = InlineReaderEclipseScene(
-                container: sceneContainer ?? container, sourcePoint: sourcePoint)
+                container: sceneContainer ?? container, sourcePoint: sourcePoint,
+                frame: sceneFrame)
             scene.animate(atZenith: { [weak self] in
                 container.bringSubviewToFront(toView)
                 toView.alpha = 0
@@ -335,7 +357,8 @@ final class InlineReaderEclipseAnimator: NSObject, UIViewControllerAnimatedTrans
                 container.insertSubview(toView, belowSubview: fromView)
             }
             let scene = InlineReaderEclipseScene(
-                container: sceneContainer ?? container, sourcePoint: sourcePoint)
+                container: sceneContainer ?? container, sourcePoint: sourcePoint,
+                frame: sceneFrame)
             scene.animateReverse(hiding: fromView, atZenith: { [weak self] in
                 self?.atZenith?()
             }, completion: { [weak self] in

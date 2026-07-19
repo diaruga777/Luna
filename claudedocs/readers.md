@@ -49,8 +49,9 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   navigation push. `InlineReaderPageViewController` keeps the existing cached article
   probe, themed-web fallback, and reader-mode switching, and now reports extracted or
   WebKit titles for tab updates.
-- Ancestor tabs occupy the strip between the close/back and Save controls. They split
-  that space equally until the favicon-plus-padding minimum would be violated, then
+- The inline surface has no Close, Save, or duplicate mode control. Its only local
+  chrome is the ancestor-tab strip at the reader card's top edge. Tabs split the
+  available width equally until the favicon-plus-padding minimum would be violated, then
   become horizontally scrollable and initially align to the rightmost content. Tabs
   preserve their button instances while metadata changes so in-flight favicon fetches
   are not cancelled. Each contains an asynchronously fetched favicon (with a visible
@@ -58,9 +59,18 @@ The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(aud
   the minimum, the title hides and the favicon remains. Selecting a tab unwinds to that
   reader (the outermost tab dismisses the overlay). `InlineReaderTabMetrics` is the
   pure, unit-tested fit/scroll sizing policy.
+- `ReaderChromeControlling` lets the fixed outer reader chrome retarget itself to the
+  innermost inline page. The exact same segmented control and audio button stay in place;
+  they switch the inline page's Scroll/RSVP/Original mode and read-aloud state, then return
+  to the outer reader on dismissal. The inline reader begins at the existing outer card's
+  top edge, immediately below those controls, and `InlineReaderEclipseScene.sceneFrame`
+  clips both eclipse directions to that same edge.
+- Pulling past either the top or bottom rubber-band moves the inline surface with the
+  finger. Crossing the distance/velocity threshold pops one inline depth (or dismisses
+  the root inline reader) with the reverse eclipse; cancelling springs it back.
 - The old split snapshots/peek views are no longer created. The outgoing live reader
   remains underneath a custom presentation controller that deliberately retains it,
-  its header tucks during the eclipse, and its scroll position is restored on dismissal.
+  and its scroll position is restored on dismissal.
   When the reader is still embedded in the root card carousel, link activation also
   calls the same carousel immersion path as scrolling down, fading the side cards,
   rims, and scrub strip in step with the opening eclipse. Animation work is limited

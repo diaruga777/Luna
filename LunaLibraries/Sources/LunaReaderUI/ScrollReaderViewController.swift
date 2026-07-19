@@ -720,7 +720,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     @objc private func imageTapped(_ gesture: UITapGestureRecognizer) {
         guard gesture.state == .ended,
               let hit = image(at: gesture.location(in: textView)) else { return }
-        let lightbox = ImageLightboxViewController(image: hit.image, sourceFrame: hit.frame)
+        let hitFrameOrigin = view.convert(hit.frame.origin, to: nil)
+        let lightbox = ImageLightboxViewController(
+            image: hit.image,
+            sourceFrame:CGRect(origin: hitFrameOrigin, size: hit.frame.size)
+        )
         present(lightbox, animated: false)
     }
 

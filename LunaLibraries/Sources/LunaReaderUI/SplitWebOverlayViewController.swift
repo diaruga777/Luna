@@ -80,7 +80,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     private let showsOuterContentBelow: Bool
 
     private let innerNav = UINavigationController()
-    private let cardView = CarouselCardView()
+    private let cardView = CardSurfaceView()
     private let tabBar = UIView()
     private let tabScrollView = UIScrollView()
     private let tabContainer = UIView()
@@ -442,7 +442,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     }
 
     private func layoutTabBar() {
-        let inset = CarouselCardView.cornerRadius
+        let inset = CardSurfaceView.cornerRadius
         tabBar.frame = CGRect(
             x: inset, y: 0,
             width: max(view.bounds.width - inset * 2, 0),

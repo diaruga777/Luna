@@ -167,18 +167,20 @@ public final class HorizonScrollIndicator: UIView {
 
     public override func didMoveToWindow() {
         super.didMoveToWindow()
-        // A self-installed indicator trapped inside a carousel card can only
-        // reach the card's (clipped) edge; the card host places its own
+        // A self-installed indicator trapped inside a card surface (the root
+        // carousel's own cards, or a host that reuses CardSurfaceView for its
+        // own nested card chrome — e.g. SplitWebOverlayViewController) can
+        // only reach the card's (clipped) edge; the card host places its own
         // escape-the-clip indicator instead, so step aside.
-        guard !isHostManaged, window != nil, isInsideCarouselCard else { return }
+        guard !isHostManaged, window != nil, isInsideCardSurface else { return }
         track(nil)
         removeFromSuperview()
     }
 
-    private var isInsideCarouselCard: Bool {
+    private var isInsideCardSurface: Bool {
         var ancestor = superview
         while let current = ancestor {
-            if current is CarouselCardView { return true }
+            if current is CardSurfaceView { return true }
             ancestor = current.superview
         }
         return false

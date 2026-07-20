@@ -105,7 +105,7 @@ final class InlineReaderEclipseScene {
 
         clippedSurface.frame = surface.bounds
         clippedSurface.clipsToBounds = true
-        clippedSurface.layer.cornerRadius = CarouselCardView.cornerRadius
+        clippedSurface.layer.cornerRadius = CardSurfaceView.cornerRadius
         clippedSurface.layer.cornerCurve = .continuous
         surface.addSubview(clippedSurface)
 

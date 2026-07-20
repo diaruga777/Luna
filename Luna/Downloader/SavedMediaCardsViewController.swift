@@ -21,13 +21,14 @@ import LunaURLClassification
 import Photos
 import UIKit
 
-final class SavedMediaCardsViewController: UIViewController {
+final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
     private let store = SavedMediaStore.shared
     private let photoSaver = PhotoLibrarySaver()
     private let downloadFooter = DownloaderProgressFooterView()
-    private let carousel = CardCarouselViewController()
-    private let emptyView = EmptyMediaView()
+    private let emptyView = CardCarouselHostViewController.makeEmptyStateView(
+        symbol: "photo.on.rectangle.angled", title: "No Saved Media",
+        subtitle: "Saved Downloader links appear here after Luna downloads the media.")
     private let settingsButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
     private var items: [SavedMediaItem] = []
@@ -54,19 +55,12 @@ final class SavedMediaCardsViewController: UIViewController {
         carousel.style = style
         carousel.dataSource = self
         carousel.delegate = self
-        addChild(carousel)
-        view.addSubview(carousel.view)
-        carousel.view.translatesAutoresizingMaskIntoConstraints = false
-        carousel.didMove(toParent: self)
+        mountCarousel()
 
         emptyView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyView)
 
         NSLayoutConstraint.activate([
-            carousel.view.topAnchor.constraint(equalTo: view.topAnchor),
-            carousel.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            carousel.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            carousel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             emptyView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             emptyView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             emptyView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -104,16 +98,12 @@ final class SavedMediaCardsViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
-        applyCarouselTopInset()
+        applyCarouselTopInset(4)
     }
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
-        applyCarouselTopInset()
-    }
-
-    private func applyCarouselTopInset() {
-        carousel.setTopInset(view.safeAreaInsets.top + 4)
+        applyCarouselTopInset(4)
     }
 
     /// Matches Reader's outer chrome: the scrubber runs edge-to-edge beneath
@@ -125,29 +115,7 @@ final class SavedMediaCardsViewController: UIViewController {
         configureBottomButton(
             shareButton, symbol: "square.and.arrow.up", action: #selector(shareCurrentTapped),
             accessibilityLabel: "Share Current Media")
-        view.addSubview(settingsButton)
-        view.addSubview(shareButton)
-        NSLayoutConstraint.activate([
-            settingsButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            settingsButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -26),
-            settingsButton.widthAnchor.constraint(equalToConstant: 44),
-            settingsButton.heightAnchor.constraint(equalToConstant: 44),
-            shareButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            shareButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -26),
-            shareButton.widthAnchor.constraint(equalToConstant: 44),
-            shareButton.heightAnchor.constraint(equalToConstant: 44),
-        ])
-    }
-
-    private func configureBottomButton(
-        _ button: UIButton, symbol: String, action: Selector, accessibilityLabel: String
-    ) {
-        button.configuration = GlassStyle.circularButtonConfiguration(symbol: symbol, padding: 10)
-        button.accessibilityLabel = accessibilityLabel
-        button.addTarget(self, action: action, for: .touchUpInside)
-        button.translatesAutoresizingMaskIntoConstraints = false
+        mountBottomControls(leading: settingsButton, trailing: shareButton)
     }
 
     /// Floats the download-progress footer above the scrub strip, mirroring the
@@ -216,11 +184,10 @@ final class SavedMediaCardsViewController: UIViewController {
         }
     }
 
-    private var cardOffset: Int { renderedPasteboardURL == nil ? 0 : 1 }
+    override var hasLeadingPasteboardCard: Bool { renderedPasteboardURL != nil }
 
     private func mediaIndex(forCarouselIndex index: Int) -> Int? {
-        let mediaIndex = index - cardOffset
-        return items.indices.contains(mediaIndex) ? mediaIndex : nil
+        itemIndex(forCarouselIndex: index, itemCount: items.count)
     }
 
     private func currentMediaItem() -> (item: SavedMediaItem, carouselIndex: Int)? {
@@ -243,10 +210,6 @@ final class SavedMediaCardsViewController: UIViewController {
     }
 
     // MARK: - Outer controls + pasteboard
-
-    @objc private func settingsTapped() {
-        navigationController?.pushViewController(SettingsViewController(), animated: true)
-    }
 
     @objc private func shareCurrentTapped() {
         guard let current = currentMediaItem() else { return }
@@ -879,37 +842,3 @@ private final class CircularDownloadProgressView: UIView {
     }
 }
 
-// MARK: - Empty state
-
-private final class EmptyMediaView: UIView {
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        let image = UIImageView(image: UIImage(systemName: "photo.on.rectangle.angled"))
-        image.tintColor = .tertiaryLabel
-        image.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 44, weight: .regular)
-        let title = UILabel()
-        title.text = "No Saved Media"
-        title.font = .preferredFont(forTextStyle: .title3)
-        title.textColor = .label
-        let subtitle = UILabel()
-        subtitle.text = "Saved Downloader links appear here after Luna downloads the media."
-        subtitle.font = .preferredFont(forTextStyle: .subheadline)
-        subtitle.textColor = .secondaryLabel
-        subtitle.textAlignment = .center
-        subtitle.numberOfLines = 0
-        let stack = UIStackView(arrangedSubviews: [image, title, subtitle])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -32),
-        ])
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-}

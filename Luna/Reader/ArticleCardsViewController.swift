@@ -36,13 +36,14 @@ import LunaStorage
 import LunaURLClassification
 import UIKit
 
-final class ArticleCardsViewController: UIViewController {
+final class ArticleCardsViewController: CardCarouselHostViewController {
 
     private static let pasteboardCardMarker = URL(string: "https://pasteboard.invalid")!
 
     private let store = ReadingListStore.shared
-    private let carousel = CardCarouselViewController()
-    private let emptyView = EmptyArticlesView()
+    private let emptyView = CardCarouselHostViewController.makeEmptyStateView(
+        symbol: "books.vertical", title: "No Saved Articles",
+        subtitle: "Articles you save appear here as cards.")
     private let settingsButton = UIButton(type: .system)
     // Screen-level reader chrome (see mountTopChrome).
     private let readerChromeRow = UIView()
@@ -102,10 +103,7 @@ final class ArticleCardsViewController: UIViewController {
         // The header row and the flanking Settings/Share circles persist through
         // immersion — only the carousel's own chrome (side cards, scrub strip,
         // card rims) fades while reading.
-        addChild(carousel)
-        view.addSubview(carousel.view)
-        carousel.view.translatesAutoresizingMaskIntoConstraints = false
-        carousel.didMove(toParent: self)
+        mountCarousel()
 
         emptyView.translatesAutoresizingMaskIntoConstraints = false
         // Stay hidden until the first `reload()` confirms the list is genuinely
@@ -124,10 +122,6 @@ final class ArticleCardsViewController: UIViewController {
         mountTopChrome()
 
         NSLayoutConstraint.activate([
-            carousel.view.topAnchor.constraint(equalTo: view.topAnchor),
-            carousel.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            carousel.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            carousel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             emptyView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             emptyView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             emptyView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -154,20 +148,16 @@ final class ArticleCardsViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: false)
-        applyCarouselTopInset()
+        // Cards rest fully below the header row — the card frames only the
+        // reader content; the buttons and controls float over the screen background.
+        applyCarouselTopInset(4 + Self.topChromeClearance)
         updateExternalReaderInsets()
     }
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
-        applyCarouselTopInset()
+        applyCarouselTopInset(4 + Self.topChromeClearance)
         updateExternalReaderInsets()
-    }
-
-    /// Cards rest fully below the header row — the card frames only the reader
-    /// content; the buttons and controls float over the screen background.
-    private func applyCarouselTopInset() {
-        carousel.setTopInset(view.safeAreaInsets.top + 4 + Self.topChromeClearance)
     }
 
     /// The height of the screen-level chrome row: it spans safeTop+4 …
@@ -352,33 +342,7 @@ final class ArticleCardsViewController: UIViewController {
         configureBottomButton(
             readerShareButton, symbol: "square.and.arrow.up", action: #selector(readerShareTapped),
             accessibilityLabel: "Share")
-        view.addSubview(settingsButton)
-        view.addSubview(readerShareButton)
-        NSLayoutConstraint.activate([
-            settingsButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            settingsButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -26),
-            settingsButton.widthAnchor.constraint(equalToConstant: 44),
-            settingsButton.heightAnchor.constraint(equalToConstant: 44),
-            readerShareButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            readerShareButton.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -26),
-            readerShareButton.widthAnchor.constraint(equalToConstant: 44),
-            readerShareButton.heightAnchor.constraint(equalToConstant: 44),
-        ])
-    }
-
-    private func configureBottomButton(
-        _ button: UIButton, symbol: String, action: Selector, accessibilityLabel: String
-    ) {
-        button.configuration = GlassStyle.circularButtonConfiguration(symbol: symbol, padding: 10)
-        button.accessibilityLabel = accessibilityLabel
-        button.addTarget(self, action: action, for: .touchUpInside)
-        button.translatesAutoresizingMaskIntoConstraints = false
-    }
-
-    @objc private func settingsTapped() {
-        navigationController?.pushViewController(SettingsViewController(), animated: true)
+        mountBottomControls(leading: settingsButton, trailing: readerShareButton)
     }
 
     // MARK: - Data
@@ -409,11 +373,10 @@ final class ArticleCardsViewController: UIViewController {
         }
     }
 
-    private var cardOffset: Int { renderedPasteboardURL == nil ? 0 : 1 }
+    override var hasLeadingPasteboardCard: Bool { renderedPasteboardURL != nil }
 
     private func articleIndex(forCarouselIndex index: Int) -> Int? {
-        let itemIndex = index - cardOffset
-        return items.indices.contains(itemIndex) ? itemIndex : nil
+        itemIndex(forCarouselIndex: index, itemCount: items.count)
     }
 
     private func addPasteboardURL() {
@@ -993,37 +956,3 @@ private final class ReaderCardContentViewController: CardContentViewController,
 
 }
 
-// MARK: - Empty state
-
-private final class EmptyArticlesView: UIView {
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        let image = UIImageView(image: UIImage(systemName: "books.vertical"))
-        image.tintColor = .tertiaryLabel
-        image.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 44, weight: .regular)
-        let title = UILabel()
-        title.text = "No Saved Articles"
-        title.font = .preferredFont(forTextStyle: .title3)
-        title.textColor = .label
-        let subtitle = UILabel()
-        subtitle.text = "Articles you save appear here as cards."
-        subtitle.font = .preferredFont(forTextStyle: .subheadline)
-        subtitle.textColor = .secondaryLabel
-        subtitle.textAlignment = .center
-        subtitle.numberOfLines = 0
-        let stack = UIStackView(arrangedSubviews: [image, title, subtitle])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -32),
-        ])
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-}

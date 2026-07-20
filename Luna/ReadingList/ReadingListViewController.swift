@@ -1277,7 +1277,7 @@ final class ReadingListViewController: UITableViewController {
 
     /// Configures a row cell for `item` (shared with the search screen so its rows
     /// look identical to the list's).
-    func configureItemCell(_ cell: ReadingListItemCell, for item: ReadingListItem) {
+    private func configureItemCell(_ cell: ReadingListItemCell, for item: ReadingListItem) {
         if let tracker = item.priceTracker {
             configurePriceTrackerCell(cell, item: item, tracker: tracker)
             return

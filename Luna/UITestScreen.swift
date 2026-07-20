@@ -214,37 +214,4 @@ final class PresentingHostViewController: UIViewController {
         present(modal, animated: modal is SplitWebOverlayViewController)
     }
 }
-
-/// A container that shows `host` and runs `action` once it has appeared. Used to
-/// deep-link to screens installed by a host's own action seam (e.g. the reading
-/// list's search overlay) rather than a standalone view controller. DEBUG-only.
-final class ActionHostViewController: UIViewController {
-    private let host: UIViewController
-    private let action: () -> Void
-    private var hasRun = false
-
-    init(host: UIViewController, action: @escaping () -> Void) {
-        self.host = host
-        self.action = action
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        addChild(host)
-        host.view.frame = view.bounds
-        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(host.view)
-        host.didMove(toParent: self)
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        guard !hasRun else { return }
-        hasRun = true
-        action()
-    }
-}
 #endif

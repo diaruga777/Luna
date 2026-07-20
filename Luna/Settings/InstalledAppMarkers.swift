@@ -29,13 +29,4 @@ enum InstalledAppMarkers {
     static func isInstalled(_ surface: AppSurface) -> Bool {
         LunaInstallationMarkers.wasInstalled(surfaceIdentifier: surface.storageIdentifier)
     }
-
-    /// `lunaInstalled.<surface>` — the suffix matches the app's bundle-id suffix.
-    static func key(for surface: AppSurface) -> String {
-        switch surface {
-        case .reader: return "lunaInstalled.reader"
-        case .downloader: return "lunaInstalled.downloader"
-        case .priceTracker: return "lunaInstalled.pricetracker"
-        }
-    }
 }

@@ -68,30 +68,17 @@ public final class FriendsStore {
 
     public static let shared = FriendsStore()
 
-    private let fileManager = FileManager.default
-    private let overrideContainerURL: URL?
-    private let mutationLock = NSLock()
+    private let store: AppGroupJSONStore<Friend>
 
     public init(containerURL: URL? = nil) {
-        self.overrideContainerURL = containerURL
-    }
-
-    private var fileURL: URL {
-        let container = overrideContainerURL
-            ?? fileManager.containerURL(
-                forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
-            ?? fileManager.temporaryDirectory
-        let url = container.appendingPathComponent("friends.json")
-        BackupPolicy.includeInBackups(url)
-        return url
+        store = AppGroupJSONStore(
+            filename: "friends.json", changeNotification: .friendsListChanged,
+            containerURL: containerURL)
     }
 
     /// All friends, newest first.
     public func items() -> [Friend] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let friends = try? JSONDecoder().decode([Friend].self, from: data)
-        else { return [] }
-        return friends.sorted { $0.dateAdded > $1.dateAdded }
+        store.load().sorted { $0.dateAdded > $1.dateAdded }
     }
 
     public func friend(withEmail email: String) -> Friend? {
@@ -105,38 +92,38 @@ public final class FriendsStore {
     /// resulting friend.
     @discardableResult
     public func add(email: String, name: String? = nil) -> Friend {
-        mutationLock.lock()
-        defer { mutationLock.unlock() }
+        store.mutationLock.lock()
+        defer { store.mutationLock.unlock() }
         var all = items()
         let normalized = Friend.normalize(email)
         if let index = all.firstIndex(where: { $0.email == normalized }) {
             if let name, !name.isEmpty { all[index].name = name }
-            save(all)
+            store.save(all)
             return all[index]
         }
         let friend = Friend(email: normalized, name: name)
         all.insert(friend, at: 0)
-        save(all)
+        store.save(all)
         return friend
     }
 
     /// Persists a full friend record (used to flip toggles / flags).
     public func update(_ friend: Friend) {
-        mutationLock.lock()
-        defer { mutationLock.unlock() }
+        store.mutationLock.lock()
+        defer { store.mutationLock.unlock() }
         var all = items()
         guard let index = all.firstIndex(where: { $0.email == friend.email }) else { return }
         all[index] = friend
-        save(all)
+        store.save(all)
     }
 
     public func remove(email: String) {
-        mutationLock.lock()
-        defer { mutationLock.unlock() }
+        store.mutationLock.lock()
+        defer { store.mutationLock.unlock() }
         let normalized = Friend.normalize(email)
         var all = items()
         all.removeAll { $0.email == normalized }
-        save(all)
+        store.save(all)
     }
 
     public func setNotifyOnEveryShare(_ enabled: Bool, email: String) {
@@ -156,16 +143,5 @@ public final class FriendsStore {
             update(friend)
         }
         return wasFirst
-    }
-
-    private func save(_ friends: [Friend]) {
-        if let data = try? JSONEncoder().encode(friends) {
-            let url = fileURL
-            try? data.write(to: url, options: .atomic)
-            BackupPolicy.includeInBackups(url)
-        }
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .friendsListChanged, object: nil)
-        }
     }
 }

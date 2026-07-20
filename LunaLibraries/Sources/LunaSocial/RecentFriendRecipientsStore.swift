@@ -28,30 +28,17 @@ public final class RecentFriendRecipientsStore {
         }
     }
 
-    private let fileManager = FileManager.default
-    private let overrideContainerURL: URL?
-    private let mutationLock = NSLock()
+    private let store: AppGroupJSONStore<Recipient>
 
     public init(containerURL: URL? = nil) {
-        self.overrideContainerURL = containerURL
-    }
-
-    private var fileURL: URL {
-        let container = overrideContainerURL
-            ?? fileManager.containerURL(
-                forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
-            ?? fileManager.temporaryDirectory
-        let url = container.appendingPathComponent("recentFriendRecipients.json")
-        BackupPolicy.includeInBackups(url)
-        return url
+        store = AppGroupJSONStore(
+            filename: "recentFriendRecipients.json",
+            changeNotification: .recentFriendRecipientsChanged, containerURL: containerURL)
     }
 
     /// Newest recipients first.
     public func items(limit: Int? = nil) -> [Recipient] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let recipients = try? JSONDecoder().decode([Recipient].self, from: data)
-        else { return [] }
-        let sorted = recipients.sorted { $0.lastSentAt > $1.lastSentAt }
+        let sorted = store.load().sorted { $0.lastSentAt > $1.lastSentAt }
         guard let limit else { return sorted }
         return Array(sorted.prefix(max(0, limit)))
     }
@@ -62,8 +49,8 @@ public final class RecentFriendRecipientsStore {
             .filter(Friend.isValidEmail)
         guard !normalized.isEmpty else { return }
 
-        mutationLock.lock()
-        defer { mutationLock.unlock() }
+        store.mutationLock.lock()
+        defer { store.mutationLock.unlock() }
 
         var byEmail: [String: Recipient] = [:]
         for recipient in items() {
@@ -72,17 +59,6 @@ public final class RecentFriendRecipientsStore {
         for email in normalized {
             byEmail[email] = Recipient(email: email, lastSentAt: now)
         }
-        save(Array(byEmail.values))
-    }
-
-    private func save(_ recipients: [Recipient]) {
-        if let data = try? JSONEncoder().encode(recipients) {
-            let url = fileURL
-            try? data.write(to: url, options: .atomic)
-            BackupPolicy.includeInBackups(url)
-        }
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .recentFriendRecipientsChanged, object: nil)
-        }
+        store.save(Array(byEmail.values))
     }
 }

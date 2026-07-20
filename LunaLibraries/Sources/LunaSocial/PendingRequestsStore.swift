@@ -47,30 +47,17 @@ public final class PendingRequestsStore {
 
     public static let shared = PendingRequestsStore()
 
-    private let fileManager = FileManager.default
-    private let overrideContainerURL: URL?
-    private let mutationLock = NSLock()
+    private let store: AppGroupJSONStore<PendingRequest>
 
     public init(containerURL: URL? = nil) {
-        self.overrideContainerURL = containerURL
-    }
-
-    private var fileURL: URL {
-        let container = overrideContainerURL
-            ?? fileManager.containerURL(
-                forSecurityApplicationGroupIdentifier: ReadingListStore.appGroupID)
-            ?? fileManager.temporaryDirectory
-        let url = container.appendingPathComponent("pendingRequests.json")
-        BackupPolicy.includeInBackups(url)
-        return url
+        store = AppGroupJSONStore(
+            filename: "pendingRequests.json", changeNotification: .pendingRequestsChanged,
+            containerURL: containerURL)
     }
 
     /// All pending requests, newest first.
     public func items() -> [PendingRequest] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let requests = try? JSONDecoder().decode([PendingRequest].self, from: data)
-        else { return [] }
-        return requests.sorted { $0.date > $1.date }
+        store.load().sorted { $0.date > $1.date }
     }
 
     public var count: Int { items().count }
@@ -82,32 +69,21 @@ public final class PendingRequestsStore {
     }
 
     public func add(_ request: PendingRequest) {
-        mutationLock.lock()
-        defer { mutationLock.unlock() }
+        store.mutationLock.lock()
+        defer { store.mutationLock.unlock() }
         var all = items()
         guard !all.contains(where: {
             $0.urlString == request.urlString && $0.senderEmail == request.senderEmail
         }) else { return }
         all.insert(request, at: 0)
-        save(all)
+        store.save(all)
     }
 
     public func remove(id: UUID) {
-        mutationLock.lock()
-        defer { mutationLock.unlock() }
+        store.mutationLock.lock()
+        defer { store.mutationLock.unlock() }
         var all = items()
         all.removeAll { $0.id == id }
-        save(all)
-    }
-
-    private func save(_ requests: [PendingRequest]) {
-        if let data = try? JSONEncoder().encode(requests) {
-            let url = fileURL
-            try? data.write(to: url, options: .atomic)
-            BackupPolicy.includeInBackups(url)
-        }
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .pendingRequestsChanged, object: nil)
-        }
+        store.save(all)
     }
 }

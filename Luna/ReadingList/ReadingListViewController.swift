@@ -1436,35 +1436,17 @@ final class ReadingListViewController: UITableViewController {
     private func presentArchiveReader(
         for item: ReadingListItem, articleURL: URL, presenter: UIViewController
     ) {
-        let reader = ArchiveWebReaderViewController(articleURL: articleURL, itemID: item.id, store: store)
-        let nav = UINavigationController(rootViewController: reader)
-        reader.onClose = { [weak nav] in
-            guard let nav else { return }
-            nav.dismiss(animated: true)
+        ArchiveUnlockFlow.present(
+            item: item, articleURL: articleURL, store: store, from: presenter
+        ) { [weak self, weak presenter] fresh in
+            guard let self, let presenter else { return }
+            // Archive/direct-unlock extraction happens in LunaArchiveReader, below
+            // the thumbnail helper's module, so it saves text first and lets the app
+            // process backfill the row cover. Without this nudge, the cover appears
+            // only on the next launch/foreground backfill pass.
+            ReadingListIngestor.shared.backfillMissingThumbnails()
+            self.open(fresh, presenter: presenter)   // now .ready → native reader
         }
-        reader.onOpenInBrowser = { [weak nav] archiveURL in
-            // This is an escape from archive.is's WKWebView-specific bot gate, so
-            // it must leave Luna for the system browser — an SFSafari sheet remains
-            // inside our presentation and doesn't provide the requested escape.
-            guard let nav else { return }
-            nav.dismiss(animated: true) {
-                UIApplication.shared.open(archiveURL)
-            }
-        }
-        reader.onExtracted = { [weak self, weak nav, weak presenter] in
-            guard let nav else { return }
-            nav.dismiss(animated: true) {
-                guard let self, let presenter,
-                      let fresh = self.store.item(withID: item.id) else { return }
-                // Archive/direct-unlock extraction happens in LunaArchiveReader, below
-                // the thumbnail helper's module, so it saves text first and lets the app
-                // process backfill the row cover. Without this nudge, the cover appears
-                // only on the next launch/foreground backfill pass.
-                ReadingListIngestor.shared.backfillMissingThumbnails()
-                self.open(fresh, presenter: presenter)   // now .ready → native reader
-            }
-        }
-        presenter.present(nav, animated: true)
     }
 
     /// Opens a non-article item (video / platform post) the way

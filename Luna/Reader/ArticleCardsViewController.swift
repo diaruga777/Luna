@@ -494,28 +494,13 @@ final class ArticleCardsViewController: UIViewController {
     /// ReadingListViewController.presentArchiveReader): on successful
     /// extraction, reopen the now-.ready item fullscreen.
     private func presentArchiveReader(for item: ReadingListItem, articleURL: URL) {
-        let reader = ArchiveWebReaderViewController(
-            articleURL: articleURL, itemID: item.id, store: store)
-        let nav = UINavigationController(rootViewController: reader)
-        reader.onClose = { [weak nav] in
-            guard let nav else { return }
-            nav.dismiss(animated: true)
+        ArchiveUnlockFlow.present(
+            item: item, articleURL: articleURL, store: store, from: self
+        ) { [weak self] fresh in
+            guard let self else { return }
+            ReadingListIngestor.shared.backfillMissingThumbnails()
+            self.openExternally(fresh)
         }
-        reader.onOpenInBrowser = { [weak nav] archiveURL in
-            guard let nav else { return }
-            nav.dismiss(animated: true) {
-                UIApplication.shared.open(archiveURL)
-            }
-        }
-        reader.onExtracted = { [weak self, weak nav] in
-            guard let nav else { return }
-            nav.dismiss(animated: true) {
-                guard let self, let fresh = self.store.item(withID: item.id) else { return }
-                ReadingListIngestor.shared.backfillMissingThumbnails()
-                self.openExternally(fresh)
-            }
-        }
-        present(nav, animated: true)
     }
 
     // MARK: - Carousel data source (see CardCarouselDataSource conformance below)

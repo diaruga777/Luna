@@ -441,25 +441,12 @@ final class CatchUpViewController: UIViewController {
     /// cancel the locked card stays.
     private func presentUnlock(_ item: ReadingListItem) {
         guard item.state == .needsCaptcha, let url = item.url else { return }
-        let reader = ArchiveWebReaderViewController(articleURL: url, itemID: item.id)
-        let nav = UINavigationController(rootViewController: reader)
-        nav.modalPresentationStyle = .fullScreen
-        reader.onClose = { [weak nav] in
-            guard let nav else { return }
-            nav.dismiss(animated: true)
+        ArchiveUnlockFlow.present(
+            item: item, articleURL: url, store: store, from: self,
+            modalPresentationStyle: .fullScreen
+        ) { [weak self] _ in
+            self?.reloadCurrentCard()
         }
-        // Escape hatch when the embedded web view can't clear archive.today's gate.
-        reader.onOpenInBrowser = { [weak nav] archiveURL in
-            guard let nav else { return }
-            nav.dismiss(animated: true) {
-                UIApplication.shared.open(archiveURL)
-            }
-        }
-        reader.onExtracted = { [weak self, weak nav] in
-            guard let nav else { return }
-            nav.dismiss(animated: true) { self?.reloadCurrentCard() }
-        }
-        present(nav, animated: true)
     }
 
     /// Rebuilds the current card from the freshly-stored item (after an unlock).

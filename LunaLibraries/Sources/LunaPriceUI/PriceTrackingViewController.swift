@@ -76,7 +76,10 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
     private let mode: Mode
     private let store = ReadingListStore.shared
-    private let manager: PriceTrackingManaging
+    /// Fetches the current price for a store URL the user adds to an existing
+    /// tracker. Protocol-based so this screen can be tested against a mock
+    /// without the network.
+    private let priceFetcher: PriceFetching
 
     /// Re-saves a URL as a normal article when the user taps "Read instead". Injected
     /// so the editor stays extension-safe (ShareKit has no `ReadingListIngestor`): the
@@ -139,9 +142,9 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
 
     private var tracker: PriceTracker? { store.item(withID: itemID)?.priceTracker }
 
-    public init(itemID: UUID, manager: PriceTrackingManaging = PriceTrackingManager()) {
+    public init(itemID: UUID, priceFetcher: PriceFetching = PriceFetcher()) {
         self.mode = .existing(itemID: itemID)
-        self.manager = manager
+        self.priceFetcher = priceFetcher
         self.saveAsArticleOverride = nil
         super.init(nibName: nil, bundle: nil)
     }
@@ -149,11 +152,11 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     /// `onReadInstead` overrides the "Read instead" re-save (extension surfaces inject
     /// their own; in-app callers omit it to use the static `defaultSaveAsArticle`).
     public init(
-        mode: Mode, manager: PriceTrackingManaging = PriceTrackingManager(),
+        mode: Mode, priceFetcher: PriceFetching = PriceFetcher(),
         onReadInstead: ((String) -> Void)? = nil
     ) {
         self.mode = mode
-        self.manager = manager
+        self.priceFetcher = priceFetcher
         self.saveAsArticleOverride = onReadInstead
         super.init(nibName: nil, bundle: nil)
     }
@@ -459,8 +462,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         }
         Task { [weak self] in
             guard let self else { return }
-            let price = await self.manager.fetchPrice(
-                urlString: urlString, prefetchedHTML: prefetchedHTML)
+            let price = await self.priceFetcher.fetchPrice(
+                forURLString: urlString, prefetchedHTML: prefetchedHTML)
             await MainActor.run {
                 guard var current = self.tracker else { return }
                 if current.hasStore(urlString: urlString) {

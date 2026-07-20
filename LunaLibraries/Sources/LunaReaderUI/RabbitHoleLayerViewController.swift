@@ -18,6 +18,27 @@ import LunaModels
 import UIKit
 import WebKit
 
+/// Notifications a `RabbitHoleLayerViewController` sends its host
+/// (`RabbitHoleReaderViewController`) — link taps, lip taps, article confirmation,
+/// mode changes, and the header back button.
+public protocol RabbitHoleLayerDelegate: AnyObject {
+    /// A link was tapped inside the layer's reader, resolved to its point in the
+    /// layer's coordinate space. Carries the tapped line's text (for the layer's
+    /// bottom lip) — nil when descended from a non-scroll mode. Card hosts use the
+    /// point as the origin of the full-screen eclipse.
+    func layer(_ layer: RabbitHoleLayerViewController, didActivateLink url: URL,
+               lineText: String?, at point: CGPoint)
+    /// The user tapped this layer's lip → host pops back so this layer is focused.
+    func layerRequestedPopToHere(_ layer: RabbitHoleLayerViewController)
+    /// Fired once the page is confirmed article-like (host reveals the mode switcher).
+    func layerDidBecomeArticle(_ layer: RabbitHoleLayerViewController)
+    /// Fired when the reader mode changes (host updates the descriptor).
+    func layer(_ layer: RabbitHoleLayerViewController, didChangeMode mode: ReadingListItem.ReaderMode)
+    /// The header back button (focused layer only): pop one layer, or exit the reader
+    /// at the root. The host decides which.
+    func layerRequestedBack(_ layer: RabbitHoleLayerViewController)
+}
+
 /// One layer (card) of the RabbitHole reader. Probes its URL off-main; renders the
 /// page with the app reader when it's article-like (mode-switchable scroll / RSVP /
 /// original-web), otherwise a themed web view. When the layer recedes to an ancestor,
@@ -30,23 +51,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// reads / switches mode so the host can persist it).
     private(set) var descriptor: RabbitHoleLayerDescriptor
 
-    /// A link was tapped inside this layer's reader → host pushes a new layer. Carries
-    /// the URL plus the tapped line's text (for this layer's bottom lip) — nil text
-    /// when descended from a non-scroll mode.
-    public var onLinkActivated: ((_ url: URL, _ lineText: String?) -> Void)?
-    /// Link activation with its resolved point in this layer's coordinate space.
-    /// Card hosts use the point as the origin of the full-screen eclipse.
-    public var onLinkActivatedAtPoint:
-        ((_ url: URL, _ lineText: String?, _ point: CGPoint) -> Void)?
-    /// The user tapped this layer's lip → host pops back so this layer is focused.
-    public var onPopToHere: (() -> Void)?
-    /// Fired once the page is confirmed article-like (host reveals the mode switcher).
-    public var onBecameArticle: (() -> Void)?
-    /// Fired when the reader mode changes (host updates the descriptor).
-    public var onModeChanged: ((ReadingListItem.ReaderMode) -> Void)?
-    /// The header back button (focused layer only): pop one layer, or exit the reader
-    /// at the root. The host decides which.
-    public var onBack: (() -> Void)?
+    public weak var delegate: RabbitHoleLayerDelegate?
 
     private let shareProvider: ReaderShareProviding?
     private let layout: RabbitHoleLayout
@@ -497,9 +502,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         return config
     }
 
-    @objc private func lipTapped() { onPopToHere?() }
+    @objc private func lipTapped() { delegate?.layerRequestedPopToHere(self) }
 
-    @objc private func backTapped() { onBack?() }
+    @objc private func backTapped() { delegate?.layerRequestedBack(self) }
 
     @objc private func modeChanged() {
         let mode = orderedModes[
@@ -542,7 +547,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         }
         embedReader(mode: mode)
         descriptor.readerMode = mode
-        onModeChanged?(mode)
+        delegate?.layer(self, didChangeMode: mode)
     }
 
     // MARK: - Article probe / embedding (forked from InlineReaderPageViewController)
@@ -637,7 +642,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         modeControl.isHidden = false
         updateSaveSlot()
         embedReader(mode: readerMode)
-        onBecameArticle?()
+        delegate?.layerDidBecomeArticle(self)
     }
 
     private func showWebView() {
@@ -691,7 +696,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             rsvpReader.configureForReuse(item: readerItem, content: content, audioEnabled: audioOn)
             rsvpReader.onLinkActivatedAtPoint = { [weak self] url, point in
                 guard let self else { return }
-                self.onLinkActivatedAtPoint?(url, nil, self.view.convert(point, from: self.rsvpReader.view))
+                self.delegate?.layer(
+                    self, didActivateLink: url, lineText: nil,
+                    at: self.view.convert(point, from: self.rsvpReader.view))
             }
             rsvpReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
             rsvpReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
@@ -704,8 +711,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
                 guard let self else { return }
                 let lineText = self.lineText(for: range)
                 let point = self.scrollReader.linkActivationPoint(forCharacterRange: range)
-                self.onLinkActivatedAtPoint?(
-                    url, lineText, self.view.convert(point, from: self.scrollReader.view))
+                self.delegate?.layer(
+                    self, didActivateLink: url, lineText: lineText,
+                    at: self.view.convert(point, from: self.scrollReader.view))
             }
             scrollReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
             scrollReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }

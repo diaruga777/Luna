@@ -43,7 +43,7 @@ public protocol ReaderChromeControlling: AnyObject {
 }
 
 public final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognizerDelegate,
-    ReaderChromeControlling {
+    ReaderChromeControlling, RabbitHoleLayerDelegate {
 
     private let rootItem: ReadingListItem
     private let rootContent: ArticleContent
@@ -228,34 +228,42 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         layer.rendersFullContentUpFront = rendersFullContentUpFront
         layer.showsHeaderChrome = providesOwnChrome
         layer.externalChromeContentInset = externalChromeContentInset
-        layer.onLinkActivated = { [weak self, weak layer] url, lineText in
-            guard let self, let layer, layer === self.layers.last else { return }
-            self.pushLayer(url: url, lineText: lineText, from: layer)
-        }
-        layer.onLinkActivatedAtPoint = { [weak self, weak layer] url, lineText, point in
-            guard let self, let layer, layer === self.layers.last else { return }
-            if self.presentsLinksAsInlineReaders {
-                self.presentInlineReader(
-                    url: url, lineText: lineText, sourcePoint: point, from: layer)
-            } else {
-                self.pushLayer(url: url, lineText: lineText, from: layer)
-            }
-        }
-        layer.onPopToHere = { [weak self, weak layer] in
-            guard let self, let layer, let index = self.layers.firstIndex(where: { $0 === layer })
-            else { return }
-            self.popToLayer(index)
-        }
-        layer.onModeChanged = { [weak self] _ in
-            self?.persist()
-            self?.onContentHierarchyChanged?()
-        }
-        layer.onBecameArticle = { [weak self] in self?.onContentHierarchyChanged?() }
-        layer.onBack = { [weak self] in self?.handleBack() }
+        layer.delegate = self
         addChild(layer)
         view.addSubview(layer.view)
         layer.didMove(toParent: self)
         return layer
+    }
+
+    // MARK: - RabbitHoleLayerDelegate
+
+    public func layer(_ layer: RabbitHoleLayerViewController, didActivateLink url: URL,
+                      lineText: String?, at point: CGPoint) {
+        guard layer === layers.last else { return }
+        if presentsLinksAsInlineReaders {
+            presentInlineReader(url: url, lineText: lineText, sourcePoint: point, from: layer)
+        } else {
+            pushLayer(url: url, lineText: lineText, from: layer)
+        }
+    }
+
+    public func layerRequestedPopToHere(_ layer: RabbitHoleLayerViewController) {
+        guard let index = layers.firstIndex(where: { $0 === layer }) else { return }
+        popToLayer(index)
+    }
+
+    public func layerDidBecomeArticle(_ layer: RabbitHoleLayerViewController) {
+        onContentHierarchyChanged?()
+    }
+
+    public func layer(_ layer: RabbitHoleLayerViewController,
+                      didChangeMode mode: ReadingListItem.ReaderMode) {
+        persist()
+        onContentHierarchyChanged?()
+    }
+
+    public func layerRequestedBack(_ layer: RabbitHoleLayerViewController) {
+        handleBack()
     }
 
     /// Fired whenever the live reader hierarchy changes shape — a layer's

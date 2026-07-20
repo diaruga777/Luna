@@ -10,8 +10,8 @@ import LunaStorage
 /// A candidate for autoplay: a not-yet-opened, readable Reader-surface article
 /// plus its already-loaded `ArticleContent`, bundled together so
 /// `AudioPlaybackCenter` never has to re-hit the store to start playing it.
-/// Built by the app shell's `AudioPlaybackCenter.nextItemProvider` closure,
-/// which reuses the exact ordering `ReadingListSectioning`/
+/// Built by the app shell's `AudioPlaybackCenterDataSource.nextCandidate()`
+/// conformer, which reuses the exact ordering `ReadingListSectioning`/
 /// `ReadingListViewController` display for the Reader surface — see
 /// `claudedocs/audio-playback-plan.md`.
 public struct QueueCandidate {

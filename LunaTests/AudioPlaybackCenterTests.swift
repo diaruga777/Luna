@@ -200,7 +200,8 @@ final class AudioPlaybackCenterTests: XCTestCase {
     }
 
     func testFinishWithEmptyQueuePlaysFinalChimeAndIdles() {
-        center.nextItemProvider = { nil }
+        let dataSource = FakeAudioPlaybackDataSource()
+        center.dataSource = dataSource
         startPlayback(blockCount: 2)
         finishArticle(totalBlocks: 2)
 
@@ -213,7 +214,9 @@ final class AudioPlaybackCenterTests: XCTestCase {
         let nextItem = AudioPlaybackFixtures.item(seed: "next", title: "The Next One")
         let nextContent = AudioPlaybackFixtures.content(title: "The Next One", blockCount: 3)
         store.seed(nextItem, content: nextContent)
-        center.nextItemProvider = { QueueCandidate(item: nextItem, content: nextContent) }
+        let dataSource = FakeAudioPlaybackDataSource()
+        dataSource.nextCandidateResult = QueueCandidate(item: nextItem, content: nextContent)
+        center.dataSource = dataSource
 
         let (item, _) = startPlayback(blockCount: 2)
         finishArticle(totalBlocks: 2)
@@ -246,7 +249,9 @@ final class AudioPlaybackCenterTests: XCTestCase {
     func testAutoplayToggledOffDuringAnnouncementFallsBackToFinalChime() {
         let nextItem = AudioPlaybackFixtures.item(seed: "next")
         let nextContent = AudioPlaybackFixtures.content(blockCount: 2)
-        center.nextItemProvider = { QueueCandidate(item: nextItem, content: nextContent) }
+        let dataSource = FakeAudioPlaybackDataSource()
+        dataSource.nextCandidateResult = QueueCandidate(item: nextItem, content: nextContent)
+        center.dataSource = dataSource
 
         startPlayback(blockCount: 1)
         finishArticle(totalBlocks: 1)

@@ -106,6 +106,25 @@ final class FakeSessionCoordinator: AudioSessionControlling {
     func scheduleDeactivationAfterUserPause() { deactivationsScheduled += 1 }
 }
 
+/// Test double for `AudioPlaybackCenterDataSource`. `script(for:content:)`
+/// mirrors the production pass-through default since no
+/// `AudioPlaybackCenterTests` case customizes trimming; `nextCandidate()` is
+/// driven directly by `nextCandidateResult`.
+final class FakeAudioPlaybackDataSource: AudioPlaybackCenterDataSource {
+    var nextCandidateResult: QueueCandidate?
+    private(set) var prefetchedCandidates: [(item: ReadingListItem, content: ArticleContent)] = []
+
+    func nextCandidate() -> QueueCandidate? { nextCandidateResult }
+
+    func script(for item: ReadingListItem, content: ArticleContent) -> AudioScript {
+        AudioScript(passthrough: content)
+    }
+
+    func prefetch(item: ReadingListItem, content: ArticleContent) {
+        prefetchedCandidates.append((item, content))
+    }
+}
+
 // MARK: - Fixture helpers
 
 enum AudioPlaybackFixtures {

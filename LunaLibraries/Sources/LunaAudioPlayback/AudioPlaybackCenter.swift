@@ -116,6 +116,30 @@ public extension AudioPlaybackObserver {
     func audioPlaybackCenter(_ center: AudioPlaybackCenter, didEmitWordEvent event: AudioWordEvent) {}
 }
 
+/// Installed by the app shell at launch (see `Luna/AudioPlaybackWiring.swift`):
+/// the autoplay queue rule and the trimming-pipeline's script resolution —
+/// the two Reader-only concerns `AudioPlaybackCenter` needs from outside
+/// `LunaAudioPlayback` but must not itself know how to compute. Nil in tests
+/// and the Share/Action extensions, which never install a conformer.
+public protocol AudioPlaybackCenterDataSource: AnyObject {
+    /// The next autoplay queue candidate — the top-most unopened, readable
+    /// Reader-surface article in the reading list's own displayed order — or
+    /// `nil` when the queue is empty.
+    func nextCandidate() -> QueueCandidate?
+
+    /// Resolves the script to speak for `item`: a cache hit, or a fast
+    /// synchronous heuristic build on miss. NEVER blocks on the LLM
+    /// refinement pass; an upgrade landing later only updates the cache for
+    /// the NEXT play of this item, never swaps mid-playback.
+    func script(for item: ReadingListItem, content: ArticleContent) -> AudioScript
+
+    /// Called once the autoplay chain resolves the NEXT queue candidate
+    /// (before its transition chime/announcement even starts), so the app
+    /// shell can ask the script pipeline to verify/prefetch that item's
+    /// script ahead of when playback actually reaches it.
+    func prefetch(item: ReadingListItem, content: ArticleContent)
+}
+
 /// The app-wide singleton and single owner of read-aloud playback: offline
 /// rendering via `SpeechRendering` -> scheduling via
 /// `ArticleAudioEngineControlling`, the autoplay chain, position persistence,
@@ -165,30 +189,11 @@ public final class AudioPlaybackCenter {
         }
     }
 
-    /// Installed by the app shell at launch (see `Luna/AppDelegate.swift` /
-    /// `AudioPlaybackAppWiring`). Returns the next queue candidate — the
-    /// top-most unopened, readable Reader-surface article in the reading
-    /// list's own displayed order — or `nil` when the queue is empty.
-    public var nextItemProvider: (() -> QueueCandidate?)?
-
-    /// Phase 4 seam (`claudedocs/audio-playback-plan.md`): resolves the
-    /// script to speak for `item`. Defaults to the Phase-1 pass-through (so
-    /// nothing regresses if the app shell never overrides it); the app shell
-    /// installs `AudioScriptPipeline.shared.script(for:content:)` here at
-    /// launch (`Luna/AudioScriptPipelineWiring.swift`) — cache hit, or a
-    /// fast synchronous heuristic build on miss. NEVER blocks on the LLM
-    /// refinement pass; an upgrade landing later only updates the cache for
-    /// the NEXT play of this item, never swaps mid-playback.
-    public var scriptProvider: (ReadingListItem, ArticleContent) -> AudioScript = { _, content in
-        AudioScript(passthrough: content)
-    }
-
-    /// Phase 4 seam: called once the autoplay chain resolves the NEXT queue
-    /// candidate (before its transition chime/announcement even starts), so
-    /// the app shell can ask the script pipeline to verify/prefetch that
-    /// item's script ahead of when playback actually reaches it. Optional —
-    /// unset in tests/extensions with no measurable effect on playback.
-    public var scriptPrefetchHandler: ((ReadingListItem, ArticleContent) -> Void)?
+    /// See `AudioPlaybackCenterDataSource`. Nil in tests/extensions, with no
+    /// measurable effect on playback: `beginPlayback` falls back to the
+    /// pass-through script factory and the autoplay chain simply finds no
+    /// next candidate.
+    public weak var dataSource: AudioPlaybackCenterDataSource?
 
     public var currentSnapshot: AudioPlaybackSnapshot {
         let totalWords = currentScript?.totalWordCount ?? 0
@@ -502,10 +507,12 @@ public final class AudioPlaybackCenter {
     }
 
     private func beginPlayback(item: ReadingListItem, content: ArticleContent, fromWordIndex: Int?) {
-        // Phase 4: cache hit, or a fast synchronous heuristic build on miss
-        // (see `scriptProvider`'s doc comment) — never the LLM refinement
-        // pass, which only ever updates the cache for next time.
-        let script = scriptProvider(item, content)
+        // Cache hit, or a fast synchronous heuristic build on miss (see
+        // `AudioPlaybackCenterDataSource.script(for:content:)`'s doc
+        // comment) — never the LLM refinement pass, which only ever updates
+        // the cache for next time. Falls back to the pass-through factory
+        // when no data source is installed (tests/extensions).
+        let script = dataSource?.script(for: item, content: content) ?? AudioScript(passthrough: content)
         guard !script.spokenBlocks.isEmpty else { return }
 
         sessionCoordinator.activate()
@@ -683,14 +690,14 @@ public final class AudioPlaybackCenter {
 
         // Autoplay is re-read fresh HERE, at the boundary (and re-checked
         // again after the announcement) — the user can toggle it mid-article.
-        guard AudioSettings.isAutoplayEnabled, let candidate = nextItemProvider?() else {
+        guard AudioSettings.isAutoplayEnabled, let candidate = dataSource?.nextCandidate() else {
             playFinalChimeThenIdle()
             return
         }
-        // Phase 4: verify/prefetch the resolved candidate's script now, well
-        // before playback actually reaches it (transition chime +
-        // announcement + another chime still have to play first).
-        scriptPrefetchHandler?(candidate.item, candidate.content)
+        // Verify/prefetch the resolved candidate's script now, well before
+        // playback actually reaches it (transition chime + announcement +
+        // another chime still have to play first).
+        dataSource?.prefetch(item: candidate.item, content: candidate.content)
         let token = sessionToken
         playTransitionChime { [weak self] in
             guard let self, token == self.sessionToken else { return }

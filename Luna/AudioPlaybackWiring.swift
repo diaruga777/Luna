@@ -18,22 +18,15 @@ import Foundation
 /// `ReaderAudioLauncher.center` stays nil there and their shared readers keep
 /// the legacy self-contained `SpeechController` path (no audio controls).
 ///
-/// This is the injected-closure composition pattern the app shell already
-/// uses (`SendToFriendSheet.accountSetupLauncher`, `DiagnosticLog.export*`,
-/// `PriceTrackingViewController.defaultSaveAsArticle`):
+/// This is the injected-composition pattern the app shell already uses
+/// elsewhere (`SendToFriendSheet.accountSetupLauncher`,
+/// `DiagnosticLog.export*`, `PriceTrackingViewController.defaultSaveAsArticle`):
 /// `LunaAudioPlayback` cannot know about `ReadingListSectioning`'s
 /// list ordering, so the queue rule lives here where both sides are visible.
 enum AudioPlaybackWiring {
 
     static func install() {
-        AudioPlaybackCenter.shared.nextItemProvider = {
-            let store = ReadingListStore.shared
-            return AudioQueueRule.nextCandidate(
-                items: store.items(),
-                now: Date(),
-                excludedItemID: AudioPlaybackCenter.shared.currentItemInfo?.itemID,
-                content: { store.content(for: $0) })
-        }
+        AudioPlaybackCenter.shared.dataSource = AppAudioPlaybackDataSource.shared
         NowPlayingCoordinator.shared.registerAtLaunch(center: .shared)
         // Phase 3: hand the center to the shared readers. With this installed,
         // their audio toggles route read-aloud through the center (mini-player,
@@ -41,6 +34,31 @@ enum AudioPlaybackWiring {
         // SpeechController; the share/action extensions never install it and
         // keep the legacy path.
         ReaderAudioLauncher.center = .shared
+    }
+}
+
+/// The app shell's one `AudioPlaybackCenterDataSource` conformer: the
+/// autoplay queue rule (`AudioQueueRule`, below) plus the trimming
+/// pipeline's script resolution, in a single object the center holds weakly.
+/// Held strongly here for the lifetime of the app.
+final class AppAudioPlaybackDataSource: AudioPlaybackCenterDataSource {
+    static let shared = AppAudioPlaybackDataSource()
+
+    func nextCandidate() -> QueueCandidate? {
+        let store = ReadingListStore.shared
+        return AudioQueueRule.nextCandidate(
+            items: store.items(),
+            now: Date(),
+            excludedItemID: AudioPlaybackCenter.shared.currentItemInfo?.itemID,
+            content: { store.content(for: $0) })
+    }
+
+    func script(for item: ReadingListItem, content: ArticleContent) -> AudioScript {
+        AudioScriptPipeline.shared.script(for: item, content: content)
+    }
+
+    func prefetch(item: ReadingListItem, content: ArticleContent) {
+        AudioScriptPipeline.shared.prefetch(item: item, content: content)
     }
 }
 

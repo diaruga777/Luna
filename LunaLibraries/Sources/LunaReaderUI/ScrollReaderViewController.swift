@@ -161,7 +161,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// blur while preserving a clear resting position below the controls.
     public var topChromeInset: CGFloat = 0 {
         didSet {
-            guard abs(topChromeInset - oldValue) > 0.5 else { return }
+            guard ChromeInsetDebounce.changed(from: oldValue, to: topChromeInset) else { return }
             applyTopChromeInset(preservingVisiblePosition: isViewLoaded)
         }
     }

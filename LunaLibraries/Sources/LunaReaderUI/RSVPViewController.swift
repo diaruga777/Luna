@@ -56,6 +56,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private var currentChunkIndex = 0
     public private(set) var isPlaying = false {
         didSet {
+            updatePlayPauseGlyph()
             if isPlaying != oldValue { onPlaybackStateChanged?(isPlaying) }
         }
     }
@@ -115,7 +116,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// dissolved by the fade run).
     public var topContentInset: CGFloat = 0 {
         didSet {
-            guard abs(topContentInset - oldValue) > 0.5 else { return }
+            guard ChromeInsetDebounce.changed(from: oldValue, to: topContentInset) else { return }
             subModeTopConstraint?.constant = topContentInset + 8
         }
     }
@@ -293,10 +294,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         guard let center = speechCenter, isViewLoaded else { return }
         let playingMine = centerOwnsItem && center.currentSnapshot.isAudiblyPlaying
         isPlaying = playingMine
-        playPauseButton.configuration?.image =
-            UIImage(systemName: playingMine ? "pause.fill" : "play.fill")
-        playPauseButton.accessibilityLabel = playingMine ? "Pause" : "Play"
         updateContextVisibility(animated: false)
+    }
+
+    /// Keeps the play/pause button's glyph + accessibility label in lockstep
+    /// with `isPlaying`, from wherever it's set.
+    private func updatePlayPauseGlyph() {
+        playPauseButton.configuration?.image = UIImage(systemName: isPlaying ? "pause.fill" : "play.fill")
+        playPauseButton.accessibilityLabel = isPlaying ? "Pause" : "Play"
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
@@ -821,10 +826,20 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     // MARK: - Display
 
     private func refreshDisplay() {
+        render(at: currentIndex, highlightWord: isSpeechMode && isPlaying ? currentIndex : nil)
+    }
+
+    /// Renders `wordIndex` via `showChunk`/`showWord` depending on the active
+    /// sub-mode, keeping `currentIndex` and (in Phrases) `currentChunkIndex` in
+    /// sync with it — the shared "which display primitive draws this word"
+    /// routing every playback/seek/event path needs.
+    private func render(at wordIndex: Int, highlightWord: Int?) {
+        currentIndex = wordIndex
         if displayMode == .phrases {
-            showChunk(at: currentChunkIndex, highlightWord: isSpeechMode && isPlaying ? currentIndex : nil)
+            currentChunkIndex = chunkIndex(forWord: wordIndex)
+            showChunk(at: currentChunkIndex, highlightWord: highlightWord)
         } else {
-            showWord(at: currentIndex)
+            showWord(at: wordIndex)
         }
     }
 
@@ -951,16 +966,24 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             currentChunkIndex = 0
         }
         isPlaying = true
-        playPauseButton.configuration?.image = UIImage(systemName: "pause.fill")
-        playPauseButton.accessibilityLabel = "Pause"
         updateContextVisibility(animated: true, duration: 0.05)
+        dispatchOnMode(
+            speech: { self.activateAudioSession(); self.speakCurrentSentence() },
+            phrases: { self.scheduleNextChunk() },
+            words: { self.scheduleNext() })
+    }
+
+    /// Routes to whichever of the three playback engines is active — speech
+    /// (read-aloud pacing), the Phrases sub-mode's chunk timer, or the default
+    /// Words WPM timer. Shared by every call site that must re-derive the same
+    /// `isSpeechMode` / `displayMode == .phrases` dispatch.
+    private func dispatchOnMode(speech: () -> Void, phrases: () -> Void, words: () -> Void) {
         if isSpeechMode {
-            activateAudioSession()
-            speakCurrentSentence()
+            speech()
         } else if displayMode == .phrases {
-            scheduleNextChunk()
+            phrases()
         } else {
-            scheduleNext()
+            words()
         }
     }
 
@@ -1004,8 +1027,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             synthesizer.stopSpeaking(at: .immediate)
             deactivateAudioSession()
         }
-        playPauseButton.configuration?.image = UIImage(systemName: "play.fill")
-        playPauseButton.accessibilityLabel = "Play"
         updateContextVisibility(animated: true, duration: 0.2)
         refreshDisplay()
         saveProgress()
@@ -1245,13 +1266,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             return
         }
         // Resume from the new position in the same mode we were playing in.
-        if isSpeechMode {
-            speakCurrentSentence()
-        } else if displayMode == .phrases {
-            scheduleNextChunk()
-        } else {
-            scheduleNext()
-        }
+        dispatchOnMode(
+            speech: { self.speakCurrentSentence() },
+            phrases: { self.scheduleNextChunk() },
+            words: { self.scheduleNext() })
     }
 
     /// Moves the focal position to `wordIndex` (clamped), snapping to the
@@ -1394,8 +1412,6 @@ extension RSVPViewController: AudioPlaybackObserver {
         }
         guard playingMine != isPlaying else { return }
         isPlaying = playingMine
-        playPauseButton.configuration?.image = UIImage(systemName: playingMine ? "pause.fill" : "play.fill")
-        playPauseButton.accessibilityLabel = playingMine ? "Pause" : "Play"
         updateContextVisibility(animated: true, duration: playingMine ? 0.05 : 0.2)
         if !playingMine {
             refreshDisplay()
@@ -1417,13 +1433,7 @@ extension RSVPViewController: AudioPlaybackObserver {
               engine.words.indices.contains(frame)
         else { return }
         guard frame != currentIndex || displayMode == .phrases else { return }
-        currentIndex = frame
-        if displayMode == .phrases {
-            currentChunkIndex = chunkIndex(forWord: frame)
-            showChunk(at: currentChunkIndex, highlightWord: frame)
-        } else {
-            showWord(at: frame)
-        }
+        render(at: frame, highlightWord: frame)
         scrubber.value = Float(frame)
         updateStatus()
         if frame >= engine.words.count - 1 {
@@ -1446,14 +1456,9 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
         }
         let wordIndex = speechSentenceBase + wordOffset
         guard wordIndex != currentIndex, engine.words.indices.contains(wordIndex) else { return }
-        currentIndex = wordIndex
-        if displayMode == .phrases {
-            // Follow the spoken word with the phrase that contains it, tinting it.
-            currentChunkIndex = chunkIndex(forWord: wordIndex)
-            showChunk(at: currentChunkIndex, highlightWord: wordIndex)
-        } else {
-            showWord(at: currentIndex)
-        }
+        // Follow the spoken word with the phrase that contains it, tinting it
+        // (render's Phrases branch).
+        render(at: wordIndex, highlightWord: wordIndex)
         scrubber.value = Float(currentIndex)
         updateStatus()
     }
@@ -1469,13 +1474,7 @@ extension RSVPViewController: AVSpeechSynthesizerDelegate {
             finish()
             return
         }
-        currentIndex = sentenceEnd + 1
-        if displayMode == .phrases {
-            currentChunkIndex = chunkIndex(forWord: currentIndex)
-            showChunk(at: currentChunkIndex, highlightWord: currentIndex)
-        } else {
-            showWord(at: currentIndex)
-        }
+        render(at: sentenceEnd + 1, highlightWord: sentenceEnd + 1)
         scrubber.value = Float(currentIndex)
         updateStatus()
         speakCurrentSentence()

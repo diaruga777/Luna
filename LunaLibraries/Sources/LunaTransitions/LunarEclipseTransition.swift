@@ -5,6 +5,14 @@
 //  A deliberately local navigation transition for opening a Reader item from a
 //  reading-list row. It uses a rendered copy of the tapped row, so the eclipse has
 //  the source's real silhouette rather than an approximation.
+//
+//  Two other transitions stage the same "solar eclipse" motif for card-shaped
+//  scenes: `CardEclipseAnimator` (LunaDesignSystem) for the root carousel's
+//  paging, and `InlineReaderEclipseTransition` (LunaReaderUI), which reuses
+//  that file's corona and flare drawing directly. This file draws its own
+//  silhouette-shadow corona and radial-light point instead, because it
+//  eclipses an arbitrary snapshot shape — a reading-list row, not a rounded
+//  card — so it can't share those card-shaped primitives.
 
 import LunaDesignSystem
 import ObjectiveC

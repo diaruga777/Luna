@@ -26,6 +26,13 @@
 //  `atZenith` callback does the slot bookkeeping and reports the affected views
 //  back for the egress reveal.
 //
+//  Two other transitions in the app stage the same "solar eclipse" motif.
+//  `InlineReaderEclipseTransition` (LunaReaderUI) reuses `makeCorona` and
+//  `EclipseFlareView` from here directly for its own reveal. `LunarEclipseTransition`
+//  (LunaTransitions) draws its own corona and point light instead, because it
+//  eclipses an arbitrary snapshot shape (a reading-list row) rather than a
+//  rounded card, so it can't share this file's card-shaped drawing.
+//
 
 import UIKit
 

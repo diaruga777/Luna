@@ -2,6 +2,14 @@
 //  InlineReaderEclipseTransition.swift
 //  LunaReaderUI
 //
+//  Stages the nested-reader push/pop as the same "solar eclipse" motif as two
+//  other transitions. `CardEclipseAnimator` (LunaDesignSystem) stages the root
+//  carousel's card-to-card paging; this file reuses its `CardEclipseTransition
+//  .makeCorona` and `EclipseFlareView` directly for its own circle-reveal
+//  choreography. `LunarEclipseTransition` (LunaTransitions) draws its own
+//  corona and point light instead, since it eclipses an arbitrary snapshot
+//  shape rather than a rounded card.
+//
 
 import LunaDesignSystem
 import UIKit

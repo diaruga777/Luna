@@ -241,17 +241,7 @@ public final class SplitWebOverlayViewController: UIViewController,
     private func makePage(url: URL) -> InlineReaderPageViewController {
         let page = InlineReaderPageViewController(
             url: url, headerHeight: 0)
-        page.onLinkActivatedAtPoint = { [weak self, weak page] linkURL, point in
-            guard let self, let page else { return }
-            let converted = page.view.convert(point, to: self.view)
-            self.pushPage(url: linkURL, sourcePoint: converted)
-        }
-        page.onBecameArticle = { [weak self] in self?.syncHeaderToTopPage() }
-        page.onMetadataChanged = { [weak self] in self?.syncHeaderToTopPage() }
-        page.onContentScrollViewChanged = { [weak self, weak page] in
-            guard self?.topPage === page else { return }
-            self?.updateScrollIndicatorTarget()
-        }
+        page.delegate = self
         return page
     }
 
@@ -611,6 +601,26 @@ public final class SplitWebOverlayViewController: UIViewController,
         let fraction = (windowPoint.x - minX) / max(controlWidth, 1)
         let index = min(Int(fraction * CGFloat(state.modes.count)), state.modes.count - 1)
         chromeSetMode(state.modes[index])
+    }
+}
+
+extension SplitWebOverlayViewController: InlineReaderPageDelegate {
+    public func page(_ page: InlineReaderPageViewController, didActivateLink url: URL, at point: CGPoint) {
+        let converted = page.view.convert(point, to: view)
+        pushPage(url: url, sourcePoint: converted)
+    }
+
+    public func pageDidBecomeArticle(_ page: InlineReaderPageViewController) {
+        syncHeaderToTopPage()
+    }
+
+    public func pageDidChangeMetadata(_ page: InlineReaderPageViewController) {
+        syncHeaderToTopPage()
+    }
+
+    public func pageDidChangeContentScrollView(_ page: InlineReaderPageViewController) {
+        guard topPage === page else { return }
+        updateScrollIndicatorTarget()
     }
 }
 

@@ -11,13 +11,31 @@ import LunaModels
 import UIKit
 import WebKit
 
+/// Notifications an `InlineReaderPageViewController` sends its host
+/// (`SplitWebOverlayViewController`) — link taps, article confirmation, title
+/// changes, and scroll-surface swaps.
+public protocol InlineReaderPageDelegate: AnyObject {
+    /// A link was tapped inside the embedded reader, at its center in the page's
+    /// coordinate space. The host pushes it as the next page in the stack,
+    /// originating the next eclipse at the actual link.
+    func page(_ page: InlineReaderPageViewController, didActivateLink url: URL, at point: CGPoint)
+    /// Fired once the page is confirmed article-like (so the host can reveal the
+    /// mode switcher for this page).
+    func pageDidBecomeArticle(_ page: InlineReaderPageViewController)
+    /// Fired when extraction or WebKit supplies a better tab title.
+    func pageDidChangeMetadata(_ page: InlineReaderPageViewController)
+    /// Fired whenever mode/probe work replaces the scroll surface so the
+    /// overlay can retarget its card-edge hosted horizon indicator.
+    func pageDidChangeContentScrollView(_ page: InlineReaderPageViewController)
+}
+
 /// One page in the inline reader's navigation stack (hosted by
 /// `SplitWebOverlayViewController`). It loads a URL in a themed web view, probes the
 /// page for article content off-main, and — when the page is article-like — swaps
 /// the web view for the app's reader (mode-switchable). A link tapped inside the
-/// embedded reader is handed up via `onLinkActivatedAtPoint` so the host pushes it as
-/// a NEW page rather than nesting another overlay; links in the raw web view navigate
-/// the web view in place.
+/// embedded reader is handed up to the delegate so the host pushes it as a NEW page
+/// rather than nesting another overlay; links in the raw web view navigate the web
+/// view in place.
 ///
 /// The content sits below the host's ancestor-tab strip. Mode and audio controls
 /// remain in the outer reader's stable chrome and are routed to this page.
@@ -26,18 +44,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     public let url: URL
     private var headerHeight: CGFloat
 
-    /// Hands a link tapped inside the embedded reader, plus its center in this page's
-    /// coordinate space, to the host — which pushes it as the next page in the stack,
-    /// originating the next eclipse at the actual link.
-    public var onLinkActivatedAtPoint: ((_ url: URL, _ point: CGPoint) -> Void)?
-    /// Fired once the page is confirmed article-like (so the host can reveal the
-    /// mode switcher for this page).
-    public var onBecameArticle: (() -> Void)?
-    /// Fired when extraction or WebKit supplies a better tab title.
-    public var onMetadataChanged: (() -> Void)?
-    /// Fired whenever mode/probe work replaces the scroll surface so the
-    /// overlay can retarget its card-edge hosted horizon indicator.
-    public var onContentScrollViewChanged: (() -> Void)?
+    public weak var delegate: InlineReaderPageDelegate?
 
     private let spinner = DotMatrixSpinnerView()
     private var articleProbe: Task<Void, Never>?
@@ -147,8 +154,8 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         SharedDiagnosticLog.record(
             "content ready from cache: \(url.absoluteString)",
             category: "preload-tap")
-        onBecameArticle?()
-        onMetadataChanged?()
+        delegate?.pageDidBecomeArticle(self)
+        delegate?.pageDidChangeMetadata(self)
         refreshPreloadedCache(url)
     }
 
@@ -188,7 +195,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         HorizonScrollIndicator.install(on: webView.scrollView, in: view)
-        onContentScrollViewChanged?()
+        delegate?.pageDidChangeContentScrollView(self)
         WebJunkBlocker.applyRuleList(to: webView.configuration.userContentController)
         webView.navigationDelegate = self
         webView.load(URLRequest(url: url))
@@ -266,8 +273,8 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         articleContent = content
         spinner.stopAnimating()
         embedReader(mode: readerMode)
-        onBecameArticle?()
-        onMetadataChanged?()
+        delegate?.pageDidBecomeArticle(self)
+        delegate?.pageDidChangeMetadata(self)
     }
 
     private func removeReaderChild() {
@@ -277,7 +284,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
             old.removeFromParent()
             readerChild = nil
             readerTopConstraint = nil
-            onContentScrollViewChanged?()
+            delegate?.pageDidChangeContentScrollView(self)
         }
     }
 
@@ -287,7 +294,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         webView?.stopLoading()
         webView?.removeFromSuperview()
         webView = nil
-        onContentScrollViewChanged?()
+        delegate?.pageDidChangeContentScrollView(self)
     }
 
     private func embedReader(mode: ReadingListItem.ReaderMode) {
@@ -315,7 +322,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
                 guard let self, let scroll else { return }
                 let point = scroll.view.convert(
                     scroll.linkActivationPoint(forCharacterRange: range), to: self.view)
-                self.onLinkActivatedAtPoint?(url, point)
+                self.delegate?.page(self, didActivateLink: url, at: point)
             }
             child = scroll
         default:
@@ -323,7 +330,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
                 item: transient, content: content, audioEnabled: isAudioOn)
             rsvp.onLinkActivatedAtPoint = { [weak self] url, point in
                 guard let self else { return }
-                self.onLinkActivatedAtPoint?(url, self.view.convert(point, from: rsvp.view))
+                self.delegate?.page(self, didActivateLink: url, at: self.view.convert(point, from: rsvp.view))
             }
             child = rsvp
         }
@@ -344,7 +351,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
         (child as? ScrollReaderViewController)?
             .activateVisibleReader(deferFullContentUntilHostCompletion: false)
         readerMode = mode
-        onContentScrollViewChanged?()
+        delegate?.pageDidChangeContentScrollView(self)
     }
 
     private static func firstScrollView(in view: UIView) -> UIScrollView? {
@@ -359,7 +366,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if articleContent == nil { spinner.stopAnimating() }
-        onMetadataChanged?()
+        delegate?.pageDidChangeMetadata(self)
     }
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         spinner.stopAnimating()

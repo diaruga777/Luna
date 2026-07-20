@@ -69,8 +69,8 @@ let package = Package(
             .product(name: "SwiftSoup", package: "SwiftSoup"),
         ]),
         .target(name: "LunaPaywallBypass", dependencies: [
-            "LunaAppConfig", "LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch",
-            .product(name: "SwiftSoup", package: "SwiftSoup"), "LunaPriceMetadata",], resources: [.process("Resources/site_unlock_rules.json")]),
+            "LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaFetch",
+            .product(name: "SwiftSoup", package: "SwiftSoup"),], resources: [.process("Resources/site_unlock_rules.json")]),
         .target(name: "LunaPriceMetadata"),
         .target(name: "LunaTransitions", dependencies: ["LunaDesignSystem"]),
         .target(name: "LunaFetch", dependencies: ["LunaModels", "LunaURLClassification", "LunaHTMLClassification", "LunaPriceMetadata", .product(name: "SwiftSoup", package: "SwiftSoup")]),

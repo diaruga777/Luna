@@ -3,7 +3,6 @@
 //  Luna
 //
 
-import LunaFetch
 import LunaHTMLClassification
 import LunaURLClassification
 import Foundation

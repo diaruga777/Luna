@@ -74,7 +74,6 @@ public protocol ArticleAudioEngineControlling: AnyObject {
 
     func play()
     func pause()
-    func stop()
     func resetAndSchedule(from time: TimeInterval)
     func schedule(_ segment: RenderedSegment, rateMode: SegmentRateMode, completion: (() -> Void)?)
     func scheduleTone(_ asset: ToneAsset, completion: (() -> Void)?) throws

@@ -23,15 +23,6 @@ public enum NonTextualContent: Equatable {
 
     public var kindLabel: String { platform.displayName }
 
-    public var embedURL: URL? {
-        switch self {
-        case .platform:
-            return nil
-        }
-    }
-
-    public var embedReferer: String { "https://clip-reader.app/" }
-
     public var staticPreviewImageURL: URL? {
         switch self {
         case .platform:

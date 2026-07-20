@@ -4,7 +4,6 @@
 //
 
 import LunaAppConfig
-import LunaURLClassification
 import LunaModels
 import Foundation
 
@@ -204,18 +203,6 @@ public final class ReadingListStore {
     // whole-item writes: callers hold stale copies, and overwriting the whole
     // item silently reverts fields written by other screens in the meantime.
 
-    /// Persists the RSVP resume position. Fire-and-forget (see `asyncUpdate`) —
-    /// this is a resume position consumed on the NEXT open, not read back
-    /// immediately after being set.
-    public func setLastWordIndex(_ wordIndex: Int, for itemID: UUID) {
-        asyncUpdate { all in
-            guard let index = all.firstIndex(where: { $0.id == itemID }),
-                  all[index].lastWordIndex != wordIndex else { return false }
-            all[index].lastWordIndex = wordIndex
-            return true
-        }
-    }
-
     /// Marks a download/extraction failure.
     public func markFailed(_ itemID: UUID) {
         coordinatedUpdate { all in
@@ -230,8 +217,7 @@ public final class ReadingListStore {
     /// offset, reading progress (monotonic), spoken word, RSVP word index —
     /// instead of several back-to-back whole-list read-modify-write cycles on the
     /// main thread. nil parameters leave their field untouched; `lastWordIndex`
-    /// lets the RSVP reader batch its exit save the same way the scroll reader
-    /// does (`setLastWordIndex` remains for callers that persist it alone).
+    /// lets the RSVP reader batch its exit save the same way the scroll reader does.
     /// - Parameter clearScrollOffset: when true, sets `lastScrollOffset` to nil (the
     ///   RSVP reader moves the shared position in word space with no pixels, so the
     ///   stored exact offset no longer corresponds to `lastWordIndex` and must be
@@ -649,12 +635,6 @@ public final class ReadingListStore {
             all.insert(item, at: 0)
             return true
         }
-    }
-
-    /// Overwrites the entire list with `items`. Destructive to concurrent writers —
-    /// reserved for test seeding; session undo goes through `restoreCatchUpState`.
-    public func restore(_ items: [ReadingListItem]) {
-        coordinatedMutate { all in all = items }
     }
 
     /// Undoes a catch-up session against a pre-session snapshot WITHOUT clobbering

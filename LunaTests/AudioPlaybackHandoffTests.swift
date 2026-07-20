@@ -65,8 +65,6 @@ final class AudioPlaybackHandoffTests: XCTestCase {
 
         XCTAssertEqual(handoff?.itemID, item.id)
         XCTAssertEqual(handoff?.title, "Fresh Article")
-        XCTAssertEqual(handoff?.wordIndex, 4)
-        XCTAssertEqual(handoff?.elapsed, 30)
         XCTAssertEqual(center.state, .idle, "a peek must never mutate state")
     }
 

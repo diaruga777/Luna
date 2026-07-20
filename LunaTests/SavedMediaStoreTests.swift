@@ -42,7 +42,8 @@ final class SavedMediaStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: store.mediaDirectory.appendingPathComponent(fileName).path))
 
-        let reloaded = try XCTUnwrap(SavedMediaStore(containerURL: root).item(id: id))
+        let reloaded = try XCTUnwrap(
+            SavedMediaStore(containerURL: root).items().first(where: { $0.id == id }))
         XCTAssertEqual(reloaded.storageState, photos.storageState)
         XCTAssertEqual(reloaded.kind, .video)
     }
@@ -66,7 +67,7 @@ final class SavedMediaStoreTests: XCTestCase {
         """
         try Data(json.utf8).write(to: directory.appendingPathComponent("savedMedia.json"))
 
-        let item = try XCTUnwrap(store.item(id: id))
+        let item = try XCTUnwrap(store.items().first(where: { $0.id == id }))
         XCTAssertEqual(item.storageState, .localFile(fileName: fileName))
         XCTAssertEqual(item.kind, .video)
     }
@@ -80,7 +81,7 @@ final class SavedMediaStoreTests: XCTestCase {
         try FileManager.default.removeItem(
             at: store.mediaDirectory.appendingPathComponent(fileName))
 
-        let repaired = try XCTUnwrap(store.item(id: local.id))
+        let repaired = try XCTUnwrap(store.items().first(where: { $0.id == local.id }))
         XCTAssertEqual(repaired.storageState, .undownloaded)
         XCTAssertNil(repaired.thumbnailFileName)
     }

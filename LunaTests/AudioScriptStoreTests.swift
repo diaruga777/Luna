@@ -85,15 +85,6 @@ final class AudioScriptStoreTests: XCTestCase {
         XCTAssertNil(store.load(forContentFileName: "ABCD.json"))
     }
 
-    func testRemoveDeletesTheCacheFile() {
-        let envelope = AudioScriptCacheEnvelope(script: makeScript(), refined: false, llmPermanentlyFailed: false)
-        store.save(envelope, forContentFileName: "ABCD.json")
-        XCTAssertNotNil(store.load(forContentFileName: "ABCD.json"))
-
-        store.remove(forContentFileName: "ABCD.json")
-        XCTAssertNil(store.load(forContentFileName: "ABCD.json"))
-    }
-
     func testCorruptFileIsTreatedAsAbsent() throws {
         let url = tempDirectory.appendingPathComponent("ABCD.audioScript.json")
         try Data("not valid json".utf8).write(to: url)

@@ -289,10 +289,6 @@ public final class SavedMediaStore {
         return items.sorted { $0.dateSaved < $1.dateSaved }
     }
 
-    public func item(id: UUID) -> SavedMediaItem? {
-        items().first { $0.id == id }
-    }
-
     public func item(forURLString urlString: String) -> SavedMediaItem? {
         items().first { $0.sourceURLString == urlString }
     }

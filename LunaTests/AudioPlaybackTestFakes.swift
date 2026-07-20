@@ -70,7 +70,6 @@ final class FakeAudioEngine: ArticleAudioEngineControlling {
 
     func play() { isPlaying = true }
     func pause() { isPlaying = false; pauseCount += 1 }
-    func stop() { isPlaying = false }
     func resetAndSchedule(from time: TimeInterval) {
         resetOffsets.append(time)
         currentTime = time

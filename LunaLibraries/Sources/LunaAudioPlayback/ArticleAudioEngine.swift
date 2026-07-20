@@ -126,15 +126,6 @@ public final class ArticleAudioEngine {
 
     public func pause() { playerNode.pause() }
 
-    /// Stops playback and clears anything scheduled. The underlying
-    /// `AVAudioEngine` keeps running (it's long-lived) — only the player
-    /// node's queue is torn down.
-    public func stop() {
-        playerNode.stop()
-        queuedDuration = 0
-        hasSignaledLowWater = false
-    }
-
     /// Seek primitive: stops the node (clearing every buffer queued on it),
     /// rebases the playhead to `time`, and leaves the node running so
     /// subsequently scheduled buffers play immediately. Word-index-based seek

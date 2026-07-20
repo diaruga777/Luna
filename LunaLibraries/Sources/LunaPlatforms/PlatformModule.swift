@@ -3,8 +3,8 @@
 //  Luna
 //
 
+import Foundation
 import LunaModels
-import UIKit
 
 /// The result of classifying a URL.
 public struct PlatformMatch: Equatable {

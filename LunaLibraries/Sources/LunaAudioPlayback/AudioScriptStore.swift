@@ -78,9 +78,4 @@ public final class AudioScriptStore {
         // content JSON itself.
         BackupPolicy.excludeFromBackups(url)
     }
-
-    public func remove(forContentFileName contentFileName: String) {
-        let url = articlesDirectory.appendingPathComponent(Self.scriptFileName(forContentFileName: contentFileName))
-        try? fileManager.removeItem(at: url)
-    }
 }

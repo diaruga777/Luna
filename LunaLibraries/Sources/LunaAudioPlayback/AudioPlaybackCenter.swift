@@ -63,8 +63,6 @@ public struct AudioPlaybackHandoff: Equatable {
     public var itemID: UUID
     public var title: String
     public var thumbnailFileName: String?
-    public var wordIndex: Int
-    public var elapsed: TimeInterval
     /// A rough progress estimate (persisted word index over the article's
     /// total, untrimmed, word count) — good enough for a paused preview's
     /// progress bar; never the authoritative value a live session computes
@@ -72,14 +70,11 @@ public struct AudioPlaybackHandoff: Equatable {
     public var progressFraction: Double
 
     public init(
-        itemID: UUID, title: String, thumbnailFileName: String?, wordIndex: Int,
-        elapsed: TimeInterval, progressFraction: Double
+        itemID: UUID, title: String, thumbnailFileName: String?, progressFraction: Double
     ) {
         self.itemID = itemID
         self.title = title
         self.thumbnailFileName = thumbnailFileName
-        self.wordIndex = wordIndex
-        self.elapsed = elapsed
         self.progressFraction = progressFraction
     }
 }
@@ -407,7 +402,7 @@ public final class AudioPlaybackCenter {
         let title = position.title.isEmpty ? (item.title ?? content.title) : position.title
         return AudioPlaybackHandoff(
             itemID: item.id, title: title, thumbnailFileName: item.thumbnailFileName,
-            wordIndex: position.wordIndex, elapsed: position.elapsed, progressFraction: fraction)
+            progressFraction: fraction)
     }
 
     private func pauseInternal(deactivateSessionAfterGrace: Bool) {

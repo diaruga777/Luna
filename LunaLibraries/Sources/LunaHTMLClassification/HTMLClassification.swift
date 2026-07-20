@@ -14,12 +14,4 @@ public enum HTMLClassification {
                 || compact.contains("content=\"\(value)\"name=\"article:content_tier")
         }
     }
-
-    public static func hasProductStructuredData(in html: String) -> Bool {
-        let lowered = html.lowercased()
-        return lowered.contains("\"@type\":\"product\"")
-            || lowered.contains("\"@type\": \"product\"")
-            || lowered.contains("itemtype=\"https://schema.org/product\"")
-            || lowered.contains("property=\"product:price:amount\"")
-    }
 }

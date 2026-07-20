@@ -105,7 +105,7 @@ public enum AudioWordEventTokenMapping {
         var running = 0
         for block in blocks {
             starts.append(running)
-            running += block.text.split(whereSeparator: { $0.isWhitespace }).count
+            running += AudioWordIndexing.wordCount(in: block.text)
         }
         return starts
     }
@@ -121,18 +121,8 @@ public enum AudioWordEventTokenMapping {
         guard blocks.indices.contains(blockIndex),
               blockTokenStarts.indices.contains(blockIndex) else { return nil }
         let text = blocks[blockIndex].text
-        var offset = 0
-        var tokenOrdinal = -1
-        var index = text.startIndex
-        while index < text.endIndex {
-            if !text[index].isWhitespace,
-               index == text.startIndex || text[text.index(before: index)].isWhitespace {
-                let start = index.utf16Offset(in: text)
-                if start <= utf16Location { tokenOrdinal += 1 } else { break }
-            }
-            index = text.index(after: index)
-        }
-        offset = max(0, tokenOrdinal)
+        let wordStarts = AudioWordIndexing.wordStartUTF16Offsets(in: text)
+        let offset = AudioWordIndexing.wordOffset(forUTF16Location: utf16Location, wordStartOffsets: wordStarts)
         return blockTokenStarts[blockIndex] + offset
     }
 }

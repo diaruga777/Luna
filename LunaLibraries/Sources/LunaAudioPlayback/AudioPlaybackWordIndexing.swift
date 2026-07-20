@@ -23,16 +23,21 @@ import Foundation
 /// as correct behavior. Live word-level highlighting DURING forward playback
 /// still uses the full marker precision (see `AudioPlaybackCenter`'s word
 /// event pipeline) — only resume/seek/skip snaps to a block boundary.
-enum AudioWordIndexing {
+///
+/// Public so other modules that need the same word-boundary arithmetic over
+/// their own block-like sequences (e.g. `LunaReaderUI`'s RSVP token mapping,
+/// which counts whitespace-delimited tokens across `ArticleContent.Block`s
+/// the same way) can reuse it instead of re-deriving it.
+public enum AudioWordIndexing {
     /// Number of whitespace-delimited words in `text` — matches
     /// `AudioScript`'s own word-counting rule exactly.
-    static func wordCount(in text: String) -> Int {
+    public static func wordCount(in text: String) -> Int {
         text.split(whereSeparator: { $0.isWhitespace }).count
     }
 
     /// The global word index at the START of each entry in `spokenBlocks`
     /// (a parallel array — same count, same order).
-    static func blockStartWordIndices(_ spokenBlocks: [AudioScript.SpokenBlock]) -> [Int] {
+    public static func blockStartWordIndices(_ spokenBlocks: [AudioScript.SpokenBlock]) -> [Int] {
         var result: [Int] = []
         result.reserveCapacity(spokenBlocks.count)
         var running = 0
@@ -45,7 +50,7 @@ enum AudioWordIndexing {
 
     /// The index INTO `spokenBlocks` (i.e. a position in `starts`) whose span
     /// contains global `wordIndex`, clamped to the script's bounds.
-    static func spokenBlockPosition(forWordIndex wordIndex: Int, in starts: [Int]) -> Int {
+    public static func spokenBlockPosition(forWordIndex wordIndex: Int, in starts: [Int]) -> Int {
         guard !starts.isEmpty else { return 0 }
         var position = 0
         for (index, start) in starts.enumerated() where start <= wordIndex {
@@ -58,7 +63,7 @@ enum AudioWordIndexing {
     /// ascending order — used to translate a `WordMarker.utteranceRange` (a
     /// character range within a block's text) into a word offset WITHIN that
     /// block, for live word-event highlighting during forward playback.
-    static func wordStartUTF16Offsets(in text: String) -> [Int] {
+    public static func wordStartUTF16Offsets(in text: String) -> [Int] {
         var offsets: [Int] = []
         var index = text.startIndex
         while index < text.endIndex {
@@ -73,7 +78,7 @@ enum AudioWordIndexing {
 
     /// The 0-based word offset WITHIN a block whose text produced
     /// `wordStartOffsets` (see above), for a marker's UTF-16 `location`.
-    static func wordOffset(forUTF16Location location: Int, wordStartOffsets: [Int]) -> Int {
+    public static func wordOffset(forUTF16Location location: Int, wordStartOffsets: [Int]) -> Int {
         guard !wordStartOffsets.isEmpty else { return 0 }
         var offset = 0
         for (index, start) in wordStartOffsets.enumerated() where start <= location {

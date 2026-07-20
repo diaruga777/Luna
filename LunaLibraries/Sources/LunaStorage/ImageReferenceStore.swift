@@ -79,19 +79,9 @@ public final class ImageReferenceStore {
     /// by a live save, or leaking orphans forever).
     @discardableResult
     private func mutate<T>(_ body: (inout [String: Set<String>]) -> T) -> T {
-        lock.lock(); defer { lock.unlock() }
-        func perform(_ url: URL) -> T {
-            var index = loadIndex(at: url)
-            let result = body(&index)
-            saveIndex(index, to: url)
-            return result
-        }
-        var coordResult: T?
-        var coordError: NSError?
-        fileCoordinator.coordinate(writingItemAt: indexURL, options: [], error: &coordError) { url in
-            coordResult = perform(url)
-        }
-        return coordResult ?? perform(indexURL)
+        coordinatedMutateJSONIndex(
+            lock: lock, fileCoordinator: fileCoordinator, indexURL: indexURL,
+            load: loadIndex, save: saveIndex, body: body)
     }
 
     // MARK: - Ownership

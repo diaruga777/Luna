@@ -175,20 +175,14 @@ public final class PreloadStore {
     /// preloaded pages).
     @discardableResult
     private func mutate<T>(_ body: (inout [String: PreloadEntry]) -> T) -> T {
-        lock.lock(); defer { lock.unlock() }
-        func perform(_ url: URL) -> T {
-            var index = loadIndex(at: url)
-            let result = body(&index)
-            saveIndex(index, to: url)
-            cachedIndex = index   // keep the sync fast-path snapshot fresh for this process
-            return result
-        }
-        var coordResult: T?
-        var coordError: NSError?
-        fileCoordinator.coordinate(writingItemAt: indexURL, options: [], error: &coordError) { url in
-            coordResult = perform(url)
-        }
-        return coordResult ?? perform(indexURL)
+        coordinatedMutateJSONIndex(
+            lock: lock, fileCoordinator: fileCoordinator, indexURL: indexURL,
+            load: { self.loadIndex(at: $0) },
+            save: { index, url in
+                self.saveIndex(index, to: url)
+                self.cachedIndex = index   // keep the sync fast-path snapshot fresh for this process
+            },
+            body: body)
     }
 
     /// Index lookup for the synchronous reader-open fast path: serves from the

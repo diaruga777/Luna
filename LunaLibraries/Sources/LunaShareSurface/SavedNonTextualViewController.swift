@@ -689,10 +689,9 @@ public final class SavedNonTextualViewController: UIViewController {
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    let identifier = try await PhotoLibrarySaver().save(
-                        fileURL: fileURL, kind: kind, shouldMoveFile: false)
-                    _ = try SavedMediaStore.shared.transitionToPhotosReference(
-                        item.id, localIdentifier: identifier, kind: kind)
+                    try await SavedMediaPhotosSync.saveAndTransition(
+                        itemID: item.id, fileURL: fileURL, kind: kind, shouldMoveFile: false,
+                        saver: PhotoLibrarySaver(), store: SavedMediaStore.shared)
                     AutoDownloadSettings.markDownloaded(self.articleURLString)
                     self.markItemRead()
                     await MainActor.run { self.finishSave(success: true) }
@@ -756,9 +755,8 @@ public final class SavedNonTextualViewController: UIViewController {
                 _ = await self.libraryPersistenceTask?.value
                 if let mediaItem = SavedMediaStore.shared.matchingItem(
                     forURLString: self.articleURLString) {
-                    if let identifier = mediaItem.photosLocalIdentifier {
-                        try await PhotoLibrarySaver().deleteAsset(localIdentifier: identifier)
-                    }
+                    try await SavedMediaPhotosSync.deletePhotosAssetIfPresent(
+                        mediaItem.photosLocalIdentifier, saver: PhotoLibrarySaver())
                     SavedMediaStore.shared.delete(mediaItem)
                 }
                 if let readingItem = ReadingListStore.shared.item(

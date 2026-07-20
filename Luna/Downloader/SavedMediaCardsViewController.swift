@@ -332,9 +332,9 @@ final class SavedMediaCardsViewController: UIViewController {
                 let tempURL = MediaDownloadStorage.newFileURL(extension: fileURL.pathExtension)
                 try FileManager.default.copyItem(at: fileURL, to: tempURL)
                 defer { try? FileManager.default.removeItem(at: tempURL) }
-                let localIdentifier = try await photoSaver.save(fileURL: tempURL, kind: kind)
-                _ = try store.transitionToPhotosReference(
-                    item.id, localIdentifier: localIdentifier, kind: kind)
+                try await SavedMediaPhotosSync.saveAndTransition(
+                    itemID: item.id, fileURL: tempURL, kind: kind, shouldMoveFile: true,
+                    saver: photoSaver, store: store)
                 presentAlert(title: "Saved to Photos", message: "The media was added to your photo library.")
             } catch {
                 presentAlert(title: "Save Failed", message: "Couldn't save this media to Photos.")
@@ -351,8 +351,9 @@ final class SavedMediaCardsViewController: UIViewController {
     private func deleteSavedItem(for item: SavedMediaItem) {
         Task { @MainActor [weak self] in
             do {
-                if let localIdentifier = item.photosLocalIdentifier {
-                    try await self?.photoSaver.deleteAsset(localIdentifier: localIdentifier)
+                if let localIdentifier = item.photosLocalIdentifier, let self {
+                    try await SavedMediaPhotosSync.deletePhotosAssetIfPresent(
+                        localIdentifier, saver: self.photoSaver)
                 }
                 guard let self else { return }
                 AutoDownloadSettings.unmarkDownloaded(item.sourceURLString)

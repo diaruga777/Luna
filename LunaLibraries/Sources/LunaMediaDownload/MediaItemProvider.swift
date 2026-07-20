@@ -90,3 +90,21 @@ public enum MediaPasteboard {
         return true
     }
 }
+
+/// Copies a just-saved item to the pasteboard when the user has opted in,
+/// shared by the background job engine (`LiveMediaDownloadManager`) and the
+/// foreground service (`MediaDownloadService`) — both call this right after
+/// a successful save.
+@MainActor
+func copyToClipboardIfEnabled(_ item: SavedMediaItem) {
+    guard AutoDownloadSettings.autoCopyDownloadsToClipboard,
+          let kind = item.kind else { return }
+    switch item.storageState {
+    case .localFile:
+        if let url = item.fileURL { _ = MediaPasteboard.copy(.localFile(url)) }
+    case .photosReference(let identifier, _, _):
+        _ = MediaPasteboard.copy(.photo(localIdentifier: identifier, kind: kind))
+    case .undownloaded:
+        break
+    }
+}

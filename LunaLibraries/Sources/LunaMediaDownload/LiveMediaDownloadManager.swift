@@ -4,6 +4,7 @@
 //
 
 import LunaAppConfig
+import LunaModels
 import LunaStorage
 import LunaURLClassification
 import AVFoundation
@@ -156,13 +157,42 @@ public final class LiveMediaDownloadManager: NSObject {
         ownership: LiveMediaDownloadOwnership? = nil,
         manual: Bool = false
     ) async -> Bool {
+        guard let gated = await gateAndPrepare(
+            urlString: urlString, title: title, ownership: ownership, manual: manual)
+        else { return false }
+
+        switch await attachToExistingJobIfPresent(gated) {
+        case .attached(let succeeded): return succeeded
+        case .notFound: break
+        }
+
+        return await createAndStartJob(gated, title: title)
+    }
+
+    /// The state a resolved, gate-passed start carries into the two phases
+    /// below, so neither has to re-derive it from the raw arguments.
+    private struct GateResult {
+        let urlString: String
+        let sourceURL: URL
+        let ownership: LiveMediaDownloadOwnership
+        let readingItem: ReadingListItem?
+    }
+
+    /// Canonicalizes the URL, checks platform support, resolves ownership, and
+    /// runs every guard that can end the start before a job is ever touched:
+    /// the already-downloaded check, the Downloader Wi-Fi-only defer, and the
+    /// Photos add-authorization prompt. Returns `nil` for every early-return
+    /// case in the original single method.
+    private func gateAndPrepare(
+        urlString: String, title: String?, ownership: LiveMediaDownloadOwnership?, manual: Bool
+    ) async -> GateResult? {
         await reapExpiredSuspensions()
 
         let urlString = await Self.canonicalRedditURLStringIfNeeded(urlString)
 
         guard MediaDownloadablePlatform.supports(urlString),
               let sourceURL = URL(string: urlString)
-        else { return false }
+        else { return nil }
 
         let ownership = ownership ?? (MediaAutoDownloader.isRunningInDownloader
             ? .downloader : .invokingApp)
@@ -180,7 +210,7 @@ public final class LiveMediaDownloadManager: NSObject {
                 // The durable Downloader library, not the legacy URL marker, is
                 // authoritative for Downloader-owned completion.
                 AutoDownloadSettings.markDownloaded(urlString)
-                return false
+                return nil
             } else {
                 // Repair state left by an interrupted/crashed inline download or
                 // by an older sibling-app Photos save. Such a marker must not
@@ -193,10 +223,10 @@ public final class LiveMediaDownloadManager: NSObject {
                 isOnWiFi: NetworkReachability.shared.isOnWiFi
             ) {
                 AutoDownloadSettings.markPendingWiFiDownload(urlString)
-                return false
+                return nil
             }
         } else if AutoDownloadSettings.wasDownloaded(urlString) {
-            return false
+            return nil
         }
 
         let canSave = ownership == .downloader
@@ -208,43 +238,60 @@ public final class LiveMediaDownloadManager: NSObject {
                 title: title,
                 message: MediaDownloadError.permissionDenied.message,
                 errorKind: .photosPermission)
-            return false
+            return nil
         }
 
-        if var existing = store.jobs().first(where: {
-            $0.sourceURLString == urlString && !$0.isTerminal
-        }) {
-            if ownership == .downloader && !existing.isDownloaderOwned {
-                existing.ownership = .downloader
-                store.upsert(existing)
-            }
-            // A previous process may have died after persisting this job but
-            // before creating its URLSession task. A duplicate paste is an
-            // explicit retry and must repair that orphan instead of returning
-            // success for work that can never advance.
-            let activeJobIDs = await activeTaskJobIDs()
-            if LiveMediaDownloadResumePolicy.shouldRestart(
-                phase: existing.phase,
-                hasActiveTask: activeJobIDs.contains(existing.id)
-            ) {
-                await restartTransfer(for: existing)
-                guard let restarted = store.job(id: existing.id), !restarted.isTerminal else {
-                    return false
-                }
-                existing = restarted
-            }
-            await updateActivity(for: existing)
-            return true
-        }
+        return GateResult(
+            urlString: urlString, sourceURL: sourceURL, ownership: ownership, readingItem: readingItem)
+    }
 
+    private enum ExistingJobOutcome {
+        case notFound
+        case attached(Bool)
+    }
+
+    /// Repairs and reattaches to a non-terminal job already tracking this
+    /// source URL, if one exists — a duplicate paste is treated as an
+    /// explicit retry, not a no-op.
+    private func attachToExistingJobIfPresent(_ gated: GateResult) async -> ExistingJobOutcome {
+        guard var existing = store.jobs().first(where: {
+            $0.sourceURLString == gated.urlString && !$0.isTerminal
+        }) else { return .notFound }
+
+        if gated.ownership == .downloader && !existing.isDownloaderOwned {
+            existing.ownership = .downloader
+            store.upsert(existing)
+        }
+        // A previous process may have died after persisting this job but
+        // before creating its URLSession task. A duplicate paste is an
+        // explicit retry and must repair that orphan instead of returning
+        // success for work that can never advance.
+        let activeJobIDs = await activeTaskJobIDs()
+        if LiveMediaDownloadResumePolicy.shouldRestart(
+            phase: existing.phase,
+            hasActiveTask: activeJobIDs.contains(existing.id)
+        ) {
+            await restartTransfer(for: existing)
+            guard let restarted = store.job(id: existing.id), !restarted.isTerminal else {
+                return .attached(false)
+            }
+            existing = restarted
+        }
+        await updateActivity(for: existing)
+        return .attached(true)
+    }
+
+    /// Creates the persisted job and starts its resolve task — reached only
+    /// when no existing job for this source URL was found above.
+    private func createAndStartJob(_ gated: GateResult, title: String?) async -> Bool {
         let jobID = UUID().uuidString
         var job = LiveMediaDownloadJob(
             id: jobID,
-            sourceURLString: urlString,
+            sourceURLString: gated.urlString,
             assetURLString: nil,
             mediaKind: "unknown",
-            title: title ?? Self.title(for: sourceURL),
-            creator: readingItem?.channelName,
+            title: title ?? Self.title(for: gated.sourceURL),
+            creator: gated.readingItem?.channelName,
             resolveKind: nil,
             phase: .resolving,
             progress: 0,
@@ -255,9 +302,9 @@ public final class LiveMediaDownloadManager: NSObject {
             resolveAttempts: 0,
             mediaAttempts: 0,
             suspendDeadline: nil,
-            ownership: ownership
+            ownership: gated.ownership
         )
-        guard let resolve = Self.resolveRequest(for: sourceURL) else {
+        guard let resolve = Self.resolveRequest(for: gated.sourceURL) else {
             store.upsert(job)
             await failJob(job, message: MediaDownloadError.unsupported.message)
             return false
@@ -306,12 +353,9 @@ public final class LiveMediaDownloadManager: NSObject {
             }
         }
 
-        var request = URLRequest(url: asset.url, timeoutInterval: 60)
-        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
-        if sourceURL.host?.lowercased().contains("tiktok") == true {
-            request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
-        }
-        startTask(request, jobID: job.id, role: .media, attempt: job.mediaAttempts)
+        startTask(
+            Self.mediaAssetRequest(assetURL: asset.url, sourceURL: sourceURL),
+            jobID: job.id, role: .media, attempt: job.mediaAttempts)
     }
 
     public func attachBackgroundCompletionHandler(_ completionHandler: @escaping () -> Void) {
@@ -380,6 +424,10 @@ public final class LiveMediaDownloadManager: NSObject {
             else {
                 // Incomplete old/corrupt downloading state can still be rebuilt
                 // from the source resolver instead of remaining stuck forever.
+                // This recurses into restartTransfer once, deliberately: job.phase
+                // is set to .resolving right above, so the recursive call lands in
+                // the .resolving case (or fails and returns there) and can never
+                // reach this .downloading branch again.
                 job.phase = .resolving
                 job.progress = 0
                 job.assetURLString = nil
@@ -388,15 +436,10 @@ public final class LiveMediaDownloadManager: NSObject {
                 await restartTransfer(for: job)
                 return
             }
-            var request = URLRequest(url: assetURL, timeoutInterval: 60)
-            request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
-            if sourceURL.host?.lowercased().contains("tiktok") == true {
-                request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
-            }
             job.errorMessage = nil
             store.upsert(job)
             startTask(
-                request, jobID: job.id,
+                Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL), jobID: job.id,
                 role: .media, attempt: job.mediaAttempts)
 
         case .suspended, .saving, .finished, .failed:
@@ -411,9 +454,7 @@ public final class LiveMediaDownloadManager: NSObject {
     /// fails, so it's cheap to call from every one of those triggers.
     public func resumePendingWiFiDownloads() async {
         guard AutoDownloadSettings.wifiOnlyDownloads, NetworkReachability.shared.isOnWiFi else { return }
-        for urlString in AutoDownloadSettings.pendingWiFiDownloadURLs() {
-            _ = await start(urlString: urlString, ownership: .downloader)
-        }
+        await startPendingWiFiDownloads(manual: false)
     }
 
     /// Starts every Wi-Fi-deferred download right away, ignoring current
@@ -421,8 +462,12 @@ public final class LiveMediaDownloadManager: NSObject {
     /// so already-deferred items don't keep waiting for the next opportunistic
     /// trigger.
     public func startAllPendingWiFiDownloads() async {
+        await startPendingWiFiDownloads(manual: true)
+    }
+
+    private func startPendingWiFiDownloads(manual: Bool) async {
         for urlString in AutoDownloadSettings.pendingWiFiDownloadURLs() {
-            _ = await start(urlString: urlString, ownership: .downloader, manual: true)
+            _ = await start(urlString: urlString, ownership: .downloader, manual: manual)
         }
     }
 
@@ -474,12 +519,9 @@ public final class LiveMediaDownloadManager: NSObject {
             if job.isDownloaderOwned {
                 postDownloaderJobProgress(job: job, progress: job.progress)
             }
-            var request = URLRequest(url: assetURL, timeoutInterval: 60)
-            request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
-            if sourceURL.host?.lowercased().contains("tiktok") == true {
-                request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
-            }
-            startTask(request, jobID: job.id, role: .media, attempt: job.mediaAttempts)
+            startTask(
+                Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
+                jobID: job.id, role: .media, attempt: job.mediaAttempts)
         } else if let sourceURL = URL(string: job.sourceURLString),
                   let resolve = Self.resolveRequest(for: sourceURL) {
             job.phase = .resolving
@@ -526,6 +568,17 @@ public final class LiveMediaDownloadManager: NSObject {
         return "Media download"
     }
 
+    /// The media-file download request for a resolved asset: browser UA, plus
+    /// the TikTok CDN's Referer requirement when `sourceURL` is a TikTok post.
+    private static func mediaAssetRequest(assetURL: URL, sourceURL: URL) -> URLRequest {
+        var request = URLRequest(url: assetURL, timeoutInterval: 60)
+        request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        if sourceURL.host?.lowercased().contains("tiktok") == true {
+            request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
+        }
+        return request
+    }
+
     private func startTask(_ request: URLRequest, jobID: String, role: TaskRole, attempt: Int) {
         let task = session.downloadTask(with: request)
         task.taskDescription = "\(jobID)|\(role.rawValue)|\(attempt)"
@@ -544,36 +597,62 @@ public final class LiveMediaDownloadManager: NSObject {
         }
     }
 
+    /// The stage of a persisted background resolve. `LiveMediaDownloadJob.resolveKind`
+    /// stores the raw string rather than this type, so jobs.json (and its decoding of
+    /// jobs written by earlier builds) never depends on this enum's case list — this
+    /// exists only to give the dispatch below compiler-checked cases instead of the
+    /// hand-matched string literals it used to switch on. An unrecognized raw string
+    /// (there is no known way to produce one today) simply fails to match any case
+    /// below, the same as it silently failed to match any string literal before.
+    private enum ResolveKind: String {
+        case x
+        case tiktok
+        case instagramEmbed
+        case facebookPlugin
+        case facebookDesktop
+        case facebookMobile
+        case facebookCanonical
+        case facebook
+        case facebookShort
+        case reddit
+    }
+
     static func resolveRequest(for url: URL) -> (request: URLRequest, kind: String)? {
         guard let recognized = PlatformRecognizer.recognize(url.absoluteString) else { return nil }
         let resolveURL: URL
-        let kind: String
+        let kind: ResolveKind
         switch recognized.platform {
         case .x:
             guard let id = recognized.itemID,
                   let url = URL(string: "https://api.fxtwitter.com/status/\(id)")
             else { return nil }
             resolveURL = url
-            kind = "x"
+            kind = .x
         case .tiktok:
             resolveURL = url
-            kind = "tiktok"
+            kind = .tiktok
         case .instagram:
             guard let code = recognized.itemID,
                   let url = URL(string: "https://www.instagram.com/p/\(code)/embed/captioned/")
             else { return nil }
             resolveURL = url
-            kind = "instagramEmbed"
+            kind = .instagramEmbed
         case .facebook:
-            // Match SocialMediaResolver's foreground/extension path: Facebook's
-            // logged-out reel page commonly returns HTTP 400 or a poster-only login
-            // wall, while the video plugin exposes the playable hd_src/sd_src MP4.
+            // Match SocialMediaResolver.resolveFacebook's foreground/extension path:
+            // Facebook's logged-out reel page commonly returns HTTP 400 or a poster-only
+            // login wall, while the video plugin exposes the playable hd_src/sd_src MP4.
             // Keep the stage in resolveKind so a persisted background job can fall
-            // through to the desktop and mobile pages if the plugin has no asset.
+            // through the desktop and mobile pages below (`startNextFacebookResolve`)
+            // the same way that function does. The two are hand-mirrored, not shared:
+            // `SocialMediaResolver.resolveFacebook` is a linear async function with a
+            // fourth (og-unfurl) fallback stage this resumable engine has no room for,
+            // while this engine re-derives the same plugin→desktop→mobile ordering as a
+            // persisted, restartable state machine so it can survive process death.
+            // Whoever changes one function's stage order must update the other to match.
             guard let pluginURL = SocialMediaResolver.facebookVideoPluginURL(for: url)
             else { return nil }
             resolveURL = pluginURL
-            kind = "facebookPlugin"
+            kind = .facebookPlugin
         case .reddit:
             // The public, subreddit-agnostic listing endpoint works for any
             // recognized permalink shape (a full `/r/.../comments/<id>/...`
@@ -584,41 +663,41 @@ public final class LiveMediaDownloadManager: NSObject {
                   let url = URL(string: "https://www.reddit.com/comments/\(id).json")
             else { return nil }
             resolveURL = url
-            kind = "reddit"
+            kind = .reddit
         default:
             return nil
         }
         var request = URLRequest(url: resolveURL, timeoutInterval: 60)
-        if kind == "x" {
+        if kind == .x {
             request.setValue("application/json", forHTTPHeaderField: "Accept")
         } else {
-            let userAgent = kind.hasPrefix("facebook")
+            let userAgent = kind.rawValue.hasPrefix("facebook")
                 ? MediaDownloadHTTP.desktopBrowserUserAgent
                 : MediaDownloadHTTP.browserUserAgent
             request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         }
-        return (request, kind)
+        return (request, kind.rawValue)
     }
 
     private func resolvedAsset(from data: Data, job: LiveMediaDownloadJob) -> MediaAsset? {
-        switch job.resolveKind {
-        case "x":
+        switch job.resolveKind.flatMap(ResolveKind.init(rawValue:)) {
+        case .x:
             return XMediaParser.assets(fromFxJSON: data).first
-        case "tiktok":
+        case .tiktok:
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return TikTokMediaParser.assets(fromHTML: html).first
-        case "instagramEmbed":
+        case .instagramEmbed:
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return InstagramMediaParser.assetsFromEmbedContextJSON(html).first
                 ?? InstagramMediaParser.assets(fromHTML: html).first
-        case "facebookPlugin", "facebookDesktop", "facebookMobile", "facebookCanonical",
-             "facebook", "facebookShort":
+        case .facebookPlugin, .facebookDesktop, .facebookMobile, .facebookCanonical,
+             .facebook, .facebookShort:
             guard let html = String(data: data, encoding: .utf8) else { return nil }
             return FacebookMediaParser.assets(fromHTML: html).first
-        case "reddit":
+        case .reddit:
             return RedditMediaParser.asset(fromListingJSON: data)
-        default:
+        case nil:
             return nil
         }
     }
@@ -633,28 +712,28 @@ public final class LiveMediaDownloadManager: NSObject {
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceThumbnailMaxPixelSize: 420,
-              ] as CFDictionary),
-              let destination = CGImageDestinationCreateWithURL(
-                JobStore.thumbnailURL(fileName: "\(jobID).jpg") as CFURL,
-                "public.jpeg" as CFString,
-                1,
-                nil)
+              ] as CFDictionary)
         else { return nil }
-        CGImageDestinationAddImage(destination, cgImage, nil)
-        guard CGImageDestinationFinalize(destination) else { return nil }
-        return "\(jobID).jpg"
+        return Self.writeThumbnail(cgImage, jobID: jobID)
     }
 
     private func makeVideoThumbnail(from fileURL: URL, jobID: String) -> String? {
         let asset = AVURLAsset(url: fileURL)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
-        guard let cgImage = try? generator.copyCGImage(at: .zero, actualTime: nil),
-              let destination = CGImageDestinationCreateWithURL(
-                JobStore.thumbnailURL(fileName: "\(jobID).jpg") as CFURL,
-                "public.jpeg" as CFString,
-                1,
-                nil)
+        guard let cgImage = try? generator.copyCGImage(at: .zero, actualTime: nil) else { return nil }
+        return Self.writeThumbnail(cgImage, jobID: jobID)
+    }
+
+    /// Writes `cgImage` to `jobID`'s thumbnail JPEG, shared by the network-image
+    /// and video-frame thumbnail paths above, which differ only in how they
+    /// obtain the `CGImage`.
+    private static func writeThumbnail(_ cgImage: CGImage, jobID: String) -> String? {
+        guard let destination = CGImageDestinationCreateWithURL(
+            JobStore.thumbnailURL(fileName: "\(jobID).jpg") as CFURL,
+            "public.jpeg" as CFString,
+            1,
+            nil)
         else { return nil }
         CGImageDestinationAddImage(destination, cgImage, nil)
         guard CGImageDestinationFinalize(destination) else { return nil }
@@ -819,33 +898,37 @@ public final class LiveMediaDownloadManager: NSObject {
     }
 
     /// Advances the durable Facebook resolver through the same useful sources as
-    /// `SocialMediaResolver`: plugin embed → desktop page → mobile page → desktop
-    /// canonical page. Returns true after starting the next background task.
+    /// `SocialMediaResolver.resolveFacebook`: plugin embed → desktop page → mobile
+    /// page → desktop canonical page. Returns true after starting the next
+    /// background task. Hand-mirrored against that function, not shared code — see
+    /// the comment on `resolveRequest`'s `.facebook` case for why (it has a fourth,
+    /// og-unfurl fallback stage this resumable engine skips). Whoever changes
+    /// either function's stage order must update the other to match.
     private func startNextFacebookResolve(
         after persistedJob: LiveMediaDownloadJob, data: Data?
     ) -> Bool {
         guard let sourceURL = URL(string: persistedJob.sourceURLString) else { return false }
 
-        let next: (url: URL, kind: String, userAgent: String)?
-        switch persistedJob.resolveKind {
-        case "facebookPlugin":
-            next = (sourceURL, "facebookDesktop", MediaDownloadHTTP.desktopBrowserUserAgent)
-        case "facebookDesktop", "facebook":
-            next = (sourceURL, "facebookMobile", MediaDownloadHTTP.browserUserAgent)
-        case "facebookMobile", "facebookShort":
+        let next: (url: URL, kind: ResolveKind, userAgent: String)?
+        switch persistedJob.resolveKind.flatMap(ResolveKind.init(rawValue:)) {
+        case .facebookPlugin:
+            next = (sourceURL, .facebookDesktop, MediaDownloadHTTP.desktopBrowserUserAgent)
+        case .facebookDesktop, .facebook:
+            next = (sourceURL, .facebookMobile, MediaDownloadHTTP.browserUserAgent)
+        case .facebookMobile, .facebookShort:
             guard let data,
                   let html = String(data: data, encoding: .utf8),
                   let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html),
                   canonical.absoluteString != sourceURL.absoluteString
             else { return false }
-            next = (canonical, "facebookCanonical", MediaDownloadHTTP.desktopBrowserUserAgent)
+            next = (canonical, .facebookCanonical, MediaDownloadHTTP.desktopBrowserUserAgent)
         default:
             return false
         }
 
         guard let next else { return false }
         var job = persistedJob
-        job.resolveKind = next.kind
+        job.resolveKind = next.kind.rawValue
         store.upsert(job)
         var request = URLRequest(url: next.url, timeoutInterval: 60)
         request.setValue(next.userAgent, forHTTPHeaderField: "User-Agent")
@@ -909,20 +992,6 @@ public final class LiveMediaDownloadManager: NSObject {
             fileExtension: job.fileExtension)
     }
 
-    @MainActor
-    private func copyToClipboardIfEnabled(_ item: SavedMediaItem) {
-        guard AutoDownloadSettings.autoCopyDownloadsToClipboard,
-              let kind = item.kind else { return }
-        switch item.storageState {
-        case .localFile:
-            if let url = item.fileURL { _ = MediaPasteboard.copy(.localFile(url)) }
-        case .photosReference(let identifier, _, _):
-            _ = MediaPasteboard.copy(.photo(localIdentifier: identifier, kind: kind))
-        case .undownloaded:
-            break
-        }
-    }
-
     private func retryOrFail(
         job: LiveMediaDownloadJob,
         role: TaskRole,
@@ -962,12 +1031,9 @@ public final class LiveMediaDownloadManager: NSObject {
             retryJob.mediaAttempts += 1
             retryJob.errorMessage = nil
             store.upsert(retryJob)
-            var request = URLRequest(url: assetURL, timeoutInterval: 60)
-            request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
-            if sourceURL.host?.lowercased().contains("tiktok") == true {
-                request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
-            }
-            startTask(request, jobID: retryJob.id, role: .media, attempt: retryJob.mediaAttempts)
+            startTask(
+                Self.mediaAssetRequest(assetURL: assetURL, sourceURL: sourceURL),
+                jobID: retryJob.id, role: .media, attempt: retryJob.mediaAttempts)
         }
     }
 

@@ -137,20 +137,6 @@ public struct MediaDownloadService: MediaDownloading {
         }
     }
 
-    @MainActor
-    private func copyToClipboardIfEnabled(_ item: SavedMediaItem) {
-        guard AutoDownloadSettings.autoCopyDownloadsToClipboard,
-              let kind = item.kind else { return }
-        switch item.storageState {
-        case .localFile:
-            if let fileURL = item.fileURL { _ = MediaPasteboard.copy(.localFile(fileURL)) }
-        case .photosReference(let identifier, _, _):
-            _ = MediaPasteboard.copy(.photo(localIdentifier: identifier, kind: kind))
-        case .undownloaded:
-            break
-        }
-    }
-
     /// TikTok and Reddit media CDNs require their site's Referer; others download bare.
     private static func referer(for url: URL) -> String? {
         let host = url.host?.lowercased() ?? ""

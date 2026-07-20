@@ -25,6 +25,17 @@ public enum ProductSearchAddOutcome {
     case duplicate
 }
 
+/// Reports the overlay's confirmed "Use this page?" pick to its host. The host
+/// performs the mandatory price fetch + dedupe + add and MUST call `completion`
+/// with the outcome so the overlay can dismiss on success or show a clear
+/// message on failure (never a silent no-op).
+public protocol ProductSearchOverlayDelegate: AnyObject {
+    func productSearchOverlay(
+        _ overlay: ProductSearchOverlayViewController,
+        didConfirmPage urlString: String, html: String,
+        completion: @escaping (ProductSearchAddOutcome) -> Void)
+}
+
 /// A near-fullscreen web search/browse overlay for adding a seller to a price
 /// tracker, styled like the inline reader (`SplitWebOverlayViewController`): a themed
 /// `WKWebView` inside an inset rounded glass card with a glass header (close +
@@ -40,7 +51,7 @@ public enum ProductSearchAddOutcome {
 ///   `ProductSuggestionDebouncer` so it never re-fires for the same page.
 ///
 /// The overlay never touches the reading-list store: when the user confirms, it
-/// hands the current URL + its rendered HTML up via `onUseThisPage` and AWAITS the
+/// hands the current URL + its rendered HTML up via `delegate` and AWAITS the
 /// host's `ProductSearchAddOutcome`. On `.added` the overlay dismisses (returning to
 /// the tracker); on `.noPrice`/`.duplicate` it shows a message and stays open.
 ///
@@ -51,13 +62,7 @@ public enum ProductSearchAddOutcome {
 public final class ProductSearchOverlayViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegate,
     WKScriptMessageHandler {
 
-    /// Called when the user confirms "Add to tracker" for the current page. `html` is
-    /// the page's rendered `outerHTML` (the host reuses it for the fast price path).
-    /// The host performs the mandatory price fetch + dedupe + add and MUST call
-    /// `completion` with the outcome so the overlay can dismiss on success or show a
-    /// clear message on failure (never a silent no-op).
-    public var onUseThisPage: ((_ urlString: String, _ html: String,
-                         _ completion: @escaping (ProductSearchAddOutcome) -> Void) -> Void)?
+    public weak var delegate: ProductSearchOverlayDelegate?
 
     private let initialURL: URL
     private let trackedProduct: ProductInfo
@@ -344,7 +349,8 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
     /// outcome to the overlay's exit behavior (dismiss on success, message otherwise).
     private func handleAddCurrentPage(urlString: String, prefetchedHTML: String?) {
         if let prefetchedHTML {
-            onUseThisPage?(urlString, prefetchedHTML) { [weak self] outcome in
+            delegate?.productSearchOverlay(self, didConfirmPage: urlString, html: prefetchedHTML) {
+                [weak self] outcome in
                 self?.handleAddOutcome(outcome)
             }
             return
@@ -352,7 +358,8 @@ public final class ProductSearchOverlayViewController: UIViewController, WKNavig
         webView?.evaluateJavaScript("document.documentElement.outerHTML") { [weak self] result, _ in
             guard let self else { return }
             let html = (result as? String) ?? ""
-            self.onUseThisPage?(urlString, html) { [weak self] outcome in
+            self.delegate?.productSearchOverlay(self, didConfirmPage: urlString, html: html) {
+                [weak self] outcome in
                 self?.handleAddOutcome(outcome)
             }
         }

@@ -504,11 +504,7 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             imageURL: nil, brand: tracker?.brand, productID: tracker?.productID)
         let overlay = ProductSearchOverlayViewController(
             initialURL: searchURL, trackedProduct: trackedProduct)
-        overlay.onUseThisPage = { [weak self] urlString, html, completion in
-            self?.addSeller(
-                urlString: urlString, prefetchedHTML: html.isEmpty ? nil : html,
-                report: completion)
-        }
+        overlay.delegate = self
         present(overlay, animated: true)
     }
 
@@ -630,6 +626,16 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
         } else {
             dismiss(animated: true)
         }
+    }
+}
+
+extension PriceTrackingViewController: ProductSearchOverlayDelegate {
+    public func productSearchOverlay(
+        _ overlay: ProductSearchOverlayViewController,
+        didConfirmPage urlString: String, html: String,
+        completion: @escaping (ProductSearchAddOutcome) -> Void
+    ) {
+        addSeller(urlString: urlString, prefetchedHTML: html.isEmpty ? nil : html, report: completion)
     }
 }
 

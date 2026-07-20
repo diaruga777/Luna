@@ -129,19 +129,14 @@ public final class ReadingListIngestor {
             ? interopDecision(result.outcome)
             : .allowed
         if case let .blocked(owner, ownerInstalled) = interop {
-            store.delete(item)
-            SharedDiagnosticLog.record(
-                "interop: blocked cross-app save (\(owner.storageIdentifier)) — discarded",
-                category: "ingest")
-            if allowsInteractivePrompt, source == .paste || source == .manual {
-                let urlString = resolvedURL.absoluteString
-                await MainActor.run {
-                    Self.interopPromptPresenter?(
-                        .blocked(owner: owner, ownerInstalled: ownerInstalled),
-                        { Task { await ReadingListIngestor.shared.handleSavePress(
-                            urlString: urlString, source: source) } })
-                }
-            }
+            let urlString = resolvedURL.absoluteString
+            await presentBlockedInterop(
+                owner: owner, ownerInstalled: ownerInstalled, source: source,
+                allowsInteractivePrompt: allowsInteractivePrompt,
+                logMessage: "interop: blocked cross-app save (\(owner.storageIdentifier)) — discarded",
+                discard: { store.delete(item) },
+                retry: { Task { await ReadingListIngestor.shared.handleSavePress(
+                    urlString: urlString, source: source) } })
             return interop
         }
 
@@ -166,12 +161,37 @@ public final class ReadingListIngestor {
         // through exactly as always (above); interactive sources ALSO get the
         // informational "install Luna X" note.
         if case let .allowedNeedsInstall(owner) = interop,
-           allowsInteractivePrompt, source == .paste || source == .manual {
+           allowsInteractivePrompt, isInteractivePromptSource(source) {
             await MainActor.run {
                 Self.interopPromptPresenter?(.needsInstall(owner: owner), nil)
             }
         }
         return interop
+    }
+
+    /// `.paste`/`.manual` are the only sources with a live UI able to show an interop
+    /// prompt — App Intents get their own dialog from the intent layer, and
+    /// background sweeps have no UI at all.
+    private func isInteractivePromptSource(_ source: CaptureSource) -> Bool {
+        source == .paste || source == .manual
+    }
+
+    /// Logs and, if eligible, presents the interop "blocked" prompt for a
+    /// cross-app-gated save. `discard` runs first — `ingest` deletes the store
+    /// placeholder it already created; `saveNewWithContent` calls this before ever
+    /// adding one, so its `discard` is a no-op. Both call sites run this inline
+    /// (never from a `defer`), so it can safely `await` the presenter.
+    private func presentBlockedInterop(
+        owner: InteropSurface, ownerInstalled: Bool, source: CaptureSource,
+        allowsInteractivePrompt: Bool, logMessage: String, discard: () -> Void,
+        retry: @escaping () -> Void
+    ) async {
+        discard()
+        SharedDiagnosticLog.record(logMessage, category: "ingest")
+        guard allowsInteractivePrompt, isInteractivePromptSource(source) else { return }
+        await MainActor.run {
+            Self.interopPromptPresenter?(.blocked(owner: owner, ownerInstalled: ownerInstalled), retry)
+        }
     }
 
     // MARK: - Outcome handling (the main-app presenter, store-writing)
@@ -689,23 +709,20 @@ public final class ReadingListIngestor {
             ? interopDecision(.article(content, html: ""))
             : .allowed
         if case let .blocked(owner, ownerInstalled) = interop {
-            SharedDiagnosticLog.record(
-                "interop: blocked cross-app paste save (reader) — refused", category: "ingest")
-            if source == .paste || source == .manual {
-                await MainActor.run {
-                    Self.interopPromptPresenter?(
-                        .blocked(owner: owner, ownerInstalled: ownerInstalled),
-                        { Task { await ReadingListIngestor.shared.saveNewWithContent(
-                            urlString: urlString, content: content, source: source) } })
-                }
-            }
+            await presentBlockedInterop(
+                owner: owner, ownerInstalled: ownerInstalled, source: source,
+                allowsInteractivePrompt: true,
+                logMessage: "interop: blocked cross-app paste save (reader) — refused",
+                discard: {},
+                retry: { Task { await ReadingListIngestor.shared.saveNewWithContent(
+                    urlString: urlString, content: content, source: source) } })
             return nil
         }
 
         let item = store.add(urlString: urlString, source: source)
         defer {
             if case let .allowedNeedsInstall(owner) = interop,
-               source == .paste || source == .manual {
+               isInteractivePromptSource(source) {
                 Task { @MainActor in
                     Self.interopPromptPresenter?(.needsInstall(owner: owner), nil)
                 }

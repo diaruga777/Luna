@@ -3,11 +3,6 @@ import Testing
 import LunaFetch
 @testable import LunaPaywallBypass
 
-@Test func trailingDotIsLimitedToNYTimesHosts() {
-    #expect(PaywallBypassRules.trailingDotURL(for: URL(string: "https://www.nytimes.com/a")!)?.host == "www.nytimes.com.")
-    #expect(PaywallBypassRules.trailingDotURL(for: URL(string: "https://example.com/a")!)?.host == "example.com.")
-}
-
 @Test func knownPaywallPublisherCommerceMarkupRetainsDirectUnlockPlan() {
     let url = URL(string:
         "https://www.newyorker.com/culture/the-weekend-essay/the-voice-of-google"

@@ -235,12 +235,35 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         resumeWordIndex: Int? = nil,
         initialDisplayMode: RSVPDisplayMode? = nil
     ) {
+        resetTransientState()
+        applyContent(
+            item: item, content: content, audioEnabled: audioEnabled,
+            shareProvider: shareProvider, resumeWordIndex: resumeWordIndex,
+            initialDisplayMode: initialDisplayMode)
+    }
+
+    /// Cancels in-flight playback and the link pill's hide timer before a reuse
+    /// swaps in new content — the part of `configureForReuse` that's about
+    /// tearing down the OLD state, independent of what the new content is.
+    private func resetTransientState() {
         pause()
         linkPillHideTimer?.invalidate()
         linkPillHideTimer = nil
         linkPillURL = nil
         linkPill.alpha = 0
+    }
 
+    /// Rebuilds the word engine/chunks for `content`, resolves the resume
+    /// position, and — once the view exists — refreshes every control that
+    /// depends on it.
+    private func applyContent(
+        item: ReadingListItem,
+        content: ArticleContent,
+        audioEnabled: Bool,
+        shareProvider: ReaderShareProviding?,
+        resumeWordIndex: Int?,
+        initialDisplayMode: RSVPDisplayMode?
+    ) {
         self.item = item
         self.isSpeechMode = audioEnabled
         self.articleContent = content
@@ -350,24 +373,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         configureLinkPill()
         configureLinkPreview()
         configureControls()
+        configureGestures()
 
         // NB: the audio session is NOT touched here — only when read-aloud
         // actually starts playing (see `play()`), so opening the silent speed
         // reader never interrupts other audio / Picture-in-Picture.
-
-        playPauseTap.addTarget(self, action: #selector(togglePlayPause))
-        playPauseTap.delegate = self
-        view.addGestureRecognizer(playPauseTap)
-
-        pressAndHoldGesture.addTarget(self, action: #selector(handlePressAndHold))
-        pressAndHoldGesture.delegate = self
-        // Shorter than the 0.5s default so slow-motion engages promptly for
-        // RSVP's fast word cadence. `require(toFail:)` below doesn't delay a
-        // genuine tap — the long-press fails the instant a touch lifts early,
-        // not after this duration elapses.
-        pressAndHoldGesture.minimumPressDuration = 0.35
-        view.addGestureRecognizer(pressAndHoldGesture)
-        playPauseTap.require(toFail: pressAndHoldGesture)
 
         applyDisplayMode()
         if displayMode == .phrases { currentChunkIndex = chunkIndex(forWord: currentIndex) }
@@ -764,6 +774,23 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             skipForwardButton.widthAnchor.constraint(equalToConstant: 48),
             skipForwardButton.heightAnchor.constraint(equalToConstant: 48),
         ])
+    }
+
+    /// The full-screen play/pause tap plus the slow-motion press-and-hold.
+    private func configureGestures() {
+        playPauseTap.addTarget(self, action: #selector(togglePlayPause))
+        playPauseTap.delegate = self
+        view.addGestureRecognizer(playPauseTap)
+
+        pressAndHoldGesture.addTarget(self, action: #selector(handlePressAndHold))
+        pressAndHoldGesture.delegate = self
+        // Shorter than the 0.5s default so slow-motion engages promptly for
+        // RSVP's fast word cadence. `require(toFail:)` below doesn't delay a
+        // genuine tap — the long-press fails the instant a touch lifts early,
+        // not after this duration elapses.
+        pressAndHoldGesture.minimumPressDuration = 0.35
+        view.addGestureRecognizer(pressAndHoldGesture)
+        playPauseTap.require(toFail: pressAndHoldGesture)
     }
 
     // MARK: - Sub-mode

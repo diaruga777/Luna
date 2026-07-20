@@ -224,24 +224,23 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         resumeWordIndex: Int? = nil,
         fullRenderUpFront: Bool = false
     ) {
+        resetTransientState()
+        applyContent(
+            item: item, content: content, audioEnabled: audioEnabled,
+            shareProvider: shareProvider, resumeWordIndex: resumeWordIndex,
+            fullRenderUpFront: fullRenderUpFront)
+    }
+
+    /// Cancels in-flight work and clears every per-session flag before a reuse
+    /// swaps in new content — the part of `configureForReuse` that's about
+    /// tearing down the OLD state, independent of what the new content is.
+    private func resetTransientState() {
         imageDownloadTask?.cancel()
         speech?.stop()
         speech = nil
         contentSizeObservation?.invalidate()
         contentSizeObservation = nil
         removeHighlight()
-
-        let resolved = ArticleImageDownloader.resolveLocalImages(content, store: ReadingListStore.shared)
-        self.item = item
-        self.content = resolved
-        self.audioEnabled = audioEnabled
-        self.shareProvider = shareProvider
-        self.explicitResumeWordIndex = resumeWordIndex
-        // The lazy shareView latches its first resolution (nil when built for a
-        // provider-less shell) and bakes in the old item's friend suggestion —
-        // rebuild it for the new item/provider.
-        shareView?.removeFromSuperview()
-        shareView = makeShareView()
 
         finishedReadingTracker = FinishedReadingTracker()
         didRestoreScroll = false
@@ -256,6 +255,30 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         pendingFlingSpeedPointsPerSecond = 0
         highlightedRange = nil
         followPlayback = true
+    }
+
+    /// Resolves + renders `content`, decides the progressive-load strategy, and —
+    /// once the view exists — installs it into the text view and its dependent
+    /// features.
+    private func applyContent(
+        item: ReadingListItem,
+        content: ArticleContent,
+        audioEnabled: Bool,
+        shareProvider: ReaderShareProviding?,
+        resumeWordIndex: Int?,
+        fullRenderUpFront: Bool
+    ) {
+        let resolved = ArticleImageDownloader.resolveLocalImages(content, store: ReadingListStore.shared)
+        self.item = item
+        self.content = resolved
+        self.audioEnabled = audioEnabled
+        self.shareProvider = shareProvider
+        self.explicitResumeWordIndex = resumeWordIndex
+        // The lazy shareView latches its first resolution (nil when built for a
+        // provider-less shell) and bakes in the old item's friend suggestion —
+        // rebuild it for the new item/provider.
+        shareView?.removeFromSuperview()
+        shareView = makeShareView()
 
         let needsFullUpFront = fullRenderUpFront || audioEnabled
             || Self.openPositionLikelyBeyondPrefix(
@@ -417,9 +440,22 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        configureTextView()
+        configureGestures()
+        configureFooter()
 
-        // Constructed with TextKit 1 so line metrics stay stable across scroll
-        // restoration and link hit-testing.
+        // In-app (seam installed) the center drives read-aloud: subscribe to its
+        // word events for highlighting — applied only while the DISPLAYED article
+        // is the playing one (see the AudioPlaybackObserver conformance below).
+        // Observers are weakly held, so no teardown is needed.
+        ReaderAudioLauncher.center?.addObserver(self)
+
+        revealInitialContent()
+    }
+
+    /// Constructed with TextKit 1 so line metrics stay stable across scroll
+    /// restoration and link hit-testing.
+    private func configureTextView() {
         textView.isEditable = false
         textView.isSelectable = true
         textView.delegate = self
@@ -440,7 +476,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         ])
         HorizonScrollIndicator.install(on: textView, in: view)
         applyTopChromeInset(preservingVisiblePosition: false)
+    }
 
+    private func configureGestures() {
         let imageTap = UITapGestureRecognizer(target: self, action: #selector(imageTapped(_:)))
         imageTap.delegate = self
         imageTap.cancelsTouchesInView = false
@@ -463,15 +501,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             sourceView: textView,
             resolveURL: { [weak self] point in self?.link(at: point)?.url },
             sourcePlaybackChanged: { [weak self] active in self?.setLinkPreviewAudioSuspended(active) })
+    }
 
-        configureFooter()
-
-        // In-app (seam installed) the center drives read-aloud: subscribe to its
-        // word events for highlighting — applied only while the DISPLAYED article
-        // is the playing one (see the AudioPlaybackObserver conformance below).
-        // Observers are weakly held, so no teardown is needed.
-        ReaderAudioLauncher.center?.addObserver(self)
-
+    /// Installs the features that depend on the full article already being
+    /// rendered, and reveals the text once its resting scroll position is set.
+    private func revealInitialContent() {
         // The end-of-article share footer is attached only once the FULL article is
         // rendered (its position is keyed off the complete content size). For a short
         // article the prefix is already complete, so attach it now; otherwise
@@ -981,29 +1015,37 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     private func startSpeech() {
         followPlayback = true
-
-        // In-app: hand off to the app-wide playback center (background audio,
-        // autoplay, the window-level mini-player replaces the private footer).
-        // The legacy path below stays for the share/action extensions, where
-        // the seam is never installed.
+        // The legacy path stays for the share/action extensions, where the
+        // app-wide playback center's seam is never installed.
         if let center = ReaderAudioLauncher.center {
-            // Already voicing this very article (e.g. a mode switch back to
-            // scroll, or reopening the playing article with audio on): keep
-            // going rather than restarting — unless a position was explicitly
-            // carried in from another reader mode.
-            if center.currentItemInfo?.itemID == item.id,
-               center.currentSnapshot.isAudiblyPlaying,
-               explicitResumeWordIndex == nil {
-                VoiceFirstRunPrompt.showIfNeeded(from: self)
-                return
-            }
-            // nil resumes the center's own persisted position when it names
-            // this item; a carried-over mode-switch position wins outright.
-            center.play(item: item, content: content, fromWordIndex: explicitResumeWordIndex)
+            startSpeechViaCenter(center)
+        } else {
+            startSpeechViaLegacyController()
+        }
+    }
+
+    /// In-app: hand off to the app-wide playback center (background audio,
+    /// autoplay, the window-level mini-player replaces the private footer).
+    private func startSpeechViaCenter(_ center: AudioPlaybackCenter) {
+        // Already voicing this very article (e.g. a mode switch back to
+        // scroll, or reopening the playing article with audio on): keep
+        // going rather than restarting — unless a position was explicitly
+        // carried in from another reader mode.
+        if center.currentItemInfo?.itemID == item.id,
+           center.currentSnapshot.isAudiblyPlaying,
+           explicitResumeWordIndex == nil {
             VoiceFirstRunPrompt.showIfNeeded(from: self)
             return
         }
+        // nil resumes the center's own persisted position when it names
+        // this item; a carried-over mode-switch position wins outright.
+        center.play(item: item, content: content, fromWordIndex: explicitResumeWordIndex)
+        VoiceFirstRunPrompt.showIfNeeded(from: self)
+    }
 
+    /// The extension-only path, driven by the private `SpeechController`
+    /// (no app-wide center, no mini-player, no background audio session).
+    private func startSpeechViaLegacyController() {
         if speech == nil {
             // Phase 6: the legacy extension-only path now speaks the TRIMMED
             // script (best available: cached refined > cached heuristic >

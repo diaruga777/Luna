@@ -456,20 +456,7 @@ public enum NextDataPrice {
 
     /// `__NEXT_DATA__` first (richest), then other `application/json` scripts.
     private static func jsonBlobs(in document: Document) -> [String] {
-        var blobs: [String] = []
-        if let next = try? document.select("script#__NEXT_DATA__").first(),
-           let json = try? next.html(), !json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            blobs.append(json)
-        }
-        if let scripts = try? document.select("script[type=application/json]") {
-            for script in scripts {
-                if let json = try? script.html(),
-                   !json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    blobs.append(json)
-                }
-            }
-        }
-        return blobs
+        EmbeddedJSONBlobs.nextDataAndJSONScripts(in: document)
     }
 
     /// Depth-first, sorted-key search for the first numeric value under any of `keys`

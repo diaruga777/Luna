@@ -444,17 +444,7 @@ public struct ProductPageDetector {
     /// All candidate JSON strings on the page: `__NEXT_DATA__` first (richest), then
     /// other `application/json` scripts, then inline `window.__X__ = { … };` blobs.
     private func embeddedJSONBlobs(document: Document) -> [String] {
-        var blobs: [String] = []
-        if let next = try? document.select("script#__NEXT_DATA__").first(),
-           let json = try? next.html().trimmedNonEmpty {
-            blobs.append(json)
-        }
-        if let scripts = try? document.select("script[type=application/json]") {
-            for script in scripts {
-                guard let json = try? script.html().trimmedNonEmpty else { continue }
-                blobs.append(json)
-            }
-        }
+        var blobs = EmbeddedJSONBlobs.nextDataAndJSONScripts(in: document)
         // Inline state assignments: `window.__APOLLO_STATE__ = {…};`,
         // `window.__INITIAL_STATE__ = {…}`. Pull the object literal after the `=`.
         if let scripts = try? document.select("script:not([type]), script[type=text/javascript]") {
@@ -821,9 +811,9 @@ public struct ProductPageDetector {
     }
 }
 
-private extension String {
+extension String {
     /// The trimmed string, or nil if it's empty after trimming.
-    public var trimmedNonEmpty: String? {
+    var trimmedNonEmpty: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }

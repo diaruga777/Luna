@@ -10,7 +10,6 @@ import LunaURLClassification
 import LunaModels
 import AVKit
 import CoreMedia
-import ImageIO
 import Photos
 import UIKit
 
@@ -521,7 +520,10 @@ public final class SavedNonTextualViewController: UIViewController {
         switch media.kind {
         case .image, .gif:
             playOverlay.isHidden = true
-            if let image = downsampledImage(from: media.fileURL) {
+            // Explicit scale 1 (not the display scale `ImageDownsampling` normally
+            // takes) reproduces this preview's existing pixel density.
+            if let image = ImageDownsampling.decode(
+                path: media.fileURL.path, scale: 1, maxPixelSize: 1400) {
                 previewImageView.image = image
                 previewPlaceholder.isHidden = true
                 persistPreviewThumbnail(image)
@@ -795,22 +797,6 @@ public final class SavedNonTextualViewController: UIViewController {
     }
 
     // MARK: - Image / video helpers
-
-    /// Decodes a local image file downsampled (ImageIO) so a full-res photo never
-    /// sits fully decoded in the memory-constrained extension.
-    private func downsampledImage(from fileURL: URL, maxPixelSize: CGFloat = 1400) -> UIImage? {
-        guard let source = CGImageSourceCreateWithURL(
-            fileURL as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-        ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(
-            source, 0, options as CFDictionary) else { return nil }
-        return UIImage(cgImage: cgImage)
-    }
 
     /// Generates a poster frame from a local video file off the main actor.
     private static func videoPoster(for fileURL: URL) async -> UIImage? {

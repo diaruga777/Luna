@@ -242,7 +242,7 @@ final class MiniPlayerHostViewController: UIViewController {
 
     private func thumbnailPath(fileName: String?) -> String? {
         guard let fileName else { return nil }
-        return ReadingListStore.shared.articlesDirectory.appendingPathComponent(fileName).path
+        return ArticleThumbnailLocator.fileURL(fileName: fileName).path
     }
 
     // MARK: - Phase 6: extension → main-app handoff (launch-time paused preview)

@@ -411,7 +411,7 @@ public final class AudioPlaybackCenter {
 
         let totalWords = AudioScript(passthrough: content).totalWordCount
         let fraction = totalWords > 0 ? min(max(Double(position.wordIndex) / Double(totalWords), 0), 1) : 0
-        let title = position.title.isEmpty ? (item.title ?? content.title) : position.title
+        let title = position.title.isEmpty ? Self.displayTitle(item: item, content: content) : position.title
         return AudioPlaybackHandoff(
             itemID: item.id, title: title, thumbnailFileName: item.thumbnailFileName,
             progressFraction: fraction)
@@ -538,7 +538,7 @@ public final class AudioPlaybackCenter {
         stateBeforePause = nil
         setState(.playing(itemID: item.id))
         currentItemInfo = AudioPlaybackItemInfo(
-            itemID: item.id, title: item.title ?? content.title,
+            itemID: item.id, title: Self.displayTitle(item: item, content: content),
             artist: Self.artistLine(content: content, item: item),
             thumbnailFileName: item.thumbnailFileName)
 
@@ -561,6 +561,13 @@ public final class AudioPlaybackCenter {
             return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         }
         return nil
+    }
+
+    /// The item's own title, falling back to its extracted content's title —
+    /// `ReadingListItem.title` can be nil (e.g. a share-sheet save before
+    /// extraction filled it in).
+    private static func displayTitle(item: ReadingListItem, content: ArticleContent) -> String {
+        item.title ?? content.title
     }
 
     /// Re-renders/schedules from `wordIndex` onward without tearing down the
@@ -726,7 +733,7 @@ public final class AudioPlaybackCenter {
 
     private func playAnnouncement(for candidate: QueueCandidate) {
         setState(.announcing(nextItemID: candidate.item.id))
-        let title = candidate.item.title ?? candidate.content.title
+        let title = Self.displayTitle(item: candidate.item, content: candidate.content)
         let announcementBlock = AudioScript.SpokenBlock(blockIndex: -1, text: "Now Reading — \(title)")
         let token = sessionToken
         Task { [weak self] in

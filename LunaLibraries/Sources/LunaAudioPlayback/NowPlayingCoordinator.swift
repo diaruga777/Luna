@@ -54,6 +54,16 @@ public protocol RemoteCommandBinding: AnyObject {
 ///      only ever reachable in-app if that install never ran — it isn't, in
 ///      Luna Reader. The legacy path in practice only runs in the Share/Action
 ///      extensions, which never touch `AudioPlaybackCenter` at all.
+/// Where a currently-playing item's `thumbnailFileName` lives on disk — the
+/// one join both the Now Playing artwork lookup (here) and the mini-player's
+/// thumbnail image view (`MiniPlayerHostViewController`) need, over the same
+/// `ReadingListStore.shared.articlesDirectory` (where `setThumbnail` writes).
+public enum ArticleThumbnailLocator {
+    public static func fileURL(fileName: String) -> URL {
+        ReadingListStore.shared.articlesDirectory.appendingPathComponent(fileName)
+    }
+}
+
 public final class NowPlayingCoordinator {
     public static let shared = NowPlayingCoordinator()
 
@@ -88,7 +98,7 @@ public final class NowPlayingCoordinator {
         infoSink: NowPlayingInfoSink = SystemNowPlayingInfoSink(),
         commandBinding: RemoteCommandBinding = SystemRemoteCommandBinding(),
         artworkFileURL: @escaping (String) -> URL? = { fileName in
-            ReadingListStore.shared.articlesDirectory.appendingPathComponent(fileName)
+            ArticleThumbnailLocator.fileURL(fileName: fileName)
         }
     ) {
         self.infoSink = infoSink

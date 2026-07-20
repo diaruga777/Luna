@@ -520,34 +520,7 @@ final class ArticleCardsViewController: UIViewController {
             return CardContentViewController()
         }
         let content = ReaderCardContentViewController(item: items[itemIndex])
-        content.inlineReaderCardFrameInWindowProvider = { [weak self] in
-            guard let self,
-                  let restingFrame = self.carousel.restingCenteredCardFrame(in: self.view)
-            else { return nil }
-            return self.view.convert(restingFrame, to: nil)
-        }
-        content.onImmersionChange = { [weak self] immersed, extendsCard in
-            guard let self else { return }
-            self.carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
-            // Slide the scroll indicator between the card edge and the screen
-            // edge in step with the immersion (setImmersed's 0.32s ease-in-out).
-            self.layoutCardScrollIndicator(animated: true)
-        }
-        content.onReaderReady = { [weak self, weak content] reader in
-            guard let self, content?.isCentered == true else { return }
-            self.readerForChrome = reader
-            self.updateExternalReaderInsets()
-            self.updateReaderChrome()
-            self.layoutCardScrollIndicator(animated: false)
-        }
-        content.onInlineReaderChange = { [weak self, weak content] reader in
-            guard let self, content?.isCentered == true else { return }
-            self.readerForChrome = reader ?? content?.rabbitHoleReader
-            self.updateReaderChrome()
-            // Step the host indicator aside for an inline reader (it keeps its
-            // own), and take back over when it dismisses.
-            self.layoutCardScrollIndicator(animated: false)
-        }
+        content.delegate = self
         return content
     }
 
@@ -689,6 +662,46 @@ extension ArticleCardsViewController: CardCarouselDelegate {
     }
 }
 
+// MARK: - Reader card content delegate
+
+extension ArticleCardsViewController: ReaderCardContentDelegate {
+
+    fileprivate func readerCard(
+        _ card: ReaderCardContentViewController, didChangeImmersion immersed: Bool, extendsCard: Bool
+    ) {
+        carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
+        // Slide the scroll indicator between the card edge and the screen
+        // edge in step with the immersion (setImmersed's 0.32s ease-in-out).
+        layoutCardScrollIndicator(animated: true)
+    }
+
+    fileprivate func readerCard(
+        _ card: ReaderCardContentViewController, didBecomeReady reader: RabbitHoleReaderViewController
+    ) {
+        guard card.isCentered else { return }
+        readerForChrome = reader
+        updateExternalReaderInsets()
+        updateReaderChrome()
+        layoutCardScrollIndicator(animated: false)
+    }
+
+    fileprivate func readerCard(
+        _ card: ReaderCardContentViewController, inlineReaderDidChange reader: ReaderChromeControlling?
+    ) {
+        guard card.isCentered else { return }
+        readerForChrome = reader ?? card.rabbitHoleReader
+        updateReaderChrome()
+        // Step the host indicator aside for an inline reader (it keeps its
+        // own), and take back over when it dismisses.
+        layoutCardScrollIndicator(animated: false)
+    }
+
+    fileprivate func readerCardInlineFrameInWindow(_ card: ReaderCardContentViewController) -> CGRect? {
+        guard let restingFrame = carousel.restingCenteredCardFrame(in: view) else { return nil }
+        return view.convert(restingFrame, to: nil)
+    }
+}
+
 // MARK: - Card content
 
 /// The synthetic leading card for a URL waiting on the pasteboard. It is
@@ -758,6 +771,27 @@ private final class PasteboardCardContentViewController: CardContentViewControll
     }
 }
 
+/// The push/pull contract between a `ReaderCardContentViewController` and its
+/// host: three pushes (immersion changed, the reader became ready, an inline
+/// reader presented/dismissed) and one pull (the card's resting frame in the
+/// window, for an inline reader's presentation math). Sole conformer:
+/// `ArticleCardsViewController`.
+private protocol ReaderCardContentDelegate: AnyObject {
+    /// The reader wants the carousel chrome faded away (true — reading is
+    /// under way) or back in (false — the user is surfacing). `extendsCard`
+    /// says whether the immersed card's bottom should extend into the strip's
+    /// room: true for the scroll reader (more content shows), false for RSVP,
+    /// whose fixed layout must not move when playback starts — only the chrome
+    /// fades.
+    func readerCard(
+        _ card: ReaderCardContentViewController, didChangeImmersion immersed: Bool, extendsCard: Bool)
+    func readerCard(
+        _ card: ReaderCardContentViewController, didBecomeReady reader: RabbitHoleReaderViewController)
+    func readerCard(
+        _ card: ReaderCardContentViewController, inlineReaderDidChange reader: ReaderChromeControlling?)
+    func readerCardInlineFrameInWindow(_ card: ReaderCardContentViewController) -> CGRect?
+}
+
 /// One article card: the FULL live reader, always embedded (side cards too, so
 /// paging never shows a placeholder), laid out to the card's bounds — the card
 /// view IS the fullscreen reader view, one header and one layout for both
@@ -766,16 +800,7 @@ private final class PasteboardCardContentViewController: CardContentViewControll
 private final class ReaderCardContentViewController: CardContentViewController,
     InlineReaderPresentationCoordinating, RabbitHoleReaderDelegate {
 
-    /// The reader wants the carousel chrome faded away (true — reading is
-    /// under way) or back in (false — the user is surfacing). `extendsCard`
-    /// says whether the immersed card's bottom should extend into the strip's
-    /// room: true for the scroll reader (more content shows), false for RSVP,
-    /// whose fixed layout must not move when playback starts — only the chrome
-    /// fades.
-    var onImmersionChange: ((_ immersed: Bool, _ extendsCard: Bool) -> Void)?
-    var onReaderReady: ((RabbitHoleReaderViewController) -> Void)?
-    var onInlineReaderChange: ((ReaderChromeControlling?) -> Void)?
-    var inlineReaderCardFrameInWindowProvider: (() -> CGRect?)?
+    weak var delegate: ReaderCardContentDelegate?
 
     private let item: ReadingListItem
     private let statusLabel = UILabel()
@@ -838,7 +863,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         isCentered = true
-        if let rabbitHoleReader { onReaderReady?(rabbitHoleReader) }
+        if let rabbitHoleReader { delegate?.readerCard(self, didBecomeReady: rabbitHoleReader) }
     }
 
     override func cardDidLeaveCenter() {
@@ -873,7 +898,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         reader.view.frame = view.bounds
         observeReaderScrollViews()
         if let rabbitHole = reader as? RabbitHoleReaderViewController {
-            onReaderReady?(rabbitHole)
+            delegate?.readerCard(self, didBecomeReady: rabbitHole)
         }
 
         // Backstop sweeps for content that mounts without a hierarchy
@@ -895,7 +920,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         DispatchQueue.main.async { self.observeReaderScrollViews() }
         DispatchQueue.main.async {
             guard self.isCentered else { return }
-            self.onReaderReady?(reader)
+            self.delegate?.readerCard(self, didBecomeReady: reader)
         }
     }
 
@@ -903,20 +928,22 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // The reader has nowhere to pop to — surface, bringing the carousel
         // chrome back instead.
         guard isCentered else { return }
-        onImmersionChange?(false, true)
+        delegate?.readerCard(self, didChangeImmersion: false, extendsCard: true)
     }
 
     func inlineReaderWillPresent(_ reader: ReaderChromeControlling) {
         guard isCentered else { return }
-        onImmersionChange?(true, rabbitHoleReader?.focusedContentScrollView != nil)
-        onInlineReaderChange?(reader)
+        delegate?.readerCard(
+            self, didChangeImmersion: true,
+            extendsCard: rabbitHoleReader?.focusedContentScrollView != nil)
+        delegate?.readerCard(self, inlineReaderDidChange: reader)
     }
 
     func inlineReaderDidDismiss(_ reader: ReaderChromeControlling) {
         guard isCentered else { return }
-        onInlineReaderChange?(rabbitHoleReader)
+        delegate?.readerCard(self, inlineReaderDidChange: rabbitHoleReader)
         if rabbitHoleReader?.shouldSurfaceAfterInlineReaderDismissal == true {
-            onImmersionChange?(false, true)
+            delegate?.readerCard(self, didChangeImmersion: false, extendsCard: true)
         }
     }
 
@@ -926,14 +953,16 @@ private final class ReaderCardContentViewController: CardContentViewController,
         else { return }
         // This is visual choreography only. The chrome target remains the inline
         // reader until `inlineReaderDidDismiss` commits the successful dismissal.
-        onImmersionChange?(false, true)
+        delegate?.readerCard(self, didChangeImmersion: false, extendsCard: true)
     }
 
     func inlineReaderDismissalDidCancel(_ reader: ReaderChromeControlling) {
         guard isCentered,
               rabbitHoleReader?.shouldSurfaceAfterInlineReaderDismissal == true
         else { return }
-        onImmersionChange?(true, rabbitHoleReader?.focusedContentScrollView != nil)
+        delegate?.readerCard(
+            self, didChangeImmersion: true,
+            extendsCard: rabbitHoleReader?.focusedContentScrollView != nil)
     }
 
     var inlineReaderTopEdgeInWindow: CGFloat {
@@ -946,7 +975,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // Immersion extends this content view to the bottom of the screen. The
         // nested reader must instead occupy the carousel card's stable resting
         // footprint; its own metrics reserve the tab strip within that height.
-        if let restingFrame = inlineReaderCardFrameInWindowProvider?() {
+        if let restingFrame = delegate?.readerCardInlineFrameInWindow(self) {
             return restingFrame
         }
         return view.convert(view.bounds, to: nil)
@@ -973,7 +1002,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
                 guard let self, self.isCentered else { return }
                 // RSVP immerses without the card-bottom extension: its layout
                 // is fixed, so play/pause must not move anything on screen.
-                self.onImmersionChange?(playing, false)
+                self.delegate?.readerCard(self, didChangeImmersion: playing, extendsCard: false)
             }
         }
         for scrollView in Self.scrollViews(in: reader.view) {
@@ -1017,10 +1046,10 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // the runs cleared first, that event just seeds a fresh baseline.
         if run <= -Self.fadeInTravel || position <= 0 {
             scrollRuns = [:]
-            onImmersionChange?(false, true)
+            delegate?.readerCard(self, didChangeImmersion: false, extendsCard: true)
         } else if run >= Self.fadeOutTravel, position > 0 {
             scrollRuns = [:]
-            onImmersionChange?(true, true)
+            delegate?.readerCard(self, didChangeImmersion: true, extendsCard: true)
         }
     }
 

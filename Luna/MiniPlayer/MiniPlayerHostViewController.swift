@@ -104,7 +104,7 @@ final class MiniPlayerHostViewController: UIViewController {
             self?.refreshDisplay()
         }
         miniPlayer.onToggleAutoplay = { [weak self] in
-            AudioSettings.isAutoplayEnabled.toggle()
+            center.isAutoplayEnabled.toggle()
             self?.refreshDisplay()
         }
         miniPlayer.onTapArticle = { [weak self] in
@@ -224,7 +224,7 @@ final class MiniPlayerHostViewController: UIViewController {
                 thumbnailPath: thumbnailPath(fileName: next?.thumbnailFileName),
                 isPlaying: snapshot.isAudiblyPlaying,
                 rate: snapshot.rate,
-                isAutoplayOn: AudioSettings.isAutoplayEnabled))
+                isAutoplayOn: center.isAutoplayEnabled))
             miniPlayer.setProgress(0, animated: false)
             return
         }
@@ -236,7 +236,7 @@ final class MiniPlayerHostViewController: UIViewController {
             thumbnailPath: thumbnailPath(fileName: info.thumbnailFileName),
             isPlaying: snapshot.isAudiblyPlaying,
             rate: snapshot.rate,
-            isAutoplayOn: AudioSettings.isAutoplayEnabled))
+            isAutoplayOn: center.isAutoplayEnabled))
         miniPlayer.setProgress(snapshot.progressFraction, animated: false)
     }
 
@@ -260,7 +260,7 @@ final class MiniPlayerHostViewController: UIViewController {
             title: handoff.title, isUpNext: false,
             thumbnailPath: thumbnailPath(fileName: handoff.thumbnailFileName),
             isPlaying: false, rate: AudioSettings.preferredRate,
-            isAutoplayOn: AudioSettings.isAutoplayEnabled))
+            isAutoplayOn: AudioPlaybackCenter.shared.isAutoplayEnabled))
         miniPlayer.setProgress(handoff.progressFraction, animated: false)
         updateBar(animated: true)
     }

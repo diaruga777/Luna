@@ -483,6 +483,16 @@ public final class AudioPlaybackCenter {
         engine?.rate = AudioSettings.preferredRate
     }
 
+    /// Whether finishing an article auto-advances to the next unread one —
+    /// brokered through the center (mirroring `cycleRate`/`setRate` for
+    /// `preferredRate`) so callers never write `AudioSettings` directly. A
+    /// pass-through, not a cached copy: `AudioSettings.isAutoplayEnabled`
+    /// itself is what the autoplay chain re-reads fresh at every boundary.
+    public var isAutoplayEnabled: Bool {
+        get { AudioSettings.isAutoplayEnabled }
+        set { AudioSettings.isAutoplayEnabled = newValue }
+    }
+
     // MARK: - Playback session lifecycle
 
     /// Resets every per-session render/schedule counter and re-derives the

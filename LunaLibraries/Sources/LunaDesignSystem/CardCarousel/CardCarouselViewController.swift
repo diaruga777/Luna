@@ -193,7 +193,11 @@ public final class CardCarouselViewController: UIViewController {
     /// A data reload that arrived mid-transition; applied when the transition
     /// settles (tearing slots down under a running transition would strand its
     /// captured card views in the hierarchy).
-    private var pendingReload: (deferred: Bool, index: Int?) = (false, nil)
+    private enum PendingReload {
+        case none
+        case pending(centerIndex: Int?)
+    }
+    private var pendingReload: PendingReload = .none
 
     private let cardArea = UIView()
     private var cardAreaTopConstraint: NSLayoutConstraint!
@@ -211,12 +215,23 @@ public final class CardCarouselViewController: UIViewController {
 
     private var playbackPan: UIPanGestureRecognizer!
     private var pagePan: UIPanGestureRecognizer!
-    /// The in-flight eclipse. The carousel must retain it for its whole run —
-    /// its animator completion holds it only weakly, so an unretained
+    /// The in-flight eclipse, and whether the inset pan is driving it
+    /// interactively. The carousel must retain the transition for its whole
+    /// run — its animator completion holds it only weakly, so an unretained
     /// transition deallocates mid-flight and freezes at the zenith.
-    private var activeTransition: CardEclipseTransition?
-    /// Whether `activeTransition` is being driven by the inset pan.
-    private var isActiveTransitionInteractive = false
+    private enum PagingTransition {
+        case none
+        case automatic(CardEclipseTransition)
+        case interactive(CardEclipseTransition)
+
+        var transition: CardEclipseTransition? {
+            switch self {
+            case .none: return nil
+            case .automatic(let transition), .interactive(let transition): return transition
+            }
+        }
+    }
+    private var pagingTransition: PagingTransition = .none
     /// Finger-travel distance mapping the pan translation to the fraction.
     private var interactiveTravel: CGFloat = 1
     /// Set when a page pan already paged non-interactively (Reduce Motion), so
@@ -326,7 +341,13 @@ public final class CardCarouselViewController: UIViewController {
     public func reloadData(centeringAt index: Int? = nil) {
         loadViewIfNeeded()
         guard !isTransitioning else {
-            pendingReload = (true, index ?? pendingReload.index)
+            let existingIndex: Int?
+            if case .pending(let centerIndex) = pendingReload {
+                existingIndex = centerIndex
+            } else {
+                existingIndex = nil
+            }
+            pendingReload = .pending(centerIndex: index ?? existingIndex)
             return
         }
         removeScrubPreview()
@@ -620,8 +641,7 @@ public final class CardCarouselViewController: UIViewController {
             completion: { [weak self] _ in
                 self?.settleAfterTransition()
             })
-        activeTransition = transition
-        isActiveTransitionInteractive = false
+        pagingTransition = .automatic(transition)
         return transition
     }
 
@@ -629,15 +649,13 @@ public final class CardCarouselViewController: UIViewController {
     /// applies resting layout, and picks up a reload that arrived mid-flight.
     private func settleAfterTransition() {
         isTransitioning = false
-        activeTransition = nil
-        isActiveTransitionInteractive = false
+        pagingTransition = .none
         view.isUserInteractionEnabled = true
         for slot in slots.values { applyRestingLayout(to: slot) }
         removeOrphanCardViews()
-        if pendingReload.deferred {
-            let index = pendingReload.index
-            pendingReload = (false, nil)
-            reloadData(centeringAt: index)
+        if case .pending(let centerIndex) = pendingReload {
+            pendingReload = .none
+            reloadData(centeringAt: centerIndex)
         }
     }
 
@@ -956,13 +974,13 @@ public final class CardCarouselViewController: UIViewController {
         case .began:
             pagePanConsumed = false
         case .changed:
-            if activeTransition == nil, !pagePanConsumed {
+            if case .none = pagingTransition, !pagePanConsumed {
                 beginInteractivePage(translation: translation)
             }
-            guard isActiveTransitionInteractive, let activeTransition else { return }
+            guard case .interactive(let activeTransition) = pagingTransition else { return }
             activeTransition.update(fraction: abs(translation) / interactiveTravel)
         case .ended, .cancelled, .failed:
-            guard isActiveTransitionInteractive, let interactiveTransition = activeTransition
+            guard case .interactive(let interactiveTransition) = pagingTransition
             else { return }
             let fraction = min(max(abs(translation) / interactiveTravel, 0), 1)
             let velocity = gesture.velocity(in: cardArea).x * style.pageSwipeMovementMultiplier
@@ -993,13 +1011,13 @@ public final class CardCarouselViewController: UIViewController {
             page(by: step)
             return
         }
-        guard makeEclipseTransition(to: target) != nil else { return }
+        guard let transition = makeEclipseTransition(to: target) else { return }
         // Finger travel maps to the incoming card's journey from its peek slot
         // to center.
         interactiveTravel = max(
             abs(metrics.centerX(forSlotOffset: step) - metrics.centerX(forSlotOffset: 0)),
             1)
-        isActiveTransitionInteractive = true
+        pagingTransition = .interactive(transition)
     }
 
     @objc private func handleScrubPan(_ gesture: UIPanGestureRecognizer) {

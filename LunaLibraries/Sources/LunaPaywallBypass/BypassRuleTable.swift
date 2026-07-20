@@ -19,7 +19,7 @@ public enum BypassRuleTable {
     public static func rule(for url: URL) -> BypassRule? {
         guard var host = url.host?.lowercased() else { return nil }
         if host.hasSuffix(".") { host.removeLast() }
-        return rules.first { host == $0.domain || host.hasSuffix("." + $0.domain) }
+        return rules.first { HostMatching.hostSuffixMatches(host, $0.domain) }
     }
 
     /// Every hard-paywall host maps to the archive.is strategy. Built straight from

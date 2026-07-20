@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaURLClassification
 import Foundation
 
 /// Finds a specific social post's URL for platforms with no public search API
@@ -98,7 +99,7 @@ public enum SocialPostFinder {
         let needle = handle.lowercased()
         let posts = urls.filter { url in
             guard let host = url.host?.lowercased() else { return false }
-            let onPlatform = platform.hosts.contains { host == $0 || host.hasSuffix(".\($0)") }
+            let onPlatform = HostMatching.hostSuffixMatches(host, anyOf: platform.hosts)
             let isPost = platform.postMarkers.contains { url.path.lowercased().contains($0) }
             return onPlatform && isPost
         }

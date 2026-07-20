@@ -93,7 +93,7 @@ public enum PlatformRecognizer {
             query: URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [],
             url: url)
         for rule in rules
-        where rule.hosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") }) && rule.recognizes(parts) {
+        where HostMatching.hostSuffixMatches(host, anyOf: rule.hosts) && rule.recognizes(parts) {
             return RecognizedPlatform(platform: rule.platform, itemID: rule.itemID(parts))
         }
         return nil

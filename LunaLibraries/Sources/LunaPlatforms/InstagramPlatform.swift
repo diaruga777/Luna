@@ -12,6 +12,8 @@ public enum InstagramLink {
 
     public static func isInstagram(_ urlString: String) -> Bool {
         guard let host = URL(string: urlString)?.host?.lowercased() else { return false }
+        // Deliberately narrower than PlatformRecognizer.instagram, which also
+        // accepts instagr.am — this predicate is instagram.com-only.
         return host == "instagram.com" || host.hasSuffix(".instagram.com")
     }
 

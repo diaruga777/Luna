@@ -9,6 +9,8 @@ import Foundation
 /// Recognizes X / Twitter status links: `(x|twitter).com/<user>/status/<id>`
 /// (id is the 19-ish-digit tweet id). Pure.
 public enum XLink {
+    // Deliberately narrower than PlatformRecognizer.x, which suffix-matches ANY
+    // x.com/twitter.com subdomain — this is a fixed host set with no suffix fallback.
     private static let hosts: Set<String> = [
         "x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com",
     ]

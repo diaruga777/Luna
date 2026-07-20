@@ -27,8 +27,7 @@ public enum NewsAggregatorUnwrapper {
     /// web landing host. Both return the publisher URL in their HTML's delayed
     /// redirect call; the delay is only for browsers and is never needed here.
     public static func isAppleNews(_ host: String) -> Bool {
-        host == "apple.news" || host.hasSuffix(".apple.news")
-            || host == "stocks.apple.com"
+        HostMatching.hostSuffixMatches(host, "apple.news") || host == "stocks.apple.com"
     }
 
     public static func isGoogleNews(_ host: String) -> Bool {
@@ -210,7 +209,7 @@ public enum NewsAggregatorUnwrapper {
 
     /// Any Facebook-owned host (so we never "unwrap" to another Facebook URL).
     private static func isFacebookHost(_ host: String) -> Bool {
-        host == "facebook.com" || host.hasSuffix(".facebook.com") || host == "fb.com"
+        HostMatching.hostSuffixMatches(host, "facebook.com") || host == "fb.com"
     }
 
     // MARK: - Helpers

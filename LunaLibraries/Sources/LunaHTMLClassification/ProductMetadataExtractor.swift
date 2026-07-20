@@ -283,8 +283,7 @@ enum GoogleShoppingProductParser {
     /// seller by ignoring the query entirely when deduping.
     private static func canonicalKey(_ url: URL) -> String {
         let host = url.host?.lowercased() ?? ""
-        var path = url.path.lowercased()
-        if path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        let path = HostMatching.normalizedPath(url.path.lowercased())
         return host + path
     }
 

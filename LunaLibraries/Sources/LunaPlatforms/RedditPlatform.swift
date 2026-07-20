@@ -11,6 +11,8 @@ import Foundation
 public enum RedditLink {
     public static func isReddit(_ urlString: String) -> Bool {
         guard let host = URL(string: urlString)?.host?.lowercased() else { return false }
+        // redd.it is matched exactly here; PlatformRecognizer.reddit also suffix-matches
+        // redd.it subdomains (e.g. i.redd.it) — deliberately narrower than that table.
         return host == "reddit.com" || host.hasSuffix(".reddit.com") || host == "redd.it"
     }
 

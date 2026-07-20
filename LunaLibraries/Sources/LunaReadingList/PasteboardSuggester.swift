@@ -133,11 +133,8 @@ public final class PasteboardSuggester: PasteboardSuggesting {
     /// query, and fragment — so the same article/post matches across variants.
     private static func normalizedKey(_ urlString: String) -> String? {
         guard let components = URLComponents(string: urlString),
-              var host = components.host?.lowercased() else { return nil }
-        if host.hasPrefix("www.") { host.removeFirst(4) }
-        var path = components.path
-        if path.count > 1, path.hasSuffix("/") { path.removeLast() }
-        return host + path
+              let host = components.host else { return nil }
+        return HostMatching.normalizedHost(host) + HostMatching.normalizedPath(components.path)
     }
 
     /// Best-effort article cover image (og:image / twitter:image), short timeout.

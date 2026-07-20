@@ -263,7 +263,7 @@ public extension WrapperHandler {
         kind: .googleShare,
         matches: { _, host in
             guard let host else { return false }
-            return host == "share.google" || host.hasSuffix(".share.google")
+            return HostMatching.hostSuffixMatches(host, "share.google")
         },
         resolve: { url in
             .fetch { session in
@@ -278,7 +278,7 @@ public extension WrapperHandler {
             kind: .shortener,
             matches: { _, host in
                 guard let host else { return false }
-                return hosts.contains(where: { host == $0 || host.hasSuffix("." + $0) })
+                return HostMatching.hostSuffixMatches(host, anyOf: hosts)
             },
             resolve: { url in
                 .fetch { session in await NewsAggregatorUnwrapper.resolveFinalRedirect(url, session: session) }

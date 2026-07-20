@@ -33,7 +33,7 @@ public struct KnownSite {
     /// predicate.
     public func matches(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased(),
-              hosts.contains(where: { host == $0 || host.hasSuffix(".\($0)") }) else { return false }
+              HostMatching.hostSuffixMatches(host, anyOf: hosts) else { return false }
         guard let path else { return true }
         return path(Array(url.pathComponents.dropFirst()))
     }

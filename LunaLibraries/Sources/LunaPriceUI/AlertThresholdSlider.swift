@@ -7,6 +7,34 @@ import LunaDesignSystem
 import LunaModels
 import UIKit
 
+/// The solid rounded pill chrome shared by every alert-threshold display: the
+/// price-tracking editor's interactive `AlertThresholdSlider` and the catch-up
+/// card's read-only readout (`CatchUpPriceTrackerCardBody.makeThresholdReadout`).
+/// A solid pill (no blur) — it sits on the editor / catch-up card's solid
+/// background, so a live blur would add little and can't be captured
+/// consistently across presentation contexts.
+public enum AlertThresholdPillChrome {
+    /// An empty pill with the shared chrome; the caller fills in its own content.
+    public static func makePill() -> UIView {
+        let pill = UIView()
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        pill.backgroundColor = GlassStyle.solidBarColor
+        pill.layer.cornerRadius = 22
+        pill.layer.cornerCurve = .continuous
+        pill.clipsToBounds = true
+        return pill
+    }
+
+    /// The pill's "Alert threshold" title label, styled identically everywhere.
+    public static func makeTitleLabel() -> UILabel {
+        let title = UILabel()
+        title.text = "Alert threshold"
+        title.font = .preferredFont(forTextStyle: .headline)
+        title.textColor = .label
+        return title
+    }
+}
+
 /// The shared alert-threshold control for price trackers: a solid rounded pill
 /// (de-glassed — `GlassStyle.solidBarColor`) containing the title **"Alert threshold"**,
 /// a slider over the fractional drop, and a readout line showing the same percent +
@@ -24,10 +52,7 @@ public final class AlertThresholdSlider: UIView {
 
     private let slider = UISlider()
     private let readoutLabel = UILabel()
-    /// A solid rounded pill (no blur) — it sits on the editor / catch-up card's solid
-    /// background, so a live blur would add little and can't be captured consistently
-    /// across presentation contexts.
-    private let pill = UIView()
+    private let pill = AlertThresholdPillChrome.makePill()
 
     /// The price baseline + currency the readout's absolute-drop text is computed
     /// against (the tracker's initial best price). Set via `configure`.
@@ -44,18 +69,9 @@ public final class AlertThresholdSlider: UIView {
 
     private func buildLayout() {
         backgroundColor = .clear
-
-        pill.translatesAutoresizingMaskIntoConstraints = false
-        pill.backgroundColor = GlassStyle.solidBarColor
-        pill.layer.cornerRadius = 22
-        pill.layer.cornerCurve = .continuous
-        pill.clipsToBounds = true
         addSubview(pill)
 
-        let title = UILabel()
-        title.text = "Alert threshold"
-        title.font = .preferredFont(forTextStyle: .headline)
-        title.textColor = .label
+        let title = AlertThresholdPillChrome.makeTitleLabel()
 
         slider.minimumValue = 0.01
         slider.maximumValue = 0.90

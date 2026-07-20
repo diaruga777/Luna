@@ -491,25 +491,16 @@ final class CatchUpPriceTrackerCardBody: UIView {
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// A read-only solid (no blur) pill mirroring `AlertThresholdSlider`'s
-    /// chrome — the "Alert threshold" title and the SAME percent + absolute readout
+    /// A read-only readout built from `AlertThresholdSlider`'s shared pill chrome —
+    /// the "Alert threshold" title and the SAME percent + absolute readout
     /// (`PriceFormatting.thresholdDescription`) — but with a "Change" button instead
     /// of the interactive slider, since catch-up is a glance surface (editing happens
     /// on the full price-tracking screen).
     private static func makeThresholdReadout(
         tracker: PriceTracker, onChange: @escaping () -> Void
     ) -> UIView {
-        let pill = UIView()
-        pill.translatesAutoresizingMaskIntoConstraints = false
-        pill.backgroundColor = GlassStyle.solidBarColor
-        pill.layer.cornerRadius = 22
-        pill.layer.cornerCurve = .continuous
-        pill.clipsToBounds = true
-
-        let title = UILabel()
-        title.text = "Alert threshold"
-        title.font = .preferredFont(forTextStyle: .headline)
-        title.textColor = .label
+        let pill = AlertThresholdPillChrome.makePill()
+        let title = AlertThresholdPillChrome.makeTitleLabel()
 
         let readout = UILabel()
         // "25% off" and "alert below <price>" on their own lines (the formatter joins

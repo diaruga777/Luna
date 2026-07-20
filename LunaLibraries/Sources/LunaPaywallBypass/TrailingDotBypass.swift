@@ -20,13 +20,18 @@ public enum TrailingDotBypass {
     /// path and query, or nil when the host is missing/empty, already carries a
     /// trailing dot, or the transform is a no-op.
     public static func trailingDotURL(for url: URL) -> URL? {
-        PaywallBypassRules.trailingDotURL(for: url)
+        guard let host = url.host, !host.isEmpty, !host.hasSuffix(".") else { return nil }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.host = host + "."
+        return components?.url
     }
 
     /// Whether `host` is a New York Times property (the apex, any subdomain, or the
     /// `nyt.com` alias). Retained for the per-host rule table / callers that still
     /// reason about NYT specifically. A trailing dot is tolerated (idempotent).
     public static func isNYTHost(_ host: String) -> Bool {
-        PaywallBypassRules.isNYTHost(host)
+        let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return host == "nytimes.com" || host.hasSuffix(".nytimes.com")
+            || host == "nyt.com" || host.hasSuffix(".nyt.com")
     }
 }

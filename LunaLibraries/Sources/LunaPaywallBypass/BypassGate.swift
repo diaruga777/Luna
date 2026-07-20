@@ -17,7 +17,7 @@ import Foundation
 /// Pure (no I/O, no UIKit) so it can be the one source of truth reused everywhere a
 /// bypass could start — the resolver's silent strategies, the archive reader's
 /// pre-stages, and both share-sheet extensions all consult it. Exercised via
-/// `PaywallBypassRulesTests` and transitively by every `BypassStrategySelector`/
+/// `BypassScenarioTests` and transitively by every `BypassStrategySelector`/
 /// `BypassPlan` test.
 public enum BypassGate {
 

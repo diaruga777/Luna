@@ -316,6 +316,9 @@ final class SavedMediaCardsViewController: UIViewController {
         present(activity, animated: true)
     }
 
+    /// Saves a defensive COPY of the item's local file to Photos (never the file
+    /// itself) — moving the original would risk losing the carousel's own copy
+    /// if the Photos save fails or is slow.
     private func saveToPhotos(_ item: SavedMediaItem) {
         Task { @MainActor in
             do {

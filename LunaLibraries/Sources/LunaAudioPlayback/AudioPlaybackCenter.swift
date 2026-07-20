@@ -475,13 +475,12 @@ public final class AudioPlaybackCenter {
 
     // MARK: - Playback session lifecycle
 
-    private func beginPlayback(item: ReadingListItem, content: ArticleContent, fromWordIndex: Int?) {
-        // Phase 4: cache hit, or a fast synchronous heuristic build on miss
-        // (see `scriptProvider`'s doc comment) — never the LLM refinement
-        // pass, which only ever updates the cache for next time.
-        let script = scriptProvider(item, content)
-        guard !script.spokenBlocks.isEmpty else { return }
-
+    /// Resets every per-session render/schedule counter and re-derives the
+    /// render cursor/baseline for a session that will render starting at
+    /// `wordIndex` — the shared setup `beginPlayback` (fresh item) and
+    /// `restartPlayback` (skip/seek/paragraph-jump within the current item)
+    /// both need before they touch the engine.
+    private func resetRenderSession(atWordIndex wordIndex: Int) {
         sessionToken = UUID()
         isPumping = false
         scheduledNotYetPlayedCount = 0
@@ -490,6 +489,20 @@ public final class AudioPlaybackCenter {
         renderedDurationSoFar = 0
         wordsRenderedSoFar = 0
 
+        renderCursor = AudioWordIndexing.spokenBlockPosition(forWordIndex: wordIndex, in: blockStartWordIndices)
+        sessionStartWordsSkipped = blockStartWordIndices[safe: renderCursor] ?? 0
+        elapsedBaselineAtResume = Double(sessionStartWordsSkipped) * Self.defaultSecondsPerWord
+        scheduledContentTimeCursor = elapsedBaselineAtResume
+        lastKnownWordIndex = sessionStartWordsSkipped
+    }
+
+    private func beginPlayback(item: ReadingListItem, content: ArticleContent, fromWordIndex: Int?) {
+        // Phase 4: cache hit, or a fast synchronous heuristic build on miss
+        // (see `scriptProvider`'s doc comment) — never the LLM refinement
+        // pass, which only ever updates the cache for next time.
+        let script = scriptProvider(item, content)
+        guard !script.spokenBlocks.isEmpty else { return }
+
         sessionCoordinator.activate()
 
         currentItem = item
@@ -497,11 +510,7 @@ public final class AudioPlaybackCenter {
         blockStartWordIndices = AudioWordIndexing.blockStartWordIndices(script.spokenBlocks)
 
         let resumeWordIndex = fromWordIndex ?? matchingPersistedWordIndex(for: item.id) ?? 0
-        renderCursor = AudioWordIndexing.spokenBlockPosition(forWordIndex: resumeWordIndex, in: blockStartWordIndices)
-        sessionStartWordsSkipped = blockStartWordIndices[safe: renderCursor] ?? 0
-        elapsedBaselineAtResume = Double(sessionStartWordsSkipped) * Self.defaultSecondsPerWord
-        scheduledContentTimeCursor = elapsedBaselineAtResume
-        lastKnownWordIndex = sessionStartWordsSkipped
+        resetRenderSession(atWordIndex: resumeWordIndex)
 
         store.markReadState(.opened, for: item.id)
         stateBeforePause = nil
@@ -540,19 +549,7 @@ public final class AudioPlaybackCenter {
         if case .paused = state { wasPaused = true } else { wasPaused = false }
 
         let clamped = max(0, min(wordIndex, max(0, script.totalWordCount - 1)))
-        sessionToken = UUID()
-        isPumping = false
-        scheduledNotYetPlayedCount = 0
-        pendingMarkerQueue = []
-        markerCursor = 0
-        renderedDurationSoFar = 0
-        wordsRenderedSoFar = 0
-
-        renderCursor = AudioWordIndexing.spokenBlockPosition(forWordIndex: clamped, in: blockStartWordIndices)
-        sessionStartWordsSkipped = blockStartWordIndices[safe: renderCursor] ?? 0
-        elapsedBaselineAtResume = Double(sessionStartWordsSkipped) * Self.defaultSecondsPerWord
-        scheduledContentTimeCursor = elapsedBaselineAtResume
-        lastKnownWordIndex = sessionStartWordsSkipped
+        resetRenderSession(atWordIndex: clamped)
 
         if let engine {
             engine.resetAndSchedule(from: elapsedBaselineAtResume)

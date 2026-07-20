@@ -805,21 +805,17 @@ private final class ReaderCardContentViewController: CardContentViewController,
     private let item: ReadingListItem
     private let statusLabel = UILabel()
     private var reader: UIViewController?
-    private var scrollObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
-    /// Per scroll view: the last seen offset and the directional run since the
-    /// last direction flip (positive = scrolling down the article).
-    private var scrollRuns: [ObjectIdentifier: (last: CGFloat, run: CGFloat)] = [:]
+    private let immersionTracker = ScrollDirectionImmersionTracker()
     private(set) var isCentered = false
     var rabbitHoleReader: RabbitHoleReaderViewController? { reader as? RabbitHoleReaderViewController }
-
-    /// Downward travel (pt) before the chrome fades away…
-    private static let fadeOutTravel: CGFloat = 24
-    /// …and upward travel before it comes back — smaller, so surfacing is easy.
-    private static let fadeInTravel: CGFloat = 12
 
     init(item: ReadingListItem) {
         self.item = item
         super.init()
+        immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
+            guard let self else { return }
+            self.delegate?.readerCard(self, didChangeImmersion: immersed, extendsCard: extendsCard)
+        }
     }
 
     override func viewDidLoad() {
@@ -863,13 +859,14 @@ private final class ReaderCardContentViewController: CardContentViewController,
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         isCentered = true
+        immersionTracker.isActive = true
         if let rabbitHoleReader { delegate?.readerCard(self, didBecomeReady: rabbitHoleReader) }
     }
 
     override func cardDidLeaveCenter() {
         super.cardDidLeaveCenter()
         isCentered = false
-        scrollRuns = [:]
+        immersionTracker.isActive = false
     }
 
     private func embedReaderIfPossible() {
@@ -896,7 +893,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         }
         self.reader = reader
         reader.view.frame = view.bounds
-        observeReaderScrollViews()
+        immersionTracker.observe(reader)
         if let rabbitHole = reader as? RabbitHoleReaderViewController {
             delegate?.readerCard(self, didBecomeReady: rabbitHole)
         }
@@ -906,7 +903,8 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // after an async probe). KVO only — never triggers layout.
         for delay in [0.7, 2.0, 4.5] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.observeReaderScrollViews()
+                guard let self, let reader = self.reader else { return }
+                self.immersionTracker.observe(reader)
             }
         }
     }
@@ -917,7 +915,9 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // A dive, pop, mode switch, or late article embed swaps the live scroll
         // views / RSVP controllers — re-sweep for new ones to observe (idempotent;
         // next runloop so the new child is mounted).
-        DispatchQueue.main.async { self.observeReaderScrollViews() }
+        DispatchQueue.main.async {
+            if let root = self.reader { self.immersionTracker.observe(root) }
+        }
         DispatchQueue.main.async {
             guard self.isCentered else { return }
             self.delegate?.readerCard(self, didBecomeReady: reader)
@@ -991,86 +991,6 @@ private final class ReaderCardContentViewController: CardContentViewController,
         rabbitHoleReader?.externalChromeContentInset = max(inset, 0)
     }
 
-    /// Hooks the immersion triggers onto the reader's live content (KVO on
-    /// every scroll view, play-state callbacks on every RSVP controller).
-    /// Idempotent — re-run whenever the reader's hierarchy changes. Only the
-    /// CENTERED card reports (side cards' readers are live but inert).
-    private func observeReaderScrollViews() {
-        guard let reader else { return }
-        for rsvp in Self.rsvpControllers(of: reader) {
-            rsvp.onPlaybackStateChanged = { [weak self] playing in
-                guard let self, self.isCentered else { return }
-                // RSVP immerses without the card-bottom extension: its layout
-                // is fixed, so play/pause must not move anything on screen.
-                self.delegate?.readerCard(self, didChangeImmersion: playing, extendsCard: false)
-            }
-        }
-        for scrollView in Self.scrollViews(in: reader.view) {
-            let key = ObjectIdentifier(scrollView)
-            guard scrollObservations[key] == nil else { continue }
-            // Synchronous on purpose: isDragging/isDecelerating must be sampled
-            // at change time — deferred to the next runloop, a quick flick's
-            // whole gesture reads as already-settled.
-            scrollObservations[key] = scrollView.observe(\.contentOffset, options: [.new]) {
-                [weak self] scrollView, _ in
-                self?.handleOffsetChange(of: scrollView)
-            }
-        }
-    }
-
-    /// Direction-driven, not position-driven: scrolling down (reading on)
-    /// fades the carousel chrome away; scrolling up — from anywhere in the
-    /// article — fades it back in. Travel accumulates per direction and
-    /// resets on a flip, so line-height jitter can't toggle the state, and
-    /// `isDragging`/`isDecelerating` keeps restore-position and
-    /// text-selection offsets from counting as reading.
-    private func handleOffsetChange(of scrollView: UIScrollView) {
-        let key = ObjectIdentifier(scrollView)
-        guard isCentered, scrollView.isDragging || scrollView.isDecelerating else {
-            scrollRuns[key] = nil
-            return
-        }
-        // Distance from the content's top (0 = at the top).
-        let position = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-        guard let previous = scrollRuns[key] else {
-            scrollRuns[key] = (position, 0)
-            return
-        }
-        let delta = position - previous.last
-        let run = (delta >= 0) == (previous.run >= 0) ? previous.run + delta : delta
-        scrollRuns[key] = (position, run)
-        // Re-seed the runs BEFORE firing: the fade's card-bottom extension
-        // resizes the scroll view synchronously, and at the article's end
-        // that clamps the offset — a synthetic ~90pt "scroll up" delivered
-        // re-entrantly that would immediately fade the chrome back in. With
-        // the runs cleared first, that event just seeds a fresh baseline.
-        if run <= -Self.fadeInTravel || position <= 0 {
-            scrollRuns = [:]
-            delegate?.readerCard(self, didChangeImmersion: false, extendsCard: true)
-        } else if run >= Self.fadeOutTravel, position > 0 {
-            scrollRuns = [:]
-            delegate?.readerCard(self, didChangeImmersion: true, extendsCard: true)
-        }
-    }
-
-    private static func rsvpControllers(of root: UIViewController) -> [RSVPViewController] {
-        var found: [RSVPViewController] = []
-        for child in root.children {
-            if let rsvp = child as? RSVPViewController { found.append(rsvp) }
-            found.append(contentsOf: rsvpControllers(of: child))
-        }
-        return found
-    }
-
-    private static func scrollViews(in root: UIView, depth: Int = 0) -> [UIScrollView] {
-        guard depth < 8 else { return [] }
-        var found: [UIScrollView] = []
-        for subview in root.subviews {
-            if let scroll = subview as? UIScrollView { found.append(scroll) }
-            found.append(contentsOf: scrollViews(in: subview, depth: depth + 1))
-        }
-        return found
-    }
 }
 
 // MARK: - Empty state

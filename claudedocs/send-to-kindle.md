@@ -1,144 +1,214 @@
+# Send to Kindle
 
-Background delivery of saved articles to an ereader. The article is rendered to
-EPUB on-device once, then delivered to each configured destination:
+Background delivery of saved articles to an ereader. The article is rendered
+to EPUB on-device once, then delivered to each configured destination.
+Today there is exactly one destination:
 
-- **Kindle** — emailed to the user's `@kindle.com` address through the connected
-  Luna email account (the same account used for sign-in and friend sharing). That
-  account's address must be on Amazon's approved-sender list.
+- **Kindle** — emailed to the user's `@kindle.com` address through the
+  connected Luna email account (the same account used for sign-in and friend
+  sharing; `EmailAccountStore`). That account's address must be on Amazon's
+  approved-sender list (amazon.com → Preferences → Personal Document
+  Settings). There is no separate SMTP credential for Kindle.
 
-No UI taps needed once configured.
+No UI taps needed once configured: an incoming article either goes out
+automatically per its capture source (below), or the user sends it explicitly
+from the reading list's long-press menu.
 
 ## Destinations
 
-`ArticleDestination` (`Luna/Send/ArticleSendCoordinator.swift`) abstracts a
-`isConfigured`, `sendMode(for: ReadingListItem)` (source-aware), `appIntentsSendMode`
-(the App-Intents/in-app mode, for double-save press detection), and
-`send(epubData:fileName:title:)`. `KindleDestination` wraps `AccountEmailSender`;
-`[ArticleDestination]` and is destination-agnostic.
+`ArticleDestination` (`LunaLibraries/Sources/LunaSend/ArticleSendCoordinator.swift`)
+abstracts a destination's `id`/`displayName`, `isConfigured`,
+`sendMode(for: ReadingListItem)` (source-aware auto-send), `appIntentsSendMode`
+(the mode governing App-Intents/in-app saves, consulted for double-save-press
+detection), and `send(epubData:fileName:title:)`. The coordinator itself is
+destination-agnostic and holds an `[ArticleDestination]`.
+
+`KindleDestination` is the sole conformer: it delegates to an
+`ArticleEmailSending` (`AccountEmailSender` in production, injectable for
+tests), and its `isConfigured`/`sendMode`/`appIntentsSendMode` all forward to
+`KindleSendSettings`/`SourceSendSettings`. `AccountEmailSender` builds a
+`MIMEMessage` addressed to `KindleSendSettings.kindleAddress` and hands it to
+the connected account's `EmailTransport`. Because `LunaSend` sits below
+`LunaMailTransport` in the dependency graph, the transport is supplied through
+a static closure, `ArticleEmailTransportProvider.make`, set once at launch in
+`Luna/AppDelegate.swift` (`{ MailTransportFactory.make() }`); in contexts that
+never send (extensions) it stays `{ nil }`, so email sends there fail as
+not-configured rather than crash.
 
 ## Auto-send by capture source
 
 Each item records where it came from: `ReadingListItem.captureSource`
-(`CaptureSource` in `ReaderKit`; nil legacy items → `.manual` via
-`effectiveCaptureSource`). Cases: `email`, `appIntent`, `friendShare`,
-`shareSheet`, `paste`, `manual`. Set at each entry point:
+(`CaptureSource` in `LunaModels`; nil legacy items → `.manual` via
+`effectiveCaptureSource`). Cases and where they're actually set today:
 
-- **email** — `IncomingMailImporter` (`store.add(…, source: .email)`).
-- **appIntent** — `IntentIngestHelper.handleSavePressWithTimeout` (→ `.appIntent`).
-- **friendShare** — `SocialMessageCenter` (`store.add(…, source: .friendShare)`;
-  resolution keys on `sharedByUsername`).
-- **shareSheet** — `SharedReadingListAppender` writes `"captureSource":"shareSheet"`
-  (raw string — the extension doesn't link ReaderKit).
-- **paste** — `ReadingListViewController` pasteboard saves.
-- **manual** — default (typed URL, reader save button, deep links).
+- **`.email`** — `IncomingMailImporter` (`LunaLibraries/Sources/LunaReadingList/`),
+  for every mail-sourced save: matched newsletters, Luna-prefixed shares
+  without a recoverable marker, **and accepted friend shares** (`autoImport`
+  tags these `.email` too — see the friend-share caveat below).
+- **`.appIntent`** — `IntentIngestHelper.handleSavePressWithTimeout`
+  (`LunaIntents`), for saves made through the Action Button / Shortcuts.
+- **`.shareSheet`** — the share extension's `SharedReadingListAppender` writes
+  `"captureSource":"shareSheet"` as a raw string (the extension doesn't link
+  `LunaModels`).
+- **`.paste`** — pasteboard-URL saves (`ReadingListViewController`,
+  `ArticleCardsViewController`, `SavedMediaCardsViewController`).
+- **`.manual`** — the default: typed URL, reader save button, deep links.
+- **`.friendShare`** — declared in `CaptureSource` and handled by
+  `SourceSendSettings`/`InteropGate`/`ReadingListIngestor`, but **no
+  production code path currently assigns it**: the one place a friend share
+  is actually imported (`IncomingMailImporter.autoImport`) tags the item
+  `.email`, and `ReadingListItem.sharedByUsername` (the field the friend-share
+  branch below keys its per-friend overrides on) is likewise never set outside
+  test fixtures. In practice, then, a friend-shared article's auto-send
+  behavior today is governed by the plain **email** toggle, not the
+  friend-share-specific one — and there's no Settings UI for the
+  friend-share toggle either (see "UI" below). Flagged here as a known gap
+  between the code that exists and the code that's reachable, not something
+  this doc's rewrite fixes.
 
-`SourceSendSettings` (`Luna/Send/SourceSendSettings.swift`) resolves, per
-destination, a source → `ArticleSendMode`:
+`SourceSendSettings` (`LunaLibraries/Sources/LunaSend/SourceSendSettings.swift`)
+resolves, per destination, a capture source → `ArticleSendMode`
+(`off`/`allSaves`/`doubleSave`):
 
-- **App Intents (Shortcuts) & in-app saves** → the destination's existing
-  `sendMode` (`off`/`allSaves`/`doubleSave`); the only source whose double-save
-  press is detected at save time.
-- **Email** → on/off. Kindle reuses `IncomingMailSettings.autoSendToKindle`.
-- **Share sheet & paste** → one on/off.
+- **App Intents (Shortcuts) & manual saves** → the destination's existing
+  `appIntentsMode` (Kindle: `KindleSendSettings.sendMode`) — the only source
+  whose double-save press is detected at save time (see Gating below).
+- **Email** → on/off. Kindle reuses `IncomingMailSettings.autoSendToKindle`
+  (the same key as the mail importer's "Also Send to Kindle" toggle, so the
+  two surfaces never diverge) rather than its own key.
+- **Share sheet & paste** → one on/off toggle.
 - **Friend shares** → an on/off default plus per-friend overrides
-  (`friendShareEnabled(forDestination:username:)`, JSON map in defaults).
+  (`friendShareEnabled(forDestination:username:)`, JSON map in
+  `UserDefaults`) — unreachable in production today per the caveat above.
 
-Sources other than App Intents default to the legacy "all saves" behavior
-(`appIntentsMode == .allSaves`) so existing setups are unchanged until touched.
+Sources other than App Intents default to whatever the destination's legacy
+`appIntentsMode` was (`legacyDefault`: on if it was `.allSaves`), so existing
+setups keep behaving the same until the user touches the new per-source
+controls.
 
 ## Gating (save-press state machine)
 
-All save entry points (the Action Button intents, in-app add)
-funnel through `ReadingListIngestor.handleSavePress(urlString:source:)`:
+Every save funnels through
+`ReadingListIngestor.handleSavePress(urlString:source:...)`, which asks the
+pure `SavePressPolicy.decide(...)` what a press on this URL means:
 
-1. URL not in list → save (tagged with `source`) + ingest.
-2. URL already in list AND previous press < 12 s ago → send to every
-   destination whose **App-Intents mode** is `.doubleSave` and that hasn't been
-   sent in the past 24 h (`SavePressPolicy.Decision.sendToEreaders(destinationIDs:)`).
-3. Any other press on an existing URL → ignored entirely (no re-ingest).
+1. **URL not in the list** → `.saveNew`: save (tagged with `source`) and
+   ingest.
+2. **URL already in the list, second press within the window** →
+   a double-save decision (see the two regimes below).
+3. **Any other press on an existing URL** → `.ignore` (no re-ingest).
 
-Decision logic is pure: `SavePressPolicy.decide(…, doubleSaveDestinationIDs:)`
-where the caller supplies `ArticleSendCoordinator.doubleSaveDestinationIDs()`
-(destinations whose `appIntentsSendMode == .doubleSave`). On ingestion,
-`articleBecameReady` consults `destination.sendMode(for: item)` — the item's
-capture source decides whether (and where) it auto-sends. Long-press a
-shown only when that destination is configured.
+Two double-save regimes coexist, distinguished by whether the caller passes
+an `intentAction` (only the Action Button's Save App Intent does, via
+`doubleSaveActionSurface`):
+
+- **Legacy (in-app saves), 12 s window** — `.sendToEreaders(destinationIDs:)`:
+  sends to every destination whose `appIntentsSendMode == .doubleSave`
+  and that hasn't already sent this item within the last 24 h
+  (`SavePressPolicy.resendCooldown`). `ArticleSendCoordinator.doubleSaveDestinationIDs()`
+  supplies the eligible, configured destination ids.
+- **Action Button (Save App Intent), 7 s window** — the user's configured
+  `DoubleSaveActionStore` action resolves (via
+  `ReadingListIngestor.resolvedIntentAction`) to one of
+  `.sendToKindle`, `.sendToFriends(emails:)`, or `.promptFriendSelector`;
+  `SavePressPolicy` turns that into `.sendToEreaders`/`.sendToFriends`/
+  `.promptFriendSelector` respectively (falling back to `.ignore` if, e.g.,
+  Kindle isn't configured).
+
+Either way, platform items (videos, posts, tracks — no article EPUB target)
+never trigger an ereader send; a double press on one is always `.ignore`.
+
+Separately from double-press gating, `ArticleSendCoordinator.articleBecameReady(_:)`
+(called by the ingestor once an item's content is ready) drives the *ordinary*
+auto-send: for each configured destination, it sends anything the item has
+queued, plus — when that destination's `sendMode(for: item)` resolves to
+`.allSaves` — every new item regardless of a double press ever happening.
 
 ## Coordinator
 
-`ArticleSendCoordinator.swift`:
-- `send(_:toDestinationID:)` — explicit single-destination send (context menu).
-- `articleBecameReady(_:)` (called by the ingestor post-`saveContent`) — per
-  destination, fires queued sends and, in `allSaves` mode, everything new.
-- `retryPendingSends()` — launch, foreground, pull-to-refresh, background entry,
-  and the existing overnight mail/price BG tasks all sweep `.queued` sends whose
-  backoff has elapsed.
-- `sendTestDocument(toDestinationID:)` — backs each settings test row.
-- EPUB built once per delivery; in-flight dedup keyed `"<itemID>|<destID>"`;
-  `.queued` written first so a mid-send process death is retried.
-- Soft failures stay `.queued`, with per-destination `sendFailureCounts`,
-  `sendNextAttemptDates`, and `sendLastErrors` persisted on the reading-list row.
-  Backoff starts at 15 minutes and doubles up to 12 hours; after 5 soft failures,
-  or immediately for hard setup/auth failures, the row becomes `.failed`.
-- Terminal send failures set `pendingSendFailureNotices`; the reading list consumes
-  that flag and shows a one-shot bottom pill immediately if foregrounded, or on the
-  next launch/foreground presentation if the failure happened in a background wakeup.
+`ArticleSendCoordinator` (`.shared`) orchestrates delivery across
+destinations — gating, queueing while an article is still ingesting, EPUB
+generation, delivery, and per-destination per-item state:
 
+- `send(_:toDestinationID:)` — explicit single-destination send (the
+  long-press context menu).
+- `articleBecameReady(_:)` — see above.
+- `retryPendingSends()` — launch, foreground, pull-to-refresh, background
+  entry, and the existing overnight mail/price background tasks all sweep
+  `.queued` sends whose backoff has elapsed.
+- `sendTestDocument(toDestinationID:)` — backs each destination's Settings
+  test row with a small literal `ArticleContent`.
+- The EPUB is built once per delivery attempt; in-flight sends are deduped by
+  an `"<itemID>|<destinationID>"` key; `.queued` is written to the item
+  *before* the network call, so a mid-send process death is retried rather
+  than silently lost.
+- Soft failures stay `.queued`, with `sendFailureCounts`, `sendNextAttemptDates`,
+  and `sendLastErrors` persisted on the reading-list row. Backoff starts at
+  15 minutes and doubles up to 12 hours (`RetryPolicy`); after 5 soft
+  failures, or immediately for a hard failure (not-configured, auth, or a
+  malformed message), the row becomes `.failed` and stops retrying.
+- Terminal failures set `pendingSendFailureNotices`; the reading list consumes
+  that flag and shows a one-shot bottom pill immediately if foregrounded, or
+  on the next launch/foreground presentation if the failure happened in a
+  background wakeup.
 
-  `users/signupByPhoneOrEmail` (code → long-lived token). Token in Keychain.
-  `users/getDevice` + `im/getSig` (best-effort session pings, mirroring the
-  reference) → `config/buckets` (bucket + OSS endpoint) → `config/stss` (OSS STS
-  creds) → **signed OSS PUT** of the EPUB to `<uid>/push/<uuid>.epub` →
-  `push/saveAndPush` (registers the object; `resourceType` is `"txt"` to match
-  implies POST; decodes the `{data:…}` envelope. Response models incl. tolerant
-  string-or-int `uid`.
-  (StringToSign = VERB\n\nContent-Type\nDate\nCanonicalizedOSSHeaders +
-  CanonicalizedResource; `x-oss-security-token` header; virtual-hosted URL).
+## EPUB & MIME
 
-reproduced by hand (the reference used the `oss2` SDK). It is NOT validated
-disclosure; a friend tests post-publication. Known risk: `URLSession` may strip
-the signed `Date` header (→ switch to a presigned URL if uploads 403).
-
-## Other shared send files (`Luna/Send/`)
-
-- `EpubBuilder.swift` — EPUB 3 from `ArticleContent` (mimetype stored first,
-  container.xml, content.opf, nav.xhtml, one chapter.xhtml, embedded jpg/png/gif/webp).
-- `ZipArchiveWriter.swift` — minimal stored-entry ZIP (own CRC32, no deps).
-- `MIMEMessage.swift` — multipart/mixed, base64 EPUB, RFC 2047 subject. Built by
-  `AccountEmailSender` and handed to the connected account's `EmailTransport`
-  (`ArticleEmailTransportProvider.make`, injected at app launch in `AppDelegate`).
-- `KindleSendSettings.swift` — Kindle address + `sendMode` (a typealias of
-  `ArticleSendMode`); `isConfigured` is true when a Kindle address is set and an
-  email account is connected.
-  in-memory mock for tests). Kindle needs no secret here — it reuses the email
-  `CredentialKeychain`: `kSecAttrAccessibleAfterFirstUnlock` (migratable, not
-  `ThisDeviceOnly`) plus `kSecAttrSynchronizable=true`, so encrypted device restore
-  and iCloud Keychain can preserve them when the user's system settings allow it.
-  Items are stored in the shared App-Group keychain access group so all three Luna
-  apps see one credential (legacy private-group items migrate on first read).
+- `EpubBuilder` (`LunaLibraries/Sources/LunaEpub/EpubBuilder.swift`) — builds a
+  minimal EPUB 3 from `ArticleContent` (mimetype stored first, then
+  `META-INF/container.xml`, `OEBPS/content.opf`, `OEBPS/nav.xhtml`, one
+  `OEBPS/chapter.xhtml`), embedding the article's downloaded jpg/png/gif/webp
+  images. This is the format Amazon recommends for Send to Kindle (converted
+  to AZW3 on their side).
+- `ZipArchiveWriter` — a minimal stored-entry (uncompressed) ZIP writer with
+  its own CRC32, no external dependency.
+- `MIMEMessage` (`LunaLibraries/Sources/LunaEpub/MIMEMessage.swift`) — an RFC
+  5322 message with one attachment, rendered `multipart/mixed`, CRLF
+  throughout, RFC 2047-encoded subject via the shared `MIMEHeaderEncoding`.
+  Built by `AccountEmailSender` and handed to the connected account's
+  `EmailTransport` as raw MIME bytes.
+- `KindleSendSettings` (`LunaLibraries/Sources/LunaSend/KindleSendSettings.swift`) —
+  the Kindle address and `sendMode` (a typealias of `ArticleSendMode`);
+  `isConfigured` is true when a Kindle address is set *and* an email account
+  is connected. No Keychain entry of its own — Kindle authenticates purely as
+  "mail from an approved sender," so the only secret involved is the
+  connected email account's own credential (`CredentialKeychain`, shared
+  across the App Group so all three Luna apps see one account).
 
 ## Model & store
 
-`ReadingListItem`: `sendStates: [String: SendState]` and `datesSent: [String: Date]`
-keyed by destination id (`sendState(for:)` / `dateSent(for:)` helpers). A Codable
-migration folds the legacy single `sendState`/`dateSent` under `"kindle"`.
-`ReadingListStore.setSendState(_:for:destination:)` stamps `datesSent[destination]`
-on `.sent`.
+`ReadingListItem` carries `sendStates: [String: SendState]` and
+`datesSent: [String: Date]`, both keyed by destination id
+(`sendState(for:)`/`dateSent(for:)` helpers; `SendState` is `.queued`/`.sent`/
+`.failed`). A `Codable` migration folds the legacy single `sendState`/`dateSent`
+(from when Kindle was the only possible destination) under `"kindle"`.
+`ReadingListStore.setSendState(_:for:destination:)` stamps
+`datesSent[destination]` when transitioning to `.sent`.
 
 ## UI
 
 - Settings → "Email & Sending" (`EmailAndKindleSettingsScreen`): the connected
-  sharing account, a Send-to-Kindle section (Kindle address + test), a
-  unofficial-API disclosure footer), and the import-from-email settings — all on
-  Source"** disclosure row pushing the shared `AutoSendBySourceScreen`
-  (`Luna/Settings/`): App Intents mode + email / share-sheet-&-paste / friend
-  toggles + a per-friend list.
-- `ReadingListViewController`: per-destination context-menu rows; subtitle shows
+  sharing account, a Send-to-Kindle section (Kindle address, a "Send Test to
+  Kindle" row, and the Double-Save-Action picker for the Action Button's 7 s
+  regime), the "Also Send to Kindle" import toggle, and a "Forwarding
+  Settings" disclosure row per destination pushing `AutoSendBySourceScreen`.
+- `AutoSendBySourceScreen` — three rows today: App Intents mode
+  (off/all-saves/double-save) and on/off for email and for share-sheet-&-paste.
+  There is no row for friend shares (see the capture-source caveat above).
+- `ReadingListViewController` — a per-destination row in the item's
+  long-press context menu (`sendToEreader`, gated on
+  `ArticleSendCoordinator.isConfigured(destinationID:)`), and a bottom pill
+  for a terminal send failure.
 
 ## Tests (`LunaTests/`)
 
-`ZipArchiveWriterTests`, `EpubBuilderTests`, `MIMEMessageTests`,
-`SavePressPolicyTests` (per-destination eligibility matrix), `ArticleSendCoordinatorTests`
-(multi-destination fan-out + capture-source gating via a mock destination),
-`SourceSendSettingsTests` (per-source resolution + per-friend overrides + legacy
-mock `URLProtocol`), plus send-state + legacy-migration cases in `ReadingListStoreTests`.
+`ZipArchiveWriterTests`, `EpubBuilderTests`, `MIMEMessageTests` cover the
+EPUB/MIME building blocks. `DoubleSavePolicyTests` and
+`ScreenshotDoublePressTests` cover the newer Action-Button 7 s double-save
+regime and its `DoubleSaveActionStore`; `DoubleSaveActionStoreTests` covers
+that store directly. There is currently **no** dedicated test coverage for
+`SourceSendSettings`'s per-source resolution or for `ArticleSendCoordinator`'s
+multi-destination fan-out/retry/backoff, or for the legacy 12 s regime in
+`SavePressPolicy` — all three had test files at one point that were deleted as
+collateral damage in an unrelated cleanup commit; restoring them is tracked
+separately, not part of this doc.

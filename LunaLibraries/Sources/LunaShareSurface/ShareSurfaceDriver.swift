@@ -259,8 +259,16 @@ public final class ShareSurfaceDriver {
             thumbnailFileName: nil, for: saved.id)
     }
 
-    @discardableResult
     private func persistTracker(_ product: ProductInfo, url: URL) -> UUID? {
+        Self.persistTracker(product, url: url, store: store)
+    }
+
+    /// Builds and saves the `PriceTracker` for a classified product page. Shared
+    /// with `ShareReaderViewController`, which reaches this same store write when
+    /// it's presenting a precomputed `Outcome` standalone rather than through
+    /// `present(_:url:blockedItemID:)`.
+    @discardableResult
+    static func persistTracker(_ product: ProductInfo, url: URL, store: ReadingListStore) -> UUID? {
         guard let saved = store.item(forURLString: url.absoluteString) else { return nil }
         let tracker = PriceTracker(
             productName: product.name, stores: product.trackerStores(fallbackURL: url),

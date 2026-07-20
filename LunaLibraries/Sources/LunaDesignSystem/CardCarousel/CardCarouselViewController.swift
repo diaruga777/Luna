@@ -162,6 +162,17 @@ public extension CardCarouselDelegate {
         onCenteredCardAt index: Int) {}
 }
 
+/// Named durations for the carousel's own non-eclipse animations (the eclipse
+/// page transition's timing lives on `CardEclipseTransition.duration`).
+private enum CarouselAnimationTiming {
+    /// `jump(to:)`'s crossfade between the current and target windows of
+    /// mounted cards (Reduce Motion, scrub commits, multi-card jumps).
+    static let crossfadeDuration: TimeInterval = 0.28
+    /// `promoteScrubPreview`'s chrome fade-in once a scrubbed preview becomes
+    /// the real centered slot.
+    static let chromeFadeDuration: TimeInterval = 0.22
+}
+
 public final class CardCarouselViewController: UIViewController {
 
     public weak var dataSource: CardCarouselDataSource?
@@ -699,7 +710,7 @@ public final class CardCarouselViewController: UIViewController {
         currentIndex = target
         UIView.transition(
             with: cardArea,
-            duration: 0.28,
+            duration: CarouselAnimationTiming.crossfadeDuration,
             options: [.transitionCrossDissolve, .allowAnimatedContent]
         ) {
             let keep = Set((self.currentIndex - 1)...(self.currentIndex + 1))
@@ -774,7 +785,7 @@ public final class CardCarouselViewController: UIViewController {
         delegate?.carousel(self, didCenterCardAt: target)
 
         UIView.animate(
-            withDuration: 0.22, delay: 0,
+            withDuration: CarouselAnimationTiming.chromeFadeDuration, delay: 0,
             options: [.curveEaseOut, .allowUserInteraction]
         ) {
             promoted.card.chromeAlpha = 1

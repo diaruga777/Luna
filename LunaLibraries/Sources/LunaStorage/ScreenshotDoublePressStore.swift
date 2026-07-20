@@ -39,7 +39,7 @@ public enum ScreenshotDoublePressStore {
     static var testDefaultsOverride: UserDefaults?
 
     private static var resolvedDefaults: UserDefaults? {
-        testDefaultsOverride ?? UserDefaults(suiteName: appGroupID)
+        resolvedAppGroupDefaults(appGroupID: appGroupID, testOverride: testDefaultsOverride)
     }
 
     /// The last recorded snapshot, or nil if none has ever been recorded (or

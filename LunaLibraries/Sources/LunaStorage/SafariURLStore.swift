@@ -26,7 +26,7 @@ public enum SafariURLStore {
     static var testDefaultsOverride: UserDefaults?
 
     private static var resolvedDefaults: UserDefaults? {
-        testDefaultsOverride ?? UserDefaults(suiteName: appGroupID)
+        resolvedAppGroupDefaults(appGroupID: appGroupID, testOverride: testDefaultsOverride)
     }
 
     public static var lastURL: String? {

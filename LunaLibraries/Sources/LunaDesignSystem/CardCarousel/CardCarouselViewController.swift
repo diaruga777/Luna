@@ -275,8 +275,7 @@ public final class CardCarouselViewController: UIViewController {
             cardArea.bottomAnchor.constraint(equalTo: scrubber.topAnchor),
         ])
 
-        scrubber.onPreview = { [weak self] index in self?.showScrubPreview(index) }
-        scrubber.onCommit = { [weak self] index in self?.commitScrub(to: index) }
+        scrubber.delegate = self
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         // Let content-level taps (links inside an embedded reader, buttons)
@@ -987,6 +986,18 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
         }
         return gestureRecognizer is UITapGestureRecognizer
             || gestureRecognizer is UILongPressGestureRecognizer
+    }
+}
+
+// MARK: - Scrub strip
+
+extension CardCarouselViewController: CarouselScrubberViewDelegate {
+    public func scrubber(_ scrubber: CarouselScrubberView, didPreview index: Int) {
+        showScrubPreview(index)
+    }
+
+    public func scrubber(_ scrubber: CarouselScrubberView, didCommit index: Int) {
+        commitScrub(to: index)
     }
 }
 

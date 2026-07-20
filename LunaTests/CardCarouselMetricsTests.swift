@@ -149,11 +149,11 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
         carousel.reloadData(centeringAt: 0)
 
         let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
-        scrubber.onPreview?(1)
+        scrubber.delegate?.scrubber(scrubber, didPreview: 1)
         XCTAssertTrue(source.preview.isPlaying)
         XCTAssertEqual(source.preview.pauseCount, 0)
 
-        scrubber.onCommit?(1)
+        scrubber.delegate?.scrubber(scrubber, didCommit: 1)
 
         XCTAssertEqual(carousel.currentIndex, 1)
         XCTAssertTrue(source.preview.parent === carousel)

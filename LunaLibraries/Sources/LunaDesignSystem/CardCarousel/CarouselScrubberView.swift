@@ -24,6 +24,15 @@
 
 import UIKit
 
+/// Reports the scrub strip's live preview and its settled commit. Sole
+/// conformer is the owning `CardCarouselViewController`.
+public protocol CarouselScrubberViewDelegate: AnyObject {
+    /// A new chip reached the strip's center while the user scrolls it.
+    func scrubber(_ scrubber: CarouselScrubberView, didPreview index: Int)
+    /// The strip settled (or a chip was tapped): commit this index.
+    func scrubber(_ scrubber: CarouselScrubberView, didCommit index: Int)
+}
+
 public final class CarouselScrubberView: UIView {
 
     /// What each strip item shows.
@@ -41,10 +50,7 @@ public final class CarouselScrubberView: UIView {
         }
     }
 
-    /// A new chip reached the strip's center while the user scrolls it.
-    public var onPreview: ((Int) -> Void)?
-    /// The strip settled (or a chip was tapped): commit this index.
-    public var onCommit: ((Int) -> Void)?
+    public weak var delegate: CarouselScrubberViewDelegate?
 
     public let style: Style
 
@@ -270,7 +276,7 @@ public final class CarouselScrubberView: UIView {
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         guard !itemViews.isEmpty else { return }
-        onCommit?(index(atX: gesture.location(in: self).x))
+        delegate?.scrubber(self, didCommit: index(atX: gesture.location(in: self).x))
     }
 
     /// The chip whose centered position is closest to content offset `x` —
@@ -297,7 +303,7 @@ extension CarouselScrubberView: UIScrollViewDelegate {
         guard index != selectedIndex else { return }
         selectedIndex = index
         applySelectionAppearance()
-        onPreview?(index)
+        delegate?.scrubber(self, didPreview: index)
     }
 
     /// Snap: retarget the natural deceleration so it lands with the nearest
@@ -326,7 +332,7 @@ extension CarouselScrubberView: UIScrollViewDelegate {
     /// The strip settled: commit whichever chip ended up at center.
     private func commitCenteredChip() {
         guard !itemViews.isEmpty else { return }
-        onCommit?(nearestIndex(toOffsetX: scrollView.contentOffset.x))
+        delegate?.scrubber(self, didCommit: nearestIndex(toOffsetX: scrollView.contentOffset.x))
     }
 }
 

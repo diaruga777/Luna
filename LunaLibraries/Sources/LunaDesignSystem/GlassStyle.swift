@@ -131,7 +131,7 @@ public enum GlassStyle {
 
     /// A trait-aware translucent fill for de-glassed circular/capsule buttons, tuned to
     /// read like the glass button material over the solid reader backgrounds.
-    public static var solidButtonFill: UIColor {
+    private static var solidButtonFill: UIColor {
         UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(white: 1.0, alpha: 0.16)

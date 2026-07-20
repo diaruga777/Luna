@@ -25,18 +25,11 @@ public enum DownsampledImageLoader {
         "\(path)#\(Int(maxPixelSize.rounded()))" as NSString
     }
 
-    /// Synchronous cache lookup only — no decode, no queue hop. Lets a caller show an
-    /// already-decoded bitmap instantly (no placeholder flash) before falling back to
-    /// `load(...)` on a miss, mirroring `ReadingListItemCell.configureArt`.
-    public static func cachedImage(path: String, pointSize: CGSize, scale: CGFloat) -> UIImage? {
-        cache.object(forKey: cacheKey(path: path, maxPixelSize: maxPixelSize(for: pointSize, scale: scale)))
-    }
-
     /// Loads a thumbnail for `path`, downsampled to `pointSize` at `scale` (see
     /// `ImageDownsampling.decode`), and delivers it on the main thread. A cache hit
     /// delivers synchronously and skips the staleness check (there's nothing stale
-    /// about a value the caller could have read via `cachedImage` a moment earlier); a
-    /// miss decodes on a utility-QoS background queue and re-checks `isStale()` — which
+    /// about a value already sitting in the cache); a miss decodes on a utility-QoS
+    /// background queue and re-checks `isStale()` — which
     /// runs on main, right before delivery — so a slow decode is dropped once the
     /// caller has moved on (a recycled cell, a torn-down view, a paged-away image).
     public static func load(

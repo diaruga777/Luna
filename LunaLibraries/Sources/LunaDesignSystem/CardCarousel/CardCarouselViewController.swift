@@ -177,7 +177,7 @@ public final class CardCarouselViewController: UIViewController {
     public var style = CardCarouselStyle()
 
     public private(set) var currentIndex = 0
-    public private(set) var isSoundMuted = true
+    private var isSoundMuted = true
 
     private struct Slot {
         let index: Int
@@ -377,12 +377,6 @@ public final class CardCarouselViewController: UIViewController {
     /// they are.
     public private(set) var isImmersed = false
 
-    /// Reported on every immersion change (including the internal reset on a
-    /// reload), inside the fade animation when there is one — hosts fade any
-    /// bottom chrome of their own (e.g. controls flanking the scrub strip)
-    /// in step with the carousel's.
-    public var onImmersionChanged: ((Bool) -> Void)?
-
     /// Whether the current immersion extends the centered card's bottom edge
     /// into the room the faded strip frees up. Content that keeps a fixed
     /// layout (the RSVP reader) immerses WITHOUT the extension, so nothing
@@ -422,16 +416,12 @@ public final class CardCarouselViewController: UIViewController {
         isImmersed = immersed
         immersionExtendsCard = extendsCard
         scrubber.isUserInteractionEnabled = !immersed
-        let apply = {
-            self.applyImmersionLayout()
-            self.onImmersionChanged?(immersed)
-        }
         if animated {
             UIView.animate(
                 withDuration: 0.32, delay: 0, options: [.curveEaseInOut, .allowUserInteraction],
-                animations: apply)
+                animations: applyImmersionLayout)
         } else {
-            apply()
+            applyImmersionLayout()
         }
     }
 
@@ -478,7 +468,7 @@ public final class CardCarouselViewController: UIViewController {
         }
     }
 
-    public func setSoundMuted(_ muted: Bool) {
+    private func setSoundMuted(_ muted: Bool) {
         isSoundMuted = muted
         applyMuteState()
         updateAudioSession()

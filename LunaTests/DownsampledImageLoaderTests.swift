@@ -62,31 +62,6 @@ final class DownsampledImageLoaderTests: XCTestCase {
         XCTAssertLessThanOrEqual(image.size.height * image.scale, 120)
     }
 
-    func testLoadCachesDecodedImage() async {
-        let path = writeLargePNG(named: "cache-me.png")
-        let pointSize = CGSize(width: 40, height: 40)
-        let scale: CGFloat = 2
-
-        XCTAssertNil(DownsampledImageLoader.cachedImage(path: path, pointSize: pointSize, scale: scale),
-                     "nothing decoded yet — cache should be empty for this path+size")
-
-        let firstLoad = expectation(description: "first decode")
-        var firstImage: UIImage?
-        DownsampledImageLoader.load(
-            path: path, pointSize: pointSize, scale: scale, isStale: { false }
-        ) { image in
-            firstImage = image
-            firstLoad.fulfill()
-        }
-        await fulfillment(of: [firstLoad], timeout: 5)
-        XCTAssertNotNil(firstImage)
-
-        // A synchronous cache hit for the same path+size returns the SAME instance
-        // (no re-decode) rather than merely an equal-looking one.
-        let cached = DownsampledImageLoader.cachedImage(path: path, pointSize: pointSize, scale: scale)
-        XCTAssertTrue(cached === firstImage, "second lookup should hit the cache, not re-decode")
-    }
-
     func testLoadDiscardsStaleDelivery() async {
         let path = writeLargePNG(named: "stale.png")
         let pointSize = CGSize(width: 40, height: 40)
@@ -101,11 +76,5 @@ final class DownsampledImageLoaderTests: XCTestCase {
             notCalled.fulfill()
         }
         await fulfillment(of: [notCalled], timeout: 1)
-
-        // The decode still happened and populated the cache — only DELIVERY to the
-        // stale caller was suppressed, not the work (a sibling caller can still
-        // benefit from the cached result).
-        let cached = DownsampledImageLoader.cachedImage(path: path, pointSize: pointSize, scale: scale)
-        XCTAssertNotNil(cached, "a stale delivery still leaves the decode cached for other callers")
     }
 }

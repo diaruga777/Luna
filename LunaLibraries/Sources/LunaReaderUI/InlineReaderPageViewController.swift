@@ -15,8 +15,8 @@ import WebKit
 /// `SplitWebOverlayViewController`). It loads a URL in a themed web view, probes the
 /// page for article content off-main, and — when the page is article-like — swaps
 /// the web view for the app's reader (mode-switchable). A link tapped inside the
-/// embedded reader is handed up via `onLinkActivated` so the host pushes it as a
-/// NEW page rather than nesting another overlay; links in the raw web view navigate
+/// embedded reader is handed up via `onLinkActivatedAtPoint` so the host pushes it as
+/// a NEW page rather than nesting another overlay; links in the raw web view navigate
 /// the web view in place.
 ///
 /// The content sits below the host's ancestor-tab strip. Mode and audio controls
@@ -26,11 +26,9 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
     public let url: URL
     private var headerHeight: CGFloat
 
-    /// Hands a link tapped inside the embedded reader to the host, which pushes it
-    /// as the next page in the stack.
-    public var onLinkActivated: ((URL) -> Void)?
-    /// Link activation plus its center in this page's coordinate space, used by
-    /// the host to originate the next eclipse at the actual link.
+    /// Hands a link tapped inside the embedded reader, plus its center in this page's
+    /// coordinate space, to the host — which pushes it as the next page in the stack,
+    /// originating the next eclipse at the actual link.
     public var onLinkActivatedAtPoint: ((_ url: URL, _ point: CGPoint) -> Void)?
     /// Fired once the page is confirmed article-like (so the host can reveal the
     /// mode switcher for this page).
@@ -66,7 +64,7 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
 
     /// The live vertically scrolling surface. RSVP intentionally returns nil.
     public var contentScrollView: UIScrollView? {
-        if readerMode == .rsvp || readerMode == .highlight { return nil }
+        if readerMode == .rsvp { return nil }
         if let webView { return webView.scrollView }
         guard let readerChild else { return nil }
         return Self.firstScrollView(in: readerChild.view)
@@ -317,25 +315,15 @@ public final class InlineReaderPageViewController: UIViewController, WKNavigatio
                 guard let self, let scroll else { return }
                 let point = scroll.view.convert(
                     scroll.linkActivationPoint(forCharacterRange: range), to: self.view)
-                if let onLinkActivatedAtPoint = self.onLinkActivatedAtPoint {
-                    onLinkActivatedAtPoint(url, point)
-                } else {
-                    self.onLinkActivated?(url)
-                }
+                self.onLinkActivatedAtPoint?(url, point)
             }
             child = scroll
-        case .rsvp, .highlight:
-            // The retired .highlight (chunking) view now lives as RSVP → Phrases.
+        default:
             let rsvp = RSVPViewController(
-                item: transient, content: content, audioEnabled: isAudioOn,
-                initialDisplayMode: mode == .highlight ? .phrases : nil)
+                item: transient, content: content, audioEnabled: isAudioOn)
             rsvp.onLinkActivatedAtPoint = { [weak self] url, point in
                 guard let self else { return }
-                if let onLinkActivatedAtPoint = self.onLinkActivatedAtPoint {
-                    onLinkActivatedAtPoint(url, self.view.convert(point, from: rsvp.view))
-                } else {
-                    self.onLinkActivated?(url)
-                }
+                self.onLinkActivatedAtPoint?(url, self.view.convert(point, from: rsvp.view))
             }
             child = rsvp
         }

@@ -111,7 +111,7 @@ public struct RSVPEngine {
         return result
     }
 
-    public static func makeWord(_ token: String, isLastInBlock: Bool, url: URL? = nil) -> RSVPWord {
+    private static func makeWord(_ token: String, isLastInBlock: Bool, url: URL? = nil) -> RSVPWord {
         let trailing = token.last
         let endsSentence = trailing.map { ".!?…".contains($0) } ?? false
         let endsClause = trailing.map { ",;:".contains($0) } ?? false

@@ -32,11 +32,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// Fired when a reader that had reached the end moves back before it.
     public var onMovedAwayFromEnd: (() -> Void)?
 
-    /// When set, the link pill hands the tapped link to this closure instead of
-    /// presenting a new inline split overlay — used by the inline reader to push the
-    /// link onto its own navigation stack rather than nesting another overlay.
-    public var onLinkActivated: ((URL) -> Void)?
-    /// Same activation with the link-pill center in this reader's coordinates.
+    /// When set, the link pill hands the tapped link (and the pill's center, in this
+    /// reader's coordinates) to this closure instead of presenting a new inline split
+    /// overlay — used by the inline reader to push the link onto its own navigation
+    /// stack rather than nesting another overlay.
     public var onLinkActivatedAtPoint: ((_ url: URL, _ point: CGPoint) -> Void)?
 
     /// Fired whenever playback starts (true) or stops (false) — every path:
@@ -642,15 +641,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             onLinkActivatedAtPoint(url, linkPill.center)
             return
         }
-        if let onLinkActivated {
-            onLinkActivated(url)
-            return
-        }
         let sourceInWindow = view.convert(linkPill.center, to: nil)
         let coordinator = inlineReaderPresentationCoordinator
         let inline = SplitWebOverlayViewController(
-            url: url, shareProvider: shareProvider, lineHeight: 0,
-            cutY: sourceInWindow.y, topHalf: nil, bottomHalf: nil,
+            url: url, shareProvider: shareProvider,
             sourcePoint: sourceInWindow, outerURL: item.url ?? url,
             outerTitle: articleContent.title,
             contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0,

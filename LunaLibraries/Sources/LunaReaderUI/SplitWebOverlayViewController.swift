@@ -50,7 +50,6 @@ public final class SplitWebOverlayViewController: UIViewController,
     public var onDismissalTransitionWillBegin: (() -> Void)?
     public var onDismissalTransitionDidCancel: (() -> Void)?
     public var onOpen: (() -> Void)?
-    public var onClose: (() -> Void)?
     public var onChromeStateChanged: (() -> Void)?
 
     private let url: URL
@@ -84,16 +83,10 @@ public final class SplitWebOverlayViewController: UIViewController,
     private var isNavigatingInlineStack = false
     private var pendingTabRemovalAnimation = false
 
-    /// Legacy split arguments remain accepted so existing extension call sites stay
-    /// source-compatible. The new presentation intentionally ignores snapshot halves.
     public init(
         url: URL,
         shareProvider: ReaderShareProviding?,
-        lineHeight: CGFloat,
-        cutY: CGFloat,
-        topHalf: UIView?,
-        bottomHalf: UIView?,
-        sourcePoint: CGPoint? = nil,
+        sourcePoint: CGPoint,
         outerURL: URL? = nil,
         outerTitle: String? = nil,
         contentTop: CGFloat = 0,
@@ -101,7 +94,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         showsOuterContentBelow: Bool = false
     ) {
         self.url = url
-        self.initialSourcePoint = sourcePoint ?? CGPoint(x: UIScreen.main.bounds.midX, y: cutY)
+        self.initialSourcePoint = sourcePoint
         self.outerURL = outerURL ?? url
         self.outerTitle = Self.titleFallback(outerTitle, url: outerURL ?? url)
         self.shareProvider = shareProvider
@@ -205,10 +198,7 @@ public final class SplitWebOverlayViewController: UIViewController,
             sourcePoint: initialSourcePoint,
             direction: .reverse,
             sceneFrame: inlineCardFrameInWindow,
-            onTransitionStart: { [weak self] in
-                self?.onClose?()
-                self?.onDismissalTransitionWillBegin?()
-            },
+            onTransitionStart: { [weak self] in self?.onDismissalTransitionWillBegin?() },
             atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
     }
 
@@ -535,8 +525,7 @@ public final class SplitWebOverlayViewController: UIViewController,
             selectedMode: page.readerMode,
             isAudioOn: page.isAudioOn,
             showsBack: true,
-            offersSaveShare: shareProvider != nil,
-            isSaved: false)
+            offersSaveShare: shareProvider != nil)
     }
 
     public func chromeSetMode(_ mode: ReadingListItem.ReaderMode) {
@@ -551,7 +540,6 @@ public final class SplitWebOverlayViewController: UIViewController,
         updateScrollIndicatorTarget()
     }
 
-    public func chromeSave() {}
     public func chromeShare(from sourceView: UIView) {
         guard let page = topPage else { return }
         shareProvider?.presentShareSheet(

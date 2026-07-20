@@ -63,7 +63,7 @@ public enum PaywallUnlockRules {
     }
 
     /// Max concrete filters one pattern may expand to; exceeding it drops the pattern.
-    static let expansionLimit = 24
+    private static let expansionLimit = 24
 
     /// Expands a group-and-alternation regex (no group quantifiers, no unsupported
     /// escapes) into the set of concrete alternation-free / group-free strings it
@@ -71,7 +71,7 @@ public enum PaywallUnlockRules {
     /// treated as opaque (their `|`/`()` are literal, not structural). Stops as
     /// soon as `limit` is exceeded (the over-limit result is a sentinel for the
     /// caller to drop the pattern, never 2^N strings in memory).
-    static func expandAlternations(_ chars: [Character], limit: Int = expansionLimit) -> [String] {
+    private static func expandAlternations(_ chars: [Character], limit: Int = expansionLimit) -> [String] {
         // Top-level `|` → the union of each alternative's expansion.
         let alternatives = splitTopLevel(chars, on: "|")
         if alternatives.count > 1 {

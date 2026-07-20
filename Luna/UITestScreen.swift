@@ -122,8 +122,7 @@ enum UITestScreenBuilder {
                     return nil
                 }
                 let nested = SplitWebOverlayViewController(
-                    url: linkedURL, shareProvider: nil, lineHeight: 0,
-                    cutY: 430, topHalf: nil, bottomHalf: nil,
+                    url: linkedURL, shareProvider: nil,
                     sourcePoint: CGPoint(x: 226, y: 430),
                     outerURL: fixtureItem.url,
                     outerTitle: fixtureContent.title,

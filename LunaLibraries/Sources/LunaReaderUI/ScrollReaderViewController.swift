@@ -22,12 +22,11 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// Fired when a reader that had reached the end moves back before it.
     public var onMovedAwayFromEnd: (() -> Void)?
 
-    /// When set, a tapped inline link is handed to this closure instead of opening
-    /// a new inline split overlay — used by the inline reader to push the link onto
-    /// its own navigation stack rather than nesting another overlay.
-    public var onLinkActivated: ((URL) -> Void)?
-    /// Same tap as `onLinkActivated`, but includes the exact text range UIKit already
-    /// resolved for the tapped link. RabbitHole uses it to avoid rescanning links on tap.
+    /// When set, a tapped inline link (with the exact text range UIKit already resolved
+    /// for it) is handed to this closure instead of opening a new inline split overlay —
+    /// used by the inline reader to push the link onto its own navigation stack rather
+    /// than nesting another overlay. RabbitHole uses the range to avoid rescanning links
+    /// on tap.
     public var onLinkActivatedWithRange: ((_ url: URL, _ range: NSRange) -> Void)?
 
     /// Center of UIKit's resolved link range in this reader's coordinate space.
@@ -1184,8 +1183,6 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 guard let self else { return }
                 if let onLinkActivatedWithRange = self.onLinkActivatedWithRange {
                     onLinkActivatedWithRange(url, textItem.range)
-                } else if let onLinkActivated = self.onLinkActivated {
-                    onLinkActivated(url)
                 } else {
                     self.openSplit(for: url, tappedRange: textItem.range)
                 }
@@ -1354,8 +1351,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let coordinator = enclosingReaderViewController
 
         let overlay = SplitWebOverlayViewController(
-            url: url, shareProvider: shareProvider, lineHeight: 0,
-            cutY: sourceInWindow.y, topHalf: nil, bottomHalf: nil,
+            url: url, shareProvider: shareProvider,
             sourcePoint: sourceInWindow, outerURL: item.url ?? url,
             outerTitle: content.title,
             contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0)

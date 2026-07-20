@@ -244,7 +244,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
             // so the share button stays low.
             return (audioOn && ReaderAudioLauncher.center == nil) ? -92 : -24
         case .rsvp: return -168                     // clear the scrubber + playback controls
-        case .highlight, .original: return -24      // .highlight retired (never selectable)
+        default: return -24                         // .original
         }
     }
 
@@ -369,10 +369,6 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
 
         let child: UIViewController
         switch mode {
-        case .scroll, .highlight:
-            // .highlight is retired and mapped to .rsvp in init, so it can't be
-            // the active mode here; treat any stray value as plain scroll.
-            child = makeScrollReader()
         case .rsvp:
             let rsvp = RSVPViewController(
                 item: item, content: content, audioEnabled: audioOn,
@@ -386,6 +382,8 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
             // The archive keeps its OWN scroll place, disjoint from the shared
             // scroll/RSVP reading position carried between the text modes.
             child = OriginalPageViewController(item: item, store: store, persistsScrollOffset: true)
+        default:
+            child = makeScrollReader()
         }
 
         addChild(child)

@@ -36,8 +36,7 @@ final class InlineReaderTabMetricsTests: XCTestCase {
     func testOverlayOwnsCustomPresentationTransition() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/linked"))
         let overlay = SplitWebOverlayViewController(
-            url: url, shareProvider: nil, lineHeight: 0, cutY: 300,
-            topHalf: nil, bottomHalf: nil, sourcePoint: CGPoint(x: 80, y: 300))
+            url: url, shareProvider: nil, sourcePoint: CGPoint(x: 80, y: 300))
 
         XCTAssertEqual(overlay.modalPresentationStyle, .custom)
         XCTAssertTrue(overlay.transitioningDelegate === overlay)
@@ -46,8 +45,7 @@ final class InlineReaderTabMetricsTests: XCTestCase {
     func testCompletedDismissalRestoresOuterReaderExactlyOnce() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/linked"))
         let overlay = SplitWebOverlayViewController(
-            url: url, shareProvider: nil, lineHeight: 0, cutY: 300,
-            topHalf: nil, bottomHalf: nil, sourcePoint: CGPoint(x: 80, y: 300))
+            url: url, shareProvider: nil, sourcePoint: CGPoint(x: 80, y: 300))
         var dismissalCount = 0
         overlay.onDismiss = { dismissalCount += 1 }
         let presenter = UIViewController()

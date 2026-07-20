@@ -687,37 +687,29 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         let readerItem = readerItem(for: url)
         embeddedReaderItemID = readerItem.id
 
-        switch mode {
-        case .scroll, .highlight, .original:
+        if mode == .rsvp {
+            rsvpReader.configureForReuse(item: readerItem, content: content, audioEnabled: audioOn)
+            rsvpReader.onLinkActivatedAtPoint = { [weak self] url, point in
+                guard let self else { return }
+                self.onLinkActivatedAtPoint?(url, nil, self.view.convert(point, from: self.rsvpReader.view))
+            }
+            rsvpReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
+            rsvpReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
+            showChild(rsvpReader)
+        } else {
             scrollReader.configureForReuse(
                 item: readerItem, content: content, audioEnabled: audioOn,
                 fullRenderUpFront: rendersFullContentUpFront)
             scrollReader.onLinkActivatedWithRange = { [weak self] url, range in
                 guard let self else { return }
                 let lineText = self.lineText(for: range)
-                if let callback = self.onLinkActivatedAtPoint {
-                    let point = self.scrollReader.linkActivationPoint(forCharacterRange: range)
-                    callback(url, lineText, self.view.convert(point, from: self.scrollReader.view))
-                } else {
-                    self.onLinkActivated?(url, lineText)
-                }
+                let point = self.scrollReader.linkActivationPoint(forCharacterRange: range)
+                self.onLinkActivatedAtPoint?(
+                    url, lineText, self.view.convert(point, from: self.scrollReader.view))
             }
             scrollReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
             scrollReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
             showChild(scrollReader)
-        case .rsvp:
-            rsvpReader.configureForReuse(item: readerItem, content: content, audioEnabled: audioOn)
-            rsvpReader.onLinkActivatedAtPoint = { [weak self] url, point in
-                guard let self else { return }
-                if let callback = self.onLinkActivatedAtPoint {
-                    callback(url, nil, self.view.convert(point, from: self.rsvpReader.view))
-                } else {
-                    self.onLinkActivated?(url, nil)
-                }
-            }
-            rsvpReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
-            rsvpReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
-            showChild(rsvpReader)
         }
         readerMode = mode
         view.setNeedsLayout()
@@ -832,22 +824,21 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     ///  • original → its own disjoint offset, leaving the shared position untouched.
     public func syncReadingPosition() {
         guard isArticle else { return }
-        switch readerMode {
-        case .scroll, .highlight:
-            descriptor.wordIndex = scrollReader.currentReadingWordIndex
-            descriptor.scrollOffset = Double(scrollReader.currentReadingScrollOffsetY)
-        case .rsvp:
+        if readerMode == .rsvp {
             descriptor.wordIndex = rsvpReader.currentReadingWordIndex
             descriptor.scrollOffset = nil
-        case .original:
+        } else if readerMode == .original {
             descriptor.originalScrollOffset = originalReader.currentScrollOffset
+        } else {
+            descriptor.wordIndex = scrollReader.currentReadingWordIndex
+            descriptor.scrollOffset = Double(scrollReader.currentReadingScrollOffsetY)
         }
     }
 
     /// Best-effort text of the line containing the tapped link range, for the bottom
     /// lip. The range comes directly from UIKit's link tap resolution, so this avoids
     /// scanning every link in the attributed string during the tap.
-    public func lineText(for linkRange: NSRange) -> String? {
+    private func lineText(for linkRange: NSRange) -> String? {
         guard let textView = contentScrollView as? UITextView else { return nil }
         let attributed = textView.textStorage
         guard attributed.length > 0 else { return nil }

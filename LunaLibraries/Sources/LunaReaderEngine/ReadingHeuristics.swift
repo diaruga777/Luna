@@ -66,7 +66,6 @@ public enum ReadingHeuristics {
     public static func isLeadingBinder(_ word: String) -> Bool { leadingBinders.contains(core(word)) }
     public static func isPhraseStarter(_ word: String) -> Bool { phraseStarters.contains(core(word)) }
     public static func isFunctionWord(_ word: String) -> Bool { functionWords.contains(core(word)) }
-    public static func hasDigit(_ word: String) -> Bool { word.contains(where: \.isNumber) }
 
     /// Rough English syllable count from vowel groups (a fast, dependency-free
     /// proxy for word complexity). Not linguistically exact, but monotonic with

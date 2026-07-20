@@ -25,7 +25,7 @@ public enum WordSplitter {
 
     /// "well-being" → ["well-", "-being"]; "a-b-c" → ["a-", "-b-", "-c"].
     /// The hyphen is duplicated across each break so both parts show it.
-    public static func hyphenSplit(_ token: String) -> [String] {
+    private static func hyphenSplit(_ token: String) -> [String] {
         let pieces = token.split(separator: "-", omittingEmptySubsequences: true).map(String.init)
         guard pieces.count > 1 else { return [token] }
         return pieces.enumerated().map { index, piece in
@@ -38,7 +38,7 @@ public enum WordSplitter {
 
     /// Cuts a too-long part into chunks of `maxCharacters`, each but the last
     /// gaining a trailing hyphen (so the total stays within the limit).
-    public static func hardWrap(_ part: String, maxCharacters: Int) -> [String] {
+    private static func hardWrap(_ part: String, maxCharacters: Int) -> [String] {
         guard part.count > maxCharacters else { return [part] }
         var remaining = Array(part)
         var chunks: [String] = []

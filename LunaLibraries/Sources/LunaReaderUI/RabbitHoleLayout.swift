@@ -64,11 +64,11 @@ public struct RabbitHoleLayout {
     }
 
     /// Number of ancestors shown as lips for a focused index.
-    public func visibleAncestors(focusedIndex: Int) -> Int { min(Int(maxVisibleAncestors), max(0, focusedIndex)) }
+    func visibleAncestors(focusedIndex: Int) -> Int { min(Int(maxVisibleAncestors), max(0, focusedIndex)) }
 
     /// The card frame for an inset-step count `s` (0 = backmost/full, growing inward by
     /// one lip/indent step each).
-    public func cardFrame(steps s: Int, bounds: CGRect, safeArea: UIEdgeInsets) -> CGRect {
+    func cardFrame(steps s: Int, bounds: CGRect, safeArea: UIEdgeInsets) -> CGRect {
         let f = CGFloat(s)
         let minX = f * indentWidth
         let minY = safeArea.top + f * lipHeight

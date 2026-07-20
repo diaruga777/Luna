@@ -29,7 +29,6 @@ public struct ReaderChromeState: Equatable {
     /// True when a layer is stacked above the root (back pops one layer).
     public var showsBack: Bool
     public var offersSaveShare: Bool
-    public var isSaved: Bool
 }
 
 /// A reader whose controls are rendered by a stable host view. Both the root
@@ -39,7 +38,6 @@ public protocol ReaderChromeControlling: AnyObject {
     var chromeState: ReaderChromeState? { get }
     func chromeSetMode(_ mode: ReadingListItem.ReaderMode)
     func chromeToggleAudio()
-    func chromeSave()
     func chromeShare(from sourceView: UIView)
     func chromeBack()
 }
@@ -74,11 +72,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     }
 
     public required init?(coder: NSCoder) { fatalError("not used") }
-
-    /// The saved reading-list item this reader was opened for — how the
-    /// window-level audio mini-player finds an already-open reader for the
-    /// playing article in the nav stack (tap-to-return navigation).
-    public var rootItemID: UUID { rootItem.id }
 
     /// Whether the article playing under `itemID` is embedded anywhere in this
     /// reader's layer trail (the root, or a dived-into page — saved pages play
@@ -316,10 +309,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         let overlay = SplitWebOverlayViewController(
             url: url,
             shareProvider: shareProvider,
-            lineHeight: 0,
-            cutY: pointInWindow.y,
-            topHalf: nil,
-            bottomHalf: nil,
             sourcePoint: pointInWindow,
             outerURL: focused.descriptor.url ?? url,
             outerTitle: focused.descriptor.title,
@@ -421,8 +410,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             selectedMode: layer.readerMode,
             isAudioOn: layer.isAudioOn,
             showsBack: topIndex > 0,
-            offersSaveShare: layer.offersSaveShare,
-            isSaved: layer.isSavedInLibrary)
+            offersSaveShare: layer.offersSaveShare)
     }
 
     public func chromeSetMode(_ mode: ReadingListItem.ReaderMode) {
@@ -431,10 +419,6 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     public func chromeToggleAudio() {
         layers[safe: focus]?.toggleAudio()
-    }
-
-    public func chromeSave() {
-        layers[safe: focus]?.performSave()
     }
 
     public func chromeShare(from sourceView: UIView) {

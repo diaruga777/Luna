@@ -23,7 +23,6 @@
 //  instances, so the same carousel serves any Luna app surface.
 //
 
-import AVFoundation
 import UIKit
 
 public protocol CardCarouselDataSource: AnyObject {
@@ -171,13 +170,20 @@ public final class CardCarouselViewController: UIViewController {
     /// Whether the carousel drives the shared AVAudioSession (ambient while
     /// muted, playback while unmuted). Hosts with their own audio coordination
     /// can turn this off.
-    public var managesAudioSession = true
+    public var managesAudioSession: Bool {
+        get { audioSession.managesAudioSession }
+        set { audioSession.managesAudioSession = newValue }
+    }
 
     /// Per-surface tuning. Set BEFORE the carousel's view loads.
     public var style = CardCarouselStyle()
 
     public private(set) var currentIndex = 0
-    private var isSoundMuted = true
+    private lazy var audioSession: CarouselAudioSessionCoordinator = {
+        let coordinator = CarouselAudioSessionCoordinator()
+        coordinator.onMuteStateChanged = { [weak self] in self?.applyMuteState() }
+        return coordinator
+    }()
 
     private struct Slot {
         let index: Int
@@ -234,7 +240,6 @@ public final class CardCarouselViewController: UIViewController {
 
     private var scrubStartFraction: Double = 0
     private var wasPlayingBeforeScrub = false
-    private var volumeObservation: NSKeyValueObservation?
 
     public init() {
         super.init(nibName: nil, bundle: nil)
@@ -315,15 +320,14 @@ public final class CardCarouselViewController: UIViewController {
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         isViewVisible = true
-        startVolumeObservation()
+        audioSession.startVolumeObservation()
         slots[currentIndex]?.content.cardDidBecomeCentered()
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         isViewVisible = false
-        volumeObservation?.invalidate()
-        volumeObservation = nil
+        audioSession.stopVolumeObservation()
         slots[currentIndex]?.content.cardDidLeaveCenter()
     }
 
@@ -484,9 +488,7 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     private func setSoundMuted(_ muted: Bool) {
-        isSoundMuted = muted
-        applyMuteState()
-        updateAudioSession()
+        audioSession.setMuted(muted)
     }
 
     // MARK: - Slots
@@ -517,11 +519,11 @@ public final class CardCarouselViewController: UIViewController {
         card.setBorderEnabled(style.showsCardBorder)
         card.setContentEdgeFadeHeight(style.contentEdgeFadeHeight)
         card.installContentView(content.view)
-        content.setMuted(isSoundMuted)
+        content.setMuted(audioSession.isMuted)
         content.audioAvailabilityChanged = { [weak self] in self?.updateMuteUI() }
         card.onMuteToggle = { [weak self] in
             guard let self else { return }
-            self.setSoundMuted(!self.isSoundMuted)
+            self.setSoundMuted(!self.audioSession.isMuted)
         }
         card.setTopLeadingAccessory(dataSource?.carousel(
             self, topLeadingAccessoryForCardAt: index))
@@ -680,7 +682,7 @@ public final class CardCarouselViewController: UIViewController {
         }
 
         if let centered = slots[currentIndex] {
-            centered.content.setMuted(isSoundMuted)
+            centered.content.setMuted(audioSession.isMuted)
             if isViewVisible { centered.content.cardDidBecomeCentered() }
         }
         updateMuteUI()
@@ -930,7 +932,7 @@ public final class CardCarouselViewController: UIViewController {
     // MARK: - Mute + audio session
 
     private func applyMuteState() {
-        for slot in slots.values { slot.content.setMuted(isSoundMuted) }
+        for slot in slots.values { slot.content.setMuted(audioSession.isMuted) }
         updateMuteUI()
     }
 
@@ -938,34 +940,7 @@ public final class CardCarouselViewController: UIViewController {
         for slot in slots.values {
             let isCenter = slot.index == currentIndex
             slot.card.setMuteButtonVisible(isCenter && slot.content.supportsAudio)
-            slot.card.updateMuteIcon(muted: isSoundMuted)
-        }
-    }
-
-    private func updateAudioSession() {
-        guard managesAudioSession else { return }
-        let session = AVAudioSession.sharedInstance()
-        // Muted autoplay must not silence other apps' audio; unmuted playback
-        // should be audible even with the silent switch on.
-        if isSoundMuted {
-            try? session.setCategory(.ambient, options: [.mixWithOthers])
-        } else {
-            try? session.setCategory(.playback)
-        }
-        try? session.setActive(true)
-    }
-
-    private func startVolumeObservation() {
-        updateAudioSession()
-        volumeObservation = AVAudioSession.sharedInstance().observe(
-            \.outputVolume, options: [.old, .new]
-        ) { [weak self] _, change in
-            guard let old = change.oldValue, let new = change.newValue, old != new
-            else { return }
-            DispatchQueue.main.async {
-                guard let self, self.isSoundMuted else { return }
-                self.setSoundMuted(false)
-            }
+            slot.card.updateMuteIcon(muted: audioSession.isMuted)
         }
     }
 }

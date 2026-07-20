@@ -47,6 +47,34 @@ public enum OnboardingFlow {
     /// `"pricetracker"`) — every onboarding store below is keyed by it.
     private static var surface: String { AppSurfaceConfig.current.storageIdentifier }
 
+    /// Installs (replacing any previous registration in `observer`) a
+    /// `ActionButtonOnboardingStore.stateDidChangeNotification` observer that calls
+    /// `onReached` once this surface's Action-Button state reaches `targetState`
+    /// while `step` is still the topmost view controller. Shared by the two
+    /// Action-Button-flow steps below, which each wait on this notification for a
+    /// different target state (`.actionButtonSetup`, then `.done`).
+    private static func watchActionButtonState(
+        _ observer: inout NSObjectProtocol?, surface: String, step: OnboardingStepViewController?,
+        until targetState: ActionButtonOnboardingState,
+        currentState: @escaping () -> ActionButtonOnboardingState, onReached: @escaping () -> Void
+    ) {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        // Observe unfiltered and match the surface in-handler: NotificationCenter
+        // matches `object` by identity, which is unreliable for bridged strings.
+        observer = NotificationCenter.default.addObserver(
+            forName: ActionButtonOnboardingStore.stateDidChangeNotification,
+            object: nil, queue: .main
+        ) { [weak step] notification in
+            guard notification.object as? String == surface else { return }
+            guard let step, step.navigationController?.topViewController === step else { return }
+            if currentState() == targetState {
+                onReached()
+            }
+        }
+    }
+
     #if DEBUG
     /// Cross-image-safe stand-in for `viewController is OnboardingStepViewController`
     /// in tests. The test bundle statically embeds its own copy of the LunaSocialUI
@@ -205,21 +233,9 @@ public enum OnboardingFlow {
             })
 
         step.onDidAppear = { [weak step] in
-            if let stateObserver {
-                NotificationCenter.default.removeObserver(stateObserver)
-            }
-            // Observe unfiltered and match the surface in-handler: NotificationCenter
-            // matches `object` by identity, which is unreliable for bridged strings.
-            stateObserver = NotificationCenter.default.addObserver(
-                forName: ActionButtonOnboardingStore.stateDidChangeNotification,
-                object: nil, queue: .main
-            ) { notification in
-                guard notification.object as? String == surface else { return }
-                guard let step, step.navigationController?.topViewController === step else { return }
-                if stores.actionButtonState(forSurface: surface) == .actionButtonSetup {
-                    advance()
-                }
-            }
+            watchActionButtonState(
+                &stateObserver, surface: surface, step: step, until: .actionButtonSetup,
+                currentState: { stores.actionButtonState(forSurface: surface) }, onReached: advance)
         }
         step.onWillEnterForeground = { [weak step] in
             guard let step, step.navigationController?.topViewController === step else { return }
@@ -276,21 +292,9 @@ public enum OnboardingFlow {
             }
             guide.play()
             if let step { step.installBackdropView(guide.playerView) }
-            if let stateObserver {
-                NotificationCenter.default.removeObserver(stateObserver)
-            }
-            // Observe unfiltered and match the surface in-handler: NotificationCenter
-            // matches `object` by identity, which is unreliable for bridged strings.
-            stateObserver = NotificationCenter.default.addObserver(
-                forName: ActionButtonOnboardingStore.stateDidChangeNotification,
-                object: nil, queue: .main
-            ) { notification in
-                guard notification.object as? String == surface else { return }
-                guard let step, step.navigationController?.topViewController === step else { return }
-                if stores.actionButtonState(forSurface: surface) == .done {
-                    finish()
-                }
-            }
+            watchActionButtonState(
+                &stateObserver, surface: surface, step: step, until: .done,
+                currentState: { stores.actionButtonState(forSurface: surface) }, onReached: finish)
         }
         step.onWillEnterForeground = { [weak step] in
             guide.stopPictureInPicture()

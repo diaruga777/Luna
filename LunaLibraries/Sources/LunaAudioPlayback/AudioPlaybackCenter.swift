@@ -192,8 +192,6 @@ public final class AudioPlaybackCenter {
 
     public var currentSnapshot: AudioPlaybackSnapshot {
         let totalWords = currentScript?.totalWordCount ?? 0
-        let avgSecPerWord = wordsRenderedSoFar > 0
-            ? (renderedDurationSoFar / Double(wordsRenderedSoFar)) : Self.defaultSecondsPerWord
         let remainingWords = max(0, totalWords - sessionStartWordsSkipped - wordsRenderedSoFar)
         let duration = elapsedBaselineAtResume + renderedDurationSoFar + Double(remainingWords) * avgSecPerWord
         let elapsed = engine?.currentTime ?? elapsedBaselineAtResume
@@ -202,6 +200,15 @@ public final class AudioPlaybackCenter {
             state: state, itemInfo: currentItemInfo, progressFraction: fraction, elapsed: elapsed,
             estimatedDuration: duration, rate: engine?.rate ?? AudioSettings.preferredRate,
             isAudiblyPlaying: isAudiblyPlaying)
+    }
+
+    /// The running average seconds-per-word for the current session, or the
+    /// bootstrap estimate before any block has been rendered yet — used to
+    /// estimate remaining duration and to map a skip/seek's seconds delta to
+    /// a word-index delta.
+    private var avgSecPerWord: Double {
+        wordsRenderedSoFar > 0
+            ? (renderedDurationSoFar / Double(wordsRenderedSoFar)) : Self.defaultSecondsPerWord
     }
 
     private var isAudiblyPlaying: Bool {
@@ -447,8 +454,6 @@ public final class AudioPlaybackCenter {
     /// seeks there. Negative `seconds` skips backward (system "skip back 15").
     public func skip(bySeconds seconds: TimeInterval) {
         guard let script = currentScript, script.totalWordCount > 0 else { return }
-        let avgSecPerWord = wordsRenderedSoFar > 0
-            ? (renderedDurationSoFar / Double(wordsRenderedSoFar)) : Self.defaultSecondsPerWord
         guard avgSecPerWord > 0 else { return }
         let deltaWords = Int((seconds / avgSecPerWord).rounded())
         let target = max(0, min(currentSeekBaseWordIndex() + deltaWords, script.totalWordCount - 1))
@@ -570,8 +575,6 @@ public final class AudioPlaybackCenter {
     private func currentSeekBaseWordIndex() -> Int {
         guard let script = currentScript, script.totalWordCount > 0 else { return lastKnownWordIndex }
         guard let engine else { return max(0, min(lastKnownWordIndex, script.totalWordCount - 1)) }
-        let avgSecPerWord = wordsRenderedSoFar > 0
-            ? (renderedDurationSoFar / Double(wordsRenderedSoFar)) : Self.defaultSecondsPerWord
         guard avgSecPerWord > 0 else { return max(0, min(lastKnownWordIndex, script.totalWordCount - 1)) }
         let estimated = Int((engine.currentTime / avgSecPerWord).rounded(.down))
         return max(0, min(max(lastKnownWordIndex, estimated), script.totalWordCount - 1))

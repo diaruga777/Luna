@@ -1,6 +1,6 @@
 //
 //  ProductPageSuggestion.swift
-//  ReaderKit
+//  LunaPriceUI
 //
 
 import LunaIngest

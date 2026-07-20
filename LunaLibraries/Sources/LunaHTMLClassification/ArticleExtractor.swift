@@ -38,13 +38,12 @@ public struct ArticleExtractor {
         // Thresholds arbitrate BETWEEN layers; a short page keeps its
         // structured (basic) extraction rather than degrading to raw text.
         //
-        // A SUBSTANTIAL refined result is trusted outright, even when `basic` is
-        // much larger: on comment-heavy pages (e.g. an archived WSJ article) the
-        // extra `basic` text is the comment thread + subscription promos that
-        // refined correctly strips — the old `refined*3 >= basic` guard wrongly
-        // fell back to that soup and dropped the article body. The guard still
-        // applies for a MEDIUM refined result (350–600), where a small refined
-        // more likely means refined's junk-class stripping ate the real content.
+        // A SUBSTANTIAL refined result (≥1200 chars) is trusted outright even when
+        // `basic` is larger — comment-heavy pages (e.g. an archived WSJ article)
+        // inflate `basic` with the comment thread + subscription promos that refined
+        // correctly strips. A MEDIUM refined result (350–600) additionally requires
+        // `refined*3 >= basic`, since a small refined result more likely means
+        // refined's junk-class stripping ate real content.
         var chosen: [ArticleContent.Block]
         let substantialRefinedLength = ArticleContent.readableBodyThreshold   // 1200
         if refinedLength >= substantialRefinedLength
@@ -721,9 +720,8 @@ public struct ArticleExtractor {
     }
 
     /// Metadata selectors are deliberately attribute-order independent. Several
-    /// publishers use `og:image:secure_url`, and large images are often only in
-    /// `twitter:image:src`, neither of which was covered by the old body-only
-    /// extraction.
+    /// publishers use `og:image:secure_url`; large images are often only in
+    /// `twitter:image:src`.
     private func leadImageURL(from document: Document, baseURL: URL) -> URL? {
         let acceptedMetaNames = [
             "og:image", "og:image:url", "og:image:secure_url",

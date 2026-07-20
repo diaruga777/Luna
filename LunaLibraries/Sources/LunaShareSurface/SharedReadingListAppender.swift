@@ -14,7 +14,7 @@ import Foundation
 /// The extension can't link the app's `ReadingListItem` type, so it writes raw
 /// JSON dictionaries via `JSONSerialization` and — crucially — preserves every
 /// EXISTING item verbatim. (Decoding the whole list into a schema-locked mirror
-/// struct and re-encoding it used to silently drop any field the mirror didn't
+/// struct and re-encoding it would silently drop any field the mirror doesn't
 /// know about — e.g. `platform`/`sendStates` — corrupting other items.)
 public enum SharedReadingListAppender {
     public static let appGroupID = AppConfig.appGroupID

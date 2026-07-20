@@ -1,6 +1,6 @@
 //
 //  PriceGraphView.swift
-//  ShareKit
+//  LunaPriceUI
 //
 
 import LunaDesignSystem

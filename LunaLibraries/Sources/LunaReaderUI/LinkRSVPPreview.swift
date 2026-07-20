@@ -306,8 +306,9 @@ final class LinkRSVPPreviewInteraction: NSObject, UIGestureRecognizerDelegate {
     /// our press begins, so they all fail and none of them can cancel the
     /// preview mid-hold: it appears and starts playback immediately, finger
     /// stationary. On non-links `shouldReceive` refuses the touch, so
-    /// everything else behaves exactly as before. Pans stay independent — a
-    /// drag that starts on a link must still scroll.
+    /// everything else behaves exactly as it would without this interaction
+    /// installed. Pans stay independent — a drag that starts on a link must
+    /// still scroll.
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer

@@ -193,8 +193,8 @@ public enum URLUnwrapper {
 //
 // Each factory wraps the existing pure parsers on `NewsAggregatorUnwrapper`
 // (`facebookRedirectTarget`, `googleNewsArticleID`, `googleNewsURL`,
-// `appleNewsPublisherURL`, `googleBatchExecuteURL`). The parsers are unchanged and
-// stay fully unit-tested; only the registry dispatch is new.
+// `appleNewsPublisherURL`, `googleBatchExecuteURL`) into a `WrapperHandler`
+// for the registry.
 
 public extension WrapperHandler {
 

@@ -1,6 +1,6 @@
 //
 //  PriceRefresher.swift
-//  Luna
+//  LunaPriceUI
 //
 
 import LunaStorage

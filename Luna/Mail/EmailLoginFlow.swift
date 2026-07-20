@@ -242,9 +242,8 @@ final class EmailEntryViewController: UIViewController {
             startOutlookOAuth(address: address)
             return
         }
-        // App-password providers (and generic, resolved below). The only feedback
-        // during this network wait used to be nothing at all — now the button
-        // itself shows it's busy.
+        // App-password providers (and generic, resolved below). The button shows
+        // it's busy for the only network wait on this screen.
         isResolving = true
         continueButton.setLoading(true)
         field.isUserInteractionEnabled = false

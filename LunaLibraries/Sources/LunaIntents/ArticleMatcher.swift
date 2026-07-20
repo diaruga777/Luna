@@ -6,7 +6,7 @@
 import LunaModels
 import Foundation
 
-/// Selection/ranking logic behind `ArticleEntity`'s query (`Luna/Intents/
+/// Selection/ranking logic behind `ArticleEntity`'s query (`Luna/Mail/Intents/
 /// ArticleEntity.swift`) and `ReadArticleIntent`'s nil-entity fallback. Kept
 /// as plain, store-free functions over `[ReadingListItem]` so it's
 /// unit-testable without AppIntents, CoreSpotlight, or a real

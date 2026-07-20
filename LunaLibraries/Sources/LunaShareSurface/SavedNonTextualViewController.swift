@@ -652,7 +652,7 @@ public final class SavedNonTextualViewController: UIViewController {
     }
 
     /// Requests Photos add access and saves the downloaded file, then marks the item
-    /// READ in the reading list (new behavior — saving counts as consuming it). Only
+    /// READ in the reading list (saving counts as consuming it). Only
     /// reachable for `.ready` (a fresh temp file PhotoKit moves) or an already-downloaded
     /// `.localFile` duplicate (a COPY is saved, then the library's own file is retired via
     /// `transitionToPhotosReference` — the button is disabled/hidden once already `.photosReference`).

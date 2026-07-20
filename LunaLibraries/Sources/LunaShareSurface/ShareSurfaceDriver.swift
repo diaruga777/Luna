@@ -149,8 +149,7 @@ public final class ShareSurfaceDriver {
 
         case let .product(product, _):
             // Persist the tracker, then present the SAME price-tracking editor the
-            // main app shows (the extension host wraps it in Done chrome). Previously
-            // both extensions only saved silently + showed a checkmark.
+            // main app shows (the extension host wraps it in Done chrome).
             presentPriceEditor(product: product, url: url)
 
         case let .video(platform, itemID):
@@ -326,11 +325,10 @@ public final class ShareSurfaceDriver {
     }
 
     /// A paywalled article: EVERY surface opens the same `ArchiveWebReaderViewController`
-    /// (the archive-CAPTCHA reader, URL pre-filled), identically to the main app — so the
-    /// presentation intent matches across surfaces (it used to diverge: the action
-    /// extension wrapped it in `ShareReaderViewController`). On a successful extract the
-    /// action extension swaps in the in-sheet native reader showing the captured content;
-    /// the zero-UI share extension confirms the save.
+    /// (the archive-CAPTCHA reader, URL pre-filled), identically to the main app, so the
+    /// presentation intent matches across surfaces. On a successful extract the action
+    /// extension swaps in the in-sheet native reader showing the captured content; the
+    /// zero-UI share extension confirms the save.
     private func presentArchive(url: URL, title: String) {
         guard let host else { return }
         guard let saved = store.item(forURLString: url.absoluteString) else {

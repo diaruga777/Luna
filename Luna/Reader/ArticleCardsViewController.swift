@@ -143,11 +143,10 @@ final class ArticleCardsViewController: UIViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(refreshPasteboardURL),
             name: UIPasteboard.changedNotification, object: nil)
-        // Load and show the saved articles synchronously, before first paint —
-        // `store.items()` serves an in-memory cache, so this is cheap. The
-        // pasteboard probe below is async (a `detectPatterns` round-trip); it
-        // used to be the ONLY caller of `reload()` on launch, so the cards
-        // didn't appear until it returned and the empty state showed until then.
+        // `reload()` must run synchronously here, before the async pasteboard probe:
+        // `store.items()` serves an in-memory cache, so this shows saved articles
+        // immediately instead of waiting on the probe's round-trip (a `detectPatterns`
+        // call).
         reload()
         refreshPasteboardURL()
     }

@@ -491,7 +491,7 @@ final class CatchUpPriceTrackerCardBody: UIView {
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// A read-only solid (de-glassed, Task 3) pill mirroring `AlertThresholdSlider`'s
+    /// A read-only solid (no blur) pill mirroring `AlertThresholdSlider`'s
     /// chrome — the "Alert threshold" title and the SAME percent + absolute readout
     /// (`PriceFormatting.thresholdDescription`) — but with a "Change" button instead
     /// of the interactive slider, since catch-up is a glance surface (editing happens

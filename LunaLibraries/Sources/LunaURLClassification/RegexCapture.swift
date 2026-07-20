@@ -5,8 +5,8 @@
 
 import Foundation
 
-/// The one first-capture-group regex helper (was quadruplicated across the
-/// aggregator unwrapper, product detector/extractor, and lead-image extractor).
+/// The one first-capture-group regex helper shared by URL/HTML classification
+/// and the paywall bypass layer.
 public enum RegexCapture {
     /// The first capture group of `pattern` in `text`, or nil when the pattern
     /// is invalid or doesn't match.

@@ -23,9 +23,9 @@ public enum BypassStrategySelector {
         // nil here because the resolver already returned early when the direct read
         // was readable, so the selector only sees non-readable pages.
         let decision = BypassGate.decision(for: url, html: directHTML, extracted: nil)
-        // A site rule may bypass even when the gate found no generic paywall evidence
-        // the gate found no generic paywall evidence — but ONLY for the "no evidence"
-        // block, never overriding a readable article / product page / platform link.
+        // A site rule may bypass even when the gate found no generic paywall
+        // evidence — but ONLY for the "no evidence" block, never overriding a
+        // readable article / product page / platform link.
         let rule = SiteUnlockRules.rule(for: url)
         let ruleAllows = rule != nil
             && (decision.allowsBypass || decision == .block(.notPaywalled))

@@ -724,7 +724,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     /// get a transient whose id is DETERMINISTICALLY seeded from the URL, so the
     /// identity stays stable across re-embeds (mode/audio toggles) within the
     /// layer instead of regenerating per embed. Either way the per-session
-    /// scroll offset comes from the descriptor, exactly as before.
+    /// scroll offset comes from the descriptor.
     private func readerItem(for url: URL) -> ReadingListItem {
         var item = ReadingListStore.shared.item(forURLString: url.absoluteString)
             ?? ReadingListItem(
@@ -794,7 +794,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         webView = nil
     }
 
-    // MARK: - Scroll access (no changes to ScrollReaderViewController)
+    // MARK: - Scroll access
 
     /// The layer's primary scroll view, found by walking the embedded reader's view
     /// tree (UITextView is a UIScrollView). Used for overscroll-pop + offset capture.
@@ -818,7 +818,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     /// Capture the active mode's reading position into the descriptor (call before a
     /// mode switch or persist). Each mode writes ONLY its own state so the archive can
-    /// never clobber the shared scroll/RSVP position (the old bug):
+    /// never clobber the shared scroll/RSVP position:
     ///  • scroll → the shared word + its exact pixels;
     ///  • RSVP → the shared word, and it clears the exact pixels (no pixels exist);
     ///  • original → its own disjoint offset, leaving the shared position untouched.

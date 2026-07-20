@@ -1,6 +1,6 @@
 //
 //  PriceFetcher.swift
-//  Luna
+//  LunaPriceUI
 //
 
 import LunaFetch

@@ -1,6 +1,6 @@
 //
 //  AppNamePlatform.swift
-//  Luna
+//  LunaIntents
 //
 
 import LunaModels

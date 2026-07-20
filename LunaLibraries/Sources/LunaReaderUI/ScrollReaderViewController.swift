@@ -547,10 +547,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// no-op when the prefix already covered the whole article.
     ///
     /// Phase 2 runs AFTER the entry animation, so the article's heavy whole-text glyph
-    /// generation no longer stalls the open. The attributed-string build + the forced
-    /// layout both run on the main actor (the renderer touches `UIScreen`/`UIFont`, and
-    /// TextKit layout must be on main anyway) — it's the TIMING (off the animation's
-    /// critical path), not threading, that removes the stall. Because the prefix is a
+    /// generation runs off the entry animation's critical path. The attributed-string
+    /// build + the forced layout both run on the main actor (the renderer touches
+    /// `UIScreen`/`UIFont`, and TextKit layout must be on main anyway) — it's the TIMING,
+    /// not threading, that keeps the open from stalling. Because the prefix is a
     /// STRICT prefix of the full text, the top/visible layout is identical, so restoring
     /// the captured `contentOffset` across the swap is invisible.
     public func prepareFullContent() {

@@ -11,8 +11,9 @@ import Foundation
 /// flattened to one rule per member domain, and `{domain}` placeholders in the
 /// regexes are already substituted.
 ///
-/// `csCode` (a small nested cleanup DSL used by a few sites) and `ldJsonUrl` are
-/// carried in the JSON but not decoded here yet — they belong to the browser tier.
+/// `csCode` (a small nested cleanup DSL used by a few sites) is carried in the
+/// JSON but not decoded here — it belongs to the browser tier. `ldJsonUrl` is
+/// decoded but not yet consumed (needs a second network fetch to resolve).
 public struct SiteUnlockRule: Decodable, Equatable {
     public let domain: String
     /// Keep cookies (the default is to blank the `Cookie:` request header).

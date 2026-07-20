@@ -12,8 +12,8 @@
 //  scrolls under it (mirroring a standard nav bar over a scroll view), via
 //  `updateScrolledAppearance`.
 //
-//  Restyle note (Task 3): the button factories below produce PLAIN system-styled
-//  controls (no liquid-glass coupling), so they can be freely restyled.
+//  The button factories below produce PLAIN system-styled controls (no
+//  liquid-glass coupling) — restyle freely.
 //
 
 import UIKit
@@ -27,8 +27,9 @@ public final class NavHeaderBar: UIView {
     /// The standard horizontal inset of bar content from the screen edges.
     public static let horizontalInset: CGFloat = 8
 
-    // De-glassed (Task 3): a solid, trait-aware fill that fades in on scroll instead of
-    // a live blur. The header sits on a solid screen background, so the blur added little
+    // A solid, trait-aware fill that fades in on scroll (mirrors a standard nav bar
+    // over a scroll view). The header sits on a solid screen background, where a live
+    // blur would have added little visual benefit.
     private let backgroundFill: UIView = {
         let view = UIView()
         view.backgroundColor = .systemBackground

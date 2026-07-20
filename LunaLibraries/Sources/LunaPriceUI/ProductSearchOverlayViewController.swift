@@ -1,6 +1,6 @@
 //
 //  ProductSearchOverlayViewController.swift
-//  Luna
+//  LunaPriceUI
 //
 
 import LunaReaderUI

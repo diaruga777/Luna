@@ -1,6 +1,6 @@
 //
 //  PriceTrackingViewController.swift
-//  ShareKit
+//  LunaPriceUI
 //
 
 import LunaStorage

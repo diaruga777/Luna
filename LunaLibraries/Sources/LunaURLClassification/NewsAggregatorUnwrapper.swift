@@ -13,14 +13,12 @@ import Foundation
 /// not the article) and the archive flow (archive.today can't snapshot it), so we
 /// resolve it up front and continue as if the publisher URL had been saved.
 ///
-/// This `enum` is now ONLY the home of the pure, well-tested wrapper parsers
+/// This enum is the home of the pure, well-tested wrapper parsers
 /// (`facebookRedirectTarget`, `googleNewsArticleID`/`googleNewsURL`/
 /// `googleNewsBatchExecute`, `appleNewsPublisherURL`, `resolveFinalRedirect`,
 /// `fetchText`). The app-wide unwrap dispatch lives in `URLUnwrapper`, whose
 /// `[WrapperHandler]` registry wraps these parsers; every surface unwraps through
-/// `URLUnwrapper` (offline-first, tracking-stripped). The old async `unwrap` /
-/// `normalizedIncomingURL*` shims were deleted once the last callers moved to
-/// `URLUnwrapper.unwrap` / `unwrapOffline`.
+/// `URLUnwrapper` (offline-first, tracking-stripped).
 public enum NewsAggregatorUnwrapper {
 
     // MARK: - Host classification

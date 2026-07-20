@@ -12,8 +12,8 @@ import Foundation
 /// screen-read response (`SaveResponseParsing.parseFields`), validates the field
 /// count for that platform, runs the platform's search (Bluesky/Reddit's own
 /// search APIs; X/TikTok/Instagram/Facebook via keyless `SocialPostFinder`), and
-/// saves the result — double-save-aware via `doubleSaveActionSurface`. There is
-/// no music/podcast case (that platform support was retired in `7c34cd69`).
+/// saves the result — double-save-aware via `doubleSaveActionSurface`.
+/// `LunaPlatforms.ContentPlatform` has no music/podcast case.
 public enum PlatformFieldSave {
 
     /// Keeps the URL resolved by the platform search independent from the save

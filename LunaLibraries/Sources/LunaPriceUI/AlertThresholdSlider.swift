@@ -1,6 +1,6 @@
 //
 //  AlertThresholdSlider.swift
-//  Luna
+//  LunaPriceUI
 //
 
 import LunaDesignSystem
@@ -24,9 +24,9 @@ public final class AlertThresholdSlider: UIView {
 
     private let slider = UISlider()
     private let readoutLabel = UILabel()
-    /// De-glassed (Task 3): a solid rounded pill. This sits on the editor / catch-up
-    /// card's solid background, so the live blur added little and could not be captured
-    /// consistently across presentation contexts.
+    /// A solid rounded pill (no blur) — it sits on the editor / catch-up card's solid
+    /// background, so a live blur would add little and can't be captured consistently
+    /// across presentation contexts.
     private let pill = UIView()
 
     /// The price baseline + currency the readout's absolute-drop text is computed

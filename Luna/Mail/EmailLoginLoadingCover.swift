@@ -6,7 +6,7 @@
 //  over the navigation controller's view so it also hides the Cancel/back bar
 //  buttons — while a network verification round trip runs, nothing on screen can
 //  be tapped. Shared by both the app-password `signIn` path and the Outlook OAuth
-//  token exchange (previously the OAuth path had its own private copy of this).
+//  token exchange.
 //
 
 import LunaDesignSystem

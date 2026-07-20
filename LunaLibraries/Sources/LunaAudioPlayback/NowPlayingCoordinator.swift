@@ -39,20 +39,21 @@ public protocol RemoteCommandBinding: AnyObject {
 /// path (`AudioPlaybackCenter`). Registered once at app launch from
 /// `AppDelegate` (via `AudioPlaybackWiring.install()` in the app shell).
 ///
-/// LEGACY-CONFLICT HANDOFF (until Phase 3 reroutes the in-app readers): the
-/// legacy `LunaReaderUI.SpeechController` also writes `nowPlayingInfo` and —
-/// worse — its `setupRemoteCommands()`/`teardownRemoteCommands()` call
-/// `removeTarget(nil)` on the shared commands, which strips THIS
-/// coordinator's launch-registered targets too. Two guards keep the new path
-/// the sole owner whenever it is actually in use:
+/// LEGACY-CONFLICT HANDOFF: the legacy `LunaReaderUI.SpeechController` also
+/// writes `nowPlayingInfo` and — worse — its `setupRemoteCommands()`/
+/// `teardownRemoteCommands()` call `removeTarget(nil)` on the shared commands,
+/// which strips THIS coordinator's launch-registered targets too. Two guards
+/// keep the new path the sole owner whenever it is actually in use:
 ///   1. Targets are re-asserted (rebound) every time `AudioPlaybackCenter`
 ///      leaves `.idle`, not only at launch — so even if a legacy in-reader
 ///      session wiped them, the moment the new center plays anything the
 ///      system commands are ours again.
-///   2. Nothing in-app starts the new center while a legacy session is
-///      audible in Phase 2 (the center has no UI yet); Phase 3 completes the
-///      handoff by rerouting the readers' footers off `SpeechController`
-///      in-app. The share/action extensions keep the legacy path untouched.
+///   2. In-app, the shared readers route through `ReaderAudioLauncher.center`
+///      (installed by `AudioPlaybackWiring.install()`) whenever it's non-nil,
+///      so `SpeechController`'s conflicting Now-Playing/remote-command code is
+///      only ever reachable in-app if that install never ran — it isn't, in
+///      Luna Reader. The legacy path in practice only runs in the Share/Action
+///      extensions, which never touch `AudioPlaybackCenter` at all.
 public final class NowPlayingCoordinator {
     public static let shared = NowPlayingCoordinator()
 

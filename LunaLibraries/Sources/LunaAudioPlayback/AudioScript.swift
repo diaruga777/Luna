@@ -7,15 +7,15 @@ import LunaModels
 
 /// The *spoken* subset/shape of an article: what read-aloud actually says, as
 /// opposed to `ArticleContent`'s full visual text. A script is built once per
-/// article and cached (Phase 4) rather than recomputed on every play.
+/// article and cached (`AudioScriptStore`/`AudioScriptPipeline`) rather than
+/// recomputed on every play.
 ///
-/// Phase 1 ships only the pass-through factory below — every non-empty block,
-/// verbatim, in order. Phase 4 adds the real heuristic + optional on-device-LLM
-/// trimming pass (dropping captions, related-link lists, bylines, share
-/// prompts, etc. — see `claudedocs/audio-playback-plan.md`). The shape here is
-/// designed to be additive: trimming only ever narrows `spokenBlocks` to a
-/// subset of blocks (by `blockIndex`) with possibly-edited `text`; nothing else
-/// about this type needs to change when that lands.
+/// The pass-through factory below is the trimming-disabled fallback — every
+/// non-empty block, verbatim, in order. `AudioTrimHeuristics`/
+/// `AudioTrimIntelligence` narrow `spokenBlocks` to a subset of blocks (by
+/// `blockIndex`) with possibly-edited `text` (dropping captions, related-link
+/// lists, bylines, share prompts, etc. — see `claudedocs/audio-playback-plan.md`);
+/// nothing else about this type needs to change for that.
 public struct AudioScript: Codable, Equatable {
 
     /// One block of the article, as read aloud. `blockIndex` refers back to the

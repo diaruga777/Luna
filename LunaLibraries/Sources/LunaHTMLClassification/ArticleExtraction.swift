@@ -24,8 +24,7 @@ public struct ExtractedArticle: Equatable {
 /// `ArticleContent` and judges whether that content is a readable article. Pure
 /// core (`extract` / `extractFromJSONLD` delegate to `ArticleExtractor`) plus a
 /// single bounded-I/O helper (`fetchAndExtract`) used by every fetch-then-extract
-/// call site, so the duplicate helpers in `ArticleResolver` and `BypassRunner`
-/// collapse into one.
+/// call site, so every fetch-then-extract call site shares one implementation.
 ///
 /// Extraction NEVER knows that bypass exists; bypass only supplies candidate HTML.
 public struct ArticleExtraction {
@@ -49,13 +48,12 @@ public struct ArticleExtraction {
         extractor.extractFromJSONLD(html: html, baseURL: baseURL)
     }
 
-    /// THE single readable-vs-paywall-stub predicate. Consolidates the three former
-    /// duplicate checks (`ArticleResolver.isReadable`, `BypassGate` step 3, and the
-    /// implicit `!looksPaywalled` inside `ArticleContent.hasReadableBody`) into one
-    /// well-tested, HTML-aware function: a body that clears the length threshold AND
-    /// doesn't read as a paywall (including the publisher-declared schema.org lock the
-    /// HTML carries). Pass `html` whenever the source HTML is available so the lock
-    /// signal can't be bypassed by reaching for a text-only path. Pure.
+    /// THE single readable-vs-paywall-stub predicate, shared by the resolver,
+    /// `ArticleContent.hasReadableBody`, and `BypassGate`: a body that clears the
+    /// length threshold AND doesn't read as a paywall (including the publisher-
+    /// declared schema.org lock the HTML carries). Pass `html` whenever the source
+    /// HTML is available so the lock signal can't be bypassed by reaching for a
+    /// text-only path. Pure.
     public static func isReadableArticle(_ content: ArticleContent, html: String?) -> Bool {
         content.bodyTextLength >= ArticleContent.readableBodyThreshold
             && !PaywallDetector.looksPaywalled(content: content, html: html)

@@ -183,8 +183,8 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
             // Compact header: the mode switcher tucks into the nav bar between the
             // Back button and the audio toggle.
             navigationItem.titleView = modeControl
-            // De-glassed (Task 3): an opaque solid background instead of the blurred
-            // material, so the bar reads consistently on the solid reader background and
+            // Opaque solid background (not translucent) so the bar reads consistently
+            // against the solid reader background.
             let appearance = UINavigationBarAppearance()
             appearance.configureWithOpaqueBackground()
             appearance.backgroundColor = .systemBackground

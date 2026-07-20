@@ -1,6 +1,6 @@
 //
 //  InAppBrowser.swift
-//  Luna
+//  LunaPriceUI
 //
 
 import SafariServices

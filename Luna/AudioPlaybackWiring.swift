@@ -19,7 +19,7 @@ import Foundation
 /// the legacy self-contained `SpeechController` path (no audio controls).
 ///
 /// This is the injected-closure composition pattern the app shell already
-/// uses (`SocialMessageCenter.ingestHandler`, `DiagnosticLog.export*`,
+/// uses (`SendToFriendSheet.accountSetupLauncher`, `DiagnosticLog.export*`,
 /// `PriceTrackingViewController.defaultSaveAsArticle`):
 /// `LunaAudioPlayback` cannot know about `ReadingListSectioning`'s
 /// list ordering, so the queue rule lives here where both sides are visible.

@@ -1,6 +1,6 @@
 //
 //  PriceTrackingManager.swift
-//  Luna
+//  LunaPriceUI
 //
 
 import LunaHTMLClassification

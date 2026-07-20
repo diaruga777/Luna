@@ -9,8 +9,8 @@ import Foundation
 /// User-adjustable read-aloud playback preferences, persisted in the App
 /// Group — same shape/pattern as `LunaDesignSystem.ReaderSettings` and
 /// `LunaReaderUI.VoiceModelStore` (see `claudedocs/audio-playback-plan.md`).
-/// Read by `AudioPlaybackCenter` (autoplay chain, rate) and, once Phase 4
-/// lands, the trimming pipeline (`isIntelligentTrimmingEnabled`).
+/// Read by `AudioPlaybackCenter` (autoplay chain, rate) and by
+/// `AudioScriptPipeline`/`ExtensionAudioScriptResolver` (`isIntelligentTrimmingEnabled`).
 public enum AudioSettings {
     public static let appGroupID = AppConfig.appGroupID
     private static var defaults: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }

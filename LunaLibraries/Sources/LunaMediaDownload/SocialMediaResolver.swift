@@ -59,9 +59,9 @@ public struct SocialMediaResolver: SocialMediaResolving {
     private func resolveInstagram(url: URL, shortcode: String?) async -> [MediaAsset] {
         // Embed page FIRST. Its `contextJSON` (gql_data.shortcode_media) carries the
         // real `video_url` for reels/videos and `display_url` for stills — the only
-        // reliable keyless source. The crawler `og:` tags now expose ONLY the poster
-        // image behind a login wall, so a video reel would otherwise save a still
-        // (the bug this fixes). `/p/{code}/embed/` serves reels too.
+        // reliable keyless source. The crawler `og:` tags expose ONLY the poster image
+        // behind a login wall, so relying on them would save a still for a video reel.
+        // `/p/{code}/embed/` serves reels too.
         if let code = shortcode,
            let embed = URL(string: "https://www.instagram.com/p/\(code)/embed/captioned/"),
            let data = await fetch(htmlRequest(embed)),

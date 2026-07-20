@@ -1,6 +1,6 @@
 //
 //  ProductSuggestionDebouncer.swift
-//  ReaderKit
+//  LunaPriceUI
 //
 
 import Foundation

@@ -1275,8 +1275,7 @@ final class ReadingListViewController: UITableViewController {
         return cell
     }
 
-    /// Configures a row cell for `item` (shared with the search screen so its rows
-    /// look identical to the list's).
+    /// Configures a row cell for `item`.
     private func configureItemCell(_ cell: ReadingListItemCell, for item: ReadingListItem) {
         if let tracker = item.priceTracker {
             configurePriceTrackerCell(cell, item: item, tracker: tracker)
@@ -1385,9 +1384,9 @@ final class ReadingListViewController: UITableViewController {
         open(item(at: indexPath), presenter: self, transitionSourceView: tableView.cellForRow(at: indexPath))
     }
 
-    /// Opens an item presenting from `presenter` (the reading list, or the search
-    /// screen): platform/video/media via `openItem`, a hard-paywalled article via
-    /// the archive web view, else the in-app reader pushed on `presenter`'s nav.
+    /// Opens an item presenting from `presenter` (the reading list): platform/video/
+    /// media via `openItem`, a hard-paywalled article via the archive web view, else
+    /// the in-app reader pushed on `presenter`'s nav.
     func open(
         _ item: ReadingListItem,
         presenter: UIViewController,
@@ -1422,8 +1421,8 @@ final class ReadingListViewController: UITableViewController {
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared)
         // This alternate transition is intentionally available only from a real Reader
-        // list-row tap. Other readers (search, deep links, the two sibling apps) retain
-        // their existing navigation treatment.
+        // list-row tap. Other readers (deep links, the two sibling apps) retain their
+        // existing navigation treatment.
         if surface == .reader, let transitionSourceView {
             LunarEclipseTransitionCenter.prepare(reader: reader, sourceView: transitionSourceView)
         }

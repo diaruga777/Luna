@@ -52,9 +52,9 @@ public protocol ProductPriceRule {
 /// `Classifier` owns "is this a product?"; this component never re-decides that),
 /// produce its complete metadata INCLUDING a mandatory price — from ONE price source.
 ///
-/// One parse, one price: the per-host rule table is consulted first, then a generic
-/// JSON-LD/OG/microdata/embedded-JSON fallback. There is no detect-then-refetch double
-/// parse (the former "sometimes saves" root). The WKWebView render tier is reached
+/// One parse, one price source per extraction — no detect-then-refetch double parse:
+/// the per-host rule table is consulted first, then a generic JSON-LD/OG/microdata/
+/// embedded-JSON fallback. The WKWebView render tier is reached
 /// ONLY when `render != nil`; extensions pass `render: nil`, making the render tier
 /// structurally unreachable there (the action-extension "spins forever" fix). It is
 /// also hard-bounded wherever it runs.

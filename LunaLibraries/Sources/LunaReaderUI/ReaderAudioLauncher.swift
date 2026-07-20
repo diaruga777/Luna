@@ -7,7 +7,7 @@
 //
 //  The APP SHELL installs `ReaderAudioLauncher.center` once at launch
 //  (`AudioPlaybackWiring.install()` in AppDelegate — the same injected-
-//  composition pattern as `SocialMessageCenter.ingestHandler`). When it is
+//  composition pattern as `SendToFriendSheet.accountSetupLauncher`). When it is
 //  installed, the shared readers (`ScrollReaderViewController`,
 //  `RSVPViewController`) hand read-aloud off to the app-wide
 //  `AudioPlaybackCenter` (background playback, autoplay, the window-level

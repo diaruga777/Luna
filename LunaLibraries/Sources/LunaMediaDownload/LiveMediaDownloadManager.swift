@@ -268,9 +268,9 @@ public final class LiveMediaDownloadManager: NSObject {
         }
         job.resolveKind = resolve.kind
         store.upsert(job)
-        // Register the durable background task before any UI-facing callback.
-        // This closes the persist-without-task window that used to leave a
-        // forever-resolving row if the app terminated during the callback.
+        // Register the durable background task before any UI-facing callback, so a
+        // process death right after this point still has a real transfer to resume —
+        // never just a persisted job stuck at "resolving" forever.
         startTask(resolve.request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
         if job.isDownloaderOwned {
             postDownloaderJobProgress(job: job, progress: 0)

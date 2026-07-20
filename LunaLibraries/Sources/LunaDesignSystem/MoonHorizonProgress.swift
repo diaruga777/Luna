@@ -117,10 +117,9 @@ public enum MoonHorizonStyle {
     /// Where (as a fraction of the lit stretch) the ramp passes through midAlpha.
     static let rampMid: CGFloat = 0.55
 
-    // The sun point and the traveling pulse. The head's bloom was brightened a
-    // step when the pulse landed (the inner/outer head alphas below); the pulse
-    // itself glows at the head's former brightness, and the merge flare when
-    // the two meet briefly outshines both.
+    // The sun point and the traveling pulse. headBloom{Inner,Outer}Alpha are brighter
+    // than pulseBloom{Inner,Outer}Alpha, so the head reads as more lit than the
+    // traveling pulse; the merge flare briefly outshines both.
     static let headBloomInnerAlpha: CGFloat = 0.70
     static let headBloomOuterAlpha: CGFloat = 0.22
     static let pulseBloomInnerAlpha: CGFloat = 0.55

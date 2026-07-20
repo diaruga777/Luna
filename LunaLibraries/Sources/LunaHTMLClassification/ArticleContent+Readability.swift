@@ -3,9 +3,8 @@
 //  Luna
 //
 //  Readability judgments that depend on the HTML-classification layer
-//  (ArticleExtraction / PaywallDetector). Kept out of the LunaModels model so
-//  the base model stays a pure value type; this extension lives alongside those
-//  detectors and migrates into LunaHTMLClassification when that module extracts.
+//  (ArticleExtraction / PaywallDetector) — kept off the LunaModels value type
+//  so the base model stays pure.
 //
 
 import LunaModels

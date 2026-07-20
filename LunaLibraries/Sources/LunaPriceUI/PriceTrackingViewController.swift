@@ -320,8 +320,6 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
     }
 
 
-    // MARK: - Threshold footer
-
     // MARK: - Price-history graph
 
     private func configureGraphContainer() {
@@ -361,6 +359,8 @@ public final class PriceTrackingViewController: UIViewController, UIGestureRecog
             graphView.showPlaceholder()
         }
     }
+
+    // MARK: - Threshold footer
 
     private func makeThresholdFooter() -> UIView {
         let container = UIView()

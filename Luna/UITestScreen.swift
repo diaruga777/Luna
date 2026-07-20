@@ -129,18 +129,7 @@ enum UITestScreenBuilder {
                     contentTop: reader.inlineReaderTopEdgeInWindow,
                     cardFrame: reader.inlineReaderCardFrameInWindow,
                     showsOuterContentBelow: reader.inlineReaderShowsOuterContentBelow)
-                nested.onOpen = { [weak reader, weak nested] in
-                    guard let nested else { return }
-                    reader?.inlineReaderWillPresent(nested)
-                }
-                nested.onChromeStateChanged = { [weak reader, weak nested] in
-                    guard let nested else { return }
-                    reader?.inlineReaderWillPresent(nested)
-                }
-                nested.onDismiss = { [weak reader, weak nested] in
-                    guard let nested else { return }
-                    reader?.inlineReaderDidDismiss(nested)
-                }
+                nested.presentationCoordinator = reader
                 return nested
             }
 

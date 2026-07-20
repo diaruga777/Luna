@@ -650,38 +650,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0,
             cardFrame: coordinator?.inlineReaderCardFrameInWindow,
             showsOuterContentBelow: coordinator?.inlineReaderShowsOuterContentBelow ?? false)
-        inline.onOpen = { [weak coordinator, weak inline] in
-            guard let inline else { return }
-            coordinator?.inlineReaderWillPresent(inline)
-        }
-        inline.onChromeStateChanged = { [weak coordinator, weak inline] in
-            guard let inline else { return }
-            coordinator?.inlineReaderWillPresent(inline)
-        }
-        inline.onDismissalTransitionWillBegin = { [weak coordinator, weak inline] in
-            guard let inline else { return }
-            coordinator?.inlineReaderWillDismiss(inline)
-        }
-        inline.onDismissalTransitionDidCancel = { [weak coordinator, weak inline] in
-            guard let inline else { return }
-            coordinator?.inlineReaderDismissalDidCancel(inline)
-        }
-        inline.onDismiss = { [weak coordinator, weak inline] in
-            guard let inline else { return }
-            coordinator?.inlineReaderDidDismiss(inline)
-        }
+        inline.presentationCoordinator = coordinator
         present(inline, animated: true)
-    }
-
-    private var inlineReaderPresentationCoordinator: InlineReaderPresentationCoordinating? {
-        var ancestor = parent
-        while let controller = ancestor {
-            if let coordinator = controller as? InlineReaderPresentationCoordinating {
-                return coordinator
-            }
-            ancestor = controller.parent
-        }
-        return nil
     }
 
     private func configureLinkPreview() {

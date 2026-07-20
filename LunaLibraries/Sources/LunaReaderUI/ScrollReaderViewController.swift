@@ -1348,44 +1348,16 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let sourcePoint = linkActivationPoint(forCharacterRange: tappedRange)
         let sourceInWindow = view.convert(sourcePoint, to: nil)
         let readerOffset = textView.contentOffset.y
-        let coordinator = enclosingReaderViewController
+        let coordinator = inlineReaderPresentationCoordinator
 
         let overlay = SplitWebOverlayViewController(
             url: url, shareProvider: shareProvider,
             sourcePoint: sourceInWindow, outerURL: item.url ?? url,
             outerTitle: content.title,
             contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0)
-        overlay.onOpen = { [weak coordinator, weak overlay] in
-            guard let overlay else { return }
-            coordinator?.inlineReaderWillPresent(overlay)
-        }
-        overlay.onChromeStateChanged = { [weak coordinator, weak overlay] in
-            guard let overlay else { return }
-            coordinator?.inlineReaderWillPresent(overlay)
-        }
-        overlay.onDismissalTransitionWillBegin = { [weak coordinator, weak overlay] in
-            guard let overlay else { return }
-            coordinator?.inlineReaderWillDismiss(overlay)
-        }
-        overlay.onDismissalTransitionDidCancel = { [weak coordinator, weak overlay] in
-            guard let overlay else { return }
-            coordinator?.inlineReaderDismissalDidCancel(overlay)
-        }
-        overlay.onDismiss = { [weak self, weak coordinator, weak overlay] in
-            self?.restoreScroll(to: readerOffset)
-            guard let overlay else { return }
-            coordinator?.inlineReaderDidDismiss(overlay)
-        }
+        overlay.presentationCoordinator = coordinator
+        overlay.onDismiss = { [weak self] in self?.restoreScroll(to: readerOffset) }
         present(overlay, animated: true)
-    }
-
-    private var enclosingReaderViewController: ReaderViewController? {
-        var ancestor = parent
-        while let controller = ancestor {
-            if let reader = controller as? ReaderViewController { return reader }
-            ancestor = controller.parent
-        }
-        return nil
     }
 
     // MARK: - Simulator-only split hooks

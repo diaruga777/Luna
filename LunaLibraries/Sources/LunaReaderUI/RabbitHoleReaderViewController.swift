@@ -323,38 +323,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             contentTop: coordinator?.inlineReaderTopEdgeInWindow ?? 0,
             cardFrame: coordinator?.inlineReaderCardFrameInWindow,
             showsOuterContentBelow: coordinator?.inlineReaderShowsOuterContentBelow ?? false)
-        overlay.onOpen = { [weak coordinator, weak overlay] in
-            guard let overlay else { return }
-            coordinator?.inlineReaderWillPresent(overlay)
-        }
-        overlay.onChromeStateChanged = { [weak coordinator, weak overlay] in
-            guard let overlay else { return }
-            coordinator?.inlineReaderWillPresent(overlay)
-        }
-        overlay.onDismissalTransitionWillBegin = { [weak coordinator, weak overlay] in
-            guard let overlay else { return }
-            coordinator?.inlineReaderWillDismiss(overlay)
-        }
-        overlay.onDismissalTransitionDidCancel = { [weak coordinator, weak overlay] in
-            guard let overlay else { return }
-            coordinator?.inlineReaderDismissalDidCancel(overlay)
-        }
-        overlay.onDismiss = { [weak coordinator, weak overlay] in
-            guard let overlay else { return }
-            coordinator?.inlineReaderDidDismiss(overlay)
-        }
+        overlay.presentationCoordinator = coordinator
         present(overlay, animated: true)
-    }
-
-    private var inlineReaderPresentationCoordinator: InlineReaderPresentationCoordinating? {
-        var ancestor = parent
-        while let controller = ancestor {
-            if let coordinator = controller as? InlineReaderPresentationCoordinating {
-                return coordinator
-            }
-            ancestor = controller.parent
-        }
-        return nil
     }
 
     /// When set, the reader is embedded outside a push (the Reader card

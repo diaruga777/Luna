@@ -35,6 +35,22 @@ public extension InlineReaderPresentationCoordinating {
     func inlineReaderDismissalDidCancel(_ reader: ReaderChromeControlling) {}
 }
 
+extension UIViewController {
+    /// Walks `parent` for the nearest ancestor conforming to
+    /// `InlineReaderPresentationCoordinating` — the shared "find my host" lookup used
+    /// by every reader that can open a nested `SplitWebOverlayViewController`.
+    var inlineReaderPresentationCoordinator: InlineReaderPresentationCoordinating? {
+        var ancestor = parent
+        while let controller = ancestor {
+            if let coordinator = controller as? InlineReaderPresentationCoordinating {
+                return coordinator
+            }
+            ancestor = controller.parent
+        }
+        return nil
+    }
+}
+
 /// A reader nested inside the outer reader's fixed chrome.
 ///
 /// Link activation grows a black circle from the link while a second, reader-sized
@@ -46,11 +62,14 @@ public final class SplitWebOverlayViewController: UIViewController,
     UINavigationControllerDelegate, UIViewControllerTransitioningDelegate,
     ReaderChromeControlling {
 
+    /// The stable outer chrome this overlay opens/chrome-state-changes/dismisses
+    /// against — set by whichever reader creates the overlay (typically via
+    /// `inlineReaderPresentationCoordinator`, the shared ancestor-walk below).
+    public weak var presentationCoordinator: InlineReaderPresentationCoordinating?
+    /// One-shot hook run when dismissal completes, for cleanup local to the overlay's
+    /// creator rather than the outer chrome (e.g. `ScrollReaderViewController`
+    /// restoring the scroll offset it had before the split opened). Fires exactly once.
     public var onDismiss: (() -> Void)?
-    public var onDismissalTransitionWillBegin: (() -> Void)?
-    public var onDismissalTransitionDidCancel: (() -> Void)?
-    public var onOpen: (() -> Void)?
-    public var onChromeStateChanged: (() -> Void)?
 
     private let url: URL
     private let initialSourcePoint: CGPoint
@@ -137,7 +156,7 @@ public final class SplitWebOverlayViewController: UIViewController,
         SharedDiagnosticLog.record(
             "opening inline reader: \(url.absoluteString)", category: "preload-tap")
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        onOpen?()
+        presentationCoordinator?.inlineReaderWillPresent(self)
     }
 
     private func animateDismiss() {
@@ -151,14 +170,15 @@ public final class SplitWebOverlayViewController: UIViewController,
         guard !didNotifyDismissal else { return }
         didNotifyDismissal = true
         onDismiss?()
+        presentationCoordinator?.inlineReaderDidDismiss(self)
         // Async WebKit/title work may finish after UIKit has removed the
         // presentation. It must never reclaim the shared outer chrome target.
-        onChromeStateChanged = nil
+        presentationCoordinator = nil
     }
 
     fileprivate func presentationDismissalDidCancel() {
         didDismiss = false
-        onDismissalTransitionDidCancel?()
+        presentationCoordinator?.inlineReaderDismissalDidCancel(self)
     }
 
     // MARK: - Modal eclipse presentation
@@ -198,7 +218,10 @@ public final class SplitWebOverlayViewController: UIViewController,
             sourcePoint: initialSourcePoint,
             direction: .reverse,
             sceneFrame: inlineCardFrameInWindow,
-            onTransitionStart: { [weak self] in self?.onDismissalTransitionWillBegin?() },
+            onTransitionStart: { [weak self] in
+                guard let self else { return }
+                self.presentationCoordinator?.inlineReaderWillDismiss(self)
+            },
             atZenith: { [weak self] in self?.animateNewestTabBehindReader() })
     }
 
@@ -550,7 +573,7 @@ public final class SplitWebOverlayViewController: UIViewController,
 
     private func notifyChromeStateChanged() {
         guard !didDismiss else { return }
-        onChromeStateChanged?()
+        presentationCoordinator?.inlineReaderWillPresent(self)
     }
 
     private func updateScrollIndicatorTarget() {

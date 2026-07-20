@@ -4,9 +4,9 @@ High-quality read-aloud for Luna Reader: offline-rendered speech through a
 long-lived audio engine, background playback with Now Playing/remote
 commands, a persistent mini-player, autoplay-next-article, and an
 audio-specific trimming pass that speaks a cleaned-up subset of the visual
-article text. Landed in 5 phases (engine core; playback center + system
-integration; UI; trimming; final integration merge) — this doc describes what
-exists now, not the phase history (see git log for that).
+article text, extension-safe playback handoff, and a Siri/Spotlight surface —
+this doc describes what exists now, not the phase-by-phase history (see git
+log for that).
 
 ## Architecture
 
@@ -36,25 +36,27 @@ New SwiftPM module **`LunaAudioPlayback`** in `LunaLibraries/Package.swift`
 ### `AudioPlaybackCenter` (`LunaAudioPlayback/AudioPlaybackCenter.swift`)
 
 App-wide singleton, single owner of playback. State machine: `idle /
-playing(item) / announcing(next) / paused(item, resumable)`. Key seams
-(installed by the app shell at launch, all nil/no-op by default so the module
-never crashes when nothing is wired):
+playing(item) / announcing(next) / paused(item, resumable)`. One seam,
+`weak var dataSource: AudioPlaybackCenterDataSource?` — nil by default (tests,
+and the Share/Action extensions, never install one) so the module never
+crashes when nothing is wired:
 
-- `nextItemProvider: (() -> QueueCandidate?)?` — installed by
-  `Luna/AudioPlaybackWiring.swift`. Resolves to `AudioQueueRule.nextCandidate`:
-  the top-most `readState == .unopened`, readable-article item in the current
+- `nextCandidate() -> QueueCandidate?` — the app shell's
+  `AppAudioPlaybackDataSource` (installed by `Luna/AudioPlaybackWiring.swift`)
+  resolves this to `AudioQueueRule.nextCandidate`: the top-most
+  `readState == .unopened`, readable-article item in the current
   Reader-surface list order (reproduces `ReadingListSectioning`'s exact
   display order), excluding the currently-playing item. `.opened` items are
-  never auto-queued (product decision).
-- `scriptProvider: (ReadingListItem, ArticleContent) -> AudioScript` —
-  installed by `Luna/AudioScriptPipelineWiring.swift` to
-  `AudioScriptPipeline.shared.script(for:content:)`. Defaults to
-  `AudioScript(passthrough:)` (every non-empty block, verbatim) if nothing
-  installs it (tests, or a hypothetical future host that skips trimming).
-- `scriptPrefetchHandler: ((ReadingListItem, ArticleContent) -> Void)?` —
-  called when the autoplay chain resolves the NEXT queue candidate (before
-  its chime/announcement even starts) so the script pipeline can
-  verify/prefetch that item's script ahead of playback reaching it.
+  never auto-queued (product decision). A nil `dataSource` means the autoplay
+  chain finds no next candidate.
+- `script(for:content:) -> AudioScript` — the same conformer forwards to
+  `AudioScriptPipeline.shared.script(for:content:)`. `beginPlayback` falls
+  back to `AudioScript(passthrough:)` (every non-empty block, verbatim) when
+  `dataSource` is nil.
+- `prefetch(item:content:)` — called when the autoplay chain resolves the
+  NEXT queue candidate (before its chime/announcement even starts) so the
+  script pipeline can verify/prefetch that item's script ahead of playback
+  reaching it.
 
 Autoplay chain on segment-queue completion: `store.markFinishedReading(id)` →
 transition chime → "Now Reading — `<title>`" announcement (same voice, always
@@ -286,10 +288,12 @@ a way to pick up where an extension left off.
   `AudioTrimIntelligence`, `AudioTrimModelSessionFactory`,
   `ExtensionAudioScriptResolver`, `ExtensionAudioScriptWriter`,
   `Resources/*.caf`).
-- `Luna/AudioPlaybackWiring.swift` — queue provider + Now Playing
-  registration + `ReaderAudioLauncher.center` install, at launch.
-- `Luna/AudioScriptPipelineWiring.swift` — trimming pipeline install +
-  `scriptProvider`/`scriptPrefetchHandler` wiring, at launch (after
+- `Luna/AudioPlaybackWiring.swift` — installs `AppAudioPlaybackDataSource`
+  (the app shell's one `AudioPlaybackCenterDataSource` conformer: queue rule +
+  script resolution), Now Playing registration, and
+  `ReaderAudioLauncher.center`, at launch.
+- `Luna/AudioScriptPipelineWiring.swift` — starts the trimming pipeline's
+  `.readingListChanged` observers/launch sweep, at launch (after
   `AudioPlaybackWiring.install()`).
 - `Luna/MiniPlayer/MiniPlayerHostViewController.swift`,
   `Luna/MiniPlayer/AudioMiniPlayerView.swift`.
@@ -315,7 +319,7 @@ a way to pick up where an extension left off.
   AudioQueueRule,NowPlayingCoordinator,AudioSessionCoordinator,
   AudioScriptPipeline,AudioScriptStore,AudioTrimHeuristics,
   AudioTrimIntelligence,ExtensionAudioScriptResolver,ExtensionAudioScriptWriter,
-  SpeechControllerAudioTrimming,MiniPlayer,...}Tests.swift`.
+  SpeechControllerAudioTrimming,AudioMiniPlayer,...}Tests.swift`.
 
 ## Gotchas future changes must respect
 

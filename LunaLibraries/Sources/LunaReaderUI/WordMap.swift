@@ -4,6 +4,7 @@
 //
 
 import LunaModels
+import LunaReaderEngine
 import Foundation
 
 /// Maps between the article's word stream (the same indices RSVPEngine uses)
@@ -22,9 +23,9 @@ public struct WordMap {
                 // whose tokenizer yields nothing for empty text).
                 continue
             }
-            // Tokenize exactly like RSVPEngine: split on whitespace.
+            // Shares RSVPEngine's tokenizer, so the two stay in the same word-index space.
             var searchLocation = 0
-            let tokens = block.text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            let tokens = WordTokenizer.tokens(in: block.text).map(\.text)
             for token in tokens {
                 let tokenRange = blockText.range(
                     of: token,

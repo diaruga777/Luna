@@ -78,11 +78,6 @@ public struct RSVPEngine {
     /// Whitespace-separated tokens with their link (if the token's UTF-16 range
     /// overlaps one of the block's link ranges).
     private static func tokensWithURLs(in block: ArticleContent.Block) -> [(text: String, url: URL?)] {
-        var result: [(String, URL?)] = []
-        var current = ""
-        var currentStart = 0
-        var utf16Offset = 0
-
         func linkURL(start: Int, length: Int) -> URL? {
             for link in block.links
             where start < link.start + link.length && start + length > link.start {
@@ -90,25 +85,9 @@ public struct RSVPEngine {
             }
             return nil
         }
-        func flush() {
-            guard !current.isEmpty else { return }
-            let length = utf16Offset - currentStart
-            result.append((current, linkURL(start: currentStart, length: length)))
-            current = ""
+        return WordTokenizer.tokens(in: block.text).map { token in
+            (token.text, linkURL(start: token.utf16Start, length: token.utf16Length))
         }
-
-        for character in block.text {
-            let characterLength = String(character).utf16.count
-            if character.isWhitespace {
-                flush()
-            } else {
-                if current.isEmpty { currentStart = utf16Offset }
-                current.append(character)
-            }
-            utf16Offset += characterLength
-        }
-        flush()
-        return result
     }
 
     private static func makeWord(_ token: String, isLastInBlock: Bool, url: URL? = nil) -> RSVPWord {

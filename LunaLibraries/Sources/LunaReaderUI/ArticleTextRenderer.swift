@@ -241,21 +241,12 @@ public enum ArticleTextRenderer {
         let key = "\(fileURL.path)|\(Int(maxWidth.rounded()))" as NSString
         if let cached = decodedCache.object(forKey: key) { return cached }
 
-        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, sourceOptions) else {
-            return nil
-        }
         let scale = UIScreen.main.scale
-        let thumbnailOptions = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxWidth * scale,
-        ] as CFDictionary
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
+        guard let image = ImageDownsampling.decode(
+            path: fileURL.path, scale: scale, maxPixelSize: maxWidth * scale)
+        else {
             return nil
         }
-        let image = UIImage(cgImage: cgImage, scale: scale, orientation: .up)
         decodedCache.setObject(image, forKey: key)
         return image
     }

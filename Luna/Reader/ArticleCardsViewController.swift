@@ -779,7 +779,7 @@ private final class PasteboardCardContentViewController: CardContentViewControll
 /// states. The card reports reading activity so the host can fade the carousel
 /// chrome around it: scroll direction in the scroll reader, play state in RSVP.
 private final class ReaderCardContentViewController: CardContentViewController,
-    InlineReaderPresentationCoordinating {
+    InlineReaderPresentationCoordinating, RabbitHoleReaderDelegate {
 
     /// The reader wants the carousel chrome faded away (true — reading is
     /// under way) or back in (false — the user is surfacing). `extendsCard`
@@ -882,22 +882,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         view.insertSubview(reader.view, at: 0)
         reader.didMove(toParent: self)
         if let rabbitHole = reader as? RabbitHoleReaderViewController {
-            // Root back button: the reader has nowhere to pop to — surface,
-            // bringing the carousel chrome back instead.
-            rabbitHole.onRootBack = { [weak self] in
-                guard let self, self.isCentered else { return }
-                self.onImmersionChange?(false, true)
-            }
-            // A dive, pop, mode switch, or late article embed swaps the live
-            // scroll views / RSVP controllers — re-sweep for new ones to
-            // observe (idempotent; next runloop so the new child is mounted).
-            rabbitHole.onContentHierarchyChanged = { [weak self] in
-                DispatchQueue.main.async { self?.observeReaderScrollViews() }
-                DispatchQueue.main.async {
-                    guard let self, self.isCentered else { return }
-                    self.onReaderReady?(rabbitHole)
-                }
-            }
+            rabbitHole.delegate = self
         }
         self.reader = reader
         reader.view.frame = view.bounds
@@ -914,6 +899,26 @@ private final class ReaderCardContentViewController: CardContentViewController,
                 self?.observeReaderScrollViews()
             }
         }
+    }
+
+    // MARK: - RabbitHoleReaderDelegate
+
+    func readerContentHierarchyDidChange(_ reader: RabbitHoleReaderViewController) {
+        // A dive, pop, mode switch, or late article embed swaps the live scroll
+        // views / RSVP controllers — re-sweep for new ones to observe (idempotent;
+        // next runloop so the new child is mounted).
+        DispatchQueue.main.async { self.observeReaderScrollViews() }
+        DispatchQueue.main.async {
+            guard self.isCentered else { return }
+            self.onReaderReady?(reader)
+        }
+    }
+
+    func readerRequestedRootBack(_ reader: RabbitHoleReaderViewController) {
+        // The reader has nowhere to pop to — surface, bringing the carousel
+        // chrome back instead.
+        guard isCentered else { return }
+        onImmersionChange?(false, true)
     }
 
     func inlineReaderWillPresent(_ reader: ReaderChromeControlling) {

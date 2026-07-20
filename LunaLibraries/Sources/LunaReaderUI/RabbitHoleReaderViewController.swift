@@ -42,6 +42,21 @@ public protocol ReaderChromeControlling: AnyObject {
     func chromeBack()
 }
 
+/// Notifications a `RabbitHoleReaderViewController` sends the outer host that embeds
+/// it (the Reader card carousel) — the reader's own analogue of the closure pair this
+/// reader already replaces via `RabbitHoleLayerDelegate`/`ReaderChromeControlling`'s
+/// query direction.
+public protocol RabbitHoleReaderDelegate: AnyObject {
+    /// The live reader hierarchy changed shape — a layer's article embeds, the mode
+    /// switches, a dive pushes a layer, or a pop removes one. Embedding hosts
+    /// re-sweep the hierarchy for scroll views / RSVP controllers to observe.
+    func readerContentHierarchyDidChange(_ reader: RabbitHoleReaderViewController)
+    /// The root layer's back pill was tapped and there's nothing to pop to — the
+    /// reader defers to its host (which brings back the carousel's own chrome)
+    /// instead of popping its own navigation controller.
+    func readerRequestedRootBack(_ reader: RabbitHoleReaderViewController)
+}
+
 public final class RabbitHoleReaderViewController: UIViewController, UIGestureRecognizerDelegate,
     ReaderChromeControlling, RabbitHoleLayerDelegate {
 
@@ -253,24 +268,18 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     }
 
     public func layerDidBecomeArticle(_ layer: RabbitHoleLayerViewController) {
-        onContentHierarchyChanged?()
+        delegate?.readerContentHierarchyDidChange(self)
     }
 
     public func layer(_ layer: RabbitHoleLayerViewController,
                       didChangeMode mode: ReadingListItem.ReaderMode) {
         persist()
-        onContentHierarchyChanged?()
+        delegate?.readerContentHierarchyDidChange(self)
     }
 
     public func layerRequestedBack(_ layer: RabbitHoleLayerViewController) {
         handleBack()
     }
-
-    /// Fired whenever the live reader hierarchy changes shape — a layer's
-    /// article embeds, the mode switches, a dive pushes a layer, or a pop
-    /// removes one. Embedding hosts (the Reader card carousel) re-sweep the
-    /// hierarchy for scroll views / RSVP controllers to observe.
-    public var onContentHierarchyChanged: (() -> Void)?
 
     // MARK: - Static placement (the only writer of layer frames)
 
@@ -285,10 +294,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
             layer.view.alpha = p.cardAlpha
             layer.applyDepth(p.depth)
             layer.setChrome(role: p.role, alpha: p.chromeAlpha)
-            // The root layer of an embedded reader (carousel card, onRootBack
+            // The root layer of an embedded reader (carousel card, delegate
             // set) has nothing to pop to — no back pill. Deeper layers and
             // pushed fullscreen readers keep theirs.
-            layer.setBackButtonHidden(i == 0 && onRootBack != nil)
+            layer.setBackButtonHidden(i == 0 && delegate != nil)
         }
     }
 
@@ -300,7 +309,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         focus = topIndex
         applyFocus()
         persist()
-        onContentHierarchyChanged?()
+        delegate?.readerContentHierarchyDidChange(self)
     }
 
     private func presentInlineReader(
@@ -330,7 +339,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// When set, the reader is embedded outside a push (the Reader card
     /// carousel) and the root layer has nothing to pop to: its back pill is
     /// hidden (re-applied via applyFocus, which reads this).
-    public var onRootBack: (() -> Void)? {
+    public weak var delegate: RabbitHoleReaderDelegate? {
         didSet { if isViewLoaded { applyFocus() } }
     }
 
@@ -347,8 +356,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// Whether layers draw their own in-card header pills. Hosts that render the
     /// chrome externally (the Reader carousel's screen-level pill row) set this
     /// false BEFORE the view loads and drive the reader through `chromeState` +
-    /// the `chrome*` methods below; `onContentHierarchyChanged` fires whenever
-    /// the state may have changed (dive, pop, mode switch, article embed).
+    /// the `chrome*` methods below; the delegate's `readerContentHierarchyDidChange`
+    /// fires whenever the state may have changed (dive, pop, mode switch, article embed).
     public var providesOwnChrome = true
 
     /// Screen-hosted chrome occlusion measured in this reader's coordinates.
@@ -363,8 +372,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     /// The live scroll surface of the focused layer, or nil when it has none
     /// (RSVP). A host that draws its own scroll indicator tracks this and
-    /// retargets it whenever `onContentHierarchyChanged` fires (dive, pop, mode
-    /// switch, article embed) — the focused layer, and thus its scroll view,
+    /// retargets it whenever `readerContentHierarchyDidChange` fires (dive, pop,
+    /// mode switch, article embed) — the focused layer, and thus its scroll view,
     /// changes across those.
     public var focusedContentScrollView: UIScrollView? { layers[safe: focus]?.contentScrollView }
 
@@ -412,8 +421,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     /// Header back: pop one layer, or exit the reader entirely at the root.
     private func handleBack() {
         if topIndex == 0 {
-            if let onRootBack {
-                onRootBack()
+            if let delegate {
+                delegate.readerRequestedRootBack(self)
             } else {
                 navigationController?.popViewController(animated: true)
             }
@@ -428,7 +437,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         focus = index
         applyFocus()
         persist()
-        onContentHierarchyChanged?()
+        delegate?.readerContentHierarchyDidChange(self)
     }
 
     private func trimLayers(above index: Int) {

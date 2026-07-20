@@ -202,13 +202,7 @@ public final class CardCarouselViewController: UIViewController {
     private let cardArea = UIView()
     private var cardAreaTopConstraint: NSLayoutConstraint!
     private lazy var scrubber = CarouselScrubberView(style: style.scrubberStyle)
-    private var previewOverlay: UIView?
-    private var previewImageView: UIImageView?
-    private var previewTitleLabel: UILabel?
-    /// Host-supplied content mounted inside the scrub preview. Downloader media
-    /// is live/playable; Reader supplies an inexpensive text excerpt.
-    private var previewContent: CardContentViewController?
-    private var previewContentIndex: Int?
+    private lazy var scrubPreview = CarouselScrubPreviewController(carousel: self, cardArea: cardArea)
     /// Bumped on every reload so async thumbnail/badge completions from a
     /// superseded item set can't land on the wrong chip.
     private var stripLoadGeneration = 0
@@ -315,7 +309,7 @@ public final class CardCarouselViewController: UIViewController {
         }
         guard !isTransitioning else { return }
         for slot in slots.values { applyRestingLayout(to: slot) }
-        layoutPreviewOverlay()
+        scrubPreview.layout(centeredCardFrame: centeredCardFrame())
     }
 
     public override func viewDidAppear(_ animated: Bool) {
@@ -350,7 +344,7 @@ public final class CardCarouselViewController: UIViewController {
             pendingReload = .pending(centerIndex: index ?? existingIndex)
             return
         }
-        removeScrubPreview()
+        scrubPreview.remove()
         setImmersed(false)
         count = dataSource?.numberOfCards(in: self) ?? 0
         let target = min(max(index ?? currentIndex, 0), max(0, count - 1))
@@ -725,114 +719,19 @@ public final class CardCarouselViewController: UIViewController {
     private func showScrubPreview(_ index: Int) {
         guard count > 0, !isTransitioning else { return }
         slots[currentIndex]?.content.setPlaying(false)
-        if previewOverlay == nil {
-            let overlay = UIView()
-            overlay.backgroundColor = .secondarySystemBackground
-            overlay.layer.cornerRadius = CarouselCardView.cornerRadius
-            overlay.layer.cornerCurve = .continuous
-            overlay.clipsToBounds = true
-            switch style.scrubberStyle {
-            case .thumbnails:
-                let imageView = UIImageView()
-                imageView.contentMode = .scaleAspectFit
-                imageView.frame = overlay.bounds
-                imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-                overlay.addSubview(imageView)
-                previewImageView = imageView
-            case .miniCards:
-                let label = UILabel()
-                label.font = .preferredFont(forTextStyle: .title2)
-                label.textColor = .label
-                label.textAlignment = .center
-                label.numberOfLines = 0
-                label.translatesAutoresizingMaskIntoConstraints = false
-                overlay.addSubview(label)
-                NSLayoutConstraint.activate([
-                    label.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 24),
-                    label.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -24),
-                    label.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
-                ])
-                previewTitleLabel = label
-            }
-            cardArea.addSubview(overlay)
-            previewOverlay = overlay
-            layoutPreviewOverlay()
-        }
-        switch style.scrubberStyle {
-        case .thumbnails:
-            dataSource?.carousel(self, loadThumbnailForCardAt: index) { [weak self] image in
-                DispatchQueue.main.async { self?.previewImageView?.image = image }
-            }
-            if style.autoplaysScrubPreviewContent {
-                mountPreviewContent(at: index, autoplay: true)
-            }
-        case .miniCards:
-            previewTitleLabel?.text = dataSource?.carousel(self, titleForCardAt: index)
-            mountPreviewContent(at: index)
-        }
-    }
-
-    private func mountPreviewContent(at index: Int, autoplay: Bool = false) {
-        guard index != previewContentIndex else { return }
-        unmountPreviewContent()
-        previewTitleLabel?.isHidden = false
-        guard let overlay = previewOverlay, let dataSource,
-              index >= 0, index < count
-        else { return }
-        guard let content = dataSource.carousel(
-            self, previewContentControllerForCardAt: index)
-        else { return }
-        addChild(content)
-        content.view.frame = overlay.bounds
-        content.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        overlay.addSubview(content.view)
-        content.didMove(toParent: self)
-        content.setMuted(true)
-        previewContent = content
-        previewContentIndex = index
-        if autoplay {
-            content.cardDidBecomeCentered()
-        }
-        // The mounted preview owns its complete visible presentation.
-        previewTitleLabel?.isHidden = true
-    }
-
-    private func unmountPreviewContent() {
-        guard let content = previewContent else { return }
-        content.setPlaying(false)
-        content.willMove(toParent: nil)
-        content.view.removeFromSuperview()
-        content.removeFromParent()
-        previewContent = nil
-        previewContentIndex = nil
-    }
-
-    private func layoutPreviewOverlay() {
-        previewOverlay?.frame = centeredCardFrame()
-    }
-
-    private func removeScrubPreview() {
-        unmountPreviewContent()
-        removeScrubPreviewOverlay()
-    }
-
-    private func removeScrubPreviewOverlay() {
-        previewOverlay?.removeFromSuperview()
-        previewOverlay = nil
-        previewImageView = nil
-        previewTitleLabel = nil
+        scrubPreview.show(at: index, cardCount: count, centeredCardFrame: centeredCardFrame())
     }
 
     private func commitScrub(to index: Int) {
         guard count > 0, !isTransitioning else { return }
         let target = min(max(index, 0), count - 1)
         if style.autoplaysScrubPreviewContent,
-           previewContentIndex == target,
-           let content = takeScrubPreviewContent() {
+           scrubPreview.previewContentIndex == target,
+           let content = scrubPreview.takeContent() {
             promoteScrubPreview(content, to: target)
             return
         }
-        removeScrubPreview()
+        scrubPreview.remove()
         if target == currentIndex {
             if isViewVisible { slots[currentIndex]?.content.cardDidBecomeCentered() }
             scrubber.setSelectedIndex(currentIndex, animated: true)
@@ -841,17 +740,6 @@ public final class CardCarouselViewController: UIViewController {
         } else {
             jump(to: target)
         }
-    }
-
-    /// Detaches the live preview without pausing or removing it as a child.
-    /// The caller immediately installs it into a real carousel card.
-    private func takeScrubPreviewContent() -> CardContentViewController? {
-        guard let content = previewContent else { return nil }
-        previewContent = nil
-        previewContentIndex = nil
-        content.view.removeFromSuperview()
-        removeScrubPreviewOverlay()
-        return content
     }
 
     /// Commits a scrubbed media preview with no player swap: the preview's

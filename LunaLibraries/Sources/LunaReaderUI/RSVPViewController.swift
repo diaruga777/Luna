@@ -27,10 +27,7 @@ import UIKit
 /// word within the phrase) instead of the WPM timer.
 public final class RSVPViewController: UIViewController, ReaderPositionTracking {
 
-    /// Fired once when playback reaches the last word.
-    public var onFinishedReading: (() -> Void)?
-    /// Fired when a reader that had reached the end moves back before it.
-    public var onMovedAwayFromEnd: (() -> Void)?
+    public weak var completionDelegate: ReaderCompletionDelegate?
 
     /// When set, the link pill hands the tapped link (and the pill's center, in this
     /// reader's coordinates) to this closure instead of presenting a new inline split
@@ -145,7 +142,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// Revealed (above the controls) when the reader reaches the end.
     private lazy var shareView = makeShareView()
     private var didRevealShare = false
-    private var didFinishReading = false
+    private var finishedReadingTracker = FinishedReadingTracker()
     private let statusLabel = UILabel()
     private let wpmDownButton = UIButton(type: .system)
     private let wpmUpButton = UIButton(type: .system)
@@ -255,7 +252,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         self.currentChunkIndex = 0
         self.isPlaying = false
         self.didRevealShare = false
-        self.didFinishReading = false
+        self.finishedReadingTracker = FinishedReadingTracker()
 
         currentIndex = resolveResumeFrame(carriedOver: resumeWordIndex)
         if displayMode == .phrases { currentChunkIndex = chunkIndex(forWord: currentIndex) }
@@ -1175,11 +1172,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     /// Common end-of-article handling for both sub-modes.
     private func finish() {
-        guard !didFinishReading else { return }
-        didFinishReading = true
+        guard finishedReadingTracker.update(reachedEnd: true) == .finished else { return }
         pause()
         revealShareView()
-        onFinishedReading?()
+        completionDelegate?.readerDidFinishReading(self)
     }
 
     // MARK: - Controls
@@ -1341,12 +1337,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func updateFinishedReadingState() {
         if isAtEnd() {
             finish()
-        } else if didFinishReading {
-            didFinishReading = false
+        } else if finishedReadingTracker.update(reachedEnd: false) == .movedAway {
             didRevealShare = false
             shareView.isHidden = true
             shareView.alpha = 0
-            onMovedAwayFromEnd?()
+            completionDelegate?.readerDidMoveAwayFromEnd(self)
         }
     }
 

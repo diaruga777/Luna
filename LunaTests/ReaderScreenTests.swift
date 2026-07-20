@@ -15,6 +15,15 @@ import UIKit
 import XCTest
 @testable import Luna
 
+/// Records completion-delegate callbacks for tests that drive `RSVPViewController`/
+/// `ScrollReaderViewController` directly (outside a host that already conforms).
+private final class RecordingReaderCompletionDelegate: ReaderCompletionDelegate {
+    var didFinish = false
+    var didMoveAway = false
+    func readerDidFinishReading(_ reader: UIViewController) { didFinish = true }
+    func readerDidMoveAwayFromEnd(_ reader: UIViewController) { didMoveAway = true }
+}
+
 final class ReaderScreenTests: XCTestCase {
 
     private let content = UITestFixtures.sampleArticleContent(title: "Reader Fixture Article")
@@ -135,9 +144,9 @@ final class ReaderScreenTests: XCTestCase {
     }
 
     func testScrollReaderFinishesWhenScrolledToEnd() {
-        var didFinish = false
+        let delegate = RecordingReaderCompletionDelegate()
         let reader = ScrollReaderViewController(item: item, content: longScrollArticleContent())
-        reader.onFinishedReading = { didFinish = true }
+        reader.completionDelegate = delegate
         reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         reader.loadViewIfNeeded()
         reader.view.layoutIfNeeded()
@@ -161,13 +170,13 @@ final class ReaderScreenTests: XCTestCase {
         textView.contentOffset.y = maxOffset
         reader.scrollViewDidScroll(textView)
 
-        XCTAssertTrue(didFinish, "Scrolling to the full article end should mark the article read")
+        XCTAssertTrue(delegate.didFinish, "Scrolling to the full article end should mark the article read")
     }
 
     func testRSVPSkipToEndFinishesReading() {
-        var didFinish = false
+        let delegate = RecordingReaderCompletionDelegate()
         let reader = RSVPViewController(item: item, content: shortArticleContent())
-        reader.onFinishedReading = { didFinish = true }
+        reader.completionDelegate = delegate
         reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         reader.loadViewIfNeeded()
         reader.view.layoutIfNeeded()
@@ -177,7 +186,7 @@ final class ReaderScreenTests: XCTestCase {
         skipForward?.sendActions(for: .touchUpInside)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
 
-        XCTAssertTrue(didFinish, "Skipping onto the final RSVP word should mark the article read")
+        XCTAssertTrue(delegate.didFinish, "Skipping onto the final RSVP word should mark the article read")
     }
 
     func testReaderHostMarksScrollCompletionReadAndArchived() {

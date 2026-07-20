@@ -375,8 +375,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
                 shareProvider: shareProvider, resumeWordIndex: resumeWordIndex,
                 initialDisplayMode: opensRSVPInPhrases ? .phrases : nil)
             opensRSVPInPhrases = false
-            rsvp.onFinishedReading = { [weak self] in self?.markRead() }
-            rsvp.onMovedAwayFromEnd = { [weak self] in self?.unmarkReadIfAutoMarkedThisSession() }
+            rsvp.completionDelegate = self
             child = rsvp
         case .original:
             // The archive keeps its OWN scroll place, disjoint from the shared
@@ -410,8 +409,7 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
             item: item, content: content, audioEnabled: audioOn,
             shareProvider: shareProvider,
             resumeWordIndex: resumeWordIndex)
-        scroll.onFinishedReading = { [weak self] in self?.markRead() }
-        scroll.onMovedAwayFromEnd = { [weak self] in self?.unmarkReadIfAutoMarkedThisSession() }
+        scroll.completionDelegate = self
         scroll.onShareFooterVisibilityChanged = { [weak self] visible in
             self?.setFloatingShareHidden(visible)
         }
@@ -441,5 +439,14 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
         let restoredState: ReadingListItem.ReadState = marksOpenedOnLoad ? .opened : readStateOnEntry
         store.restoreFinishedReadingState(
             readState: restoredState, readingProgress: readingProgressOnEntry, for: item.id)
+    }
+}
+
+extension ReaderViewController: ReaderCompletionDelegate {
+    public func readerDidFinishReading(_ reader: UIViewController) {
+        markRead()
+    }
+    public func readerDidMoveAwayFromEnd(_ reader: UIViewController) {
+        unmarkReadIfAutoMarkedThisSession()
     }
 }

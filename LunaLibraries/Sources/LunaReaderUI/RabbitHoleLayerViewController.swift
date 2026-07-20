@@ -700,8 +700,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
                     self, didActivateLink: url, lineText: nil,
                     at: self.view.convert(point, from: self.rsvpReader.view))
             }
-            rsvpReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
-            rsvpReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
+            rsvpReader.completionDelegate = self
             showChild(rsvpReader)
         } else {
             scrollReader.configureForReuse(
@@ -715,8 +714,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
                     self, didActivateLink: url, lineText: lineText,
                     at: self.view.convert(point, from: self.scrollReader.view))
             }
-            scrollReader.onFinishedReading = { [weak self] in self?.markEmbeddedItemRead() }
-            scrollReader.onMovedAwayFromEnd = { [weak self] in self?.unmarkEmbeddedItemReadIfAutoMarked() }
+            scrollReader.completionDelegate = self
             showChild(scrollReader)
         }
         readerMode = mode
@@ -877,5 +875,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         if articleContent == nil, (error as NSError).code != NSURLErrorCancelled {
             showLoadError()
         }
+    }
+}
+
+extension RabbitHoleLayerViewController: ReaderCompletionDelegate {
+    public func readerDidFinishReading(_ reader: UIViewController) {
+        markEmbeddedItemRead()
+    }
+    public func readerDidMoveAwayFromEnd(_ reader: UIViewController) {
+        unmarkEmbeddedItemReadIfAutoMarked()
     }
 }

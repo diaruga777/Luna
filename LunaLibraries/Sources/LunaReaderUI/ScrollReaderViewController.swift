@@ -17,10 +17,7 @@ import UIKit
 public final class ScrollReaderViewController: UIViewController, UITextViewDelegate, ReaderPositionTracking,
     UIContextMenuInteractionDelegate, UIGestureRecognizerDelegate {
 
-    /// Fired once when the user reaches the end of the article.
-    public var onFinishedReading: (() -> Void)?
-    /// Fired when a reader that had reached the end moves back before it.
-    public var onMovedAwayFromEnd: (() -> Void)?
+    public weak var completionDelegate: ReaderCompletionDelegate?
 
     /// When set, a tapped inline link (with the exact text range UIKit already resolved
     /// for it) is handed to this closure instead of opening a new inline split overlay —
@@ -81,7 +78,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var imageDownloadTask: Task<Void, Never>?
     private let textView = UITextView(usingTextLayoutManager: false)
     private let store = ReadingListStore.shared
-    private var didFinishReading = false
+    private var finishedReadingTracker = FinishedReadingTracker()
     private var didRestoreScroll = false
 
     // MARK: - Progressive (two-phase) load
@@ -246,7 +243,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         shareView?.removeFromSuperview()
         shareView = makeShareView()
 
-        didFinishReading = false
+        finishedReadingTracker = FinishedReadingTracker()
         didRestoreScroll = false
         didLoadFullContent = false
         didBeginFullContentLoad = false
@@ -1162,12 +1159,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         guard didLoadFullContent, textView.contentSize.height > 0 else { return }
         let visibleBottom = textView.contentOffset.y + textView.bounds.height
         let reachedEnd = visibleBottom >= textView.contentSize.height - 40
-        if reachedEnd, !didFinishReading {
-            didFinishReading = true
-            onFinishedReading?()
-        } else if !reachedEnd, didFinishReading {
-            didFinishReading = false
-            onMovedAwayFromEnd?()
+        switch finishedReadingTracker.update(reachedEnd: reachedEnd) {
+        case .finished: completionDelegate?.readerDidFinishReading(self)
+        case .movedAway: completionDelegate?.readerDidMoveAwayFromEnd(self)
+        case nil: break
         }
     }
 
@@ -1440,8 +1435,8 @@ extension ScrollReaderViewController: SpeechControllerDelegate {
     }
 
     public func speechDidFinishArticle(_ controller: SpeechController) {
-        didFinishReading = true
-        onFinishedReading?()
+        finishedReadingTracker.markFinished()
+        completionDelegate?.readerDidFinishReading(self)
         footerPlayButton.configuration?.image = UIImage(systemName: "play.fill")
         removeHighlight()
     }

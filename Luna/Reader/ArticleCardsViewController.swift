@@ -32,6 +32,7 @@ import LunaReaderUI
 import LunaReadingList
 import LunaReadingListUI
 import LunaSocialUI
+import LunaSocial
 import LunaStorage
 import LunaURLClassification
 import UIKit
@@ -130,6 +131,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(reload), name: .readingListChanged, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reload), name: .friendsListChanged, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(refreshPasteboardURL),
             name: UIApplication.didBecomeActiveNotification,
@@ -400,7 +403,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
             .filter { ReadingListSectioning.rendersAsReader($0) }
             .sorted { ($0.bumpDate ?? $0.dateAdded) > ($1.bumpDate ?? $1.dateAdded) }
         var fingerprint = updated.map {
-            "\($0.id)|\($0.title ?? "")|\($0.state)|\($0.thumbnailFileName ?? "")"
+            "\($0.id)|\($0.title ?? "")|\($0.state)|\($0.thumbnailFileName ?? "")|\(senderName(for: $0) ?? "")"
         }
         fingerprint.insert("paste|\(pasteboardURL?.absoluteString ?? "")", at: 0)
         guard fingerprint != appliedFingerprint else { return }
@@ -482,9 +485,30 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         guard let itemIndex = articleIndex(forCarouselIndex: index) else {
             return CardContentViewController()
         }
-        let content = ReaderCardContentViewController(item: items[itemIndex])
+        let item = items[itemIndex]
+        let content = ReaderCardContentViewController(item: item, senderName: senderName(for: item))
         content.delegate = self
         return content
+    }
+
+    /// Incoming-email cards follow the contact's current name, falling back to
+    /// the name captured from the original From header for legacy/unknown senders.
+    private func senderName(for item: ReadingListItem) -> String? {
+        Self.resolvedSenderName(for: item) { email in
+            FriendsStore.shared.friend(withEmail: email)?.displayName
+        }
+    }
+
+    static func resolvedSenderName(
+        for item: ReadingListItem,
+        contactNameForEmail: (String) -> String?
+    ) -> String? {
+        guard item.effectiveCaptureSource == .email else { return nil }
+        if let email = item.incomingSenderEmail,
+           let currentName = contactNameForEmail(email) {
+            return currentName
+        }
+        return item.channelName
     }
 
     func carousel(
@@ -766,14 +790,18 @@ private final class ReaderCardContentViewController: CardContentViewController,
     weak var delegate: ReaderCardContentDelegate?
 
     private let item: ReadingListItem
+    private let senderName: String?
     private let statusLabel = UILabel()
+    private let senderBadge = UIVisualEffectView(effect: GlassStyle.barEffect())
+    private let senderLabel = UILabel()
     private var reader: UIViewController?
     private let immersionTracker = ScrollDirectionImmersionTracker()
     private(set) var isCentered = false
     var rabbitHoleReader: RabbitHoleReaderViewController? { reader as? RabbitHoleReaderViewController }
 
-    init(item: ReadingListItem) {
+    init(item: ReadingListItem, senderName: String?) {
         self.item = item
+        self.senderName = senderName
         super.init()
         immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
             guard let self else { return }
@@ -785,6 +813,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         super.viewDidLoad()
         view.backgroundColor = .clear
         embedReaderIfPossible()
+        mountSenderBadgeIfNeeded()
 
         if reader == nil {
             statusLabel.font = .preferredFont(forTextStyle: .subheadline)
@@ -805,6 +834,32 @@ private final class ReaderCardContentViewController: CardContentViewController,
                 statusLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             ])
         }
+    }
+
+    private func mountSenderBadgeIfNeeded() {
+        guard let senderName, !senderName.isEmpty else { return }
+        senderBadge.layer.cornerRadius = 14
+        senderBadge.clipsToBounds = true
+        senderBadge.isUserInteractionEnabled = false
+        senderBadge.translatesAutoresizingMaskIntoConstraints = false
+        senderLabel.text = "From \(senderName)"
+        senderLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        senderLabel.textColor = .secondaryLabel
+        senderLabel.lineBreakMode = .byTruncatingTail
+        senderLabel.translatesAutoresizingMaskIntoConstraints = false
+        senderBadge.contentView.addSubview(senderLabel)
+        view.addSubview(senderBadge)
+        NSLayoutConstraint.activate([
+            senderBadge.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            senderBadge.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            senderBadge.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 48),
+            senderBadge.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -48),
+            senderBadge.heightAnchor.constraint(equalToConstant: 28),
+            senderLabel.leadingAnchor.constraint(equalTo: senderBadge.contentView.leadingAnchor, constant: 11),
+            senderLabel.trailingAnchor.constraint(equalTo: senderBadge.contentView.trailingAnchor, constant: -11),
+            senderLabel.centerYAnchor.constraint(equalTo: senderBadge.contentView.centerYAnchor),
+        ])
+        senderBadge.accessibilityLabel = "From \(senderName)"
     }
 
     override func viewDidLayoutSubviews() {
@@ -955,4 +1010,3 @@ private final class ReaderCardContentViewController: CardContentViewController,
     }
 
 }
-

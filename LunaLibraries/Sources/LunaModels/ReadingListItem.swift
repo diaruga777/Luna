@@ -99,6 +99,9 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// 0…1 how far the user has gotten (scroll depth or RSVP position).
     public var readingProgress: Double?
     public var channelName: String?
+    /// Normalized sender address for an incoming-email save. The UI resolves
+    /// this through the contact store so later renames appear immediately.
+    public var incomingSenderEmail: String?
     /// Downloaded video thumbnail (inside the Articles directory).
     public var thumbnailFileName: String?
     /// Username of the friend who shared this item to us, when it arrived via
@@ -216,6 +219,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.wordCount = nil
         self.readingProgress = nil
         self.channelName = nil
+        self.incomingSenderEmail = nil
         self.thumbnailFileName = nil
         self.sharedByUsername = nil
         self.documentType = nil
@@ -253,6 +257,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         platform: ContentPlatform? = nil,
         platformItemID: String? = nil,
         channelName: String? = nil,
+        incomingSenderEmail: String? = nil,
         captureSource: CaptureSource? = nil,
         priceTracker: PriceTracker? = nil
     ) {
@@ -273,6 +278,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.wordCount = wordCount
         self.readingProgress = readingProgress
         self.channelName = channelName
+        self.incomingSenderEmail = incomingSenderEmail
         self.thumbnailFileName = nil
         self.sharedByUsername = sharedByUsername
         self.documentType = documentType
@@ -354,6 +360,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         wordCount = try container.decodeIfPresent(Int.self, forKey: .wordCount)
         readingProgress = try container.decodeIfPresent(Double.self, forKey: .readingProgress)
         channelName = try container.decodeIfPresent(String.self, forKey: .channelName)
+        incomingSenderEmail = try container.decodeIfPresent(String.self, forKey: .incomingSenderEmail)
         thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
         sharedByUsername = try container.decodeIfPresent(String.self, forKey: .sharedByUsername)
         documentType = try container.decodeIfPresent(String.self, forKey: .documentType)

@@ -452,6 +452,19 @@ public final class ReadingListStore {
         }
     }
 
+    /// Records the stable sender identity for an incoming-email item while
+    /// retaining the parsed name as a fallback when no contact exists.
+    public func setIncomingSender(email: String, displayName: String, for itemID: UUID) {
+        coordinatedUpdate { all in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            let changed = all[index].incomingSenderEmail != email
+                || all[index].channelName != displayName
+            all[index].incomingSenderEmail = email
+            all[index].channelName = displayName
+            return changed
+        }
+    }
+
     /// Writes downloaded art bytes to the Articles dir and points the item at it.
     public func setThumbnail(_ data: Data, for itemID: UUID) {
         let fileName = "\(itemID.uuidString)-thumb.jpg"

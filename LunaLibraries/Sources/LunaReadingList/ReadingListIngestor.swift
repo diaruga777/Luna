@@ -17,6 +17,7 @@ import LunaFetch
 import LunaHTMLClassification
 import LunaURLClassification
 import LunaModels
+import LunaSocial
 import Foundation
 
 /// Downloads and extracts content for reading-list items: the immediate step
@@ -671,7 +672,9 @@ public final class ReadingListIngestor {
             guard store.friendMode(forSurface: surface) == .preset else {
                 return .promptFriendSelector
             }
-            let emails = store.presetFriendEmails(forSurface: surface)
+            let emails = store.presetFriendEmails(forSurface: surface).filter {
+                !FriendsStore.shared.isBlocked($0)
+            }
             guard !emails.isEmpty, EmailShareCenter.shared.isConfigured else {
                 return .promptFriendSelector
             }

@@ -27,14 +27,35 @@ public struct Friend: Codable, Equatable {
     /// Whether an accepted share from this friend has ever been received (so the
     /// first one can always notify).
     public var hasReceivedShare: Bool
+    /// Blocked contacts remain visible in a separate list but their incoming
+    /// mail is ignored and they are omitted from recipient pickers.
+    public var isBlocked: Bool
 
     public init(email: String, name: String? = nil, dateAdded: Date = Date(),
-                notifyOnEveryShare: Bool = false, hasReceivedShare: Bool = false) {
+                notifyOnEveryShare: Bool = false, hasReceivedShare: Bool = false,
+                isBlocked: Bool = false) {
         self.email = Friend.normalize(email)
         self.name = name
         self.dateAdded = dateAdded
         self.notifyOnEveryShare = notifyOnEveryShare
         self.hasReceivedShare = hasReceivedShare
+        self.isBlocked = isBlocked
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case email, name, dateAdded, notifyOnEveryShare, hasReceivedShare, isBlocked
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        email = Friend.normalize(try container.decode(String.self, forKey: .email))
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        dateAdded = try container.decode(Date.self, forKey: .dateAdded)
+        notifyOnEveryShare = try container.decodeIfPresent(
+            Bool.self, forKey: .notifyOnEveryShare) ?? false
+        hasReceivedShare = try container.decodeIfPresent(
+            Bool.self, forKey: .hasReceivedShare) ?? false
+        isBlocked = try container.decodeIfPresent(Bool.self, forKey: .isBlocked) ?? false
     }
 
     /// User-facing name: the nickname, else the address local part.
@@ -81,12 +102,20 @@ public final class FriendsStore {
         store.load().sorted { $0.dateAdded > $1.dateAdded }
     }
 
+    /// Contacts available for sharing and incoming-email import.
+    public func activeItems() -> [Friend] { items().filter { !$0.isBlocked } }
+
+    /// Contacts whose incoming messages are ignored.
+    public func blockedItems() -> [Friend] { items().filter(\.isBlocked) }
+
     public func friend(withEmail email: String) -> Friend? {
         let normalized = Friend.normalize(email)
         return items().first { $0.email == normalized }
     }
 
     public func isFriend(_ email: String) -> Bool { friend(withEmail: email) != nil }
+
+    public func isBlocked(_ email: String) -> Bool { friend(withEmail: email)?.isBlocked == true }
 
     /// Adds a friend (or updates the name of an existing one). Returns the
     /// resulting friend.
@@ -129,6 +158,12 @@ public final class FriendsStore {
     public func setNotifyOnEveryShare(_ enabled: Bool, email: String) {
         guard var friend = friend(withEmail: email) else { return }
         friend.notifyOnEveryShare = enabled
+        update(friend)
+    }
+
+    public func setBlocked(_ blocked: Bool, email: String) {
+        guard var friend = friend(withEmail: email) else { return }
+        friend.isBlocked = blocked
         update(friend)
     }
 

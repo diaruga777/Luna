@@ -58,6 +58,32 @@ final class FriendsStoreTests: XCTestCase {
         XCTAssertFalse(store.markReceivedShare(email: "alice@example.com")) // subsequent
     }
 
+    func testBlockMovesContactToBlockedListAndUnblockRestoresIt() {
+        store.add(email: "alice@example.com", name: "Alice")
+
+        store.setBlocked(true, email: "alice@example.com")
+        XCTAssertTrue(store.isBlocked("ALICE@example.com"))
+        XCTAssertTrue(store.activeItems().isEmpty)
+        XCTAssertEqual(store.blockedItems().map(\.email), ["alice@example.com"])
+
+        store.setBlocked(false, email: "alice@example.com")
+        XCTAssertFalse(store.isBlocked("alice@example.com"))
+        XCTAssertEqual(store.activeItems().map(\.email), ["alice@example.com"])
+        XCTAssertTrue(store.blockedItems().isEmpty)
+    }
+
+    func testLegacyContactWithoutBlockedFieldDefaultsToActive() throws {
+        let friend = Friend(email: "legacy@example.com", name: "Legacy")
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(friend)) as? [String: Any])
+        object.removeValue(forKey: "isBlocked")
+        let data = try JSONSerialization.data(withJSONObject: [object])
+        try data.write(to: scratchDirectory.appendingPathComponent("friends.json"))
+
+        XCTAssertEqual(store.activeItems().map(\.email), ["legacy@example.com"])
+        XCTAssertTrue(store.blockedItems().isEmpty)
+    }
+
     func testNewestFirstOrdering() {
         store.add(email: "first@example.com")
         usleep(5000) // distinct dateAdded timestamps

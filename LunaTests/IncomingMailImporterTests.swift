@@ -5,6 +5,7 @@
 
 import XCTest
 import LunaMailAccount
+import LunaSocial
 @testable import LunaReadingList
 
 final class IncomingMailImporterTests: XCTestCase {
@@ -47,5 +48,13 @@ final class IncomingMailImporterTests: XCTestCase {
             IncomingMailImporter.titleStrippingLunaPrefix(
                 "\(FilterGuide.subjectPrefix)https://example.com/article"),
             "https://example.com/article")
+    }
+
+    func testSameAddressIsCaseAndWhitespaceInsensitive() {
+        XCTAssertTrue(IncomingMailImporter.sameAddress(
+            " Sender@Example.com ", "sender@example.com"))
+        XCTAssertFalse(IncomingMailImporter.sameAddress(
+            "sender@example.com", "other@example.com"))
+        XCTAssertFalse(IncomingMailImporter.sameAddress("sender@example.com", nil))
     }
 }

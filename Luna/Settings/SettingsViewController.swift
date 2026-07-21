@@ -22,6 +22,13 @@ extension UITableViewController {
         return toggle
     }
 
+    func makeToggle(isOn: Bool, onChange: @escaping (Bool) -> Void) -> UISwitch {
+        let toggle = UISwitch()
+        toggle.isOn = isOn
+        toggle.addAction(UIAction { [weak toggle] _ in onChange(toggle?.isOn ?? false) }, for: .valueChanged)
+        return toggle
+    }
+
     func presentInfoAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))

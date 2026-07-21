@@ -88,13 +88,6 @@ final class AutoSendBySourceScreen: NavHeaderTableController {
         }
     }
 
-    private func makeToggle(isOn: Bool, onChange: @escaping (Bool) -> Void) -> UISwitch {
-        let toggle = UISwitch()
-        toggle.isOn = isOn
-        toggle.addAction(UIAction { [weak toggle] _ in onChange(toggle?.isOn ?? false) }, for: .valueChanged)
-        return toggle
-    }
-
     private func makeModeButton() -> UIButton {
         let button = UIButton(type: .system)
         button.showsMenuAsPrimaryAction = true

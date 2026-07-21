@@ -773,11 +773,11 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     }
 
     private func updateContext() {
-        let radius = 12
-        let lower = max(0, index - radius)
-        let upper = min(engine.words.count, index + radius + 1)
-        previousContextLabel.text = engine.words[lower..<index].map(\.text).joined(separator: " ")
-        nextContextLabel.text = engine.words[(index + 1)..<upper].map(\.text).joined(separator: " ")
+        guard let context = RSVPContextWindow.context(
+            around: index..<(index + 1), words: engine.words, radius: 12)
+        else { return }
+        previousContextLabel.text = context.preceding
+        nextContextLabel.text = context.following
     }
 
     private func setContextVisible(_ visible: Bool) {

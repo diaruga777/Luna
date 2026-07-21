@@ -933,25 +933,18 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// mode the context excludes the words currently in the reticule; in Words
     /// mode it surrounds the single focal word.
     private func updateContextText() {
-        let words = engine.words
-        let (lower, upper): (Int, Int)
-        if displayMode == .phrases, chunks.indices.contains(currentChunkIndex) {
-            let range = chunks[currentChunkIndex].wordRange
-            lower = range.lowerBound
-            upper = range.upperBound
-        } else {
-            lower = currentIndex
-            upper = currentIndex + 1
-        }
-        guard words.indices.contains(lower) else {
+        let shownRange: Range<Int> = displayMode == .phrases && chunks.indices.contains(currentChunkIndex)
+            ? chunks[currentChunkIndex].wordRange
+            : currentIndex..<(currentIndex + 1)
+        guard let context = RSVPContextWindow.context(
+            around: shownRange, words: engine.words, radius: Self.contextWordCount)
+        else {
             previousContextLabel.text = nil
             nextContextLabel.text = nil
             return
         }
-        let precedingStart = max(0, lower - Self.contextWordCount)
-        let followingEnd = min(words.count, upper + Self.contextWordCount)
-        previousContextLabel.text = words[precedingStart..<lower].map(\.text).joined(separator: " ")
-        nextContextLabel.text = words[upper..<followingEnd].map(\.text).joined(separator: " ")
+        previousContextLabel.text = context.preceding
+        nextContextLabel.text = context.following
     }
 
     /// Animates the Words-mode context in/out on play/pause (Phrases keeps it on).

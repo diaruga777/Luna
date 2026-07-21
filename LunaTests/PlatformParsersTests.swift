@@ -20,6 +20,15 @@ final class PlatformParsersTests: XCTestCase {
         XCTAssertNil(XLink.tweetID(from: "https://example.com/user/status/20"))
     }
 
+    /// `XLink` delegates its host check to `PlatformRecognizer`, which suffix-matches
+    /// ANY x.com/twitter.com subdomain — not just the small fixed set `XLink` used to
+    /// hardcode. A subdomain outside that old fixed set now parses instead of
+    /// silently returning nil.
+    func testXRecognizesAnyTwitterSubdomain() {
+        XCTAssertEqual(XLink.tweetID(from: "https://some-other.twitter.com/jack/status/20"), "20")
+        XCTAssertEqual(XLink.handle(from: "https://some-other.twitter.com/jack/status/20"), "@jack")
+    }
+
     func testTikTokRecognizesHostAndVideoID() {
         XCTAssertTrue(TikTokLink.isTikTok("https://www.tiktok.com/@user/video/7212345678901234567"))
         XCTAssertEqual(

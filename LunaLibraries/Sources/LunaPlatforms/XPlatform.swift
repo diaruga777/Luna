@@ -4,21 +4,18 @@
 //
 
 import LunaModels
+import LunaURLClassification
 import Foundation
 
 /// Recognizes X / Twitter status links: `(x|twitter).com/<user>/status/<id>`
 /// (id is the 19-ish-digit tweet id). Pure.
 public enum XLink {
-    // Deliberately narrower than PlatformRecognizer.x, which suffix-matches ANY
-    // x.com/twitter.com subdomain — this is a fixed host set with no suffix fallback.
-    private static let hosts: Set<String> = [
-        "x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com",
-    ]
-
-    /// The tweet id from a status URL.
+    /// The tweet id from a status URL. Host recognition delegates to
+    /// `PlatformRecognizer` (any x.com/twitter.com subdomain); this only owns the
+    /// status-segment parsing.
     public static func tweetID(from urlString: String) -> String? {
-        guard let url = URL(string: urlString), let host = url.host?.lowercased(),
-              hosts.contains(host) else { return nil }
+        guard PlatformRecognizer.recognize(urlString)?.platform == .x,
+              let url = URL(string: urlString) else { return nil }
         let segments = Array(url.pathComponents.dropFirst())
         guard let statusIndex = segments.firstIndex(where: { $0 == "status" || $0 == "statuses" }),
               statusIndex + 1 < segments.count else { return nil }
@@ -31,8 +28,8 @@ public enum XLink {
 
     /// The author handle ("@user") from `(x|twitter).com/<user>/status/<id>`.
     public static func handle(from urlString: String) -> String? {
-        guard let url = URL(string: urlString), let host = url.host?.lowercased(),
-              hosts.contains(host) else { return nil }
+        guard PlatformRecognizer.recognize(urlString)?.platform == .x,
+              let url = URL(string: urlString) else { return nil }
         let segments = Array(url.pathComponents.dropFirst())
         guard let statusIndex = segments.firstIndex(where: { $0 == "status" || $0 == "statuses" }),
               statusIndex >= 1 else { return nil }

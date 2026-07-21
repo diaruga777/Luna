@@ -7,10 +7,8 @@ import LunaDesignSystem
 import LunaModels
 import UIKit
 
-/// The solid rounded pill chrome shared by every alert-threshold display: the
-/// price-tracking editor's interactive `AlertThresholdSlider` and the catch-up
-/// card's read-only readout (`CatchUpPriceTrackerCardBody.makeThresholdReadout`).
-/// A solid pill (no blur) — it sits on the editor / catch-up card's solid
+/// The solid rounded pill chrome for the price-tracking editor's interactive
+/// `AlertThresholdSlider`. A solid pill (no blur) — it sits on the editor's solid
 /// background, so a live blur would add little and can't be captured
 /// consistently across presentation contexts.
 public enum AlertThresholdPillChrome {

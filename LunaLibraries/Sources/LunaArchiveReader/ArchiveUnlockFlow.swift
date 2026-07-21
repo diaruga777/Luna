@@ -11,8 +11,8 @@ import UIKit
 /// `ArchiveWebReaderViewController`, wire its `onClose`/`onOpenInBrowser`/
 /// `onExtracted` outcomes, and — on a successful extraction — dismiss and hand the
 /// refreshed item to the caller. Every call site's own "what happens after unlock"
-/// (reopen in a reader, reload a carousel card, rebuild a catch-up card) stays with
-/// the caller via `onUnlocked`.
+/// (reopen in a reader, reload a carousel card) stays with the caller via
+/// `onUnlocked`.
 public enum ArchiveUnlockFlow {
 
     /// Presents the archive-unlock web reader for `item`, in its own navigation

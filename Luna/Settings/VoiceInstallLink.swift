@@ -9,8 +9,7 @@ import UIKit
 /// Deep-links the user to iOS Settings to install enhanced Apple voices. There is
 /// no public deep-link straight into Accessibility → Spoken Content → Voices, so
 /// this tries the best available `App-Prefs` path and falls back to the app's own
-/// Settings page. Shared by the Voice settings screen and the catch-up voice card
-/// (both main-app surfaces).
+/// Settings page. Used by the Voice settings screen.
 enum VoiceInstallLink {
 
     /// Opens the first candidate Settings URL that the system can handle.

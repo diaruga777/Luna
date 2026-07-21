@@ -13,36 +13,16 @@ final class ReadingListSectioningTests: XCTestCase {
 
     private let now = Date(timeIntervalSince1970: 1_000_000_000)
 
-    // `shouldShowCatchUpDot` also lights the dot when enhanced voices aren't
-    // installed and the voice catch-up card hasn't been dismissed — an orthogonal
-    // trigger that, on a clean simulator, would force the dot on regardless of the
-    // unread-count / locked-save logic these tests exercise. Dismiss it so the dot
-    // tests are deterministic; restore the prior value afterward.
-    private var priorDismissedVoiceCatchUp = false
-
-    override func setUp() {
-        super.setUp()
-        priorDismissedVoiceCatchUp = VoiceModelStore.hasDismissedVoiceCatchUp
-        VoiceModelStore.hasDismissedVoiceCatchUp = true
-    }
-
-    override func tearDown() {
-        VoiceModelStore.hasDismissedVoiceCatchUp = priorDismissedVoiceCatchUp
-        super.tearDown()
-    }
-
     /// Builds an article item (renders as reader) with controllable state/age.
     private func article(
         addedDaysAgo: Double = 0,
         readState: ReadingListItem.ReadState = .unopened,
-        state: ReadingListItem.State = .ready,
-        bumpDaysAgo: Double? = nil
+        state: ReadingListItem.State = .ready
     ) -> ReadingListItem {
         var item = ReadingListItem(urlString: "https://example.com/\(UUID().uuidString)")
         item.dateAdded = now.addingTimeInterval(-addedDaysAgo * 86_400)
         item.readState = readState
         item.state = state
-        if let bumpDaysAgo { item.bumpDate = now.addingTimeInterval(-bumpDaysAgo * 86_400) }
         return item
     }
 
@@ -269,85 +249,6 @@ final class ReadingListSectioningTests: XCTestCase {
     func testListFilterMediaExcludesReaders() {
         XCTAssertFalse(ReadingListSectioning.ListFilter.mediaAndLinks.includes(article()))
         XCTAssertTrue(ReadingListSectioning.ListFilter.mediaAndLinks.includes(platformItem()))
-    }
-
-    // MARK: - catchUpQueue
-
-    func testCatchUpExcludesRead() {
-        let queue = ReadingListSectioning.catchUpQueue(items: [article(readState: .read)])
-        XCTAssertTrue(queue.isEmpty)
-    }
-
-    func testCatchUpIncludesUnopenedAndOpened() {
-        let queue = ReadingListSectioning.catchUpQueue(
-            items: [article(readState: .unopened), article(readState: .opened)])
-        XCTAssertEqual(queue.count, 2)
-    }
-
-    func testCatchUpExcludesPendingArticle() {
-        // A reader item whose content isn't ready (still pending) doesn't qualify.
-        let queue = ReadingListSectioning.catchUpQueue(items: [article(state: .pending)])
-        XCTAssertTrue(queue.isEmpty)
-    }
-
-    func testCatchUpIncludesLockedArticle() {
-        let queue = ReadingListSectioning.catchUpQueue(items: [article(state: .needsCaptcha)])
-        XCTAssertEqual(queue.count, 1)
-    }
-
-    func testCatchUpExcludesFailedArticle() {
-        let queue = ReadingListSectioning.catchUpQueue(items: [article(state: .failed)])
-        XCTAssertTrue(queue.isEmpty)
-    }
-
-    func testCatchUpIncludesNonReaderRegardlessOfState() {
-        // Non-readers (video/links) always qualify when unread.
-        var pendingPlatformItem = platformItem()
-        pendingPlatformItem.state = .pending
-        let queue = ReadingListSectioning.catchUpQueue(items: [pendingPlatformItem])
-        XCTAssertEqual(queue.count, 1)
-    }
-
-    func testCatchUpSortsOldestFirstByDateAdded() {
-        let newer = article(addedDaysAgo: 1)
-        let older = article(addedDaysAgo: 5)
-        let queue = ReadingListSectioning.catchUpQueue(items: [newer, older])
-        XCTAssertEqual(queue.map(\.id), [older.id, newer.id])
-    }
-
-    func testCatchUpUsesBumpDateOverDateAdded() {
-        // `older` by save date, but bumped recently → sorts after the un-bumped item.
-        let unbumped = article(addedDaysAgo: 2)
-        let bumpedRecently = article(addedDaysAgo: 10, bumpDaysAgo: 0)
-        let queue = ReadingListSectioning.catchUpQueue(items: [bumpedRecently, unbumped])
-        XCTAssertEqual(queue.map(\.id), [unbumped.id, bumpedRecently.id])
-    }
-
-    // MARK: - shouldShowCatchUpDot
-
-    func testDotHiddenBelowThresholdWithNoLockedSave() {
-        let items = (0..<9).map { _ in article() }
-        XCTAssertFalse(ReadingListSectioning.shouldShowCatchUpDot(items: items))
-    }
-
-    func testDotShownAtThreshold() {
-        let items = (0..<10).map { _ in article() }
-        XCTAssertTrue(ReadingListSectioning.shouldShowCatchUpDot(items: items))
-    }
-
-    func testDotShownForLockedSaveBelowThreshold() {
-        XCTAssertTrue(ReadingListSectioning.shouldShowCatchUpDot(items: [article(state: .needsCaptcha)]))
-    }
-
-    func testDotIgnoresReadItemsTowardThreshold() {
-        let read = (0..<20).map { _ in article(readState: .read) }
-        XCTAssertFalse(ReadingListSectioning.shouldShowCatchUpDot(items: read))
-    }
-
-    func testDotIgnoresReadLockedSave() {
-        // A locked save that's already been marked read doesn't trigger the dot.
-        let item = article(readState: .read, state: .needsCaptcha)
-        XCTAssertFalse(ReadingListSectioning.shouldShowCatchUpDot(items: [item]))
     }
 
     // MARK: - Section ordering / identity

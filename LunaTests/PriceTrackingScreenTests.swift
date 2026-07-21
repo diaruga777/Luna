@@ -1,89 +1,28 @@
 //
-//  CatchUpAndPriceScreenTests.swift
+//  PriceTrackingScreenTests.swift
 //  LunaTests
 //
-//  Snapshot + navigation/layout coverage for the catch-up card stack and the
-//  price-tracking editor.
+//  Navigation/layout coverage for the price-tracking editor.
 //
 
 import LunaReadingListUI
 import LunaPriceUI
-import LunaMailAccount
 import LunaStorage
 import LunaModels
 import UIKit
 import XCTest
 @testable import Luna
 
-final class CatchUpAndPriceScreenTests: XCTestCase {
+final class PriceTrackingScreenTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
         UIView.setAnimationsEnabled(false)
-        // Connect a dummy account so Catch-Up exercises the card deck rather than
-        // the "set up email" overlay shown when no account is configured.
-        EmailAccountStore.shared.save(
-            EmailAccount(providerID: .gmail, address: "test@gmail.com",
-                         server: MailProvider.provider(for: .gmail).server),
-            credential: .appPassword("x"))
     }
 
     override func tearDown() {
-        EmailAccountStore.shared.clear()
         UITestSupport.wipeSharedStore()
         super.tearDown()
-    }
-
-    // MARK: - Catch-up
-
-    /// The catch-up card stack renders its first card from the seeded unread queue.
-    func testCatchUpCardStackSnapshot() {
-        UITestSupport.seedSharedStore(.catchUpEligible)
-        let router = ReadingListViewController()
-        _ = UITestSupport.host(UINavigationController(rootViewController: router))
-        let queue = ReadingListSectioning.catchUpQueue(items: ReadingListStore.shared.items())
-        XCTAssertGreaterThanOrEqual(queue.count, 10, "catch-up fixture should be eligible")
-        let catchUp = CatchUpViewController(unread: queue, router: router)
-        SnapshotTesting.assertSnapshot(of: catchUp, named: "catchup-cards")
-    }
-
-    /// A locked (needsCaptcha) card appears in the queue and renders as a card.
-    func testCatchUpWithLockedCardSnapshot() {
-        UITestSupport.seedSharedStore(.mixed)
-        let router = ReadingListViewController()
-        _ = UITestSupport.host(UINavigationController(rootViewController: router))
-        let queue = ReadingListSectioning.catchUpQueue(items: ReadingListStore.shared.items())
-        let catchUp = CatchUpViewController(unread: queue, router: router)
-        SnapshotTesting.assertSnapshot(of: catchUp, named: "catchup-mixed")
-    }
-
-    /// A price tracker surfaces as a catch-up card with the dedicated tracker layout:
-    /// thumbnail, product name, per-store mini-table, and a READ-ONLY alert-threshold
-    /// readout with a "Change" button (the slider lives on the full editor screen).
-    func testCatchUpPriceTrackerCardSnapshot() {
-        UITestSupport.seedSharedStore(.mixed)
-        let trackers = ReadingListStore.shared.items().filter { $0.isPriceTracker }
-        XCTAssertFalse(trackers.isEmpty, "mixed fixture should seed price trackers")
-        let router = ReadingListViewController()
-        _ = UITestSupport.host(UINavigationController(rootViewController: router))
-        // Build a queue of just the trackers so the first card is a tracker card.
-        let catchUp = CatchUpViewController(unread: trackers, router: router)
-        SnapshotTesting.assertSnapshot(of: catchUp, named: "catchup-price-tracker")
-    }
-
-    func testCatchUpLayoutHasOnScreenContent() {
-        UITestSupport.seedSharedStore(.catchUpEligible)
-        let router = ReadingListViewController()
-        _ = UITestSupport.host(UINavigationController(rootViewController: router))
-        let queue = ReadingListSectioning.catchUpQueue(items: ReadingListStore.shared.items())
-        let catchUp = CatchUpViewController(unread: queue, router: router)
-        let window = UITestSupport.host(catchUp)
-        // The card stack + bottom buttons should be laid out within bounds.
-        XCTAssertGreaterThan(catchUp.view.subviews.count, 0)
-        for subview in catchUp.view.subviews where !subview.isHidden && subview.bounds.height > 1 {
-            LayoutAssertions.assertVisibleAndInBounds(subview, in: catchUp.view)
-        }
-        _ = window
     }
 
     // MARK: - Price tracking editor

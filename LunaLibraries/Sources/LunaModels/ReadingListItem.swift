@@ -67,8 +67,9 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     public var urlString: String
     public var title: String?
     public var dateAdded: Date
-    /// When the user last "bumped" this item in catch-up — re-sorts it to the top of
-    /// the reading list and is shown (instead of the save date) on its catch-up card.
+    /// When the user last "bumped" this item — re-sorts it to the top of the reading
+    /// list and, where a view sorts by recency (e.g. the card-carousel root), takes
+    /// priority over the save date.
     public var bumpDate: Date?
     public var state: State
     /// File name (inside the Articles directory) of the extracted `ArticleContent` JSON.

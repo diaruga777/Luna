@@ -622,11 +622,10 @@ public final class ReadingListStore {
         return tracker.stores.map { $0.lastRefreshed ?? .distantPast }.min() ?? .distantPast
     }
 
-    // MARK: - Catch-up
+    // MARK: - Bump / undo
 
-    /// Stamps a new bump date on an item and moves it to the top of the list (it
-    /// re-sorts up in the reading list and shows the bump date on future catch-up
-    /// cards).
+    /// Stamps a new bump date on an item and moves it to the top of the list (the
+    /// row's own "Bump to Top" action re-sorts it up in the reading list).
     public func bump(_ itemID: UUID) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
@@ -634,29 +633,6 @@ public final class ReadingListStore {
             item.bumpDate = Date()
             all.insert(item, at: 0)
             return true
-        }
-    }
-
-    /// Undoes a catch-up session against a pre-session snapshot WITHOUT clobbering
-    /// concurrent writers: snapshot items still present revert exactly what the
-    /// session mutates (read state, bump date, relative order) while keeping any
-    /// concurrent field changes (ingest results, price refreshes); items saved
-    /// since the snapshot — by this app, an extension, or an intent — stay, ahead
-    /// of the restored list; items deleted since are not resurrected.
-    public func restoreCatchUpState(from snapshot: [ReadingListItem]) {
-        let snapshotByID = Dictionary(
-            snapshot.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        coordinatedMutate { all in
-            let currentByID = Dictionary(
-                all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            let newcomers = all.filter { snapshotByID[$0.id] == nil }
-            let restored: [ReadingListItem] = snapshot.compactMap { old in
-                guard var current = currentByID[old.id] else { return nil }
-                current.readState = old.readState
-                current.bumpDate = old.bumpDate
-                return current
-            }
-            all = newcomers + restored
         }
     }
 

@@ -67,6 +67,9 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     public var urlString: String
     public var title: String?
     public var dateAdded: Date
+    /// When non-nil, the item is kept in the archive tray instead of the main
+    /// surface. The original save date remains unchanged for the tray footer.
+    public var archivedAt: Date?
     /// When the user last "bumped" this item — re-sorts it to the top of the reading
     /// list and, where a view sorts by recency (e.g. the card-carousel root), takes
     /// priority over the save date.
@@ -148,6 +151,8 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
     /// Whether this save is a price tracker rather than an article/media item.
     public var isPriceTracker: Bool { priceTracker != nil }
 
+    public var isArchived: Bool { archivedAt != nil }
+
     /// Capture source for routing/auto-send, defaulting legacy items to `.manual`.
     public var effectiveCaptureSource: CaptureSource { captureSource ?? .manual }
 
@@ -206,6 +211,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.urlString = urlString
         self.title = nil
         self.dateAdded = Date()
+        self.archivedAt = nil
         self.bumpDate = nil
         self.state = .pending
         self.contentFileName = nil
@@ -265,6 +271,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         self.urlString = urlString
         self.title = title
         self.dateAdded = dateAdded
+        self.archivedAt = nil
         self.bumpDate = bumpDate
         self.state = state
         self.contentFileName = nil
@@ -338,6 +345,7 @@ public struct ReadingListItem: Codable, Identifiable, Equatable {
         urlString = try container.decode(String.self, forKey: .urlString)
         title = try container.decodeIfPresent(String.self, forKey: .title)
         dateAdded = try container.decode(Date.self, forKey: .dateAdded)
+        archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
         bumpDate = try container.decodeIfPresent(Date.self, forKey: .bumpDate)
         // Unknown state → .pending: the safe floor (the item is re-ingested
         // rather than dropped or mislabeled ready).

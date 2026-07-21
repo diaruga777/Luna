@@ -19,6 +19,14 @@ Every Downloader save has one durable `SavedMediaItem` row and exactly one visib
    time. A small multicolor Photos rosette appears in the card's top-leading corner
    so this backing is visible at a glance; tapping it opens that asset in Photos.
 
+`archivedAt` removes a row from the main carousel and places it in the pull-out
+archive tray without losing its source identity. Archiving a `.localFile` immediately
+deletes the full media and changes the row to `.undownloaded`, while retaining the
+small opportunistic thumbnail. A PhotoKit reference remains intact and playable;
+transitions into Photos retain their generated thumbnail as the archive fallback.
+Re-download completion preserves `archivedAt`, updates `dateSaved` to the download
+date, and therefore uses the ordinary local-retention clock without unarchiving.
+
 `SavedMediaStore.ensureUndownloaded` creates the manifest row before transfer and uses
 the reading-list UUID as its stable identity. Existing manifests with the old required
 `fileName` field decode as `.localFile`, so migration does not lose downloads. If a local
@@ -60,8 +68,8 @@ Manual **Save to Photos** copies the local file to a PhotoKit staging URL. After
 confirms the save and returns an identifier, `transitionToPhotosReference` performs a
 crash-recoverable two-write transaction:
 
-1. atomically commit `.photosReference` together with the old local file/thumbnail names
-   as pending deletion;
+1. atomically commit `.photosReference` together with the old local file name
+   as pending deletion (the small generated thumbnail is retained);
 2. delete those files durably, then atomically clear the pending names.
 
 `SavedMediaStore.items()` finishes interrupted pending deletions on the next load. Thus a
@@ -72,9 +80,10 @@ the manifest commit and file cleanup.
 
 The root carousel reconciles Photos references when `.readWrite` authorization is
 available.
-If `PHAsset.fetchAssets(withLocalIdentifiers:)` no longer finds an asset, Luna deletes the
+If `PHAsset.fetchAssets(withLocalIdentifiers:)` no longer finds an active asset, Luna deletes the
 Downloader item and clears its download-dedup marker, so saving the URL again can download
-it again. Reconciliation is skipped for denied/restricted access and for `.limited`
+it again. An archived missing asset instead becomes `.undownloaded`, stays slightly dimmed
+with a dotted-outline download icon, and re-downloads when tapped. Reconciliation is skipped for denied/restricted access and for `.limited`
 access, where a nil fetch can mean "not selected" rather than deleted. Limited access can
 still display selected assets, but Luna only interprets absence as deletion with full
 `.authorized` read/write access.
@@ -97,7 +106,9 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   interaction model). Local media plays from its App Group file; Photos-backed images
   load with PhotoKit image APIs and Photos-backed videos load through
   `PHImageManager.requestAVAsset`. Long-press menus offer **Save to Photos** on local
-  rows (Photos-backed rows do not offer a redundant save action), Share, and Delete.
+  rows (Photos-backed rows do not offer a redundant save action), Share, Archive, and Delete.
+  The archive tray shows thumbnail-only square cells. Available local/PhotoKit media opens
+  fullscreen; unavailable media re-downloads on tap; long-press offers Unarchive.
   Settings and direct system file sharing flank the edge-to-edge scrub strip in glass
   circles; there is no root Friends or Add button. Sharing hands the activity controller
   exactly one concrete media file URL (no source link, text, or lazy provider), so it shows

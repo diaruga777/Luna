@@ -120,4 +120,25 @@ final class ReadingListStoreCacheTests: XCTestCase {
         store.markFailed(UUID())
         wait(for: [missingIDNotifies], timeout: 0.5)
     }
+
+    func testArchivingRoundTripsAndReleasesRecursivePreloadOwnership() throws {
+        let preloadStore = PreloadStore(containerURL: scratchDirectory)
+        store = ReadingListStore(containerURL: scratchDirectory, preloadStore: preloadStore)
+        let item = addAndWaitForNotification("https://example.com/root")
+        let descendant = try XCTUnwrap(URL(string: "https://example.com/child"))
+        preloadStore.record(url: descendant, rootID: item.id, kind: .unrepresentable)
+        XCTAssertEqual(preloadStore.entry(for: descendant)?.owners, [item.id.uuidString])
+
+        let archived = expectation(forNotification: .readingListChanged, object: nil)
+        store.setArchived(true, for: item.id, at: Date(timeIntervalSince1970: 123))
+        wait(for: [archived], timeout: 2)
+
+        XCTAssertEqual(store.item(withID: item.id)?.archivedAt, Date(timeIntervalSince1970: 123))
+        XCTAssertNil(preloadStore.entry(for: descendant), "archive drops this root's preload tree")
+
+        let unarchived = expectation(forNotification: .readingListChanged, object: nil)
+        store.setArchived(false, for: item.id)
+        wait(for: [unarchived], timeout: 2)
+        XCTAssertNil(store.item(withID: item.id)?.archivedAt)
+    }
 }

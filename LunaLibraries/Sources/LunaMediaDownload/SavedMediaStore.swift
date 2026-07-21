@@ -68,6 +68,9 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
     public var sourceURLString: String
     public var title: String?
     public var dateSaved: Date
+    /// When non-nil, this row lives in the archive tray. Re-downloads preserve
+    /// the value so playback availability never implicitly unarchives it.
+    public var archivedAt: Date?
     /// Nil until resolution/download establishes the actual resource type.
     public var kind: MediaAsset.Kind?
     public var storageState: StorageState
@@ -89,6 +92,8 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
     /// of reaching for `sourceURLString` directly.
     public var displayTitle: String { title ?? creator ?? sourceURLString }
 
+    public var isArchived: Bool { archivedAt != nil }
+
     public var fileName: String? {
         guard case .localFile(let fileName) = storageState else { return nil }
         return fileName
@@ -108,7 +113,7 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, sourceURLString, title, dateSaved, kind, storageState, fileName, thumbnailFileName
+        case id, sourceURLString, title, dateSaved, archivedAt, kind, storageState, fileName, thumbnailFileName
         case platform, platformItemID, creator
     }
 
@@ -122,6 +127,7 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
         self.sourceURLString = sourceURLString
         self.title = title
         self.dateSaved = dateSaved
+        self.archivedAt = nil
         self.kind = kind
         self.storageState = storageState
         self.thumbnailFileName = thumbnailFileName
@@ -136,6 +142,7 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
         sourceURLString = try container.decode(String.self, forKey: .sourceURLString)
         title = try container.decodeIfPresent(String.self, forKey: .title)
         dateSaved = try container.decode(Date.self, forKey: .dateSaved)
+        archivedAt = try container.decodeIfPresent(Date.self, forKey: .archivedAt)
         kind = try container.decodeIfPresent(MediaAsset.Kind.self, forKey: .kind)
         thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
         platform = try? container.decodeIfPresent(ContentPlatform.self, forKey: .platform)
@@ -157,6 +164,7 @@ public struct SavedMediaItem: Codable, Identifiable, Equatable {
         try container.encode(sourceURLString, forKey: .sourceURLString)
         try container.encodeIfPresent(title, forKey: .title)
         try container.encode(dateSaved, forKey: .dateSaved)
+        try container.encodeIfPresent(archivedAt, forKey: .archivedAt)
         try container.encodeIfPresent(kind, forKey: .kind)
         try container.encode(storageState, forKey: .storageState)
         try container.encodeIfPresent(thumbnailFileName, forKey: .thumbnailFileName)
@@ -428,11 +436,13 @@ public final class SavedMediaStore {
             platform: recognized?.platform ?? existing?.platform,
             platformItemID: recognized?.itemID ?? existing?.platformItemID,
             creator: creator ?? existing?.creator)
+        var persistedItem = item
+        persistedItem.archivedAt = existing?.archivedAt
         lock.lock()
         items = loadUnlocked()
         let replaced = items.filter { $0.id == id }
         items.removeAll { $0.id == id }
-        items.append(item)
+        items.append(persistedItem)
         do {
             try saveUnlocked(items)
             lock.unlock()
@@ -444,11 +454,13 @@ public final class SavedMediaStore {
             }
             throw error
         }
-        for old in replaced where old.id != item.id || old.fileName != item.fileName {
-            removeLocalFiles(for: old)
+        for old in replaced where old.id != persistedItem.id || old.fileName != persistedItem.fileName {
+            removePendingFiles(fileName: old.fileName,
+                               thumbnailFileName: old.thumbnailFileName == persistedItem.thumbnailFileName
+                                   ? nil : old.thumbnailFileName)
         }
         notifyChanged()
-        return item
+        return persistedItem
     }
 
     /// Commits a PhotoKit durable identifier before deleting the app-owned file.
@@ -465,13 +477,14 @@ public final class SavedMediaStore {
             return nil
         }
         let pendingFile = items[index].fileName
-        let pendingThumbnail = items[index].thumbnailFileName
+        // The small poster is the archive's durable visual identity. Keep it
+        // even after the full app-owned media moves into Photos.
+        let pendingThumbnail: String? = nil
         if items[index].kind == nil { items[index].kind = kind }
         items[index].storageState = .photosReference(
             localIdentifier: localIdentifier,
             pendingLocalFileName: pendingFile,
             pendingThumbnailFileName: pendingThumbnail)
-        items[index].thumbnailFileName = nil
         do {
             try saveUnlocked(items)
         } catch {
@@ -511,6 +524,50 @@ public final class SavedMediaStore {
         notifyChanged()
     }
 
+    /// Archives/unarchives a saved media row. App-owned full media is removed
+    /// immediately on archive while its small thumbnail survives. A PhotoKit
+    /// reference is already external storage, so it remains playable in place.
+    public func setArchived(_ archived: Bool, for itemID: UUID, at date: Date = Date()) {
+        lock.lock()
+        var items = loadUnlocked()
+        guard let index = items.firstIndex(where: { $0.id == itemID }) else {
+            lock.unlock()
+            return
+        }
+        let old = items[index]
+        if archived {
+            guard items[index].archivedAt == nil else { lock.unlock(); return }
+            items[index].archivedAt = date
+            if case .localFile = items[index].storageState {
+                items[index].storageState = .undownloaded
+            }
+        } else {
+            guard items[index].archivedAt != nil else { lock.unlock(); return }
+            items[index].archivedAt = nil
+        }
+        guard (try? saveUnlocked(items)) != nil else { lock.unlock(); return }
+        lock.unlock()
+        if archived, case .localFile = old.storageState {
+            removePendingFiles(fileName: old.fileName, thumbnailFileName: nil)
+        }
+        notifyChanged()
+    }
+
+    /// A deleted/unavailable Photos asset leaves an archived row downloadable;
+    /// its retained thumbnail remains. Active rows keep their legacy delete flow.
+    public func markArchivedPhotosAssetMissing(_ itemID: UUID) {
+        lock.lock()
+        var items = loadUnlocked()
+        guard let index = items.firstIndex(where: { $0.id == itemID }),
+              items[index].isArchived,
+              case .photosReference = items[index].storageState
+        else { lock.unlock(); return }
+        items[index].storageState = .undownloaded
+        guard (try? saveUnlocked(items)) != nil else { lock.unlock(); return }
+        lock.unlock()
+        notifyChanged()
+    }
+
     /// Applies the age-based retention policy. Saved media is app-owned: it is the
     /// Downloader grid's primary content, deleted explicitly from the grid (`delete`)
     /// or aged out here — NOT tied to reading-list membership. (An earlier version
@@ -539,7 +596,7 @@ public final class SavedMediaStore {
         var updated = items
         for index in updated.indices where expiredIDs.contains(updated[index].id) {
             updated[index].storageState = .undownloaded
-            updated[index].thumbnailFileName = nil
+            if !updated[index].isArchived { updated[index].thumbnailFileName = nil }
         }
         do {
             try saveUnlocked(updated)
@@ -548,7 +605,13 @@ public final class SavedMediaStore {
             return
         }
         lock.unlock()
-        for item in ageExpired { removeLocalFiles(for: item) }
+        for item in ageExpired {
+            if item.isArchived {
+                removePendingFiles(fileName: item.fileName, thumbnailFileName: nil)
+            } else {
+                removeLocalFiles(for: item)
+            }
+        }
         notifyChanged()
     }
 

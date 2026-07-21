@@ -1,4 +1,5 @@
 import LunaMediaDownload
+import UIKit
 import XCTest
 
 final class SavedMediaStoreTests: XCTestCase {
@@ -197,5 +198,99 @@ final class SavedMediaStoreTests: XCTestCase {
         }
 
         wait(for: [changed], timeout: 2)
+    }
+
+    func testArchiveDropsFullLocalMediaButKeepsThumbnailAndCanUnarchive() throws {
+        let urlString = "https://x.com/example/status/archive"
+        let source = root.appendingPathComponent("source.jpg")
+        try makeJPEG().write(to: source)
+        let local = try store.addDownloadedFile(
+            source, kind: .image, sourceURLString: urlString, title: "Archived")
+        let fileName = try XCTUnwrap(local.fileName)
+        let thumbnail = try XCTUnwrap(local.thumbnailFileName)
+
+        store.setArchived(true, for: local.id, at: Date(timeIntervalSince1970: 456))
+        let archived = try XCTUnwrap(store.items().first(where: { $0.id == local.id }))
+        XCTAssertTrue(archived.isArchived)
+        XCTAssertEqual(archived.storageState, .undownloaded)
+        XCTAssertEqual(archived.thumbnailFileName, thumbnail)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: store.mediaDirectory.appendingPathComponent(fileName).path))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: store.thumbnailDirectory.appendingPathComponent(thumbnail).path))
+
+        store.setArchived(false, for: local.id)
+        XCTAssertFalse(try XCTUnwrap(store.items().first).isArchived)
+    }
+
+    func testRedownloadKeepsItemArchivedAndRefreshesRetentionDate() throws {
+        let urlString = "https://x.com/example/status/redownload"
+        let firstSource = root.appendingPathComponent("first.jpg")
+        try makeJPEG().write(to: firstSource)
+        let first = try store.addDownloadedFile(
+            firstSource, kind: .image, sourceURLString: urlString, title: nil,
+            dateSaved: Date(timeIntervalSince1970: 100))
+        store.setArchived(true, for: first.id)
+
+        let secondSource = root.appendingPathComponent("second.jpg")
+        try makeJPEG().write(to: secondSource)
+        let redownloaded = try store.addDownloadedFile(
+            secondSource, kind: .image, sourceURLString: urlString, title: nil,
+            dateSaved: Date(timeIntervalSince1970: 900))
+
+        XCTAssertTrue(redownloaded.isArchived)
+        XCTAssertEqual(redownloaded.dateSaved, Date(timeIntervalSince1970: 900))
+        XCTAssertNotNil(redownloaded.fileName)
+        XCTAssertNotNil(redownloaded.thumbnailFileName)
+    }
+
+    func testPhotosTransitionRetainsOpportunisticThumbnail() throws {
+        let source = root.appendingPathComponent("photos.jpg")
+        try makeJPEG().write(to: source)
+        let local = try store.addDownloadedFile(
+            source, kind: .image, sourceURLString: "https://instagram.com/p/photos", title: nil)
+        let thumbnail = try XCTUnwrap(local.thumbnailFileName)
+
+        let photos = try XCTUnwrap(try store.transitionToPhotosReference(
+            local.id, localIdentifier: "photos-id", kind: .image))
+        XCTAssertEqual(photos.thumbnailFileName, thumbnail)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: store.thumbnailDirectory.appendingPathComponent(thumbnail).path))
+    }
+
+    func testRetentionExpiryKeepsArchivedThumbnail() throws {
+        let previous = MediaRetentionSettings.option
+        MediaRetentionSettings.option = .oneDay
+        defer { MediaRetentionSettings.option = previous }
+        let source = root.appendingPathComponent("expired.jpg")
+        try makeJPEG().write(to: source)
+        let local = try store.addDownloadedFile(
+            source, kind: .image, sourceURLString: "https://instagram.com/p/expired",
+            title: nil, dateSaved: Date(timeIntervalSince1970: 100))
+        store.setArchived(true, for: local.id)
+        let thumbnail = try XCTUnwrap(store.items().first?.thumbnailFileName)
+
+        // Re-download produces a local file while preserving archive state.
+        let redownload = root.appendingPathComponent("expired-again.jpg")
+        try makeJPEG().write(to: redownload)
+        _ = try store.addDownloadedFile(
+            redownload, kind: .image, sourceURLString: local.sourceURLString,
+            title: nil, dateSaved: Date(timeIntervalSince1970: 200))
+        store.purgeExpired(now: Date(timeIntervalSince1970: 200 + 2 * 86_400))
+
+        let expired = try XCTUnwrap(store.items().first)
+        XCTAssertTrue(expired.isArchived)
+        XCTAssertEqual(expired.storageState, .undownloaded)
+        XCTAssertEqual(expired.thumbnailFileName, thumbnail)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: store.thumbnailDirectory.appendingPathComponent(thumbnail).path))
+    }
+
+    private func makeJPEG() -> Data {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 40))
+        return renderer.jpegData(withCompressionQuality: 0.9) { context in
+            UIColor.systemPurple.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        }
     }
 }

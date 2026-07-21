@@ -47,6 +47,7 @@ public final class ReadingListStore {
     /// a saved item owns the images its content references, so deleting the item frees
     /// them — unless another save or preloaded page still references the same image.
     private let imageReferences: ImageReferenceStore
+    private let preloads: PreloadStore
 
     /// In-memory cache of the decoded list, valid only while `cacheToken` matches the
     /// file's current (modification date, size). Filled by `items()` on a cache miss
@@ -69,9 +70,10 @@ public final class ReadingListStore {
 
     /// The shared store uses the App Group container; tests pass a scratch
     /// directory so they never touch (or wipe) real user data.
-    public init(containerURL: URL? = nil) {
+    public init(containerURL: URL? = nil, preloadStore: PreloadStore? = nil) {
         self.overrideContainerURL = containerURL
         self.imageReferences = ImageReferenceStore(containerURL: containerURL)
+        self.preloads = preloadStore ?? .shared
     }
 
     private var containerURL: URL {
@@ -310,6 +312,23 @@ public final class ReadingListStore {
         coordinatedMutate { all in
             if let found = all.first(where: { $0.id == item.id }) { self.removeFiles(for: found) }
             all.removeAll { $0.id == item.id }
+        }
+    }
+
+    /// Moves an item into or out of its surface's archive tray. Archiving keeps
+    /// the saved article/document bytes intact, but releases this root's entire
+    /// recursive preload tree so it owns no speculative descendants (depth 0).
+    public func setArchived(_ archived: Bool, for itemID: UUID, at date: Date = Date()) {
+        let changed = coordinatedMutate { all -> Bool in
+            guard let index = all.firstIndex(where: { $0.id == itemID }) else { return false }
+            let value: Date? = archived ? date : nil
+            guard all[index].archivedAt != value else { return false }
+            if archived, all[index].archivedAt != nil { return false }
+            all[index].archivedAt = value
+            return true
+        }
+        if changed, archived {
+            preloads.releaseTree(rootID: itemID)
         }
     }
 
@@ -984,6 +1003,6 @@ public final class ReadingListStore {
         imageReferences.removeReferences(contentKey: ImageReferenceStore.itemKey(item.id))
         // Release this save's preload subtree (refcount decrement; only ever deletes
         // files under Preloads/, never a user save).
-        PreloadStore.shared.releaseTree(rootID: item.id)
+        preloads.releaseTree(rootID: item.id)
     }
 }

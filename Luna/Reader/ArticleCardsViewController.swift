@@ -65,6 +65,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private let cardScrollIndicator = HorizonScrollIndicator.makeHosted()
     private var chromeModes: [ReadingListItem.ReaderMode] = []
     private var items: [ReadingListItem] = []
+    private var archivedItems: [ReadingListItem] = []
     private var appliedFingerprint: [String] = []
     private var pasteboardURL: URL?
     /// The paste item currently represented by the carousel's data source.
@@ -72,10 +73,6 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// previously centered article through the old index space.
     private var renderedPasteboardURL: URL?
     private var consumedPasteboardChangeCount: Int?
-    /// The press-driven RSVP preview for the centered card, while a long-press
-    /// is live (or it has locked itself into playback).
-    private var rsvpSession: ArticleRSVPPreviewSession?
-    private var rsvpPressStart = CGPoint.zero
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -129,6 +126,16 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
 
         mountBottomControls()
         mountTopChrome()
+        mountArchiveTray(
+            shifting: { [weak self] in
+                guard let self else { return [] }
+                return [self.carousel.view, self.emptyView]
+            },
+            canPull: { [weak self] in
+                guard let self else { return false }
+                let count = self.items.count + self.cardOffset
+                return count == 0 || self.carousel.currentIndex == count - 1
+            })
 
         NSLayoutConstraint.activate([
             emptyView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -412,10 +419,17 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     }
 
     @objc private func reload() {
-        let updated = Self.orderedReaderItems(store.items())
-        var fingerprint = updated.map {
-            "\($0.id)|\($0.title ?? "")|\($0.state)|\($0.thumbnailFileName ?? "")|\(senderName(for: $0) ?? "")"
+        let allReaderItems = store.items().filter { ReadingListSectioning.rendersAsReader($0) }
+        let updated = Self.orderedReaderItems(allReaderItems)
+        let updatedArchive = allReaderItems.filter(\.isArchived).sorted {
+            ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
         }
+        var fingerprint = updated.map {
+            "active|\($0.id)|\($0.title ?? "")|\($0.state)|\($0.thumbnailFileName ?? "")|\(senderName(for: $0) ?? "")"
+        }
+        fingerprint.append(contentsOf: updatedArchive.map {
+            "archive|\($0.id)|\($0.title ?? "")|\($0.archivedAt?.timeIntervalSince1970 ?? 0)"
+        })
         fingerprint.insert("paste|\(pasteboardURL?.absoluteString ?? "")", at: 0)
         guard fingerprint != appliedFingerprint else { return }
         appliedFingerprint = fingerprint
@@ -423,6 +437,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         let oldItemIndex = carousel.currentIndex - cardOffset
         let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil
         items = updated
+        archivedItems = updatedArchive
         renderedPasteboardURL = pasteboardURL
         let newOffset = cardOffset
         let centeredIndex = centeredID.flatMap { id in
@@ -431,6 +446,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         carousel.reloadData(centeringAt: centeredIndex)
         emptyView.isHidden = !items.isEmpty || renderedPasteboardURL != nil
         carousel.view.isHidden = items.isEmpty && renderedPasteboardURL == nil
+        archiveTray?.setItems(makeArchiveTrayItems())
         updateReaderChrome()
     }
 
@@ -439,7 +455,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     /// the carousel's newest/bumped-first ordering.
     static func orderedReaderItems(_ candidates: [ReadingListItem]) -> [ReadingListItem] {
         candidates
-            .filter { ReadingListSectioning.rendersAsReader($0) }
+            .filter { ReadingListSectioning.rendersAsReader($0) && !$0.isArchived }
             .sorted { lhs, rhs in
                 let lhsIsRead = lhs.readState == .read
                 let rhsIsRead = rhs.readState == .read
@@ -449,6 +465,32 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 if lhsDate != rhsDate { return lhsDate > rhsDate }
                 return lhs.id.uuidString < rhs.id.uuidString
             }
+    }
+
+    private func makeArchiveTrayItems() -> [ArchiveTrayItem] {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return archivedItems.map { item in
+            ArchiveTrayItem(
+                id: item.id,
+                title: item.title ?? item.url?.host ?? item.urlString,
+                footer: formatter.string(from: item.dateAdded),
+                showsMetadata: true,
+                isAvailable: true,
+                loadImage: { completion in
+                    guard let url = item.url else {
+                        completion(UIImage(systemName: item.isDocument ? "doc" : "globe"))
+                        return
+                    }
+                    completion(UIImage(systemName: "globe"))
+                    SourceIconCache.shared.icon(forPageURL: url) { image in
+                        if let image { completion(image) }
+                    }
+                },
+                tap: { [weak self] in self?.openExternally(item) },
+                unarchive: { [weak self] in self?.store.setArchived(false, for: item.id) })
+        }
     }
 
     // MARK: - Opening / immersion
@@ -612,6 +654,19 @@ extension ArticleCardsViewController: CardCarouselDataSource {}
 
 extension ArticleCardsViewController: CardCarouselDelegate {
 
+    func carousel(
+        _ carousel: CardCarouselViewController,
+        contextMenuForCardAt index: Int
+    ) -> UIContextMenuConfiguration? {
+        guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
+        let item = items[itemIndex]
+        return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
+            UIMenu(children: [UIAction(
+                title: "Archive", image: UIImage(systemName: "archivebox")
+            ) { _ in self?.store.setArchived(true, for: item.id) }])
+        })
+    }
+
     func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {
         // The carousel has already restored its card geometry so this same pan
         // can page. Keep the screen-level footer veil and indicator in lockstep.
@@ -655,41 +710,6 @@ extension ArticleCardsViewController: CardCarouselDelegate {
             extendsCard: card.rabbitHoleReader?.focusedContentScrollView != nil)
     }
 
-    /// Long-press = the link-preview RSVP experience for the card's article:
-    /// glass card with appearance animation and haptics, drag up to lock, drag
-    /// left/right to pause/speed — all driven by the same press.
-    func carousel(
-        _ carousel: CardCarouselViewController,
-        longPress gesture: UILongPressGestureRecognizer,
-        onCenteredCardAt index: Int
-    ) {
-        switch gesture.state {
-        case .began:
-            guard let itemIndex = articleIndex(forCarouselIndex: index),
-                  presentedViewController == nil,
-                  rsvpSession == nil
-            else { return }
-            let item = items[itemIndex]
-            guard item.state == .ready, let content = store.content(for: item) else { return }
-            rsvpPressStart = gesture.location(in: view)
-            rsvpSession = ArticleRSVPPreviewSession(
-                host: self, item: item, content: content, anchorPoint: rsvpPressStart)
-        case .changed:
-            let point = gesture.location(in: view)
-            rsvpSession?.update(
-                translation: CGPoint(
-                    x: point.x - rsvpPressStart.x, y: point.y - rsvpPressStart.y),
-                fingerPoint: point)
-        case .ended:
-            rsvpSession?.finish()
-            rsvpSession = nil
-        case .cancelled, .failed:
-            rsvpSession?.cancel()
-            rsvpSession = nil
-        default:
-            break
-        }
-    }
 }
 
 // MARK: - Reader card content delegate

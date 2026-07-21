@@ -19,6 +19,7 @@ import UIKit
 class CardCarouselHostViewController: UIViewController {
 
     let carousel = CardCarouselViewController()
+    private(set) var archiveTray: ArchiveTrayController?
 
     /// Adds the already-configured `carousel` (style/dataSource/delegate are the
     /// subclass's business, set before calling this) as a full-screen child,
@@ -34,6 +35,17 @@ class CardCarouselHostViewController: UIViewController {
             carousel.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             carousel.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+    }
+
+    final func mountArchiveTray(
+        shifting views: @escaping () -> [UIView], canPull: @escaping () -> Bool
+    ) {
+        archiveTray = ArchiveTrayController(host: self, shiftedViews: views, canPull: canPull)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        archiveTray?.layout(in: view.bounds, safeAreaInsets: view.safeAreaInsets)
     }
 
     /// Cards rest fully below the safe area; `inset` adds any extra chrome-row

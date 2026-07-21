@@ -21,6 +21,16 @@ final class ArticleCardOrderingTests: XCTestCase {
         XCTAssertEqual(ordered.map(\.id), [newestActive.id, oldActive.id, newestRead.id, oldRead.id])
     }
 
+    func testArchivedArticlesAreNotCarouselCards() {
+        let active = article("active", daysAgo: 1, readState: .opened)
+        var archived = article("archived", daysAgo: 0, readState: .unopened)
+        archived.archivedAt = Date()
+
+        XCTAssertEqual(
+            ArticleCardsViewController.orderedReaderItems([archived, active]).map(\.id),
+            [active.id])
+    }
+
     private func article(
         _ seed: String, daysAgo: TimeInterval, readState: ReadingListItem.ReadState
     ) -> ReadingListItem {

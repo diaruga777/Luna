@@ -12,6 +12,7 @@
 //
 
 import AVFoundation
+import AVKit
 import LunaDesignSystem
 import LunaMediaDownload
 import LunaReadingList
@@ -32,6 +33,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     private let settingsButton = UIButton(type: .system)
     private let shareButton = UIButton(type: .system)
     private var items: [SavedMediaItem] = []
+    private var archivedItems: [SavedMediaItem] = []
     private var isReconcilingPhotos = false
     private var pasteboardURL: URL?
     private var renderedPasteboardURL: URL?
@@ -76,6 +78,16 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
         mountBottomControls()
         mountDownloadFooter()
+        mountArchiveTray(
+            shifting: { [weak self] in
+                guard let self else { return [] }
+                return [self.carousel.view, self.emptyView]
+            },
+            canPull: { [weak self] in
+                guard let self else { return false }
+                let count = self.items.count + self.cardOffset
+                return count == 0 || self.carousel.currentIndex == count - 1
+            })
 
         // Bridges saves/deletes made by the action/share extension (a DIFFERENT
         // process, so the in-process .savedMediaChanged post below never reaches
@@ -150,10 +162,17 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
 
     @objc private func reload() {
         store.purgeExpired()
-        let updated = store.items()
-        var fingerprint = updated.map { item in
-            "\(item.id)|\(item.thumbnailFileName ?? "")|\(storageStateKey(item))"
+        let allItems = store.items()
+        let updated = allItems.filter { !$0.isArchived }
+        let updatedArchive = allItems.filter(\.isArchived).sorted {
+            ($0.archivedAt ?? .distantPast) > ($1.archivedAt ?? .distantPast)
         }
+        var fingerprint = updated.map { item in
+            "active|\(item.id)|\(item.thumbnailFileName ?? "")|\(storageStateKey(item))"
+        }
+        fingerprint.append(contentsOf: updatedArchive.map { item in
+            "archive|\(item.id)|\(item.thumbnailFileName ?? "")|\(storageStateKey(item))"
+        })
         fingerprint.insert("paste|\(pasteboardURL?.absoluteString ?? "")", at: 0)
         defer { reconcilePhotosReferencesIfAuthorized() }
         guard fingerprint != appliedFingerprint else { return }
@@ -162,6 +181,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         let oldItemIndex = carousel.currentIndex - cardOffset
         let centeredID = items.indices.contains(oldItemIndex) ? items[oldItemIndex].id : nil
         items = updated
+        archivedItems = updatedArchive
         renderedPasteboardURL = pasteboardURL
         let pendingIndex = pendingPasteboardDownloadURLString.flatMap { pending in
             items.firstIndex { $0.sourceURLString == pending }
@@ -174,7 +194,82 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         carousel.reloadData(centeringAt: centeredIndex)
         emptyView.isHidden = !items.isEmpty || renderedPasteboardURL != nil
         carousel.view.isHidden = items.isEmpty && renderedPasteboardURL == nil
+        archiveTray?.setItems(makeArchiveTrayItems())
         updateShareButton()
+    }
+
+    private func makeArchiveTrayItems() -> [ArchiveTrayItem] {
+        archivedItems.map { item in
+            let available: Bool
+            switch item.storageState {
+            case .localFile, .photosReference: available = true
+            case .undownloaded: available = false
+            }
+            return ArchiveTrayItem(
+                id: item.id, title: nil, footer: nil, showsMetadata: false,
+                isAvailable: available,
+                loadImage: { [weak self] completion in
+                    self?.loadThumbnail(for: item, completion: completion)
+                },
+                tap: { [weak self] in self?.openArchivedMedia(item) },
+                unarchive: { [weak self] in self?.store.setArchived(false, for: item.id) })
+        }
+    }
+
+    private func openArchivedMedia(_ item: SavedMediaItem) {
+        switch item.storageState {
+        case .undownloaded:
+            startDownload(item)
+        case .localFile:
+            guard let url = item.fileURL else { startDownload(item); return }
+            if item.kind == .video {
+                presentPlayer(item: AVPlayerItem(url: url))
+            } else {
+                presentArchiveImage { completion in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        completion(UIImage(contentsOfFile: url.path))
+                    }
+                }
+            }
+        case .photosReference(let identifier, _, _):
+            if item.kind == .video {
+                Self.loadPhotosVideoItem(identifier: identifier) { [weak self] playerItem in
+                    DispatchQueue.main.async {
+                        guard let playerItem else {
+                            if PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized {
+                                self?.store.markArchivedPhotosAssetMissing(item.id)
+                                self?.startDownload(item)
+                            } else {
+                                self?.presentAlert(
+                                    title: "Photos Access Needed",
+                                    message: "Allow Photos access to play this archived item.")
+                            }
+                            return
+                        }
+                        self?.presentPlayer(item: playerItem)
+                    }
+                }
+            } else {
+                presentArchiveImage { completion in
+                    Self.loadPhotosImage(
+                        identifier: identifier, targetSize: PHImageManagerMaximumSize,
+                        completion: completion)
+                }
+            }
+        }
+    }
+
+    private func presentPlayer(item: AVPlayerItem) {
+        let controller = AVPlayerViewController()
+        controller.player = AVPlayer(playerItem: item)
+        controller.modalPresentationStyle = .fullScreen
+        present(controller, animated: true) { controller.player?.play() }
+    }
+
+    private func presentArchiveImage(loader: @escaping (@escaping (UIImage?) -> Void) -> Void) {
+        let controller = ArchivedImageViewController(loader: loader)
+        controller.modalPresentationStyle = .fullScreen
+        present(controller, animated: true)
     }
 
     private func storageStateKey(_ item: SavedMediaItem) -> String {
@@ -395,7 +490,7 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     /// evidence of deletion.
     private func reconcilePhotosReferencesIfAuthorized() {
         guard !isReconcilingPhotos,
-              items.contains(where: { $0.photosLocalIdentifier != nil })
+              (items + archivedItems).contains(where: { $0.photosLocalIdentifier != nil })
         else { return }
         isReconcilingPhotos = true
         Task { @MainActor in
@@ -404,15 +499,58 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             guard authorized,
                   PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
             else { return }
-            let missing = items.filter { item in
+            let missing = (items + archivedItems).filter { item in
                 guard let identifier = item.photosLocalIdentifier else { return false }
                 return photoSaver.fetchAsset(localIdentifier: identifier) == nil
             }
             for item in missing {
-                deleteSavedItem(for: item)
+                if item.isArchived {
+                    store.markArchivedPhotosAssetMissing(item.id)
+                } else {
+                    deleteSavedItem(for: item)
+                }
             }
         }
     }
+}
+
+private final class ArchivedImageViewController: UIViewController {
+    private let loader: (@escaping (UIImage?) -> Void) -> Void
+
+    init(loader: @escaping (@escaping (UIImage?) -> Void) -> Void) {
+        self.loader = loader
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(imageView)
+        let close = UIButton(type: .close)
+        close.tintColor = .white
+        close.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        close.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(close)
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: view.topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            close.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            close.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            close.widthAnchor.constraint(equalToConstant: 44),
+            close.heightAnchor.constraint(equalToConstant: 44),
+        ])
+        loader { image in DispatchQueue.main.async { imageView.image = image } }
+    }
+
+    @objc private func closeTapped() { dismiss(animated: true) }
 }
 
 // MARK: - Carousel data source
@@ -646,6 +784,9 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
                     title: "Share", image: UIImage(systemName: "square.and.arrow.up")
                 ) { [weak self] _ in self?.share(item, sourceIndex: index) })
             }
+            actions.append(UIAction(
+                title: "Archive", image: UIImage(systemName: "archivebox")
+            ) { [weak self] _ in self?.store.setArchived(true, for: item.id) })
             actions.append(UIAction(
                 title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
             ) { [weak self] _ in self?.deleteSavedItem(for: item) })
@@ -896,4 +1037,3 @@ private final class CircularDownloadProgressView: UIView {
         progressLayer.path = path.cgPath
     }
 }
-

@@ -34,6 +34,15 @@ own adapters later). The Downloader-specific adapters live in
 
 ## Interaction model
 
+- **Archive tray**: Reader and Downloader each keep a distinct, non-card tray just
+  beyond the carousel's right edge. Its vertical `archive` tab remains slightly
+  visible, but the tray is absent from the carousel count and scrubber. A leftward
+  pull is accepted only on the rightmost card (or the empty state), opens the tray
+  to 2/3 screen width, and shifts the card/empty UX left by 1/2 screen width. The
+  gesture is interactive in both directions; tapping the exposed outside area
+  spring-dismisses it. `ArchiveTrayController` owns this shared presentation and
+  a vertically scrolling 2-column square grid.
+
 - **Autoplay**: the centered card's content autoplays and loops as soon as it is
   centered (`CardContentViewController.cardDidBecomeCentered`); it pauses when it
   leaves center, keeping position.
@@ -136,7 +145,7 @@ structurally guarantees no card view outlives its slot.
 `SavedMediaCardsViewController` keeps the grid's plumbing: cross-process Darwin
 bridge, `.savedMediaChanged`/`.readingListChanged`/foreground/activation reloads,
 expiry purge, Photos reconciliation (full `.authorized` only), long-press context
-menu (Download / Share / Save to Photos / Delete), mark-opened on centering, and the
+menu (Download / Share / Save to Photos / Archive / Delete), mark-opened on centering, and the
 `DownloaderProgressFooterView`. Reloads are fingerprinted
 (`id|thumbnail|storageState` per item) so store notifications that change nothing
 visible don't rebuild live card content mid-playback; real changes reload while
@@ -235,8 +244,9 @@ Differences from the Downloader, via `CardCarouselStyle`:
   the persistent Settings/Share buttons so content never bleeds into their
   footer safe area. In **RSVP**, playing fades it away and pausing
   brings it back (`RSVPViewController.onPlaybackStateChanged`).
-- **Long-press** on the centered card: RSVP popover (`RSVPViewController` in a
-  real `.popover`, adaptation forced to `.none`) without going fullscreen.
+- **Long-press** on the centered card opens its Archive context menu. Archived
+  article squares show favicon, title, and original save date; tapping opens the
+  fully retained reader content and long-pressing offers Unarchive.
 - The cards root has NO header bar.
 - A new pasteboard URL is represented as a synthetic leading card (so it is
   visible as the left peek) and as a `doc.on.clipboard` mini-card in the scrubber.

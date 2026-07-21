@@ -3,22 +3,16 @@
 //  Luna
 //
 
-import LunaReaderUI
 import LunaModels
 import Foundation
 
 /// Pure, UIKit-free decision logic for how the reading list is sliced into
-/// sections, which items qualify for catch-up, and when the catch-up
-/// "action needed" dot lights up. Extracted from `ReadingListViewController`
-/// so it can be unit-tested without a view controller, store, or simulator.
+/// sections. Extracted from `ReadingListViewController` so it can be
+/// unit-tested without a view controller, store, or simulator.
 public enum ReadingListSectioning {
     /// Items older than this (by save date) and still unread fall out of the
     /// active Reading window into the Archive section.
     public static let archiveAge: TimeInterval = 7 * 24 * 60 * 60
-
-    /// The unread count at (and above) which the catch-up dot turns on even
-    /// without a locked save.
-    public static let catchUpDotUnreadThreshold = 10
 
     /// Sections the reading list groups items into. Raw values are STABLE
     /// (persisted in the collapsed-sections key), so new cases append at the
@@ -173,31 +167,6 @@ public enum ReadingListSectioning {
         items.contains { $0.priceTracker?.isArchived == false }
     }
 
-    /// Items worth catching up on: unread (incl. partially read), and
-    /// renderable (ready articles or locked paywalled articles, or any
-    /// platform/media item), oldest first by bump date (falling back to save
-    /// date).
-    public static func catchUpQueue(items: [ReadingListItem]) -> [ReadingListItem] {
-        items.filter { item in
-            guard item.readState != .read else { return false }
-            // Locked (needsCaptcha) articles show as locked cards; other
-            // readers need their content ready; non-readers always qualify.
-            return rendersAsReader(item)
-                ? (item.state == .ready || item.state == .needsCaptcha) : true
-        }.sorted { ($0.bumpDate ?? $0.dateAdded) < ($1.bumpDate ?? $1.dateAdded) }
-    }
-
-    /// Whether the red "action needed" dot should show: once there are 10+
-    /// unread items, OR whenever there's an unarchived LOCKED (paywalled,
-    /// awaiting unlock) save — regardless of count — OR when the catch-up voice
-    /// card is still pending (no enhanced voice installed and not yet dismissed),
-    /// so the nudge surfaces even with an empty reading list.
-    public static func shouldShowCatchUpDot(items: [ReadingListItem]) -> Bool {
-        let unread = items.filter { $0.readState != .read }
-        let hasLockedSave = unread.contains { $0.state == .needsCaptcha }
-        return unread.count >= catchUpDotUnreadThreshold || hasLockedSave
-            || (!VoiceModelStore.isAppleEnhancedInstalled && !VoiceModelStore.hasDismissedVoiceCatchUp)
-    }
 }
 
 /// Which standalone Luna app a reading-list screen renders for. The three apps share

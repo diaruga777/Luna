@@ -12,7 +12,11 @@ owns each platform module's presentation and optional metadata fetcher.
 
 Music and podcast items are no longer a Luna content type. Spotify, Apple Music,
 and Apple Podcasts URLs are not classified as platform media and cannot create
-URL-less saved items through App Intents or the reading list.
+URL-less saved items through App Intents or the reading list. The Safari
+extension's `content.js` recognizes exactly these six platforms too (generated
+from `PlatformRecognizer` — see `safari-extension.md`'s "Shared platform-host
+list"); it no longer shows a "Download in Luna" pill on Spotify/Apple
+Music/Apple Podcasts pages, since the app has no way to act on them.
 
 ## Ingestion and rendering
 

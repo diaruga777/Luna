@@ -121,6 +121,26 @@ section page does not get a reader pill); a known hard-paywall host also counts 
 for the `onlyLocked` mode. This is the single generalized rule — no site is hardcoded in the
 extension; `afr.com` is simply one entry in the shared list.
 
+**Shared platform-host list (`recognizedPlatformPage`).** `PlatformRecognizer`
+(`LunaURLClassification`) is the single Swift source of truth for platform recognition
+(X, Bluesky, Reddit, TikTok, Instagram, Facebook) — every real classification decision
+in the app (ingest, media-download gating, paywall-bypass gating, pasteboard
+suggestions) goes through it. The extension shares its host lists through the generated
+`LunaSafari/Resources/platform_hosts.generated.js` (`self.__LUNA_PLATFORM_HOSTS`),
+injected by `background.js` immediately before `content.js` (same slot as
+`news_hosts.generated.js`). `PlatformHostsJSParityTests` regenerates it
+(`TEST_RUNNER_RECORD_PLATFORM_HOSTS=1`) from `PlatformRecognizer.rules` and, without
+that flag, fails the suite if the committed file drifts. Only the host lists are
+generated data; the path-shape requirements content.js needs beyond a host match —
+Bluesky's `/profile/<author>/post/<rkey>` shape (`blueskyPostID`), Reddit's post/gallery/
+share-link gate (`currentRedditIsPost`, mirroring `PlatformRecognizer.reddit`'s
+`recognizes`) — are hand-written JS mirroring the Swift structural checks, guarded by
+`PlatformHostsJSFixtureParityTests`' URL-matrix comparison against `PlatformRecognizer`
+directly (in a bare `WKWebView`, not just the raw host-list diff). Spotify, Apple Music,
+and Apple Podcasts are NOT platforms — `ContentPlatform` has no such cases (see
+`content-platforms.md`) — so content.js recognizes none of them; it used to invent all
+three independently, which showed a "Download in Luna" pill the app could never act on.
+
 **Article heuristic (`looksLikeArticle`).** The fallback prose scorer for pages that are not
 rescued by the shared host list — a lightweight Readability-style scorer, JS-only, since it
 only decides button visibility; the app re-classifies properly on save via `LunaIngest`. The
@@ -177,9 +197,10 @@ Downloader-platform flow:
      "Installed-app detection" above.
    - `readerAppClipURL` — `LunaReaderAppClipURL` from `LunaSafari/Info.plist`.
    - `downloaderAppClipURL` — `LunaDownloaderAppClipURL` from `LunaSafari/Info.plist`.
-2. Before article heuristics run, content.js recognizes Downloader-platform hosts mirrored
-   Facebook). These pages are never classified as
-   articles by text length, even when a caption/comment body is long.
+2. Before article heuristics run, content.js recognizes Downloader-platform hosts (X,
+   Bluesky, Reddit, TikTok, Instagram, Facebook) via `recognizedPlatformPage` — see
+   "Shared platform-host list" below. These pages are never classified as articles by
+   text length, even when a caption/comment body is long.
 3. On a recognized platform URL, the button says "Download in Luna". With the Downloader
    app installed (its own extension host, or the launch marker), it deep-links
    `lunadownloader://read?url=...`. Otherwise it routes to
@@ -193,8 +214,9 @@ Downloader-platform flow:
    downloadable/animated; preview-image-only posts are suppressed.
 5. **Reddit is post-page + animated-media gated** (mirrors `PlatformRecognizer.reddit`, which
    now `recognizes:` only a post). The pill appears ONLY on an individual post permalink
-   (`/comments/<id>`, `/r|user|u/<name>/comments/<id>`, `/gallery/<id>`, or a
-   `redd.it/<id>` short link) — never on the home feed, a subreddit listing, or a
+   (`/comments/<id>`, `/r|user|u/<name>/comments/<id>`, `/gallery/<id>`, a
+   `redd.it/<id>` short link, or Reddit's own app-native share link `/r/<sub>/s/<token>`,
+   `currentRedditIsPost`) — never on the home feed, a subreddit listing, or a
    comment-history listing (a subreddit literally named "comments" is still a feed) —
    AND only when the post's primary content is animated image/video. `redditPostHasMedia()`
    qualifies on the server-rendered `<shreddit-post post-type="video|gif|gifv">`

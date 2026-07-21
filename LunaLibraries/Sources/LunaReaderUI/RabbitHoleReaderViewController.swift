@@ -116,7 +116,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         edgePopPan = edge
 
         NotificationCenter.default.addObserver(
-            self, selector: #selector(persist),
+            self, selector: #selector(persistForBackground),
             name: UIApplication.didEnterBackgroundNotification, object: nil)
 
         addSimulatorDiveHooksIfNeeded()
@@ -493,6 +493,14 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     }
 
     // MARK: - Persistence
+
+    /// Backgrounding can be followed immediately by a force-quit. Drain the
+    /// store's fire-and-forget position write before iOS suspends this process,
+    /// otherwise the next cold launch can see the previous reading position.
+    @objc private func persistForBackground() {
+        persist()
+        store.flushPendingUpdates()
+    }
 
     @objc private func persist() {
         guard !layers.isEmpty else { return }

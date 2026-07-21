@@ -60,7 +60,20 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
             if isPlaying != oldValue { onPlaybackStateChanged?(isPlaying) }
         }
     }
+    /// The Phrases sub-mode's chunk timer (`scheduleNextChunk`/`advanceChunk`).
+    /// The Words sub-mode's timer is `wordClock` below — the two stay separate
+    /// low-level timers because only the words-mode one is shared with the
+    /// link preview.
     private var timer: Timer?
+    private var intervalStart: Date?
+    private var intervalDuration: TimeInterval?
+    /// Drives the Words sub-mode's per-word advance — shared with
+    /// `LinkRSVPPreview`'s own word timer (see `RSVPPlaybackClock`).
+    private lazy var wordClock: RSVPPlaybackClock = {
+        let clock = RSVPPlaybackClock()
+        clock.delegate = self
+        return clock
+    }()
     private var wpm: Double = ReaderSettings.baseWPM
 
     // Read-aloud pacing: when on, whole sentences are spoken (natural prosody,
@@ -168,11 +181,6 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     /// applies only to the silent WPM/chunk timer — read-aloud paces itself via TTS.
     private let pressAndHoldGesture = UILongPressGestureRecognizer()
     private var isSpeedHeld = false
-    /// Wall-clock start/length of the in-flight WPM/chunk interval, so a
-    /// hold or release mid-word rescales the REMAINING time instead of
-    /// restarting the word's full duration.
-    private var intervalStart: Date?
-    private var intervalDuration: TimeInterval?
 
     /// Horizontal position of the focal (ORP) column, as a fraction of width.
     private static let focalFraction: CGFloat = 0.4
@@ -1022,12 +1030,14 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         if speechCenter != nil {
             timer?.invalidate()
             timer = nil
+            wordClock.cancel()
             saveProgress()
             return
         }
         isPlaying = false
         timer?.invalidate()
         timer = nil
+        wordClock.cancel()
         isSpeedHeld = false
         intervalStart = nil
         intervalDuration = nil
@@ -1118,12 +1128,15 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         rescaleRunningInterval(by: 0.5)
     }
 
+    /// Rescales whichever sub-mode's timer is running — the shared
+    /// `wordClock` in Words, or the chunk timer below in Phrases.
     private func rescaleRunningInterval(by factor: Double) {
-        guard let start = intervalStart, let duration = intervalDuration, timer != nil else { return }
-        let remaining = max(0, duration - Date().timeIntervalSince(start)) * factor
-        let isPhrases = displayMode == .phrases
-        startTimer(remaining) { [weak self] in
-            isPhrases ? self?.advanceChunk() : self?.advance()
+        if displayMode == .phrases {
+            guard let start = intervalStart, let duration = intervalDuration, timer != nil else { return }
+            let remaining = max(0, duration - Date().timeIntervalSince(start)) * factor
+            startTimer(remaining) { [weak self] in self?.advanceChunk() }
+        } else {
+            wordClock.rescaleRemaining(by: factor)
         }
     }
 
@@ -1134,7 +1147,8 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
 
     /// Schedules `handler` after `interval`, recording the interval's
     /// wall-clock start/length so a hold/release mid-word can rescale the
-    /// REMAINING time (see `rescaleRunningInterval`).
+    /// REMAINING time (see `rescaleRunningInterval`) — the Phrases sub-mode's
+    /// chunk timer only; Words uses the shared `wordClock`.
     private func startTimer(_ interval: TimeInterval, handler: @escaping () -> Void) {
         timer?.invalidate()
         intervalStart = Date()
@@ -1147,9 +1161,7 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     // MARK: Words-mode timer
 
     private func scheduleNext() {
-        startTimer(effectiveDuration(engine.duration(at: currentIndex, wpm: wpm))) { [weak self] in
-            self?.advance()
-        }
+        wordClock.schedule(effectiveDuration(engine.duration(at: currentIndex, wpm: wpm)))
     }
 
     private func advance() {
@@ -1264,9 +1276,11 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         // glyph or saving — we restore the exact state below.
         if isSpeechMode {
             synthesizer.stopSpeaking(at: .immediate)
-        } else {
+        } else if displayMode == .phrases {
             timer?.invalidate()
             timer = nil
+        } else {
+            wordClock.cancel()
         }
 
         seek(toWord: target)
@@ -1404,6 +1418,12 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
         didRevealShare = true
         shareView.isHidden = false
         UIView.animate(withDuration: 0.3) { self.shareView.alpha = 1 }
+    }
+}
+
+extension RSVPViewController: RSVPPlaybackClockDelegate {
+    public func playbackClockDidFire(_ clock: RSVPPlaybackClock) {
+        advance()
     }
 }
 

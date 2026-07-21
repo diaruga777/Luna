@@ -476,7 +476,13 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     private let anchorPoint: CGPoint
     private let engine: RSVPEngine
     private var index: Int
-    private var timer: Timer?
+    /// Drives the per-word advance — shared with `RSVPViewController`'s own
+    /// Words sub-mode timer (see `RSVPPlaybackClock`).
+    private lazy var wordClock: RSVPPlaybackClock = {
+        let clock = RSVPPlaybackClock()
+        clock.delegate = self
+        return clock
+    }()
     private var titleTimer: Timer?
     private var isShowingTitle = true
     private var isPausedByMenu = false
@@ -487,8 +493,6 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     private var isLocked = false
     private var currentWPM = ReaderSettings.baseWPM
     private var selectedAction: LinkPreviewAction?
-    private var intervalStartedAt: Date?
-    private var intervalDuration: TimeInterval?
 
     var onDismiss: (() -> Void)?
     var onAction: ((LinkPreviewAction) -> Void)?
@@ -736,7 +740,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
 
     func dismissPreview(completion: (() -> Void)? = nil) {
         persistPosition()
-        timer?.invalidate()
+        wordClock.cancel()
         titleTimer?.invalidate()
         if isAudioMode, ReaderAudioLauncher.center?.currentItemInfo?.itemID == article.item.id {
             ReaderAudioLauncher.center?.pause()
@@ -788,7 +792,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     private func pauseForHorizontalContext() {
         guard !isPausedByHorizontalDrag else { return }
         isPausedByHorizontalDrag = true
-        timer?.invalidate()
+        wordClock.cancel()
         titleTimer?.invalidate()
         if isShowingTitle {
             isShowingTitle = false
@@ -818,26 +822,13 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     private func scheduleNext() {
         guard !isShowingTitle, !isPlaybackPaused, !isAudioMode,
               engine.words.indices.contains(index) else { return }
-        startWordTimer(engine.duration(at: index, wpm: currentWPM))
-    }
-
-    private func startWordTimer(_ duration: TimeInterval) {
-        timer?.invalidate()
-        intervalStartedAt = Date()
-        intervalDuration = duration
-        timer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) {
-            [weak self] _ in
-            guard let self, self.index < self.engine.words.count - 1 else { return }
-            self.index += 1
-            self.showCurrentWord()
-            self.scheduleNext()
-        }
+        wordClock.schedule(engine.duration(at: index, wpm: currentWPM))
     }
 
     private func pauseForMenu() {
         guard !isPausedByMenu else { return }
         isPausedByMenu = true
-        timer?.invalidate()
+        wordClock.cancel()
         titleTimer?.invalidate()
         setMoreActionsHintVisible(false)
         UIView.animate(withDuration: 0.15) { self.menu.alpha = 1 }
@@ -851,17 +842,16 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         resumePlaybackIfNeeded()
     }
 
+    /// Rescales the in-flight word's REMAINING time by `oldWPM / newWPM` — a
+    /// no-op if nothing is scheduled (title still showing, or playback
+    /// paused/audio-mode) — so a horizontal drag takes effect now without
+    /// restarting the displayed word.
     private func applyTemporaryWPM(_ newWPM: Double) {
         guard abs(newWPM - currentWPM) > 0.5 else { return }
         let oldWPM = currentWPM
         currentWPM = newWPM
-        guard !isShowingTitle, !isPlaybackPaused, !isAudioMode,
-              let started = intervalStartedAt, let oldDuration = intervalDuration,
-              oldDuration > 0, timer != nil else { return }
-        let remainingFraction = max(0, 1 - Date().timeIntervalSince(started) / oldDuration)
-        // Word duration is inversely proportional to WPM; rescale only the remaining
-        // portion so a drag takes effect now without restarting the displayed word.
-        startWordTimer(oldDuration * (oldWPM / newWPM) * remainingFraction)
+        guard !isShowingTitle, !isPlaybackPaused, !isAudioMode else { return }
+        wordClock.rescaleRemaining(by: oldWPM / newWPM)
     }
 
     private func persistPosition() {
@@ -928,7 +918,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
                 DispatchQueue.main.async { center.pause() }
             }
         } else {
-            timer?.invalidate()
+            wordClock.cancel()
             resumePlaybackIfNeeded()
         }
     }
@@ -941,7 +931,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
         ReaderSettings.baseWPM = currentWPM
         updateSpeedLabel()
         if !isPlaybackPaused && !isAudioMode {
-            timer?.invalidate()
+            wordClock.cancel()
             scheduleNext()
         }
         UISelectionFeedbackGenerator().selectionChanged()
@@ -966,7 +956,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
             resumePlaybackIfNeeded()
         } else {
             isPausedByControl = true
-            timer?.invalidate()
+            wordClock.cancel()
             titleTimer?.invalidate()
             if isShowingTitle {
                 isShowingTitle = false
@@ -992,7 +982,7 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
             playPauseButton.configuration?.image = UIImage(systemName: "play.fill")
             setContextVisible(true)
         } else {
-            timer?.invalidate()
+            wordClock.cancel()
             titleTimer?.invalidate()
             isShowingTitle = false
             isAudioMode = true
@@ -1115,5 +1105,14 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
             row.backgroundColor = action == selectedAction
                 ? GlassStyle.readingAccent.withAlphaComponent(0.2) : .clear
         }
+    }
+}
+
+extension LinkRSVPPreviewViewController: RSVPPlaybackClockDelegate {
+    func playbackClockDidFire(_ clock: RSVPPlaybackClock) {
+        guard index < engine.words.count - 1 else { return }
+        index += 1
+        showCurrentWord()
+        scheduleNext()
     }
 }

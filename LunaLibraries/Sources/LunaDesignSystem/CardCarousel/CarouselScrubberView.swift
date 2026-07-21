@@ -85,7 +85,7 @@ public final class CarouselScrubberView: UIView {
     private var spacing: CGFloat {
         switch style {
         case .thumbnails:
-            40
+            20
         case .miniCards:
             // At 1.1× the 44pt selected card is 48.4pt wide. A 12pt pitch gap
             // keeps it visibly separate from both unselected neighbors.
@@ -106,6 +106,7 @@ public final class CarouselScrubberView: UIView {
     private let trailingBlur = UIVisualEffectView(effect: UIBlurEffect(style: .regular))
     private var itemViews: [ScrubberItemView] = []
     private var selectedIndex = 0
+    private let selectionFeedback = UISelectionFeedbackGenerator()
 
     /// True while the strip's motion belongs to the user's finger (dragging or
     /// the deceleration it launched). Programmatic centering must stand aside,
@@ -295,6 +296,10 @@ public final class CarouselScrubberView: UIView {
 
 extension CarouselScrubberView: UIScrollViewDelegate {
 
+    public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        selectionFeedback.prepare()
+    }
+
     /// Live preview: while the user scrolls the strip, every chip that passes
     /// the viewport's center becomes the selection (and previews its card).
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -303,6 +308,8 @@ extension CarouselScrubberView: UIScrollViewDelegate {
         guard index != selectedIndex else { return }
         selectedIndex = index
         applySelectionAppearance()
+        selectionFeedback.selectionChanged()
+        selectionFeedback.prepare()
         delegate?.scrubber(self, didPreview: index)
     }
 

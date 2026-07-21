@@ -17,7 +17,7 @@ Every Downloader save has one durable `SavedMediaItem` row and exactly one visib
    `PHAsset.localIdentifier`, not a duplicate media file. Card content, scrub-strip
    thumbnails, sharing, and clipboard exports resolve the asset through PhotoKit each
    time. A small multicolor Photos rosette appears in the card's top-leading corner
-   so this backing is visible at a glance.
+   so this backing is visible at a glance; tapping it opens that asset in Photos.
 
 `SavedMediaStore.ensureUndownloaded` creates the manifest row before transfer and uses
 the reading-list UUID as its stable identity. Existing manifests with the old required

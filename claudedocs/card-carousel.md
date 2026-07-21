@@ -20,9 +20,11 @@ own adapters later). The Downloader-specific adapters live in
   under a `CarouselCardView.restingDimAlpha` (70%) black dim so the centered card
   carries the screen. All geometry is pure math in `CardCarouselMetrics`
   (unit-tested in `CardCarouselMetricsTests`).
-- Both roots have no header bar. Their scrub strips run edge to edge and are
-  flanked by 44pt Liquid Glass Settings and Share circles; chips fade-blur out
-  before reaching them (`scrubberEdgeFadeWidth` 72). Downloader's Share circle
+- Both roots have no header bar. The Downloader scrub strip is bounded between
+  the inner edges of the 44pt Liquid Glass Settings and Share circles (64pt
+  horizontal inset), with no edge blur that could show as a band on black.
+  Its thumbnail pitch uses a 20pt gap. The Reader retains its edge-to-edge,
+  fade-blurred miniature-card strip. Downloader's Share circle
   exports the centered media file directly through the system share sheet and is
   hidden for pasteboard/undownloaded cards. Downloader has no Friends or Add
   button on the root; Friends remains reachable through Settings. Its 9:16
@@ -49,17 +51,20 @@ own adapters later). The Downloader-specific adapters live in
   (`decelerationRate = .fast`) to the nearest chip dead-center via a
   `targetContentOffset` snap, then commits it. Symmetric content insets let
   even the first and last chips center exactly; at rest the selected chip is
-  always centered, whatever selected it (scrub, tap, or card swipe). A tap on
+  always centered, whatever selected it (scrub, tap, or card swipe), with a
+  selection haptic whenever a new chip crosses center during a drag. A tap on
   a chip commits it directly. Chips fade-blur out near the strip's ends
   (`CardCarouselStyle.scrubberEdgeFadeWidth` → `CarouselScrubberView
   .edgeFadeWidth`: an alpha gradient mask plus gradient-masked blur veils).
   The Downloader opts into `autoplaysScrubPreviewContent`: as each thumbnail
   reaches the strip's center, the large overlay mounts that card's real content
-  immediately and autoplays it muted (including looping videos and GIFs). Moving
+  immediately and autoplays it using the carousel's current mute state
+  (including looping videos and GIFs). Moving
   to another thumbnail stops and replaces that temporary preview player. On
   release, the selected preview controller is promoted into the centered card
   without replacing its player or timestamp, so playback continues smoothly;
-  only the centered card's mute and optional Photos controls fade in.
+  only the centered card's mute and optional Photos controls fade in. The
+  Photos control opens that Photos-backed asset in the Photos app.
 - **Audio** is off by default (`CardCarouselViewController.isSoundMuted`, carousel-
   wide). The mute/unmute button sits at the card's top-right and only shows when the
   content reports `supportsAudio` (videos discover their audio track async). Pressing

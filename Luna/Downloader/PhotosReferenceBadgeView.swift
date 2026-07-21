@@ -2,20 +2,27 @@ import UIKit
 
 /// Compact Photos-style rosette used as a storage-origin badge. It is drawn in
 /// code so it remains crisp at both grid and fullscreen sizes.
-final class PhotosReferenceBadgeView: UIImageView {
-    init() {
-        super.init(image: Self.icon)
-        contentMode = .scaleAspectFit
-        isUserInteractionEnabled = false
-        accessibilityLabel = "Stored in Photos"
-        isAccessibilityElement = true
+final class PhotosReferenceBadgeView: UIButton {
+    private let action: () -> Void
+
+    init(action: @escaping () -> Void) {
+        self.action = action
+        super.init(frame: .zero)
+        setImage(Self.icon, for: .normal)
+        imageView?.contentMode = .scaleAspectFit
+        accessibilityLabel = "Open in Photos"
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.28
         layer.shadowRadius = 2
         layer.shadowOffset = CGSize(width: 0, height: 1)
+        addTarget(self, action: #selector(openPhotos), for: .touchUpInside)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func openPhotos() {
+        action()
+    }
 
     private static let icon: UIImage = {
         let size = CGSize(width: 48, height: 48)

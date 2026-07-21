@@ -181,7 +181,7 @@ final class CardCarouselPagePanStartPolicyTests: XCTestCase {
 @MainActor
 final class CardCarouselScrubPromotionTests: XCTestCase {
 
-    func testCommitPromotesPlayingPreviewWithoutPausingOrReplacingIt() throws {
+    func testCommitPromotesPlayingPreviewWithoutPausingOrReplacingItAndPreservesSoundState() throws {
         let source = ScrubPromotionDataSource()
         let carousel = CardCarouselViewController()
         var style = CardCarouselStyle()
@@ -193,9 +193,13 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
         carousel.view.layoutIfNeeded()
         carousel.reloadData(centeringAt: 0)
 
+        let muteButton = try XCTUnwrap(firstButton(labelled: "Unmute", in: carousel.view))
+        muteButton.sendActions(for: .touchUpInside)
+
         let scrubber = try XCTUnwrap(firstScrubber(in: carousel.view))
         scrubber.delegate?.scrubber(scrubber, didPreview: 1)
         XCTAssertTrue(source.preview.isPlaying)
+        XCTAssertFalse(source.preview.isMuted)
         XCTAssertEqual(source.preview.pauseCount, 0)
 
         scrubber.delegate?.scrubber(scrubber, didCommit: 1)
@@ -210,6 +214,11 @@ final class CardCarouselScrubPromotionTests: XCTestCase {
     private func firstScrubber(in view: UIView) -> CarouselScrubberView? {
         if let scrubber = view as? CarouselScrubberView { return scrubber }
         return view.subviews.lazy.compactMap { self.firstScrubber(in: $0) }.first
+    }
+
+    private func firstButton(labelled label: String, in view: UIView) -> UIButton? {
+        if let button = view as? UIButton, button.accessibilityLabel == label { return button }
+        return view.subviews.lazy.compactMap { self.firstButton(labelled: label, in: $0) }.first
     }
 }
 
@@ -244,6 +253,7 @@ private final class ScrubPromotionDataSource: @preconcurrency CardCarouselDataSo
 private final class PlaybackSpyCardContentViewController: CardContentViewController {
     private(set) var playing = false
     private(set) var pauseCount = 0
+    private(set) var isMuted = true
 
     override var isPlayable: Bool { true }
     override var isPlaying: Bool { playing }
@@ -251,5 +261,9 @@ private final class PlaybackSpyCardContentViewController: CardContentViewControl
     override func setPlaying(_ playing: Bool) {
         self.playing = playing
         if !playing { pauseCount += 1 }
+    }
+
+    override func setMuted(_ muted: Bool) {
+        isMuted = muted
     }
 }

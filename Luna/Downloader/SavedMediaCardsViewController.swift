@@ -53,8 +53,11 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
         var style = CardCarouselStyle()
         style.pageSwipeMovementMultiplier = 1.5
         style.autoplaysScrubPreviewContent = true
-        style.scrubberHorizontalInset = 0
-        style.scrubberEdgeFadeWidth = 72
+        // Keep the strip inside the inner edges of the 44pt footer buttons.
+        // A bounded strip needs no blur veil (which reads as a dark band on
+        // black backgrounds).
+        style.scrubberHorizontalInset = 64
+        style.scrubberEdgeFadeWidth = 0
         style.showsCardBorder = true
         carousel.style = style
         carousel.dataSource = self
@@ -503,9 +506,28 @@ extension SavedMediaCardsViewController: CardCarouselDataSource {
         topLeadingAccessoryForCardAt index: Int
     ) -> UIView? {
         guard let mediaIndex = mediaIndex(forCarouselIndex: index),
-              items[mediaIndex].photosLocalIdentifier != nil
+              let identifier = items[mediaIndex].photosLocalIdentifier
         else { return nil }
-        return PhotosReferenceBadgeView()
+        return PhotosReferenceBadgeView { [weak self] in
+            self?.openInPhotos(localIdentifier: identifier)
+        }
+    }
+
+    private func openInPhotos(localIdentifier: String) {
+        // Photos routes assets by the UUID component of PhotoKit's durable
+        // local identifier. Use its public redirect scheme and fall back to
+        // opening the library if this OS cannot resolve the asset route.
+        let uuid = localIdentifier.split(separator: "/", maxSplits: 1).first.map(String.init)
+        var components = URLComponents()
+        components.scheme = "photos-redirect"
+        components.host = "asset"
+        components.queryItems = uuid.map { [URLQueryItem(name: "uuid", value: $0)] }
+
+        guard let destination = components.url else { return }
+        UIApplication.shared.open(destination) { success in
+            guard !success, let library = URL(string: "photos-redirect://") else { return }
+            UIApplication.shared.open(library)
+        }
     }
 
     /// A mid-size decode shared by the scrub strip and its drag-preview overlay

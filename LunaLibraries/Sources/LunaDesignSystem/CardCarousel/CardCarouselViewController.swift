@@ -223,6 +223,7 @@ public final class CardCarouselViewController: UIViewController {
     public var style = CardCarouselStyle()
 
     public private(set) var currentIndex = 0
+    var isSoundMuted: Bool { audioSession.isMuted }
     private lazy var audioSession: CarouselAudioSessionCoordinator = {
         let coordinator = CarouselAudioSessionCoordinator()
         coordinator.onMuteStateChanged = { [weak self] in self?.applyMuteState() }
@@ -978,6 +979,7 @@ public final class CardCarouselViewController: UIViewController {
 
     private func applyMuteState() {
         for slot in slots.values { slot.content.setMuted(audioSession.isMuted) }
+        scrubPreview.setMuted(audioSession.isMuted)
         updateMuteUI()
     }
 

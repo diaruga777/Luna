@@ -93,7 +93,7 @@ final class CarouselScrubPreviewController {
         content.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         overlay.addSubview(content.view)
         content.didMove(toParent: carousel)
-        content.setMuted(true)
+        content.setMuted(carousel.isSoundMuted)
         previewContent = content
         previewContentIndex = index
         if autoplay {
@@ -120,6 +120,10 @@ final class CarouselScrubPreviewController {
     func remove() {
         unmountContent()
         removeOverlay()
+    }
+
+    func setMuted(_ muted: Bool) {
+        previewContent?.setMuted(muted)
     }
 
     func removeOverlay() {

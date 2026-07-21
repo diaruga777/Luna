@@ -762,20 +762,9 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
     private func showCurrentWord() {
         guard engine.words.indices.contains(index) else { return }
         let word = engine.words[index]
-        let characters = Array(word.text)
-        guard !characters.isEmpty else { return }
-        let orp = min(word.orpIndex, characters.count - 1)
-        let attributed = NSMutableAttributedString(
-            string: word.text,
-            attributes: [.font: UIFont.monospacedSystemFont(ofSize: 31, weight: .medium),
-                         .foregroundColor: UIColor.label])
-        let start = String(characters.prefix(orp)).utf16.count
-        let length = String(characters[orp]).utf16.count
-        attributed.addAttribute(.foregroundColor, value: GlassStyle.readingAccent,
-                                range: NSRange(location: start, length: length))
         focusLabel.numberOfLines = 1
         focusLabel.font = .monospacedSystemFont(ofSize: 31, weight: .medium)
-        focusLabel.attributedText = attributed
+        focusLabel.attributedText = RSVPWordDisplay.attributedText(for: word, font: focusLabel.font)
         if isPausedByHorizontalDrag || isPausedByControl { updateContext() }
     }
 

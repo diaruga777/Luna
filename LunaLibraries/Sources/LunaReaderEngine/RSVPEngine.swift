@@ -19,6 +19,18 @@ public struct RSVPWord {
     public let endsClause: Bool
     /// The link this word belongs to, if it falls inside a block link range.
     public let url: URL?
+
+    public init(
+        text: String, orpIndex: Int, endsSentence: Bool, endsParagraph: Bool,
+        endsClause: Bool, url: URL? = nil
+    ) {
+        self.text = text
+        self.orpIndex = orpIndex
+        self.endsSentence = endsSentence
+        self.endsParagraph = endsParagraph
+        self.endsClause = endsClause
+        self.url = url
+    }
 }
 
 /// Turns extracted article blocks into a timed word stream for RSVP reading.

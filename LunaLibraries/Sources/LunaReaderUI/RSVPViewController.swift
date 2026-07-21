@@ -875,27 +875,10 @@ public final class RSVPViewController: UIViewController, ReaderPositionTracking 
     private func showWord(at index: Int) {
         guard engine.words.indices.contains(index) else { return }
         let word = engine.words[index]
-        let characters = Array(word.text)
-        let orp = min(word.orpIndex, max(characters.count - 1, 0))
-
-        let attributed = NSMutableAttributedString(
-            string: word.text,
-            attributes: [.font: wordFont, .foregroundColor: UIColor.label])
-        let orpStart = String(characters.prefix(orp)).utf16.count
-        let orpLength = String(characters[orp]).utf16.count
-        attributed.addAttribute(
-            .foregroundColor, value: GlassStyle.readingAccent,
-            range: NSRange(location: orpStart, length: orpLength))
-        wordLabel.attributedText = attributed
+        wordLabel.attributedText = RSVPWordDisplay.attributedText(for: word, font: wordFont)
         wordLabel.sizeToFit()
 
-        let prefixWidth = NSAttributedString(
-            string: String(characters.prefix(orp)),
-            attributes: [.font: wordFont]).size().width
-        let orpWidth = NSAttributedString(
-            string: String(characters[orp]),
-            attributes: [.font: wordFont]).size().width
-
+        let (prefixWidth, orpWidth) = RSVPWordDisplay.orpOffsets(for: word, font: wordFont)
         let focalX = view.bounds.width * Self.focalFraction
         let centerY = focalCenterY
         wordLabel.frame.origin = CGPoint(

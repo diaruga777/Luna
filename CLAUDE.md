@@ -72,15 +72,19 @@ Almost all code lives in the local SwiftPM package `LunaLibraries/` (layered: co
 orchestration/intents; `LunaAppConfig` at the bottom is the App-Group id source of
 truth). The Xcode targets are thin shells: the `Luna/` folder holds the shared app shell
 (AppDelegate/SceneDelegate), per-app Settings, the main-screen composition
-(ReadingListViewController/CatchUp/Search), composition wiring (AppReaderProviders/
-OnboardingFlow/AppSurfaceConfig), the App Intent **definitions** (`Luna/Intents/*` — business
-logic is in the `LunaIntents` library) — and is shared by ALL
+(ReadingListViewController/CatchUp), composition wiring (AppReaderProviders/
+OnboardingFlow/AppSurfaceConfig), the App Intent **definitions** (`Luna/Mail/Intents/*` —
+business logic is in the `LunaIntents` library) — and is shared by ALL
 THREE app targets (each picks its surface from its bundle id). The Share/Action extensions
 link only `LunaShareSurface` (+ transitive), `LunaSafari` links nothing (it reads the App
 Group id from its own Info.plist via `SafariAppGroup`). Cross-tier wiring uses injected
 closures/protocols installed at launch in AppDelegate (e.g.
-`SocialMessageCenter.ingestHandler`/`shareRecorder`, `DiagnosticLog.export*`,
-`PriceTrackingViewController.defaultSaveAsArticle`). The package is pinned to Swift
+`AudioPlaybackCenter.dataSource`, `ReadingListIngestor.interopPromptPresenter`,
+`DiagnosticLog.exportIdentityProvider`,
+`PriceTrackingViewController.defaultSaveAsArticle`). Component-boundary communication
+inside the UI layers uses delegate protocols (e.g. `RabbitHoleLayerDelegate`,
+`ReaderCompletionDelegate`, `InlineReaderPresentationCoordinating`,
+`CarouselScrubberViewDelegate`), not stored closures. The package is pinned to Swift
 5 language mode. Reusable modules need `public` API + explicit `public init`s.
 
 ## Running the unit tests (CLI — works headless, no Blitz needed)
@@ -129,10 +133,11 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   app-group entitlement, so the test host crashes at launch (early-exit, "external
   symbol") on app-group container access. Default ad-hoc signing applies the
   entitlement and the app group works on the simulator.
-- **The full suite is green on the iOS 26.x sim: 918 tests, 8 skipped, 0 failures**
-  (measured after the audio-playback feature landed; the previously-documented "904"
-  predates it). The 4 skips are intentional `XCTSkip`s — `CatchUpAndPriceScreenTests
-  .testPriceTracking{,Alerting}EditorSnapshot` and the six
+- **The full suite is green on the iOS 26.x sim: 1379 tests, 14 skipped, 0 failures**
+  (measured after the 2026-07-21 structural refactor, which also restored the seven
+  test files deleted by commit `97833a34` and added coverage for the newly extracted
+  types — see `refactor-plans/`). The 14 skips are intentional `XCTSkip`s —
+  `CatchUpAndPriceScreenTests.testPriceTracking{,Alerting}EditorSnapshot` and the twelve
   `GuideVideoRecorderTests.testRecord*` methods (gated behind
   `RECORD_GUIDE_VIDEOS=1`). One class,
   `ArticleAudioEngineTests` (14 tests, real `AVAudioEngine.start()` even in manual/offline

@@ -253,9 +253,9 @@ public final class ShareViewController: UIViewController {
 
     /// Extracts Safari's preprocessing dictionary from either its normal wrapped
     /// property-list shape or the direct payload shape seen from some extension hosts.
-    /// Internal for regression tests; this is deliberately Foundation-only so it is
-    /// identical in the app and action-extension processes.
-    public nonisolated static func javaScriptResult(from item: Any?) -> [String: Any]? {
+    /// Deliberately Foundation-only so it is identical in the app and
+    /// action-extension processes.
+    nonisolated static func javaScriptResult(from item: Any?) -> [String: Any]? {
         let dictionary: [String: Any]?
         if let payload = item as? [String: Any] {
             dictionary = payload
@@ -273,7 +273,7 @@ public final class ShareViewController: UIViewController {
         return dictionary["URL"] is String ? dictionary : nil
     }
 
-    public nonisolated static func javaScriptResult(fromPropertyListData data: Data) -> [String: Any]? {
+    nonisolated static func javaScriptResult(fromPropertyListData data: Data) -> [String: Any]? {
         guard let propertyList = try? PropertyListSerialization.propertyList(
             from: data, options: [], format: nil)
         else { return nil }

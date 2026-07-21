@@ -20,16 +20,14 @@ import UIKit
 /// over) the window's root.
 ///
 /// Every case maps to the exact construction seam the unit tests use
-/// (`ReaderViewController(item:content:…)`, `CatchUpViewController(unread:router:)`,
-/// `ShareReaderViewController(url:mode:onDone:)`, etc.), so a deep-linked screen
-/// renders the same content the snapshot tests assert on.
+/// (`ReaderViewController(item:content:…)`, `ShareReaderViewController(url:mode:onDone:)`,
+/// etc.), so a deep-linked screen renders the same content the snapshot tests assert on.
 ///
 /// DEBUG-only and launch-arg-gated — production code paths never reference this.
 /// See `claudedocs/ui-testing.md`.
 enum UITestScreen: String, CaseIterable {
     // Reading list is reachable via `-uiTestState` alone, but these let the agent
     // request specific list-driven modals/pushes deterministically.
-    case catchUp
     case friends
     case friendDetail
     case settings
@@ -46,9 +44,6 @@ enum UITestScreen: String, CaseIterable {
     case shareReaderArticle
     case shareMediaPlatform
     case actionReaderArticle
-
-    // Catch-up showing only a price-tracker card (for verifying that card's layout).
-    case priceCatchUp
 }
 
 /// Builds the forced root view controller for a deep-linked UI-test screen. Some
@@ -91,16 +86,6 @@ enum UITestScreenBuilder {
                     rootViewController: PriceTrackingViewController(itemID: tracker.id))
             }
             return UINavigationController(rootViewController: ReadingListViewController())
-
-        case .priceCatchUp:
-            let router = ReadingListViewController()
-            let host = UINavigationController(rootViewController: router)
-            return PresentingHostViewController(host: host) { [weak router] in
-                guard let router else { return nil }
-                let trackers = ReadingListStore.shared.items().filter { $0.isPriceTracker }
-                guard !trackers.isEmpty else { return nil }
-                return CatchUpViewController(unread: trackers, router: router)
-            }
 
         case .readerScroll:
             return UINavigationController(rootViewController: reader(forceMode: .scroll))
@@ -148,17 +133,6 @@ enum UITestScreenBuilder {
                 content: .platform(.x, itemID: "123"), onDone: {})
             return UINavigationController(rootViewController: screen)
 
-        case .catchUp:
-            // Catch-up is presented modally over the reading list. Host the list and
-            // present the card stack once it's on screen.
-            let router = ReadingListViewController()
-            let host = UINavigationController(rootViewController: router)
-            return PresentingHostViewController(host: host) { [weak router] in
-                guard let router else { return nil }
-                let queue = ReadingListSectioning.catchUpQueue(items: ReadingListStore.shared.items())
-                guard !queue.isEmpty else { return nil }
-                return CatchUpViewController(unread: queue, router: router)
-            }
         }
     }
 
@@ -169,8 +143,8 @@ enum UITestScreenBuilder {
 }
 
 /// A container that shows `host` and, once it has appeared, presents a modal built
-/// by `makeModal`. Used to deep-link to screens (e.g. the catch-up card stack) that
-/// the app only ever shows modally over the reading list. DEBUG-only test scaffolding.
+/// by `makeModal`. Used to deep-link to screens the app only ever shows modally over
+/// another root (e.g. the nested split-web overlay). DEBUG-only test scaffolding.
 final class PresentingHostViewController: UIViewController {
     private let host: UIViewController
     private let makeModal: () -> UIViewController?

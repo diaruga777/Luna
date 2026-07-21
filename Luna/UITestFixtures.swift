@@ -22,9 +22,6 @@ enum UITestState: String, CaseIterable {
     /// One of every save type: articles (ready/locked/failed), document,
     /// platform posts, friend-shared items, and price trackers.
     case mixed
-    /// 12 unread renderable articles — enough to make catch-up eligible (the dot)
-    /// and give the card stack a queue.
-    case catchUpEligible
     /// Several price trackers, one of them alerting (a price drop past threshold).
     case priceTracking
 
@@ -72,7 +69,6 @@ enum UITestFixtures {
         switch state {
         case .empty: return Fixture(items: [], contents: [:])
         case .mixed: return mixedFixture()
-        case .catchUpEligible: return catchUpFixture()
         case .priceTracking: return priceTrackingFixture()
         }
     }
@@ -198,24 +194,6 @@ enum UITestFixtures {
             title: "Discounted Gadget", dateAdded: ago(days: 3),
             state: .ready, captureSource: .manual, priceTracker: alertingTracker))
 
-        return Fixture(items: items, contents: contents)
-    }
-
-    // MARK: - Catch-up eligible (12+ unread renderable)
-
-    static func catchUpFixture() -> Fixture {
-        var items: [ReadingListItem] = []
-        var contents: [UUID: ArticleContent] = [:]
-        for index in 0..<12 {
-            let title = "Catch-Up Article #\(index + 1)"
-            let item = ReadingListItem(
-                seed: "cu-\(index)", urlString: "https://example.com/catchup/\(index)",
-                title: title, dateAdded: ago(days: index + 1),
-                state: .ready, readState: .unopened, wordCount: 480,
-                captureSource: .manual)
-            contents[item.id] = sampleArticleContent(title: title)
-            items.append(item)
-        }
         return Fixture(items: items, contents: contents)
     }
 

@@ -40,10 +40,10 @@ enum UITestSeeder {
     /// Whether this process was launched by the UI-test / screenshot harness at all
     /// (a seeded state, a deep-linked screen, or an onboarding step). The screenshot
     /// agent uses this to suppress simulator-only debug tap targets (the row ellipsis,
-    /// reader "Split High/Low", catch-up "Sim Bump") that otherwise overlay real
-    /// content in captures. Those hooks still appear for interactive simulator
-    /// automation runs (no launch arg) and in unit/snapshot tests (which build VCs
-    /// directly, without these args). DEBUG-only; always false in release.
+    /// reader "Split High/Low") that otherwise overlay real content in captures. Those
+    /// hooks still appear for interactive simulator automation runs (no launch arg)
+    /// and in unit/snapshot tests (which build VCs directly, without these args).
+    /// DEBUG-only; always false in release.
     static var isUITestLaunch: Bool {
         #if DEBUG
         return UITestLaunch.isActive
@@ -92,7 +92,7 @@ enum UITestSeeder {
     static func applyIfNeeded() {
         #if DEBUG
         // A screen deep-link without an explicit state still wants a populated store
-        // (price-editor, catch-up, search read the shared store) — default to mixed.
+        // (price-editor, search read the shared store) — default to mixed.
         let state = requestedState ?? (requestedScreen != nil ? .mixed : nil)
         guard let state else { return }
         UIView.setAnimationsEnabled(false)

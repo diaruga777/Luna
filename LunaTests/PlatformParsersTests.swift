@@ -39,14 +39,17 @@ final class PlatformParsersTests: XCTestCase {
         XCTAssertFalse(TikTokLink.isTikTok("https://example.com/@user/video/1"))
     }
 
+    /// `RedditLink.isReddit`/`.postID` had zero production callers (`.subreddit`,
+    /// the one caller that used to gate on `.isReddit`, doesn't) and duplicated a
+    /// narrower version of `PlatformRecognizer.reddit`'s host/post logic; both were
+    /// deleted as dead code. `.jsonURL` doesn't gate on host at all and is unchanged.
     func testRedditParsesPostIDAndJSONURL() {
         let url = "https://www.reddit.com/r/swift/comments/abc123/some_title/"
-        XCTAssertTrue(RedditLink.isReddit(url))
-        XCTAssertEqual(RedditLink.postID(from: url), "abc123")
+        XCTAssertEqual(PlatformRecognizer.recognize(url)?.itemID, "abc123")
         XCTAssertEqual(
             RedditLink.jsonURL(for: url)?.absoluteString,
             "https://www.reddit.com/r/swift/comments/abc123/some_title.json")
-        XCTAssertFalse(RedditLink.isReddit("https://example.com/r/swift/comments/x/y"))
+        XCTAssertNil(PlatformRecognizer.recognize("https://example.com/r/swift/comments/x/y"))
     }
 
     /// `PlatformRecognizer` classifies Reddit ONLY on an individual post permalink —

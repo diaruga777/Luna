@@ -9,13 +9,6 @@ import Foundation
 
 /// Recognizes Reddit post links: `reddit.com/r/<sub>/comments/<id>/<slug>`. Pure.
 public enum RedditLink {
-    public static func isReddit(_ urlString: String) -> Bool {
-        guard let host = URL(string: urlString)?.host?.lowercased() else { return false }
-        // redd.it is matched exactly here; PlatformRecognizer.reddit also suffix-matches
-        // redd.it subdomains (e.g. i.redd.it) — deliberately narrower than that table.
-        return host == "reddit.com" || host.hasSuffix(".reddit.com") || host == "redd.it"
-    }
-
     /// The subreddit ("r/<name>") from a permalink path, if present.
     public static func subreddit(from urlString: String) -> String? {
         guard let url = URL(string: urlString) else { return nil }
@@ -23,16 +16,6 @@ public enum RedditLink {
         guard let index = segments.firstIndex(where: { $0.lowercased() == "r" }),
               index + 1 < segments.count, !segments[index + 1].isEmpty else { return nil }
         return "r/\(segments[index + 1])"
-    }
-
-    /// The base-36 post id from a `/comments/<id>/…` permalink.
-    public static func postID(from urlString: String) -> String? {
-        guard let url = URL(string: urlString), isReddit(urlString) else { return nil }
-        let segments = Array(url.pathComponents.dropFirst())
-        guard let commentsIndex = segments.firstIndex(of: "comments"),
-              commentsIndex + 1 < segments.count else { return nil }
-        let id = segments[commentsIndex + 1]
-        return id.isEmpty ? nil : id
     }
 
     /// The public JSON metadata URL for a permalink.

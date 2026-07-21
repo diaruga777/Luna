@@ -149,6 +149,28 @@ final class SocialMediaResolverTests: XCTestCase {
         ])
     }
 
+    func testReportedFacebookReelUsesCookieFreeUncachedMobileFallback() async {
+        let source = URL(string: "https://www.facebook.com/reel/2555554881528124/")!
+        var mobileRequest: URLRequest?
+        let resolver = SocialMediaResolver { request in
+            guard request.value(forHTTPHeaderField: "User-Agent")
+                    == MediaDownloadHTTP.browserUserAgent else { return nil }
+            mobileRequest = request
+            // Facebook varies attribute order and sometimes emits `name` instead of
+            // `property`; both are valid Open Graph representations seen in the wild.
+            return Data(#"<meta content='https://video.example.com/reel.mp4?x=1&amp;y=2' name='og:video:secure_url'>"#.utf8)
+        }
+
+        let assets = await resolver.resolveAssets(for: source)
+
+        XCTAssertEqual(assets, [
+            MediaAsset(url: URL(string: "https://video.example.com/reel.mp4?x=1&y=2")!, kind: .video),
+        ])
+        XCTAssertEqual(mobileRequest?.httpShouldHandleCookies, false)
+        XCTAssertEqual(mobileRequest?.cachePolicy, .reloadIgnoringLocalCacheData)
+        XCTAssertEqual(mobileRequest?.value(forHTTPHeaderField: "Accept-Language"), "en-US,en;q=0.9")
+    }
+
     func testFacebookInlinePlayableURLResolvesAsVideoBeforePoster() {
         let html = #"""
         <meta property="og:image" content="https://cdn.example.com/poster.jpg">

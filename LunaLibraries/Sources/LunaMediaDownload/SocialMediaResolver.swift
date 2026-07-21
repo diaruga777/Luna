@@ -121,7 +121,8 @@ public struct SocialMediaResolver: SocialMediaResolving {
         // real (SD) playable MP4. A reel's canonical is the reel URL itself, so for
         // reels this og:video fallback is the only asset — without it they resolved
         // to "no media" even though the video was right there on the page.
-        if let data = await fetch(htmlRequest(url)),
+        if let data = await fetch(Self.facebookPageRequest(
+            url, userAgent: MediaDownloadHTTP.browserUserAgent)),
            let html = String(data: data, encoding: .utf8) {
             if let canonical = FacebookMediaParser.canonicalVideoURL(fromHTML: html),
                canonical.absoluteString != url.absoluteString,
@@ -137,7 +138,8 @@ public struct SocialMediaResolver: SocialMediaResolving {
         // Fallback: the og-unfurl view (`facebookexternalhit`) only when it exposes
         // a real video. Facebook video permalinks commonly expose their poster as
         // `og:image`; saving that still would turn a video download into an image.
-        guard let data = await fetch(metaScrapeRequest(url)),
+        guard let data = await fetch(Self.facebookPageRequest(
+            url, userAgent: MediaDownloadHTTP.facebookCrawlerUserAgent)),
               let html = String(data: data, encoding: .utf8) else { return [] }
         if let videoURL = OpenGraphMediaParser.content(named: "og:video", in: html)
             ?? OpenGraphMediaParser.content(named: "og:video:secure_url", in: html),
@@ -200,7 +202,7 @@ public struct SocialMediaResolver: SocialMediaResolving {
     /// (`og:video`/`og:image`) to it even when they'd otherwise show a login wall.
     private func metaScrapeRequest(_ url: URL) -> URLRequest {
         var request = URLRequest(url: url, timeoutInterval: 15)
-        request.setValue("facebookexternalhit/1.1", forHTTPHeaderField: "User-Agent")
+        request.setValue(MediaDownloadHTTP.facebookCrawlerUserAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         return request
     }
@@ -219,9 +221,25 @@ public struct SocialMediaResolver: SocialMediaResolving {
     }
 
     private func facebookVideoPageRequest(_ url: URL) -> URLRequest {
-        var request = URLRequest(url: url, timeoutInterval: 15)
-        request.setValue(MediaDownloadHTTP.desktopBrowserUserAgent, forHTTPHeaderField: "User-Agent")
+        Self.facebookPageRequest(url, userAgent: MediaDownloadHTTP.desktopBrowserUserAgent)
+    }
+
+    /// A cookie-free, cache-bypassing Facebook page request. Media resolution is a
+    /// logged-out scrape: carrying state from an earlier Facebook request can turn a
+    /// public reel's lightweight Open Graph response into a consent/login wall, and a
+    /// cached wall can survive after the reel becomes publicly available. Keep this
+    /// factory shared with the durable background resolver so both paths see the same
+    /// response shape.
+    static func facebookPageRequest(
+        _ url: URL, userAgent: String, timeoutInterval: TimeInterval = 15
+    ) -> URLRequest {
+        var request = URLRequest(
+            url: url, cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: timeoutInterval)
+        request.httpShouldHandleCookies = false
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
         return request
     }
 
@@ -242,6 +260,9 @@ public enum MediaDownloadHTTP {
     /// poster metadata, while the desktop page includes `browser_native_*_url`.
     public static let desktopBrowserUserAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+
+    /// Facebook's public link-unfurl crawler, used only after browser-page fallbacks.
+    public static let facebookCrawlerUserAgent = "facebookexternalhit/1.1"
 }
 
 /// Small, dependency-free Open Graph parser for social pages. Attribute order in
@@ -252,7 +273,9 @@ private enum OpenGraphMediaParser {
         for tag in tags {
             let lowercased = tag.lowercased()
             guard lowercased.contains("property=\"\(name)\"")
-                    || lowercased.contains("property='\(name)'") else { continue }
+                    || lowercased.contains("property='\(name)'")
+                    || lowercased.contains("name=\"\(name)\"")
+                    || lowercased.contains("name='\(name)'") else { continue }
             for quote in ["\"", "'"] {
                 let marker = "content=\(quote)"
                 guard let start = tag.range(of: marker, options: [.caseInsensitive])?.upperBound,
@@ -495,8 +518,8 @@ public enum FacebookMediaParser {
         }
         // Open Graph video as a last resort. Deliberately ignore `og:image`: for
         // Facebook video URLs it is a poster, not downloadable video media.
-        for pattern in [#"property="og:video(?::secure_url|:url)?" content="(.*?)""#] {
-            if let raw = firstGroup(in: html, pattern: pattern),
+        for property in ["og:video", "og:video:secure_url", "og:video:url"] {
+            if let raw = OpenGraphMediaParser.content(named: property, in: html),
                let url = URL(string: unescape(raw)) {
                 return [MediaAsset(url: url, kind: .video)]
             }

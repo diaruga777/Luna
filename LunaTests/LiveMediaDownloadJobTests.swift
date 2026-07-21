@@ -14,6 +14,8 @@ final class LiveMediaDownloadJobTests: XCTestCase {
             MediaDownloadHTTP.desktopBrowserUserAgent)
         XCTAssertEqual(resolve.request.url?.host, "www.facebook.com")
         XCTAssertEqual(resolve.request.url?.path, "/plugins/video.php")
+        XCTAssertEqual(resolve.request.httpShouldHandleCookies, false)
+        XCTAssertEqual(resolve.request.cachePolicy, .reloadIgnoringLocalCacheData)
         let href = resolve.request.url.flatMap {
             URLComponents(url: $0, resolvingAgainstBaseURL: false)
         }?.queryItems?.first(where: { $0.name == "href" })?.value

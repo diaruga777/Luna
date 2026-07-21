@@ -200,7 +200,10 @@ their legacy per-platform Photos auto-save controls.
   Its Facebook resolver follows the extension resolver's plugin-embed-first sequence,
   then falls back through the desktop page, mobile page, and any canonical video page;
   this is important because logged-out `/reel/` pages commonly return HTTP 400 to the
-  desktop request even while the video plugin exposes a playable MP4.
+  desktop request. Facebook resolver requests bypass cookies and cached responses so a
+  prior consent/login wall cannot mask a public reel; the mobile fallback accepts Open
+  Graph video tags regardless of attribute order or whether Facebook uses `property` or
+  `name`.
 - `SavedMediaStore.swift` owns `savedMedia.json`, the three-state model, legacy decoding,
   local files/thumbnails, retention, and crash recovery.
 - `PhotoLibrarySaver.swift` requests authorization, creates `.photo`/`.video` resources

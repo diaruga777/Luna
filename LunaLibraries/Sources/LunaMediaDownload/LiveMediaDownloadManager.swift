@@ -670,14 +670,17 @@ public final class LiveMediaDownloadManager: NSObject {
         default:
             return nil
         }
-        var request = URLRequest(url: resolveURL, timeoutInterval: 60)
+        var request: URLRequest
         if kind == .x {
+            request = URLRequest(url: resolveURL, timeoutInterval: 60)
             request.setValue("application/json", forHTTPHeaderField: "Accept")
+        } else if kind.rawValue.hasPrefix("facebook") {
+            request = SocialMediaResolver.facebookPageRequest(
+                resolveURL, userAgent: MediaDownloadHTTP.desktopBrowserUserAgent,
+                timeoutInterval: 60)
         } else {
-            let userAgent = kind.rawValue.hasPrefix("facebook")
-                ? MediaDownloadHTTP.desktopBrowserUserAgent
-                : MediaDownloadHTTP.browserUserAgent
-            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+            request = URLRequest(url: resolveURL, timeoutInterval: 60)
+            request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         }
         return (request, kind.rawValue)
@@ -933,9 +936,8 @@ public final class LiveMediaDownloadManager: NSObject {
         var job = persistedJob
         job.resolveKind = next.kind.rawValue
         store.upsert(job)
-        var request = URLRequest(url: next.url, timeoutInterval: 60)
-        request.setValue(next.userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        let request = SocialMediaResolver.facebookPageRequest(
+            next.url, userAgent: next.userAgent, timeoutInterval: 60)
         startTask(request, jobID: job.id, role: .resolve, attempt: job.resolveAttempts)
         return true
     }

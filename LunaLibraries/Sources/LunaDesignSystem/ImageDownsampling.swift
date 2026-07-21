@@ -7,10 +7,10 @@ import ImageIO
 import UIKit
 
 /// Shared ImageIO-based downsampling decode, used anywhere a thumbnail is read
-/// from disk (reading-list row art, catch-up card thumbnails). Decoding is the
-/// slow/expensive part of showing an on-disk image — downsampling to roughly the
-/// display size means a large source file (a full-resolution photo, say) is never
-/// held as a full-size decoded bitmap for a small well.
+/// from disk (e.g. reading-list row art). Decoding is the slow/expensive part of
+/// showing an on-disk image — downsampling to roughly the display size means a
+/// large source file (a full-resolution photo, say) is never held as a full-size
+/// decoded bitmap for a small well.
 public enum ImageDownsampling {
     /// Decodes the image file at `path`, downsampled so its longest side is at
     /// most `maxPixelSize` PIXELS (already scaled for the display). Returns `nil`

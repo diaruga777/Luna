@@ -7,8 +7,7 @@
 //  a new focused layer on top, leaving previous layers as tappable lips (title on top,
 //  the tapped line on the bottom) plus a leading indent — so you can rabbit-hole several
 //  links deep without losing your place. The trail is persisted per save and restored on
-//  next launch. Catch-Up embeds `ReaderViewController` directly; the SplitWebOverlay
-//  inline reader is a separate surface.
+//  next launch. The SplitWebOverlay inline reader is a separate surface.
 //
 //  Layers rest at integer focus positions (RabbitHoleLayout).
 //

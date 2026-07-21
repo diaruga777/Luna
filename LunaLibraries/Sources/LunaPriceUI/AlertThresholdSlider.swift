@@ -38,8 +38,7 @@ public enum AlertThresholdPillChrome {
 /// a slider over the fractional drop, and a readout line showing the same percent +
 /// absolute price text everywhere (`PriceFormatting.thresholdDescription`).
 ///
-/// Used identically by the price-tracking editor and the catch-up price-tracker
-/// card, so both render the same and drive the same `alertThresholdFraction`. The
+/// Used by the price-tracking editor to drive `alertThresholdFraction`. The
 /// view is presentation-only: it updates its own readout live while dragging and
 /// reports the final fraction via `onCommitted` (when the host should persist),
 /// never touching the store itself.

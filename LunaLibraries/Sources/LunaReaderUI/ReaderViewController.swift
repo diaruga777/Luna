@@ -50,8 +50,8 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     private let persistsModePreference: Bool
     private let onModeChange: ((ReadingListItem.ReaderMode) -> Void)?
 
-    /// When false, opening does NOT mark the item `.opened` (a catch-up card just
-    /// previews the article; only an explicit Mark Read changes its state).
+    /// When false, opening does NOT mark the item `.opened` — for a host that just
+    /// previews the article; only an explicit Mark Read changes its state.
     private let marksOpenedOnLoad: Bool
 
     private let modeControl = LunaSegmentedControl()
@@ -59,11 +59,11 @@ public final class ReaderViewController: UIViewController, InlineReaderPresentat
     private weak var inlineReaderForChrome: ReaderChromeControlling?
     /// When true, the mode switcher + audio toggle render in an inline (de-glassed,
     /// Task 3) header embedded DIRECTLY in the view (no UINavigationController). The
-    /// host (a catch-up card) sits on a solid background, so the bar uses a solid fill
-    /// rather than a live blur.
+    /// host sits on a solid background, so the bar uses a solid fill rather than a
+    /// live blur.
     private let inlineControlsHeader: Bool
-    /// Optional line shown ABOVE the controls inside the single inline header
-    /// (the catch-up card's date/sender) so the card needs no separate header strip.
+    /// Optional line shown ABOVE the controls inside the single inline header (e.g.
+    /// a date/sender line) so the host needs no separate header strip.
     private let inlineHeaderSubtitle: String?
     private let inlineHeader = UIView()
 

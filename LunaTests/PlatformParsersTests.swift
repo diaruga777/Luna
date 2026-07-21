@@ -85,21 +85,29 @@ final class PlatformParsersTests: XCTestCase {
         XCTAssertNil(PlatformRecognizer.recognize("https://www.reddit.com/r//s/abc"))
     }
 
-    func testInstagramShortcode() {
+    /// `InstagramLink`/`FacebookLink` (the presentation-layer parsers these used to
+    /// test) had zero production callers — `InstagramPlatform`/`FacebookPlatform`
+    /// never invoked them — and were deleted as dead code. `PlatformRecognizer` is
+    /// the only Instagram/Facebook recognition Luna ships.
+    func testInstagramShortcodeViaRecognizer() {
         XCTAssertEqual(
-            InstagramLink.shortcode(from: "https://www.instagram.com/reel/CxYz123/"), "CxYz123")
+            PlatformRecognizer.recognize("https://www.instagram.com/reel/CxYz123/")?.itemID, "CxYz123")
         XCTAssertEqual(
-            InstagramLink.shortcode(from: "https://instagram.com/p/AbC/"), "AbC")
-        XCTAssertNil(InstagramLink.shortcode(from: "https://instagram.com/someuser"))
-        XCTAssertFalse(InstagramLink.isInstagram("https://example.com/p/AbC"))
+            PlatformRecognizer.recognize("https://instagram.com/p/AbC/")?.itemID, "AbC")
+        XCTAssertNil(PlatformRecognizer.recognize("https://instagram.com/someuser")?.itemID)
+        XCTAssertNil(PlatformRecognizer.recognize("https://example.com/p/AbC"))
     }
 
-    func testFacebookRecognitionAndID() {
-        XCTAssertTrue(FacebookLink.isFacebook("https://www.facebook.com/watch/?v=123"))
-        XCTAssertEqual(FacebookLink.itemID(from: "https://www.facebook.com/watch/?v=123"), "123")
-        XCTAssertEqual(FacebookLink.itemID(from: "https://facebook.com/reel/456"), "456")
-        XCTAssertTrue(FacebookLink.isFacebook("https://fb.watch/abcdef/"))
-        XCTAssertFalse(FacebookLink.isFacebook("https://example.com/reel/1"))
+    func testFacebookRecognitionAndIDViaRecognizer() {
+        XCTAssertEqual(
+            PlatformRecognizer.recognize("https://www.facebook.com/watch/?v=123")?.platform, .facebook)
+        XCTAssertEqual(
+            PlatformRecognizer.recognize("https://www.facebook.com/watch/?v=123")?.itemID, "123")
+        XCTAssertEqual(
+            PlatformRecognizer.recognize("https://facebook.com/reel/456")?.itemID, "456")
+        XCTAssertEqual(
+            PlatformRecognizer.recognize("https://fb.watch/abcdef/")?.platform, .facebook)
+        XCTAssertNil(PlatformRecognizer.recognize("https://example.com/reel/1"))
     }
 
     func testRegistryDispatchesAcrossPlatforms() {

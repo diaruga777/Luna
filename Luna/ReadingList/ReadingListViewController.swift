@@ -70,10 +70,6 @@ final class ReadingListViewController: UITableViewController {
     private typealias Section = ReadingListSectioning.Section
     private typealias ListFilter = ReadingListSectioning.ListFilter
 
-    /// Top-to-bottom display order: a pasteboard suggestion sits above the list,
-    /// failed items in a collapsible section at the very bottom.
-    private static let displayOrder: [Section] = ReadingListSectioning.displayOrder
-
     /// Whether the item opens in the text reader (articles, documents, emails), as
     /// opposed to media & links, which open
     /// in a player, embed, or browser. Mirrors the tap routing in `didSelectRowAt`.
@@ -455,34 +451,10 @@ final class ReadingListViewController: UITableViewController {
     }
 
     private func buildGroups(items unfiltered: [ReadingListItem]) -> [(section: Section, items: [ReadingListItem])] {
-        // A concrete surface restricts the whole list to its single category (other
-        // categories live in the same store but surface in their own app); the combined
-        // list (surface == nil) honours the user-selected filter segment.
-        let all = unfiltered.filter { surface?.includes($0) ?? filter.includes($0) }
-        let buckets = ReadingListSectioning.assignSections(items: all, now: Self.sectioningNow())
-        var bySection: [Section: [ReadingListItem]] =
-            [.reading: buckets.reading, .archive: buckets.archive, .error: buckets.failed]
-
-        // The price-tracking section sits BELOW Reading. The single triggered-but-
-        // UNVIEWED tracker floats to the very TOP of the whole list as its own
-        // one-row `.priceAlert` section, badged red; it's excluded from the
-        // price-tracking section body by `assignSections`. Once viewed, it rejoins
-        // the price-tracking section below Reading.
-        bySection[.priceTracking] = buckets.priceTracking
-        if let pinned = ReadingListSectioning.topUnviewedAlertingPriceTracker(items: all) {
-            bySection[.priceAlert] = [pinned]
-        }
-
-        // The pasteboard suggestion: a spinner row while evaluating, then the
-        // resolved candidate (unless it's since been saved by some path).
-        if let pasteboardRow = pasteboardSuggestions.currentDisplayItem() {
-            bySection[.pasteboard] = [pasteboardRow]
-        }
-
-        return Self.displayOrder.compactMap { section in
-            let items = bySection[section] ?? []
-            return items.isEmpty ? nil : (section, items)
-        }
+        ReadingListGroupBuilder.buildGroups(
+            items: unfiltered, filter: filter, surface: surface,
+            pasteboardRow: pasteboardSuggestions.currentDisplayItem(),
+            now: Self.sectioningNow())
     }
 
     /// The filter segments currently shown, in segment order. `.all` plus

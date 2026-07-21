@@ -133,7 +133,7 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   app-group entitlement, so the test host crashes at launch (early-exit, "external
   symbol") on app-group container access. Default ad-hoc signing applies the
   entitlement and the app group works on the simulator.
-- **The full suite is green on the iOS 26.x sim: 1379 tests, 14 skipped, 0 failures**
+- **The full suite is green on the iOS 26.x sim: 1393 tests, 14 skipped, 0 failures**
   (measured after the 2026-07-21 structural refactor, which also restored the seven
   test files deleted by commit `97833a34` and added coverage for the newly extracted
   types — see `refactor-plans/`). The 14 skips are intentional `XCTSkip`s —

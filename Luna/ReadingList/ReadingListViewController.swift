@@ -1425,132 +1425,48 @@ final class ReadingListViewController: UITableViewController {
     /// the cell (see `cellForRowAt`) so the menu is testable without a synthesized
     /// long-press.
     private func rowMenu(for item: ReadingListItem, at indexPath: IndexPath) -> UIMenu {
-        let sendToFriend = UIAction(
-            title: "Send to Friend…",
-            image: UIImage(systemName: "person.2")
-        ) { [weak self] _ in
-            self?.presentSend(item)
-        }
-        let sendToKindle = UIAction(
-            title: "Send to Kindle",
-            image: UIImage(systemName: "paperplane")
-        ) { [weak self] _ in
-            self?.sendToEreader(item, destinationID: ArticleDestinationID.kindle)
-        }
-        let shareEbook = UIAction(
-            title: "Share eBook…",
-            image: UIImage(systemName: "square.and.arrow.up")
-        ) { [weak self] _ in
-            guard let self else { return }
-            let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-            self.shareEbook(item, from: sourceView)
-        }
-        let shareLink = UIAction(
-            title: "Share Link…",
-            image: UIImage(systemName: "link")
-        ) { [weak self] _ in
-            guard let self else { return }
-            let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
-            SendToFriendSheet.shareLink(
-                urlString: item.urlString,
-                sharedURLString: self.appClipShareURLString(for: item),
-                from: self, sourceView: sourceView)
-        }
-        let copyLink = UIAction(
-            title: "Copy Link",
-            image: UIImage(systemName: "doc.on.doc")
-        ) { [weak self] _ in
-            guard let self else { return }
-            // Copy immediately (works on every menu path); defer the confirmation modal
-            // until the context menu has dismissed.
-            SendToFriendSheet.copyToPasteboard(urlString: item.urlString)
-            self.afterRowMenuDismissal { [weak self] in
+        let actions = RowMenuActions(
+            isInReadingSection: section(at: indexPath.section) == .reading,
+            isKindleConfigured: ArticleSendCoordinator.shared.isConfigured(
+                destinationID: ArticleDestinationID.kindle),
+            sendToFriend: { [weak self] in self?.presentSend(item) },
+            sendToKindle: { [weak self] in
+                self?.sendToEreader(item, destinationID: ArticleDestinationID.kindle)
+            },
+            shareEbook: { [weak self] in
                 guard let self else { return }
-                SendToFriendSheet.presentCopiedConfirmation(from: self)
-            }
-        }
-        let delete = UIAction(
-            title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive
-        ) { [weak self] _ in
-            self?.deleteItemAnimated(item)
-        }
-        // Videos: share to friends + delete. Documents: ereaders + read +
-        // delete. Articles: everything. Each ereader row shows only when
-        // that destination is set up.
-
-        // Price trackers get a focused menu: share the tracker to a friend,
-        // archive/unarchive it (archived = hidden + excluded from refresh), delete.
-        if let tracker = item.priceTracker {
-            var trackerChildren: [UIAction] = []
-            trackerChildren.append(sendToFriend)
-            let archiveTitle = tracker.isArchived ? "Unarchive Tracker" : "Archive Tracker"
-            let archiveIcon = tracker.isArchived ? "tray.and.arrow.up" : "archivebox"
-            trackerChildren.append(UIAction(
-                title: archiveTitle, image: UIImage(systemName: archiveIcon)
-            ) { [weak self] _ in
+                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+                self.shareEbook(item, from: sourceView)
+            },
+            shareLink: { [weak self] in
+                guard let self else { return }
+                let sourceView = self.tableView.cellForRow(at: indexPath) ?? self.view ?? UIView()
+                SendToFriendSheet.shareLink(
+                    urlString: item.urlString,
+                    sharedURLString: self.appClipShareURLString(for: item),
+                    from: self, sourceView: sourceView)
+            },
+            copyLink: { [weak self] in
+                guard let self else { return }
+                // Copy immediately (works on every menu path); defer the confirmation modal
+                // until the context menu has dismissed.
+                SendToFriendSheet.copyToPasteboard(urlString: item.urlString)
+                self.afterRowMenuDismissal { [weak self] in
+                    guard let self else { return }
+                    SendToFriendSheet.presentCopiedConfirmation(from: self)
+                }
+            },
+            saveMediaToPhotos: { [weak self] in self?.saveMediaToPhotos(item) },
+            bumpToTop: { [weak self] in self?.store.bump(item.id) },
+            toggleTrackerArchived: { [weak self] in
                 guard let self, var updated = self.store.item(withID: item.id)?.priceTracker else { return }
                 updated.isArchived.toggle()
                 self.store.updatePriceTracker(updated, for: item.id)
-            })
-            trackerChildren.append(delete)
-            return UIMenu(title: tracker.productName, children: trackerChildren)
-        }
-
-        var children: [UIAction] = []
-        // Reading-section items only: jump an item to the top of the list.
-        if section(at: indexPath.section) == .reading {
-            children.append(UIAction(
-                title: "Bump to Top", image: UIImage(systemName: "arrow.up.to.line")
-            ) { [weak self] _ in
-                self?.store.bump(item.id)
-            })
-        }
-        if item.canShareToFriends {
-            children.append(sendToFriend)
-        }
-        // Any item that kept a real web URL (articles and platform items) can
-        // share that link.
-        if item.isShareable {
-            children.append(shareLink)
-            children.append(copyLink)
-        }
-        // X / Instagram / TikTok posts: download the post's media.
-        if MediaDownloadablePlatform.supports(item.urlString) {
-            let downloadMedia = UIAction(
-                title: "Save to Photos",
-                image: UIImage(systemName: "photo.badge.arrow.down")
-            ) { [weak self] _ in
-                self?.saveMediaToPhotos(item)
-            }
-            children.append(downloadMedia)
-        }
-        // Article-only actions — ereader sends, and the eBook for text-only
-        // no-url articles (email/document) that can't share a link.
-        if !item.isPlatformItem {
-            if ArticleSendCoordinator.shared.isConfigured(destinationID: ArticleDestinationID.kindle) {
-                children.append(sendToKindle)
-            }
-            if !item.isShareable, item.state == .ready {
-                children.append(shareEbook)
-            }
-        }
-        // Archived (read) items can be unarchived back to the Reading section.
-        if item.readState == .read {
-            let unarchive = UIAction(
-                title: "Unarchive", image: UIImage(systemName: "tray.and.arrow.up")
-            ) { [weak self] _ in
-                self?.store.markUnread(item.id)
-            }
-            children.append(unarchive)
-        }
-        children.append(delete)
-        // "Edit List" enters multi-select / drag-reorder edit mode (bottom item).
-        let editList = UIAction(
-            title: "Edit List", image: UIImage(systemName: "arrow.up.arrow.down")
-        ) { [weak self] _ in
-            self?.setEditing(true, animated: true)
-        }
-        return UIMenu(children: children + [editList])
+            },
+            unarchive: { [weak self] in self?.store.markUnread(item.id) },
+            delete: { [weak self] in self?.deleteItemAnimated(item) },
+            editList: { [weak self] in self?.setEditing(true, animated: true) })
+        return ReadingListRowMenuFactory.menu(for: item, actions: actions)
     }
 
     private func appClipShareURLString(for item: ReadingListItem) -> String? {

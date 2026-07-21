@@ -43,11 +43,14 @@ function report(url) {
 function injectContentScript(tabId, url) {
     if (!/^https?:\/\//i.test(url || "")) { return; }
     if (!browser.scripting || !browser.scripting.executeScript) { return; }
-    // news_hosts.generated.js defines self.__LUNA_NEWS_HOSTS (the app's shared
-    // NewsSites host list) FIRST, in the same injected world, so content.js's
-    // isKnownArticleHost/isKnownHardPaywallHost see it as soon as they run.
+    // news_hosts.generated.js / platform_hosts.generated.js define
+    // self.__LUNA_NEWS_HOSTS / self.__LUNA_PLATFORM_HOSTS (the app's shared
+    // NewsSites / PlatformRecognizer host lists) FIRST, in the same injected world,
+    // so content.js's isKnownArticleHost/isKnownHardPaywallHost/recognizedPlatformPage
+    // see them as soon as they run.
     browser.scripting.executeScript({
-        target: { tabId: tabId }, files: ["news_hosts.generated.js", "content.js"]
+        target: { tabId: tabId },
+        files: ["news_hosts.generated.js", "platform_hosts.generated.js", "content.js"]
     }).catch(function () { /* some pages block injection; ignore */ });
 }
 

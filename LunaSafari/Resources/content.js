@@ -873,28 +873,45 @@
         }
     }
 
-    // Mirrors PlatformRecognizer for Downloader-relevant web platforms. These
-    // pages are not article candidates, even when captions/comments push body
-    // text over the reader threshold.
+    // The app's canonical platform table (PlatformRecognizer.rules, LunaURLClassification)
+    // shared through the generated platform_hosts.generated.js (self.__LUNA_PLATFORM_HOSTS),
+    // injected before this file by background.js -- guarded against drift by
+    // PlatformHostsJSParityTests, same pattern as the news-hosts list below.
+    function platformHosts(key) {
+        var data = (typeof self !== "undefined") ? self.__LUNA_PLATFORM_HOSTS : undefined;
+        return (data && data[key]) || [];
+    }
+
+    // Mirrors PlatformRecognizer for Downloader-relevant web platforms -- same host
+    // lists (via platformHosts) AND the same path-shape requirements (a bare Bluesky
+    // profile or Reddit subreddit/feed does NOT recognize; only a post does). These
+    // pages are not article candidates, even when captions/comments push body text
+    // over the reader threshold.
     function recognizedPlatformPage() {
         var host = (location.hostname || "").toLowerCase();
         var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
-        if (hostMatches(host, ["x.com", "twitter.com"])) { return "x"; }
-        if (host === "bsky.app" && segments.indexOf("post") >= 0) { return "bluesky"; }
+        if (hostMatches(host, platformHosts("x"))) { return "x"; }
+        if (hostMatches(host, platformHosts("bluesky")) && blueskyPostID(segments)) { return "bluesky"; }
         // Reddit classifies ONLY on an individual post permalink (comments / gallery
-        // / redd.it short link), never on a subreddit or home feed — mirrors
-        // PlatformRecognizer.reddit's `recognizes:` gate. Feed suppression and the
-        // animated-media gate live in handleReddit.
-        if ((hostMatches(host, ["reddit.com"]) || host === "redd.it") && currentRedditPostID()) { return "reddit"; }
-        if (hostMatches(host, ["tiktok.com"])) { return "tiktok"; }
-        if (hostMatches(host, ["instagram.com", "instagr.am"])) { return "instagram"; }
-        if (hostMatches(host, ["facebook.com", "fb.com"]) || host === "fb.watch") { return "facebook"; }
-        if (hostMatches(host, ["spotify.com"]) && ["track", "album", "artist", "episode", "show"].indexOf(segments[0]) >= 0) {
-            return "spotify";
-        }
-        if (host === "music.apple.com") { return "appleMusic"; }
-        if (host === "podcasts.apple.com") { return "applePodcasts"; }
+        // / redd.it short link / app-native share link), never on a subreddit or
+        // home feed — mirrors PlatformRecognizer.reddit's `recognizes:` gate. Feed
+        // suppression and the animated-media gate live in handleReddit.
+        if (hostMatches(host, platformHosts("reddit")) && currentRedditIsPost()) { return "reddit"; }
+        if (hostMatches(host, platformHosts("tiktok"))) { return "tiktok"; }
+        if (hostMatches(host, platformHosts("instagram"))) { return "instagram"; }
+        if (hostMatches(host, platformHosts("facebook"))) { return "facebook"; }
         return null;
+    }
+
+    // The Bluesky post rkey from /profile/<author>/post/<rkey>, or null — mirrors
+    // PlatformRecognizer's blueskyPostID structural check. Unlike a bare host match,
+    // a bare profile (no /post/) does NOT recognize; only a post does.
+    function blueskyPostID(segments) {
+        var authorIndex = segments.indexOf("profile");
+        if (authorIndex < 0 || segments.length <= authorIndex + 3 || segments[authorIndex + 2] !== "post") {
+            return null;
+        }
+        return nonEmptySegment(segments[authorIndex + 3]);
     }
 
     // Visibility-only media gate for Downloader-platform pages. Saving/downloading a
@@ -998,13 +1015,40 @@
         return null;
     }
 
-    // A reddit / redd.it host (new reddit, old.reddit, or a redd.it short link).
-    function isRedditHost() {
-        var host = (location.hostname || "").toLowerCase();
-        return hostMatches(host, ["reddit.com"]) || host === "redd.it";
+    // The opaque share token from Reddit's own app-native share link,
+    // /r/<sub>/s/<token> — mirrors PlatformRecognizer.redditShareToken. Reddit only
+    // resolves it via a live HTTP redirect, so it carries no decodable post id;
+    // used only as a recognition gate (see currentRedditIsPost), never as an id.
+    function redditShareToken(segments) {
+        if (!segments || segments[0] !== "r" || segments.length <= 3
+            || !segments[1] || segments[2] !== "s" || !segments[3]) {
+            return null;
+        }
+        return segments[3];
     }
 
-    // The reddit post id for the CURRENT location, or null on a feed/listing.
+    // True when the CURRENT location is a recognized Reddit item — a post
+    // permalink OR an app-native share link — mirroring PlatformRecognizer.reddit's
+    // `recognizes` gate exactly. Id extraction (currentRedditPostID) stays
+    // narrower: a share link recognizes but has no decodable id, same as Swift's
+    // itemID staying nil for it.
+    function currentRedditIsPost() {
+        if (currentRedditPostID()) { return true; }
+        var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
+        return redditShareToken(segments) !== null;
+    }
+
+    // A reddit / redd.it host (new reddit, old.reddit, or any redd.it subdomain,
+    // e.g. i.redd.it) — mirrors PlatformRecognizer.reddit's suffix-matched host set.
+    function isRedditHost() {
+        var host = (location.hostname || "").toLowerCase();
+        return hostMatches(host, platformHosts("reddit"));
+    }
+
+    // The reddit post id for the CURRENT location, or null on a feed/listing. The
+    // exact "redd.it" host (not a subdomain like i.redd.it) is the short-link
+    // redirector, whose one path segment IS the id — mirrors
+    // PlatformRecognizer.redditPostID's identical exact-host special case.
     function currentRedditPostID() {
         var host = (location.hostname || "").toLowerCase();
         var segments = location.pathname.split("/").filter(function (s) { return s.length > 0; });
@@ -1078,7 +1122,7 @@
     // non-media verdict stops immediately (no pill).
     function attemptRedditInjection(resp, target, attempt) {
         var generation = redditGeneration;
-        if (!currentRedditPostID()) { return; }
+        if (!currentRedditIsPost()) { return; }
         if (redditPostContainerPresent()) {
             if (redditPostHasMedia()) { injectLunaButton(target); }
             return;

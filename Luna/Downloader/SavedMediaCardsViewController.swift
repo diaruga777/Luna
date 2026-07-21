@@ -37,6 +37,10 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     private var renderedPasteboardURL: URL?
     private var consumedPasteboardChangeCount: Int?
     private var pendingPasteboardDownloadURLString: String?
+    /// Concrete exports keyed by item so the share sheet never receives a lazy
+    /// provider and the current Photos-backed card can be warmed before a tap.
+    private var preparedShareFiles: [UUID: URL] = [:]
+    private var sharePreparationTasks: [UUID: Task<URL?, Never>] = [:]
     /// Fingerprint of the last-applied item list, so store notifications that
     /// changed nothing visible (frequent on foreground/activation catch-ups)
     /// don't tear down and rebuild live card content mid-playback.
@@ -268,15 +272,54 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
     // MARK: - Item actions (context menu)
 
     private func share(_ item: SavedMediaItem, sourceIndex: Int) {
-        guard let backing = providerBacking(for: item),
-              let provider = MediaItemProviderFactory.makeProvider(for: backing)
-        else { return }
-        let activity = UIActivityViewController(activityItems: [provider], applicationActivities: nil)
-        if let card = carousel.cardView(at: sourceIndex) {
-            activity.popoverPresentationController?.sourceView = card
-            activity.popoverPresentationController?.sourceRect = card.bounds
+        Task { @MainActor [weak self] in
+            guard let self,
+                  let fileURL = await self.prepareShareFile(for: item)
+            else {
+                self?.presentAlert(
+                    title: "Share Failed", message: "Couldn't prepare this media for sharing.")
+                return
+            }
+
+            // A single concrete file URL is the entire payload. This lets the
+            // system derive the movie preview and exposes normal file receivers
+            // without attaching Luna metadata, text, or the source URL.
+            let activity = UIActivityViewController(
+                activityItems: [fileURL], applicationActivities: nil)
+            if let card = self.carousel.cardView(at: sourceIndex) {
+                activity.popoverPresentationController?.sourceView = card
+                activity.popoverPresentationController?.sourceRect = card.bounds
+            }
+            self.present(activity, animated: true)
         }
-        present(activity, animated: true)
+    }
+
+    private func prewarmShareFile(for item: SavedMediaItem) {
+        guard case .photosReference = item.storageState else { return }
+        Task { @MainActor [weak self] in
+            _ = await self?.prepareShareFile(for: item)
+        }
+    }
+
+    private func prepareShareFile(for item: SavedMediaItem) async -> URL? {
+        if let existing = preparedShareFiles[item.id],
+           FileManager.default.fileExists(atPath: existing.path) {
+            return existing
+        }
+        if let existingTask = sharePreparationTasks[item.id] {
+            return await existingTask.value
+        }
+
+        let task = Task {
+            await MediaAutoDownloader.exportFile(from: item)?.fileURL
+        }
+        sharePreparationTasks[item.id] = task
+        let fileURL = await task.value
+        sharePreparationTasks[item.id] = nil
+        if let fileURL {
+            preparedShareFiles[item.id] = fileURL
+        }
+        return fileURL
     }
 
     /// Saves a defensive COPY of the item's local file to Photos (never the file
@@ -341,18 +384,6 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
             // Wi-Fi-only setting (unlike the opportunistic resume sweep).
             _ = await LiveMediaDownloadManager.shared.start(
                 urlString: item.sourceURLString, title: item.title, manual: true)
-        }
-    }
-
-    private func providerBacking(for item: SavedMediaItem) -> MediaItemProviderBacking? {
-        switch item.storageState {
-        case .undownloaded:
-            return nil
-        case .localFile:
-            return item.fileURL.map(MediaItemProviderBacking.localFile)
-        case .photosReference(let identifier, _, _):
-            guard let kind = item.kind else { return nil }
-            return .photo(localIdentifier: identifier, kind: kind)
         }
     }
 
@@ -558,7 +589,9 @@ extension SavedMediaCardsViewController: CardCarouselDelegate {
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
         updateShareButton()
         guard let mediaIndex = mediaIndex(forCarouselIndex: index) else { return }
-        markOpened(items[mediaIndex])
+        let item = items[mediaIndex]
+        markOpened(item)
+        prewarmShareFile(for: item)
     }
 
     func carousel(_ carousel: CardCarouselViewController, didTapCenteredCardAt index: Int) {

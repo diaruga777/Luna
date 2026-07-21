@@ -94,7 +94,7 @@ public enum MediaAutoDownloader {
         if let existing = SavedMediaStore.shared.existingDownloadedItem(
             forURLString: urlString
         ) {
-            return await intentMedia(from: existing)
+            return await exportFile(from: existing)
         }
 
         do {
@@ -103,14 +103,17 @@ public enum MediaAutoDownloader {
                 title: ReadingListStore.shared.item(forURLString: urlString)?.title,
                 onProgress: { _ in })
             AutoDownloadSettings.markDownloaded(urlString)
-            return await intentMedia(from: item)
+            return await exportFile(from: item)
         } catch {
             AutoDownloadSettings.unmarkDownloaded(urlString)
             return nil
         }
     }
 
-    private static func intentMedia(from item: SavedMediaItem) async -> DownloadedMedia? {
+    /// Materializes one saved item as a concrete, shareable file URL with a
+    /// human-readable filename. Local items use a hard link when possible;
+    /// Photos-backed items stream their original resource out of PhotoKit.
+    public static func exportFile(from item: SavedMediaItem) async -> DownloadedMedia? {
         guard let kind = item.kind else { return nil }
         let fileName = IntentMediaExportNaming.fileName(
             title: item.title,

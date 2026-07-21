@@ -99,7 +99,11 @@ row to `.undownloaded`; Photos references remain governed by the user's Photos l
   `PHImageManager.requestAVAsset`. Long-press menus offer **Save to Photos** on local
   rows (Photos-backed rows do not offer a redundant save action), Share, and Delete.
   Settings and direct system file sharing flank the edge-to-edge scrub strip in glass
-  circles; there is no root Friends or Add button. A supported non-duplicate URL on the
+  circles; there is no root Friends or Add button. Sharing hands the activity controller
+  exactly one concrete media file URL (no source link, text, or lazy provider), so it shows
+  the media preview and supports normal file destinations. The current Photos-backed card
+  is exported to a friendly-named temporary file in advance to minimize tap latency. A
+  supported non-duplicate URL on the
   pasteboard appears as a transient leading card with the URL and a Download button.
   Tapping it creates the durable undownloaded row, starts the Downloader-owned transfer,
   and switches to the normal moon-horizon/progress UI.

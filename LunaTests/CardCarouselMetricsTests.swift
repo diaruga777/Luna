@@ -133,6 +133,51 @@ final class CarouselScrubberMathTests: XCTestCase {
     }
 }
 
+final class CardCarouselPagePanStartPolicyTests: XCTestCase {
+
+    func testHorizontalEdgePanIsAcceptedWhetherChromeIsVisibleOrImmersed() {
+        let velocity = CGPoint(x: -500, y: 40)
+
+        XCTAssertEqual(
+            decision(isImmersed: false, startsInsideCenteredCard: false, velocity: velocity),
+            .accept)
+        XCTAssertEqual(
+            decision(isImmersed: true, startsInsideCenteredCard: false, velocity: velocity),
+            .acceptAndSurface)
+    }
+
+    func testVerticalEdgePanDoesNotSurfaceOrPage() {
+        XCTAssertEqual(
+            decision(
+                isImmersed: true,
+                startsInsideCenteredCard: false,
+                velocity: CGPoint(x: 40, y: 500)),
+            .reject)
+    }
+
+    func testImmersedInCardPanRemainsOwnedByReaderContent() {
+        XCTAssertEqual(
+            decision(
+                isImmersed: true,
+                startsInsideCenteredCard: true,
+                velocity: CGPoint(x: 500, y: 10)),
+            .reject)
+    }
+
+    private func decision(
+        isImmersed: Bool,
+        startsInsideCenteredCard: Bool,
+        velocity: CGPoint
+    ) -> CardCarouselPagePanStartDecision {
+        CardCarouselPagePanStartPolicy.decision(
+            isTransitioning: false,
+            isImmersed: isImmersed,
+            startsInsideCenteredCard: startsInsideCenteredCard,
+            pagesOnInCardSwipes: true,
+            velocity: velocity)
+    }
+}
+
 @MainActor
 final class CardCarouselScrubPromotionTests: XCTestCase {
 

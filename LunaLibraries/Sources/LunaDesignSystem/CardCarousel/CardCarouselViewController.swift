@@ -147,6 +147,10 @@ public protocol CardCarouselDelegate: AnyObject {
         _ carousel: CardCarouselViewController,
         longPress gesture: UILongPressGestureRecognizer,
         onCenteredCardAt index: Int)
+    /// An edge page pan began while the carousel was immersed. The carousel
+    /// has already restored its own chrome synchronously; hosts use this to
+    /// restore any matching screen-level chrome before the page moves.
+    func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController)
 }
 
 public extension CardCarouselDelegate {
@@ -160,6 +164,35 @@ public extension CardCarouselDelegate {
         _ carousel: CardCarouselViewController,
         longPress gesture: UILongPressGestureRecognizer,
         onCenteredCardAt index: Int) {}
+    func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {}
+}
+
+enum CardCarouselPagePanStartDecision: Equatable {
+    case reject
+    case accept
+    case acceptAndSurface
+}
+
+enum CardCarouselPagePanStartPolicy {
+    static func decision(
+        isTransitioning: Bool,
+        isImmersed: Bool,
+        startsInsideCenteredCard: Bool,
+        pagesOnInCardSwipes: Bool,
+        velocity: CGPoint
+    ) -> CardCarouselPagePanStartDecision {
+        guard !isTransitioning else { return .reject }
+        if startsInsideCenteredCard {
+            // Immersed readers reserve in-card gestures for their content. A
+            // screen-edge swipe remains the always-available paging affordance.
+            guard !isImmersed, pagesOnInCardSwipes,
+                  abs(velocity.x) > abs(velocity.y) * 1.5
+            else { return .reject }
+            return .accept
+        }
+        guard abs(velocity.x) > abs(velocity.y) else { return .reject }
+        return isImmersed ? .acceptAndSurface : .accept
+    }
 }
 
 /// Named durations for the carousel's own non-eclipse animations (the eclipse
@@ -421,10 +454,10 @@ public final class CardCarouselViewController: UIViewController {
     }
 
     public func setImmersed(_ immersed: Bool, extendsCard: Bool = true, animated: Bool = false) {
-        // A transition can only start un-immersed (paging is inert while
-        // immersed), so this only drops a spurious fade-out — e.g. a reader
-        // still decelerating while the user pages away — that would fight the
-        // eclipse's manipulation of the same card.
+        // A transition starts un-immersed: an edge page pan first surfaces the
+        // carousel synchronously. This drops any later spurious fade-out — e.g.
+        // a reader still decelerating while the user pages away — that would
+        // fight the eclipse's manipulation of the same card.
         guard !isTransitioning else { return }
         if immersed == isImmersed {
             // Already immersed but the extension mode changed (e.g. a mode
@@ -973,17 +1006,20 @@ extension CardCarouselViewController: UIGestureRecognizerDelegate {
             return abs(velocity.x) > abs(velocity.y)
         }
         if gestureRecognizer === pagePan {
-            guard !isTransitioning, !isImmersed else { return false }
             let velocity = pagePan.velocity(in: cardArea)
-            if insideCenter {
-                // Inside the card, paging is opt-in (embedded readers) and only
-                // for strongly-horizontal drags, so it never fights the
-                // content's own vertical scrolling.
-                guard style.pagesOnInCardSwipes else { return false }
-                return abs(velocity.x) > abs(velocity.y) * 1.5
+            let decision = CardCarouselPagePanStartPolicy.decision(
+                isTransitioning: isTransitioning,
+                isImmersed: isImmersed,
+                startsInsideCenteredCard: insideCenter,
+                pagesOnInCardSwipes: style.pagesOnInCardSwipes,
+                velocity: velocity)
+            if decision == .acceptAndSurface {
+                // Restore the resting card geometry before the same pan starts
+                // manipulating it, so immersion never costs a second swipe.
+                setImmersed(false, animated: false)
+                delegate?.carouselDidSurfaceForEdgePaging(self)
             }
-            // Pans on the insets beside the card always page interactively.
-            return abs(velocity.x) > abs(velocity.y)
+            return decision != .reject
         }
         return true
     }

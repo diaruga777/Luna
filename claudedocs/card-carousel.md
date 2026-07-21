@@ -202,8 +202,11 @@ Differences from the Downloader, via `CardCarouselStyle`:
   fades the peeking side cards and the scrub strip out and — for the scroll
   reader (`extendsCard: true`) — extends only the centered card's bottom edge
   into the room the strip frees up (top, sides, corner radius, and the
-  reader's own header pills never move or change; paging, peek taps, and the
-  strip are inert while immersed). RSVP immerses with `extendsCard: false`:
+  reader's own header pills never move or change; peek taps and the strip are
+  inert while immersed). A horizontal pan beginning in either screen-edge
+  inset synchronously restores the resting card geometry and carousel chrome,
+  then continues that same gesture into interactive paging — immersion never
+  requires a separate surfacing swipe. RSVP immerses with `extendsCard: false`:
   its layout is fixed (focal word, controls), so playing must not move
   anything on screen — the card frame holds and only the chrome fades. The
   extension would also have pushed the RSVP playback controls below

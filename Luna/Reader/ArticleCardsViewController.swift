@@ -597,6 +597,13 @@ extension ArticleCardsViewController: CardCarouselDataSource {}
 
 extension ArticleCardsViewController: CardCarouselDelegate {
 
+    func carouselDidSurfaceForEdgePaging(_ carousel: CardCarouselViewController) {
+        // The carousel has already restored its card geometry so this same pan
+        // can page. Keep the screen-level footer veil and indicator in lockstep.
+        footerContentFade.alpha = 0
+        layoutCardScrollIndicator(animated: false)
+    }
+
     func carousel(_ carousel: CardCarouselViewController, didCenterCardAt index: Int) {
         if renderedPasteboardURL != nil, index == 0 {
             readerForChrome = nil

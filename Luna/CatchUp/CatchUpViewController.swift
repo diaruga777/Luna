@@ -313,63 +313,17 @@ final class CatchUpViewController: UIViewController {
     }
 
     private func populate(_ card: CatchUpCardView, with item: ReadingListItem) {
-        let body: UIView
-        // The body's top: an article reader folds the date INTO its single glass
-        // header (no separate strip → no divider seam); a media card gets the
-        // standalone date strip above it.
-        let bodyTop: NSLayoutYAxisAnchor
-        if let tracker = item.priceTracker {
-            // A price tracker fills the whole content area (no date strip): a small
-            // thumbnail, the product name, a non-tappable per-store mini-table, and a
-            // read-only alert-threshold readout with a "Change" button. Editing the
-            // threshold happens on the full price-tracking screen (where the slider
-            // lives), opened via the button.
-            let trackerBody = CatchUpPriceTrackerCardBody(item: item, tracker: tracker, store: store)
-            trackerBody.onChangeThreshold = { [weak self] in
-                self?.openPriceTracker(item)
-            }
-            body = trackerBody
-            bodyTop = card.contentContainer.topAnchor
-        } else if ReadingListViewController.rendersAsReader(item), item.state == .ready,
-           let content = store.content(for: item) {
-            // Embed the reader DIRECTLY (no UINavigationController) with an inline
-            // liquid-glass header carrying the card's date. The card rasterizes itself
-            // while rotating, so the glass header renders at identity scale (no balloon).
-            let reader = ReaderViewController(
-                item: item, content: content, forceMode: .scroll,
-                shareProvider: nil,
-                persistsModePreference: false, marksOpenedOnLoad: false,
-                inlineControlsHeader: true,
-                inlineHeaderSubtitle: CatchUpCardHeader.text(for: item))
-            addChild(reader)
-            body = reader.view
-            currentReaderChild = reader
-            bodyTop = card.contentContainer.topAnchor
-            reader.didMove(toParent: self)
-        } else {
-            let header = CatchUpCardHeader(item: item)
-            header.translatesAutoresizingMaskIntoConstraints = false
-            card.contentContainer.addSubview(header)
-            NSLayoutConstraint.activate([
-                header.topAnchor.constraint(equalTo: card.contentContainer.topAnchor),
-                header.leadingAnchor.constraint(equalTo: card.contentContainer.leadingAnchor),
-                header.trailingAnchor.constraint(equalTo: card.contentContainer.trailingAnchor),
-            ])
-            // A paywalled item awaiting its archive unlock shows a locked placeholder
-            // (there's no content yet); everything else shows its media/link preview.
-            if item.state == .needsCaptcha {
-                body = Self.makeLockedBody(for: item)
-            } else {
-                body = CatchUpMediaCardBody(item: item, store: store) { [weak self] in
-                    self?.openMediaItem(item)
-                }
-            }
-            bodyTop = header.bottomAnchor
-        }
+        let result = CatchUpCardBodyFactory.make(
+            for: item, card: card, store: store, host: self,
+            onChangeThreshold: { [weak self] in self?.openPriceTracker(item) },
+            onOpenMediaItem: { [weak self] in self?.openMediaItem(item) })
+        currentReaderChild = result.readerChild
+
+        let body = result.body
         body.translatesAutoresizingMaskIntoConstraints = false
         card.contentContainer.addSubview(body)
         NSLayoutConstraint.activate([
-            body.topAnchor.constraint(equalTo: bodyTop),
+            body.topAnchor.constraint(equalTo: result.bodyTop),
             body.leadingAnchor.constraint(equalTo: card.contentContainer.leadingAnchor),
             body.trailingAnchor.constraint(equalTo: card.contentContainer.trailingAnchor),
             body.bottomAnchor.constraint(equalTo: card.contentContainer.bottomAnchor),
@@ -396,44 +350,6 @@ final class CatchUpViewController: UIViewController {
         // `viewDidAppear` to reflect any threshold change.
         needsCardReloadOnReappear = true
         present(nav, animated: true)
-    }
-
-    /// The locked-card placeholder: a lock glyph + title + hint (no content exists
-    /// until the user unlocks it via the archive flow).
-    private static func makeLockedBody(for item: ReadingListItem) -> UIView {
-        let container = UIView()
-        let icon = UIImageView(image: UIImage(
-            systemName: "lock.fill",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 46, weight: .semibold)))
-        icon.tintColor = GlassStyle.readingAccent
-        icon.contentMode = .center
-
-        let titleLabel = UILabel()
-        titleLabel.text = item.title ?? item.url?.host ?? "Locked article"
-        titleLabel.font = .systemFont(ofSize: 20, weight: .bold)
-        titleLabel.textColor = .label
-        titleLabel.textAlignment = .center
-        titleLabel.numberOfLines = 4
-
-        let hint = UILabel()
-        hint.text = "Locked · swipe left or tap Unlock to read it in Luna"
-        hint.font = .preferredFont(forTextStyle: .subheadline)
-        hint.textColor = .secondaryLabel
-        hint.textAlignment = .center
-        hint.numberOfLines = 0
-
-        let stack = UIStackView(arrangedSubviews: [icon, titleLabel, hint])
-        stack.axis = .vertical
-        stack.spacing = 14
-        stack.alignment = .center
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -28),
-        ])
-        return container
     }
 
     /// Presents the in-app archive reader to unlock a locked item. On success the

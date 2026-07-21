@@ -43,7 +43,6 @@ byte-reproducible. No `Date()`/`UUID()` at fixture build time.
 - **`mixed`** — one of **every** save type: ready article, opened article,
   needsCaptcha (locked) article, failed article, friend-shared article, PDF
   platform posts, a normal price tracker, and an **alerting** price tracker.
-- **`catchUpEligible`** — 12 unread ready articles (catch-up dot + queue).
 - **`priceTracking`** — 3 trackers (steady, dropped/alerting, never-refreshed).
 
 ### In-app seeding (screenshot agent)
@@ -63,16 +62,16 @@ For capturing a specific screen across many device sizes without fragile
 coordinate-tapping, launch with `-uiTestScreen <rawValue>` (seeds `.mixed`
 automatically if no `-uiTestState` given). `UITestScreenBuilder` builds that screen
 (or presents it over a host) as the window root using the **same construction seams
-the snapshot tests use**. Cases: `catchUp`, `friends`, `friendDetail`, `settings`,
-`priceTrackingEditor`, `search`, `readerScroll`/`readerHighlight`/`readerRSVP`/
+the snapshot tests use**. Cases: `friends`, `friendDetail`, `settings`,
+`priceTrackingEditor`, `readerScroll`/`readerHighlight`/`readerRSVP`/
 `readerNested`/
-`shareMediaPlatform`, `replays`. Share/action-extension screens are hosted in-app (the
+`shareMediaPlatform`. Share/action-extension screens are hosted in-app (the
 real share sheet can't be driven on a simulator).
 
 ### Suppressing simulator debug hooks in captures
 
 The simulator-only debug tap targets (reading-list row ellipsis, reader "Split
-High/Low", catch-up "Sim Bump") overlay real content. They are gated on
+High/Low") overlay real content. They are gated on
 `!UITestLaunch.isActive`, so they vanish for any `-uiTestState`/`-uiTestScreen`/
 `-uiTestOnboardingStep` launch (the screenshot agent) but remain for interactive
 simulator automation (no launch arg) and for unit/snapshot tests (which build VCs
@@ -116,10 +115,10 @@ the reference for inspection.
 
 | Test file | Snapshot | Navigation / layout |
 |---|---|---|
-| `ReadingListScreenTests` | each state + each filter segment | row tap → reader / tracker editor / archive reader / openItem (video, platform); settings/friends/catch-up buttons; table layout |
+| `ReadingListScreenTests` | each state + each filter segment | row tap → reader / tracker editor / archive reader / openItem (video, platform); settings/friends buttons; table layout |
 | `OnboardingScreenTests` | every step (email, Safari, shortcut install, Action Button, action extension) | flow root shows email first; step buttons in-bounds |
 | `ReaderScreenTests` | scroll / highlight / rsvp / inline-header / standalone scroll + rsvp | mode switcher swaps hosted child VC; reader child in-bounds |
-| `CatchUpAndPriceScreenTests` | catch-up cards (eligible + mixed/locked); price editor (normal + alerting) | catch-up + price-editor layout/store list |
+| `PriceTrackingScreenTests` | — | price-editor layout/store list |
 | `SocialAndSeederTests` | — | friends-screen layout; seeder contract (every state ↔ fixture, mixed covers all types, deterministic ids, wipe) |
 
 ### Extension surface fixture (the `ExtensionHost` / `ShareSurfaceDriver` seam)

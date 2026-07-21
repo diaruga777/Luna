@@ -80,10 +80,9 @@ the SavedMediaStore stat-token cache (cross-instance visibility via re-stat).
 
 ## WS-B — Image decode hygiene (memory + scroll performance)
 
-The repo already has the right pattern twice (downsampled, off-main, NSCache:
-`LunaLibraries/Sources/LunaReadingListUI/ReadingListItemCell.swift:24-45`,
-`Luna/CatchUp/CatchUpSubviews.swift:310`). Extend it to the remaining
-full-size main-thread decodes:
+The repo already has the right pattern (downsampled, off-main, NSCache:
+`LunaLibraries/Sources/LunaReadingListUI/ReadingListItemCell.swift:24-45`).
+Extend it to the remaining full-size main-thread decodes:
 
 **B1. Downloader grid cells decode full-size on main.**
 `Luna/Downloader/SavedMediaGridViewController.swift:589` —

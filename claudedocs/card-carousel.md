@@ -223,9 +223,7 @@ Differences from the Downloader, via `CardCarouselStyle`:
   brings it back (`RSVPViewController.onPlaybackStateChanged`).
 - **Long-press** on the centered card: RSVP popover (`RSVPViewController` in a
   real `.popover`, adaptation forced to `.none`) without going fullscreen.
-- The cards root has NO header bar (and no catch-up entry — catch-up remains
-  on the list root, `ReadingListViewController`, used by the other surfaces;
-  `CatchUpViewController`'s router is the `CatchUpRouting` protocol).
+- The cards root has NO header bar.
 - A new pasteboard URL is represented as a synthetic leading card (so it is
   visible as the left peek) and as a `doc.on.clipboard` mini-card in the scrubber.
   Tapping the card/chip or swiping onto it saves through the normal ingest

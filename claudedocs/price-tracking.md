@@ -262,9 +262,8 @@ only** (`PriceRefresher`); the save-time decision no longer calls it.
   threshold"**, a slider (0.01…0.90), and a readout line
   (`PriceFormatting.thresholdDescription` — percent + absolute "alert below $…").
   Presentation-only: `configure(fraction:initialPrice:currency:)` seeds it; reports
-  via `onChanged` (live) / `onCommitted` (on release → host persists). Used IDENTICALLY
-  by `PriceTrackingViewController`'s footer AND the catch-up price-tracker card, so
-  both render the same and drive the same `alertThresholdFraction`.
+  via `onChanged` (live) / `onCommitted` (on release → host persists). Used by
+  `PriceTrackingViewController`'s footer to drive `alertThresholdFraction`.
 - `Luna/ReadingList/PriceRefreshCoordinator.swift` — main-app side effects: runs
   `PriceRefresher` over the shared store and posts `NotificationManager.postPriceDrop`
   per `newlyAlerting` outcome.
@@ -408,7 +407,7 @@ notifies. See `social-sharing.md`.
   unviewed-alert float-out + greatest-discount, **at-most-one float**, **viewed alert
   does NOT float** (and yields the top to a smaller-but-unviewed one), filter
   visibility, displayOrder (price-tracking below Reading; `.priceAlert` first). Plus
-  `CatchUpAndPriceScreenTests` (editor nav): existing-mode **Back** pops + **no
+  `PriceTrackingScreenTests` (editor nav): existing-mode **Back** pops + **no
   "Read instead"**; creation-mode **"Read instead"** discards the whole tracker +
   pops; merge-mode **"Read instead"** reverts ONLY the just-added seller (rest
   intact) + pops; **extension host shows Done, in-app shows Back**; opening an

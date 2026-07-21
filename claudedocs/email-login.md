@@ -5,8 +5,8 @@
 files are added here). Entry point: `EmailLoginFlow.present(from:accountStore:
 completion:)`, called from `AppDelegate` (first-launch prompt), the "Replay
 Onboarding" flow (`OnboardingFlow`, with an ephemeral `accountStore` — see
-`claudedocs/onboarding.md`), `EmailAndKindleSettingsScreen`, and `CatchUpViewController`
-(inline nudge). It builds and presents a `UINavigationController`.
+`claudedocs/onboarding.md`), and `EmailAndKindleSettingsScreen`. It builds and
+presents a `UINavigationController`.
 During first-launch onboarding, `OnboardingFlow` instead embeds the same
 `EmailEntryViewController` directly as its root. That mode replaces modal Cancel
 with a top-right **Skip for now** action and advances to the Safari onboarding

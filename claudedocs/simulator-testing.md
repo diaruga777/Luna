@@ -37,12 +37,6 @@ verify via the harness. NEVER ship these on device.
   a small bottom-left "Row actions" button (`ellipsis.circle`) whose `.menu` is the
   same `ReadingListViewController.rowMenu(for:at:)`; a plain tap opens it. Wired in
   `cellForRowAt` only when `AppEnvironment.isSimulator`.
-- **Catch-up cards** — the swipe actions also exist as the real bottom Bump / Mark
-  Read buttons, so card actions are testable by tapping those (no extra hook needed).
-  A **"Sim Swipe"** button (`CatchUpViewController.addSimulatorSwipeHookIfNeeded`)
-  holds the current card at a partial rotation (`CatchUpCardView.simulatorHoldSwipe`)
-  so the rotated state — e.g. that the glass header doesn't balloon — is inspectable
-  without a drag gesture.
 - **Inline reader split** — `ScrollReaderViewController.addSimulatorSplitHooksIfNeeded`
   adds **"Split High"/"Split Low"** buttons that call `openSplit` at a high/low screen
   fraction, since the harness can't tap an exact inline link. Use these to verify the

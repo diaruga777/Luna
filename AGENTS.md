@@ -63,7 +63,7 @@ Almost all code lives in the local SwiftPM package `LunaLibraries/` (layered: co
 orchestration/intents; `LunaAppConfig` at the bottom is the App-Group/iCloud id source of
 truth). The Xcode targets are thin shells: the `Luna/` folder holds the shared app shell
 (AppDelegate/SceneDelegate), per-app Settings, the main-screen composition
-(ReadingListViewController/CatchUp/Search), composition wiring (AppReaderProviders/
+(ReadingListViewController/Search), composition wiring (AppReaderProviders/
 OnboardingFlow/AppSurfaceConfig), the App Intent **definitions** (`Luna/Intents/*` — business
 logic is in the `LunaIntents` library) — and is shared by ALL
 THREE app targets (each picks its surface from its bundle id). The Share/Action extensions
@@ -104,16 +104,14 @@ xcodebuild test -scheme Luna -destination "platform=iOS Simulator,id=$SIM" \
   symbol") on app-group container access. Default ad-hoc signing applies the
   entitlement and the app group works on the simulator.
 - **The full suite is green on the iOS 26.x sim: 904 tests, 2 skipped, 0 failures.**
-  (The 2 skips are intentional `XCTSkip`s — `CatchUpAndPriceScreenTests.testPriceTracking{,Alerting}EditorSnapshot`.)
+  (The 2 skips are intentional `XCTSkip`s — `PriceTrackingScreenTests.testPriceTracking{,Alerting}EditorSnapshot`.)
   The ~36 failures previously documented here were all stale test data, not the
   environment, and have been fixed: snapshot reference PNGs are device-specific and
   were re-recorded on this sim with `RECORD_SNAPSHOTS=1` (re-record after intentional
   UI changes via `TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test …` — the build-setting
-  form does NOT reach the runner's environment);
-  `ReadingListSectioningTests.testDot*` dismiss the voice-catch-up flag in setUp so the
-  orthogonal "enhanced voices not installed" dot trigger doesn't fire; and the two
-  extraction tests were aligned to the 1200 threshold. If snapshots fail again on a
-  *different* device, re-record there rather than treating it as a regression.
+  form does NOT reach the runner's environment); and the two extraction tests were
+  aligned to the 1200 threshold. If snapshots fail again on a *different* device,
+  re-record there rather than treating it as a regression.
 - For a compile-only check (fast, no run): `xcodebuild build-for-testing -scheme Luna
   -destination 'generic/platform=iOS Simulator'`.
 

@@ -76,7 +76,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch visibleSections[section] {
         case .lunaAccount:
-            return "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to friends and import shares sent to you."
+            return "Connect any email provider (Gmail, iCloud, Yahoo, Outlook, or a custom IMAP server) to send articles to contacts and import shares sent to you."
         case .kindle:
             return "Articles are emailed from the connected Luna email account (the section at the top of this screen). That address must be on Amazon's approved-sender list (amazon.com → Preferences → Personal Document Settings), and sending requires the account to be connected."
         case .doubleSave:
@@ -263,7 +263,7 @@ final class EmailAndKindleSettingsScreen: NavHeaderTableController {
         let names = emails.map { email in
             FriendsStore.shared.friend(withEmail: email)?.displayName ?? Friend.localPart(email)
         }
-        return names.count <= 2 ? names.joined(separator: ", ") : "\(names.count) Friends"
+        return names.count <= 2 ? names.joined(separator: ", ") : "\(names.count) Contacts"
     }
 
     // MARK: - Field cells

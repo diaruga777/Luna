@@ -59,7 +59,7 @@ final class ReadingListRowMenuFactoryTests: XCTestCase {
         tracker.isArchived = false
         item.priceTracker = tracker
         let menu = ReadingListRowMenuFactory.menu(for: item, actions: actions())
-        XCTAssertEqual(titles(menu), ["Send to Friend…", "Archive Tracker", "Delete"])
+        XCTAssertEqual(titles(menu), ["Send to Contact…", "Archive Tracker", "Delete"])
     }
 
     func testArchivedTrackerOffersUnarchive() {
@@ -69,7 +69,7 @@ final class ReadingListRowMenuFactoryTests: XCTestCase {
         tracker.isArchived = true
         item.priceTracker = tracker
         let menu = ReadingListRowMenuFactory.menu(for: item, actions: actions())
-        XCTAssertEqual(titles(menu), ["Send to Friend…", "Unarchive Tracker", "Delete"])
+        XCTAssertEqual(titles(menu), ["Send to Contact…", "Unarchive Tracker", "Delete"])
     }
 
     // MARK: - A shareable article (real web URL)
@@ -80,7 +80,7 @@ final class ReadingListRowMenuFactoryTests: XCTestCase {
         let result = titles(menu)
         XCTAssertTrue(result.contains("Share Link…"))
         XCTAssertTrue(result.contains("Copy Link"))
-        XCTAssertTrue(result.contains("Send to Friend…"), "a real web URL can share to friends")
+        XCTAssertTrue(result.contains("Send to Contact…"), "a real web URL can share to contacts")
         XCTAssertFalse(result.contains("Share eBook…"), "a shareable article never offers the eBook fallback")
         XCTAssertEqual(result.last, "Edit List", "Edit List is always the trailing action")
     }
@@ -131,7 +131,7 @@ final class ReadingListRowMenuFactoryTests: XCTestCase {
         XCTAssertTrue(result.contains("Share eBook…"))
         XCTAssertFalse(result.contains("Share Link…"))
         XCTAssertFalse(result.contains("Copy Link"))
-        XCTAssertFalse(result.contains("Send to Friend…"), "a synthetic URL can't share to friends")
+        XCTAssertFalse(result.contains("Send to Contact…"), "a synthetic URL can't share to contacts")
         XCTAssertTrue(result.contains("Send to Kindle"), "ereader sends are independent of shareability")
     }
 

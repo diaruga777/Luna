@@ -151,7 +151,7 @@ enum UITestFixtures {
                              title: "Couldn't Load This One", state: .failed,
                              daysAgo: 3, withContent: false))
         items.append(article(seed: "a-friend", url: "https://example.com/from-friend",
-                             title: "Shared By A Friend", daysAgo: 2, sharedBy: "alex"))
+                             title: "Shared By A Contact", daysAgo: 2, sharedBy: "alex"))
 
         // Document
         let doc = ReadingListItem(

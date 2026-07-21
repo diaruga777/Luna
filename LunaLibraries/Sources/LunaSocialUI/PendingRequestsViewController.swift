@@ -57,7 +57,7 @@ public final class PendingRequestsViewController: NavHeaderTableController {
         let sheet = UIAlertController(
             title: request.title ?? request.urlString,
             message: "Shared by \(request.displaySender)", preferredStyle: .actionSheet)
-        sheet.addAction(UIAlertAction(title: "Add Friend & Import", style: .default) { [weak self] _ in
+        sheet.addAction(UIAlertAction(title: "Add Contact & Import", style: .default) { [weak self] _ in
             FriendsStore.shared.add(email: request.senderEmail, name: request.senderName)
             self?.importAndRemove(request)
         })
@@ -76,6 +76,8 @@ public final class PendingRequestsViewController: NavHeaderTableController {
     private func importAndRemove(_ request: PendingRequest) {
         if let item = ReadingListStore.shared.addIfAbsent(urlString: request.urlString, source: .email) {
             ReadingListStore.shared.setChannelName(request.displaySender, for: item.id)
+            ReadingListStore.shared.setIncomingSender(
+                email: request.senderEmail, displayName: request.displaySender, for: item.id)
             Task { await ReadingListIngestor.shared.ingest(item) }
         }
         PendingRequestsStore.shared.remove(id: request.id)

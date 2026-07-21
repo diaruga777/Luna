@@ -38,7 +38,7 @@ final class InteropSettingsTests: XCTestCase {
         XCTAssertTrue(nav.topViewController is InteropPaywallViewController)
     }
 
-    func testFriendsIsASettingsSubpage() {
+    func testContactsIsASettingsSubpage() {
         let settings = SettingsViewController()
         let nav = UINavigationController(rootViewController: settings)
         settings.loadViewIfNeeded()
@@ -47,9 +47,9 @@ final class InteropSettingsTests: XCTestCase {
         guard let row = rows.first(where: {
             let path = IndexPath(row: $0, section: 0)
             let cell = settings.tableView(settings.tableView, cellForRowAt: path)
-            return (cell.contentConfiguration as? UIListContentConfiguration)?.text == "Friends"
+            return (cell.contentConfiguration as? UIListContentConfiguration)?.text == "Contacts"
         }) else {
-            return XCTFail("Settings must expose Friends")
+            return XCTFail("Settings must expose Contacts")
         }
 
         settings.tableView(

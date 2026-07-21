@@ -31,7 +31,7 @@ final class DoubleSaveRecipientsScreen: NavHeaderTableController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        friends = FriendsStore.shared.items()
+        friends = FriendsStore.shared.activeItems()
         tableView.reloadData()
     }
 
@@ -48,11 +48,11 @@ final class DoubleSaveRecipientsScreen: NavHeaderTableController {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .askEveryTime:
-            return "A double save opens Luna's friend selector so you pick recipients each time."
+            return "A double save opens Luna's contact selector so you pick recipients each time."
         case .friends:
             return friends.isEmpty
-                ? "Add friends on the Friends screen to preset recipients here."
-                : "A double save emails the article to every selected friend immediately."
+                ? "Add contacts on the Contacts screen to preset recipients here."
+                : "A double save emails the article to every selected contact immediately."
         }
     }
 

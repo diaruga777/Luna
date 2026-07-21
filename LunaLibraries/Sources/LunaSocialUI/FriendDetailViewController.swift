@@ -7,13 +7,12 @@ import LunaSocial
 import LunaDesignSystem
 import UIKit
 
-/// Per-friend settings: rename, "notify on every share" toggle (default off —
-/// only the first accepted share notifies), and remove.
+/// Per-contact settings: rename, notifications, block/unblock, and remove.
 public final class FriendDetailViewController: NavHeaderTableController {
 
     private var friend: Friend
 
-    private enum Section: Int, CaseIterable { case profile, notifications, remove }
+    private enum Section: Int, CaseIterable { case profile, notifications, blocking, remove }
 
     public init(friend: Friend) {
         self.friend = friend
@@ -32,7 +31,7 @@ public final class FriendDetailViewController: NavHeaderTableController {
     }
 
     public override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        1
+        Section(rawValue: section) == .notifications && friend.isBlocked ? 0 : 1
     }
 
     public override func tableView(
@@ -53,8 +52,11 @@ public final class FriendDetailViewController: NavHeaderTableController {
             toggle.isOn = friend.notifyOnEveryShare
             toggle.addTarget(self, action: #selector(toggleNotify(_:)), for: .valueChanged)
             cell.accessoryView = toggle
+        case .blocking:
+            config.text = friend.isBlocked ? "Unblock Contact" : "Block Contact"
+            config.textProperties.color = friend.isBlocked ? .systemBlue : .systemRed
         case .remove:
-            config.text = "Remove Friend"
+            config.text = "Remove Contact"
             config.textProperties.color = .systemRed
         }
         cell.contentConfiguration = config
@@ -65,7 +67,7 @@ public final class FriendDetailViewController: NavHeaderTableController {
         _ tableView: UITableView, titleForFooterInSection section: Int
     ) -> String? {
         Section(rawValue: section) == .notifications
-            ? "By default you're notified only the first time this friend shares with you."
+            ? "By default you're notified only the first time this contact shares with you."
             : nil
     }
 
@@ -74,6 +76,9 @@ public final class FriendDetailViewController: NavHeaderTableController {
         switch Section(rawValue: indexPath.section)! {
         case .profile: promptRename()
         case .notifications: break
+        case .blocking:
+            FriendsStore.shared.setBlocked(!friend.isBlocked, email: friend.email)
+            navigationController?.popViewController(animated: true)
         case .remove:
             FriendsStore.shared.remove(email: friend.email)
             navigationController?.popViewController(animated: true)

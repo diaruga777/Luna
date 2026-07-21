@@ -629,7 +629,7 @@ final class ReadingListViewController: UITableViewController {
         // Friends / email sharing is available in all three apps.
         leading.append(NavHeaderBar.imageButton(
             systemName: "person.2", target: self, action: #selector(friendsTapped),
-            accessibilityLabel: "Friends"))
+            accessibilityLabel: "Contacts"))
         header.setLeadingControls(leading)
         header.setTrailingControls([
             NavHeaderBar.imageButton(

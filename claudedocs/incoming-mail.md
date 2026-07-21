@@ -42,7 +42,9 @@ Kindle even if the app is never opened).
   (`allowedSenders`/`subjectFilters`):
   - **Marked Luna share**: imported straight from `marker.url` through the
     normal silent ingest pipeline (real article/video/product/etc., not the
-    rendered email).
+    rendered email). A recognized sender is automatically added to Contacts,
+    using the From-header name; the connected account's own address is never
+    added as a contact.
   - **`via Lu\u{200C}na:` subject but no recoverable marker** (provider stripped
     the header, or a long article's trailing marker block got clipped by the
     mail fetch size cap) — `importUnmarkedLunaShare`: extracts the
@@ -54,6 +56,10 @@ Kindle even if the app is never opened).
   - **Everything else (generic newsletter match)**: saved **as an article**
     (the email body IS the content; `lunamail://<uid>` item + `saveContent`),
     falling back to the first URL when there's no usable body.
+  Before routing, mail from a blocked contact is marked read and ignored.
+  Imported items retain the normalized sender email as well as the parsed
+  fallback name. Reader cards resolve that email through Contacts at display
+  time, so renaming a contact immediately updates the card's “From …” label.
   Items are tagged `captureSource: .email`; auto-send is then handled by
   `ArticleSendCoordinator.articleBecameReady` per the destination's
   email-source setting (Kindle's reuses `autoSendToKindle`; see

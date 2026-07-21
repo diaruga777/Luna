@@ -15,7 +15,7 @@ public final class RecipientPickerViewController: UITableViewController,
     CNContactPickerDelegate {
 
     private let onComplete: ([String]) -> Void
-    private let friends = FriendsStore.shared.items()
+    private let friends = FriendsStore.shared.activeItems()
     /// Selected emails (lowercased). Ad-hoc entries (typed / from Contacts) are
     /// appended to `extraRecipients` so they render as rows too.
     private var selected = Set<String>()
@@ -57,7 +57,7 @@ public final class RecipientPickerViewController: UITableViewController,
     public override func tableView(
         _ tableView: UITableView, titleForHeaderInSection section: Int
     ) -> String? {
-        Section(rawValue: section) == .recipients && !allRecipients.isEmpty ? "Friends" : nil
+        Section(rawValue: section) == .recipients && !allRecipients.isEmpty ? "Contacts" : nil
     }
 
     public override func tableView(
@@ -71,7 +71,7 @@ public final class RecipientPickerViewController: UITableViewController,
                 config.text = "Enter email address…"
                 config.image = UIImage(systemName: "envelope")
             } else {
-                config.text = "Add from Contacts"
+                config.text = "Add from Phone Contacts"
                 config.image = UIImage(systemName: "person.crop.circle.badge.plus")
             }
             cell.accessoryType = .none

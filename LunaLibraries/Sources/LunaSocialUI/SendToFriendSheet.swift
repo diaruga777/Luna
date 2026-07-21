@@ -30,7 +30,9 @@ public enum SendToFriendSheet {
             promptAccountSetup(from: presenter)
             return
         }
-        let recentRecipients = RecentFriendRecipientsStore.shared.items(limit: 5)
+        let recentRecipients = RecentFriendRecipientsStore.shared.items(limit: 5).filter {
+            !FriendsStore.shared.isBlocked($0.email)
+        }
         guard !recentRecipients.isEmpty else {
             presentFriendPicker(from: presenter, item: item, urlString: urlString, title: title)
             return
@@ -85,7 +87,7 @@ public enum SendToFriendSheet {
         urlString: String,
         title: String?
     ) {
-        let sheet = UIAlertController(title: "Send to Friend", message: nil, preferredStyle: .actionSheet)
+        let sheet = UIAlertController(title: "Send to Contact", message: nil, preferredStyle: .actionSheet)
         for recipient in recipients {
             sheet.addAction(UIAlertAction(title: recipient.email, style: .default) { _ in
                 deliver(item: item, urlString: urlString, title: title, to: [recipient.email], from: presenter)
@@ -137,7 +139,7 @@ public enum SendToFriendSheet {
     private static func promptAccountSetup(from presenter: UIViewController) {
         let alert = UIAlertController(
             title: "Set up email first",
-            message: "Connect your email account to send articles to friends.",
+            message: "Connect your email account to send articles to contacts.",
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Not Now", style: .cancel))
         if let launcher = accountSetupLauncher {

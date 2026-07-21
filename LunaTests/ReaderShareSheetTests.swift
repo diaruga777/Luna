@@ -15,7 +15,7 @@ final class ReaderShareSheetTests: XCTestCase {
             includeEbook: true,
             onPickFriend: {}, onShareLink: {}, onCopyLink: {}, onShareEbook: {})
         XCTAssertEqual(rows.count, 4)
-        XCTAssertEqual(rows.map(\.title), ["Send to a Friend…", "Share Link…", "Copy Link", "Share eBook…"])
+        XCTAssertEqual(rows.map(\.title), ["Send to a Contact…", "Share Link…", "Copy Link", "Share eBook…"])
         XCTAssertFalse(rows.contains { $0.isPrimary })
     }
 
@@ -23,7 +23,7 @@ final class ReaderShareSheetTests: XCTestCase {
         let rows = ReaderShareSheet.rows(
             includeEbook: false,
             onPickFriend: {}, onShareLink: {}, onCopyLink: {}, onShareEbook: {})
-        XCTAssertEqual(rows.map(\.title), ["Send to a Friend…", "Share Link…", "Copy Link"])
+        XCTAssertEqual(rows.map(\.title), ["Send to a Contact…", "Share Link…", "Copy Link"])
         XCTAssertFalse(rows.contains { $0.title.contains("eBook") })
     }
 

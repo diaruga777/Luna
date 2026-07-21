@@ -8,21 +8,22 @@ import LunaDesignSystem
 import ContactsUI
 import UIKit
 
-/// The Friends screen (shared by all three apps): the saved email recipients,
+/// The Contacts screen (shared by all three apps): the saved email recipients,
 /// an entry to the pending-requests moderation queue (badged), and ways to add
-/// a friend by email or from the system Contacts picker.
+/// a contact by email or from the system Contacts picker.
 public final class FriendsViewController: NavHeaderTableController, CNContactPickerDelegate {
 
-    private var friends: [Friend] = FriendsStore.shared.items()
+    private var contacts: [Friend] = FriendsStore.shared.activeItems()
+    private var blocked: [Friend] = FriendsStore.shared.blockedItems()
     private var pendingCount = PendingRequestsStore.shared.count
 
-    private enum Section: Int, CaseIterable { case pending, add, friends }
+    private enum Section: Int, CaseIterable { case pending, add, contacts, blocked }
 
     public init() { super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     public override func viewDidLoad() {
-        headerTitle = "Friends"
+        headerTitle = "Contacts"
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         NotificationCenter.default.addObserver(
@@ -39,7 +40,8 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
     }
 
     @objc private func reload() {
-        friends = FriendsStore.shared.items()
+        contacts = FriendsStore.shared.activeItems()
+        blocked = FriendsStore.shared.blockedItems()
         pendingCount = PendingRequestsStore.shared.count
         tableView.reloadData()
     }
@@ -54,14 +56,19 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
         switch Section(rawValue: section)! {
         case .pending: return pendingCount > 0 ? 1 : 0
         case .add: return 2
-        case .friends: return friends.count
+        case .contacts: return contacts.count
+        case .blocked: return blocked.count
         }
     }
 
     public override func tableView(
         _ tableView: UITableView, titleForHeaderInSection section: Int
     ) -> String? {
-        Section(rawValue: section) == .friends && !friends.isEmpty ? "Friends" : nil
+        switch Section(rawValue: section)! {
+        case .contacts: return contacts.isEmpty ? nil : "Contacts"
+        case .blocked: return blocked.isEmpty ? nil : "Blocked"
+        default: return nil
+        }
     }
 
     public override func tableView(
@@ -80,14 +87,15 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
                 config.text = "Add by Email"
                 config.image = UIImage(systemName: "envelope")
             } else {
-                config.text = "Add from Contacts"
+                config.text = "Add from Phone Contacts"
                 config.image = UIImage(systemName: "person.crop.circle.badge.plus")
             }
             cell.accessoryType = .none
-        case .friends:
-            let friend = friends[indexPath.row]
-            config.text = friend.displayName
-            config.secondaryText = friend.email
+        case .contacts, .blocked:
+            let contact = Section(rawValue: indexPath.section) == .contacts
+                ? contacts[indexPath.row] : blocked[indexPath.row]
+            config.text = contact.displayName
+            config.secondaryText = contact.email
         }
         cell.contentConfiguration = config
         return cell
@@ -100,8 +108,9 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
             navigationController?.pushViewController(PendingRequestsViewController(), animated: true)
         case .add:
             indexPath.row == 0 ? promptForEmail() : presentContactPicker()
-        case .friends:
-            let friend = friends[indexPath.row]
+        case .contacts, .blocked:
+            let friend = Section(rawValue: indexPath.section) == .contacts
+                ? contacts[indexPath.row] : blocked[indexPath.row]
             navigationController?.pushViewController(
                 FriendDetailViewController(friend: friend), animated: true)
         }
@@ -110,22 +119,29 @@ public final class FriendsViewController: NavHeaderTableController, CNContactPic
     public override func tableView(
         _ tableView: UITableView, canEditRowAt indexPath: IndexPath
     ) -> Bool {
-        Section(rawValue: indexPath.section) == .friends
+        let section = Section(rawValue: indexPath.section)
+        return section == .contacts || section == .blocked
     }
 
     public override func tableView(
         _ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle,
         forRowAt indexPath: IndexPath
     ) {
-        guard editingStyle == .delete, Section(rawValue: indexPath.section) == .friends else { return }
-        FriendsStore.shared.remove(email: friends[indexPath.row].email)
+        guard editingStyle == .delete else { return }
+        let contact: Friend
+        switch Section(rawValue: indexPath.section)! {
+        case .contacts: contact = contacts[indexPath.row]
+        case .blocked: contact = blocked[indexPath.row]
+        default: return
+        }
+        FriendsStore.shared.remove(email: contact.email)
         reload()
     }
 
     // MARK: - Adding
 
     private func promptForEmail() {
-        EmailRecipientPrompt.presentEmailAlert(from: self, title: "Add friend") { [weak self] raw in
+        EmailRecipientPrompt.presentEmailAlert(from: self, title: "Add contact") { [weak self] raw in
             guard Friend.isValidEmail(raw) else { return }
             _ = FriendsStore.shared.add(email: raw)
             self?.reload()

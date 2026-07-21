@@ -37,7 +37,7 @@ enum ReadingListRowMenuFactory {
 
     static func menu(for item: ReadingListItem, actions: RowMenuActions) -> UIMenu {
         let sendToFriend = UIAction(
-            title: "Send to Friend…", image: UIImage(systemName: "person.2")
+            title: "Send to Contact…", image: UIImage(systemName: "person.2")
         ) { _ in actions.sendToFriend() }
         let sendToKindle = UIAction(
             title: "Send to Kindle", image: UIImage(systemName: "paperplane")

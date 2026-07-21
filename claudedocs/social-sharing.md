@@ -1,25 +1,25 @@
-# Social Sharing (Friends via Email)
+# Social Sharing (Contacts via Email)
 
-Friend sharing is **email-based**, universal across all three apps (no
-CloudKit, no separate identity/crypto system, no per-app gating). A friend is
+Contact sharing is **email-based**, universal across all three apps (no
+CloudKit, no separate identity/crypto system, no per-app gating). A contact is
 just an email address; sharing an item sends a nicely-formatted email that a
-recipient's Luna app recognizes and offers to import.
+recipient's Luna app recognizes and imports.
 
 ## Key files
 
 - **`LunaSocial/FriendsStore.swift`** — `Friend` (`email` [the stable
   identifier, lowercased], optional `name`, `dateAdded`, `notifyOnEveryShare`,
-  `hasReceivedShare`). `FriendsStore` persists `friends.json` in the App Group
+  `hasReceivedShare`, `isBlocked`). `FriendsStore` persists `friends.json` in the App Group
   container (`ReadingListStore` pattern: lock-serialized mutations, posts
   `.friendsListChanged`). `add` is idempotent by email and updates the name;
-  `markReceivedShare` tracks whether a friend's first share has landed yet (so
-  it can always notify once).
+  `markReceivedShare` tracks whether a contact's first share has landed yet (so
+  it can always notify once). Active and blocked projections feed separate UI
+  sections and recipient pickers.
 - **`LunaSocial/PendingRequestsStore.swift`** — `PendingRequest` (sender email/
   name, url, title, advisory `ContentKind` string, provider message id, date).
-  Persists `pendingRequests.json` in the App Group container. A moderation
-  queue for Luna shares from senders who aren't yet an accepted friend —
-  guards against importing from arbitrary senders. Deduped by
-  (url, senderEmail).
+  Persists legacy `pendingRequests.json` entries in the App Group container.
+  The queue remains visible so requests created by older builds can be handled,
+  but new recognized senders are added to Contacts and imported automatically.
 - **`LunaSocial/NotificationManager.swift`** — local notifications only (no
   remote push/APNs): `postShareReceived` (friend's import landed),
   `postPendingRequest` (stranger's share needs review), `postPriceDrop`.
@@ -37,35 +37,31 @@ recipient's Luna app recognizes and offers to import.
   snapshot/thumbnail, detail lines for creator/media title), builds the raw
   MIME with the `X-Luna-Share` header via `EmailMIMEBuilder`, and sends through
   the connected account's `EmailTransport` (`MailTransportFactory.make`).
-  Records every recipient as a friend on send (the user chose them, so no
-  moderation needed outbound).
+  Records every recipient as a contact on send.
 - **`LunaReadingList/IncomingMailImporter.swift`** (see `incoming-mail.md` for
   the IMAP/mail-fetch mechanics) — `handleLunaShare` parses the marker off an
-  incoming message and routes by sender: an accepted friend → `autoImport`
-  (adds to the reading list tagged `source: .email`, sets `channelName` to the
-  friend's display name, ingests, marks `hasReceivedShare`/notifies per the
-  friend's `notifyOnEveryShare` toggle); anyone else → `queuePending` (adds a
-  `PendingRequest`, posts a "wants to share with you" notification, does NOT
-  import). The originating mail is marked read either way — accepting later is
-  a purely local decision.
+  incoming message, ignores blocked senders, automatically adds new recognized
+  senders to Contacts (except the connected account's own address), and imports
+  through the normal pipeline. Each item stores the sender email for live name
+  resolution plus the From-header name as a fallback.
 
 ## UI (`LunaSocialUI/`, shared by all three apps)
 
-- **`FriendsViewController`** — reached from the top-level Settings page; friends list
-  (swipe to delete), a badged entry
-  to Pending Requests when any are queued, "Add by Email" / "Add from
+- **`FriendsViewController`** — presented to users as **Contacts** from the
+  top-level Settings page. It shows separate Contacts and Blocked sections,
+  a badged legacy Pending Requests entry, and "Add by Email" / "Add from Phone
   Contacts" (`CNContactPickerViewController` — no Contacts permission needed).
-  Tapping a friend pushes `FriendDetailViewController` (notify-on-every-share
-  toggle, remove).
+  Tapping a contact pushes `FriendDetailViewController` (rename,
+  notify-on-every-share, block/unblock, remove).
 - **`PendingRequestsViewController`** — the moderation queue. Tapping a
-  request offers "Add Friend & Import" (adds sender to `FriendsStore` +
+  request offers "Add Contact & Import" (adds sender to `FriendsStore` +
   imports), "Import Once" (imports without adding as a friend), or "Delete".
 - **`RecipientPickerViewController`** — the full recipient picker: multi-select
-  from friends, "Enter email address…", or "Add from Contacts". Returns the
+  from active contacts, "Enter email address…", or "Add from Phone Contacts". Returns the
   chosen addresses to `EmailShareCenter`.
 - **`RecentFriendRecipientsStore`** — records successful sent-to addresses in
   App Group JSON (`recentFriendRecipients.json`), newest first, for quick send.
-- **`SendToFriendSheet`** / **`ReaderShareSheet`** — "Send to Friend" first
+- **`SendToFriendSheet`** / **`ReaderShareSheet`** — "Send to Contact" first
   shows a bottom sheet with up to 5 recent sent-to emails plus "Other…" for the
   full picker. With no past sends, it skips straight to the full picker.
 

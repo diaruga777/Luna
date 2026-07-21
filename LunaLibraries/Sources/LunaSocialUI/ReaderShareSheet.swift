@@ -40,7 +40,7 @@ public final class ReaderShareSheet: UIViewController {
     ) -> [Row] {
         var rows: [Row] = []
         rows.append(Row(
-            title: "Send to a Friend…", systemImage: "person.2",
+            title: "Send to a Contact…", systemImage: "person.2",
             isPrimary: false, action: onPickFriend))
         rows.append(Row(
             title: "Share Link…", systemImage: "link",

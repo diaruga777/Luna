@@ -19,7 +19,7 @@ public enum DoubleSaveAction: String, CaseIterable {
     public var displayName: String {
         switch self {
         case .sendToKindle: return "Send to Kindle"
-        case .sendToFriend: return "Send to Friend"
+        case .sendToFriend: return "Send to Contact"
         }
     }
 }
@@ -33,7 +33,7 @@ public enum DoubleSaveFriendMode: String, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .preset: return "Preset Friends"
+        case .preset: return "Preset Contacts"
         case .askEveryTime: return "Ask Every Time"
         }
     }

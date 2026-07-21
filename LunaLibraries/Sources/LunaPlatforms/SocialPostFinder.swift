@@ -3,6 +3,7 @@
 //  Luna
 //
 
+import LunaModels
 import LunaURLClassification
 import Foundation
 
@@ -15,14 +16,20 @@ public enum SocialPostFinder {
     public enum Platform {
         case x, tiktok, instagram, facebook
 
-        /// Hosts that count as this platform.
-        var hosts: [String] {
+        /// The `PlatformRecognizer` platform this case corresponds to.
+        private var recognized: ContentPlatform {
             switch self {
-            case .x: return ["x.com", "twitter.com", "mobile.twitter.com"]
-            case .tiktok: return ["tiktok.com", "vm.tiktok.com"]
-            case .instagram: return ["instagram.com"]
-            case .facebook: return ["facebook.com", "fb.watch", "m.facebook.com"]
+            case .x: return .x
+            case .tiktok: return .tiktok
+            case .instagram: return .instagram
+            case .facebook: return .facebook
             }
+        }
+
+        /// Hosts that count as this platform, looked up from `PlatformRecognizer`'s
+        /// canonical table rather than a hand-maintained copy.
+        var hosts: [String] {
+            PlatformRecognizer.rules.first { $0.platform == recognized }?.hosts ?? []
         }
 
         /// Path fragments that mark a real post (vs. a profile/home page).

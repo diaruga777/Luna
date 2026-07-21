@@ -5,6 +5,7 @@
 
 import Foundation
 import LunaStorage
+import LunaURLClassification
 
 /// Resolves → downloads → saves a social post's first media item to Photos.
 /// Used by both entry points (the action extension button + the reading list
@@ -138,10 +139,16 @@ public struct MediaDownloadService: MediaDownloading {
     }
 
     /// TikTok and Reddit media CDNs require their site's Referer; others download bare.
+    /// `url` is always the already-recognized source post URL (every caller gates on
+    /// `MediaDownloadablePlatform.supports` first), so an anchored host-suffix match
+    /// is exactly as reliable here as the old substring check and doesn't risk a
+    /// stray `faketiktok.com` false positive.
     private static func referer(for url: URL) -> String? {
         let host = url.host?.lowercased() ?? ""
-        if host.contains("tiktok") { return "https://www.tiktok.com/" }
-        if host.contains("reddit") || host == "redd.it" { return "https://www.reddit.com/" }
+        if HostMatching.hostSuffixMatches(host, "tiktok.com") { return "https://www.tiktok.com/" }
+        if HostMatching.hostSuffixMatches(host, anyOf: ["reddit.com", "redd.it"]) {
+            return "https://www.reddit.com/"
+        }
         return nil
     }
 }

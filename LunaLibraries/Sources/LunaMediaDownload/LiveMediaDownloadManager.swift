@@ -570,10 +570,13 @@ public final class LiveMediaDownloadManager: NSObject {
 
     /// The media-file download request for a resolved asset: browser UA, plus
     /// the TikTok CDN's Referer requirement when `sourceURL` is a TikTok post.
+    /// `sourceURL` is always the already-recognized source post URL (every job is
+    /// created behind `MediaDownloadablePlatform.supports`), so an anchored
+    /// host-suffix match is exactly as reliable here as the old substring check.
     private static func mediaAssetRequest(assetURL: URL, sourceURL: URL) -> URLRequest {
         var request = URLRequest(url: assetURL, timeoutInterval: 60)
         request.setValue(MediaDownloadHTTP.browserUserAgent, forHTTPHeaderField: "User-Agent")
-        if sourceURL.host?.lowercased().contains("tiktok") == true {
+        if HostMatching.hostSuffixMatches(sourceURL.host?.lowercased() ?? "", "tiktok.com") {
             request.setValue("https://www.tiktok.com/", forHTTPHeaderField: "Referer")
         }
         return request

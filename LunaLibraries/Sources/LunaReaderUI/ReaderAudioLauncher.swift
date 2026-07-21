@@ -23,6 +23,7 @@
 
 import LunaAudioPlayback
 import LunaModels
+import LunaReaderEngine
 import Foundation
 import UIKit
 
@@ -124,5 +125,26 @@ public enum AudioWordEventTokenMapping {
         let wordStarts = AudioWordIndexing.wordStartUTF16Offsets(in: text)
         let offset = AudioWordIndexing.wordOffset(forUTF16Location: utf16Location, wordStartOffsets: wordStarts)
         return blockTokenStarts[blockIndex] + offset
+    }
+}
+
+/// The shared "audio-center word event → RSVP frame" sequence applied by
+/// both the full reader's and the link preview's `AudioPlaybackObserver`
+/// conformances: the event's (block index, in-block UTF-16 location) maps to
+/// the shared token space via `AudioWordEventTokenMapping`, then into the
+/// engine's frame space (a word can occupy several frames when its token was
+/// long-word-split) via `RSVPEngine.frameIndex(forTokenIndex:)`.
+public enum RSVPAudioWordSync {
+    public static func frameIndex(
+        for event: AudioWordEvent,
+        blocks: [ArticleContent.Block],
+        blockTokenStarts: [Int],
+        engine: RSVPEngine
+    ) -> Int? {
+        guard let token = AudioWordEventTokenMapping.tokenIndex(
+            blockIndex: event.blockIndex, utf16Location: event.rangeInBlockText.location,
+            blocks: blocks, blockTokenStarts: blockTokenStarts)
+        else { return nil }
+        return engine.frameIndex(forTokenIndex: token)
     }
 }

@@ -1006,13 +1006,12 @@ private final class LinkRSVPPreviewViewController: UIViewController, AudioPlayba
 
     func audioPlaybackCenter(_ center: AudioPlaybackCenter, didEmitWordEvent event: AudioWordEvent) {
         guard isAudioMode, center.currentItemInfo?.itemID == article.item.id,
-              let token = AudioWordEventTokenMapping.tokenIndex(
-                blockIndex: event.blockIndex,
-                utf16Location: event.rangeInBlockText.location,
-                blocks: article.content.blocks,
+              let frame = RSVPAudioWordSync.frameIndex(
+                for: event, blocks: article.content.blocks,
                 blockTokenStarts: AudioWordEventTokenMapping.blockTokenStarts(
-                    blocks: article.content.blocks)),
-              let frame = engine.frameIndex(forTokenIndex: token) else { return }
+                    blocks: article.content.blocks),
+                engine: engine)
+        else { return }
         index = frame
         showCurrentWord()
     }

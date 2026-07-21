@@ -1446,13 +1446,10 @@ extension RSVPViewController: AudioPlaybackObserver {
     /// THIS article: the event's (original block index, in-block UTF-16 range)
     /// maps into the engine's shared token space, then to an RSVP frame.
     public func audioPlaybackCenter(_ center: AudioPlaybackCenter, didEmitWordEvent event: AudioWordEvent) {
-        guard speechCenter != nil, isViewLoaded, isPlaying, centerOwnsItem else { return }
-        guard let token = AudioWordEventTokenMapping.tokenIndex(
-                blockIndex: event.blockIndex,
-                utf16Location: event.rangeInBlockText.location,
-                blocks: articleContent.blocks,
-                blockTokenStarts: blockTokenStarts()),
-              let frame = engine.frameIndex(forTokenIndex: token),
+        guard speechCenter != nil, isViewLoaded, isPlaying, centerOwnsItem,
+              let frame = RSVPAudioWordSync.frameIndex(
+                for: event, blocks: articleContent.blocks,
+                blockTokenStarts: blockTokenStarts(), engine: engine),
               engine.words.indices.contains(frame)
         else { return }
         guard frame != currentIndex || displayMode == .phrases else { return }

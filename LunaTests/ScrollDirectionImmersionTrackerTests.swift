@@ -41,6 +41,7 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         container.view.addSubview(scrollView)
 
         tracker = ScrollDirectionImmersionTracker()
+        tracker.bottomRevealDistance = { 0 }
         events = []
         tracker.onImmersionChange = { [weak self] immersed, extendsCard in
             self?.events.append((immersed, extendsCard))
@@ -98,15 +99,23 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         XCTAssertTrue(events.isEmpty)
     }
 
-    // MARK: - Fade-in threshold (scrolling up), smaller than fade-out
+    // MARK: - Fade-in threshold (scrolling up), one third of the viewport
 
     func testUpwardTravelPastThresholdFiresImmersedFalse() {
-        drag(to: 100)
-        drag(to: 94)   // run -6
-        drag(to: 86)   // run -14 <= -fadeInTravel (12)
+        drag(to: 600)
+        drag(to: 450)  // run -150, below one third of the 800pt viewport
+        XCTAssertTrue(events.isEmpty)
+        drag(to: 320)  // run -280, beyond 800 / 3
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.immersed, false)
         XCTAssertEqual(events.first?.extendsCard, true)
+    }
+
+    func testTinyUpwardCorrectionDoesNotRestoreChrome() {
+        drag(to: 600)
+        drag(to: 588)
+        drag(to: 560)
+        XCTAssertTrue(events.isEmpty)
     }
 
     func testReachingTheTopAlwaysFiresImmersedFalseRegardlessOfRun() {
@@ -114,6 +123,20 @@ final class ScrollDirectionImmersionTrackerTests: XCTestCase {
         // its own, but "at the top" is its own unconditional trigger.
         drag(to: 5)
         drag(to: 0)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.immersed, false)
+    }
+
+    func testArticleBottomRestoresAtFutureRestingCardEdge() {
+        tracker.bottomRevealDistance = { 100 }
+        // Positioning/restoration itself is not user motion and must not count
+        // toward the directional threshold. Resume a real drag just outside
+        // the future resting edge; maximum position is 3200.
+        scrollView.fakeIsDragging = false
+        scrollView.contentOffset = CGPoint(x: 0, y: 3000)
+        drag(to: 3099) // seeds at 101pt remaining
+        XCTAssertTrue(events.isEmpty)
+        drag(to: 3100) // 100pt remains: content bottom meets that edge
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events.first?.immersed, false)
     }

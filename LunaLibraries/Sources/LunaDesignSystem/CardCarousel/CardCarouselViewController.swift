@@ -836,6 +836,8 @@ public final class CardCarouselViewController: UIViewController {
             : centeredCardFrame()
         if center.contains(location) {
             guard let content = slots[currentIndex]?.content else { return }
+            let contentPoint = cardArea.convert(location, to: content.view)
+            guard content.allowsCardTap(at: contentPoint) else { return }
             if content.isPlayable {
                 content.setPlaying(!content.isPlaying)
             } else {

@@ -42,6 +42,12 @@ open class CardContentViewController: UIViewController {
 
     open func setMuted(_ muted: Bool) {}
 
+    /// Whether a plain card-level tap at this content-local point should be
+    /// forwarded to the carousel delegate. Content with its own non-control
+    /// interactions (for example text links or inline image attachments) can
+    /// reject the additive card tap without interfering with its own gesture.
+    open func allowsCardTap(at point: CGPoint) -> Bool { true }
+
     /// The card became the centered card: playable content should (re)start,
     /// looping, honoring the mute state last applied via `setMuted`.
     open func cardDidBecomeCentered() {

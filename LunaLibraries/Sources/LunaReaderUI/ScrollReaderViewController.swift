@@ -1274,6 +1274,14 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         return nil
     }
 
+    /// Whether a point in this controller's view is already owned by normal
+    /// reader interaction. The outer card uses this to keep its additive
+    /// show/hide-chrome tap away from links and inline images.
+    public func hasInteractiveContent(at point: CGPoint) -> Bool {
+        let textPoint = view.convert(point, to: textView)
+        return link(at: textPoint) != nil || imageEntry(at: textPoint) != nil
+    }
+
     private func setLinkPreviewAudioSuspended(_ suspended: Bool) {
         if suspended {
             if let center = ReaderAudioLauncher.center,

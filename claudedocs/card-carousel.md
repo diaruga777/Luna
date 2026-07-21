@@ -218,8 +218,14 @@ Differences from the Downloader, via `CardCarouselStyle`:
   mode switch swaps them, sampled synchronously so flicks aren't misread as
   settled): **scrolling down** past a small directional run (24pt, resetting
   on direction flips so jitter can't toggle it) fades the chrome away;
-  **scrolling up — from anywhere in the article —** (12pt, or reaching the
-  top) fades it back in. In **RSVP**, playing fades it away and pausing
+  **scrolling up — from anywhere in the article —** by one third of the visible
+  card height fades it back in; reaching the top restores it immediately, and
+  approaching the article bottom restores it when the content edge meets the
+  resting card's future bottom edge. Tapping plain reader content also toggles
+  immersion, while links and inline images retain their normal actions. During
+  scroll immersion, a screen-level dissolve becomes opaque at the top edge of
+  the persistent Settings/Share buttons so content never bleeds into their
+  footer safe area. In **RSVP**, playing fades it away and pausing
   brings it back (`RSVPViewController.onPlaybackStateChanged`).
 - **Long-press** on the centered card: RSVP popover (`RSVPViewController` in a
   real `.popover`, adaptation forced to `.none`) without going fullscreen.

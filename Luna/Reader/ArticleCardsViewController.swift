@@ -53,6 +53,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private let readerAudioButton = UIButton(type: .system)
     private let readerModeControl = LunaSegmentedControl()
     private let readerShareButton = UIButton(type: .system)
+    private let footerContentFade = ReaderFooterContentFadeView()
     private weak var readerForChrome: ReaderChromeControlling?
     /// The reader's scroll indicator, hosted here (not inside the card) so it can
     /// slide from the card's trailing edge out to the screen edge as the card
@@ -118,6 +119,13 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         // stay on top). Host-positioned every layout — no Auto Layout.
         cardScrollIndicator.isHidden = true
         view.addSubview(cardScrollIndicator)
+
+        // Immersion extends the reader below its resting card edge. Keep that
+        // extra content from entering the footer controls' safe area: the veil
+        // becomes fully opaque exactly at the buttons' top edge.
+        footerContentFade.alpha = 0
+        footerContentFade.isUserInteractionEnabled = false
+        view.addSubview(footerContentFade)
 
         mountBottomControls()
         mountTopChrome()
@@ -294,6 +302,11 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         if !isIndicatorSliding { layoutCardScrollIndicator(animated: false) }
+        let fadeStart = settingsButton.frame.minY - Self.contentEdgeFade
+        footerContentFade.frame = CGRect(
+            x: 0, y: fadeStart, width: view.bounds.width,
+            height: max(view.bounds.maxY - fadeStart, 0))
+        footerContentFade.setFadeHeight(Self.contentEdgeFade)
     }
 
     private func updateReaderChrome() {
@@ -609,7 +622,15 @@ extension ArticleCardsViewController: CardCarouselDelegate {
             addPasteboardURL()
             return
         }
-        unlockCurrentCardIfNeeded()
+        guard let card = carousel.contentController(at: index) as? ReaderCardContentViewController,
+              card.rabbitHoleReader != nil
+        else {
+            unlockCurrentCardIfNeeded()
+            return
+        }
+        readerCard(
+            card, didChangeImmersion: !carousel.isImmersed,
+            extendsCard: card.rabbitHoleReader?.focusedContentScrollView != nil)
     }
 
     /// Long-press = the link-preview RSVP experience for the card's article:
@@ -657,6 +678,12 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
         _ card: ReaderCardContentViewController, didChangeImmersion immersed: Bool, extendsCard: Bool
     ) {
         carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
+        UIView.animate(
+            withDuration: 0.32, delay: 0,
+            options: [.curveEaseInOut, .allowUserInteraction]
+        ) {
+            self.footerContentFade.alpha = immersed && extendsCard ? 1 : 0
+        }
         // Slide the scroll indicator between the card edge and the screen
         // edge in step with the immersion (setImmersed's 0.32s ease-in-out).
         layoutCardScrollIndicator(animated: true)
@@ -806,6 +833,12 @@ private final class ReaderCardContentViewController: CardContentViewController,
         immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
             guard let self else { return }
             self.delegate?.readerCard(self, didChangeImmersion: immersed, extendsCard: extendsCard)
+        }
+        immersionTracker.bottomRevealDistance = { [weak self] in
+            guard let self,
+                  let resting = self.delegate?.readerCardInlineFrameInWindow(self)
+            else { return 0 }
+            return max(0, self.view.bounds.height - resting.height)
         }
     }
 
@@ -1009,4 +1042,60 @@ private final class ReaderCardContentViewController: CardContentViewController,
         rabbitHoleReader?.externalChromeContentInset = max(inset, 0)
     }
 
+    override func allowsCardTap(at point: CGPoint) -> Bool {
+        !Self.readerControllers(under: reader).contains { controller in
+            guard let scrollReader = controller as? ScrollReaderViewController,
+                  scrollReader.isViewLoaded,
+                  scrollReader.view.window != nil
+            else { return false }
+            return scrollReader.hasInteractiveContent(
+                at: view.convert(point, to: scrollReader.view))
+        }
+    }
+
+    private static func readerControllers(under root: UIViewController?) -> [UIViewController] {
+        guard let root else { return [] }
+        return [root] + root.children.flatMap { readerControllers(under: $0) }
+    }
+
+}
+
+/// Screen-level footer veil used only while the scroll reader's card is
+/// immersed. It dissolves content over the normal card fade depth, then paints
+/// the footer safe area solid so reader content cannot bleed behind controls.
+private final class ReaderFooterContentFadeView: UIView {
+    override class var layerClass: AnyClass { CAGradientLayer.self }
+    private var gradient: CAGradientLayer { layer as! CAGradientLayer }
+    private var fadeHeight: CGFloat = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        updateColors()
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+            (view: ReaderFooterContentFadeView, _: UITraitCollection) in view.updateColors()
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.height > 0 else { return }
+        gradient.locations = [0, NSNumber(value: min(fadeHeight / bounds.height, 1)), 1]
+    }
+
+    func setFadeHeight(_ height: CGFloat) {
+        fadeHeight = max(height, 1)
+        setNeedsLayout()
+    }
+
+    private func updateColors() {
+        let background = UIColor.systemBackground.resolvedColor(with: traitCollection)
+        gradient.colors = [
+            background.withAlphaComponent(0).cgColor,
+            background.cgColor,
+            background.cgColor,
+        ]
+    }
 }

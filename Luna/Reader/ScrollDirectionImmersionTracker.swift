@@ -21,6 +21,11 @@ final class ScrollDirectionImmersionTracker {
     /// the chrome fades.
     var onImmersionChange: ((_ immersed: Bool, _ extendsCard: Bool) -> Void)?
 
+    /// How much taller the live, immersed card is than its resting footprint.
+    /// When the article's bottom comes within this distance of the viewport,
+    /// restoring the chrome puts that bottom exactly at the restored card edge.
+    var bottomRevealDistance: (() -> CGFloat)?
+
     /// Whether the tracker currently reports. Side cards' readers are live but
     /// inert, so the host sets this only while its card is centered; going
     /// inactive drops any in-progress directional run.
@@ -38,8 +43,10 @@ final class ScrollDirectionImmersionTracker {
 
     /// Downward travel (pt) before the chrome fades away…
     private static let fadeOutTravel: CGFloat = 24
-    /// …and upward travel before it comes back — smaller, so surfacing is easy.
-    private static let fadeInTravel: CGFloat = 12
+    /// …and the fraction of the visible card the user must travel upward
+    /// before it comes back. This deliberately resists tiny reverse-scroll
+    /// corrections while remaining proportional on iPhone and iPad.
+    private static let fadeInViewportFraction: CGFloat = 1 / 3
 
     /// Hooks the immersion triggers onto `root`'s live content (KVO on every
     /// scroll view, play-state callbacks on every RSVP controller). Idempotent
@@ -82,7 +89,25 @@ final class ScrollDirectionImmersionTracker {
         }
         // Distance from the content's top (0 = at the top).
         let position = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-        guard let previous = scrollRuns[key] else {
+        let maximumPosition = max(
+            0,
+            scrollView.contentSize.height + scrollView.adjustedContentInset.top
+                + scrollView.adjustedContentInset.bottom - scrollView.bounds.height)
+        let remainingToBottom = max(0, maximumPosition - position)
+        let revealAtBottom = max(0, bottomRevealDistance?() ?? 0)
+
+        // Position exceptions do not need a directional run. At the top the
+        // chrome always returns immediately; near the bottom it returns at the
+        // exact point where shrinking to the resting card will meet the
+        // article's bottom edge.
+        let previous = scrollRuns[key]
+        if (previous != nil && (position <= 0 || remainingToBottom <= revealAtBottom))
+            || (revealAtBottom > 0 && remainingToBottom <= revealAtBottom) {
+            scrollRuns = [:]
+            onImmersionChange?(false, true)
+            return
+        }
+        guard let previous else {
             scrollRuns[key] = (position, 0)
             return
         }
@@ -94,7 +119,8 @@ final class ScrollDirectionImmersionTracker {
         // that clamps the offset — a synthetic ~90pt "scroll up" delivered
         // re-entrantly that would immediately fade the chrome back in. With
         // the runs cleared first, that event just seeds a fresh baseline.
-        if run <= -Self.fadeInTravel || position <= 0 {
+        let fadeInTravel = max(scrollView.bounds.height * Self.fadeInViewportFraction, 1)
+        if run <= -fadeInTravel {
             scrollRuns = [:]
             onImmersionChange?(false, true)
         } else if run >= Self.fadeOutTravel, position > 0 {

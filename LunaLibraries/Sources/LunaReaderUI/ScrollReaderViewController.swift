@@ -322,7 +322,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         content: ArticleContent, budget: Int) -> Bool {
         // A non-trivial saved scroll offset (more than a screen down) resumes below
         // the prefix. A tiny offset (near the top) is fine to show against the prefix.
-        if let saved = item.lastScrollOffset, saved > CGFloat(UIScreen.main.bounds.height) {
+        if item.readState != .read,
+           let saved = item.lastScrollOffset, saved > CGFloat(UIScreen.main.bounds.height) {
             return true
         }
         // The word we'll actually resume from on open: a carried-in mode-switch index
@@ -333,7 +334,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             resumeWord = nil
         } else if let carried = resumeWordIndex {
             resumeWord = carried
-        } else if item.lastScrollOffset == nil {
+        } else if item.readState != .read, item.lastScrollOffset == nil {
             resumeWord = item.lastWordIndex
         } else {
             resumeWord = nil
@@ -544,6 +545,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var hasInitialScrollPosition: Bool {
         if let resume = explicitResumeWordIndex, !audioEnabled,
            wordMap.attributedRange(forWord: resume) != nil { return true }
+        // A finished article's persisted position is normally the footer/end.
+        // Until read cards get their own UI, present them like ordinary cards
+        // from the top so their first viewport is never an empty trailing tail.
+        guard item.readState != .read else { return false }
         if item.lastScrollOffset != nil { return true }
         if let word = item.lastWordIndex,
            wordMap.attributedRange(forWord: word) != nil { return true }
@@ -817,9 +822,9 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         if let resume = explicitResumeWordIndex, !audioEnabled,
            wordMap.attributedRange(forWord: resume) != nil {
             scrollWord(resume, toFractionFromTop: 0.25)
-        } else if let saved = item.lastScrollOffset {
+        } else if item.readState != .read, let saved = item.lastScrollOffset {
             restoreScroll(to: CGFloat(saved))
-        } else if let word = item.lastWordIndex,
+        } else if item.readState != .read, let word = item.lastWordIndex,
                   wordMap.attributedRange(forWord: word) != nil {
             scrollWord(word, toFractionFromTop: 0.25)
         }

@@ -412,9 +412,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     }
 
     @objc private func reload() {
-        let updated = store.items()
-            .filter { ReadingListSectioning.rendersAsReader($0) }
-            .sorted { ($0.bumpDate ?? $0.dateAdded) > ($1.bumpDate ?? $1.dateAdded) }
+        let updated = Self.orderedReaderItems(store.items())
         var fingerprint = updated.map {
             "\($0.id)|\($0.title ?? "")|\($0.state)|\($0.thumbnailFileName ?? "")|\(senderName(for: $0) ?? "")"
         }
@@ -434,6 +432,23 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         emptyView.isHidden = !items.isEmpty || renderedPasteboardURL != nil
         carousel.view.isHidden = items.isEmpty && renderedPasteboardURL == nil
         updateReaderChrome()
+    }
+
+    /// Keeps finished articles available as ordinary reader cards for now, but
+    /// groups them after every unopened/in-progress article. Each group retains
+    /// the carousel's newest/bumped-first ordering.
+    static func orderedReaderItems(_ candidates: [ReadingListItem]) -> [ReadingListItem] {
+        candidates
+            .filter { ReadingListSectioning.rendersAsReader($0) }
+            .sorted { lhs, rhs in
+                let lhsIsRead = lhs.readState == .read
+                let rhsIsRead = rhs.readState == .read
+                if lhsIsRead != rhsIsRead { return !lhsIsRead }
+                let lhsDate = lhs.bumpDate ?? lhs.dateAdded
+                let rhsDate = rhs.bumpDate ?? rhs.dateAdded
+                if lhsDate != rhsDate { return lhsDate > rhsDate }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
     }
 
     // MARK: - Opening / immersion

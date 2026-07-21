@@ -173,6 +173,43 @@ final class ReaderScreenTests: XCTestCase {
         XCTAssertTrue(delegate.didFinish, "Scrolling to the full article end should mark the article read")
     }
 
+    func testFinishedScrollReaderStartsAtTopInsteadOfPersistedEnd() {
+        var finished = item
+        finished.readState = .read
+        finished.lastScrollOffset = 50_000
+        finished.lastWordIndex = 400
+        let reader = ScrollReaderViewController(item: finished, content: longScrollArticleContent())
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        guard let textView = findTextView(in: reader.view) else {
+            XCTFail("Scroll reader should contain its text view")
+            return
+        }
+        XCTAssertLessThanOrEqual(
+            textView.contentOffset.y, -textView.adjustedContentInset.top + 1,
+            "A finished card should show the article opening, not its empty end tail")
+        XCTAssertEqual(textView.alpha, 1)
+    }
+
+    func testInProgressScrollReaderStillRestoresPersistedOffset() {
+        var inProgress = item
+        inProgress.readState = .opened
+        inProgress.lastScrollOffset = 600
+        let reader = ScrollReaderViewController(item: inProgress, content: longScrollArticleContent())
+        reader.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        reader.loadViewIfNeeded()
+        reader.view.layoutIfNeeded()
+
+        guard let textView = findTextView(in: reader.view) else {
+            XCTFail("Scroll reader should contain its text view")
+            return
+        }
+        XCTAssertEqual(textView.contentOffset.y, 600, accuracy: 1)
+        XCTAssertEqual(textView.alpha, 1)
+    }
+
     func testRSVPSkipToEndFinishesReading() {
         let delegate = RecordingReaderCompletionDelegate()
         let reader = RSVPViewController(item: item, content: shortArticleContent())

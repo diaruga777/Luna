@@ -129,21 +129,15 @@ final class ReadingListViewController: UITableViewController {
     /// Done / Select All / Delete.
     private let header = NavHeaderBar()
 
-    /// The scrolling large-title row ("Reading List" + catch-up button), sitting at the
-    /// top of the table's content so it scrolls away under the pinned bar just like a
-    /// system large title. Combined with the filter control into the table header view.
+    /// The scrolling large-title row ("Reading List"), sitting at the top of the
+    /// table's content so it scrolls away under the pinned bar just like a system
+    /// large title. Combined with the filter control into the table header view.
     private let largeTitleLabel = UILabel()
 
     /// Reader and Price Tracker deliberately start with content, rather than a generic
     /// "Reading List" title. Downloader and the combined dev list retain that header.
     private var showsLargeListHeader: Bool {
         surface != .reader && surface != .priceTracker
-    }
-
-    /// Reader dropped the large title but must keep the catch-up entry point: a slim
-    /// row between the pinned bar and the list, holding just the catch-up button.
-    private var showsCatchUpRow: Bool {
-        surface == .reader
     }
 
     /// Reader items and trackers are self-describing cells, so their active sections
@@ -164,11 +158,6 @@ final class ReadingListViewController: UITableViewController {
     private weak var mediaDownloadStatus: MediaDownloadStatusView?
     private let photoSaver = PhotoLibrarySaver()
     private var isPresentingSendFailureNotice = false
-
-    /// The "catch up" button, on the large-title row; its red dot badge shows when there
-    /// are unread items to catch up on.
-    private let catchUpButton = UIButton(type: .system)
-    private let catchUpBadge = UIView()
 
     /// Non-empty groups in display order; rebuilt on every `reload`.
     private var groups: [(section: Section, items: [ReadingListItem])] = []
@@ -203,7 +192,6 @@ final class ReadingListViewController: UITableViewController {
 
         // The pinned header bar (replaces the nav bar) + its default buttons.
         header.mount(in: self)
-        configureCatchUpButton()
         setDefaultHeaderControls()
 
         refreshControl = UIRefreshControl()
@@ -254,9 +242,7 @@ final class ReadingListViewController: UITableViewController {
         // The list draws its own in-content header (pinned bar + scrolling large title),
         // so keep the shared nav bar hidden on every appearance.
         navigationController?.setNavigationBarHidden(true, animated: false)
-        // The catch-up button's top inset must clear the pinned bar.
         updateHeaderInsets()
-        catchUpButton.isHidden = isEditing
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -334,7 +320,6 @@ final class ReadingListViewController: UITableViewController {
         // instead of each one re-reading the store itself.
         let items = store.items()
         updateFilterVisibility(items: items)
-        updateCatchUpButton(items: items)
         applyReloadedGroups(buildGroups(items: items))
         updateEmptyState()
         presentPendingSendFailureNoticeIfNeeded(items: items)
@@ -624,72 +609,17 @@ final class ReadingListViewController: UITableViewController {
         navigationController?.pushViewController(FriendsViewController(), animated: true)
     }
 
-    // MARK: - Catch up
-
-    /// Items worth catching up on: unread (incl. partially read), and renderable
-    /// (ready articles, or any platform/media item), oldest first by bump/save date.
-    private func catchUpQueue() -> [ReadingListItem] {
-        ReadingListSectioning.catchUpQueue(items: store.items())
-    }
-
-    private func configureCatchUpButton() {
-        catchUpButton.setImage(
-            UIImage(systemName: "rectangle.stack",
-                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)),
-            for: .normal)
-        // Same color as the other nav-bar buttons (white in dark, black in light);
-        // only the unread dot is red.
-        catchUpButton.tintColor = .label
-        catchUpButton.accessibilityLabel = "Catch up"
-        catchUpButton.addTarget(self, action: #selector(catchUpTapped), for: .touchUpInside)
-        catchUpButton.translatesAutoresizingMaskIntoConstraints = false
-
-        // A red "action needed" dot in the top-right corner of the icon.
-        catchUpBadge.backgroundColor = .systemRed
-        catchUpBadge.layer.cornerRadius = 4.5
-        catchUpBadge.isUserInteractionEnabled = false
-        catchUpBadge.isHidden = true
-        catchUpBadge.translatesAutoresizingMaskIntoConstraints = false
-        catchUpButton.addSubview(catchUpBadge)
-        NSLayoutConstraint.activate([
-            catchUpBadge.widthAnchor.constraint(equalToConstant: 9),
-            catchUpBadge.heightAnchor.constraint(equalToConstant: 9),
-            catchUpBadge.trailingAnchor.constraint(equalTo: catchUpButton.trailingAnchor, constant: 2),
-            catchUpBadge.topAnchor.constraint(equalTo: catchUpButton.topAnchor, constant: -2),
-        ])
-    }
-
-    /// Shows the red "action needed" dot once there are 10+ unread items, OR whenever
-    /// there's an unarchived LOCKED (paywalled, awaiting unlock) save — regardless of
-    /// count. Hides the whole button in edit mode.
-    private func updateCatchUpButton() {
-        updateCatchUpButton(items: store.items())
-    }
-
-    private func updateCatchUpButton(items: [ReadingListItem]) {
-        // Badge while there's catch-up worth doing, or until the email account is set up.
-        let needsEmailSetup = !EmailAccountStore.shared.isConfigured
-        catchUpBadge.isHidden = !(ReadingListSectioning.shouldShowCatchUpDot(items: items)
-            || needsEmailSetup)
-        catchUpButton.isHidden = isEditing || !(showsLargeListHeader || showsCatchUpRow)
-    }
-
     override func scrollViewDidScroll(_ scrollView: UIScrollView) {
         header.updateScrolledAppearance(
             contentOffsetY: scrollView.contentOffset.y,
             adjustedTopInset: scrollView.adjustedContentInset.top)
     }
 
-    @objc func catchUpTapped() {
-        let catchUp = CatchUpViewController(unread: catchUpQueue(), router: self)
-        present(catchUp, animated: true)
-    }
-
     // MARK: - Header controls
 
     /// The normal (non-editing) header: settings + friends (leading); add
-    /// (trailing) in the pinned bar. The large "Reading List" title + catch-up button
-    /// live on the scrolling title row of the table header (`makeTableHeader`).
+    /// (trailing) in the pinned bar. The large "Reading List" title lives on the
+    /// scrolling title row of the table header (`makeTableHeader`).
     private func setDefaultHeaderControls() {
         var leading = [
             NavHeaderBar.imageButton(
@@ -709,14 +639,12 @@ final class ReadingListViewController: UITableViewController {
     }
 
     /// Builds the scrolling table-header content: the large "Reading List" title row
-    /// (with the catch-up button on its trailing edge) — or, on Reader, a slim row
-    /// with just the catch-up button — and — when applicable — the
-    /// Articles / Media / Price filter row beneath it. Sized to fit and assigned as the
-    /// `tableHeaderView` so it scrolls away under the pinned bar like a system large
-    /// title. `showsFilter` includes the filter row.
+    /// — and, when applicable, the Articles / Media / Price filter row beneath it.
+    /// Sized to fit and assigned as the `tableHeaderView` so it scrolls away under
+    /// the pinned bar like a system large title. `showsFilter` includes the filter
+    /// row.
     private func rebuildTableHeader(showsFilter: Bool) {
-        guard showsLargeListHeader || showsCatchUpRow || showsFilter else {
-            catchUpButton.removeFromSuperview()
+        guard showsLargeListHeader || showsFilter else {
             tableHeaderContainer = nil
             tableView.tableHeaderView = nil
             return
@@ -730,7 +658,6 @@ final class ReadingListViewController: UITableViewController {
 
         var bottomAnchor = container.topAnchor
         if showsLargeListHeader {
-            // Large-title row: "Reading List" leading, catch-up button trailing.
             let titleRow = UIView()
             titleRow.translatesAutoresizingMaskIntoConstraints = false
             largeTitleLabel.text = "Reading List"
@@ -739,8 +666,6 @@ final class ReadingListViewController: UITableViewController {
             largeTitleLabel.adjustsFontForContentSizeCategory = true
             largeTitleLabel.translatesAutoresizingMaskIntoConstraints = false
             titleRow.addSubview(largeTitleLabel)
-            if catchUpButton.superview != nil { catchUpButton.removeFromSuperview() }
-            titleRow.addSubview(catchUpButton)
             container.addSubview(titleRow)
 
             NSLayoutConstraint.activate([
@@ -750,32 +675,8 @@ final class ReadingListViewController: UITableViewController {
                 titleRow.heightAnchor.constraint(equalToConstant: 52),
                 largeTitleLabel.leadingAnchor.constraint(equalTo: titleRow.leadingAnchor, constant: 20),
                 largeTitleLabel.bottomAnchor.constraint(equalTo: titleRow.bottomAnchor, constant: -6),
-                catchUpButton.trailingAnchor.constraint(equalTo: titleRow.trailingAnchor, constant: -16),
-                catchUpButton.centerYAnchor.constraint(equalTo: largeTitleLabel.centerYAnchor),
-                catchUpButton.widthAnchor.constraint(equalToConstant: 34),
-                catchUpButton.heightAnchor.constraint(equalToConstant: 34),
             ])
             bottomAnchor = titleRow.bottomAnchor
-        } else if showsCatchUpRow {
-            // No large title: just the catch-up button on the trailing edge, giving
-            // the list some breathing room below the pinned bar.
-            let catchUpRow = UIView()
-            catchUpRow.translatesAutoresizingMaskIntoConstraints = false
-            if catchUpButton.superview != nil { catchUpButton.removeFromSuperview() }
-            catchUpRow.addSubview(catchUpButton)
-            container.addSubview(catchUpRow)
-
-            NSLayoutConstraint.activate([
-                catchUpRow.topAnchor.constraint(equalTo: container.topAnchor),
-                catchUpRow.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                catchUpRow.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                catchUpRow.heightAnchor.constraint(equalToConstant: 44),
-                catchUpButton.trailingAnchor.constraint(equalTo: catchUpRow.trailingAnchor, constant: -16),
-                catchUpButton.centerYAnchor.constraint(equalTo: catchUpRow.centerYAnchor),
-                catchUpButton.widthAnchor.constraint(equalToConstant: 34),
-                catchUpButton.heightAnchor.constraint(equalToConstant: 34),
-            ])
-            bottomAnchor = catchUpRow.bottomAnchor
         }
         if showsFilter, let filterRow = filterHeaderView {
             filterRow.translatesAutoresizingMaskIntoConstraints = false
@@ -825,7 +726,6 @@ final class ReadingListViewController: UITableViewController {
         } else {
             setDefaultHeaderControls()
         }
-        updateCatchUpButton()
     }
 
     @objc private func selectAllTapped() {
@@ -932,12 +832,11 @@ final class ReadingListViewController: UITableViewController {
             }
         } completion: { [weak self] _ in
             self?.isAnimatingRowChange = false
-            // A delete can change whether the Articles / Media & Links filter applies,
-            // and whether the catch-up badge should still show (both notification-driven
-            // updates that a swallowed `.readingListChanged` — suppressed above while
-            // isAnimatingRowChange was true — would otherwise have applied).
+            // A delete can change whether the Articles / Media & Links filter applies
+            // (a notification-driven update that a swallowed `.readingListChanged` —
+            // suppressed above while isAnimatingRowChange was true — would otherwise
+            // have applied).
             self?.updateFilterVisibility()
-            self?.updateCatchUpButton()
         }
     }
 
@@ -1262,9 +1161,8 @@ final class ReadingListViewController: UITableViewController {
     }
 
     /// Opens a non-article item (video / platform post) the way
-    /// tapping its row does, presenting any in-app viewer from `presenter` (the
-    /// reading list, or the catch-up screen). Returns false for reader articles, so
-    /// the caller can render those itself.
+    /// tapping its row does, presenting any in-app viewer from `presenter`. Returns
+    /// false for reader articles, so the caller can render those itself.
     @discardableResult
     func openItem(_ item: ReadingListItem, presentingFrom presenter: UIViewController) -> Bool {
         if let platform = item.contentPlatform {

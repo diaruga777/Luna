@@ -3,13 +3,12 @@
 //  Luna
 //
 
+import LunaURLClassification
 import Foundation
 
 /// Recognizes Bluesky post links and converts between web URLs and AT-protocol
 /// post references. Pure (no network).
 public enum BlueskyLink {
-    private static let hosts: Set<String> = ["bsky.app", "www.bsky.app"]
-
     public struct Post: Equatable {
         /// Handle or DID from the profile path segment.
         public let author: String
@@ -25,7 +24,7 @@ public enum BlueskyLink {
     /// Parses `bsky.app/profile/<handle|did>/post/<rkey>`.
     public static func post(from urlString: String) -> Post? {
         guard let url = URL(string: urlString), let host = url.host?.lowercased(),
-              hosts.contains(host) else { return nil }
+              HostMatching.hostSuffixMatches(host, "bsky.app") else { return nil }
         let parts = url.pathComponents.dropFirst() // drop leading "/"
         let segments = Array(parts)
         guard segments.count >= 4, segments[0] == "profile", segments[2] == "post" else { return nil }

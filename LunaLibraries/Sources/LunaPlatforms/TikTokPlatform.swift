@@ -4,15 +4,17 @@
 //
 
 import LunaModels
+import LunaURLClassification
 import Foundation
 
 /// Recognizes TikTok links: `tiktok.com/@<user>/video/<id>` and short
 /// `vm.tiktok.com/<code>` / `vt.tiktok.com/<code>` (kept opaque — id unknown
 /// until resolved). Pure.
 public enum TikTokLink {
+    /// Delegates to `PlatformRecognizer` so there's one TikTok host table, not two
+    /// that happen to agree today.
     public static func isTikTok(_ urlString: String) -> Bool {
-        guard let host = URL(string: urlString)?.host?.lowercased() else { return false }
-        return host == "tiktok.com" || host.hasSuffix(".tiktok.com")
+        PlatformRecognizer.recognize(urlString)?.platform == .tiktok
     }
 
     /// The numeric video id from a full `/@user/video/<id>` URL, if present.

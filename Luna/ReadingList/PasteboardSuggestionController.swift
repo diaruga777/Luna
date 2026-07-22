@@ -29,6 +29,7 @@ protocol PasteboardSuggestionControllerDelegate: AnyObject {
     func pasteboardSuggestion(_ controller: PasteboardSuggestionController, openSaved item: ReadingListItem)
 }
 
+@MainActor
 final class PasteboardSuggestionController: NSObject {
 
     weak var delegate: PasteboardSuggestionControllerDelegate?
@@ -86,17 +87,15 @@ final class PasteboardSuggestionController: NSObject {
         delegate?.pasteboardSuggestionDidChange(self)
         Task { [weak self] in
             let candidate = await PasteboardSuggester.shared.evaluate(urlString: urlString)
-            await MainActor.run {
-                guard let self, self.evaluatingPasteboardURL == urlString else { return }
-                self.evaluatingPasteboardURL = nil
-                // Only suggest what THIS app's surface can show: saving an
-                // article from the Price Tracker app would store it fine but
-                // make it vanish from this list — a save that looks discarded.
-                self.pasteboardCandidate = candidate.flatMap {
-                    self.surfaceAllows($0) ? $0 : nil
-                }
-                self.delegate?.pasteboardSuggestionDidChange(self)
+            guard let self, self.evaluatingPasteboardURL == urlString else { return }
+            self.evaluatingPasteboardURL = nil
+            // Only suggest what THIS app's surface can show: saving an
+            // article from the Price Tracker app would store it fine but
+            // make it vanish from this list — a save that looks discarded.
+            self.pasteboardCandidate = candidate.flatMap {
+                self.surfaceAllows($0) ? $0 : nil
             }
+            self.delegate?.pasteboardSuggestionDidChange(self)
         }
     }
 
@@ -154,26 +153,24 @@ final class PasteboardSuggestionController: NSObject {
             Task { [weak self] in
                 let result = await ReadingListIngestor.shared.handleSavePress(
                     urlString: candidate.urlString, source: .paste)
-                await MainActor.run {
-                    guard let self else { return }
-                    let resultItem: ReadingListItem?
-                    switch result {
-                    case .saved(let saved), .savedNeedsOwnerInstall(let saved, _),
-                         .sentToEreaders(let saved),
-                         .sentToFriends(let saved), .friendPromptRequested(let saved):
-                        resultItem = saved
-                    case .ignored: resultItem = nil
-                    case .blockedByInterop:
-                        // Unpaid cross-surface paste — discarded; the ingest
-                        // gate has already shown the interop prompt.
-                        return
-                    }
-                    let item = resultItem
-                        .flatMap { ReadingListStore.shared.item(withID: $0.id) }
-                        ?? ReadingListStore.shared.item(forURLString: candidate.urlString)
-                    guard let item else { return }
-                    self.delegate?.pasteboardSuggestion(self, openSaved: item)
+                guard let self else { return }
+                let resultItem: ReadingListItem?
+                switch result {
+                case .saved(let saved), .savedNeedsOwnerInstall(let saved, _),
+                     .sentToEreaders(let saved),
+                     .sentToFriends(let saved), .friendPromptRequested(let saved):
+                    resultItem = saved
+                case .ignored: resultItem = nil
+                case .blockedByInterop:
+                    // Unpaid cross-surface paste — discarded; the ingest
+                    // gate has already shown the interop prompt.
+                    return
                 }
+                let item = resultItem
+                    .flatMap { ReadingListStore.shared.item(withID: $0.id) }
+                    ?? ReadingListStore.shared.item(forURLString: candidate.urlString)
+                guard let item else { return }
+                self.delegate?.pasteboardSuggestion(self, openSaved: item)
             }
         } else if candidate.content != nil {
             delegate?.pasteboardSuggestion(self, openTransient: transient, for: candidate)

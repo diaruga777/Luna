@@ -34,4 +34,14 @@ final class ArchiveTrayControllerTests: XCTestCase {
         XCTAssertFalse(tray.isPullAvailableForTesting)
         XCTAssertEqual(tray.trayFrameForTesting.minX, 420, accuracy: 0.5)
     }
+
+    @MainActor
+    func testLongPressCancelsTheCellTapItReplaces() {
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        let tray = ArchiveTrayController(
+            host: host, shiftedViews: { [] }, canPull: { true })
+
+        XCTAssertTrue(tray.unarchivePressCancelsTouchesForTesting)
+    }
 }

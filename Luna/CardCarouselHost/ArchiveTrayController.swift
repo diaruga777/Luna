@@ -33,6 +33,7 @@ final class ArchiveTrayController: NSObject {
     private let collection: UICollectionView
     private let emptyLabel = UILabel()
     private var pan: UIPanGestureRecognizer!
+    private var unarchivePress: UILongPressGestureRecognizer!
     private var items: [ArchiveTrayItem] = []
     private var progress: CGFloat = 0
     private var panStartProgress: CGFloat = 0
@@ -94,9 +95,8 @@ final class ArchiveTrayController: NSObject {
         collection.delegate = self
         collection.register(ArchiveTrayCell.self, forCellWithReuseIdentifier: ArchiveTrayCell.reuseID)
         tray.addSubview(collection)
-        let unarchivePress = UILongPressGestureRecognizer(
+        unarchivePress = UILongPressGestureRecognizer(
             target: self, action: #selector(handleUnarchivePress(_:)))
-        unarchivePress.cancelsTouchesInView = false
         collection.addGestureRecognizer(unarchivePress)
 
         emptyLabel.text = "No archived items"
@@ -220,6 +220,7 @@ final class ArchiveTrayController: NSObject {
     #if DEBUG
     var isPullAvailableForTesting: Bool { pullAvailable }
     var trayFrameForTesting: CGRect { tray.frame }
+    var unarchivePressCancelsTouchesForTesting: Bool { unarchivePress.cancelsTouchesInView }
     #endif
 }
 
@@ -266,9 +267,11 @@ private final class ArchiveTrayCell: UICollectionViewCell {
     private var imageCompactConstraint: NSLayoutConstraint!
     private var imageFillConstraint: NSLayoutConstraint!
     private var representedID: UUID?
+    private var unarchive: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        isAccessibilityElement = true
         contentView.backgroundColor = LunaColors.secondaryBackground
         contentView.layer.cornerRadius = 16
         contentView.layer.cornerCurve = .continuous
@@ -310,12 +313,15 @@ private final class ArchiveTrayCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         representedID = nil
+        unarchive = nil
+        accessibilityCustomActions = nil
         imageView.image = nil
         super.prepareForReuse()
     }
 
     func configure(with item: ArchiveTrayItem) {
         representedID = item.id
+        unarchive = item.unarchive
         titleLabel.text = item.title
         footerLabel.text = item.footer
         imageCompactConstraint.isActive = item.showsMetadata
@@ -326,11 +332,20 @@ private final class ArchiveTrayCell: UICollectionViewCell {
         contentView.alpha = item.isAvailable ? 1 : 0.64
         accessibilityLabel = [item.title, item.footer].compactMap { $0 }.joined(separator: ", ")
         accessibilityHint = item.isAvailable ? "Opens item" : "Downloads item"
+        accessibilityCustomActions = [UIAccessibilityCustomAction(
+            name: "Unarchive", target: self,
+            selector: #selector(performAccessibilityUnarchive))]
         item.loadImage { [weak self] image in
             DispatchQueue.main.async {
                 guard self?.representedID == item.id else { return }
                 self?.imageView.image = image
             }
         }
+    }
+
+    @objc private func performAccessibilityUnarchive() -> Bool {
+        guard let unarchive else { return false }
+        unarchive()
+        return true
     }
 }

@@ -115,7 +115,8 @@ public enum ReadingListSectioning {
                 priceTracking.append(item)
             } else if item.state == .failed {
                 failed.append(item)
-            } else if (item.readState == .read && item.pendingArchiveAt == nil)
+            } else if item.isArchived
+                        || (item.readState == .read && item.pendingArchiveAt == nil)
                         || now.timeIntervalSince(item.dateAdded) > archiveAge {
                 archive.append(item)
             } else {

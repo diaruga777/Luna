@@ -92,6 +92,14 @@ final class ReadingListSectioningTests: XCTestCase {
         XCTAssertTrue(buckets.archive.isEmpty)
     }
 
+    func testExplicitlyArchivedUnreadArticleGoesToArchiveImmediately() {
+        var archived = article(addedDaysAgo: 0, readState: .unopened)
+        archived.archivedAt = now
+        let buckets = ReadingListSectioning.assignSections(items: [archived], now: now)
+        XCTAssertEqual(buckets.archive.map(\.id), [archived.id])
+        XCTAssertTrue(buckets.reading.isEmpty)
+    }
+
     func testUnreadButAgedOutGoesToArchive() {
         let buckets = ReadingListSectioning.assignSections(
             items: [article(addedDaysAgo: 8)], now: now)

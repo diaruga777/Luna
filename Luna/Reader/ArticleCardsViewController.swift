@@ -17,9 +17,7 @@
 //    out; scrolling up — from anywhere in the article — fades them back in.
 //    In RSVP, playing fades them out and pausing fades them back. The
 //    reader's own header never moves or changes.
-//  - Long-pressing the centered card runs the link-preview RSVP experience
-//    (glass card, drag gestures, haptics) for the card's article, without
-//    going fullscreen.
+//  - Long-pressing a card exposes its archive action through a context menu.
 //  - Horizontal swipes INSIDE the card page to the neighbor (readers have no
 //    timeline to scrub); the scrub strip shows mini-card chips, each badged
 //    with the article's source (favicon / sender initials / symbol fallback).
@@ -632,7 +630,7 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                     }
                 },
                 tap: { [weak self] in self?.openExternally(item) },
-                unarchive: { [weak self] in self?.store.setArchived(false, for: item.id) })
+                unarchive: { [weak self] in self?.store.markUnread(item.id) })
         }
     }
 

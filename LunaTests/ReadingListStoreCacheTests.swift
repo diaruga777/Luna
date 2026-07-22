@@ -164,4 +164,23 @@ final class ReadingListStoreCacheTests: XCTestCase {
         XCTAssertNil(committed?.pendingArchiveAt)
         XCTAssertEqual(committed?.archivedAt, finishedAt)
     }
+
+    func testMarkUnreadClearsCommittedAndPendingArchiveState() {
+        let item = addAndWaitForNotification("https://example.com/unarchive")
+        let finished = expectation(forNotification: .readingListChanged, object: nil)
+        store.markFinishedReading(item.id, at: Date(timeIntervalSince1970: 456))
+        wait(for: [finished], timeout: 2)
+        let archived = expectation(forNotification: .readingListChanged, object: nil)
+        store.archivePendingFinishedItems()
+        wait(for: [archived], timeout: 2)
+
+        let unarchived = expectation(forNotification: .readingListChanged, object: nil)
+        store.markUnread(item.id)
+        wait(for: [unarchived], timeout: 2)
+
+        let restored = store.item(withID: item.id)
+        XCTAssertEqual(restored?.readState, .unopened)
+        XCTAssertNil(restored?.archivedAt)
+        XCTAssertNil(restored?.pendingArchiveAt)
+    }
 }

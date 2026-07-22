@@ -243,9 +243,9 @@ public final class ReadingListIngestor {
             _ = store.saveContent(resolvedContent, for: item)
         }
 
-        // Capture the original page after media enrichment. Prefer a live URL
-        // navigation (WebKit fetches every subresource, so Original renders like the
-        // real page); fall back to the fetched HTML only if that fails.
+        // Capture the unlocked HTML returned by the resolver. A fresh live navigation
+        // can return the publisher's paywall even though this exact response produced
+        // the complete native reader; live capture is only the fallback.
         await captureWebArchiveIfPossible(for: item, url: url, html: html)
     }
 
@@ -520,12 +520,16 @@ public final class ReadingListIngestor {
         }
     }
 
-    /// Captures and stores a `.webarchive` for a web page, preferring the live URL.
+    /// Captures and stores a cleaned `.webarchive`, preferring the resolver's exact
+    /// unlocked HTML over a fresh live navigation that may reintroduce a paywall.
     fileprivate func captureWebArchiveIfPossible(for item: ReadingListItem, url: URL, html: String?) async {
         guard url.scheme?.hasPrefix("http") ?? false else { return }   // never for lunamail://, lunadoc://
-        var archive = await WebArchiveCapturer.capture(url: url)
-        if archive == nil, let html, !html.isEmpty {
+        var archive: Data?
+        if let html, !html.isEmpty {
             archive = await WebArchiveCapturer.capture(html: html, baseURL: url)
+        }
+        if archive == nil {
+            archive = await WebArchiveCapturer.capture(url: url)
         }
         if let archive { store.saveWebArchive(archive, for: item) }
     }

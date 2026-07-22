@@ -81,10 +81,17 @@ public enum WebJunkBlocker {
     public static func makeConfiguration() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         configuration.processPool = sharedProcessPool
+        addCleanupScript(to: configuration.userContentController)
+        return configuration
+    }
+
+    /// Installs the synchronous DOM-cleanup half on an existing configuration.
+    /// Saved-archive capture/replay combines this with its paywall-specific scripts
+    /// before the first navigation.
+    public static func addCleanupScript(to controller: WKUserContentController) {
         let script = WKUserScript(
             source: cleanupJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        configuration.userContentController.addUserScript(script)
-        return configuration
+        controller.addUserScript(script)
     }
 
     /// Compiles (or fetches the cached) rule list and attaches it. Async — the
@@ -108,6 +115,32 @@ public enum WebJunkBlocker {
                     // all junk blocking.
                     Logger(subsystem: "luna", category: "webjunk")
                         .error("content rule compile failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// Async form used when a caller must attach the blocker before navigation.
+    public static func compiledRuleList() async -> WKContentRuleList? {
+        await withCheckedContinuation { continuation in
+            guard let store = WKContentRuleListStore.default() else {
+                continuation.resume(returning: nil)
+                return
+            }
+            store.lookUpContentRuleList(forIdentifier: ruleListIdentifier) { cached, _ in
+                if let cached {
+                    continuation.resume(returning: cached)
+                    return
+                }
+                store.compileContentRuleList(
+                    forIdentifier: ruleListIdentifier,
+                    encodedContentRuleList: rulesJSON
+                ) { compiled, error in
+                    if let error {
+                        Logger(subsystem: "luna", category: "webjunk")
+                            .error("content rule compile failed: \(error.localizedDescription)")
+                    }
+                    continuation.resume(returning: compiled)
                 }
             }
         }

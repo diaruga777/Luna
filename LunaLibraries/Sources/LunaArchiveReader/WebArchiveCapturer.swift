@@ -18,7 +18,7 @@ public final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
     private let html: String?
     private let url: URL?
     private let baseURL: URL
-    private let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1024, height: 1024))
+    private let webView: WKWebView
     private var continuation: CheckedContinuation<Data?, Never>?
     private var timeoutTask: Task<Void, Never>?
     private var captured = false
@@ -27,6 +27,9 @@ public final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
         self.html = html
         self.url = url
         self.baseURL = baseURL
+        self.webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 1024, height: 1024),
+            configuration: SavedArchiveWebConfiguration.make(for: baseURL))
         super.init()
         webView.navigationDelegate = self
     }
@@ -42,7 +45,8 @@ public final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
     }
 
     private func run() async -> Data? {
-        await withCheckedContinuation { continuation in
+        await SavedArchiveWebConfiguration.prepare(webView.configuration, for: baseURL)
+        return await withCheckedContinuation { continuation in
             self.continuation = continuation
             timeoutTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(20))

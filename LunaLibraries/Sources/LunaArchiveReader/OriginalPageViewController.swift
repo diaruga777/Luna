@@ -21,6 +21,9 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
     /// The archive's OWN scroll position to restore once its content finishes loading,
     /// kept fully disjoint from the scroll/RSVP reading position. Consumed once per load.
     private var pendingRestoreOffset: Double?
+    /// Invalidates an asynchronous blocker preparation when this reusable reader is
+    /// configured for a different item before the preparation finishes.
+    private var loadGeneration = 0
     /// When true this reader restores from / persists to `item.lastOriginalScrollOffset`
     /// itself (the plain reader path). RabbitHole leaves this false and drives the
     /// offset through its per-layer descriptor instead.
@@ -32,14 +35,8 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
         self.store = store
         self.persistsScrollOffset = persistsScrollOffset
         self.pendingRestoreOffset = savedScrollOffset ?? (persistsScrollOffset ? item.lastOriginalScrollOffset : nil)
-        let configuration = WKWebViewConfiguration()
-        // A web archive is the captured page, not merely static HTML. Publishers such
-        // as The New Yorker install their CSS and finish layout from deferred script
-        // bundles; disabling JavaScript leaves the archived DOM present but unstyled
-        // (often with large empty lazy-layout regions). The archive already contains
-        // the scripts captured from the page, so replay it with normal WebKit page
-        // semantics just as it rendered at capture time.
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        let configuration = SavedArchiveWebConfiguration.make(
+            for: item.url ?? URL(string: "about:blank")!)
         self.webView = WKWebView(frame: .zero, configuration: configuration)
         super.init(nibName: nil, bundle: nil)
     }
@@ -135,12 +132,33 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
     private func loadOriginal() {
         guard let item else { return }
         let savedItem = store.item(withID: item.id) ?? item
+        let sourceURL = savedItem.url ?? URL(string: "about:blank")!
+        loadGeneration += 1
+        let generation = loadGeneration
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // This controller is reusable. Replace the URL-specific document-end
+            // cleanup script before preparing the new host's content blockers.
+            let controller = webView.configuration.userContentController
+            controller.removeAllUserScripts()
+            WebJunkBlocker.addCleanupScript(to: controller)
+            controller.addUserScript(PaywallUnlockRules.cleanupUserScript())
+            if let siteScript = SiteCleanupScripts.userScript(for: sourceURL) {
+                controller.addUserScript(siteScript)
+            }
+            await SavedArchiveWebConfiguration.prepare(webView.configuration, for: sourceURL)
+            guard generation == loadGeneration else { return }
+            performLoad(savedItem: savedItem, sourceURL: sourceURL)
+        }
+    }
+
+    private func performLoad(savedItem: ReadingListItem, sourceURL: URL) {
         if let archiveURL = store.webArchiveURL(for: savedItem),
            let data = try? Data(contentsOf: archiveURL) {
             // `createWebArchiveData` documents this MIME type as loadable directly
             // in WKWebView. The base URL is only used for the archive's own origin.
             webView.load(data, mimeType: "application/x-webarchive", characterEncodingName: "utf-8",
-                         baseURL: savedItem.url ?? archiveURL)
+                         baseURL: sourceURL)
         } else if let documentURL = store.originalDocumentURL(for: savedItem) {
             webView.loadFileURL(documentURL, allowingReadAccessTo: store.articlesDirectory)
         } else if savedItem.isShareable, let liveURL = savedItem.url {

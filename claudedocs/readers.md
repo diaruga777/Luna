@@ -53,7 +53,13 @@ without making the reader reverse a large part of the page.
 Original mode applies the same stable top content inset directly to its WKWebView.
 Saved web archives replay with content JavaScript enabled because some publishers
 install captured CSS and complete page layout from deferred scripts; disabling it can
-leave the archived DOM visible but unstyled with large empty lazy-layout regions.
+leave the archived DOM visible but unstyled with large empty lazy-layout regions. Both
+capture and replay use Luna's generic junk blocker, generic paywall cleanup, bundled
+per-site cleanup, and per-host metering-script rules. Ingestion captures the resolver's
+unlocked HTML first and only navigates to the live publisher URL as a fallback, so the
+saved artifact does not replace a readable response with a fresh paywall. Extension
+saves attempt the same capture while alive; the main-app backfill uses the cleaned live
+capture path when the extension expires first.
 A layer restored with `.original` compares the actually mounted child (rather than
 mistaking the restored mode value for an already-mounted reader), so a cold launch
 loads the saved web archive immediately without requiring a mode round trip.

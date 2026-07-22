@@ -218,6 +218,14 @@ public enum PaywallUnlockRules {
         }
     }
 
+    /// Async form for web views that must install the per-host blocker before their
+    /// first request (notably saved-archive capture and replay).
+    public static func compiledRuleList(for url: URL) async -> WKContentRuleList? {
+        await withCheckedContinuation { continuation in
+            compiledRuleList(for: url) { continuation.resume(returning: $0) }
+        }
+    }
+
     // MARK: - DOM cleanup userscript
 
     /// Injected at documentStart; re-runs on an interval (covering the reader's poll

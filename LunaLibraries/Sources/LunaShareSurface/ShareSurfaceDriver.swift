@@ -232,6 +232,18 @@ public final class ShareSurfaceDriver {
         // does; a no-op if a script is already cached.
         ExtensionAudioScriptWriter.writeHeuristicScriptIfNeeded(
             item: savedWithContent, content: content, articlesDirectory: store.articlesDirectory)
+        // Best-effort while the extension remains alive: archive the SAME unlocked
+        // HTML that produced the native reader, with the shared ad/paywall cleanup.
+        // If the process ends first, the main app's cleaned live backfill repairs it.
+        if !html.isEmpty {
+            let archiveStore = store
+            let itemID = saved.id
+            Task {
+                guard let archive = await WebArchiveCapturer.capture(html: html, baseURL: url),
+                      let current = archiveStore.item(withID: itemID) else { return }
+                archiveStore.saveWebArchive(archive, for: current)
+            }
+        }
         // Give the row the SAME cover thumbnail an in-app save produces. Best-effort
         // from the page HTML the pipeline already fetched (Safari's text-only action
         // snapshot has no og:image, so it simply yields no cover here). The extension

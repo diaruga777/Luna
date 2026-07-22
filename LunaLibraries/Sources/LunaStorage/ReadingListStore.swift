@@ -592,10 +592,11 @@ public final class ReadingListStore {
         for id in archivedIDs { preloads.releaseTree(rootID: id) }
     }
 
-    /// Forces an item back to unread and clears every archive marker (the
-    /// Archive-section "Unarchive" action) — a deliberate downgrade that
-    /// `markReadState`'s forward-only guard disallows.
-    public func markUnread(_ itemID: UUID) {
+    /// Forces an item back to unread, clears every archive marker, and bumps it
+    /// to the front of the active carousel (the Archive-tray "Unarchive"
+    /// action). This is a deliberate downgrade that `markReadState`'s
+    /// forward-only guard disallows.
+    public func markUnread(_ itemID: UUID, at date: Date = Date()) {
         coordinatedUpdate { all in
             guard let index = all.firstIndex(where: { $0.id == itemID }),
                   all[index].readState != .unopened
@@ -605,6 +606,7 @@ public final class ReadingListStore {
             all[index].readState = .unopened
             all[index].archivedAt = nil
             all[index].pendingArchiveAt = nil
+            all[index].bumpDate = date
             return true
         }
     }

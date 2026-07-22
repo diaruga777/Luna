@@ -46,9 +46,12 @@ own adapters later). The Downloader-specific adapters live in
   spring-dismisses it. `ArchiveTrayController` owns this shared presentation and
   a vertically scrolling single-column list of wide rectangular items. Its opaque
   neutral background follows light/dark appearance and covers card chrome beneath
-  it while open. Long-pressing a tray item offers Unarchive and Share; Downloader
-  also offers a destructive Delete that removes the complete save through its
-  normal cleanup path. The carousel reports its intended
+  it while open. Long-pressing a tray item offers Unarchive and Share; both Reader
+  and Downloader also offer a destructive Delete that removes the complete save
+  through the surface's normal cleanup path. Reader unarchive writes immediately,
+  bumps the article to the first active position, and animates a snapshot from its
+  tray cell into the centered first-card frame while the tray spring-dismisses.
+  The carousel reports its intended
   navigation target before card motion begins: scrubbing, tapping a scrubber chip,
   or swiping away from the rightmost card retracts the tray concurrently instead
   of waiting for the card swap. Paging toward the rightmost card reveals the tab
@@ -289,10 +292,12 @@ Differences from the Downloader, via `CardCarouselStyle`:
   the persistent Settings/Share buttons so content never bleeds into their
   footer safe area. In **RSVP**, playing fades it away and pausing
   brings it back (`RSVPViewController.onPlaybackStateChanged`).
-- **Long-press** on the centered card opens its Archive context menu. Archived
+- **Long-press** on the centered Reader card offers Archive and destructive Delete.
+  Archive persists immediately, then the old card drifts slightly upward while
+  fading out before its next neighbor springs into the centered position. Archived
   article squares show favicon, title, and original save date; tapping opens the
-  fully retained reader content; long-pressing opens a context menu with Unarchive
-  and Share.
+  fully retained reader content; long-pressing offers Unarchive, Share, and
+  destructive Delete. Both Delete actions remove the full save and owned files.
 - The cards root has NO header bar.
 - A new pasteboard URL is represented as a synthetic leading card (so it is
   visible as the left peek) and as a `doc.on.clipboard` mini-card in the scrubber.

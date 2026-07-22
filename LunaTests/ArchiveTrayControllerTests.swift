@@ -44,12 +44,31 @@ final class ArchiveTrayControllerTests: XCTestCase {
         tray.setItems([ArchiveTrayItem(
             id: UUID(), title: "Archived item", footer: nil, showsMetadata: true,
             isAvailable: true, loadImage: { $0(nil) }, tap: {}, share: { _ in },
-            unarchive: {}, delete: nil)])
+            unarchive: { _ in }, delete: nil)])
 
         let titles = tray.contextMenuForTesting(itemAt: 0).children.compactMap {
             ($0 as? UIAction)?.title
         }
         XCTAssertEqual(titles, ["Unarchive", "Share"])
+    }
+
+    @MainActor
+    func testUnarchiveActionReceivesItsSourceView() throws {
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        var receivedSource: UIView?
+        let tray = ArchiveTrayController(
+            host: host, shiftedViews: { [] }, canPull: { true })
+        tray.setItems([ArchiveTrayItem(
+            id: UUID(), title: "Archived item", footer: nil, showsMetadata: true,
+            isAvailable: true, loadImage: { $0(nil) }, tap: {}, share: { _ in },
+            unarchive: { receivedSource = $0 }, delete: nil)])
+
+        let action = try XCTUnwrap(
+            tray.contextMenuForTesting(itemAt: 0).children.first as? UIAction)
+        action.performWithSender(nil, target: nil)
+
+        XCTAssertNotNil(receivedSource)
     }
 
     @MainActor
@@ -62,7 +81,7 @@ final class ArchiveTrayControllerTests: XCTestCase {
         tray.setItems([ArchiveTrayItem(
             id: UUID(), title: nil, footer: nil, showsMetadata: false,
             isAvailable: false, loadImage: { $0(nil) }, tap: {}, share: { _ in },
-            unarchive: {}, delete: { didDelete = true })])
+            unarchive: { _ in }, delete: { didDelete = true })])
 
         let menu = tray.contextMenuForTesting(itemAt: 0)
         let actions = menu.children.compactMap { $0 as? UIAction }

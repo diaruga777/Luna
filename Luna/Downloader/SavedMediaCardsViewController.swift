@@ -265,7 +265,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 share: { [weak self] sourceView in
                     self?.share(item, sourceView: sourceView)
                 },
-                unarchive: { [weak self] in self?.store.setArchived(false, for: item.id) },
+                unarchive: { [weak self] _ in
+                    self?.store.setArchived(false, for: item.id)
+                },
                 delete: { [weak self] in self?.deleteSavedItem(for: item) })
         }
     }

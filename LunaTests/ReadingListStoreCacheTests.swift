@@ -175,12 +175,14 @@ final class ReadingListStoreCacheTests: XCTestCase {
         wait(for: [archived], timeout: 2)
 
         let unarchived = expectation(forNotification: .readingListChanged, object: nil)
-        store.markUnread(item.id)
+        let unarchivedAt = Date(timeIntervalSince1970: 789)
+        store.markUnread(item.id, at: unarchivedAt)
         wait(for: [unarchived], timeout: 2)
 
         let restored = store.item(withID: item.id)
         XCTAssertEqual(restored?.readState, .unopened)
         XCTAssertNil(restored?.archivedAt)
         XCTAssertNil(restored?.pendingArchiveAt)
+        XCTAssertEqual(restored?.bumpDate, unarchivedAt)
     }
 }

@@ -95,6 +95,13 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
     private var pasteboardEvaluationTask: Task<Void, Never>?
     private var isCommittingPasteboardCandidate = false
     private var pendingPasteboardSavedID: UUID?
+    /// One-shot centering override used by archive choreography. Store writes
+    /// happen before the visual transition, then the synchronous reload places
+    /// the intended successor/restored item under the animation snapshot.
+    private var pendingTransitionCenteredID: UUID?
+    /// An unarchive reload must not let normal pull-availability reconciliation
+    /// snap the still-open tray shut before its coordinated dismissal begins.
+    private var isAnimatingFromArchiveTray = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -581,15 +588,26 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         let pendingIndex = pendingPasteboardSavedID.flatMap { id in
             items.firstIndex { $0.id == id }
         }
-        let centeredIndex = wasPasteboardCentered && renderedPasteboardState != nil ? 0 : centeredID.flatMap { id in
+        let transitionIndex = pendingTransitionCenteredID.flatMap { id in
             items.firstIndex { $0.id == id }.map { $0 + newOffset }
-        } ?? pendingIndex.map { $0 + newOffset } ?? (items.isEmpty ? 0 : newOffset)
+        }
+        let preservedIndex = wasPasteboardCentered && renderedPasteboardState != nil
+            ? 0
+            : centeredID.flatMap { id in
+            items.firstIndex { $0.id == id }.map { $0 + newOffset }
+        }
+        let centeredIndex = transitionIndex ?? preservedIndex
+            ?? pendingIndex.map { $0 + newOffset }
+            ?? (items.isEmpty ? 0 : newOffset)
+        pendingTransitionCenteredID = nil
         if pendingIndex != nil { pendingPasteboardSavedID = nil }
         carousel.reloadData(centeringAt: centeredIndex)
         emptyView.isHidden = !items.isEmpty || renderedPasteboardState != nil
         carousel.view.isHidden = items.isEmpty && renderedPasteboardState == nil
         archiveTray?.setItems(makeArchiveTrayItems())
-        refreshArchivePullAvailability(animated: false)
+        if !isAnimatingFromArchiveTray {
+            refreshArchivePullAvailability(animated: false)
+        }
         updateReaderChrome()
     }
 
@@ -642,10 +660,200 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                         from: self,
                         sourceView: sourceView)
                 },
-                unarchive: { [weak self] in self?.store.markUnread(item.id) },
-                delete: nil)
+                unarchive: { [weak self] sourceView in
+                    self?.unarchive(item, from: sourceView)
+                },
+                delete: { [weak self] in self?.deleteArchived(item) })
         }
     }
+
+    // MARK: - Archive transitions
+
+    private func archive(_ item: ReadingListItem, fromCarouselIndex carouselIndex: Int) {
+        guard let itemIndex = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let isCentered = carousel.currentIndex == carouselIndex
+        let successor: ReadingListItem?
+        let incomingDirection: CGFloat
+        if itemIndex + 1 < items.count {
+            successor = items[itemIndex + 1]
+            incomingDirection = 1
+        } else if itemIndex > 0 {
+            successor = items[itemIndex - 1]
+            incomingDirection = -1
+        } else {
+            successor = nil
+            incomingDirection = 0
+        }
+
+        let sourceCard = carousel.cardView(at: carouselIndex)
+        let snapshot = sourceCard.flatMap(makeTransitionSnapshot(of:))
+        if isCentered { pendingTransitionCenteredID = successor?.id }
+
+        // Persist first. The manual reload consumes the new disk/cache truth in
+        // this same event turn; the queued notification becomes a no-op because
+        // its fingerprint has already been applied.
+        store.setArchived(true, for: item.id)
+        reload()
+
+        guard isCentered, !UIAccessibility.isReduceMotionEnabled,
+              UIView.areAnimationsEnabled else {
+            snapshot?.removeFromSuperview()
+            return
+        }
+
+        let incoming: UIView? = successor == nil
+            ? emptyView
+            : carousel.cardView(at: carousel.currentIndex)
+        incoming?.alpha = 0
+        carousel.view.isUserInteractionEnabled = false
+
+        let revealIncoming = { [weak self, weak incoming] in
+            guard let self else { return }
+            incoming?.transform = CGAffineTransform(
+                translationX: incomingDirection * 28, y: 0).scaledBy(x: 0.985, y: 0.985)
+            UIView.animate(
+                withDuration: 0.42, delay: 0,
+                usingSpringWithDamping: 0.88, initialSpringVelocity: 0.15,
+                options: [.beginFromCurrentState, .allowUserInteraction]
+            ) {
+                incoming?.alpha = 1
+                incoming?.transform = .identity
+            } completion: { _ in
+                incoming?.alpha = 1
+                incoming?.transform = .identity
+                self.carousel.view.isUserInteractionEnabled = true
+            }
+        }
+
+        guard let snapshot else {
+            revealIncoming()
+            return
+        }
+        UIView.animate(
+            withDuration: 0.24, delay: 0,
+            options: [.curveEaseIn, .beginFromCurrentState, .allowUserInteraction]
+        ) {
+            snapshot.alpha = 0
+            snapshot.transform = CGAffineTransform(translationX: 0, y: -20)
+        } completion: { _ in
+            snapshot.removeFromSuperview()
+            revealIncoming()
+        }
+    }
+
+    private func unarchive(_ item: ReadingListItem, from sourceView: UIView) {
+        guard archivedItems.contains(where: { $0.id == item.id }) else { return }
+        let snapshot = makeTransitionSnapshot(of: sourceView)
+        isAnimatingFromArchiveTray = true
+        pendingTransitionCenteredID = item.id
+
+        // `markUnread` also stamps bumpDate, making this the first active
+        // article. Reload synchronously so the destination exists before the
+        // tray and traveling snapshot begin their coordinated animation.
+        store.markUnread(item.id)
+        reload()
+        view.layoutIfNeeded()
+
+        let destination = carousel.cardView(at: carousel.currentIndex)
+        destination?.alpha = 0
+        let shouldAnimate = !UIAccessibility.isReduceMotionEnabled
+            && UIView.areAnimationsEnabled && snapshot != nil && destination != nil
+
+        archiveTray?.dismiss(animated: shouldAnimate)
+
+        guard shouldAnimate, let snapshot, let destination else {
+            snapshot?.removeFromSuperview()
+            destination?.alpha = 1
+            finishUnarchiveTransition()
+            return
+        }
+
+        // `dismiss` has installed the tray's closed model values, so conversion
+        // now yields the card's final unshifted frame even while UIKit animates
+        // the presentation layer out of the open-tray transform.
+        let destinationFrame = destination.convert(destination.bounds, to: view)
+        carousel.view.isUserInteractionEnabled = false
+        UIView.animate(
+            withDuration: 0.5, delay: 0,
+            usingSpringWithDamping: 0.86, initialSpringVelocity: 0.1,
+            options: [.beginFromCurrentState, .allowUserInteraction]
+        ) {
+            snapshot.frame = destinationFrame
+            snapshot.layer.cornerRadius = destination.layer.cornerRadius
+        } completion: { [weak self, weak destination] _ in
+            snapshot.removeFromSuperview()
+            destination?.alpha = 1
+            self?.finishUnarchiveTransition()
+        }
+        UIView.animate(
+            withDuration: 0.18, delay: 0.3,
+            options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
+        ) {
+            snapshot.alpha = 0
+            destination.alpha = 1
+        }
+    }
+
+    private func finishUnarchiveTransition() {
+        isAnimatingFromArchiveTray = false
+        carousel.view.isUserInteractionEnabled = true
+        refreshArchivePullAvailability(animated: false)
+    }
+
+    private func deleteArchived(_ item: ReadingListItem) {
+        store.delete(item)
+        reload()
+    }
+
+    private func deleteActive(_ item: ReadingListItem) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        if carousel.currentIndex == index + cardOffset {
+            let successor = items.indices.contains(index + 1)
+                ? items[index + 1]
+                : (index > 0 ? items[index - 1] : nil)
+            pendingTransitionCenteredID = successor?.id
+        }
+        store.delete(item)
+        reload()
+    }
+
+    private func makeTransitionSnapshot(of sourceView: UIView) -> UIView? {
+        guard let snapshot = sourceView.snapshotView(afterScreenUpdates: false) else { return nil }
+        snapshot.frame = sourceView.convert(sourceView.bounds, to: view)
+        if let cell = sourceView as? UICollectionViewCell {
+            snapshot.layer.cornerRadius = cell.contentView.layer.cornerRadius
+        } else {
+            snapshot.layer.cornerRadius = sourceView.layer.cornerRadius
+        }
+        snapshot.layer.cornerCurve = .continuous
+        snapshot.clipsToBounds = true
+        view.addSubview(snapshot)
+        return snapshot
+    }
+
+    private func cardContextMenu(
+        for item: ReadingListItem, carouselIndex: Int
+    ) -> UIMenu {
+        UIMenu(children: [
+            UIAction(title: "Archive", image: UIImage(systemName: "archivebox")) {
+                [weak self] _ in
+                self?.archive(item, fromCarouselIndex: carouselIndex)
+            },
+            UIAction(
+                title: "Delete", image: UIImage(systemName: "trash"),
+                attributes: .destructive
+            ) { [weak self] _ in
+                self?.deleteActive(item)
+            },
+        ])
+    }
+
+    #if DEBUG
+    func cardContextMenuForTesting(at carouselIndex: Int) -> UIMenu? {
+        guard let itemIndex = articleIndex(forCarouselIndex: carouselIndex) else { return nil }
+        return cardContextMenu(for: items[itemIndex], carouselIndex: carouselIndex)
+    }
+    #endif
 
     // MARK: - Opening / immersion
 
@@ -847,9 +1055,7 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         guard let itemIndex = articleIndex(forCarouselIndex: index) else { return nil }
         let item = items[itemIndex]
         return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
-            UIMenu(children: [UIAction(
-                title: "Archive", image: UIImage(systemName: "archivebox")
-            ) { _ in self?.store.setArchived(true, for: item.id) }])
+            self?.cardContextMenu(for: item, carouselIndex: index) ?? UIMenu()
         })
     }
 

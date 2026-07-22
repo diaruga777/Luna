@@ -18,9 +18,11 @@ struct ArchiveTrayItem {
     let loadImage: (@escaping (UIImage?) -> Void) -> Void
     let tap: () -> Void
     let share: (UIView) -> Void
-    let unarchive: () -> Void
-    /// Surface-owned permanent deletion. Reader leaves this nil; Downloader
-    /// supplies its full saved-media + shared-reading-list cleanup path.
+    /// The pressed cell is supplied so a surface can animate the item back to
+    /// its destination. Accessibility activation supplies the cell as well.
+    let unarchive: (UIView) -> Void
+    /// Surface-owned permanent deletion. Both surfaces supply their complete
+    /// save-cleanup path.
     let delete: (() -> Void)?
 }
 
@@ -136,6 +138,12 @@ final class ArchiveTrayController: NSObject {
     /// away retracts it and closes an open tray defensively.
     func refreshPullAvailability(animated: Bool) {
         setPullAvailable(canPull(), animated: animated)
+    }
+
+    /// Closes an open tray. Surface-owned item transitions use this to keep the
+    /// drawer dismissal in lockstep with their own animation.
+    func dismiss(animated: Bool) {
+        setOpen(false, animated: animated)
     }
 
     /// Updates availability from an in-flight carousel target. This does not
@@ -296,7 +304,7 @@ extension ArchiveTrayController: UICollectionViewDataSource, UICollectionViewDel
         var actions: [UIAction] = [
             UIAction(
                 title: "Unarchive", image: UIImage(systemName: "tray.and.arrow.up")
-            ) { _ in item.unarchive() },
+            ) { _ in item.unarchive(sourceView) },
             UIAction(
                 title: "Share", image: UIImage(systemName: "square.and.arrow.up")
             ) { _ in item.share(sourceView) },
@@ -321,7 +329,7 @@ private final class ArchiveTrayCell: UICollectionViewCell {
     private var imageCompactConstraint: NSLayoutConstraint!
     private var imageFillConstraint: NSLayoutConstraint!
     private var representedID: UUID?
-    private var unarchive: (() -> Void)?
+    private var unarchive: ((UIView) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -400,7 +408,7 @@ private final class ArchiveTrayCell: UICollectionViewCell {
 
     @objc private func performAccessibilityUnarchive() -> Bool {
         guard let unarchive else { return false }
-        unarchive()
+        unarchive(self)
         return true
     }
 }

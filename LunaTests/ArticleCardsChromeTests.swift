@@ -276,6 +276,48 @@ final class ArticleCardsChromeTests: XCTestCase {
         XCTAssertEqual(indicator.alpha, 0, accuracy: 0.001)
     }
 
+    func testReaderCardContextMenuOffersArchiveAndDestructiveDelete() throws {
+        let controller = makeArticleController(seed: "reader-card-menu", title: "Reader menu")
+        let item = try XCTUnwrap(ReadingListStore.shared.items().first)
+        let menu = try XCTUnwrap(
+            controller.cardContextMenuForTesting(at: controller.carousel.currentIndex))
+        let actions = menu.children.compactMap { $0 as? UIAction }
+
+        XCTAssertEqual(actions.map(\.title), ["Archive", "Delete"])
+        let delete = try XCTUnwrap(actions.last)
+        XCTAssertTrue(delete.attributes.contains(.destructive))
+
+        delete.performWithSender(nil, target: nil)
+
+        XCTAssertNil(ReadingListStore.shared.item(withID: item.id))
+        XCTAssertNil(ReadingListStore.shared.content(for: item))
+    }
+
+    func testReaderArchiveTrayOffersDeleteAndDeletesCompleteSave() throws {
+        var item = ReadingListItem(
+            seed: "reader-archive-delete",
+            urlString: "https://example.com/reader-archive-delete",
+            title: "Archived Reader Save", dateAdded: Date(), state: .ready,
+            wordCount: 480)
+        item.archivedAt = Date()
+        let content = UITestFixtures.sampleArticleContent(title: "Archived Reader Save")
+        ReadingListStore.shared.seedForTesting(
+            items: [item], contents: [item.id: content])
+        let controller = ArticleCardsViewController()
+        controller.loadViewIfNeeded()
+
+        let menu = try XCTUnwrap(controller.archiveTray?.contextMenuForTesting(itemAt: 0))
+        let actions = menu.children.compactMap { $0 as? UIAction }
+        XCTAssertEqual(actions.map(\.title), ["Unarchive", "Share", "Delete"])
+        let delete = try XCTUnwrap(actions.last)
+        XCTAssertTrue(delete.attributes.contains(.destructive))
+
+        delete.performWithSender(nil, target: nil)
+
+        XCTAssertNil(ReadingListStore.shared.item(withID: item.id))
+        XCTAssertNil(ReadingListStore.shared.content(for: item))
+    }
+
     private func makeArticleController(
         seed: String, title: String, senderName: String? = nil
     ) -> ArticleCardsViewController {

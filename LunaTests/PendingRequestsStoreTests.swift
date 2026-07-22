@@ -25,30 +25,35 @@ final class PendingRequestsStoreTests: XCTestCase {
         super.tearDown()
     }
 
-    private func request(url: String = "https://ex.com/a", from: String = "bob@example.com") -> PendingRequest {
-        PendingRequest(senderEmail: from, senderName: "Bob", urlString: url,
+    private func request(url: String = "https://ex.com/a") -> PendingRequest {
+        PendingRequest(senderEmail: "bob@example.com", senderName: "Bob", urlString: url,
                        title: "A", kind: "article", messageID: "1")
     }
 
-    func testAddCountRemove() {
-        store.add(request())
+    func testLoadsAndRemovesLegacyRequests() throws {
+        let item = request()
+        try JSONEncoder().encode([item]).write(
+            to: scratch.appendingPathComponent("pendingRequests.json"), options: .atomic)
+
+        XCTAssertEqual(store.items(), [item])
         XCTAssertEqual(store.count, 1)
-        let item = store.items().first!
         store.remove(id: item.id)
         XCTAssertEqual(store.count, 0)
     }
 
-    func testDedupesSameURLAndSender() {
-        store.add(request())
-        store.add(request())
-        XCTAssertEqual(store.count, 1)
-        XCTAssertTrue(store.contains(urlString: "https://ex.com/a", senderEmail: "BOB@example.com"))
-    }
+    func testLegacyRequestsAreSortedNewestFirst() throws {
+        let older = PendingRequest(
+            senderEmail: "bob@example.com", senderName: "Bob",
+            urlString: "https://ex.com/old", title: "Old", kind: "article",
+            messageID: "1", date: Date(timeIntervalSince1970: 1))
+        let newer = PendingRequest(
+            senderEmail: "alice@example.com", senderName: "Alice",
+            urlString: "https://ex.com/new", title: "New", kind: "article",
+            messageID: "2", date: Date(timeIntervalSince1970: 2))
+        try JSONEncoder().encode([older, newer]).write(
+            to: scratch.appendingPathComponent("pendingRequests.json"), options: .atomic)
 
-    func testDistinctSendersCoexist() {
-        store.add(request(from: "bob@example.com"))
-        store.add(request(from: "alice@example.com"))
-        XCTAssertEqual(store.count, 2)
+        XCTAssertEqual(store.items().map(\.id), [newer.id, older.id])
     }
 
     func testDisplaySenderFallsBackToLocalPart() {

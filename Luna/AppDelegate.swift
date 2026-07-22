@@ -25,9 +25,9 @@ import os
 final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
     private let logger = Logger(subsystem: "com.hsanabria.luna", category: "push")
-    /// Periodic task (~twice daily) that reads new mail: imports Luna shares
-    /// (friends' auto-import; strangers → pending requests) and matched
-    /// newsletters, so shares arrive even if the app is never opened.
+    /// Periodic task (~twice daily) that reads new mail: imports recognized Luna
+    /// shares (adding new senders to Contacts) and matched newsletters, so
+    /// shares arrive even if the app is never opened.
     private static let mailFetchTaskID = "com.hsanabria.luna.mailFetch"
     private static let mailFetchInterval: TimeInterval = 12 * 60 * 60
     /// Periodic task (~every 12h) that re-fetches every non-archived price

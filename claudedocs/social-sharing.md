@@ -21,8 +21,9 @@ recipient's Luna app recognizes and imports.
   The queue remains visible so requests created by older builds can be handled,
   but new recognized senders are added to Contacts and imported automatically.
 - **`LunaSocial/NotificationManager.swift`** — local notifications only (no
-  remote push/APNs): `postShareReceived` (friend's import landed),
-  `postPendingRequest` (stranger's share needs review), `postPriceDrop`.
+  remote push/APNs): `postShareReceived` (a contact import landed) and
+  `postPriceDrop`. Legacy pending-request notification routing remains so
+  notifications delivered by older builds still open the preserved queue.
   `clearShareNotifications()` removes delivered "share received" notifications
   once the user reaches the reading list.
 - **`LunaMailAccount/LunaShareMarker.swift`** — the machine-readable marker
@@ -83,10 +84,10 @@ Tapping a "pending request" notification should route to
 - No App-Group-only queuing needed for extensions: the Share/Action
   extensions don't send friend emails themselves (`EmailShareCenter` is
   main-app only); they queue through the normal share-sheet/URL ingest path.
-- Capture source `.friendShare` (`CaptureSource` in `LunaModels`) marks items
-  that arrived via `autoImport`/`queuePending`-then-accept, so send-by-source
-  rules (see `send-to-kindle.md`) and the reading list's "from <name>"
-  attribution can key off it.
+- New email imports use capture source `.email`; `.friendShare` remains
+  decodable for items written by older builds. Incoming sender fields drive
+  send-by-source rules (see `send-to-kindle.md`) and the reading list's
+  "From <name>" attribution.
 
 ## Tests
 

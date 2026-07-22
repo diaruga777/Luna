@@ -62,23 +62,6 @@ public final class PendingRequestsStore {
 
     public var count: Int { items().count }
 
-    /// True when a request from this sender for this URL already exists (dedupe).
-    public func contains(urlString: String, senderEmail: String) -> Bool {
-        let sender = Friend.normalize(senderEmail)
-        return items().contains { $0.urlString == urlString && $0.senderEmail == sender }
-    }
-
-    public func add(_ request: PendingRequest) {
-        store.mutationLock.lock()
-        defer { store.mutationLock.unlock() }
-        var all = items()
-        guard !all.contains(where: {
-            $0.urlString == request.urlString && $0.senderEmail == request.senderEmail
-        }) else { return }
-        all.insert(request, at: 0)
-        store.save(all)
-    }
-
     public func remove(id: UUID) {
         store.mutationLock.lock()
         defer { store.mutationLock.unlock() }

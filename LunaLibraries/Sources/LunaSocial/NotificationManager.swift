@@ -8,8 +8,8 @@ import Foundation
 import UserNotifications
 
 /// Local-notification helper for share events. The email importer surfaces
-/// results here (a friend's accepted share, or a new pending request from a
-/// stranger). Authorization is requested once so notifications can appear.
+/// results here when a recognized share lands. Authorization is requested once
+/// so notifications can appear.
 public enum NotificationManager {
 
     // MARK: - userInfo keys / values
@@ -49,17 +49,6 @@ public enum NotificationManager {
         content.sound = .default
         content.userInfo = [typeKey: typeShareReceived]
         post(content, identifier: receivedIdentifierPrefix + UUID().uuidString)
-    }
-
-    /// Posts "X wants to share with you" for a new pending request from a
-    /// stranger. Tapping it opens the Pending Requests screen.
-    public static func postPendingRequest(fromName name: String, title: String?) {
-        let content = UNMutableNotificationContent()
-        content.title = "\(name) wants to share with you"
-        content.body = title ?? "Review the request in Luna."
-        content.sound = .default
-        content.userInfo = [typeKey: typePendingRequest]
-        post(content)
     }
 
     /// Removes delivered "share received" notifications (called when the user

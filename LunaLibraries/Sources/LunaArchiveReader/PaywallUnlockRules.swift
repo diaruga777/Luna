@@ -228,9 +228,10 @@ public enum PaywallUnlockRules {
 
     // MARK: - DOM cleanup userscript
 
-    /// Injected at documentStart; re-runs on an interval (covering the reader's poll
-    /// window) to strip paywall overlays, unhide the article, restore scroll, and
-    /// reveal AMP subscriber sections. NEVER runs on the archive.today reader.
+    /// Injected at documentStart; observes the document for its whole lifetime so a
+    /// publisher cannot restore its wall after the initial cleanup window. Strips
+    /// paywall overlays, unhides the article, restores scroll, and reveals AMP
+    /// subscriber sections. NEVER runs on the archive.today reader.
     public static let domCleanupScript = """
     (function () {
       try {
@@ -242,7 +243,8 @@ public enum PaywallUnlockRules {
           'div.snippet-promotion', '.snippet-promotion', 'div[id*="-snippet-overlay"]',
           'div.modal-backdrop', 'div[class^="Modal_paywall"]', 'div[class^="Modal_cta"]',
           'div[class*="subscribe-wall"]', 'div[class*="regwall"]', 'div.tp-modal',
-          'div[data-testid*="paywall"]', 'div[class*="PaywallOverlay"]', 'div.piano-template'
+          'div[data-testid*="paywall"]', 'div[class*="PaywallOverlay"]', 'div.piano-template',
+          'aside[class*="PaywallModalWrapper"]', 'aside[class*="PaywallInlineBarrierWrapper"]'
         ];
         var UNHIDE = ['blurred','blur','blur-sm','blur-md','blur-lg','gradient','fade','faded-content',
           'clipped','cropped','truncated','locked','is-locked','noscroll','no-scroll','scroll-lock',
@@ -314,9 +316,22 @@ public enum PaywallUnlockRules {
           } catch (e) {}
         }
         clean();
-        var n = 0;
-        var t = setInterval(function () { clean(); if (++n > 20) { clearInterval(t); } }, 700);
         document.addEventListener('DOMContentLoaded', clean);
+        // Paywall frameworks commonly hydrate an empty server-rendered shell after
+        // the article has already appeared. Observe child insertion for the whole
+        // document lifetime; requestAnimationFrame coalesces mutation bursts and
+        // avoids a permanent polling timer.
+        var cleanScheduled = false;
+        function scheduleClean() {
+          if (cleanScheduled) { return; }
+          cleanScheduled = true;
+          requestAnimationFrame(function () { cleanScheduled = false; clean(); });
+        }
+        var root = document.documentElement;
+        if (root && window.MutationObserver) {
+          new MutationObserver(scheduleClean).observe(root, { childList: true, subtree: true });
+        }
+        window.addEventListener('pageshow', clean);
       } catch (e) {}
     })();
     """

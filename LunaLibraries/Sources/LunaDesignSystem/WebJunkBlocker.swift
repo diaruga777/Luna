@@ -13,7 +13,8 @@ import WebKit
 /// scrolling (sites lock it while a modal is up).
 public enum WebJunkBlocker {
 
-    private static let ruleListIdentifier = "luna-web-junk-v1"
+    // Bump whenever `rulesJSON` changes: WebKit persists compiled lists by ID.
+    private static let ruleListIdentifier = "luna-web-junk-v2"
 
     private static let rulesJSON = """
     [
@@ -21,7 +22,7 @@ public enum WebJunkBlocker {
         "trigger": { "url-filter": ".*" },
         "action": {
           "type": "css-display-none",
-          "selector": "[class*='paywall'],[id*='paywall'],[class*='popup'],[id*='popup'],[class*='consent'],[id*='consent'],[class*='cookie-banner'],[id*='cookie-banner'],[class*='newsletter'],[class*='donate'],[id*='donate'],[class*='gdpr'],[id*='gdpr'],[class*='interstitial'],[class*='subscribe-banner'],[class*='piano'],[id*='piano'],[class*='fc-consent'],[id*='onetrust'],[class*='onetrust'],[id*='sp_message'],[class*='sp_message']"
+          "selector": "aside[class*='Paywall'],[role='dialog'][class*='paywall'],[role='dialog'][id*='paywall'],[class*='PaywallOverlay'],[class*='paywall-modal'],[class*='paywall-bar'],[data-testid*='PaywallInlineBarrier'],[class*='popup'],[id*='popup'],[class*='consent'],[id*='consent'],[class*='cookie-banner'],[id*='cookie-banner'],[class*='newsletter'],[class*='donate'],[id*='donate'],[class*='gdpr'],[id*='gdpr'],[class*='interstitial'],[class*='subscribe-banner'],[class*='piano'],[id*='piano'],[class*='fc-consent'],[id*='onetrust'],[class*='onetrust'],[id*='sp_message'],[class*='sp_message']"
         }
       },
       {

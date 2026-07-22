@@ -73,7 +73,7 @@ final class PaywallUnlockRulesTests: XCTestCase {
         let js = PaywallUnlockRules.domCleanupScript
         XCTAssertTrue(js.contains("archive"))          // self-guards off the archive reader
         XCTAssertTrue(js.contains("paywall"))           // targets paywall containers
-        XCTAssertTrue(js.contains("setInterval"))       // re-runs over the poll window
+        XCTAssertTrue(js.contains("MutationObserver"))  // watches late wall hydration for page lifetime
         XCTAssertTrue(js.contains("data-src"))          // un-lazies images
         XCTAssertTrue(js.contains("subscriptions-section"))  // reveals AMP subscriber sections
         // A content wrapper that shares a paywall class (e.g. WSJ's `.paywall`

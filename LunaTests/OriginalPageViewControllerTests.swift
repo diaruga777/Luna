@@ -28,6 +28,57 @@ final class OriginalPageViewControllerTests: XCTestCase {
         XCTAssertTrue(sources.contains { $0.contains("div.paywall") })
         XCTAssertTrue(sources.contains { $0.contains("aside.paywall-bar") })
         XCTAssertTrue(sources.contains { $0.contains("div.ad-stickyhero") })
+        XCTAssertTrue(sources.contains { $0.contains("MutationObserver") })
+    }
+
+    @MainActor
+    func testNewYorkerReplayKeepsArticleVisibleWhenPaywallArrivesLate() async throws {
+        let url = try XCTUnwrap(URL(
+            string: "https://www.newyorker.com/culture/the-weekend-essay/test"))
+        let configuration = SavedArchiveWebConfiguration.make(for: url)
+        await SavedArchiveWebConfiguration.prepare(configuration, for: url)
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 390, height: 844), configuration: configuration)
+        let evaluated = expectation(description: "late paywall cleaned")
+        var outcome: String?
+        let delegate = LoadDelegate {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                let expression = """
+                (function () {
+                  var articleDisplay = getComputedStyle(document.querySelector('#article')).display;
+                  var wall = document.querySelector('#late-wall');
+                  var wallHidden = !wall || getComputedStyle(wall).display === 'none';
+                  return articleDisplay + '|' + wallHidden;
+                })()
+                """
+                webView.evaluateJavaScript(expression) { result, error in
+                    if let error { XCTFail("fixture expression failed: \(error)") }
+                    outcome = result as? String
+                    evaluated.fulfill()
+                }
+            }
+        }
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString(
+            """
+            <html><body>
+              <article><p id="article" class="paywall">The complete saved article.</p></article>
+              <script>
+                setTimeout(function () {
+                  var wall = document.createElement('aside');
+                  wall.id = 'late-wall';
+                  wall.className = 'PaywallModalWrapper-current paywall-modal';
+                  wall.textContent = 'Subscribe to continue';
+                  document.body.appendChild(wall);
+                }, 150);
+              </script>
+            </body></html>
+            """,
+            baseURL: url)
+
+        await fulfillment(of: [evaluated], timeout: 5)
+        withExtendedLifetime(delegate) {}
+        XCTAssertEqual(outcome, "block|true")
     }
 
     @MainActor
@@ -55,5 +106,15 @@ final class OriginalPageViewControllerTests: XCTestCase {
         XCTAssertTrue(archivedHTML.contains("div.ad, aside.paywall-bar"))
         XCTAssertTrue(archivedHTML.contains("display:none !important"))
         XCTAssertTrue(archivedHTML.contains("Complete article prose remains available"))
+    }
+
+    private final class LoadDelegate: NSObject, WKNavigationDelegate {
+        private let onFinish: () -> Void
+
+        init(onFinish: @escaping () -> Void) { self.onFinish = onFinish }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            onFinish()
+        }
     }
 }

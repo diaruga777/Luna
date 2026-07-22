@@ -202,6 +202,11 @@ no nav bar of its own beyond Done.
   glass capsules (accent-tinted) sit above and below the ORP letter at the
   focal column. Scroll/chunk highlight = inline text-background tint in the
   accent (a glass overlay would blur the words being read).
+- **Shared chrome carries a subtle per-app tint.** `LunaSurfacePalette` resolves
+  Reader (173/181/246), Downloader (204/118/9), or Price Tracker (7/255/157)
+  from the host bundle-id component, including that host's extensions. Liquid
+  Glass bars/buttons use the base at 14% alpha; moon-horizon progress and custom
+  scroll indicators use a gently contrast-tempered version of the same colour.
 - **End-of-article share** (`Luna/Reader/ArticleShareView.swift`): separator + "Done reading? Share it." + Share button + one-tap "Send to <friend>" suggestion. The Share button → `ReaderShareProviding.presentShareSheet`. Scroll reader appends it below the text (subview positioned via a `contentSize` observer; `contentInset.bottom` reserved so it clears the floating footer); RSVP fades it in above the controls on finish.
 
 ## Reader share sheet (the share button) — Feature C

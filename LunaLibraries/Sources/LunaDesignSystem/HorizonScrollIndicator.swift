@@ -6,7 +6,7 @@
 import UIKit
 
 /// A custom vertical scroll indicator drawn in the "moon horizon" visual
-/// language of `MoonHorizonProgressBar`, rotated upright: a thin, faint warm
+/// language of `MoonHorizonProgressBar`, rotated upright: a thin, faint tinted
 /// line for the full scroll track and one brilliant point of light — the sun
 /// core with its radial bloom — riding it at the current scroll position.
 ///
@@ -37,7 +37,7 @@ public final class HorizonScrollIndicator: UIView {
     /// How far the line sits in from the trailing edge — matches the system
     /// indicator's inset closely enough to read as "on the edge".
     private static let trailingMargin: CGFloat = 3.5
-    /// The faint track evokes the progress bar's lit line but unlit: same warm
+    /// The faint track evokes the progress bar's lit line but unlit: same app
     /// hue, low alpha, so the bright point clearly reads as the head.
     private static let trackAlpha: CGFloat = 0.22
     private static let idleFadeDelay: TimeInterval = 1.1
@@ -58,7 +58,7 @@ public final class HorizonScrollIndicator: UIView {
         didSet { setNeedsLayout() }
     }
 
-    /// The faint warm track line spanning the scrollable range.
+    /// The faint per-app-tinted track line spanning the scrollable range.
     private let trackLayer = CAShapeLayer()
     /// The sun's steep radial bloom around the point.
     private let bloomLayer = CAGradientLayer()

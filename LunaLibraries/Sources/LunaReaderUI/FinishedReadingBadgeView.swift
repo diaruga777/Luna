@@ -31,6 +31,7 @@ public final class FinishedReadingBadgeView: UIView {
         if #available(iOS 26.0, *) {
             let glass = UIGlassEffect()
             glass.isInteractive = true
+            glass.tintColor = LunaSurfacePalette.glassTint
             effectView = UIVisualEffectView(effect: glass)
         } else {
             effectView = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))

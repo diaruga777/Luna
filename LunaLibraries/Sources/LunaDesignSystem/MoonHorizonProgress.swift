@@ -14,13 +14,9 @@ import UIKit
 /// Stylized, not hyperrealistic.
 public enum MoonHorizonStyle {
 
-    /// Warm sunlight for the illuminated stretch of horizon: pale gold against a
-    /// dark sky, a deeper amber where the background is light so it still reads.
-    public static let sunlight = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 1.0, green: 0.90, blue: 0.72, alpha: 1)
-            : UIColor(red: 0.96, green: 0.68, blue: 0.24, alpha: 1)
-    }
+    /// A tempered form of the current app's identity colour. The gradients and
+    /// low-alpha bloom keep it atmospheric rather than reading as a solid stripe.
+    public static let sunlight = LunaSurfacePalette.progressAccent
     /// The white-hot center of the sun point itself.
     public static let sunCore = UIColor { traits in
         traits.userInterfaceStyle == .dark

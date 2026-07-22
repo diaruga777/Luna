@@ -64,7 +64,7 @@ public enum GlassStyle {
         var config: UIButton.Configuration
         if #available(iOS 26.0, *) {
             config = .glass()
-            config.baseBackgroundColor = LunaColors.secondaryBackground.withAlphaComponent(0.85)
+            config.baseBackgroundColor = LunaSurfacePalette.glassTint
         } else {
             config = .filled()
             config.baseBackgroundColor = LunaColors.secondaryBackground
@@ -91,7 +91,7 @@ public enum GlassStyle {
     public static func barEffect() -> UIVisualEffect {
         if #available(iOS 26.0, *) {
             let glass = UIGlassEffect()
-            glass.tintColor = LunaColors.secondaryBackground.withAlphaComponent(0.72)
+            glass.tintColor = LunaSurfacePalette.glassTint
             return glass
         }
         return UIBlurEffect(style: .systemMaterial)

@@ -75,6 +75,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var content: ArticleContent
     private var rendered: RenderedArticle
     private var wordMap: WordMap
+    private let includesArticleTitle: Bool
     private var imageDownloadTask: Task<Void, Never>?
     private let textView = UITextView(usingTextLayoutManager: false)
     private let store = ReadingListStore.shared
@@ -175,7 +176,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public init(item: ReadingListItem, content: ArticleContent,
          audioEnabled: Bool = false,
          shareProvider: ReaderShareProviding? = nil,
-         resumeWordIndex: Int? = nil) {
+         resumeWordIndex: Int? = nil,
+         includesArticleTitle: Bool = true) {
         self.item = item
         // Bake in any images already cached on disk (keyed by URL hash) BEFORE the
         // first render, so they appear in the same frame as the text instead of
@@ -186,6 +188,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         self.audioEnabled = audioEnabled
         self.shareProvider = shareProvider
         self.explicitResumeWordIndex = resumeWordIndex
+        self.includesArticleTitle = includesArticleTitle
         // Phase 1: render only a leading prefix so the FIRST layout of the text view
         // is cheap (a couple hundred characters), removing the whole-article glyph
         // pass that stalled the first open behind the entry animation. Local images
@@ -205,8 +208,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             item: item, resumeWordIndex: resumeWordIndex, audioEnabled: audioEnabled,
             content: resolved, budget: Self.prefixCharacterBudget)
         let rendered = needsFullUpFront
-            ? ArticleTextRenderer.render(resolved)
-            : ArticleTextRenderer.render(resolved, characterBudget: Self.prefixCharacterBudget)
+            ? ArticleTextRenderer.render(resolved, includesTitle: includesArticleTitle)
+            : ArticleTextRenderer.render(
+                resolved, characterBudget: Self.prefixCharacterBudget,
+                includesTitle: includesArticleTitle)
         self.rendered = rendered
         self.wordMap = WordMap(content: resolved, rendered: rendered)
         super.init(nibName: nil, bundle: nil)
@@ -290,8 +295,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 item: item, resumeWordIndex: resumeWordIndex, audioEnabled: audioEnabled,
                 content: resolved, budget: Self.prefixCharacterBudget)
         let rendered = needsFullUpFront
-            ? ArticleTextRenderer.render(resolved)
-            : ArticleTextRenderer.render(resolved, characterBudget: Self.prefixCharacterBudget)
+            ? ArticleTextRenderer.render(resolved, includesTitle: includesArticleTitle)
+            : ArticleTextRenderer.render(
+                resolved, characterBudget: Self.prefixCharacterBudget,
+                includesTitle: includesArticleTitle)
         self.rendered = rendered
         self.wordMap = WordMap(content: resolved, rendered: rendered)
         if rendered.isComplete { didLoadFullContent = true }
@@ -603,7 +610,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             // `[weak self]` drops this if the VC deallocated. Require the view loaded
             // (it always is by the time Phase 2 is triggered) before touching it.
             guard let self, self.isViewLoaded, !self.didLoadFullContent else { return }
-            let full = ArticleTextRenderer.render(self.content)
+            let full = ArticleTextRenderer.render(
+                self.content, includesTitle: self.includesArticleTitle)
             self.applyFullContent(full)
         }
     }
@@ -703,7 +711,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                   updated != self.content
             else { return }
             self.content = updated
-            self.rendered = ArticleTextRenderer.render(updated)
+            self.rendered = ArticleTextRenderer.render(
+                updated, includesTitle: self.includesArticleTitle)
             self.wordMap = WordMap(content: updated, rendered: self.rendered)
             let offset = self.textView.contentOffset
             self.textView.attributedText = self.rendered.text

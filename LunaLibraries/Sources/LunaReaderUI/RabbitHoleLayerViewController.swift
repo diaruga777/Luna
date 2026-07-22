@@ -222,13 +222,15 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
 
     /// Creates a blank layer shell. Loading starts after `configure` assigns its page.
     public init(shareProvider: ReaderShareProviding?,
-         layout: RabbitHoleLayout) {
+         layout: RabbitHoleLayout,
+         includesArticleTitle: Bool = true) {
         self.descriptor = RabbitHoleLayerDescriptor(urlString: "")
         self.shareProvider = shareProvider
         self.layout = layout
         let emptyItem = Self.emptyItem
         self.scrollReader = ScrollReaderViewController(
-            item: emptyItem, content: Self.emptyContent, audioEnabled: false)
+            item: emptyItem, content: Self.emptyContent, audioEnabled: false,
+            includesArticleTitle: includesArticleTitle)
         self.rsvpReader = RSVPViewController(item: emptyItem, content: Self.emptyContent)
         self.originalReader = OriginalPageViewController()
         super.init(nibName: nil, bundle: nil)

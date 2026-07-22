@@ -42,8 +42,10 @@ public struct RenderedArticle {
 public enum ArticleTextRenderer {
 
     /// Builds the full attributed string for the article.
-    public static func render(_ content: ArticleContent) -> RenderedArticle {
-        render(content, characterBudget: nil)
+    public static func render(
+        _ content: ArticleContent, includesTitle: Bool = true
+    ) -> RenderedArticle {
+        render(content, characterBudget: nil, includesTitle: includesTitle)
     }
 
     /// Builds the attributed string for the article, optionally TRUNCATED to a
@@ -62,7 +64,11 @@ public enum ArticleTextRenderer {
     /// This is the scroll reader's Phase-1 fast path: laying out a few hundred
     /// characters is near-instant, so the reader paints immediately behind the
     /// entry animation; the full text is rendered and swapped in afterward.
-    public static func render(_ content: ArticleContent, characterBudget: Int?) -> RenderedArticle {
+    public static func render(
+        _ content: ArticleContent,
+        characterBudget: Int?,
+        includesTitle: Bool = true
+    ) -> RenderedArticle {
         let result = NSMutableAttributedString()
         var blockTextRanges: [NSRange?] = []
         var imageRanges: [(NSRange, URL)] = []
@@ -70,15 +76,17 @@ public enum ArticleTextRenderer {
         // Cap to the readable text column so images don't overflow on iPad.
         let maxImageWidth = min(UIScreen.main.bounds.width - 100, 660)
 
-        let titleParagraph = NSMutableParagraphStyle()
-        titleParagraph.paragraphSpacing = content.author == nil ? 24 : 8
-        result.append(NSAttributedString(
-            string: content.title + "\n",
-            attributes: [
-                .font: serifFont(size: 30, weight: .bold),
-                .foregroundColor: UIColor.label,
-                .paragraphStyle: titleParagraph,
-            ]))
+        if includesTitle {
+            let titleParagraph = NSMutableParagraphStyle()
+            titleParagraph.paragraphSpacing = content.author == nil ? 24 : 8
+            result.append(NSAttributedString(
+                string: content.title + "\n",
+                attributes: [
+                    .font: serifFont(size: 30, weight: .bold),
+                    .foregroundColor: UIColor.label,
+                    .paragraphStyle: titleParagraph,
+                ]))
+        }
 
         if let author = content.author {
             let authorParagraph = NSMutableParagraphStyle()

@@ -83,6 +83,21 @@ final class ArticleTextRendererProgressiveTests: XCTestCase {
         XCTAssertLessThan(prefix.blockTextRanges.count, full.blockTextRanges.count)
     }
 
+    func testCardRenderCanReplaceTheInlineTitle() {
+        let article = ArticleContent(
+            title: "Card Header Title",
+            author: "Reader Author",
+            blocks: [paragraph("The article body remains available.")])
+
+        let rendered = ArticleTextRenderer.render(article, includesTitle: false)
+        let text = rendered.text.string
+
+        XCTAssertFalse(text.contains(article.title))
+        XCTAssertTrue(text.contains("Reader Author"))
+        XCTAssertTrue(text.contains("The article body remains available."))
+        XCTAssertEqual(rendered.blockTextRanges.count, article.blocks.count)
+    }
+
     // MARK: - Short article: budget covers everything → complete, no truncation
 
     func testShortArticleUnderBudgetIsComplete() {

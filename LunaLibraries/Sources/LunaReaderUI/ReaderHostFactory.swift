@@ -16,10 +16,12 @@ public enum ReaderHostFactory {
     public static func make(item: ReadingListItem,
                      content: ArticleContent,
                      shareProvider: ReaderShareProviding? = nil,
-                     fullContentUpFront: Bool = false) -> UIViewController {
+                     fullContentUpFront: Bool = false,
+                     includesArticleTitle: Bool = true) -> UIViewController {
         let reader = RabbitHoleReaderViewController(
             item: item, content: content,
-            shareProvider: shareProvider)
+            shareProvider: shareProvider,
+            includesArticleTitle: includesArticleTitle)
         reader.rendersFullContentUpFront = fullContentUpFront
         return reader
     }

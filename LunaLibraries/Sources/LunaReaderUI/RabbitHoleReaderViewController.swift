@@ -62,6 +62,7 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private let rootItem: ReadingListItem
     private let rootContent: ArticleContent
     private let shareProvider: ReaderShareProviding?
+    private let includesArticleTitle: Bool
     private let store = ReadingListStore.shared
     private let stackStore = RabbitHoleStackStore.shared
     private var layout = RabbitHoleLayout()
@@ -78,10 +79,12 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     private var didMarkOpened = false
 
     public init(item: ReadingListItem, content: ArticleContent,
-                shareProvider: ReaderShareProviding? = nil) {
+                shareProvider: ReaderShareProviding? = nil,
+                includesArticleTitle: Bool = true) {
         self.rootItem = item
         self.rootContent = content
         self.shareProvider = shareProvider
+        self.includesArticleTitle = includesArticleTitle
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -238,7 +241,8 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
 
     private func makeLayer() -> RabbitHoleLayerViewController {
         let layer = RabbitHoleLayerViewController(
-            shareProvider: shareProvider, layout: layout)
+            shareProvider: shareProvider, layout: layout,
+            includesArticleTitle: includesArticleTitle)
         layer.rendersFullContentUpFront = rendersFullContentUpFront
         layer.defersFullContentUntilPrimary = defersFullContentUntilPrimary
         if hasActivatedPrimaryContent {

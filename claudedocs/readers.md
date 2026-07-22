@@ -26,6 +26,17 @@ TWO reading modes for extracted articles, with read-aloud, nested inline readers
   - **Words**: the classic one-word-at-a-time display on the focal column with the ORP letter tinted, glass reticule marks above/below, word-length-aware timing (`RSVPEngine`). Context shows only while paused.
   - **Phrases**: a whole phrase shown over **two lines** in a glass reticule panel (`GlassStyle.focusPanel()`) in a **smaller proportional font** (`makePhraseFont`), with the surrounding prose **always visible above and below and updating as the phrase advances**. Phrase grouping + per-phrase timing come from `ReaderKit/ChunkPlanner.swift` driven by `ReaderKit/ReadingHeuristics.swift` (best-practice chunking: break at sentence/clause boundaries and before phrase-starting prepositions/conjunctions, never end a chunk on a determiner/preposition; dwell longer on long/complex/numeric words, skim function words). With read-aloud on, whole sentences are spoken and the **currently-spoken word is highlighted within the displayed phrase** (the phrase follows the speech word-to-word).
 
+The Reader carousel adds one card-owned title header above the embedded reader, shared
+unchanged across Scroll, RSVP, and Original. It uses the normal 30pt reader-title font
+with the saved page's asynchronously cached favicon on the leading edge (a globe while
+loading). In Scroll cards `ReaderHostFactory(includesArticleTitle: false)` suppresses the
+old attributed-string title, so this row occupies that title's content space at the top
+instead of duplicating it. Once content scrolls, the same row stays pinned over the live
+mode while carousel chrome is visible. Immersion moves it up 14pt and fades it with the
+other card chrome; at the exact top of a scroll surface it remains visible as article
+content. Returning to card mode restores the row and its reserved top inset. Fullscreen,
+share-extension, and non-carousel readers keep the original inline title.
+
 The scroll reader (`ScrollReaderViewController`) backs Scroll only via `init(audioEnabled:)`: audio → `SpeechController`; else plain. The footer routes play/pause/skip/speed to the speech engine.
 
 ## Scroll reader (+ split-web link handling)

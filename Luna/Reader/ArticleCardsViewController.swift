@@ -654,6 +654,8 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         // The carousel has already restored its card geometry so this same pan
         // can page. Keep the screen-level footer veil and indicator in lockstep.
         footerContentFade.alpha = 0
+        (carousel.contentController(at: carousel.currentIndex) as? ReaderCardContentViewController)?
+            .setCardChromeVisible(true, animated: false)
         layoutCardScrollIndicator(animated: false)
     }
 
@@ -670,8 +672,9 @@ extension ArticleCardsViewController: CardCarouselDelegate {
         }
         guard let itemIndex = articleIndex(forCarouselIndex: index) else { return }
         store.markReadState(.opened, for: items[itemIndex].id)
-        readerForChrome = (carousel.contentController(at: index) as? ReaderCardContentViewController)?
-            .rabbitHoleReader
+        let card = carousel.contentController(at: index) as? ReaderCardContentViewController
+        card?.setCardChromeVisible(!carousel.isImmersed, animated: false)
+        readerForChrome = card?.rabbitHoleReader
         updateExternalReaderInsets()
         updateReaderChrome()
         layoutCardScrollIndicator(animated: false)
@@ -702,6 +705,7 @@ extension ArticleCardsViewController: ReaderCardContentDelegate {
     fileprivate func readerCard(
         _ card: ReaderCardContentViewController, didChangeImmersion immersed: Bool, extendsCard: Bool
     ) {
+        card.setCardChromeVisible(!immersed, animated: true)
         carousel.setImmersed(immersed, extendsCard: extendsCard, animated: true)
         UIView.animate(
             withDuration: 0.32, delay: 0,
@@ -846,8 +850,12 @@ private final class ReaderCardContentViewController: CardContentViewController,
     private let statusLabel = UILabel()
     private let senderBadge = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let senderLabel = UILabel()
+    private let titleHeader: ReaderCardTitleHeaderView
     private var reader: UIViewController?
     private let immersionTracker = ScrollDirectionImmersionTracker()
+    private var baseTopContentInset: CGFloat = 0
+    private var titleHeaderHeight: CGFloat = 0
+    private var cardChromeVisible = true
     private(set) var isCentered = false
     var rabbitHoleReader: LunaReaderUI.RabbitHoleReaderViewController? {
         reader as? LunaReaderUI.RabbitHoleReaderViewController
@@ -856,6 +864,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
     init(item: ReadingListItem, senderName: String?) {
         self.item = item
         self.senderName = senderName
+        self.titleHeader = ReaderCardTitleHeaderView(title: item.title ?? "Untitled")
         super.init()
         immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
             guard let self else { return }
@@ -873,6 +882,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         super.viewDidLoad()
         view.backgroundColor = .clear
         embedReaderIfPossible()
+        mountTitleHeader()
         mountSenderBadgeIfNeeded()
 
         if reader == nil {
@@ -922,11 +932,29 @@ private final class ReaderCardContentViewController: CardContentViewController,
         senderBadge.accessibilityLabel = "From \(senderName)"
     }
 
+    private func mountTitleHeader() {
+        titleHeader.isUserInteractionEnabled = false
+        view.addSubview(titleHeader)
+        guard ArticleSourceBadge.wantsFavicon(item), let url = item.url else { return }
+        SourceIconCache.shared.icon(forPageURL: url) { [weak self] image in
+            guard let image else { return }
+            self?.titleHeader.setIcon(image)
+        }
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // The reader fills the card — the fade-out's bottom extension just
         // grows this frame, revealing more content; nothing inside shifts.
         reader?.view.frame = view.bounds
+        let height = titleHeader.heightThatFits(width: view.bounds.width)
+        titleHeader.frame = CGRect(
+            x: 0, y: baseTopContentInset,
+            width: view.bounds.width, height: height)
+        if abs(height - titleHeaderHeight) > 0.5 {
+            titleHeaderHeight = height
+            applyReaderTopInset()
+        }
     }
 
     // MARK: - Live reader lifecycle
@@ -943,12 +971,14 @@ private final class ReaderCardContentViewController: CardContentViewController,
         super.cardDidLeaveCenter()
         isCentered = false
         immersionTracker.isActive = false
+        setCardChromeVisible(true, animated: false)
     }
 
     private func embedReaderIfPossible() {
         guard reader == nil, item.state == .ready,
               let content = ReadingListStore.shared.content(for: item)
         else { return }
+        titleHeader.setTitle(content.title)
         // Render only the initial scroll viewport while this is a side card or
         // scrub preview. Promotion keeps this exact controller and then permits
         // its seamless Phase-2 expansion; offscreen text layout and image work
@@ -956,7 +986,8 @@ private final class ReaderCardContentViewController: CardContentViewController,
         let reader = ReaderHostFactory.make(
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
-            fullContentUpFront: false)
+            fullContentUpFront: false,
+            includesArticleTitle: false)
         if let rabbitHole = reader as? LunaReaderUI.RabbitHoleReaderViewController {
             rabbitHole.providesOwnChrome = false
             rabbitHole.presentsLinksAsInlineReaders = true
@@ -1066,7 +1097,43 @@ private final class ReaderCardContentViewController: CardContentViewController,
     /// The resting clearance below the card's top edge — enough that an
     /// unscrolled page starts below the card's top-edge dissolve.
     func setTopContentInset(_ inset: CGFloat) {
-        rabbitHoleReader?.externalChromeContentInset = max(inset, 0)
+        baseTopContentInset = max(inset, 0)
+        titleHeader.frame.origin.y = baseTopContentInset
+        applyReaderTopInset()
+    }
+
+    /// Keeps the title row with the card chrome while it is surfaced. When the
+    /// card immerses, the row leaves with that chrome unless the focused scroll
+    /// surface is still at its very top, where the row is the article's in-content
+    /// title rather than floating chrome.
+    func setCardChromeVisible(_ visible: Bool, animated: Bool) {
+        cardChromeVisible = visible
+        let staysAsContent = !visible && focusedScrollIsAtTop
+        let showsHeader = visible || staysAsContent
+        applyReaderTopInset(showingHeader: showsHeader)
+        let changes = {
+            self.titleHeader.alpha = showsHeader ? 1 : 0
+            self.titleHeader.transform = showsHeader
+                ? .identity : CGAffineTransform(translationX: 0, y: -14)
+        }
+        if animated {
+            UIView.animate(
+                withDuration: 0.32, delay: 0,
+                options: [.curveEaseInOut, .allowUserInteraction], animations: changes)
+        } else {
+            changes()
+        }
+    }
+
+    private var focusedScrollIsAtTop: Bool {
+        guard let scroll = rabbitHoleReader?.focusedContentScrollView else { return false }
+        return scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1
+    }
+
+    private func applyReaderTopInset(showingHeader: Bool? = nil) {
+        let headerIsShown = showingHeader ?? (cardChromeVisible || focusedScrollIsAtTop)
+        let titleSpace = headerIsShown ? titleHeaderHeight : 0
+        rabbitHoleReader?.externalChromeContentInset = baseTopContentInset + titleSpace
     }
 
     override func allowsCardTap(at point: CGPoint) -> Bool {
@@ -1085,6 +1152,78 @@ private final class ReaderCardContentViewController: CardContentViewController,
         return [root] + root.children.flatMap { readerControllers(under: $0) }
     }
 
+}
+
+/// The title treatment shared by Scroll, RSVP, and Original while an article is
+/// shown as a carousel card. It uses the same 30-point reader title typography,
+/// now paired with the page's favicon (a globe remains visible while it loads).
+private final class ReaderCardTitleHeaderView: UIView {
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+
+    init(title: String) {
+        super.init(frame: .zero)
+        backgroundColor = .systemBackground
+
+        iconView.image = UIImage(systemName: "globe")
+        iconView.tintColor = .secondaryLabel
+        iconView.contentMode = .scaleAspectFit
+        iconView.layer.cornerRadius = 6
+        iconView.clipsToBounds = true
+
+        titleLabel.text = title
+        titleLabel.font = Self.readerTitleFont
+        titleLabel.textColor = .label
+        titleLabel.numberOfLines = 3
+        titleLabel.lineBreakMode = .byTruncatingTail
+
+        addSubview(iconView)
+        addSubview(titleLabel)
+        isAccessibilityElement = true
+        accessibilityLabel = title
+        accessibilityTraits = .header
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func setIcon(_ image: UIImage) {
+        iconView.image = image
+        iconView.tintColor = nil
+    }
+
+    func setTitle(_ title: String) {
+        titleLabel.text = title
+        accessibilityLabel = title
+        setNeedsLayout()
+        superview?.setNeedsLayout()
+    }
+
+    func heightThatFits(width: CGFloat) -> CGFloat {
+        let titleWidth = max(width - 20 - 30 - 12 - 20, 0)
+        let titleHeight = titleLabel.sizeThatFits(
+            CGSize(width: titleWidth, height: .greatestFiniteMagnitude)).height
+        return max(30, titleHeight) + 20
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let iconSide: CGFloat = 30
+        iconView.frame = CGRect(x: 20, y: 10, width: iconSide, height: iconSide)
+        let titleX = iconView.frame.maxX + 12
+        titleLabel.frame = CGRect(
+            x: titleX, y: 10,
+            width: max(bounds.width - titleX - 20, 0),
+            height: max(bounds.height - 20, 0))
+    }
+
+    private static var readerTitleFont: UIFont {
+        let scaled = 30 * ReaderSettings.fontScale
+        let base = UIFont.systemFont(ofSize: scaled, weight: .bold)
+        guard ReaderSettings.useSerifFont,
+              let descriptor = base.fontDescriptor.withDesign(.serif)
+        else { return base }
+        return UIFont(descriptor: descriptor, size: scaled)
+    }
 }
 
 /// Screen-level footer veil used only while the scroll reader's card is

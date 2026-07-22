@@ -127,6 +127,9 @@ final class SavedMediaCardsViewController: CardCarouselHostViewController {
                 guard let self else { return false }
                 let count = self.items.count + self.cardOffset
                 return count == 0 || self.carousel.currentIndex == count - 1
+            },
+            openStateChanged: { [weak self] open in
+                self?.carousel.setMuteButtonOccluded(open)
             })
 
         // Bridges saves/deletes made by the action/share extension (a DIFFERENT

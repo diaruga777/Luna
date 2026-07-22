@@ -1170,10 +1170,21 @@ public final class CardCarouselViewController: UIViewController {
         updateMuteUI()
     }
 
+    private var isMuteButtonOccluded = false
+
+    /// Temporarily removes the top-right audio control while a host-owned
+    /// overlay covers the card. The content's mute state is unchanged.
+    public func setMuteButtonOccluded(_ occluded: Bool) {
+        guard isMuteButtonOccluded != occluded else { return }
+        isMuteButtonOccluded = occluded
+        updateMuteUI()
+    }
+
     private func updateMuteUI() {
         for slot in slots.values {
             let isCenter = slot.index == currentIndex
-            slot.card.setMuteButtonVisible(isCenter && slot.content.supportsAudio)
+            slot.card.setMuteButtonVisible(
+                !isMuteButtonOccluded && isCenter && slot.content.supportsAudio)
             slot.card.updateMuteIcon(muted: audioSession.isMuted)
         }
     }

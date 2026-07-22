@@ -27,8 +27,10 @@ final class ArchiveTrayController: NSObject {
     private weak var host: UIViewController?
     private let shiftedViews: () -> [UIView]
     private let canPull: () -> Bool
+    private let openStateChanged: (Bool) -> Void
     private let tray = UIView()
-    private let tab = UILabel()
+    private let tab = UIView()
+    private let tabLabel = UILabel()
     private let dismissControl = UIControl()
     private let collection: UICollectionView
     private let emptyLabel = UILabel()
@@ -45,10 +47,16 @@ final class ArchiveTrayController: NSObject {
     private static let peek: CGFloat = 13
     private static let tabWidth: CGFloat = 30
 
-    init(host: UIViewController, shiftedViews: @escaping () -> [UIView], canPull: @escaping () -> Bool) {
+    init(
+        host: UIViewController,
+        shiftedViews: @escaping () -> [UIView],
+        canPull: @escaping () -> Bool,
+        openStateChanged: @escaping (Bool) -> Void = { _ in }
+    ) {
         self.host = host
         self.shiftedViews = shiftedViews
         self.canPull = canPull
+        self.openStateChanged = openStateChanged
         let layout = UICollectionViewFlowLayout()
         layout.minimumInteritemSpacing = 10
         layout.minimumLineSpacing = 10
@@ -66,28 +74,35 @@ final class ArchiveTrayController: NSObject {
         dismissControl.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
         view.addSubview(dismissControl)
 
-        tray.backgroundColor = UIColor.systemIndigo.resolvedColor(with: view.traitCollection)
-            .withAlphaComponent(0.16)
+        // This surface overlaps the shifted card while open, so it must remain
+        // opaque. The semantic neutral also follows Luna's light/dark appearance.
+        tray.backgroundColor = LunaColors.secondaryBackground
         tray.layer.cornerRadius = 28
         tray.layer.cornerCurve = .continuous
-        tray.layer.borderWidth = 1
-        tray.layer.borderColor = UIColor.systemIndigo.withAlphaComponent(0.32).cgColor
         tray.clipsToBounds = false
         view.addSubview(tray)
 
-        tab.text = "a\nr\nc\nh\ni\nv\ne"
-        tab.numberOfLines = 7
-        tab.textAlignment = .center
-        tab.font = .preferredFont(forTextStyle: .caption2)
-        tab.adjustsFontForContentSizeCategory = true
-        tab.textColor = .white
-        tab.backgroundColor = .systemIndigo
+        tab.backgroundColor = LunaColors.tertiaryBackground
         tab.layer.cornerRadius = 10
         tab.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
         tab.clipsToBounds = true
         tab.isAccessibilityElement = true
         tab.accessibilityLabel = "Archive"
         tray.addSubview(tab)
+
+        // Rotate one unbroken word rather than stacking seven lines. The latter
+        // can exceed the fixed tab height at larger Dynamic Type sizes and gets
+        // ellipsized by UILabel.
+        tabLabel.text = "archive"
+        tabLabel.numberOfLines = 1
+        tabLabel.textAlignment = .center
+        tabLabel.font = .preferredFont(forTextStyle: .caption2)
+        tabLabel.adjustsFontForContentSizeCategory = true
+        tabLabel.adjustsFontSizeToFitWidth = true
+        tabLabel.minimumScaleFactor = 0.72
+        tabLabel.textColor = LunaColors.primaryText
+        tabLabel.isAccessibilityElement = false
+        tab.addSubview(tabLabel)
 
         collection.backgroundColor = .clear
         collection.alwaysBounceVertical = true
@@ -153,14 +168,15 @@ final class ArchiveTrayController: NSObject {
         tray.bounds = CGRect(x: 0, y: 0, width: width, height: max(0, bounds.height - top - bottom))
         tray.center.y = top + tray.bounds.height / 2
         tab.frame = CGRect(x: -Self.tabWidth, y: 64, width: Self.tabWidth, height: 126)
+        tabLabel.bounds = CGRect(x: 0, y: 0, width: tab.bounds.height - 16, height: tab.bounds.width)
+        tabLabel.center = CGPoint(x: tab.bounds.midX, y: tab.bounds.midY)
+        tabLabel.transform = CGAffineTransform(rotationAngle: -.pi / 2)
         collection.frame = tray.bounds
         emptyLabel.frame = tray.bounds.insetBy(dx: 18, dy: 18)
         applyProgress()
         if let layout = collection.collectionViewLayout as? UICollectionViewFlowLayout {
-            let usable = width - layout.sectionInset.left - layout.sectionInset.right
-                - layout.minimumInteritemSpacing
-            let side = floor(usable / 2)
-            layout.itemSize = CGSize(width: side, height: side)
+            let usable = floor(width - layout.sectionInset.left - layout.sectionInset.right)
+            layout.itemSize = CGSize(width: usable, height: 128)
         }
     }
 
@@ -215,6 +231,7 @@ final class ArchiveTrayController: NSObject {
         tray.frame.origin.x = closedX + (openX - closedX) * progress
         let shift = -laidOutSize.width * 0.5 * progress
         shiftedViews().forEach { $0.transform = CGAffineTransform(translationX: shift, y: 0) }
+        openStateChanged(progress > 0.001)
         dismissControl.isHidden = progress < 0.01
         dismissControl.alpha = progress * 0.18
         tray.layer.shadowColor = UIColor.black.cgColor
@@ -226,7 +243,14 @@ final class ArchiveTrayController: NSObject {
     #if DEBUG
     var isPullAvailableForTesting: Bool { pullAvailable }
     var trayFrameForTesting: CGRect { tray.frame }
+    var trayBackgroundColorForTesting: UIColor? { tray.backgroundColor }
+    var archiveLabelTextForTesting: String? { tabLabel.text }
+    var archiveLabelNumberOfLinesForTesting: Int { tabLabel.numberOfLines }
+    var itemSizeForTesting: CGSize {
+        (collection.collectionViewLayout as? UICollectionViewFlowLayout)?.itemSize ?? .zero
+    }
     var unarchivePressCancelsTouchesForTesting: Bool { unarchivePress.cancelsTouchesInView }
+    func setOpenForTesting(_ open: Bool) { setOpen(open, animated: false) }
     #endif
 }
 
@@ -278,7 +302,7 @@ private final class ArchiveTrayCell: UICollectionViewCell {
     override init(frame: CGRect) {
         super.init(frame: frame)
         isAccessibilityElement = true
-        contentView.backgroundColor = LunaColors.secondaryBackground
+        contentView.backgroundColor = LunaColors.tertiaryBackground
         contentView.layer.cornerRadius = 16
         contentView.layer.cornerCurve = .continuous
         contentView.clipsToBounds = true
@@ -295,20 +319,21 @@ private final class ArchiveTrayCell: UICollectionViewCell {
             child.translatesAutoresizingMaskIntoConstraints = false
             contentView.addSubview(child)
         }
-        imageCompactConstraint = imageView.heightAnchor.constraint(
-            equalTo: contentView.heightAnchor, multiplier: 0.52)
-        imageFillConstraint = imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        imageCompactConstraint = imageView.widthAnchor.constraint(
+            equalTo: contentView.widthAnchor, multiplier: 0.42)
+        imageFillConstraint = imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor)
         NSLayoutConstraint.activate([
             imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
             imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             imageCompactConstraint,
-            titleLabel.topAnchor.constraint(equalTo: imageView.bottomAnchor, constant: 6),
-            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
-            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+            titleLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
+            titleLabel.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 10),
+            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -10),
             footerLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             footerLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-            footerLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -7),
+            footerLabel.topAnchor.constraint(greaterThanOrEqualTo: titleLabel.bottomAnchor, constant: 4),
+            footerLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
             unavailableIcon.centerXAnchor.constraint(equalTo: imageView.centerXAnchor),
             unavailableIcon.centerYAnchor.constraint(equalTo: imageView.centerYAnchor),
         ])

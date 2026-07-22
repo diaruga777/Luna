@@ -158,6 +158,10 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
                 guard let self else { return false }
                 let count = self.items.count + self.cardOffset
                 return count == 0 || self.carousel.currentIndex == count - 1
+            },
+            openStateChanged: { [weak self] open in
+                self?.readerAudioButton.isHidden = open
+                self?.carousel.setMuteButtonOccluded(open)
             })
 
         NSLayoutConstraint.activate([

@@ -40,6 +40,28 @@ final class CardCarouselHostViewControllerTests: XCTestCase {
         override var hasLeadingPasteboardCard: Bool { pasteboardCardShowing }
     }
 
+    @MainActor
+    func testPagingTowardLastCardWaitsUntilCenterToRevealArchiveTab() {
+        let host = TestHost()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        var isRightmost = false
+        host.mountArchiveTray(shifting: { [] }, canPull: { isRightmost })
+        host.viewDidLayoutSubviews()
+
+        XCTAssertFalse(host.archiveTray?.isPullAvailableForTesting ?? true)
+        host.updateArchivePullAvailability(forTargetIndex: 2, cardCount: 3, animated: false)
+        XCTAssertFalse(
+            host.archiveTray?.isPullAvailableForTesting ?? true,
+            "Selecting the incoming last card must not reveal the tab at animation start")
+
+        isRightmost = true
+        host.refreshArchivePullAvailability(animated: false)
+        XCTAssertTrue(
+            host.archiveTray?.isPullAvailableForTesting ?? false,
+            "The did-center refresh reveals the tab at animation completion")
+    }
+
     // MARK: - No leading pasteboard card: carousel index == item index
 
     func testNoPasteboardCardMapsCarouselIndexDirectlyToItemIndex() {

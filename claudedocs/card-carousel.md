@@ -44,10 +44,13 @@ own adapters later). The Downloader-specific adapters live in
   to 2/3 screen width, and shifts the card/empty UX left by 1/2 screen width. The
   gesture is interactive in both directions; tapping the exposed outside area
   spring-dismisses it. `ArchiveTrayController` owns this shared presentation and
-  a vertically scrolling 2-column square grid. The carousel reports its intended
+  a vertically scrolling single-column list of wide rectangular items. Its opaque
+  neutral background follows light/dark appearance and covers card chrome beneath
+  it while open. The carousel reports its intended
   navigation target before card motion begins: scrubbing, tapping a scrubber chip,
   or swiping away from the rightmost card retracts the tray concurrently instead
-  of waiting for the card swap; scrubbing back or cancelling a page restores it.
+  of waiting for the card swap. Paging toward the rightmost card reveals the tab
+  only after that card centers; cancelling a page restores it after settling.
 
 - **Autoplay**: the centered card's content autoplays and loops as soon as it is
   centered (`CardContentViewController.cardDidBecomeCentered`); it pauses when it

@@ -92,25 +92,32 @@ class CardCarouselHostViewController: UIViewController {
     }
 
     final func mountArchiveTray(
-        shifting views: @escaping () -> [UIView], canPull: @escaping () -> Bool
+        shifting views: @escaping () -> [UIView],
+        canPull: @escaping () -> Bool,
+        openStateChanged: @escaping (Bool) -> Void = { _ in }
     ) {
-        archiveTray = ArchiveTrayController(host: self, shiftedViews: views, canPull: canPull)
+        archiveTray = ArchiveTrayController(
+            host: self,
+            shiftedViews: views,
+            canPull: canPull,
+            openStateChanged: openStateChanged)
     }
 
     final func refreshArchivePullAvailability(animated: Bool) {
         archiveTray?.refreshPullAvailability(animated: animated)
     }
 
-    /// Updates the tray from the carousel's intended target rather than its
-    /// not-yet-swapped `currentIndex`, so the tab retracts alongside paging.
+    /// Retracts the tray from the carousel's intended target rather than its
+    /// not-yet-swapped `currentIndex`, so paging away hides the tab immediately.
+    /// Paging toward the last card deliberately does nothing here: the tab is
+    /// revealed only by `refreshArchivePullAvailability` after that card centers.
     final func updateArchivePullAvailability(
         forTargetIndex index: Int,
         cardCount: Int,
         animated: Bool
     ) {
-        archiveTray?.setPullAvailable(
-            cardCount == 0 || index == cardCount - 1,
-            animated: animated)
+        guard cardCount > 0, index != cardCount - 1 else { return }
+        archiveTray?.setPullAvailable(false, animated: animated)
     }
 
     override func viewDidLayoutSubviews() {

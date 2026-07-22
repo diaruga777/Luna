@@ -68,4 +68,47 @@ final class ArchiveTrayControllerTests: XCTestCase {
         XCTAssertTrue(tray.isPullAvailableForTesting)
         XCTAssertEqual(tray.trayFrameForTesting.minX, 377, accuracy: 0.5)
     }
+
+    @MainActor
+    func testTrayUsesOpaqueNeutralStylingAndSingleColumnRectangles() {
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let tray = ArchiveTrayController(
+            host: host, shiftedViews: { [] }, canPull: { true })
+
+        tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
+
+        let resolvedBackground = tray.trayBackgroundColorForTesting?.resolvedColor(
+            with: host.traitCollection)
+        XCTAssertNotNil(resolvedBackground)
+        XCTAssertEqual(resolvedBackground?.cgColor.alpha ?? 0, 1, accuracy: 0.001)
+        XCTAssertEqual(tray.itemSizeForTesting.width, 232, accuracy: 0.5)
+        XCTAssertEqual(tray.itemSizeForTesting.height, 128, accuracy: 0.5)
+        XCTAssertEqual(tray.archiveLabelTextForTesting, "archive")
+        XCTAssertEqual(tray.archiveLabelNumberOfLinesForTesting, 1)
+    }
+
+    @MainActor
+    func testAudioChromeIsOccludedOnlyWhileTrayIsOpen() {
+        let host = UIViewController()
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        var openStates: [Bool] = []
+        let tray = ArchiveTrayController(
+            host: host,
+            shiftedViews: { [] },
+            canPull: { true },
+            openStateChanged: { openStates.append($0) })
+
+        tray.layout(in: host.view.bounds, safeAreaInsets: .zero)
+        XCTAssertEqual(openStates.last, false)
+
+        // Pulling even partially open immediately removes controls that would
+        // otherwise remain visible through the tray's rounded corner.
+        tray.setOpenForTesting(true)
+        XCTAssertEqual(openStates.last, true)
+        tray.setOpenForTesting(false)
+        XCTAssertEqual(openStates.last, false)
+    }
 }

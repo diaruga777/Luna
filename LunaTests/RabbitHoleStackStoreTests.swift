@@ -48,6 +48,26 @@ final class RabbitHoleStackStoreTests: XCTestCase {
         XCTAssertEqual(layer.modeSegmentCountForTesting, 2)
     }
 
+    /// Restoring a saved layer whose persisted mode is Original must mount and
+    /// load that reader on the first presentation. Comparing only the restored
+    /// `readerMode` used to make the initial embed look redundant, producing a
+    /// blank card until switching away and back.
+    @MainActor
+    func testRestoredOriginalModeMountsArchiveReaderInitially() {
+        let layer = RabbitHoleLayerViewController(
+            shareProvider: nil, layout: RabbitHoleLayout())
+        let content = ArticleContent(title: "Archive", blocks: [
+            .init(kind: .paragraph, text: "Saved page.", links: []),
+        ])
+        layer.configure(
+            descriptor: RabbitHoleLayerDescriptor(
+                urlString: "https://example.com/archive", readerMode: .original),
+            knownContent: content)
+        layer.loadViewIfNeeded()
+
+        XCTAssertTrue(layer.hasMountedOriginalReaderForTesting)
+    }
+
     /// A carousel preview uses the real reader controller, but ordinary child
     /// activation must not turn its viewport-sized prefix into a whole-article
     /// render. Promotion permanently lifts that gate and runs Phase 2.

@@ -12,9 +12,8 @@
 //  chip directly.
 //
 //  The strip has no container chrome — chips float directly on the background
-//  and fade-blur out as they approach either end (an alpha gradient mask plus
-//  gradient-masked blur veils), so hosts can flank the strip with controls and
-//  let chips melt away before reaching them.
+//  and alpha-fade as they approach either end, so hosts can flank the strip
+//  with controls and let chips disappear without drawing an edge veil.
 //
 //  Two styles: `.thumbnails` (small 9:16 image chips — Downloader) and
 //  `.miniCards` (miniature article cards — Reader): each chip is a tiny card
@@ -61,7 +60,7 @@ public final class CarouselScrubberView: UIView {
 
     public let style: Style
 
-    /// Width of the fade-blur zone at each end of the strip. Chips dissolve
+    /// Width of the alpha-fade zone at each end of the strip. Chips dissolve
     /// across this zone as they approach the bounds, so flanking controls
     /// never sit over fully-drawn chips. 0 disables the effect.
     public var edgeFadeWidth: CGFloat = 0 {
@@ -102,15 +101,11 @@ public final class CarouselScrubberView: UIView {
 
     /// Hosts the scroll view and carries the edge fade mask. The mask must
     /// live on a non-scrolling ancestor (a mask on the scroll view's own layer
-    /// would ride along with its scrolled bounds) — and must NOT contain the
-    /// blur veils: UIVisualEffectView only supports masks set directly on the
-    /// effect view itself, not on an ancestor.
+    /// would ride along with its scrolled bounds).
     private let stripContainer = UIView()
     private let scrollView = UIScrollView()
     private let stack = UIStackView()
     private let fadeMask = GradientMaskView()
-    private let leadingBlur = UIVisualEffectView(effect: UIBlurEffect(style: .regular))
-    private let trailingBlur = UIVisualEffectView(effect: UIBlurEffect(style: .regular))
     private var itemViews: [ScrubberItemView] = []
     private var selectedIndex = 0
     private var reportedVisibleIndices = IndexSet()
@@ -145,15 +140,6 @@ public final class CarouselScrubberView: UIView {
         stack.spacing = spacing
         stack.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(stack)
-
-        // Edge veils: gradient-masked blurs sit above the chips so they smear
-        // into the background while the outer alpha mask fades them away.
-        for blur in [leadingBlur, trailingBlur] {
-            blur.isUserInteractionEnabled = false
-            addSubview(blur)
-        }
-        leadingBlur.mask = GradientMaskView(fadingFrom: .leading)
-        trailingBlur.mask = GradientMaskView(fadingFrom: .trailing)
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: stripContainer.topAnchor),
@@ -198,14 +184,6 @@ public final class CarouselScrubberView: UIView {
         stripContainer.layer.mask = edgeFadeWidth > 0 ? fadeMask.layer : nil
         fadeMask.frame = stripContainer.bounds
         fadeMask.setFadeWidth(edgeFadeWidth, in: bounds.width)
-        let veilWidth = min(edgeFadeWidth, bounds.width / 2)
-        leadingBlur.frame = CGRect(x: 0, y: 0, width: veilWidth, height: bounds.height)
-        trailingBlur.frame = CGRect(
-            x: bounds.width - veilWidth, y: 0, width: veilWidth, height: bounds.height)
-        leadingBlur.mask?.frame = leadingBlur.bounds
-        trailingBlur.mask?.frame = trailingBlur.bounds
-        leadingBlur.isHidden = edgeFadeWidth <= 0
-        trailingBlur.isHidden = edgeFadeWidth <= 0
     }
 
     // MARK: - Content
@@ -369,11 +347,9 @@ extension CarouselScrubberView: UIScrollViewDelegate {
     }
 }
 
-/// A view whose layer is a horizontal alpha gradient — used both as the
-/// strip's outer fade mask and as the masks that taper the edge blur veils.
+/// A view whose layer is a horizontal alpha gradient used as the strip's
+/// non-scrolling outer fade mask.
 private final class GradientMaskView: UIView {
-    enum Edge { case leading, trailing }
-
     override class var layerClass: AnyClass { CAGradientLayer.self }
 
     private var gradientLayer: CAGradientLayer { layer as! CAGradientLayer }
@@ -389,18 +365,6 @@ private final class GradientMaskView: UIView {
             UIColor.black.cgColor, UIColor.clear.cgColor,
         ]
         gradientLayer.locations = [0, 0, 1, 1]
-    }
-
-    /// Veil mask: fully opaque at the given outer edge, clear at the inner one
-    /// — the blur is strongest where chips are about to vanish.
-    convenience init(fadingFrom edge: Edge) {
-        self.init(frame: .zero)
-        gradientLayer.colors = [UIColor.black.cgColor, UIColor.clear.cgColor]
-        gradientLayer.locations = [0, 1]
-        if edge == .trailing {
-            gradientLayer.startPoint = CGPoint(x: 1, y: 0.5)
-            gradientLayer.endPoint = CGPoint(x: 0, y: 0.5)
-        }
     }
 
     func setFadeWidth(_ fadeWidth: CGFloat, in totalWidth: CGFloat) {

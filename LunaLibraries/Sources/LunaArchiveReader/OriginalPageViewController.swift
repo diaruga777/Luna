@@ -52,6 +52,17 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
     /// The archive's current (disjoint) scroll offset, for the host to persist.
     public var currentScrollOffset: Double { Double(webView.scrollView.contentOffset.y) }
 
+    /// Stable space at the top of the archive scroll surface for card-hosted
+    /// chrome. Like the scroll reader's `topChromeInset`, this is content inset
+    /// rather than a frame offset so a card can install its title inside the
+    /// archive's actual scrolling content without relayout on immersion.
+    public var topContentInset: CGFloat = 0 {
+        didSet {
+            guard abs(topContentInset - oldValue) > 0.5 else { return }
+            applyTopContentInset()
+        }
+    }
+
     public func configure(item: ReadingListItem, store: ReadingListStore = .shared,
                           savedScrollOffset: Double? = nil) {
         self.item = item
@@ -79,6 +90,7 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         HorizonScrollIndicator.install(on: webView.scrollView, in: view)
+        applyTopContentInset()
 
         loadOriginal()
     }
@@ -119,5 +131,10 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
             // mode — which the reader always offers for web saves — is never blank.
             webView.load(URLRequest(url: liveURL))
         }
+    }
+
+    private func applyTopContentInset() {
+        webView.scrollView.contentInset.top = topContentInset
+        webView.scrollView.verticalScrollIndicatorInsets.top = topContentInset
     }
 }

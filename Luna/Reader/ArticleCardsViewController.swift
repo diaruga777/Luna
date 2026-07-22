@@ -108,10 +108,11 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         style.pagesOnInCardSwipes = true
         style.pageSwipeMovementMultiplier = 1.5
         style.scrubberStyle = .miniCards
-        // The strip runs edge to edge; chips fade-blur out before they reach
-        // the flanking Settings/Share circles (12pt margin + 44pt button).
-        style.scrubberHorizontalInset = 0
-        style.scrubberEdgeFadeWidth = 72
+        // The strip's actual viewport begins/ends at the inner edges of the
+        // flanking 44pt Settings/Share circles (12pt outer margin). Its chips
+        // alpha-fade as they approach those bounds.
+        style.scrubberHorizontalInset = 56
+        style.scrubberEdgeFadeWidth = 28
         // Glass rim so the cards (and the dimmed side peeks, especially in dark
         // mode) read against a same-tone background; fades with the chrome on
         // immersion.
@@ -367,9 +368,8 @@ final class ArticleCardsViewController: CardCarouselHostViewController {
         updateReaderChrome()
     }
 
-    /// Flanks the title scrubber with Settings and Share. The strip itself
-    /// runs edge to edge underneath; its chips fade-blur out before reaching
-    /// these buttons (`scrubberEdgeFadeWidth`).
+    /// Flanks the title scrubber with Settings and Share. The strip's bounds
+    /// meet the buttons' inner edges and its chips fade before reaching them.
     private func mountBottomControls() {
         configureBottomButton(
             settingsButton, symbol: "gearshape", action: #selector(settingsTapped),
@@ -983,13 +983,20 @@ private final class ReaderCardContentViewController: CardContentViewController,
     private let statusLabel = UILabel()
     private let senderBadge = UIVisualEffectView(effect: GlassStyle.barEffect())
     private let senderLabel = UILabel()
+    /// The pinned copy shown while card chrome is surfaced and the scrollable
+    /// copy that permanently occupies the reader's top content inset. Keeping
+    /// both copies laid out identically lets visibility change without changing
+    /// the live reader's geometry or content offset.
     private let titleHeader: ReaderCardTitleHeaderView
+    private let scrollTitleHeader: ReaderCardTitleHeaderView
     private let knownContent: ArticleContent?
     private var reader: UIViewController?
     private let immersionTracker = ScrollDirectionImmersionTracker()
     private var baseTopContentInset: CGFloat = 0
     private var titleHeaderHeight: CGFloat = 0
     private var cardChromeVisible = true
+    private weak var titleScrollView: UIScrollView?
+    private var titleScrollObservation: NSKeyValueObservation?
     private(set) var isCentered = false
     var rabbitHoleReader: LunaReaderUI.RabbitHoleReaderViewController? {
         reader as? LunaReaderUI.RabbitHoleReaderViewController
@@ -1000,6 +1007,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         self.senderName = senderName
         self.knownContent = knownContent
         self.titleHeader = ReaderCardTitleHeaderView(title: item.title ?? "Untitled")
+        self.scrollTitleHeader = ReaderCardTitleHeaderView(title: item.title ?? "Untitled")
         super.init()
         immersionTracker.onImmersionChange = { [weak self] immersed, extendsCard in
             guard let self else { return }
@@ -1068,12 +1076,15 @@ private final class ReaderCardContentViewController: CardContentViewController,
     }
 
     private func mountTitleHeader() {
-        titleHeader.isUserInteractionEnabled = false
+        for header in [titleHeader, scrollTitleHeader] {
+            header.isUserInteractionEnabled = false
+        }
         view.addSubview(titleHeader)
         guard ArticleSourceBadge.wantsFavicon(item), let url = item.url else { return }
         SourceIconCache.shared.icon(forPageURL: url) { [weak self] image in
             guard let image else { return }
             self?.titleHeader.setIcon(image)
+            self?.scrollTitleHeader.setIcon(image)
         }
     }
 
@@ -1082,14 +1093,18 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // The reader fills the card — the fade-out's bottom extension just
         // grows this frame, revealing more content; nothing inside shifts.
         reader?.view.frame = view.bounds
-        let height = titleHeader.heightThatFits(width: view.bounds.width)
-        titleHeader.frame = CGRect(
-            x: 0, y: baseTopContentInset,
-            width: view.bounds.width, height: height)
+        let height = titleHeader.heightThatFits(
+            width: view.bounds.width, topInset: baseTopContentInset)
+        _ = scrollTitleHeader.heightThatFits(
+            width: view.bounds.width, topInset: baseTopContentInset)
+        // The background begins at the card's top edge while the title/icon keep
+        // their normal clearance below the edge dissolve.
+        titleHeader.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: height)
         if abs(height - titleHeaderHeight) > 0.5 {
             titleHeaderHeight = height
             applyReaderTopInset()
         }
+        synchronizeScrollableTitleHeader()
     }
 
     // MARK: - Live reader lifecycle
@@ -1114,6 +1129,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
               let content = knownContent ?? ReadingListStore.shared.content(for: item)
         else { return }
         titleHeader.setTitle(content.title)
+        scrollTitleHeader.setTitle(content.title)
         // Render only the initial scroll viewport while this is a side card or
         // scrub preview. Promotion keeps this exact controller and then permits
         // its seamless Phase-2 expansion; offscreen text layout and image work
@@ -1138,6 +1154,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
         self.reader = reader
         reader.view.frame = view.bounds
         immersionTracker.observe(reader)
+        synchronizeScrollableTitleHeader()
         if let rabbitHole = reader as? RabbitHoleReaderViewController {
             delegate?.readerCard(self, didBecomeReady: rabbitHole)
         }
@@ -1159,8 +1176,13 @@ private final class ReaderCardContentViewController: CardContentViewController,
         // A dive, pop, mode switch, or late article embed swaps the live scroll
         // views / RSVP controllers — re-sweep for new ones to observe (idempotent;
         // next runloop so the new child is mounted).
+        // Mode switches mount their child before this callback, so retarget the
+        // title synchronously as well; the async pass remains a backstop for a
+        // late-loading web/article child.
+        synchronizeScrollableTitleHeader()
         DispatchQueue.main.async {
             if let root = self.reader { self.immersionTracker.observe(root) }
+            self.synchronizeScrollableTitleHeader()
         }
         DispatchQueue.main.async {
             guard self.isCentered else { return }
@@ -1233,24 +1255,59 @@ private final class ReaderCardContentViewController: CardContentViewController,
     /// unscrolled page starts below the card's top-edge dissolve.
     func setTopContentInset(_ inset: CGFloat) {
         baseTopContentInset = max(inset, 0)
-        titleHeader.frame.origin.y = baseTopContentInset
+        view.setNeedsLayout()
         applyReaderTopInset()
     }
 
-    /// Keeps the title row with the card chrome while it is surfaced. When the
-    /// card immerses, the row leaves with that chrome unless the focused scroll
-    /// surface is still at its very top, where the row is the article's in-content
-    /// title rather than floating chrome.
+    /// Card immersion changes only the pinned copy's visibility. The scrollable
+    /// copy and the reader's top inset never move, so scroll/RSVP/archive layouts
+    /// remain stable throughout the transition. RSVP has no scroll surface and
+    /// therefore keeps the pinned title visible at all times.
     func setCardChromeVisible(_ visible: Bool, animated: Bool) {
         cardChromeVisible = visible
-        let staysAsContent = !visible && focusedScrollIsAtTop
-        let showsHeader = visible || staysAsContent
-        applyReaderTopInset(showingHeader: showsHeader)
-        let changes = {
-            self.titleHeader.alpha = showsHeader ? 1 : 0
-            self.titleHeader.transform = showsHeader
-                ? .identity : CGAffineTransform(translationX: 0, y: -14)
+        updatePinnedTitleVisibility(animated: animated)
+    }
+
+    /// Moves the permanent title copy into whichever scroll surface is focused
+    /// (Scroll, Original/web archive, or a live web fallback). It occupies the
+    /// negative content-inset region, so at offset zero it lands pixel-for-pixel
+    /// beneath the pinned copy and then naturally scrolls away with the page.
+    private func synchronizeScrollableTitleHeader() {
+        let focused = rabbitHoleReader?.focusedContentScrollView
+        if focused !== titleScrollView {
+            titleScrollObservation = nil
+            scrollTitleHeader.removeFromSuperview()
+            titleScrollView = focused
+            if let focused {
+                focused.addSubview(scrollTitleHeader)
+                focused.bringSubviewToFront(scrollTitleHeader)
+                titleScrollObservation = focused.observe(\.contentOffset, options: [.new]) {
+                    [weak self] _, _ in
+                    self?.updatePinnedTitleVisibility(animated: false)
+                }
+            }
         }
+        guard let focused else {
+            updatePinnedTitleVisibility(animated: false)
+            return
+        }
+        scrollTitleHeader.frame = CGRect(
+            x: 0, y: -titleHeaderHeight,
+            width: focused.bounds.width, height: titleHeaderHeight)
+        focused.bringSubviewToFront(scrollTitleHeader)
+        updatePinnedTitleVisibility(animated: false)
+    }
+
+    private func updatePinnedTitleVisibility(animated: Bool) {
+        // With no scroll surface the active reader is RSVP (or a non-ready
+        // placeholder), whose title is fixed and never follows card chrome.
+        let showsPinnedTitle = titleScrollView == nil
+            || (cardChromeVisible && !focusedScrollIsAtTop)
+        let changes = {
+            self.titleHeader.alpha = showsPinnedTitle ? 1 : 0
+        }
+        titleHeader.accessibilityElementsHidden = !showsPinnedTitle
+        scrollTitleHeader.accessibilityElementsHidden = showsPinnedTitle
         if animated {
             UIView.animate(
                 withDuration: 0.32, delay: 0,
@@ -1261,14 +1318,12 @@ private final class ReaderCardContentViewController: CardContentViewController,
     }
 
     private var focusedScrollIsAtTop: Bool {
-        guard let scroll = rabbitHoleReader?.focusedContentScrollView else { return false }
+        guard let scroll = titleScrollView else { return false }
         return scroll.contentOffset.y <= -scroll.adjustedContentInset.top + 1
     }
 
-    private func applyReaderTopInset(showingHeader: Bool? = nil) {
-        let headerIsShown = showingHeader ?? (cardChromeVisible || focusedScrollIsAtTop)
-        let titleSpace = headerIsShown ? titleHeaderHeight : 0
-        rabbitHoleReader?.externalChromeContentInset = baseTopContentInset + titleSpace
+    private func applyReaderTopInset() {
+        rabbitHoleReader?.externalChromeContentInset = titleHeaderHeight
     }
 
     override func allowsCardTap(at point: CGPoint) -> Bool {
@@ -1295,6 +1350,7 @@ private final class ReaderCardContentViewController: CardContentViewController,
 private final class ReaderCardTitleHeaderView: UIView {
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
+    private var topInset: CGFloat = 0
 
     init(title: String) {
         super.init(frame: .zero)
@@ -1333,22 +1389,26 @@ private final class ReaderCardTitleHeaderView: UIView {
         superview?.setNeedsLayout()
     }
 
-    func heightThatFits(width: CGFloat) -> CGFloat {
+    func heightThatFits(width: CGFloat, topInset: CGFloat) -> CGFloat {
+        self.topInset = topInset
         let titleWidth = max(width - 20 - 30 - 12 - 20, 0)
         let titleHeight = titleLabel.sizeThatFits(
             CGSize(width: titleWidth, height: .greatestFiniteMagnitude)).height
-        return max(30, titleHeight) + 20
+        return topInset + max(30, titleHeight) + 20
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         let iconSide: CGFloat = 30
-        iconView.frame = CGRect(x: 20, y: 10, width: iconSide, height: iconSide)
+        let contentHeight = max(bounds.height - topInset, 0)
+        iconView.frame = CGRect(
+            x: 20, y: topInset + (contentHeight - iconSide) / 2,
+            width: iconSide, height: iconSide)
         let titleX = iconView.frame.maxX + 12
         titleLabel.frame = CGRect(
-            x: titleX, y: 10,
+            x: titleX, y: topInset + 10,
             width: max(bounds.width - titleX - 20, 0),
-            height: max(bounds.height - 20, 0))
+            height: max(contentHeight - 20, 0))
     }
 
     private static var readerTitleFont: UIFont {

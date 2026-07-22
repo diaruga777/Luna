@@ -319,6 +319,7 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         let inset = showsHeaderChrome ? 0 : externalChromeContentInset
         scrollReader.topChromeInset = inset
         rsvpReader.topContentInset = inset
+        originalReader.topContentInset = inset
         webView?.scrollView.contentInset.top = inset
         webView?.scrollView.verticalScrollIndicatorInsets.top = inset
     }
@@ -689,14 +690,17 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private func embedReader(mode: ReadingListItem.ReaderMode, forceReembed: Bool = false) {
         guard let content = articleContent, let url = descriptor.url else { return }
         if mode == .original {
-            guard readerMode != .original || forceReembed else { return }
+            // `readerMode` is restored from the descriptor before the first
+            // child is mounted. Compare the actual child instead: otherwise a
+            // cold launch restored directly into Original returns here and
+            // leaves the card blank until the user switches away and back.
+            guard readerChild !== originalReader || forceReembed else { return }
             spinner.stopAnimating()
             removeLiveWebView()
-            var transient = ReadingListItem(urlString: url.absoluteString)
-            transient.state = .ready
-            transient.title = descriptor.title
+            let originalItem = readerItem(for: url)
             // Restore the archive's OWN disjoint offset — never the shared reading position.
-            originalReader.configure(item: transient, savedScrollOffset: descriptor.originalScrollOffset)
+            originalReader.configure(
+                item: originalItem, savedScrollOffset: descriptor.originalScrollOffset)
             showChild(originalReader)
             readerMode = .original
             return
@@ -830,6 +834,14 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     public var isRSVPPlaying: Bool? {
         readerMode == .rsvp ? rsvpReader.isPlaying : nil
     }
+
+    #if DEBUG
+    /// Regression hook: a descriptor restored directly into Original must have
+    /// mounted the archive reader, not merely selected the mode in chrome.
+    public var hasMountedOriginalReaderForTesting: Bool {
+        readerChild === originalReader
+    }
+    #endif
 
     private static func firstScrollView(in view: UIView) -> UIScrollView? {
         if let scroll = view as? UIScrollView { return scroll }

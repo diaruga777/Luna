@@ -112,7 +112,7 @@ public struct CardCarouselStyle {
     /// Horizontal room around the scrub strip. Hosts can increase this to
     /// flank the strip with floating controls without covering its content.
     public var scrubberHorizontalInset: CGFloat = 16
-    /// Width of the fade-blur zone at each end of the scrub strip. Chips
+    /// Width of the alpha-fade zone at each end of the scrub strip. Chips
     /// dissolve across this zone as they approach the strip's bounds — hosts
     /// that flank the strip with floating controls size it so chips melt away
     /// before reaching them. 0 disables the effect.

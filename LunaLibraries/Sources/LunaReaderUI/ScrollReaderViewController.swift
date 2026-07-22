@@ -106,6 +106,12 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public var wordCountForTesting: Int { wordMap.wordCount }
     #endif
 
+    /// Host-controlled guard for embedded previews whose UIKit appearance must
+    /// reveal and restore the viewport without starting whole-article Phase 2.
+    /// The host explicitly calls `prepareFullContent()` when it promotes the
+    /// reader to its primary surface.
+    public var defersAutomaticFullContentLoad = false
+
     /// Read aloud (the shared audio toggle).
     private var audioEnabled: Bool
     private var didStartPlayback = false
@@ -213,9 +219,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// calls this on a pre-added child so link activation does not pay the child-VC,
     /// TextKit view, gesture, footer, and constraint setup cost.
     /// - Parameter fullRenderUpFront: render the WHOLE article immediately instead
-    ///   of the Phase-1 prefix + deferred Phase-2 swap. For hosts that keep the
-    ///   reader permanently embedded (e.g. carousel cards), where a post-embed
-    ///   content swap would visibly relayout the card.
+    ///   of the Phase-1 prefix + deferred Phase-2 swap, for hosts that cannot
+    ///   tolerate progressive rendering.
     public func configureForReuse(
         item: ReadingListItem,
         content: ArticleContent,
@@ -845,7 +850,8 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        activateVisibleReader()
+        activateVisibleReader(
+            deferFullContentUntilHostCompletion: defersAutomaticFullContentLoad)
     }
 
     /// Called by hosts that keep this reader pre-added while hidden, then reveal it

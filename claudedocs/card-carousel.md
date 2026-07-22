@@ -178,13 +178,18 @@ Differences from the Downloader, via `CardCarouselStyle`:
   and web saves a globe until the favicon lands (the data-source callback may
   fire twice: instant fallback, then the fetched icon —
   `ArticleSourceBadge.fallback(for:)`, unit-tested in `SourceBadgeTests`).
-  Scrolling the strip shows the exact full reader card that will be selected,
+  Scrolling the strip shows the exact reader card that will be selected,
   including its current mode, content hierarchy, and saved reading position.
-  The carousel prepares full card controllers only for chips intersecting the
+  The carousel prepares real card controllers only for chips intersecting the
   scrubber viewport, releases prepared controllers as they leave that window,
   and promotes the live preview controller directly into the centered slot on
-  commit. The preview therefore cannot swap to different content when the
-  strip settles, while preparation remains bounded by the visible window.
+  commit. Reader previews remain on the scroll reader's Phase-1 prefix: only
+  enough text and inline images for the visible content window are laid out or
+  loaded. Promotion of that same controller permanently lifts the primary gate
+  and starts the seamless Phase-2 full-content swap. The preview therefore
+  cannot swap to different content when the strip settles, while whole-article
+  layout and image loading stay off the scrub path. A deep saved position still
+  renders enough content up front to restore its actual viewport.
 - EVERY mounted card (centered + both side peeks) embeds a full live
   `RabbitHoleReaderViewController` (`ReaderHostFactory.make`), laid out to the
   card's bounds — the card view IS the fullscreen reader view (one header, one

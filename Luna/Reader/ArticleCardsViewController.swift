@@ -849,7 +849,9 @@ private final class ReaderCardContentViewController: CardContentViewController,
     private var reader: UIViewController?
     private let immersionTracker = ScrollDirectionImmersionTracker()
     private(set) var isCentered = false
-    var rabbitHoleReader: RabbitHoleReaderViewController? { reader as? RabbitHoleReaderViewController }
+    var rabbitHoleReader: LunaReaderUI.RabbitHoleReaderViewController? {
+        reader as? LunaReaderUI.RabbitHoleReaderViewController
+    }
 
     init(item: ReadingListItem, senderName: String?) {
         self.item = item
@@ -929,13 +931,11 @@ private final class ReaderCardContentViewController: CardContentViewController,
 
     // MARK: - Live reader lifecycle
 
-    // No relayout on focus change: the reader's layout is card-local and
-    // focus-independent, so the state a card mounted in is its final state.
-
     override func cardDidBecomeCentered() {
         super.cardDidBecomeCentered()
         isCentered = true
         immersionTracker.isActive = true
+        rabbitHoleReader?.activatePrimaryContent()
         if let rabbitHoleReader { delegate?.readerCard(self, didBecomeReady: rabbitHoleReader) }
     }
 
@@ -949,16 +949,18 @@ private final class ReaderCardContentViewController: CardContentViewController,
         guard reader == nil, item.state == .ready,
               let content = ReadingListStore.shared.content(for: item)
         else { return }
-        // The whole article renders at embed time (`fullContentUpFront`) — the
-        // card's initial state IS its final state. No Phase-2 swap arrives
-        // later, so nothing relayouts or shifts when the card becomes centered.
+        // Render only the initial scroll viewport while this is a side card or
+        // scrub preview. Promotion keeps this exact controller and then permits
+        // its seamless Phase-2 expansion; offscreen text layout and image work
+        // therefore never sits on the scrub interaction's critical path.
         let reader = ReaderHostFactory.make(
             item: item, content: content,
             shareProvider: AppReaderShareProvider.shared,
-            fullContentUpFront: true)
-        if let rabbitHole = reader as? RabbitHoleReaderViewController {
+            fullContentUpFront: false)
+        if let rabbitHole = reader as? LunaReaderUI.RabbitHoleReaderViewController {
             rabbitHole.providesOwnChrome = false
             rabbitHole.presentsLinksAsInlineReaders = true
+            rabbitHole.defersFullContentUntilPrimary = true
         }
         addChild(reader)
         reader.view.autoresizingMask = []

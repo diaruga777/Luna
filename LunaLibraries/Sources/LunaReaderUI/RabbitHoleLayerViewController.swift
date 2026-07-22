@@ -187,10 +187,21 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
     private var isConfigured = false
 
     /// Render embedded scroll readers' WHOLE article up front instead of the
-    /// Phase-1 prefix + deferred Phase-2 swap. Set by permanently-embedding hosts
-    /// (carousel cards), where the swap would visibly relayout the card. Must be
-    /// set before content is configured.
+    /// Phase-1 prefix + deferred Phase-2 swap. Must be set before content is
+    /// configured.
     public var rendersFullContentUpFront = false
+
+    /// Suppresses automatic Phase 2 while this layer is only a carousel side
+    /// card or scrub preview. Activation permanently lifts the gate for this
+    /// layer, including later mode switches back to Scroll.
+    public var defersFullContentUntilPrimary = false
+    private var hasActivatedPrimaryContent = false
+
+    public func activatePrimaryContent() {
+        hasActivatedPrimaryContent = true
+        scrollReader.defersAutomaticFullContentLoad = false
+        (readerChild as? ScrollReaderViewController)?.prepareFullContent()
+    }
 
     /// Whether this layer draws its own in-card header pills. Hosts that render
     /// the reader chrome OUTSIDE the card (the Reader carousel's screen-level
@@ -703,6 +714,8 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
             rsvpReader.completionDelegate = self
             showChild(rsvpReader)
         } else {
+            scrollReader.defersAutomaticFullContentLoad =
+                defersFullContentUntilPrimary && !hasActivatedPrimaryContent
             scrollReader.configureForReuse(
                 item: readerItem, content: content, audioEnabled: audioOn,
                 fullRenderUpFront: rendersFullContentUpFront)
@@ -783,7 +796,9 @@ public final class RabbitHoleLayerViewController: UIViewController, WKNavigation
         readerChild = child
         child.view.isUserInteractionEnabled = (currentRole == .focused)
         (child as? ScrollReaderViewController)?
-            .activateVisibleReader(deferFullContentUntilHostCompletion: false)
+            .activateVisibleReader(
+                deferFullContentUntilHostCompletion:
+                    scrollReader.defersAutomaticFullContentLoad)
     }
 
     private func removeReaderChild() {

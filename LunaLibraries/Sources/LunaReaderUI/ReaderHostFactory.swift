@@ -11,8 +11,8 @@ import UIKit
 /// entry point.
 public enum ReaderHostFactory {
     /// - Parameter fullContentUpFront: render every layer's whole article
-    ///   immediately (no progressive prefix → swap) — for hosts that keep the
-    ///   reader permanently embedded, e.g. carousel cards.
+    ///   immediately (no progressive prefix → swap) for hosts that cannot
+    ///   tolerate progressive rendering.
     public static func make(item: ReadingListItem,
                      content: ArticleContent,
                      shareProvider: ReaderShareProviding? = nil,

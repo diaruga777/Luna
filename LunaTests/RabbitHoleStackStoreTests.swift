@@ -48,6 +48,48 @@ final class RabbitHoleStackStoreTests: XCTestCase {
         XCTAssertEqual(layer.modeSegmentCountForTesting, 2)
     }
 
+    /// A carousel preview uses the real reader controller, but ordinary child
+    /// activation must not turn its viewport-sized prefix into a whole-article
+    /// render. Promotion permanently lifts that gate and runs Phase 2.
+    @MainActor
+    func testPrimaryGateDefersFullScrollRenderUntilPromotion() throws {
+        let content = ArticleContent(title: "Long", blocks: (0..<4).map { index in
+            .init(
+                kind: .paragraph,
+                text: "Paragraph \(index) " + String(repeating: "viewport word ", count: 180),
+                links: [])
+        })
+        let layer = RabbitHoleLayerViewController(
+            shareProvider: nil, layout: RabbitHoleLayout())
+        layer.defersFullContentUntilPrimary = true
+        layer.view.frame = CGRect(x: 0, y: 0, width: 390, height: 650)
+        layer.configure(
+            descriptor: RabbitHoleLayerDescriptor(urlString: "https://example.com/long"),
+            knownContent: content)
+        layer.loadViewIfNeeded()
+        layer.view.layoutIfNeeded()
+
+        let scroll = try XCTUnwrap(
+            layer.children.compactMap { $0 as? ScrollReaderViewController }.first)
+        let prefixLength = scroll.renderedTextLengthForTesting
+        scroll.beginAppearanceTransition(true, animated: false)
+        scroll.endAppearanceTransition()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertFalse(scroll.didLoadFullContentForTesting)
+        XCTAssertEqual(scroll.renderedTextLengthForTesting, prefixLength)
+        XCTAssertLessThan(prefixLength, ArticleTextRenderer.render(content).text.length)
+
+        layer.activatePrimaryContent()
+        let deadline = Date().addingTimeInterval(5)
+        while !scroll.didLoadFullContentForTesting, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+
+        XCTAssertTrue(scroll.didLoadFullContentForTesting)
+        XCTAssertGreaterThan(scroll.renderedTextLengthForTesting, prefixLength)
+    }
+
     private var tempDir: URL!
     private var store: RabbitHoleStackStore!
 

@@ -240,6 +240,10 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
         let layer = RabbitHoleLayerViewController(
             shareProvider: shareProvider, layout: layout)
         layer.rendersFullContentUpFront = rendersFullContentUpFront
+        layer.defersFullContentUntilPrimary = defersFullContentUntilPrimary
+        if hasActivatedPrimaryContent {
+            layer.activatePrimaryContent()
+        }
         layer.showsHeaderChrome = providesOwnChrome
         layer.externalChromeContentInset = externalChromeContentInset
         layer.delegate = self
@@ -343,10 +347,23 @@ public final class RabbitHoleReaderViewController: UIViewController, UIGestureRe
     }
 
     /// Render every layer's WHOLE article up front instead of the Phase-1 prefix
-    /// + deferred Phase-2 swap. For permanently-embedding hosts (carousel cards):
-    /// the card's initial state IS its final state — no post-embed content swap,
-    /// no relayout when the card is focused. Set before the view loads.
+    /// + deferred Phase-2 swap. Set before the view loads for hosts that cannot
+    /// tolerate progressive rendering.
     public var rendersFullContentUpFront = false
+
+    /// Keep embedded scroll readers on their viewport-sized Phase-1 render
+    /// until the host explicitly promotes this reader to primary. Carousel
+    /// side cards and scrub previews use this so ordinary child appearance
+    /// callbacks cannot start whole-article layout in the background.
+    public var defersFullContentUntilPrimary = false
+    private var hasActivatedPrimaryContent = false
+
+    /// Marks the focused layer as primary and permits its progressive reader
+    /// to perform the seamless Phase-2 full-content swap.
+    public func activatePrimaryContent() {
+        hasActivatedPrimaryContent = true
+        layers.last?.activatePrimaryContent()
+    }
 
     /// Embedded card readers open links in the dedicated eclipse overlay rather
     /// than adding another in-card rabbit-hole layer.

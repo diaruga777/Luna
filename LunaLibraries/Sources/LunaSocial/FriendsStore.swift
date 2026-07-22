@@ -84,7 +84,7 @@ public struct Friend: Codable, Equatable {
 
 /// Persists the friends list as JSON in the App Group container (shared by all
 /// three apps), mirroring the `ReadingListStore` pattern: fresh disk reads,
-/// lock-serialized mutations, change notification.
+/// cross-process coordinated mutations, change notification.
 public final class FriendsStore {
 
     public static let shared = FriendsStore()
@@ -121,62 +121,74 @@ public final class FriendsStore {
     /// resulting friend.
     @discardableResult
     public func add(email: String, name: String? = nil) -> Friend {
-        store.mutationLock.lock()
-        defer { store.mutationLock.unlock() }
-        var all = items()
         let normalized = Friend.normalize(email)
-        if let index = all.firstIndex(where: { $0.email == normalized }) {
-            if let name, !name.isEmpty { all[index].name = name }
-            store.save(all)
-            return all[index]
+        return store.mutate { all in
+            if let index = all.firstIndex(where: { $0.email == normalized }) {
+                guard let name, !name.isEmpty, all[index].name != name else {
+                    return (all[index], false)
+                }
+                all[index].name = name
+                return (all[index], true)
+            }
+            let friend = Friend(email: normalized, name: name)
+            all.append(friend)
+            return (friend, true)
         }
-        let friend = Friend(email: normalized, name: name)
-        all.insert(friend, at: 0)
-        store.save(all)
-        return friend
     }
 
     /// Persists a full friend record (used to flip toggles / flags).
     public func update(_ friend: Friend) {
-        store.mutationLock.lock()
-        defer { store.mutationLock.unlock() }
-        var all = items()
-        guard let index = all.firstIndex(where: { $0.email == friend.email }) else { return }
-        all[index] = friend
-        store.save(all)
+        store.mutate { all in
+            guard let index = all.firstIndex(where: { $0.email == friend.email }),
+                  all[index] != friend
+            else { return ((), false) }
+            all[index] = friend
+            return ((), true)
+        }
     }
 
     public func remove(email: String) {
-        store.mutationLock.lock()
-        defer { store.mutationLock.unlock() }
         let normalized = Friend.normalize(email)
-        var all = items()
-        all.removeAll { $0.email == normalized }
-        store.save(all)
+        store.mutate { all in
+            let originalCount = all.count
+            all.removeAll { $0.email == normalized }
+            return ((), all.count != originalCount)
+        }
     }
 
     public func setNotifyOnEveryShare(_ enabled: Bool, email: String) {
-        guard var friend = friend(withEmail: email) else { return }
-        friend.notifyOnEveryShare = enabled
-        update(friend)
+        let normalized = Friend.normalize(email)
+        store.mutate { all in
+            guard let index = all.firstIndex(where: { $0.email == normalized }),
+                  all[index].notifyOnEveryShare != enabled
+            else { return ((), false) }
+            all[index].notifyOnEveryShare = enabled
+            return ((), true)
+        }
     }
 
     public func setBlocked(_ blocked: Bool, email: String) {
-        guard var friend = friend(withEmail: email) else { return }
-        friend.isBlocked = blocked
-        update(friend)
+        let normalized = Friend.normalize(email)
+        store.mutate { all in
+            guard let index = all.firstIndex(where: { $0.email == normalized }),
+                  all[index].isBlocked != blocked
+            else { return ((), false) }
+            all[index].isBlocked = blocked
+            return ((), true)
+        }
     }
 
     /// Records that a share from this friend was received. Returns true if this
     /// was the first ever (so the caller can always notify on the first one).
     @discardableResult
     public func markReceivedShare(email: String) -> Bool {
-        guard var friend = friend(withEmail: email) else { return false }
-        let wasFirst = !friend.hasReceivedShare
-        if wasFirst {
-            friend.hasReceivedShare = true
-            update(friend)
+        let normalized = Friend.normalize(email)
+        return store.mutate { all in
+            guard let index = all.firstIndex(where: { $0.email == normalized }),
+                  !all[index].hasReceivedShare
+            else { return (false, false) }
+            all[index].hasReceivedShare = true
+            return (true, true)
         }
-        return wasFirst
     }
 }

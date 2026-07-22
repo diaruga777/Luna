@@ -10,8 +10,8 @@ recipient's Luna app recognizes and imports.
 - **`LunaSocial/FriendsStore.swift`** — `Friend` (`email` [the stable
   identifier, lowercased], optional `name`, `dateAdded`, `notifyOnEveryShare`,
   `hasReceivedShare`, `isBlocked`). `FriendsStore` persists `friends.json` in the App Group
-  container (`ReadingListStore` pattern: lock-serialized mutations, posts
-  `.friendsListChanged`). `add` is idempotent by email and updates the name;
+  container with coordinated load-mutate-save transactions and posts
+  `.friendsListChanged`. `add` is idempotent by email and updates the name;
   `markReceivedShare` tracks whether a contact's first share has landed yet (so
   it can always notify once). Active and blocked projections feed separate UI
   sections and recipient pickers.

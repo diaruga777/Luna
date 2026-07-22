@@ -91,6 +91,18 @@ final class FriendsStoreTests: XCTestCase {
         XCTAssertEqual(store.items().map(\.email), ["second@example.com", "first@example.com"])
     }
 
+    func testIndependentStoresDoNotLoseConcurrentAppGroupUpdates() {
+        let firstProcess = FriendsStore(containerURL: scratchDirectory)
+        let secondProcess = FriendsStore(containerURL: scratchDirectory)
+
+        DispatchQueue.concurrentPerform(iterations: 40) { index in
+            let process = index.isMultiple(of: 2) ? firstProcess : secondProcess
+            process.add(email: "person\(index)@example.com")
+        }
+
+        XCTAssertEqual(store.items().count, 40)
+    }
+
     func testEmailValidation() {
         XCTAssertTrue(Friend.isValidEmail("a@b.com"))
         XCTAssertFalse(Friend.isValidEmail("not-an-email"))

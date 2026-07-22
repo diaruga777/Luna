@@ -49,16 +49,22 @@ public final class RecentFriendRecipientsStore {
             .filter(Friend.isValidEmail)
         guard !normalized.isEmpty else { return }
 
-        store.mutationLock.lock()
-        defer { store.mutationLock.unlock() }
-
-        var byEmail: [String: Recipient] = [:]
-        for recipient in items() {
-            byEmail[recipient.email] = recipient
+        store.mutate { all in
+            // Assignment also repairs any duplicate rows written by legacy
+            // builds; `Dictionary(uniqueKeysWithValues:)` would trap on them.
+            var byEmail: [String: Recipient] = [:]
+            for recipient in all {
+                if let existing = byEmail[recipient.email],
+                   existing.lastSentAt >= recipient.lastSentAt {
+                    continue
+                }
+                byEmail[recipient.email] = recipient
+            }
+            for email in normalized {
+                byEmail[email] = Recipient(email: email, lastSentAt: now)
+            }
+            all = Array(byEmail.values)
+            return ((), true)
         }
-        for email in normalized {
-            byEmail[email] = Recipient(email: email, lastSentAt: now)
-        }
-        store.save(Array(byEmail.values))
     }
 }

@@ -63,10 +63,10 @@ public final class PendingRequestsStore {
     public var count: Int { items().count }
 
     public func remove(id: UUID) {
-        store.mutationLock.lock()
-        defer { store.mutationLock.unlock() }
-        var all = items()
-        all.removeAll { $0.id == id }
-        store.save(all)
+        store.mutate { all in
+            let originalCount = all.count
+            all.removeAll { $0.id == id }
+            return ((), all.count != originalCount)
+        }
     }
 }

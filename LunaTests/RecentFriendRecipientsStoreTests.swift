@@ -47,4 +47,20 @@ final class RecentFriendRecipientsStoreTests: XCTestCase {
 
         XCTAssertEqual(store.items().map(\.email), ["valid@example.com"])
     }
+
+    func testRecordingRepairsDuplicateLegacyRowsWithoutTrapping() throws {
+        let duplicate = [
+            RecentFriendRecipientsStore.Recipient(
+                email: "same@example.com", lastSentAt: Date(timeIntervalSince1970: 1)),
+            RecentFriendRecipientsStore.Recipient(
+                email: "same@example.com", lastSentAt: Date(timeIntervalSince1970: 2)),
+        ]
+        try JSONEncoder().encode(duplicate).write(
+            to: scratchDirectory.appendingPathComponent("recentFriendRecipients.json"),
+            options: .atomic)
+
+        store.recordSent(to: ["other@example.com"], now: Date(timeIntervalSince1970: 3))
+
+        XCTAssertEqual(store.items().map(\.email), ["other@example.com", "same@example.com"])
+    }
 }

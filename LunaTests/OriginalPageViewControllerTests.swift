@@ -87,10 +87,18 @@ final class OriginalPageViewControllerTests: XCTestCase {
             string: "https://www.newyorker.com/culture/the-weekend-essay/test"))
         let prose = String(repeating: "Complete article prose remains available. ", count: 80)
         let html = """
-        <html><head><title>Saved article</title></head><body>
+        <html><head><title>Saved article</title></head><body onload="window.publisherBooted=true">
         <aside class="paywall-bar">Subscribe</aside>
         <div class="ad-stickyhero">Advertisement</div>
         <article><p>\(prose)</p></article>
+        <script>
+          var renderedStyle = document.createElement('style');
+          renderedStyle.textContent = '.layout-installed-by-script { margin: 17px; }';
+          document.head.appendChild(renderedStyle);
+          setTimeout(function () {
+            document.body.innerHTML = '<aside class="paywall-modal">Subscribe</aside>';
+          }, 5000);
+        </script>
         </body></html>
         """
 
@@ -106,6 +114,46 @@ final class OriginalPageViewControllerTests: XCTestCase {
         XCTAssertTrue(archivedHTML.contains("div.ad, aside.paywall-bar"))
         XCTAssertTrue(archivedHTML.contains("display:none !important"))
         XCTAssertTrue(archivedHTML.contains("Complete article prose remains available"))
+        XCTAssertTrue(archivedHTML.contains("layout-installed-by-script"))
+        XCTAssertFalse(archivedHTML.localizedCaseInsensitiveContains("<script"))
+        XCTAssertFalse(archivedHTML.contains("onload="))
+    }
+
+    func testArchiveSanitizerRemovesLegacyPublisherExecutionOnly() throws {
+        let html = """
+        <html><head>
+          <style>.rendered-layout { display: grid; }</style>
+          <meta http-equiv="refresh" content="1; https://example.com/live-paywall">
+        </head><body onload="installWall()">
+          <article><p>Captured readable prose.</p></article>
+          <script>setTimeout(installWall, 1000)</script>
+        </body></html>
+        """
+        let archive: [String: Any] = [
+            "WebMainResource": [
+                "WebResourceData": Data(html.utf8),
+                "WebResourceFrameName": "",
+                "WebResourceMIMEType": "text/html",
+                "WebResourceTextEncodingName": "UTF-8",
+                "WebResourceURL": "https://www.newyorker.com/story",
+            ],
+            "WebSubresources": [],
+        ]
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: archive, format: .binary, options: 0)
+        let sanitized = try XCTUnwrap(WebArchiveSanitizer.sanitized(data))
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(
+                from: sanitized, options: [], format: nil) as? [String: Any])
+        let main = try XCTUnwrap(plist["WebMainResource"] as? [String: Any])
+        let mainData = try XCTUnwrap(main["WebResourceData"] as? Data)
+        let result = try XCTUnwrap(String(data: mainData, encoding: .utf8))
+
+        XCTAssertTrue(result.contains("Captured readable prose"))
+        XCTAssertTrue(result.contains(".rendered-layout { display: grid; }"))
+        XCTAssertFalse(result.localizedCaseInsensitiveContains("<script"))
+        XCTAssertFalse(result.localizedCaseInsensitiveContains("http-equiv=\"refresh\""))
+        XCTAssertFalse(result.contains("onload="))
     }
 
     private final class LoadDelegate: NSObject, WKNavigationDelegate {

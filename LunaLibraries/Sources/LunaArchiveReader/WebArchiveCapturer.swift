@@ -72,7 +72,10 @@ public final class WebArchiveCapturer: NSObject, WKNavigationDelegate {
             try? await Task.sleep(for: .milliseconds(900))
             guard let self, self.continuation != nil else { return }
             self.webView.createWebArchiveData { [weak self] result in
-                let data = try? result.get()
+                let rawData = try? result.get()
+                // Preserve the rendered DOM/CSS but never persist publisher code
+                // that can hydrate a paywall again when the archive is replayed.
+                let data = rawData.flatMap(WebArchiveSanitizer.sanitized)
                 // Treat a suspiciously tiny archive as a failure (blank/empty page).
                 self?.finish((data?.count ?? 0) > 1024 ? data : nil)
             }

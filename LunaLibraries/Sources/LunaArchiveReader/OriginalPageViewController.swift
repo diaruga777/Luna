@@ -155,9 +155,13 @@ public final class OriginalPageViewController: UIViewController, WKNavigationDel
     private func performLoad(savedItem: ReadingListItem, sourceURL: URL) {
         if let archiveURL = store.webArchiveURL(for: savedItem),
            let data = try? Data(contentsOf: archiveURL) {
+            // Older archives may still contain the publisher's executable bundles.
+            // Sanitize in memory on every replay so a delayed hydration cannot
+            // replace the already-captured readable DOM with a paywall or live page.
+            let replayData = WebArchiveSanitizer.sanitized(data) ?? data
             // `createWebArchiveData` documents this MIME type as loadable directly
             // in WKWebView. The base URL is only used for the archive's own origin.
-            webView.load(data, mimeType: "application/x-webarchive", characterEncodingName: "utf-8",
+            webView.load(replayData, mimeType: "application/x-webarchive", characterEncodingName: "utf-8",
                          baseURL: sourceURL)
         } else if let documentURL = store.originalDocumentURL(for: savedItem) {
             webView.loadFileURL(documentURL, allowingReadAccessTo: store.articlesDirectory)

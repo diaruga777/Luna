@@ -66,6 +66,10 @@ The generic WebKit CSS only targets structural wall containers—not arbitrary
 `paywall` classes, because Condé Nast uses that class on the readable article
 paragraphs themselves. DOM cleanup observes late child insertion for the full page
 lifetime so a hydrated paywall cannot replace the article after first paint.
+Archive capture keeps the post-layout DOM and injected CSS but strips publisher
+`script` elements, inline event handlers, and meta refreshes before persistence.
+Replay applies the same sanitization in memory to legacy archives, preventing an old
+publisher bundle from rehydrating the saved DOM or navigating it back to a live wall.
 A layer restored with `.original` compares the actually mounted child (rather than
 mistaking the restored mode value for an already-mounted reader), so a cold launch
 loads the saved web archive immediately without requiring a mode round trip.

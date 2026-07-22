@@ -244,6 +244,21 @@ final class SavedMediaStoreTests: XCTestCase {
         XCTAssertNotNil(redownloaded.thumbnailFileName)
     }
 
+    func testRequiredPendingRowCannotBeResurrectedAfterDeletion() throws {
+        let urlString = "https://x.com/example/status/deleted-during-download"
+        let pending = try store.ensureUndownloaded(
+            id: UUID(), sourceURLString: urlString, title: "Pending")
+        store.delete(pending)
+        let source = root.appendingPathComponent("deleted-during-download.jpg")
+        try makeJPEG().write(to: source)
+
+        XCTAssertThrowsError(try store.addDownloadedFile(
+            source, kind: .image, sourceURLString: urlString, title: "Pending",
+            requiringItemID: pending.id))
+        XCTAssertTrue(store.items().isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+    }
+
     func testPhotosTransitionRetainsOpportunisticThumbnail() throws {
         let source = root.appendingPathComponent("photos.jpg")
         try makeJPEG().write(to: source)

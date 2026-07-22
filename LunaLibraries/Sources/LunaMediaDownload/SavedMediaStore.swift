@@ -13,6 +13,10 @@ import Foundation
 import UIKit
 import UniformTypeIdentifiers
 
+private enum SavedMediaStoreMutationError: Error {
+    case itemRemoved
+}
+
 public struct SavedMediaItem: Codable, Identifiable, Equatable {
     public enum StorageState: Codable, Equatable {
         case undownloaded
@@ -407,14 +411,21 @@ public final class SavedMediaStore {
         title: String?,
         creator: String? = nil,
         fileExtension ext: String? = nil,
-        dateSaved: Date = Date()
+        dateSaved: Date = Date(),
+        requiringItemID: UUID? = nil
     ) throws -> SavedMediaItem {
         let recognized = PlatformRecognizer.recognize(sourceURLString)
         lock.lock()
         var items = loadUnlocked()
-        let existingIndex = Self.matchIndex(in: items, id: nil, sourceURLString: sourceURLString)
+        let existingIndex = Self.matchIndex(
+            in: items, id: requiringItemID, sourceURLString: sourceURLString)
         let existing = existingIndex.map { items[$0] }
-        let id = existing?.id ?? UUID()
+        guard requiringItemID == nil || existing?.id == requiringItemID else {
+            lock.unlock()
+            throw SavedMediaStoreMutationError.itemRemoved
+        }
+        let protectedItemID = requiringItemID ?? existing?.id
+        let id = protectedItemID ?? UUID()
         lock.unlock()
         let cleanExt = Self.cleanExtension(ext ?? fileURL.pathExtension, kind: kind)
         // A fresh name keeps an existing durable local backing intact until the
@@ -437,9 +448,34 @@ public final class SavedMediaStore {
             platformItemID: recognized?.itemID ?? existing?.platformItemID,
             creator: creator ?? existing?.creator)
         var persistedItem = item
-        persistedItem.archivedAt = existing?.archivedAt
+        func removeNewFiles() {
+            try? fm.removeItem(at: destination)
+            if let thumbnailName {
+                try? fm.removeItem(at: thumbnailDirectory.appendingPathComponent(thumbnailName))
+            }
+        }
         lock.lock()
         items = loadUnlocked()
+        let latestIndex = Self.matchIndex(in: items, id: id, sourceURLString: sourceURLString)
+        let latest = latestIndex.map { items[$0] }
+        guard protectedItemID == nil || latest?.id == protectedItemID else {
+            lock.unlock()
+            removeNewFiles()
+            throw SavedMediaStoreMutationError.itemRemoved
+        }
+        // Metadata and archive status may have changed while the file move and
+        // thumbnail generation were in flight. Merge from the latest manifest,
+        // never from the stale pre-I/O snapshot.
+        persistedItem.title = title ?? latest?.title ?? existing?.title
+        persistedItem.creator = creator ?? latest?.creator ?? existing?.creator
+        persistedItem.platform = recognized?.platform ?? latest?.platform ?? existing?.platform
+        persistedItem.platformItemID = recognized?.itemID
+            ?? latest?.platformItemID ?? existing?.platformItemID
+        if let latest {
+            persistedItem.archivedAt = latest.archivedAt
+        } else {
+            persistedItem.archivedAt = existing?.archivedAt
+        }
         let replaced = items.filter { $0.id == id }
         items.removeAll { $0.id == id }
         items.append(persistedItem)
@@ -448,10 +484,7 @@ public final class SavedMediaStore {
             lock.unlock()
         } catch {
             lock.unlock()
-            try? fm.removeItem(at: destination)
-            if let thumbnailName {
-                try? fm.removeItem(at: thumbnailDirectory.appendingPathComponent(thumbnailName))
-            }
+            removeNewFiles()
             throw error
         }
         for old in replaced where old.id != persistedItem.id || old.fileName != persistedItem.fileName {

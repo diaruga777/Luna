@@ -475,12 +475,12 @@ public final class SavedNonTextualViewController: UIViewController {
                     } catch {
                         saved = try store.addDownloadedFile(
                             copy, kind: kind, sourceURLString: sourceURLString, title: title,
-                            creator: creator)
+                            creator: creator, requiringItemID: pending.id)
                     }
                 } else {
                     saved = try store.addDownloadedFile(
                         copy, kind: kind, sourceURLString: sourceURLString, title: title,
-                        creator: creator)
+                        creator: creator, requiringItemID: pending.id)
                 }
                 AutoDownloadSettings.markDownloaded(sourceURLString)
                 if AutoDownloadSettings.autoCopyDownloadsToClipboard {

@@ -97,7 +97,8 @@ public struct MediaDownloadService: MediaDownloading {
                 kind: asset.kind,
                 sourceURLString: url.absoluteString,
                 title: title,
-                fileExtension: fileURL.pathExtension)
+                fileExtension: fileURL.pathExtension,
+                requiringItemID: pending.id)
             await copyToClipboardIfEnabled(item)
             return item
         } catch {

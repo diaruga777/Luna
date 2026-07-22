@@ -973,9 +973,11 @@ public final class LiveMediaDownloadManager: NSObject {
     private func finishDownloaderStorage(
         job: LiveMediaDownloadJob, fileURL: URL, kind: MediaAsset.Kind
     ) async throws -> SavedMediaItem {
+        guard let pending = SavedMediaStore.shared.matchingItem(
+            forURLString: job.sourceURLString)
+        else { throw CancellationError() }
         if AutoDownloadSettings.autoSaveDownloadsToPhotos,
-           await saver.requestReadAuthorization(),
-           let pending = SavedMediaStore.shared.matchingItem(forURLString: job.sourceURLString) {
+           await saver.requestReadAuthorization() {
             do {
                 let identifier = try await saver.save(
                     fileURL: fileURL, kind: kind, shouldMoveFile: false)
@@ -994,7 +996,8 @@ public final class LiveMediaDownloadManager: NSObject {
             sourceURLString: job.sourceURLString,
             title: job.title,
             creator: job.creator,
-            fileExtension: job.fileExtension)
+            fileExtension: job.fileExtension,
+            requiringItemID: pending.id)
     }
 
     private func retryOrFail(

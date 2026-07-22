@@ -797,7 +797,10 @@ public struct ArticleExtractor {
     /// anything declared tiny.
     private func makeImageBlock(from element: Element, baseURL: URL) -> ArticleContent.Block? {
         guard var urlString = imageURLString(from: element, baseURL: baseURL) else { return nil }
-        if urlString.hasSuffix(".svg") || urlString.hasSuffix(".gif") { return nil }
+        // SVGs cannot be decoded by the offline raster-image pipeline. GIFs are
+        // deliberately retained: the reader stores their original animation and
+        // presents it inline (including when metadata promotes one to lead art).
+        if URL(string: urlString)?.pathExtension.lowercased() == "svg" { return nil }
 
         // Token-exact matching: substring matching would reject legitimate
         // URLs (e.g. "ads" inside WordPress's "/wp-content/uploads/").

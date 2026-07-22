@@ -69,13 +69,20 @@ public enum ArticleImageDownloader {
             }
             // A main-app ingestion may already have cached this image before the
             // action/share reader opens; preserve it rather than re-fetching it.
-            if block.imageFileName != nil {
-                blocks.append(block)
-                continue
-            }
             guard let rawURL = block.imageURLString, let imageURL = URL(string: rawURL) else {
                 blocks.append(block)
                 continue
+            }
+            // Older Luna builds accepted WebP from image CDNs even for a `.gif`
+            // source URL, then transcoded only frame zero to JPEG. Treat that legacy
+            // still as missing so reopening the article repairs it in place. A real
+            // preserved/converted animation is always stored as `.gif`.
+            if let fileName = block.imageFileName {
+                if !expectsGIFAnimation(imageURL) || fileName.lowercased().hasSuffix(".gif") {
+                    blocks.append(block)
+                    continue
+                }
+                block.imageFileName = nil
             }
             guard shouldDownload(block, textBeforeBlock) else {
                 blocks.append(block)
@@ -86,7 +93,10 @@ public enum ArticleImageDownloader {
             // viewer builds a fresh transient item each time — itemId naming meant it
             // re-fetched every open). If a local copy already exists, skip the network.
             let base = Self.stableBase(for: rawURL)
-            if let existing = Self.existingFileName(base: base, in: store.articlesDirectory) {
+            if let existing = Self.existingFileName(
+                base: base, in: store.articlesDirectory,
+                animatedGIFOnly: expectsGIFAnimation(imageURL)
+            ) {
                 block.imageFileName = existing
                 blocks.append(block)
                 continue
@@ -130,15 +140,33 @@ public enum ArticleImageDownloader {
     public static func resolveLocalImages(
         _ content: ArticleContent, store: ReadingListStore
     ) -> ArticleContent {
-        guard content.blocks.contains(where: { $0.kind == .image && $0.imageFileName == nil })
+        guard content.blocks.contains(where: { block in
+            guard block.kind == .image else { return false }
+            if block.imageFileName == nil { return true }
+            guard let rawURL = block.imageURLString, let imageURL = URL(string: rawURL),
+                  expectsGIFAnimation(imageURL) else { return false }
+            return block.imageFileName?.lowercased().hasSuffix(".gif") != true
+        })
         else { return content }
         let directory = store.articlesDirectory
         var blocks: [ArticleContent.Block] = []
         blocks.reserveCapacity(content.blocks.count)
         for var block in content.blocks {
-            if block.kind == .image, block.imageFileName == nil, let rawURL = block.imageURLString,
-               let existing = existingFileName(base: stableBase(for: rawURL), in: directory) {
-                block.imageFileName = existing
+            if block.kind == .image, let rawURL = block.imageURLString,
+               let imageURL = URL(string: rawURL) {
+                let expectsAnimation = expectsGIFAnimation(imageURL)
+                if let current = block.imageFileName,
+                   expectsAnimation, !current.lowercased().hasSuffix(".gif") {
+                    // Unlink a legacy frame-zero JPEG so the reader's missing-image
+                    // pass can fetch the animation again.
+                    block.imageFileName = nil
+                }
+                if block.imageFileName == nil,
+                   let existing = existingFileName(
+                       base: stableBase(for: rawURL), in: directory,
+                       animatedGIFOnly: expectsAnimation) {
+                    block.imageFileName = existing
+                }
             }
             blocks.append(block)
         }
@@ -155,8 +183,13 @@ public enum ArticleImageDownloader {
     }
 
     /// An already-downloaded file for `base` (any image extension), or nil.
-    private static func existingFileName(base: String, in directory: URL) -> String? {
-        let candidates = ["jpg", "png", "gif", "jpeg", "webp", "heic", "heif", "avif", "img"]
+    private static func existingFileName(
+        base: String, in directory: URL, animatedGIFOnly: Bool = false
+    ) -> String? {
+        // Prefer GIF before legacy JPEG when both exist after an automatic repair.
+        let candidates = animatedGIFOnly
+            ? ["gif"]
+            : ["gif", "jpg", "png", "jpeg", "webp", "heic", "heif", "avif", "img"]
         for ext in candidates {
             let name = "\(base).\(ext)"
             if FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) {
@@ -170,7 +203,7 @@ public enum ArticleImageDownloader {
         var request = URLRequest(url: url, timeoutInterval: 18)
         request.setValue(ArticleFetcher.safariUserAgent, forHTTPHeaderField: "User-Agent")
         request.setValue(
-            "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            acceptHeader(for: url),
             forHTTPHeaderField: "Accept")
         request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
         request.setValue(refererURL.absoluteString, forHTTPHeaderField: "Referer")
@@ -179,10 +212,20 @@ public enum ArticleImageDownloader {
               let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode),
               data.count > 512, data.count <= maxBytes,
-              CGImageSourceCreateWithData(data as CFData, nil) != nil
+              let source = CGImageSourceCreateWithData(data as CFData, nil)
         else { return nil }
 
         let originalExtension = fileExtension(for: http.mimeType, url: url)
+        if CGImageSourceGetCount(source) > 1 {
+            // GIF and APNG are directly animated by ImageIO. A CDN may still ignore
+            // our GIF-specific Accept header and serve animated WebP; convert that
+            // sequence to GIF rather than feeding it through the single-frame raster
+            // transcode below.
+            if originalExtension == "gif" { return (data, "gif") }
+            if originalExtension == "png" { return (data, "png") }
+            if let gif = transcodeAnimationToGIF(source) { return (gif, "gif") }
+            return nil
+        }
         // Transcode to a downsampled, fast-decoding format up front. Keep animated
         // GIFs as-is (transcoding would freeze the animation); everything else (incl.
         // slow-to-decode webp/avif/heic) becomes jpg, or png when it has transparency.
@@ -190,6 +233,83 @@ public enum ArticleImageDownloader {
             return transcoded
         }
         return (data, originalExtension)
+    }
+
+    /// Requests the original GIF representation from content-negotiating CDNs.
+    /// WordPress's i0.wp.com otherwise sees WebP support and returns animated WebP;
+    /// older Luna builds then flattened it during the normal raster transcode.
+    static func acceptHeader(for url: URL) -> String {
+        if expectsGIFAnimation(url) {
+            return "image/gif,image/apng,image/*,*/*;q=0.8"
+        }
+        return "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+    }
+
+    private static func expectsGIFAnimation(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == "gif"
+    }
+
+    /// Converts an animated format that ImageIO can decode (notably WebP) into a
+    /// GIF sequence that `CGAnimateImageAtURLWithBlock` can play efficiently.
+    private static func transcodeAnimationToGIF(_ source: CGImageSource) -> Data? {
+        let count = CGImageSourceGetCount(source)
+        guard count > 1 else { return nil }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output, UTType.gif.identifier as CFString, count, nil)
+        else { return nil }
+
+        let sourceProperties = CGImageSourceCopyProperties(source, nil) as? [CFString: Any]
+        let loopCount = animationLoopCount(in: sourceProperties) ?? 0
+        CGImageDestinationSetProperties(destination, [
+            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: loopCount]
+        ] as CFDictionary)
+
+        for index in 0..<count {
+            guard let frame = CGImageSourceCreateImageAtIndex(source, index, nil) else { return nil }
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil)
+                as? [CFString: Any]
+            let delay = max(0.02, animationDelay(in: properties) ?? 0.1)
+            CGImageDestinationAddImage(destination, frame, [
+                kCGImagePropertyGIFDictionary: [
+                    kCGImagePropertyGIFDelayTime: delay,
+                    kCGImagePropertyGIFUnclampedDelayTime: delay,
+                ]
+            ] as CFDictionary)
+        }
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
+    }
+
+    private static func animationDelay(in properties: [CFString: Any]?) -> Double? {
+        for dictionaryKey in [
+            kCGImagePropertyGIFDictionary, kCGImagePropertyPNGDictionary,
+            kCGImagePropertyWebPDictionary,
+        ] {
+            guard let dictionary = properties?[dictionaryKey] as? [CFString: Any] else { continue }
+            for delayKey in [
+                kCGImagePropertyGIFUnclampedDelayTime, kCGImagePropertyGIFDelayTime,
+                kCGImagePropertyAPNGUnclampedDelayTime, kCGImagePropertyAPNGDelayTime,
+                kCGImagePropertyWebPUnclampedDelayTime, kCGImagePropertyWebPDelayTime,
+            ] {
+                if let number = dictionary[delayKey] as? NSNumber { return number.doubleValue }
+            }
+        }
+        return nil
+    }
+
+    private static func animationLoopCount(in properties: [CFString: Any]?) -> Int? {
+        for (dictionaryKey, loopKey) in [
+            (kCGImagePropertyGIFDictionary, kCGImagePropertyGIFLoopCount),
+            (kCGImagePropertyPNGDictionary, kCGImagePropertyAPNGLoopCount),
+            (kCGImagePropertyWebPDictionary, kCGImagePropertyWebPLoopCount),
+        ] {
+            if let dictionary = properties?[dictionaryKey] as? [CFString: Any],
+               let number = dictionary[loopKey] as? NSNumber {
+                return number.intValue
+            }
+        }
+        return nil
     }
 
     /// Downsamples to `maxStoredPixelSize` and re-encodes as JPEG (or PNG when the

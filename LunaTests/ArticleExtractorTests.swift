@@ -134,6 +134,25 @@ final class ArticleExtractorTests: XCTestCase {
         ])
     }
 
+    func testRetainsGIFBodyImageAndCanPromoteGIFToLeadImage() throws {
+        let gifURL = "https://i0.wp.com/example.com/uploads/motion.gif?resize=800%2C80&ssl=1"
+        let html = """
+        <html><head><meta property="og:image" content="\(gifURL)"></head>
+        <body><article>
+        <p>Opening article paragraph with enough text to give the article container a dominant score here.</p>
+        <figure><img src="\(gifURL)" width="800" height="180"></figure>
+        <p>Closing article paragraph with enough text to keep the article container scoring dominant.</p>
+        </article></body></html>
+        """
+
+        let content = try extractor.extract(html: html, baseURL: baseURL)
+        let images = content.blocks.filter { $0.kind == .image }
+
+        XCTAssertEqual(images.count, 1, "metadata and body copies of the GIF are deduplicated")
+        XCTAssertEqual(content.blocks.first?.kind, .image, "the GIF can be the article's lead art")
+        XCTAssertEqual(content.blocks.first?.imageURLString, gifURL)
+    }
+
     func testPrependsJSONLDHeroWhenOpenGraphImageIsAbsent() throws {
         let html = """
         <html><head><script type="application/ld+json">

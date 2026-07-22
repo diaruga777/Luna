@@ -77,6 +77,10 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     private var wordMap: WordMap
     private let includesArticleTitle: Bool
     private var imageDownloadTask: Task<Void, Never>?
+    /// Live animation views laid over TextKit's first-frame attachments. TextKit 1
+    /// draws attachments as static bitmaps, so a real image view is required for GIF
+    /// playback. Views are enabled only while visible to bound decode/CPU cost.
+    private var animatedImageViews: [AnimatedArticleImageView] = []
     private let textView = UITextView(usingTextLayoutManager: false)
     private let store = ReadingListStore.shared
     private var finishedReadingTracker = FinishedReadingTracker()
@@ -106,6 +110,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public var didLoadFullContentForTesting: Bool { didLoadFullContent }
     public var renderedTextLengthForTesting: Int { rendered.text.length }
     public var wordCountForTesting: Int { wordMap.wordCount }
+    public var animatedImageViewCountForTesting: Int { animatedImageViews.count }
     #endif
 
     /// Host-controlled guard for embedded previews whose UIKit appearance must
@@ -247,6 +252,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     /// tearing down the OLD state, independent of what the new content is.
     private func resetTransientState() {
         imageDownloadTask?.cancel()
+        removeAnimatedImageViews()
         speech?.stop()
         speech = nil
         removeHighlight()
@@ -317,6 +323,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             textView.alpha = 1
             footer.isHidden = true
         }
+        installAnimatedImageViews()
         if didLoadFullContent {
             attachShareFooterIfNeeded()
             fetchMissingImagesIfNeeded()
@@ -417,6 +424,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
 
     deinit {
         imageDownloadTask?.cancel()
+        removeAnimatedImageViews()
         speech?.stop()
         extensionAudioScriptResolver?.cancelInFlightRefinement()
         contentSizeObservation?.invalidate()
@@ -498,6 +506,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         ])
         HorizonScrollIndicator.install(on: textView, in: view)
         applyTopChromeInset(preservingVisiblePosition: false)
+        installAnimatedImageViews()
     }
 
     private func installFinishedBadge() {
@@ -592,6 +601,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 top: 20, left: horizontal, bottom: 40, right: horizontal)
         }
         layoutShareView()
+        layoutAnimatedImageViews()
 
         // Restore the scroll position as soon as we have real bounds — BEFORE
         // the view is on screen — then reveal, so there's no top-flash + jump.
@@ -672,6 +682,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
                 }
             }
         }
+        installAnimatedImageViews()
 
         didLoadFullContent = true
         // Now that the full word map exists, wire up the position-dependent features
@@ -733,6 +744,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
             self.textView.setContentOffset(offset, animated: false)
             self.textView.layoutManager.ensureLayout(for: self.textView.textContainer)
             self.textView.layoutIfNeeded()
+            self.installAnimatedImageViews()
             self.layoutShareView()
             self.checkFinishedReading()
             self.updateShareFooterVisibility()
@@ -768,6 +780,56 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
         let contentRect = glyphRect.offsetBy(
             dx: textView.textContainerInset.left, dy: textView.textContainerInset.top)
         return (entry, textView.convert(contentRect, to: view))
+    }
+
+    /// Rebuilds the live overlays after any attributed-string swap. The static first
+    /// frame remains in the attachment underneath, so layout, snapshots, printing,
+    /// and animation startup all have a stable fallback.
+    private func installAnimatedImageViews() {
+        removeAnimatedImageViews()
+        guard isViewLoaded else { return }
+        for entry in rendered.imageRanges where AnimatedArticleImageView.canAnimate(entry.fileURL) {
+            let imageView = AnimatedArticleImageView(
+                fileURL: entry.fileURL, attachmentRange: entry.range)
+            textView.addSubview(imageView)
+            animatedImageViews.append(imageView)
+        }
+        layoutAnimatedImageViews()
+    }
+
+    private func removeAnimatedImageViews() {
+        for imageView in animatedImageViews {
+            imageView.setPlaybackEnabled(false)
+            imageView.removeFromSuperview()
+        }
+        animatedImageViews.removeAll()
+    }
+
+    private func layoutAnimatedImageViews() {
+        guard !animatedImageViews.isEmpty, textView.textStorage.length > 0 else { return }
+        textView.layoutManager.ensureLayout(for: textView.textContainer)
+        for imageView in animatedImageViews {
+            let glyphRange = textView.layoutManager.glyphRange(
+                forCharacterRange: imageView.attachmentRange, actualCharacterRange: nil)
+            let glyphRect = textView.layoutManager.boundingRect(
+                forGlyphRange: glyphRange, in: textView.textContainer)
+            imageView.frame = glyphRect.offsetBy(
+                dx: textView.textContainerInset.left,
+                dy: textView.textContainerInset.top)
+        }
+        updateAnimatedImagePlayback()
+    }
+
+    private func updateAnimatedImagePlayback() {
+        guard !animatedImageViews.isEmpty else { return }
+        // `bounds` is in the text view's content coordinate system and already
+        // includes its contentOffset. A small margin starts the next animation just
+        // before it scrolls on screen without running the rest of the article.
+        let playbackRect = textView.bounds.insetBy(dx: 0, dy: -160)
+        let shouldPlay = viewIfLoaded?.window != nil
+        for imageView in animatedImageViews {
+            imageView.setPlaybackEnabled(shouldPlay && imageView.frame.intersects(playbackRect))
+        }
     }
 
     /// Full hit-test + decode. Full resolution (not the reader's downsampled inline
@@ -1158,6 +1220,7 @@ public final class ScrollReaderViewController: UIViewController, UITextViewDeleg
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         checkFinishedReading()
         updateShareFooterVisibility()
+        updateAnimatedImagePlayback()
         if scrollView.isTracking || scrollView.isDragging {
             // User-driven scroll: stop auto-follow; drop the resume highlight
             // only when nothing is actively playing.
